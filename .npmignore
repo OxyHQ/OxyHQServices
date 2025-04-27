@@ -1,0 +1,18 @@
+# Source
+src/
+
+# Configuration files
+tsconfig.json
+webpack.config.js
+jest.config.js
+.gitignore
+
+# Development files
+node_modules/
+*.log
+.DS_Store
+
+# Tests
+**/*.test.ts
+**/*.spec.ts
+coverage/ 
