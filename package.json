@@ -1,6 +1,6 @@
 {
     "name": "@oxyhq/services",
-    "version": "0.1.16",
+    "version": "0.1.18",
     "description": "Authentication, user management, and karma system for Oxy applications",
     "main": "dist/index.js",
     "module": "dist/index.js",
@@ -40,9 +40,9 @@
         "webpack-cli": "^6.0.1"
     },
     "peerDependencies": {
-        "react": "18.3.1",
-        "react-dom": "18.3.1",
-        "react-native": ">=0.70.0"
+        "react": "19.0.0",
+        "react-dom": "19.0.0",
+        "react-native": "0.79.2"
     },
     "peerDependenciesMeta": {
         "react-dom": {
