@@ -4,6 +4,7 @@
 
 // Export the main provider component and context
 export { default as OxyProvider } from './components/OxyProvider';
+export { default as OxySignInButton } from './components/OxySignInButton';
 export { 
   OxyContextProvider, 
   useOxy,

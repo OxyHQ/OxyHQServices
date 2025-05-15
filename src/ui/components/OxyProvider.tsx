@@ -107,6 +107,23 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     };
                 }
             });
+
+            // Add a method to navigate between screens
+            // @ts-ignore - Adding custom method
+            externalRef.current._navigateToScreen = (screenName: string) => {
+                // Access the navigation function exposed by OxyRouter
+                // Use internal mechanism to notify router about navigation
+                // We'll use a simple event-based approach
+                if (typeof document !== 'undefined') {
+                    // For web - use a custom event
+                    const event = new CustomEvent('oxy:navigate', { detail: screenName });
+                    document.dispatchEvent(event);
+                } else {
+                    // For React Native - use the navigation prop directly if available
+                    console.log(`Requesting navigation to ${screenName}`);
+                    // We'll implement a simpler mechanism in OxyRouter
+                }
+            };
         }
     }, [externalRef, modalRef]);
 
@@ -233,6 +250,19 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     // Method to adjust snap points from Router
     const adjustSnapPoints = useCallback((points: string[]) => {
         setSnapPoints(points);
+    }, []);
+
+    // Method to programmatically navigate to a specific screen
+    const navigateToScreen = useCallback((screenName: string) => {
+        // If we have a router component with navigate method, use it
+        if (modalRef.current) {
+            // Store the navigate function on the modal ref so it can be accessed externally
+            // @ts-ignore - Adding custom property for external navigation
+            modalRef.current._navigateToScreen = (screen: string) => {
+                // This will be populated by the OxyRouter component when it renders
+                console.log(`Navigating to ${screen} programmatically`);
+            };
+        }
     }, []);
 
     // Close the bottom sheet with animation

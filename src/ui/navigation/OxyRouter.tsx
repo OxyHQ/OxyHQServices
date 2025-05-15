@@ -52,7 +52,29 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         } else {
             console.error(`Screen "${screen}" not found`);
         }
-    };
+    };    // Expose the navigate method to the parent component (OxyProvider)
+    useEffect(() => {
+        // Set up event listener for navigation events
+        const handleNavigationEvent = (event: any) => {
+            if (event && event.detail) {
+                const screenName = event.detail;
+                console.log(`Navigation event received for screen: ${screenName}`);
+                navigate(screenName);
+            }
+        };
+
+        // Add event listener (web only)
+        if (typeof document !== 'undefined') {
+            document.addEventListener('oxy:navigate', handleNavigationEvent);
+        }
+
+        // Cleanup
+        return () => {
+            if (typeof document !== 'undefined') {
+                document.removeEventListener('oxy:navigate', handleNavigationEvent);
+            }
+        };
+    }, []);
 
     const goBack = () => {
         if (screenHistory.length > 1) {

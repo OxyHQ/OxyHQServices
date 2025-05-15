@@ -17,6 +17,7 @@ export interface OxyContextState {
 
     // Access to services
     oxyServices: OxyServices;
+    bottomSheetRef?: React.RefObject<any>;
 }
 
 // Create the context with default values

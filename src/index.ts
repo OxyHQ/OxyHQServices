@@ -8,7 +8,8 @@ import {
   useOxy, 
   SignInScreen, 
   SignUpScreen, 
-  AccountCenterScreen 
+  AccountCenterScreen,
+  OxySignInButton
 } from './ui';
 
 // Export OxyContext types directly
@@ -30,7 +31,8 @@ export {
   useOxy, 
   SignInScreen, 
   SignUpScreen,
-  AccountCenterScreen 
+  AccountCenterScreen,
+  OxySignInButton
 };
 
 // Export types explicitly

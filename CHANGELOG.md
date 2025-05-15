@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [5.1.6] - 2025-05-16
+
+### Added
+- New `OxySignInButton` component for easy integration of sign-in functionality
+- UI_COMPONENTS.md documentation file with detailed information about available UI components
+- Updated examples to demonstrate the use of OxySignInButton
+
 ## [5.1.5] - 2025-05-15
 
 ### Fixed

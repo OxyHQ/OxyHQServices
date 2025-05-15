@@ -1,9 +1,9 @@
 import React, { useRef, useState, useEffect } from 'react';
-import { View, Button, StyleSheet, Text, ActivityIndicator } from 'react-native';
+import { View, Button, StyleSheet, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { BottomSheetModal } from '@gorhom/bottom-sheet';
 // Note: This import would work in a real project where the package is installed via npm.
 // For development/testing, you might need to use relative imports instead.
-import { OxyServices, OxyProvider, User, useOxy } from '@oxyhq/services';
+import { OxyServices, OxyProvider, User, useOxy, OxySignInButton } from '@oxyhq/services';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 /**
@@ -93,11 +93,43 @@ export default function App() {
         return <Button title="Sign In / Sign Up" onPress={openSheet} />;
     };
 
+    // Component to conditionally show the Account Center button
+    const AccountCenterButton = ({ openAccountCenter }: { openAccountCenter: () => void }) => {
+        const { user } = useOxy();
+        if (!user) return null;
+        return (
+            <TouchableOpacity
+                style={styles.accountCenterButton}
+                onPress={openAccountCenter}
+            >
+                <Text style={styles.accountCenterButtonText}>Manage Account</Text>
+            </TouchableOpacity>
+        );
+    };
+
     // Methods to control the sheet
     const openSheet = () => {
         // The OxyProvider exposes an expand method on the bottomSheetRef
         if (bottomSheetRef.current) {
             bottomSheetRef.current.expand();
+        }
+    };
+
+    // Open the Account Center screen
+    const openAccountCenter = () => {
+        if (bottomSheetRef.current) {
+            // Set initialScreen to AccountCenter and expand
+            if (oxyServices) {
+                bottomSheetRef.current.expand();
+                // Use setTimeout to ensure the sheet is open before trying to navigate
+                setTimeout(() => {
+                    // Navigate to the AccountCenter screen
+                    if (bottomSheetRef.current) {
+                        // @ts-ignore - Access the navigate method via the router
+                        bottomSheetRef.current._navigateToScreen?.('AccountCenter');
+                    }
+                }, 300);
+            }
         }
     };
 
@@ -147,11 +179,57 @@ export default function App() {
                         {/* Only show login button if not authenticated */}
                         <LoginButton openSheet={openSheet} />
 
+                        {/* Use the new OxySignInButton component */}
+                        <View style={styles.buttonExamples}>
+                            <Text style={styles.sectionTitle}>OxySignInButton Examples:</Text>
+
+                            {/* Default style */}
+                            <OxySignInButton />
+
+                            {/* Outlined variant */}
+                            <OxySignInButton
+                                variant="outline"
+                                style={{ marginTop: 10 }}
+                            />
+
+                            {/* Contained variant */}
+                            <OxySignInButton
+                                variant="contained"
+                                style={{ marginTop: 10 }}
+                                text="Continue with Oxy"
+                            />
+
+                            {/* Custom handler example */}
+                            <OxySignInButton
+                                style={{ marginTop: 10 }}
+                                text="Custom Handler"
+                                onPress={() => {
+                                    console.log('Custom authentication flow');
+                                    openSheet();
+                                }}
+                            />
+                        </View>
+
+                        {/* Only show Account Center button if authenticated */}
+                        <AccountCenterButton openAccountCenter={openAccountCenter} />
+
                         {/* Bottom sheet control buttons */}
                         <View style={styles.controlButtons}>
                             <Button title="Close Sheet" onPress={closeSheet} />
                             <Button title="Half Open" onPress={() => snapToIndex(0)} />
                             <Button title="Fully Open" onPress={() => snapToIndex(1)} />
+                            <Button
+                                title="Open Account Center"
+                                onPress={() => {
+                                    // First open the sheet, then navigate to Account Center
+                                    bottomSheetRef.current?.expand();
+                                    setTimeout(() => {
+                                        // @ts-ignore - _navigateToScreen is added at runtime
+                                        bottomSheetRef.current?._navigateToScreen?.('AccountCenter');
+                                    }, 300);
+                                }}
+                                color="#5A5AFF"
+                            />
                         </View>
                     </View>
                 </SessionManager>
@@ -172,6 +250,20 @@ const styles = StyleSheet.create({
     controlButtons: {
         marginTop: 20,
         gap: 10,
+    },
+    buttonExamples: {
+        marginTop: 20,
+        padding: 15,
+        backgroundColor: '#f9f9f9',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#eaeaea',
+    },
+    sectionTitle: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        marginBottom: 15,
+        color: '#333',
     },
     loadingContainer: {
         flex: 1,
@@ -211,5 +303,17 @@ const styles = StyleSheet.create({
         color: '#D32F2F',
         fontSize: 14,
         marginBottom: 10,
+    },
+    accountCenterButton: {
+        backgroundColor: '#5A5AFF',
+        padding: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+        marginTop: 10,
+    },
+    accountCenterButtonText: {
+        color: 'white',
+        fontWeight: 'bold',
+        fontSize: 16,
     }
 });

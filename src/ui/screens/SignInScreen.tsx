@@ -21,7 +21,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     const [password, setPassword] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
 
-    const { login, isLoading } = useOxy();
+    const { login, isLoading, user, isAuthenticated } = useOxy();
 
     const isDarkTheme = theme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
@@ -30,6 +30,35 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     const placeholderColor = isDarkTheme ? '#AAAAAA' : '#999999';
     const primaryColor = '#0066CC';
     const borderColor = isDarkTheme ? '#444444' : '#E0E0E0';
+
+    // If user is already authenticated, show user info instead of login form
+    if (user && isAuthenticated) {
+        return (
+            <View style={[styles.container, { backgroundColor, padding: 20 }]}>
+                <Text style={[styles.title, { color: textColor }]}>Welcome, {user.username}!</Text>
+
+                <View style={styles.userInfoContainer}>
+                    <Text style={[styles.userInfoText, { color: textColor }]}>
+                        You are already signed in.
+                    </Text>
+                    {user.email && (
+                        <Text style={[styles.userInfoText, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                            Email: {user.email}
+                        </Text>
+                    )}
+                </View>
+
+                <View style={styles.actionButtonsContainer}>
+                    <TouchableOpacity
+                        style={[styles.button, { backgroundColor: primaryColor }]}
+                        onPress={() => navigate('AccountCenter')}
+                    >
+                        <Text style={styles.buttonText}>Go to Account Center</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        );
+    }
 
     const handleLogin = async () => {
         if (!username || !password) {
@@ -188,6 +217,22 @@ const styles = StyleSheet.create({
     errorText: {
         color: '#D32F2F',
         fontSize: 14,
+    },
+    // New styles for authenticated user view
+    userInfoContainer: {
+        padding: 20,
+        marginVertical: 20,
+        backgroundColor: '#F5F5F5',
+        borderRadius: 12,
+        alignItems: 'center',
+    },
+    userInfoText: {
+        fontSize: 16,
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    actionButtonsContainer: {
+        marginTop: 20,
     },
 });
 

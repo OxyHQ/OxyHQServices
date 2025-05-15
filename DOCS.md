@@ -592,6 +592,16 @@ Main component that provides authentication UI and context.
 function OxyProvider(props: OxyProviderProps): JSX.Element;
 ```
 
+#### OxySignInButton
+
+Pre-styled button component for signing in with Oxy services.
+
+```typescript
+function OxySignInButton(props: OxySignInButtonProps): JSX.Element | null;
+```
+
+For detailed documentation on OxySignInButton, see [UI_COMPONENTS.md](./UI_COMPONENTS.md).
+
 #### OxyContextProvider
 
 Context-only provider without UI.

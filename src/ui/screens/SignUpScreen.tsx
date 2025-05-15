@@ -24,7 +24,7 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
     const [confirmPassword, setConfirmPassword] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
 
-    const { signUp, isLoading } = useOxy();
+    const { signUp, isLoading, user, isAuthenticated } = useOxy();
 
     const isDarkTheme = theme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
@@ -33,6 +33,35 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
     const placeholderColor = isDarkTheme ? '#AAAAAA' : '#999999';
     const primaryColor = '#0066CC';
     const borderColor = isDarkTheme ? '#444444' : '#E0E0E0';
+
+    // If user is already authenticated, show user info and account center option
+    if (user && isAuthenticated) {
+        return (
+            <View style={[styles.container, { backgroundColor, padding: 20 }]}>
+                <Text style={[styles.title, { color: textColor }]}>Welcome, {user.username}!</Text>
+
+                <View style={styles.userInfoContainer}>
+                    <Text style={[styles.userInfoText, { color: textColor }]}>
+                        You are already signed in.
+                    </Text>
+                    {user.email && (
+                        <Text style={[styles.userInfoText, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                            Email: {user.email}
+                        </Text>
+                    )}
+                </View>
+
+                <View style={styles.actionButtonsContainer}>
+                    <TouchableOpacity
+                        style={[styles.button, { backgroundColor: primaryColor }]}
+                        onPress={() => navigate('AccountCenter')}
+                    >
+                        <Text style={styles.buttonText}>Go to Account Center</Text>
+                    </TouchableOpacity>
+                </View>
+            </View>
+        );
+    }
 
     const validateEmail = (email: string) => {
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -266,6 +295,21 @@ const styles = StyleSheet.create({
     errorText: {
         color: '#D32F2F',
         fontSize: 14,
+    },
+    userInfoContainer: {
+        padding: 20,
+        marginVertical: 20,
+        backgroundColor: '#F5F5F5',
+        borderRadius: 12,
+        alignItems: 'center',
+    },
+    userInfoText: {
+        fontSize: 16,
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    actionButtonsContainer: {
+        marginTop: 24,
     },
 });
 
