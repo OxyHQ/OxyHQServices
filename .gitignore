@@ -1,6 +1,7 @@
 # dependencies
 node_modules/
 dist/
+lib/
 
 # Environment variables
 .env

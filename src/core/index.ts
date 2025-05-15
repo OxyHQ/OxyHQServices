@@ -1,0 +1,768 @@
+import axios, { AxiosInstance, AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
+import { jwtDecode } from 'jwt-decode';
+import {
+  OxyConfig, 
+  User, 
+  LoginResponse, 
+  Notification,
+  Wallet,
+  Transaction,
+  TransferFundsRequest,
+  PurchaseRequest,
+  WithdrawalRequest,
+  TransactionResponse,
+  KarmaRule,
+  KarmaHistory,
+  KarmaLeaderboardEntry,
+  KarmaAwardRequest,
+  ApiError,
+  PaymentMethod,
+  PaymentRequest,
+  PaymentResponse,
+  AnalyticsData,
+  FollowerDetails,
+  ContentViewer
+} from '../models/interfaces';
+
+interface JwtPayload {
+  exp: number;
+  userId: string;
+  [key: string]: any;
+}
+
+/**
+ * OxyServices - Client library for interacting with the Oxy API
+ */
+export class OxyServices {
+  private client: AxiosInstance;
+  private accessToken: string | null = null;
+  private refreshToken: string | null = null;
+  private refreshPromise: Promise<{ accessToken: string; refreshToken: string }> | null = null;
+
+  /**
+   * Creates a new instance of the OxyServices client
+   * @param config - Configuration for the client
+   */
+  constructor(config: OxyConfig) {
+    this.client = axios.create({ 
+      baseURL: config.baseURL,
+      timeout: 10000 // 10 second timeout
+    });
+    
+    // Interceptor for adding auth header and handling token refresh
+    this.client.interceptors.request.use(async (req: InternalAxiosRequestConfig) => {
+      if (!this.accessToken) {
+        return req;
+      }        // Check if token is expired and refresh if needed
+        try {
+          const decoded = jwtDecode<JwtPayload>(this.accessToken);
+          const currentTime = Math.floor(Date.now() / 1000);
+        
+        // If token expires in less than 60 seconds, refresh it
+        if (decoded.exp - currentTime < 60) {
+          await this.refreshTokens();
+        }
+      } catch (error) {
+        // If token can't be decoded, continue with request and let server handle it
+        console.warn('Error decoding JWT token', error);
+      }
+      
+      req.headers = req.headers || {};
+      req.headers.Authorization = `Bearer ${this.accessToken}`;
+      return req;
+    });
+    
+    // Response interceptor for handling errors
+    this.client.interceptors.response.use(
+      response => response,
+      async (error: AxiosError) => {
+        const originalRequest = error.config;
+        
+        // If the error is due to an expired token and we haven't tried refreshing yet
+        if (
+          error.response?.status === 401 &&
+          this.refreshToken &&
+          originalRequest && 
+          !originalRequest.headers?.['X-Retry-After-Refresh']
+        ) {
+          try {
+            await this.refreshTokens();
+            
+            // Retry the original request with new token
+            const newRequest = { ...originalRequest };
+            if (newRequest.headers) {
+              newRequest.headers.Authorization = `Bearer ${this.accessToken}`;
+              newRequest.headers['X-Retry-After-Refresh'] = 'true';
+            }
+            return this.client(newRequest);
+          } catch (refreshError) {
+            // If refresh fails, force user to login again
+            this.accessToken = null;
+            this.refreshToken = null;
+            return Promise.reject(refreshError);
+          }
+        }
+        
+        // Format error response
+        const apiError: ApiError = {
+          message: (error.response?.data as any)?.message || 'An unknown error occurred',
+          code: (error.response?.data as any)?.code || 'UNKNOWN_ERROR',
+          status: error.response?.status || 500,
+          details: error.response?.data
+        };
+        
+        return Promise.reject(apiError);
+      }
+    );
+  }
+
+  /**
+   * Gets the currently authenticated user ID from the token
+   * @returns The user ID or null if not authenticated
+   */
+  public getCurrentUserId(): string | null {
+    if (!this.accessToken) return null;
+    
+    try {
+      const decoded = jwtDecode<JwtPayload>(this.accessToken);
+      return decoded.userId;
+    } catch {
+      return null;
+    }
+  }
+  
+  /**
+   * Checks if the user is currently authenticated
+   * @returns Boolean indicating authentication status
+   */
+  public isAuthenticated(): boolean {
+    return this.accessToken !== null;
+  }
+
+  /**
+   * Sets authentication tokens directly (useful for initializing from storage)
+   * @param accessToken - JWT access token
+   * @param refreshToken - Refresh token for getting new access tokens
+   */
+  public setTokens(accessToken: string, refreshToken: string): void {
+    this.accessToken = accessToken;
+    this.refreshToken = refreshToken;
+  }
+  
+  /**
+   * Clears all authentication tokens
+   */
+  public clearTokens(): void {
+    this.accessToken = null;
+    this.refreshToken = null;
+  }
+
+  /**
+   * Sign up a new user
+   * @param username - Desired username
+   * @param email - User's email address
+   * @param password - User's password
+   * @returns Object containing the message, token and user data
+   */
+  async signUp(username: string, email: string, password: string): Promise<{ message: string; token: string; user: User }> {
+    try {
+      const res = await this.client.post('/auth/signup', { username, email, password });
+      const { message, token, user } = res.data;
+      this.accessToken = token;
+      return { message, token, user };
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Log in and store tokens
+   * @param username - User's username or email
+   * @param password - User's password
+   * @returns Login response containing tokens and user data
+   */
+  async login(username: string, password: string): Promise<LoginResponse> {
+    try {
+      const res = await this.client.post('/auth/login', { username, password });
+      const { accessToken, refreshToken, user } = res.data;
+      this.accessToken = accessToken;
+      this.refreshToken = refreshToken;
+      return { accessToken, refreshToken, user };
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Log out user
+   */
+  async logout(): Promise<void> {
+    if (!this.refreshToken) return;
+    
+    try {
+      await this.client.post('/auth/logout', { refreshToken: this.refreshToken });
+    } catch (error) {
+      console.warn('Error during logout', error);
+    } finally {
+      this.accessToken = null;
+      this.refreshToken = null;
+    }
+  }
+
+  /**
+   * Refresh access and refresh tokens
+   * @returns New tokens
+   */
+  async refreshTokens(): Promise<{ accessToken: string; refreshToken: string }> {
+    if (!this.refreshToken) {
+      throw new Error('No refresh token available');
+    }
+    
+    // If a refresh is already in progress, return that promise
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+    
+    // Create a new refresh promise
+    this.refreshPromise = (async () => {
+      try {
+        const res = await this.client.post('/auth/refresh', { refreshToken: this.refreshToken });
+        const { accessToken, refreshToken } = res.data;
+        this.accessToken = accessToken;
+        this.refreshToken = refreshToken;
+        return { accessToken, refreshToken };
+      } catch (error) {
+        this.accessToken = null;
+        this.refreshToken = null;
+        throw this.handleError(error);
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+    
+    return this.refreshPromise;
+  }
+
+  /**
+   * Validate current access token
+   * @returns Boolean indicating if the token is valid
+   */
+  async validate(): Promise<boolean> {
+    try {
+      const res = await this.client.get('/auth/validate');
+      return res.data.valid;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /* Profile Methods */
+
+  /**
+   * Fetch profile by username
+   * @param username - The username to look up
+   * @returns User profile data
+   */
+  async getProfileByUsername(username: string): Promise<User> {
+    try {
+      const res = await this.client.get(`/profiles/username/${username}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Search profiles
+   * @param query - Search query string
+   * @param limit - Maximum number of results to return
+   * @param offset - Number of results to skip for pagination
+   * @returns Array of matching user profiles
+   */
+  async searchProfiles(query: string, limit?: number, offset?: number): Promise<User[]> {
+    try {
+      const params: Record<string, any> = { query };
+      if (limit !== undefined) params.limit = limit;
+      if (offset !== undefined) params.offset = offset;
+      const res = await this.client.get('/profiles/search', { params });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /* User Methods */
+
+  /**
+   * Get general user by ID
+   * @param userId - The user ID to look up
+   * @returns User data
+   */
+  async getUserById(userId: string): Promise<User> {
+    try {
+      const res = await this.client.get(`/users/${userId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Update user profile (requires auth)
+   * @param userId - User ID to update (must match authenticated user or have admin rights)
+   * @param updates - Object containing fields to update
+   * @returns Updated user data
+   */
+  async updateUser(userId: string, updates: Record<string, any>): Promise<User> {
+    try {
+      const res = await this.client.put(`/users/${userId}`, updates);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Follow a user
+   * @param userId - User ID to follow
+   * @returns Status of the follow operation
+   */
+  async followUser(userId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await this.client.post(`/users/${userId}/follow`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Unfollow a user
+   * @param userId - User ID to unfollow
+   * @returns Status of the unfollow operation
+   */
+  async unfollowUser(userId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await this.client.delete(`/users/${userId}/follow`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /* Notification Methods */
+
+  /**
+   * Fetch all notifications for the authenticated user
+   * @returns Array of notifications
+   */
+  async getNotifications(): Promise<Notification[]> {
+    try {
+      const res = await this.client.get('/notifications');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get count of unread notifications
+   * @returns Number of unread notifications
+   */
+  async getUnreadCount(): Promise<number> {
+    try {
+      const res = await this.client.get('/notifications/unread-count');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Create a new notification (admin use)
+   * @param data - Notification data
+   * @returns Created notification
+   */
+  async createNotification(data: Partial<Notification>): Promise<Notification> {
+    try {
+      const res = await this.client.post('/notifications', data);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Mark a single notification as read
+   * @param notificationId - ID of notification to mark as read
+   */
+  async markNotificationAsRead(notificationId: string): Promise<void> {
+    try {
+      await this.client.put(`/notifications/${notificationId}/read`);
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Mark all notifications as read
+   */
+  async markAllNotificationsAsRead(): Promise<void> {
+    try {
+      await this.client.put('/notifications/read-all');
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Delete a notification
+   * @param notificationId - ID of notification to delete
+   */
+  async deleteNotification(notificationId: string): Promise<void> {
+    try {
+      await this.client.delete(`/notifications/${notificationId}`);
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /* Payment Methods */
+
+  /**
+   * Process a payment
+   * @param data - Payment data including user ID, plan, and payment method
+   * @returns Payment result with transaction ID
+   */
+  async processPayment(data: PaymentRequest): Promise<PaymentResponse> {
+    try {
+      const res = await this.client.post('/payments/process', data);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Validate a payment method
+   * @param paymentMethod - Payment method to validate
+   * @returns Object indicating if the payment method is valid
+   */
+  async validatePaymentMethod(paymentMethod: any): Promise<{ valid: boolean }> {
+    try {
+      const res = await this.client.post('/payments/validate', { paymentMethod });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get saved payment methods for a user
+   * @param userId - User ID to get payment methods for
+   * @returns Array of payment methods
+   */
+  async getPaymentMethods(userId: string): Promise<PaymentMethod[]> {
+    try {
+      const res = await this.client.get(`/payments/methods/${userId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /* Analytics Methods */
+
+  /**
+   * Get analytics data
+   * @param userId - User ID to get analytics for
+   * @param period - Time period for analytics (e.g., "day", "week", "month")
+   * @returns Analytics data
+   */
+  async getAnalytics(userId: string, period?: string): Promise<AnalyticsData> {
+    try {
+      const params: Record<string, any> = { userID: userId };
+      if (period) params.period = period;
+      const res = await this.client.get('/analytics', { params });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Update analytics (internal use)
+   * @param userId - User ID to update analytics for
+   * @param type - Type of analytics to update
+   * @param data - Analytics data to update
+   * @returns Message indicating success
+   */
+  async updateAnalytics(userId: string, type: string, data: Record<string, any>): Promise<{ message: string }> {
+    try {
+      const res = await this.client.post('/analytics/update', { userID: userId, type, data });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get content viewers analytics
+   * @param userId - User ID to get viewer data for
+   * @param period - Time period for analytics
+   * @returns Array of content viewer data
+   */
+  async getContentViewers(userId: string, period?: string): Promise<ContentViewer[]> {
+    try {
+      const params: Record<string, any> = { userID: userId };
+      if (period) params.period = period;
+      const res = await this.client.get('/analytics/viewers', { params });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get follower analytics details
+   * @param userId - User ID to get follower data for
+   * @param period - Time period for follower data
+   * @returns Follower details
+   */
+  async getFollowerDetails(userId: string, period?: string): Promise<FollowerDetails> {
+    try {
+      const params: Record<string, any> = { userID: userId };
+      if (period) params.period = period;
+      const res = await this.client.get('/analytics/followers', { params });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /* Wallet Methods */
+
+  /**
+   * Get wallet info
+   * @param userId - User ID to get wallet for
+   * @returns Wallet data
+   */
+  async getWallet(userId: string): Promise<Wallet> {
+    try {
+      const res = await this.client.get(`/wallet/${userId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get transaction history
+   * @param userId - User ID to get transactions for
+   * @param limit - Maximum number of transactions to return
+   * @param offset - Number of transactions to skip for pagination
+   * @returns Array of transactions and pagination info
+   */
+  async getTransactionHistory(
+    userId: string, 
+    limit?: number, 
+    offset?: number
+  ): Promise<{ transactions: Transaction[]; total: number; hasMore: boolean }> {
+    try {
+      const params: Record<string, any> = {};
+      if (limit !== undefined) params.limit = limit;
+      if (offset !== undefined) params.offset = offset;
+      const res = await this.client.get(`/wallet/transactions/${userId}`, { params });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get a specific transaction
+   * @param transactionId - ID of transaction to retrieve
+   * @returns Transaction data
+   */
+  async getTransaction(transactionId: string): Promise<Transaction> {
+    try {
+      const res = await this.client.get(`/wallet/transaction/${transactionId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Transfer funds between users
+   * @param data - Transfer details including source, destination, and amount
+   * @returns Transaction response
+   */
+  async transferFunds(data: TransferFundsRequest): Promise<TransactionResponse> {
+    try {
+      const res = await this.client.post('/wallet/transfer', data);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Process a purchase
+   * @param data - Purchase details including user, item, and amount
+   * @returns Transaction response
+   */
+  async processPurchase(data: PurchaseRequest): Promise<TransactionResponse> {
+    try {
+      const res = await this.client.post('/wallet/purchase', data);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Request a withdrawal
+   * @param data - Withdrawal details including user, amount, and address
+   * @returns Transaction response
+   */
+  async requestWithdrawal(data: WithdrawalRequest): Promise<TransactionResponse> {
+    try {
+      const res = await this.client.post('/wallet/withdraw', data);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /* Karma Methods */
+
+  /**
+   * Get karma leaderboard
+   * @returns Array of karma leaderboard entries
+   */
+  async getKarmaLeaderboard(): Promise<KarmaLeaderboardEntry[]> {
+    try {
+      const res = await this.client.get('/karma/leaderboard');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get karma rules
+   * @returns Array of karma rules
+   */
+  async getKarmaRules(): Promise<KarmaRule[]> {
+    try {
+      const res = await this.client.get('/karma/rules');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get total karma for a user
+   * @param userId - User ID to get karma for
+   * @returns Object with total karma points
+   */
+  async getUserKarmaTotal(userId: string): Promise<{ total: number }> {
+    try {
+      const res = await this.client.get(`/karma/${userId}/total`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get karma history for a user
+   * @param userId - User ID to get karma history for
+   * @param limit - Maximum number of history entries to return
+   * @param offset - Number of entries to skip for pagination
+   * @returns Karma history entries and pagination info
+   */
+  async getUserKarmaHistory(
+    userId: string, 
+    limit?: number, 
+    offset?: number
+  ): Promise<{ history: KarmaHistory[]; total: number; hasMore: boolean }> {
+    try {
+      const params: Record<string, any> = {};
+      if (limit !== undefined) params.limit = limit;
+      if (offset !== undefined) params.offset = offset;
+      const res = await this.client.get(`/karma/${userId}/history`, { params });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Award karma points to a user
+   * @param data - Karma award details
+   * @returns Karma award response
+   */
+  async awardKarma(data: KarmaAwardRequest): Promise<{ success: boolean; message: string; history: KarmaHistory }> {
+    try {
+      const res = await this.client.post('/karma/award', data);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Deduct karma points from a user
+   * @param data - Karma deduction details
+   * @returns Karma deduction response
+   */
+  async deductKarma(data: KarmaAwardRequest): Promise<{ success: boolean; message: string; history: KarmaHistory }> {
+    try {
+      const res = await this.client.post('/karma/deduct', data);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Create or update karma rule (admin)
+   * @param data - Karma rule data
+   * @returns Created or updated karma rule
+   */
+  async createOrUpdateKarmaRule(data: Partial<KarmaRule>): Promise<KarmaRule> {
+    try {
+      const res = await this.client.post('/karma/rules', data);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Centralized error handling
+   * @private
+   * @param error - Error object from API call
+   * @returns Formatted API error
+   */
+  private handleError(error: any): ApiError {
+    if (error && error.code && error.status) {
+      // Already formatted as ApiError
+      return error as ApiError;
+    }
+    
+    const apiError: ApiError = {
+      message: error?.message || (error?.response?.data as any)?.message || 'Unknown error occurred',
+      code: (error?.response?.data as any)?.code || 'UNKNOWN_ERROR',
+      status: error?.response?.status || 500,
+      details: error?.response?.data
+    };
+    
+    return apiError;
+  }
+}
+
+export default OxyServices;

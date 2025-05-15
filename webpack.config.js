@@ -28,6 +28,8 @@ module.exports = {
     'react/jsx-runtime': 'react/jsx-runtime',
     'react-native': 'react-native',
     'expo-secure-store': 'expo-secure-store',
-    '@react-native-async-storage/async-storage': '@react-native-async-storage/async-storage'
+    '@react-native-async-storage/async-storage': '@react-native-async-storage/async-storage',
+    'axios': 'axios',
+    'jwt-decode': 'jwt-decode'
   }
 };
