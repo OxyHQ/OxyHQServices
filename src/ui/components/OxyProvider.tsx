@@ -1,6 +1,7 @@
+// filepath: /home/nate/OxyServicesandApi/OxyHQServices/src/ui/components/OxyProvider.tsx
 import React, { useCallback, useRef, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions, Platform, Animated } from 'react-native';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetBackdropProps } from '@gorhom/bottom-sheet';
+import { View, Text, StyleSheet, Dimensions, Platform, Animated, StatusBar } from 'react-native';
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView } from '@gorhom/bottom-sheet';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { OxyServices } from '../../core';
@@ -27,6 +28,7 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
         contextOnly = false,
         onAuthStateChange,
         storageKeyPrefix,
+        bottomSheetRef,
         ...bottomSheetProps
     } = props;
 
@@ -50,11 +52,14 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
             storageKeyPrefix={storageKeyPrefix}
             onAuthStateChange={onAuthStateChange}
         >
-            <GestureHandlerRootView style={{ flex: 1 }}>
-                <SafeAreaProvider>
-                    <OxyBottomSheet {...bottomSheetProps} oxyServices={oxyServices} />
-                    {children}
-                </SafeAreaProvider>
+            <GestureHandlerRootView style={styles.gestureHandlerRoot}>
+                <BottomSheetModalProvider>
+                    <StatusBar translucent backgroundColor="transparent" />
+                    <SafeAreaProvider>
+                        <OxyBottomSheet {...bottomSheetProps} bottomSheetRef={bottomSheetRef} oxyServices={oxyServices} />
+                        {children}
+                    </SafeAreaProvider>
+                </BottomSheetModalProvider>
             </GestureHandlerRootView>
         </OxyContextProvider>
     );
@@ -64,6 +69,7 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
  * OxyBottomSheet component - A bottom sheet-based authentication and account management UI
  * 
  * This is the original OxyProvider UI functionality, now extracted into its own component
+ * and reimplemented using BottomSheetModal for better Android compatibility
  */
 const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     oxyServices,
@@ -72,18 +78,101 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     onAuthenticated,
     theme = 'light',
     customStyles = {},
+    bottomSheetRef: externalRef,
+    autoPresent = false,
 }) => {
-    const bottomSheetRef = useRef<BottomSheet>(null);
-    // Use fixed height values instead of percentages for more reliable sizing
-    const [snapPoints, setSnapPoints] = useState<(string | number)[]>([height * 0.6, height * 0.85]);
+    // Use the provided external ref or create an internal one if not provided
+    // Create our own BottomSheetModal ref to handle proper typings
+    const internalRef = useRef<BottomSheetModal>(null);
 
-    // Animation values
-    const fadeAnim = useRef(new Animated.Value(1)).current;
-    const slideAnim = useRef(new Animated.Value(0)).current;
+    // Use a local ref that we know has the right type
+    const modalRef = useRef<BottomSheetModal>(null);
+
+    // Set up effect to sync the external ref with our local ref
+    useEffect(() => {
+        if (externalRef && modalRef.current) {
+            // We need to expose certain methods to the external ref
+            // This is a workaround for the type incompatibility
+            const methodsToExpose = ['snapToIndex', 'snapToPosition', 'close', 'expand', 'collapse'];
+
+            methodsToExpose.forEach((method) => {
+                if (modalRef.current && typeof modalRef.current[method as keyof typeof modalRef.current] === 'function') {
+                    // Properly forward methods from modalRef to externalRef
+                    // @ts-ignore - We're doing a runtime compatibility layer
+                    externalRef.current = externalRef.current || {};
+                    // @ts-ignore - Dynamic method assignment
+                    externalRef.current[method] = (...args: any[]) => {
+                        // @ts-ignore - Dynamic method call
+                        return modalRef.current?.[method]?.(...args);
+                    };
+                }
+            });
+        }
+    }, [externalRef, modalRef]);
+
+    // Use percentage-based snap points for better cross-platform compatibility
+    const [snapPoints, setSnapPoints] = useState<(string | number)[]>(['60%', '85%']);
+
+    // Animation values - we'll use these for content animations
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+    const slideAnim = useRef(new Animated.Value(50)).current;
     const handleScaleAnim = useRef(new Animated.Value(1)).current;
 
     // Get the authentication context
     const oxyContext = useOxy();
+
+    // Present the modal when component mounts, but only if autoPresent is true
+    useEffect(() => {
+        // Add expand method that handles presentation and animations
+        if (externalRef && modalRef.current) {
+            // Override expand to handle initial presentation
+            // @ts-ignore - Dynamic method assignment
+            externalRef.current.expand = () => {
+                // Only present if not already presented
+                modalRef.current?.present();
+
+                // Start content animations after presenting
+                Animated.parallel([
+                    Animated.timing(fadeAnim, {
+                        toValue: 1,
+                        duration: 300,
+                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                    }),
+                    Animated.spring(slideAnim, {
+                        toValue: 0,
+                        friction: 8,
+                        tension: 40,
+                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                    }),
+                ]).start();
+            };
+        }
+
+        // Auto-present if the autoPresent prop is true
+        if (autoPresent && modalRef.current) {
+            // Small delay to allow everything to initialize
+            const timer = setTimeout(() => {
+                modalRef.current?.present();
+
+                // Start content animations after presenting
+                Animated.parallel([
+                    Animated.timing(fadeAnim, {
+                        toValue: 1,
+                        duration: 300,
+                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                    }),
+                    Animated.spring(slideAnim, {
+                        toValue: 0,
+                        friction: 8,
+                        tension: 40,
+                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                    }),
+                ]).start();
+            }, 100);
+
+            return () => clearTimeout(timer);
+        }
+    }, [externalRef, modalRef, fadeAnim, slideAnim, autoPresent]);
 
     // Handle authentication success from the bottom sheet screens
     const handleAuthenticated = useCallback((user: any) => {
@@ -99,39 +188,17 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             Animated.timing(handleScaleAnim, {
                 toValue: 1.1,
                 duration: 300,
-                useNativeDriver: true,
+                useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
             }),
             Animated.timing(handleScaleAnim, {
                 toValue: 1,
                 duration: 300,
-                useNativeDriver: true,
+                useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
             }),
         ]);
 
         // Run the animation once when component mounts
         pulseAnimation.start();
-    }, []);
-
-    // Animate when sheet appears
-    useEffect(() => {
-        // Reset animation values
-        slideAnim.setValue(50);
-        fadeAnim.setValue(0);
-
-        // Start animations
-        Animated.parallel([
-            Animated.timing(fadeAnim, {
-                toValue: 1,
-                duration: 300,
-                useNativeDriver: true,
-            }),
-            Animated.spring(slideAnim, {
-                toValue: 0,
-                friction: 8,
-                tension: 40,
-                useNativeDriver: true,
-            }),
-        ]).start();
     }, []);
 
     // Handle backdrop rendering
@@ -153,49 +220,63 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         return {
             backgroundColor: baseColor,
             // Make sure there's no transparency
-            opacity: 1
+            opacity: 1,
+            // Additional Android-specific styles
+            ...Platform.select({
+                android: {
+                    elevation: 24,
+                }
+            })
         };
     };
 
     // Method to adjust snap points from Router
     const adjustSnapPoints = useCallback((points: string[]) => {
-        // Convert percentage strings to numeric values
-        const convertedPoints = points.map(point => {
-            if (typeof point === 'string' && point.includes('%')) {
-                const percentage = parseInt(point, 10) / 100;
-                return height * percentage;
-            }
-            return point;
-        });
-
-        setSnapPoints(convertedPoints);
-    }, [height]);
+        setSnapPoints(points);
+    }, []);
 
     // Close the bottom sheet with animation
     const handleClose = useCallback(() => {
         // Animate content out
         Animated.timing(fadeAnim, {
             toValue: 0,
-            duration: 200,
-            useNativeDriver: true,
+            duration: Platform.OS === 'android' ? 100 : 200, // Faster on Android
+            useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
         }).start(() => {
-            // Close the sheet
-            bottomSheetRef.current?.close();
+            // Dismiss the sheet
+            modalRef.current?.dismiss();
             if (onClose) {
                 setTimeout(() => {
                     onClose();
-                }, 100);
+                }, Platform.OS === 'android' ? 150 : 100);
             }
         });
     }, [onClose, fadeAnim]);
 
+    // Handle sheet index changes
+    const handleSheetChanges = useCallback((index: number) => {
+        if (index === -1 && onClose) {
+            onClose();
+        } else if (index === 1) {
+            // Pulse animation when expanded to full height
+            Animated.sequence([
+                Animated.timing(handleScaleAnim, {
+                    toValue: 1.2,
+                    duration: 200,
+                    useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                }),
+                Animated.timing(handleScaleAnim, {
+                    toValue: 1,
+                    duration: 200,
+                    useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                }),
+            ]).start();
+        }
+    }, [onClose, handleScaleAnim]);
+
     return (
-        <BottomSheet
-            style={[
-                { width: '100%', height: '100%' },
-                styles.bottomSheet
-            ]}
-            ref={bottomSheetRef}
+        <BottomSheetModal
+            ref={modalRef}
             index={0}
             snapPoints={snapPoints}
             enablePanDownToClose
@@ -205,7 +286,9 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     style={{
                         alignItems: 'center',
                         paddingVertical: 8,
-                        transform: [{ scale: handleScaleAnim }]
+                        ...(Platform.OS === 'ios' ? {
+                            transform: [{ scale: handleScaleAnim }]
+                        } : {})
                     }}
                 >
                     <View style={[
@@ -221,52 +304,57 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     borderTopRightRadius: 15,
                 }
             ]}
-            onChange={(index) => {
-                if (index === -1 && onClose) {
-                    onClose();
-                } else if (index === 1) {
-                    // Pulse animation when expanded to full height
-                    Animated.sequence([
-                        Animated.timing(handleScaleAnim, {
-                            toValue: 1.2,
-                            duration: 200,
-                            useNativeDriver: true,
-                        }),
-                        Animated.timing(handleScaleAnim, {
-                            toValue: 1,
-                            duration: 200,
-                            useNativeDriver: true,
-                        }),
-                    ]).start();
-                }
+            handleIndicatorStyle={{
+                backgroundColor: customStyles.handleColor || (theme === 'light' ? '#CCCCCC' : '#444444'),
+                width: 40,
+                height: 4,
             }}
+            onChange={handleSheetChanges}
             // Adding additional props to improve layout behavior
             keyboardBehavior={Platform.OS === 'ios' ? 'interactive' : 'extend'}
             keyboardBlurBehavior="restore"
             android_keyboardInputMode="adjustResize"
+            enableOverDrag={true}
+            enableContentPanningGesture={true}
+            enableHandlePanningGesture={true}
+            overDragResistanceFactor={2.5}
+            enableBlurKeyboardOnGesture={true}
+            // Log sheet animations for debugging
+            onAnimate={(fromIndex: number, toIndex: number) => {
+                console.log(`Animating from index ${fromIndex} to ${toIndex}`);
+            }}
         >
-            <Animated.View
+            <BottomSheetView
                 style={[
                     styles.contentContainer,
                     // Override padding if provided in customStyles
                     customStyles.contentPadding !== undefined && { padding: customStyles.contentPadding },
-                    // Apply animations
-                    {
-                        opacity: fadeAnim,
-                        transform: [{ translateY: slideAnim }]
-                    }
                 ]}
             >
-                <OxyRouter
-                    oxyServices={oxyServices}
-                    initialScreen={initialScreen}
-                    onClose={handleClose}
-                    onAuthenticated={handleAuthenticated}
-                    theme={theme}
-                    adjustSnapPoints={adjustSnapPoints}
-                />
-            </Animated.View>
-        </BottomSheet>
+                <Animated.View
+                    style={[
+                        styles.animatedContent,
+                        // Apply animations - conditionally for Android
+                        Platform.OS === 'android' ?
+                            {
+                                opacity: 1,  // No fade animation on Android
+                            } : {
+                                opacity: fadeAnim,
+                                transform: [{ translateY: slideAnim }]
+                            }
+                    ]}
+                >
+                    <OxyRouter
+                        oxyServices={oxyServices}
+                        initialScreen={initialScreen}
+                        onClose={handleClose}
+                        onAuthenticated={handleAuthenticated}
+                        theme={theme}
+                        adjustSnapPoints={adjustSnapPoints}
+                    />
+                </Animated.View>
+            </BottomSheetView>
+        </BottomSheetModal>
     );
 };
 
@@ -277,6 +365,11 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
         backgroundColor: 'transparent', // Make this transparent to let the bottom sheet background show through
+    },
+    animatedContent: {
+        flex: 1,
+        width: '100%',
+        height: '100%',
     },
     indicator: {
         width: 40,
@@ -291,12 +384,16 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-    bottomSheet: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -3 },
-        shadowOpacity: 0.2,
-        shadowRadius: 5,
-        elevation: 16,
+    gestureHandlerRoot: {
+        flex: 1,
+        position: 'relative',
+        backgroundColor: 'transparent',
+        ...Platform.select({
+            android: {
+                height: '100%',
+                width: '100%',
+            }
+        })
     },
 });
 

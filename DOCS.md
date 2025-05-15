@@ -804,9 +804,10 @@ For more control over the bottom sheet:
 
 ```jsx
 import React, { useRef } from 'react';
-import { Button } from 'react-native';
+import { Button, View } from 'react-native';
 import BottomSheet from '@gorhom/bottom-sheet';
 import { OxyProvider } from '@oxyhq/services';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 function App() {
   // Create a ref for the bottom sheet
@@ -818,21 +819,25 @@ function App() {
   const snapToIndex = (index) => bottomSheetRef.current?.snapToIndex(index);
   
   return (
-    <>
-      <Button title="Open Auth" onPress={openSheet} />
-      <Button title="Close Auth" onPress={closeSheet} />
-      <Button title="Half Open" onPress={() => snapToIndex(0)} />
-      <Button title="Fully Open" onPress={() => snapToIndex(1)} />
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <View style={{ margin: 20 }}>
+        <Button title="Open Auth" onPress={openSheet} />
+        <Button title="Close Auth" onPress={closeSheet} />
+        <Button title="Half Open" onPress={() => snapToIndex(0)} />
+        <Button title="Fully Open" onPress={() => snapToIndex(1)} />
+      </View>
       
       <OxyProvider
         oxyServices={oxyServices}
         bottomSheetRef={bottomSheetRef}
         onClose={() => console.log('Sheet closed')}
       />
-    </>
+    </GestureHandlerRootView>
   );
 }
 ```
+
+> **Note for Native Platforms**: Ensure that your app is wrapped with `GestureHandlerRootView` for proper gesture handling on React Native, and that you're using the `bottomSheetRef` prop to control the sheet programmatically.
 
 ### Multi-Environment Configuration
 

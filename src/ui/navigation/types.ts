@@ -1,6 +1,7 @@
 import { OxyServices } from '../../core';
 import { User } from '../../models/interfaces';
 import { ComponentType, ReactNode } from 'react';
+import { BottomSheetModal } from '@gorhom/bottom-sheet';
 
 /**
  * Base props for all screens in the Oxy UI system
@@ -64,6 +65,18 @@ export interface OxyProviderProps {
    * @default "light"
    */
   theme?: 'light' | 'dark';
+  
+  /**
+   * Reference to the bottom sheet component
+   * Use this to programmatically control the bottom sheet
+   */
+  bottomSheetRef?: React.RefObject<BottomSheetModal>;
+  
+  /**
+   * Whether to automatically present the bottom sheet when component mounts
+   * @default false
+   */
+  autoPresent?: boolean;
   
   /**
    * Custom styles for the bottom sheet
