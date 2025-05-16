@@ -6,6 +6,9 @@ import { OxyServices } from '../../core';
 import SignInScreen from '../screens/SignInScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import AccountCenterScreen from '../screens/AccountCenterScreen';
+import AccountOverviewScreen from '../screens/AccountOverviewScreen';
+
+// Import types
 import { OxyRouterProps, RouteConfig } from './types';
 
 // Define route configuration with screen components and default snap points
@@ -20,6 +23,10 @@ const routes: Record<string, RouteConfig> = {
     },
     AccountCenter: {
         component: AccountCenterScreen,
+        snapPoints: ['60%', '100%'],
+    },
+    AccountOverview: {
+        component: AccountOverviewScreen,
         snapPoints: ['60%', '85%'],
     },
 };

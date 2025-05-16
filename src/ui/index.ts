@@ -5,6 +5,7 @@
 // Export the main provider component and context
 export { default as OxyProvider } from './components/OxyProvider';
 export { default as OxySignInButton } from './components/OxySignInButton';
+export { default as OxyLogo } from './components/OxyLogo';
 export { 
   OxyContextProvider, 
   useOxy,
@@ -16,6 +17,7 @@ export {
 export { default as SignInScreen } from './screens/SignInScreen';
 export { default as SignUpScreen } from './screens/SignUpScreen';
 export { default as AccountCenterScreen } from './screens/AccountCenterScreen';
+export { default as AccountOverviewScreen } from './screens/AccountOverviewScreen';
 
 // Export types
 export * from './navigation/types';

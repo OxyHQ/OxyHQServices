@@ -31,7 +31,7 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
     const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
     const inputBackgroundColor = isDarkTheme ? '#333333' : '#F5F5F5';
     const placeholderColor = isDarkTheme ? '#AAAAAA' : '#999999';
-    const primaryColor = '#0066CC';
+    const primaryColor = '#d169e5';
     const borderColor = isDarkTheme ? '#444444' : '#E0E0E0';
 
     // If user is already authenticated, show user info and account center option
@@ -256,15 +256,15 @@ const styles = StyleSheet.create({
     },
     input: {
         height: 48,
-        borderRadius: 8,
+        borderRadius: 35,
         paddingHorizontal: 16,
         borderWidth: 1,
         fontSize: 16,
     },
     button: {
-        backgroundColor: '#0066CC',
+        backgroundColor: '#d169e5',
         height: 48,
-        borderRadius: 8,
+        borderRadius: 35,
         alignItems: 'center',
         justifyContent: 'center',
         marginTop: 24,
@@ -289,7 +289,7 @@ const styles = StyleSheet.create({
     errorContainer: {
         backgroundColor: '#FFEBEE',
         padding: 12,
-        borderRadius: 8,
+        borderRadius: 35,
         marginBottom: 16,
     },
     errorText: {
@@ -300,7 +300,7 @@ const styles = StyleSheet.create({
         padding: 20,
         marginVertical: 20,
         backgroundColor: '#F5F5F5',
-        borderRadius: 12,
+        borderRadius: 35,
         alignItems: 'center',
     },
     userInfoText: {

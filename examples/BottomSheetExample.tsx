@@ -1,10 +1,10 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { View, Button, StyleSheet, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { BottomSheetModal } from '@gorhom/bottom-sheet';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 // Note: This import would work in a real project where the package is installed via npm.
 // For development/testing, you might need to use relative imports instead.
-import { OxyServices, OxyProvider, User, useOxy, OxySignInButton } from '@oxyhq/services';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { OxyServices, OxyProvider, User, useOxy, OxySignInButton, OxyLogo } from '@oxyhq/services';
 
 /**
  * Example demonstrating how to use the OxyProvider component
@@ -49,7 +49,7 @@ export default function App() {
         if (isLoading) {
             return (
                 <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color="#0066CC" />
+                    <ActivityIndicator size="large" color="#d169e5" />
                     <Text style={styles.loadingText}>Loading session...</Text>
                 </View>
             );
@@ -102,7 +102,15 @@ export default function App() {
                 style={styles.accountCenterButton}
                 onPress={openAccountCenter}
             >
-                <Text style={styles.accountCenterButtonText}>Manage Account</Text>
+                <View style={styles.buttonContent}>
+                    <OxyLogo
+                        width={20}
+                        height={20}
+                        fillColor="white"
+                        secondaryFillColor="rgba(255, 255, 255, 0.8)"
+                    />
+                    <Text style={styles.accountCenterButtonText}>Manage Account</Text>
+                </View>
             </TouchableOpacity>
         );
     };
@@ -121,14 +129,10 @@ export default function App() {
             // Set initialScreen to AccountCenter and expand
             if (oxyServices) {
                 bottomSheetRef.current.expand();
-                // Use setTimeout to ensure the sheet is open before trying to navigate
-                setTimeout(() => {
-                    // Navigate to the AccountCenter screen
-                    if (bottomSheetRef.current) {
-                        // @ts-ignore - Access the navigate method via the router
-                        bottomSheetRef.current._navigateToScreen?.('AccountCenter');
-                    }
-                }, 300);
+
+                // Navigate immediately to the AccountCenter screen
+                // @ts-ignore - Access the navigate method via the router
+                bottomSheetRef.current._navigateToScreen?.('AccountCenter');
             }
         }
     };
@@ -208,6 +212,14 @@ export default function App() {
                                     openSheet();
                                 }}
                             />
+
+                            {/* Disabled button example */}
+                            <OxySignInButton
+                                variant="contained"
+                                style={{ marginTop: 10 }}
+                                text="Disabled Button"
+                                disabled={true}
+                            />
                         </View>
 
                         {/* Only show Account Center button if authenticated */}
@@ -221,14 +233,12 @@ export default function App() {
                             <Button
                                 title="Open Account Center"
                                 onPress={() => {
-                                    // First open the sheet, then navigate to Account Center
+                                    // Expand and immediately navigate to Account Center
                                     bottomSheetRef.current?.expand();
-                                    setTimeout(() => {
-                                        // @ts-ignore - _navigateToScreen is added at runtime
-                                        bottomSheetRef.current?._navigateToScreen?.('AccountCenter');
-                                    }, 300);
+                                    // @ts-ignore - _navigateToScreen is added at runtime
+                                    bottomSheetRef.current?._navigateToScreen?.('AccountCenter');
                                 }}
-                                color="#5A5AFF"
+                                color="#d169e5"
                             />
                         </View>
                     </View>
@@ -239,6 +249,7 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+
     container: {
         flex: 1,
     },
@@ -294,7 +305,7 @@ const styles = StyleSheet.create({
     },
     sessionInfoText: {
         fontSize: 12,
-        color: '#0066CC',
+        color: '#d169e5',
         fontStyle: 'italic',
         marginTop: 10,
         marginBottom: 15,
@@ -305,15 +316,21 @@ const styles = StyleSheet.create({
         marginBottom: 10,
     },
     accountCenterButton: {
-        backgroundColor: '#5A5AFF',
-        padding: 12,
-        borderRadius: 8,
+        backgroundColor: '#d169e5',
+        padding: 14,
+        borderRadius: 35,
         alignItems: 'center',
         marginTop: 10,
+    },
+    buttonContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     accountCenterButtonText: {
         color: 'white',
         fontWeight: 'bold',
         fontSize: 16,
+        marginLeft: 12,
     }
 });

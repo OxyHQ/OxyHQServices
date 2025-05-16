@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
     },
     userInfoContainer: {
         padding: 20,
-        borderRadius: 12,
+        borderRadius: 35,
         borderWidth: 1,
         marginBottom: 24,
         alignItems: 'center',
@@ -195,7 +195,7 @@ const styles = StyleSheet.create({
     },
     logoutButton: {
         height: 50,
-        borderRadius: 8,
+        borderRadius: 35,
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 24,

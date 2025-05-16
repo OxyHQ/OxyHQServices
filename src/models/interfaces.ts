@@ -7,6 +7,7 @@ export interface User {
   id: string;
   username: string;
   email?: string;
+  avatarUrl?: string;
   // Add other user fields as needed
 }
 
@@ -124,4 +125,4 @@ export interface ContentViewer {
   userId: string;
   viewedAt: string;
   // Add other content viewer fields as needed
-} 
+}

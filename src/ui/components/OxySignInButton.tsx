@@ -1,6 +1,7 @@
 import React from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, ViewStyle, TextStyle, StyleProp } from 'react-native';
 import { useOxy } from '../context/OxyContext';
+import OxyLogo from './OxyLogo';
 
 export interface OxySignInButtonProps {
     /**
@@ -32,9 +33,7 @@ export interface OxySignInButtonProps {
     text?: string;
 
     /**
-     * Delay in milliseconds before navigating to SignIn screen after expanding
-     * Only used when using bottomSheetRef automatic navigation
-     * @default 300
+     * @deprecated No longer used as navigation is now instant
      */
     navigationDelay?: number;
 
@@ -82,7 +81,7 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     style,
     textStyle,
     text = 'Sign in with Oxy',
-    navigationDelay = 300,
+    navigationDelay, // Kept for backward compatibility but no longer used
     disabled = false,
     showWhenAuthenticated = false,
 }) => {
@@ -100,15 +99,12 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
 
         // Default behavior: open the bottom sheet and navigate to SignIn
         if (bottomSheetRef?.current) {
+            // Expand the bottom sheet and immediately navigate to SignIn
             bottomSheetRef.current.expand();
 
-            // Use setTimeout to ensure the sheet is open before trying to navigate
-            setTimeout(() => {
-                if (bottomSheetRef?.current) {
-                    // @ts-ignore - _navigateToScreen is added at runtime by OxyRouter
-                    bottomSheetRef.current._navigateToScreen?.('SignIn');
-                }
-            }, navigationDelay);
+            // Navigate immediately without delay
+            // @ts-ignore - _navigateToScreen is added at runtime by OxyRouter
+            bottomSheetRef.current._navigateToScreen?.('SignIn');
         } else {
             console.warn('OxySignInButton: bottomSheetRef is not available. Either provide an onPress prop or ensure this component is used within an OxyProvider.');
         }
@@ -138,6 +134,18 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
         }
     };
 
+    // Determine the logo container style based on the variant
+    const getLogoContainerStyle = () => {
+        switch (variant) {
+            case 'outline':
+                return styles.logoContainerOutline;
+            case 'contained':
+                return styles.logoContainerContained;
+            default:
+                return styles.logoContainerDefault;
+        }
+    };
+
     return (
         <TouchableOpacity
             style={[styles.button, getButtonStyle(), disabled && styles.buttonDisabled]}
@@ -145,8 +153,13 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
             disabled={disabled}
         >
             <View style={styles.buttonContent}>
-                <View style={styles.logoContainer}>
-                    <Text style={styles.logoText}>O</Text>
+                <View style={[styles.logoContainer, getLogoContainerStyle(), disabled && styles.logoContainerDisabled]}>
+                    <OxyLogo
+                        width={20}
+                        height={20}
+                        fillColor={variant === 'contained' ? 'white' : '#d169e5'}
+                        secondaryFillColor={variant === 'contained' ? 'rgba(255, 255, 255, 0.8)' : undefined}
+                    />
                 </View>
                 <Text style={[styles.text, getTextStyle(), disabled && styles.textDisabled]}>
                     {text}
@@ -158,8 +171,8 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
 
 const styles = StyleSheet.create({
     button: {
-        padding: 12,
-        borderRadius: 8,
+        padding: 14,
+        borderRadius: 35,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -176,10 +189,10 @@ const styles = StyleSheet.create({
     buttonOutline: {
         backgroundColor: 'transparent',
         borderWidth: 1,
-        borderColor: '#5A5AFF',
+        borderColor: '#d169e5',
     },
     buttonContained: {
-        backgroundColor: '#5A5AFF',
+        backgroundColor: '#d169e5',
     },
     buttonDisabled: {
         opacity: 0.6,
@@ -192,13 +205,13 @@ const styles = StyleSheet.create({
     text: {
         fontWeight: '600',
         fontSize: 16,
-        marginLeft: 10,
+        marginLeft: 12,
     },
     textDefault: {
         color: '#333333',
     },
     textOutline: {
-        color: '#5A5AFF',
+        color: '#d169e5',
     },
     textContained: {
         color: '#FFFFFF',
@@ -207,17 +220,29 @@ const styles = StyleSheet.create({
         color: '#888888',
     },
     logoContainer: {
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        backgroundColor: '#5A5AFF',
+        width: 28,
+        height: 28,
+        borderRadius: 14,
         justifyContent: 'center',
         alignItems: 'center',
+        overflow: 'hidden',
+        padding: 2,
     },
-    logoText: {
-        color: 'white',
-        fontWeight: 'bold',
-        fontSize: 16,
+    logoContainerDefault: {
+        backgroundColor: '#d169e5',
+    },
+    logoContainerOutline: {
+        backgroundColor: 'transparent',
+        borderWidth: 1,
+        borderColor: '#d169e5',
+    },
+    logoContainerContained: {
+        backgroundColor: '#FFFFFF40',  // Semi-transparent white
+        borderWidth: 1,
+        borderColor: '#FFFFFF80',      // More opaque white
+    },
+    logoContainerDisabled: {
+        opacity: 0.6,
     },
 });
 

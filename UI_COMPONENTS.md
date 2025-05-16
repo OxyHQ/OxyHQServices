@@ -6,6 +6,7 @@ This document provides details about the UI components available in the `@oxyhq/
 
 - [OxyProvider](#oxyprovider)
 - [OxySignInButton](#oxysigninbutton)
+- [OxyLogo](#oxylogo)
 
 ## OxyProvider
 
@@ -92,3 +93,52 @@ By default, the OxySignInButton:
 2. Only renders if no user is authenticated (unless showWhenAuthenticated is true)
 3. When pressed, automatically opens the bottom sheet and navigates to the SignIn screen
 4. Can be customized with your own onPress handler for custom authentication flows
+
+## OxyLogo
+
+The Oxy logo component for React Native applications. This is an SVG component that can be used to display the Oxy logo in your app.
+
+```tsx
+import { OxyLogo } from '@oxyhq/services';
+
+// Basic usage
+<OxyLogo />
+
+// Custom size
+<OxyLogo width={32} height={32} />
+
+// With custom style
+<OxyLogo 
+  width={24} 
+  height={24} 
+  style={{ margin: 5 }} 
+/>
+
+// With custom colors
+<OxyLogo 
+  width={24} 
+  height={24}
+  fillColor="#9c27b0" 
+  secondaryFillColor="#ce93d8"
+/>
+```
+
+### Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| width | `number` | `24` | Width of the logo in pixels |
+| height | `number` | `24` | Height of the logo in pixels |
+| style | `StyleProp<ViewStyle>` | `undefined` | Additional styles for the logo container |
+| fillColor | `string` | `'#d169e5'` | Primary fill color for the logo |
+| secondaryFillColor | `string` | `'#db85ec'` | Secondary fill color for the inner glow effect |
+
+### Requirements
+
+This component requires `react-native-svg` to be installed in your project:
+
+```bash
+npm install react-native-svg
+# or
+yarn add react-native-svg
+```

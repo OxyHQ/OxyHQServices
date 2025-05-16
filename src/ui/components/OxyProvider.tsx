@@ -330,8 +330,8 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             backgroundStyle={[
                 getBackgroundStyle(),
                 {
-                    borderTopLeftRadius: 15,
-                    borderTopRightRadius: 15,
+                    borderTopLeftRadius: 35,
+                    borderTopRightRadius: 35,
                 }
             ]}
             handleIndicatorStyle={{
@@ -407,7 +407,7 @@ const styles = StyleSheet.create({
         alignSelf: 'center',
         marginTop: 8,
         marginBottom: 8,
-        borderRadius: 2,
+        borderRadius: 35,
     },
     errorContainer: {
         flex: 1,
