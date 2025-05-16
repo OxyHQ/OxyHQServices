@@ -2,26 +2,24 @@ import React, { useState, useEffect } from 'react';
 import { Text, View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import * as Font from 'expo-font';
 
-// Import font based on environment
-// This approach handles both development and production builds
+/**
+ * Get the font source for both native and web environments
+ * This is specifically designed to work when distributed as an npm package
+ */
 const getPhuduFont = () => {
     try {
-        // Try to load from the standard path (development)
+        // For both development and when used as a package
+        // This is the most reliable approach for cross-platform compatibility
         return require('../../assets/fonts/Phudu-VariableFont_wght.ttf');
-    } catch (e) {
-        try {
-            // Try to load from the lib path (production/npm package)
-            return require('../assets/fonts/Phudu-VariableFont_wght.ttf');
-        } catch (e2) {
-            console.error('Failed to load Phudu font:', e2);
-            return null;
-        }
+    } catch (error) {
+        console.warn('Failed to load Phudu font:', error);
+        return null;
     }
 };
 
 /**
  * FontLoader component that loads custom fonts before rendering children
- * This is useful for apps that use Expo
+ * This works in both the package development and when consumed as an npm package
  */
 export const FontLoader = ({
     children,
@@ -79,57 +77,52 @@ export const FontLoader = ({
 };
 
 /**
- * Setup fonts for non-Expo React Native projects and web
- * This function needs to be called once at your app's entry point
+ * Setup fonts for applications consuming this package
+ * This should be called by applications using your package
  */
-export const setupFonts = () => {
-    // For React Native, the fonts need to be properly linked
-    if (Platform.OS !== 'web') {
-        // Link fonts for native platforms
-        // For React Native without Expo, the fonts should be linked using:
-        // 1. For iOS: Add the font file to Xcode project and add entry to Info.plist
-        // 2. For Android: Place the font in android/app/src/main/assets/fonts/
-        // Or use: npx react-native-asset link
-        console.info('Fonts should be linked in native projects to use Phudu-Variable font');
-        return true;
-    }
+export const setupFonts = async () => {
+    try {
+        const phuduFont = getPhuduFont();
 
-    // For web platform, dynamically inject CSS to load the font
-    if (typeof document !== 'undefined') {
-        try {
-            // Create a style element
-            const style = document.createElement('style');
+        if (!phuduFont) {
+            throw new Error('Phudu font file not found');
+        }
 
-            // Try to get the font
-            let fontPath: string;
-            try {
-                // Try to resolve the font path dynamically
-                const fontModule = getPhuduFont();
-                // In bundled apps, this may be a resolved URL
-                fontPath = typeof fontModule === 'string' ? fontModule : '/assets/fonts/Phudu-VariableFont_wght.ttf';
-            } catch (e) {
-                // Fallback to conventional path
-                fontPath = '/assets/fonts/Phudu-VariableFont_wght.ttf';
+        if (Platform.OS === 'web') {
+            // For web platform, dynamically inject CSS to load the font
+            if (typeof document !== 'undefined') {
+                // Create a style element
+                const style = document.createElement('style');
+
+                // Define the @font-face rule
+                style.textContent = `
+                    @font-face {
+                        font-family: 'Phudu';
+                        src: url(${phuduFont}) format('truetype');
+                        font-weight: 100 900; /* Variable font weight range */
+                        font-style: normal;
+                    }
+                `;
+                // Append to the document head
+                document.head.appendChild(style);
+                console.info('Web font Phudu has been dynamically loaded');
             }
+        } else {
+            // For native platforms, guidance for the package users
+            console.info('Fonts should be linked in native projects to use Phudu-Variable font');
 
-            // Define the @font-face rule
-            style.textContent = `
-        @font-face {
-          font-family: 'Phudu';
-          src: url('${fontPath}') format('truetype');
-          font-weight: 100 900; /* Variable font weight range */
-          font-style: normal;
+            // Attempt to load the font anyway (this works if the consumer has linked the assets)
+            await Font.loadAsync({
+                'Phudu-Variable': phuduFont,
+                'Phudu-Variable-Bold': phuduFont,
+            });
         }
-      `;
-            // Append to the document head
-            document.head.appendChild(style);
-            console.info('Web font Phudu has been dynamically loaded from: ' + fontPath);
-        } catch (error) {
-            console.error('Failed to load web font:', error);
-        }
+
+        return true;
+    } catch (error: any) {
+        console.warn('Error setting up fonts:', error?.message || error);
+        return false;
     }
-
-    return true;
 };
 
 const styles = StyleSheet.create({

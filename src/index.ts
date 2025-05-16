@@ -10,7 +10,8 @@ import {
   SignUpScreen, 
   AccountCenterScreen,
   OxySignInButton,
-  OxyLogo
+  OxyLogo,
+  FontLoader
 } from './ui';
 
 // Export OxyContext types directly
@@ -34,7 +35,8 @@ export {
   SignUpScreen,
   AccountCenterScreen,
   OxySignInButton,
-  OxyLogo
+  OxyLogo,
+  FontLoader
 };
 
 // Export types explicitly
