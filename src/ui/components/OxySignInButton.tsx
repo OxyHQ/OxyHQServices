@@ -2,6 +2,7 @@ import React from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, ViewStyle, TextStyle, StyleProp } from 'react-native';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
+import { fontFamilies } from '../styles/fonts';
 
 export interface OxySignInButtonProps {
     /**
@@ -203,6 +204,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     text: {
+        fontFamily: fontFamilies.phudu,
         fontWeight: '600',
         fontSize: 16,
         marginLeft: 12,

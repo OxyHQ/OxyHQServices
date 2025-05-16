@@ -13,6 +13,7 @@ import {
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from '../components/OxyLogo';
+import { fontStyles } from '../styles/fonts';
 
 const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -379,8 +380,7 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
     greeting: {
-        fontSize: 20,
-        fontWeight: 'bold',
+        ...fontStyles.titleSmall,
         marginVertical: 10,
     },
     manageAccountButton: {
@@ -402,8 +402,8 @@ const styles = StyleSheet.create({
         marginBottom: 10,
     },
     sectionHeaderText: {
+        ...fontStyles.titleSmall,
         fontSize: 16,
-        fontWeight: '500',
     },
     accountsContainer: {
         borderRadius: 15,

@@ -32,7 +32,8 @@
     "scripts": {
         "typescript": "tsc --skipLibCheck --noEmit",
         "lint": "biome lint --error-on-warnings ./src",
-        "build": "bob build && yarn copy-dts && yarn delete-dts.js && yarn delete-debug-view",
+        "build": "bob build && yarn copy-assets && yarn copy-dts && yarn delete-dts.js && yarn delete-debug-view",
+        "copy-assets": "copyfiles -u 1 \"src/assets/**/*\" lib/commonjs/assets && copyfiles -u 1 \"src/assets/**/*\" lib/module/assets",
         "copy-dts": "copyfiles -u 1 \"src/**/*.d.ts\" lib/typescript",
         "delete-debug-view": "rm -rf ./lib/commonjs/components/bottomSheetDebugView ./lib/module/components/bottomSheetDebugView ./lib/typescript/components/bottomSheetDebugView || true",
         "delete-dts.js": "find ./lib/commonjs -name '*.d.js*' -delete && find ./lib/module -name '*.d.js*' -delete",
@@ -44,6 +45,7 @@
         "@gorhom/bottom-sheet": "^5.1.0",
         "@react-native-async-storage/async-storage": "^2.1.2",
         "axios": "^1.9.0",
+        "expo-font": "^13.3.1",
         "invariant": "^2.2.4",
         "jwt-decode": "^4.0.0",
         "react-native-safe-area-context": "^5.4.0",

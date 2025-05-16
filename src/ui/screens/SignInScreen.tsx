@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
+import { fontStyles } from '../styles/fonts';
 
 const SignInScreen: React.FC<BaseScreenProps> = ({
     navigate,
@@ -161,10 +162,9 @@ const styles = StyleSheet.create({
         padding: 20,
     },
     title: {
-        fontSize: 24,
-        fontWeight: 'bold',
+        ...fontStyles.titleLarge,
         marginBottom: 24,
-        textAlign: 'center',
+        textAlign: 'left',
     },
     formContainer: {
         width: '100%',
@@ -173,7 +173,7 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     label: {
-        fontSize: 14,
+        ...fontStyles.label,
         marginBottom: 8,
     },
     input: {
@@ -192,9 +192,8 @@ const styles = StyleSheet.create({
         marginTop: 24,
     },
     buttonText: {
+        ...fontStyles.buttonText,
         color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
     },
     footerTextContainer: {
         flexDirection: 'row',
@@ -202,10 +201,10 @@ const styles = StyleSheet.create({
         marginTop: 24,
     },
     footerText: {
-        fontSize: 14,
+        ...fontStyles.footerText,
     },
     linkText: {
-        fontSize: 14,
+        ...fontStyles.linkText,
         fontWeight: '600',
     },
     errorContainer: {
@@ -215,8 +214,8 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     errorText: {
+        ...fontStyles.errorText,
         color: '#D32F2F',
-        fontSize: 14,
     },
     // New styles for authenticated user view
     userInfoContainer: {
@@ -227,8 +226,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     userInfoText: {
-        fontSize: 16,
-        marginBottom: 8,
+        ...fontStyles.userInfoText,
         textAlign: 'center',
     },
     actionButtonsContainer: {

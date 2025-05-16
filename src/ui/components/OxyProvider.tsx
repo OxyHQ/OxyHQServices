@@ -11,6 +11,10 @@ import SignUpScreen from '../screens/SignUpScreen';
 import AccountCenterScreen from '../screens/AccountCenterScreen';
 import { OxyContextProvider, useOxy } from '../context/OxyContext';
 import OxyRouter from '../navigation/OxyRouter';
+import { FontLoader, setupFonts } from './FontLoader';
+
+// Initialize fonts automatically
+setupFonts();
 
 const { height, width } = Dimensions.get('window');
 
@@ -52,15 +56,17 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
             storageKeyPrefix={storageKeyPrefix}
             onAuthStateChange={onAuthStateChange}
         >
-            <GestureHandlerRootView style={styles.gestureHandlerRoot}>
-                <BottomSheetModalProvider>
-                    <StatusBar translucent backgroundColor="transparent" />
-                    <SafeAreaProvider>
-                        <OxyBottomSheet {...bottomSheetProps} bottomSheetRef={bottomSheetRef} oxyServices={oxyServices} />
-                        {children}
-                    </SafeAreaProvider>
-                </BottomSheetModalProvider>
-            </GestureHandlerRootView>
+            <FontLoader>
+                <GestureHandlerRootView style={styles.gestureHandlerRoot}>
+                    <BottomSheetModalProvider>
+                        <StatusBar translucent backgroundColor="transparent" />
+                        <SafeAreaProvider>
+                            <OxyBottomSheet {...bottomSheetProps} bottomSheetRef={bottomSheetRef} oxyServices={oxyServices} />
+                            {children}
+                        </SafeAreaProvider>
+                    </BottomSheetModalProvider>
+                </GestureHandlerRootView>
+            </FontLoader>
         </OxyContextProvider>
     );
 };

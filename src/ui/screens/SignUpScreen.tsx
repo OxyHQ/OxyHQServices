@@ -12,6 +12,7 @@ import {
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
+import { fontStyles } from '../styles/fonts';
 
 const SignUpScreen: React.FC<BaseScreenProps> = ({
     navigate,
@@ -237,8 +238,7 @@ const styles = StyleSheet.create({
         fontSize: 16,
     },
     title: {
-        fontSize: 24,
-        fontWeight: 'bold',
+        ...fontStyles.titleMedium,
         textAlign: 'center',
     },
     placeholder: {

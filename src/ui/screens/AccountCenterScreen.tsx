@@ -11,6 +11,7 @@ import {
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
+import { fontStyles } from '../styles/fonts';
 
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -164,8 +165,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     title: {
-        fontSize: 24,
-        fontWeight: 'bold',
+        ...fontStyles.titleMedium,
     },
     userInfoContainer: {
         padding: 20,
