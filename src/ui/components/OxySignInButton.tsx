@@ -34,11 +34,6 @@ export interface OxySignInButtonProps {
     text?: string;
 
     /**
-     * @deprecated No longer used as navigation is now instant
-     */
-    navigationDelay?: number;
-
-    /**
      * Whether to disable the button
      * @default false
      */
@@ -82,7 +77,6 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     style,
     textStyle,
     text = 'Sign in with Oxy',
-    navigationDelay, // Kept for backward compatibility but no longer used
     disabled = false,
     showWhenAuthenticated = false,
 }) => {
@@ -208,7 +202,7 @@ const styles = StyleSheet.create({
             web: fontFamilies.phudu,
             default: fontFamilies.phuduBold
         }),
-        fontWeight: '600',
+        fontWeight: 'bold' as TextStyle['fontWeight'],
         fontSize: 16,
         marginLeft: 12,
     },

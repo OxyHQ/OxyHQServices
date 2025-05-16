@@ -1,136 +1,58 @@
-# @oxyhq/services
+# Oxy Services Module
 
-Reusable OxyHQ module to handle authentication, user management, karma system and more 🚀
+A unified client library for the Oxy API (authentication, user management, notifications, payments, analytics, wallet, and karma).
+
+## Table of Contents
+
+- [Overview](#overview)
+- [Installation](#installation)
+- [Usage](#usage)
+- [Configuration](#configuration)
+- [API Reference](#api-reference)
+  - [OxyConfig](#oxyconfig)
+  - [Class: OxyServices](#class-oxyservices)
+- [Examples](#examples)
+- [Development](#development)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Overview
+
+The `@oxyhq/services` package provides a simple, promise-based client to interact with the Oxy API. It wraps HTTP calls to endpoints for:
+
+- Authentication (signup, login, token refresh, logout, validation)
+- User & profile operations (fetch, update, follow/unfollow)
+- Real‑time notifications (list, create, mark read, delete)
+- Payments & wallet (process payment, validate method, transfer funds, purchase, withdrawal)
+- Analytics & content insights (time‑series data, viewers, follower stats)
+- Karma system (leaderboard, rules, award/deduct points)
+
+## What's New in 5.1.5
+
+- **Fixed BottomSheet on Native Platforms**: The `OxyProvider` component now correctly displays the authentication UI in a bottom sheet on native platforms.
+- **Added `bottomSheetRef` Prop**: The `OxyProvider` component now accepts a `bottomSheetRef` prop for programmatic control of the bottom sheet.
+- **Improved Native Animations**: Enhanced animation and layout behavior for a smoother experience on all platforms.
 
 ## Installation
 
 ```bash
+# npm
 npm install @oxyhq/services
+
+# yarn
+yarn add @oxyhq/services
 ```
 
-## Dependencies
+### Required Peer Dependencies
 
-The package requires the following peer dependencies:
+For React Native applications using the bottom sheet authentication UI:
 
 ```bash
-npm install @gorhom/bottom-sheet@^5 react-native-gesture-handler react-native-reanimated @react-native-async-storage/async-storage
+# npm
+npm install @gorhom/bottom-sheet react-native-gesture-handler react-native-reanimated react-native-safe-area-context
+
+# yarn
+yarn add @gorhom/bottom-sheet react-native-gesture-handler react-native-reanimated react-native-safe-area-context
 ```
-
-## Quick Start
-
-```tsx
-import React, { useRef } from 'react';
-import { View, Button } from 'react-native';
-import { BottomSheetModal } from '@gorhom/bottom-sheet';
-import { OxyServices, OxyProvider, useOxy, OxySignInButton } from '@oxyhq/services';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-
-export default function App() {
-  // Create a ref for the bottom sheet
-  const bottomSheetRef = useRef<BottomSheetModal>(null);
-
-  // Initialize OxyServices
-  const oxyServices = new OxyServices({
-    baseURL: 'https://api.example.com', // Replace with your API URL
-  });
-
-  return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <OxyProvider
-        oxyServices={oxyServices}
-        bottomSheetRef={bottomSheetRef}
-        initialScreen="SignIn"
-        autoPresent={false}
-        theme="light"
-      >
-        <View style={{ margin: 20 }}>
-          {/* Use the built-in OxySignInButton for easy integration */}
-          <OxySignInButton />
-          
-          {/* Or create your own custom button */}
-          <Button 
-            title="Custom Sign In" 
-            onPress={() => bottomSheetRef.current?.expand()} 
-          />
-        </View>
-      </OxyProvider>
-    </GestureHandlerRootView>
-  );
-}
-```
-
-## Components
-
-### OxyProvider
-
-The main provider component that manages authentication state and exposes the bottom sheet for sign-in, sign-up, and account management.
-
-### OxySignInButton
-
-A pre-styled button component for signing in with Oxy services. This component automatically integrates with the OxyProvider context and will control the authentication bottom sheet when pressed.
-
-```tsx
-// Basic usage
-<OxySignInButton />
-
-// Custom styling
-<OxySignInButton 
-  variant="contained" 
-  style={{ marginTop: 20 }} 
-  text="Login with Oxy" 
-/>
-```
-
-Available in three variants:
-- `default`: A flat white button with a subtle shadow
-- `outline`: A transparent button with a colored border
-- `contained`: A solid colored button with white text
-
-## Font Integration
-
-The OxyProvider UI components use the Phudu variable font for titles and important UI elements, giving the interface a distinctive and cohesive look.
-
-### Font Features
-
-- **Phudu Variable Font**: Modern, distinctive font for titles and buttons
-- **Automatic Font Loading**: Fonts automatically load when using the OxyProvider component
-- **Platform Support**: Works on iOS, Android, and Web platforms
-
-### Using the Fonts in Your App
-
-To use the same fonts in your own components:
-
-```tsx
-import { fontStyles, fontFamilies } from '@oxyhq/services';
-
-const MyComponent = () => (
-  <View style={styles.container}>
-    <Text style={styles.title}>My Title</Text>
-    <Text style={styles.subtitle}>My Subtitle</Text>
-  </View>
-);
-
-const styles = StyleSheet.create({
-  title: {
-    ...fontStyles.titleLarge,
-    color: '#333333',
-  },
-  subtitle: {
-    ...fontStyles.titleSmall,
-    color: '#666666',
-  },
-});
-```
-
-For more information about font integration, please refer to the [Font Integration Guide](./FONT_INTEGRATION.md) and [Font Weight Handling](./FONT_WEIGHT_HANDLING.md) documentation.
-
-## Documentation
-
-For detailed documentation, see:
-- [DOCS.md](./DOCS.md) - Complete API documentation
-- [UI_COMPONENTS.md](./UI_COMPONENTS.md) - UI components documentation
-- [Examples](./examples) - Working examples of integration
-
-## License
-
-MIT
