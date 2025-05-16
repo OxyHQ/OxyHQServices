@@ -5,12 +5,14 @@ All notable changes to this project will be documented in this file.
 ## [5.1.7] - 2025-05-16
 
 ### Added
+- Integrated Phudu variable font for all titles and important UI text elements
 - New `OxyLogo` SVG component for consistent branding across applications
 - Enhanced `OxyLogo` with customizable colors via fillColor and secondaryFillColor props
 - Improved UI components with updated branding and styling using #d169e5 as primary color
 - Standardized button border radius to 35px for a more modern look
-- Enhanced `OxySignInButton` with variant-specific logo styling
+- Enhanced `OxySignInButton` with variant-specific logo styling and Phudu font
 - Updated examples to showcase the new branding elements
+- Added font documentation: FONT_INTEGRATION.md and FONT_WEIGHT_HANDLING.md
 
 ### Improved
 - Removed navigation delay in bottom sheet transitions for a more responsive user experience

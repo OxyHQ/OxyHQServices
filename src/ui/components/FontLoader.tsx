@@ -42,9 +42,10 @@ export const FontLoader = ({
                     throw new Error('Phudu font file not found');
                 }
 
-                // Load the Phudu variable font
+                // Load the Phudu variable font with multiple weight variants
                 await Font.loadAsync({
                     'Phudu-Variable': phuduFont,
+                    'Phudu-Variable-Bold': phuduFont, // Same font file but registered with a bold name for native
                 });
                 setFontState('loaded');
             } catch (error) {

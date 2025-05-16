@@ -1,5 +1,7 @@
 # OxyProvider Font Integration Guide
 
+> **Note about Font Weights**: For issues with font weights (bold text) on React Native, please refer to the [Font Weight Handling guide](./FONT_WEIGHT_HANDLING.md).
+
 ## For Library Consumers
 
 If you're using the OxyProvider component from this npm package, here's how to ensure the Phudu font works correctly:

@@ -86,6 +86,44 @@ Available in three variants:
 - `outline`: A transparent button with a colored border
 - `contained`: A solid colored button with white text
 
+## Font Integration
+
+The OxyProvider UI components use the Phudu variable font for titles and important UI elements, giving the interface a distinctive and cohesive look.
+
+### Font Features
+
+- **Phudu Variable Font**: Modern, distinctive font for titles and buttons
+- **Automatic Font Loading**: Fonts automatically load when using the OxyProvider component
+- **Platform Support**: Works on iOS, Android, and Web platforms
+
+### Using the Fonts in Your App
+
+To use the same fonts in your own components:
+
+```tsx
+import { fontStyles, fontFamilies } from '@oxyhq/services';
+
+const MyComponent = () => (
+  <View style={styles.container}>
+    <Text style={styles.title}>My Title</Text>
+    <Text style={styles.subtitle}>My Subtitle</Text>
+  </View>
+);
+
+const styles = StyleSheet.create({
+  title: {
+    ...fontStyles.titleLarge,
+    color: '#333333',
+  },
+  subtitle: {
+    ...fontStyles.titleSmall,
+    color: '#666666',
+  },
+});
+```
+
+For more information about font integration, please refer to the [Font Integration Guide](./FONT_INTEGRATION.md) and [Font Weight Handling](./FONT_WEIGHT_HANDLING.md) documentation.
+
 ## Documentation
 
 For detailed documentation, see:

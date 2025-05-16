@@ -1,5 +1,5 @@
 import React from 'react';
-import { TouchableOpacity, Text, View, StyleSheet, ViewStyle, TextStyle, StyleProp } from 'react-native';
+import { TouchableOpacity, Text, View, StyleSheet, ViewStyle, TextStyle, StyleProp, Platform } from 'react-native';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
 import { fontFamilies } from '../styles/fonts';
@@ -204,7 +204,10 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     text: {
-        fontFamily: fontFamilies.phudu,
+        fontFamily: Platform.select({
+            web: fontFamilies.phudu,
+            default: fontFamilies.phuduBold
+        }),
         fontWeight: '600',
         fontSize: 16,
         marginLeft: 12,

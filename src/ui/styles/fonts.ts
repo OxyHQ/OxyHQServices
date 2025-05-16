@@ -11,6 +11,15 @@ export const fontFamilies = {
     web: 'Phudu',  // Web projects will use standard CSS font name
     default: 'Phudu-Variable'  // Native projects will use the PostScript name
   }),
+
+  /**
+   * Font specifically for bold text in Phudu
+   * Variable fonts on mobile might need explicit weight variants
+   */
+  phuduBold: Platform.select({
+    web: 'Phudu',  // Web just uses the same name with weight in CSS
+    default: 'Phudu-Variable-Bold'  // On native, we specify the bold variant directly
+  }),
 };
 
 /**
@@ -18,17 +27,26 @@ export const fontFamilies = {
  */
 export const fontStyles: Record<string, TextStyle> = {
   titleLarge: {
-    fontFamily: fontFamilies.phudu,
+    fontFamily: Platform.select({
+      web: fontFamilies.phudu,
+      default: fontFamilies.phuduBold
+    }),
     fontSize: 34,
     fontWeight: 'bold' as TextStyle['fontWeight'],
   },
   titleMedium: {
-    fontFamily: fontFamilies.phudu,
+    fontFamily: Platform.select({
+      web: fontFamilies.phudu,
+      default: fontFamilies.phuduBold
+    }),
     fontSize: 24,
     fontWeight: 'bold' as TextStyle['fontWeight'],
   },
   titleSmall: {
-    fontFamily: fontFamilies.phudu,
+    fontFamily: Platform.select({
+      web: fontFamilies.phudu,
+      default: fontFamilies.phuduBold
+    }),
     fontSize: 20,
     fontWeight: 'bold' as TextStyle['fontWeight'],
     },
