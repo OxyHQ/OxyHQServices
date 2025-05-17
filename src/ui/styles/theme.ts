@@ -102,7 +102,7 @@ export const createCommonStyles = (theme: 'light' | 'dark') => {
     },
     scrollContainer: {
       flexGrow: 1,
-      padding: 20,
+      padding: 10,
     },
     input: {
       height: 48,
