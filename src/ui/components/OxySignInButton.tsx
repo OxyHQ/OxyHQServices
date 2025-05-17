@@ -129,17 +129,8 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
         }
     };
 
-    // Determine the logo container style based on the variant
-    const getLogoContainerStyle = () => {
-        switch (variant) {
-            case 'outline':
-                return styles.logoContainerOutline;
-            case 'contained':
-                return styles.logoContainerContained;
-            default:
-                return styles.logoContainerDefault;
-        }
-    };
+    // This function was previously used for logo container styling
+    // Now removed as we're not using the container anymore
 
     return (
         <TouchableOpacity
@@ -148,14 +139,13 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
             disabled={disabled}
         >
             <View style={styles.buttonContent}>
-                <View style={[styles.logoContainer, getLogoContainerStyle(), disabled && styles.logoContainerDisabled]}>
-                    <OxyLogo
-                        width={20}
-                        height={20}
-                        fillColor={variant === 'contained' ? 'white' : '#d169e5'}
-                        secondaryFillColor={variant === 'contained' ? 'rgba(255, 255, 255, 0.8)' : undefined}
-                    />
-                </View>
+                <OxyLogo
+                    width={20}
+                    height={20}
+                    fillColor={variant === 'contained' ? 'white' : '#d169e5'}
+                    secondaryFillColor={variant === 'contained' ? 'rgba(255, 255, 255, 0.8)' : undefined}
+                    style={disabled ? { opacity: 0.6 } : undefined}
+                />
                 <Text style={[styles.text, getTextStyle(), disabled && styles.textDisabled]}>
                     {text}
                 </Text>
@@ -201,7 +191,7 @@ const styles = StyleSheet.create({
         fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-SemiBold',
         fontWeight: Platform.OS === 'web' ? '600' : undefined, // Only apply fontWeight on web
         fontSize: 16,
-        marginLeft: 12,
+        marginLeft: 10,
     },
     textDefault: {
         color: '#333333',
@@ -214,31 +204,6 @@ const styles = StyleSheet.create({
     },
     textDisabled: {
         color: '#888888',
-    },
-    logoContainer: {
-        width: 28,
-        height: 28,
-        borderRadius: 14,
-        justifyContent: 'center',
-        alignItems: 'center',
-        overflow: 'hidden',
-        padding: 2,
-    },
-    logoContainerDefault: {
-        backgroundColor: '#d169e5',
-    },
-    logoContainerOutline: {
-        backgroundColor: 'transparent',
-        borderWidth: 1,
-        borderColor: '#d169e5',
-    },
-    logoContainerContained: {
-        backgroundColor: '#FFFFFF40',  // Semi-transparent white
-        borderWidth: 1,
-        borderColor: '#FFFFFF80',      // More opaque white
-    },
-    logoContainerDisabled: {
-        opacity: 0.6,
     },
 });
 

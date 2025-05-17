@@ -14,6 +14,7 @@ import {
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies, useThemeColors, createCommonStyles } from '../styles';
+import OxyLogo from '../components/OxyLogo';
 
 const SignInScreen: React.FC<BaseScreenProps> = ({
     navigate,
@@ -84,6 +85,11 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                 contentContainerStyle={commonStyles.scrollContainer}
                 keyboardShouldPersistTaps="handled"
             >
+                <OxyLogo
+                    style={{ marginBottom: 24 }}
+                    width={50}
+                    height={50}
+                />
                 <Text style={[
                     styles.title,
                     { color: colors.text }
