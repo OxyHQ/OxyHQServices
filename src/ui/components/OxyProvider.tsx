@@ -1,8 +1,8 @@
 // filepath: /home/nate/OxyServicesandApi/OxyHQServices/src/ui/components/OxyProvider.tsx
 import React, { useCallback, useRef, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, Dimensions, Platform, Animated, StatusBar } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, Platform, Animated, StatusBar, Keyboard, KeyboardEvent } from 'react-native';
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView } from '@gorhom/bottom-sheet';
-import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { OxyServices } from '../../core';
 import { OxyProviderProps } from '../navigation/types';
@@ -141,8 +141,46 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     const slideAnim = useRef(new Animated.Value(50)).current;
     const handleScaleAnim = useRef(new Animated.Value(1)).current;
 
+    // Track keyboard status
+    const [keyboardVisible, setKeyboardVisible] = useState(false);
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
+    const insets = useSafeAreaInsets();
+
     // Get the authentication context
     const oxyContext = useOxy();
+
+    // Handle keyboard events
+    useEffect(() => {
+        const keyboardWillShowListener = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+            (event: KeyboardEvent) => {
+                setKeyboardVisible(true);
+                // Get keyboard height from event
+                const keyboardHeightValue = event.endCoordinates.height;
+                setKeyboardHeight(keyboardHeightValue);
+
+                // Ensure the bottom sheet remains visible when keyboard opens
+                // by adjusting to the highest snap point
+                if (modalRef.current) {
+                    modalRef.current.snapToIndex(1);
+                }
+            }
+        );
+
+        const keyboardWillHideListener = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+            () => {
+                setKeyboardVisible(false);
+                setKeyboardHeight(0);
+            }
+        );
+
+        // Cleanup listeners
+        return () => {
+            keyboardWillShowListener.remove();
+            keyboardWillHideListener.remove();
+        };
+    }, []);
 
     // Present the modal when component mounts, but only if autoPresent is true
     useEffect(() => {
@@ -255,8 +293,16 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
 
     // Method to adjust snap points from Router
     const adjustSnapPoints = useCallback((points: string[]) => {
-        setSnapPoints(points);
-    }, []);
+        // Ensure snap points are high enough when keyboard is visible
+        if (keyboardVisible) {
+            // If keyboard is visible, make sure we use higher snap points
+            // to ensure the sheet content remains visible
+            const highestPoint = points[points.length - 1];
+            setSnapPoints([highestPoint, highestPoint]);
+        } else {
+            setSnapPoints(points);
+        }
+    }, [keyboardVisible]);
 
     // Method to programmatically navigate to a specific screen
     const navigateToScreen = useCallback((screenName: string) => {
@@ -307,8 +353,12 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
                 }),
             ]).start();
+        } else if (index === 0 && keyboardVisible) {
+            // If keyboard is visible and user tries to go to a smaller snap point,
+            // force the sheet to stay at the highest point for better visibility
+            modalRef.current?.snapToIndex(1);
         }
-    }, [onClose, handleScaleAnim]);
+    }, [onClose, handleScaleAnim, keyboardVisible]);
 
     return (
         <BottomSheetModal
@@ -347,7 +397,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             }}
             onChange={handleSheetChanges}
             // Adding additional props to improve layout behavior
-            keyboardBehavior={Platform.OS === 'ios' ? 'interactive' : 'extend'}
+            keyboardBehavior="interactive"
             keyboardBlurBehavior="restore"
             android_keyboardInputMode="adjustResize"
             enableOverDrag={true}
@@ -365,6 +415,10 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     styles.contentContainer,
                     // Override padding if provided in customStyles
                     customStyles.contentPadding !== undefined && { padding: customStyles.contentPadding },
+                    // Add bottom padding when keyboard is visible to ensure content is not covered
+                    keyboardVisible && {
+                        paddingBottom: Math.max(keyboardHeight - insets.bottom, 0)
+                    },
                 ]}
             >
                 <Animated.View
