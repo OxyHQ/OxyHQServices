@@ -83,7 +83,7 @@ const FontDemoScreen = () => {
                     <Text style={styles.sectionTitle}>Regular Text Comparison</Text>
                     <View style={styles.card}>
                         <Text style={styles.regularText}>
-                            This is regular system font text. The OxyProvider UI components use the Phudu Variable Font for a distinctive look across titles and important elements.
+                            This is regular system font text. The OxyProvider UI components use the Phudu font family for a distinctive look across titles and important elements.
                         </Text>
 
                         <View style={styles.comparisonContainer}>
@@ -165,6 +165,8 @@ const styles = StyleSheet.create({
         color: '#333',
     },
     customHeader: {
+        // For web: Use the CSS font-family with CSS weight handling
+        // For native: platform.select already uses the appropriate static font in fontFamilies.phudu
         fontFamily: fontFamilies.phudu,
         fontSize: 18,
         marginBottom: 12,

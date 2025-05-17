@@ -9,10 +9,11 @@ import {
     Platform,
     KeyboardAvoidingView,
     ScrollView,
+    TextStyle,
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
-import { fontStyles } from '../styles/fonts';
+import { fontFamilies } from '../styles/fonts';
 
 const SignUpScreen: React.FC<BaseScreenProps> = ({
     navigate,
@@ -39,7 +40,13 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
     if (user && isAuthenticated) {
         return (
             <View style={[styles.container, { backgroundColor, padding: 20 }]}>
-                <Text style={[styles.title, { color: textColor }]}>Welcome, {user.username}!</Text>
+                <Text style={[
+                    styles.title,
+                    {
+                        color: textColor,
+                        textAlign: 'center'
+                    }
+                ]}>Welcome, {user.username}!</Text>
 
                 <View style={styles.userInfoContainer}>
                     <Text style={[styles.userInfoText, { color: textColor }]}>
@@ -113,7 +120,13 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
                     <TouchableOpacity onPress={goBack} style={styles.backButton}>
                         <Text style={[styles.backButtonText, { color: primaryColor }]}>Back</Text>
                     </TouchableOpacity>
-                    <Text style={[styles.title, { color: textColor }]}>Create Account</Text>
+                    <Text style={[
+                        styles.title,
+                        {
+                            color: textColor,
+                            textAlign: 'center'
+                        }
+                    ]}>Create Account</Text>
                     <View style={styles.placeholder} />
                 </View>
 
@@ -238,7 +251,11 @@ const styles = StyleSheet.create({
         fontSize: 16,
     },
     title: {
-        ...fontStyles.titleMedium,
+        fontFamily: Platform.OS === 'web'
+            ? 'Phudu'  // Use CSS font name directly for web
+            : 'Phudu-Bold',  // Use exact font name as registered with Font.loadAsync
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
+        fontSize: 24,
         textAlign: 'center',
     },
     placeholder: {

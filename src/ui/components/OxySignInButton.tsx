@@ -198,11 +198,8 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     text: {
-        fontFamily: Platform.select({
-            web: fontFamilies.phudu,
-            default: fontFamilies.phuduBold
-        }),
-        fontWeight: 'bold' as TextStyle['fontWeight'],
+        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-SemiBold',
+        fontWeight: Platform.OS === 'web' ? '600' : undefined, // Only apply fontWeight on web
         fontSize: 16,
         marginLeft: 12,
     },

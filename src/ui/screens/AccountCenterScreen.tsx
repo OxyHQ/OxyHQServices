@@ -8,10 +8,11 @@ import {
     ScrollView,
     Alert,
     Platform,
+    TextStyle,
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
-import { fontStyles } from '../styles/fonts';
+import { fontFamilies } from '../styles/fonts';
 
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -165,7 +166,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     title: {
-        ...fontStyles.titleMedium,
+        fontFamily: Platform.OS === 'web'
+            ? 'Phudu'  // Use CSS font name directly for web
+            : 'Phudu-Bold',  // Use exact font name as registered with Font.loadAsync
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
+        fontSize: 24,
     },
     userInfoContainer: {
         padding: 20,

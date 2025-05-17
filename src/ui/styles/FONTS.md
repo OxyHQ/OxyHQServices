@@ -6,8 +6,15 @@ This document explains how custom fonts are implemented in the OxyProvider UI co
 ## Implementation Details
 
 ### Fonts Used
-- **Phudu Variable Font**: Used for all big titles in the application for a consistent brand experience.
-  - File location: `src/assets/fonts/Phudu-VariableFont_wght.ttf`
+- **Phudu Font Family**: Used for all big titles in the application for a consistent brand experience.
+  - File location: `src/assets/fonts/Phudu/` directory containing:
+    - Phudu-Light.ttf (weight: 300)
+    - Phudu-Regular.ttf (weight: 400)
+    - Phudu-Medium.ttf (weight: 500)
+    - Phudu-SemiBold.ttf (weight: 600)
+    - Phudu-Bold.ttf (weight: 700)
+    - Phudu-ExtraBold.ttf (weight: 800)
+    - Phudu-Black.ttf (weight: 900)
 
 ### How to Use
 The font system has been implemented across all UI components. To use the fonts in your custom components:
@@ -66,9 +73,9 @@ Also ensure the font files are properly linked in your native projects:
 The `setupFonts` function will dynamically add the necessary @font-face CSS to load the Phudu font. 
 The font will be automatically located if you use a bundler that supports asset imports.
 
-If automatic resolution fails, the library will look for the font at `/assets/fonts/Phudu-VariableFont_wght.ttf` in your web build.
+If automatic resolution fails, the library will look for the font files in the `/assets/fonts/Phudu/` directory in your web build.
 
-To customize the font path for web, modify the `setupFonts` function in your own implementation:
+To customize the font paths for web, modify the `setupFonts` function in your own implementation:
 
 ```javascript
 // Custom implementation
@@ -79,16 +86,23 @@ export const setupFonts = () => {
   if (typeof document !== 'undefined') {
     const style = document.createElement('style');
     
-    // Add custom @font-face rule with your own font path
-    const customFontPath = '/path/to/your/font/Phudu-VariableFont_wght.ttf';
+    // Add custom @font-face rules with your own font paths
+    const customFontPathBase = '/path/to/your/fonts/Phudu/';
     
     style.textContent = `
       @font-face {
         font-family: 'Phudu';
-        src: url('${customFontPath}') format('truetype');
-        font-weight: 100 900;
+        src: url('${customFontPathBase}Phudu-Regular.ttf') format('truetype');
+        font-weight: 400;
         font-style: normal;
       }
+      @font-face {
+        font-family: 'Phudu';
+        src: url('${customFontPathBase}Phudu-Bold.ttf') format('truetype');
+        font-weight: 700;
+        font-style: normal;
+      }
+      /* Add other weights as needed */
     `;
     
     document.head.appendChild(style);
@@ -100,8 +114,8 @@ export const setupFonts = () => {
 ```
 
 ### Platform Support
-- **iOS/Android**: Loaded as 'Phudu-Variable'
-- **Web**: Uses the font name 'Phudu' (automatically loaded via CSS)
+- **iOS/Android**: Loaded as individual font files ('Phudu-Regular', 'Phudu-Bold', etc.)
+- **Web**: Uses the font name 'Phudu' with specific weights via CSS weight property
 
 ### Custom Font Implementation
 If you want to add additional fonts:

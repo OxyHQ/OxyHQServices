@@ -9,11 +9,12 @@ import {
     Alert,
     Platform,
     Image,
+    TextStyle,
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from '../components/OxyLogo';
-import { fontStyles } from '../styles/fonts';
+import { fontFamilies } from '../styles/fonts';
 
 const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -380,7 +381,11 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
     },
     greeting: {
-        ...fontStyles.titleSmall,
+        fontFamily: Platform.OS === 'web'
+            ? 'Phudu'  // Use CSS font name directly for web
+            : 'Phudu-Bold',  // Use exact font name as registered with Font.loadAsync
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
+        fontSize: 20,
         marginVertical: 10,
     },
     manageAccountButton: {
@@ -402,7 +407,10 @@ const styles = StyleSheet.create({
         marginBottom: 10,
     },
     sectionHeaderText: {
-        ...fontStyles.titleSmall,
+        fontFamily: Platform.OS === 'web'
+            ? 'Phudu'  // Use CSS font name directly for web
+            : 'Phudu-Bold',  // Use exact font name as registered with Font.loadAsync
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
         fontSize: 16,
     },
     accountsContainer: {

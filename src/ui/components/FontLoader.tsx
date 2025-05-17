@@ -3,16 +3,24 @@ import { Text, View, ActivityIndicator, StyleSheet, Platform } from 'react-nativ
 import * as Font from 'expo-font';
 
 /**
- * Get the font source for both native and web environments
+ * Get the Phudu font sources for both native and web environments 
  * This is specifically designed to work when distributed as an npm package
  */
-const getPhuduFont = () => {
+const getPhuduFonts = () => {
     try {
         // For both development and when used as a package
-        // This is the most reliable approach for cross-platform compatibility
-        return require('../../assets/fonts/Phudu-VariableFont_wght.ttf');
+        // Load all static font weights
+        return {
+            'Phudu-Light': require('../../assets/fonts/Phudu/Phudu-Light.ttf'),
+            'Phudu-Regular': require('../../assets/fonts/Phudu/Phudu-Regular.ttf'),
+            'Phudu-Medium': require('../../assets/fonts/Phudu/Phudu-Medium.ttf'),
+            'Phudu-SemiBold': require('../../assets/fonts/Phudu/Phudu-SemiBold.ttf'),
+            'Phudu-Bold': require('../../assets/fonts/Phudu/Phudu-Bold.ttf'),
+            'Phudu-ExtraBold': require('../../assets/fonts/Phudu/Phudu-ExtraBold.ttf'),
+            'Phudu-Black': require('../../assets/fonts/Phudu/Phudu-Black.ttf'),
+        };
     } catch (error) {
-        console.warn('Failed to load Phudu font:', error);
+        console.warn('Failed to load Phudu fonts:', error);
         return null;
     }
 };
@@ -33,18 +41,16 @@ export const FontLoader = ({
     useEffect(() => {
         const loadFonts = async () => {
             try {
-                // Get the font based on environment
-                const phuduFont = getPhuduFont();
+                // Get all the font weights
+                const phuduFonts = getPhuduFonts();
 
-                if (!phuduFont) {
-                    throw new Error('Phudu font file not found');
+                if (!phuduFonts) {
+                    throw new Error('Phudu font files not found');
                 }
 
-                // Load the Phudu variable font with multiple weight variants
-                await Font.loadAsync({
-                    'Phudu-Variable': phuduFont,
-                    'Phudu-Variable-Bold': phuduFont, // Same font file but registered with a bold name for native
-                });
+                // Load all the static Phudu fonts with their respective weights
+                await Font.loadAsync(phuduFonts);
+
                 setFontState('loaded');
             } catch (error) {
                 console.error('Error loading fonts:', error);
@@ -82,40 +88,75 @@ export const FontLoader = ({
  */
 export const setupFonts = async () => {
     try {
-        const phuduFont = getPhuduFont();
+        const phuduFonts = getPhuduFonts();
 
-        if (!phuduFont) {
-            throw new Error('Phudu font file not found');
+        if (!phuduFonts) {
+            throw new Error('Phudu font files not found');
         }
 
         if (Platform.OS === 'web') {
-            // For web platform, dynamically inject CSS to load the font
+            // For web platform, dynamically inject CSS to load the fonts
             if (typeof document !== 'undefined') {
                 // Create a style element
                 const style = document.createElement('style');
 
-                // Define the @font-face rule
-                style.textContent = `
+                // Define @font-face rules for each font weight
+                const fontFaceRules = `
                     @font-face {
                         font-family: 'Phudu';
-                        src: url(${phuduFont}) format('truetype');
-                        font-weight: 100 900; /* Variable font weight range */
+                        src: url(${phuduFonts['Phudu-Light']}) format('truetype');
+                        font-weight: 300;
+                        font-style: normal;
+                    }
+                    @font-face {
+                        font-family: 'Phudu';
+                        src: url(${phuduFonts['Phudu-Regular']}) format('truetype');
+                        font-weight: 400;
+                        font-style: normal;
+                    }
+                    @font-face {
+                        font-family: 'Phudu';
+                        src: url(${phuduFonts['Phudu-Medium']}) format('truetype');
+                        font-weight: 500;
+                        font-style: normal;
+                    }
+                    @font-face {
+                        font-family: 'Phudu';
+                        src: url(${phuduFonts['Phudu-SemiBold']}) format('truetype');
+                        font-weight: 600;
+                        font-style: normal;
+                    }
+                    @font-face {
+                        font-family: 'Phudu';
+                        src: url(${phuduFonts['Phudu-Bold']}) format('truetype');
+                        font-weight: 700;
+                        font-style: normal;
+                    }
+                    @font-face {
+                        font-family: 'Phudu';
+                        src: url(${phuduFonts['Phudu-ExtraBold']}) format('truetype');
+                        font-weight: 800;
+                        font-style: normal;
+                    }
+                    @font-face {
+                        font-family: 'Phudu';
+                        src: url(${phuduFonts['Phudu-Black']}) format('truetype');
+                        font-weight: 900;
                         font-style: normal;
                     }
                 `;
+
+                style.textContent = fontFaceRules;
                 // Append to the document head
                 document.head.appendChild(style);
-                console.info('Web font Phudu has been dynamically loaded');
+                console.info('All Phudu web fonts have been dynamically loaded');
             }
         } else {
             // For native platforms, guidance for the package users
-            console.info('Fonts should be linked in native projects to use Phudu-Variable font');
+            console.info('Fonts should be linked in native projects to use Phudu fonts');
 
-            // Attempt to load the font anyway (this works if the consumer has linked the assets)
-            await Font.loadAsync({
-                'Phudu-Variable': phuduFont,
-                'Phudu-Variable-Bold': phuduFont,
-            });
+            // Attempt to load the fonts anyway (this works if the consumer has linked the assets)
+            await Font.loadAsync(phuduFonts);
         }
 
         return true;

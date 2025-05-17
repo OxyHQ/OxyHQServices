@@ -9,10 +9,11 @@ import {
     Platform,
     KeyboardAvoidingView,
     ScrollView,
+    TextStyle,
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
-import { fontStyles } from '../styles/fonts';
+import { fontFamilies, useThemeColors, createCommonStyles } from '../styles';
 
 const SignInScreen: React.FC<BaseScreenProps> = ({
     navigate,
@@ -24,26 +25,24 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
     const { login, isLoading, user, isAuthenticated } = useOxy();
 
-    const isDarkTheme = theme === 'dark';
-    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
-    const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
-    const inputBackgroundColor = isDarkTheme ? '#333333' : '#F5F5F5';
-    const placeholderColor = isDarkTheme ? '#AAAAAA' : '#999999';
-    const primaryColor = '#d169e5';
-    const borderColor = isDarkTheme ? '#444444' : '#E0E0E0';
+    const colors = useThemeColors(theme);
+    const commonStyles = createCommonStyles(theme);
 
     // If user is already authenticated, show user info instead of login form
     if (user && isAuthenticated) {
         return (
-            <View style={[styles.container, { backgroundColor, padding: 20 }]}>
-                <Text style={[styles.title, { color: textColor }]}>Welcome, {user.username}!</Text>
+            <View style={[commonStyles.container, { padding: 20 }]}>
+                <Text style={[
+                    styles.title,
+                    { color: colors.text }
+                ]}>Welcome, {user.username}!</Text>
 
-                <View style={styles.userInfoContainer}>
-                    <Text style={[styles.userInfoText, { color: textColor }]}>
+                <View style={[styles.userInfoContainer, { backgroundColor: colors.inputBackground }]}>
+                    <Text style={[styles.userInfoText, { color: colors.text }]}>
                         You are already signed in.
                     </Text>
                     {user.email && (
-                        <Text style={[styles.userInfoText, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[styles.userInfoText, { color: colors.secondaryText }]}>
                             Email: {user.email}
                         </Text>
                     )}
@@ -51,10 +50,10 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
                 <View style={styles.actionButtonsContainer}>
                     <TouchableOpacity
-                        style={[styles.button, { backgroundColor: primaryColor }]}
+                        style={[commonStyles.button, { backgroundColor: colors.primary }]}
                         onPress={() => navigate('AccountCenter')}
                     >
-                        <Text style={styles.buttonText}>Go to Account Center</Text>
+                        <Text style={commonStyles.buttonText}>Go to Account Center</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -79,30 +78,30 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     return (
         <KeyboardAvoidingView
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={[styles.container, { backgroundColor }]}
+            style={[commonStyles.container]}
         >
             <ScrollView
-                contentContainerStyle={styles.scrollContainer}
+                contentContainerStyle={commonStyles.scrollContainer}
                 keyboardShouldPersistTaps="handled"
             >
-                <Text style={[styles.title, { color: textColor }]}>Sign In</Text>
+                <Text style={[
+                    styles.title,
+                    { color: colors.text }
+                ]}>Sign In</Text>
 
                 {errorMessage ? (
-                    <View style={styles.errorContainer}>
-                        <Text style={styles.errorText}>{errorMessage}</Text>
+                    <View style={commonStyles.errorContainer}>
+                        <Text style={commonStyles.errorText}>{errorMessage}</Text>
                     </View>
                 ) : null}
 
                 <View style={styles.formContainer}>
                     <View style={styles.inputContainer}>
-                        <Text style={[styles.label, { color: textColor }]}>Username</Text>
+                        <Text style={[styles.label, { color: colors.text }]}>Username</Text>
                         <TextInput
-                            style={[
-                                styles.input,
-                                { backgroundColor: inputBackgroundColor, borderColor, color: textColor }
-                            ]}
+                            style={commonStyles.input}
                             placeholder="Enter your username"
-                            placeholderTextColor={placeholderColor}
+                            placeholderTextColor={colors.placeholder}
                             value={username}
                             onChangeText={setUsername}
                             autoCapitalize="none"
@@ -111,14 +110,11 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                     </View>
 
                     <View style={styles.inputContainer}>
-                        <Text style={[styles.label, { color: textColor }]}>Password</Text>
+                        <Text style={[styles.label, { color: colors.text }]}>Password</Text>
                         <TextInput
-                            style={[
-                                styles.input,
-                                { backgroundColor: inputBackgroundColor, borderColor, color: textColor }
-                            ]}
+                            style={commonStyles.input}
                             placeholder="Enter your password"
-                            placeholderTextColor={placeholderColor}
+                            placeholderTextColor={colors.placeholder}
                             value={password}
                             onChangeText={setPassword}
                             secureTextEntry
@@ -127,7 +123,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                     </View>
 
                     <TouchableOpacity
-                        style={[styles.button, { opacity: isLoading ? 0.8 : 1 }]}
+                        style={[commonStyles.button, { opacity: isLoading ? 0.8 : 1 }]}
                         onPress={handleLogin}
                         disabled={isLoading}
                         testID="login-button"
@@ -135,16 +131,16 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                         {isLoading ? (
                             <ActivityIndicator color="#FFFFFF" size="small" />
                         ) : (
-                            <Text style={styles.buttonText}>Sign In</Text>
+                            <Text style={commonStyles.buttonText}>Sign In</Text>
                         )}
                     </TouchableOpacity>
 
                     <View style={styles.footerTextContainer}>
-                        <Text style={[styles.footerText, { color: textColor }]}>
+                        <Text style={[styles.footerText, { color: colors.text }]}>
                             Don't have an account?{' '}
                         </Text>
                         <TouchableOpacity onPress={() => navigate('SignUp')}>
-                            <Text style={[styles.linkText, { color: primaryColor }]}>Sign Up</Text>
+                            <Text style={[styles.linkText, { color: colors.primary }]}>Sign Up</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -154,15 +150,13 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    scrollContainer: {
-        flexGrow: 1,
-        padding: 20,
-    },
+    // Local screen-specific styles
     title: {
-        ...fontStyles.titleLarge,
+        fontFamily: Platform.OS === 'web'
+            ? 'Phudu'  // Use CSS font name directly for web
+            : 'Phudu-Bold',  // Use exact font name as registered with Font.loadAsync
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
+        fontSize: 34,
         marginBottom: 24,
         textAlign: 'left',
     },
@@ -173,27 +167,9 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     label: {
-        ...fontStyles.label,
+        fontSize: 14,
+        fontWeight: '500' as TextStyle['fontWeight'],
         marginBottom: 8,
-    },
-    input: {
-        height: 48,
-        borderRadius: 35,
-        paddingHorizontal: 16,
-        borderWidth: 1,
-        fontSize: 16,
-    },
-    button: {
-        backgroundColor: '#d169e5',
-        height: 48,
-        borderRadius: 35,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginTop: 24,
-    },
-    buttonText: {
-        ...fontStyles.buttonText,
-        color: '#FFFFFF',
     },
     footerTextContainer: {
         flexDirection: 'row',
@@ -201,32 +177,24 @@ const styles = StyleSheet.create({
         marginTop: 24,
     },
     footerText: {
-        ...fontStyles.footerText,
+        fontSize: 14,
+        lineHeight: 20,
     },
     linkText: {
-        ...fontStyles.linkText,
+        fontSize: 14,
+        lineHeight: 20,
         fontWeight: '600',
-    },
-    errorContainer: {
-        backgroundColor: '#FFEBEE',
-        padding: 12,
-        borderRadius: 35,
-        marginBottom: 16,
-    },
-    errorText: {
-        ...fontStyles.errorText,
-        color: '#D32F2F',
     },
     // New styles for authenticated user view
     userInfoContainer: {
         padding: 20,
         marginVertical: 20,
-        backgroundColor: '#F5F5F5',
         borderRadius: 35,
         alignItems: 'center',
     },
     userInfoText: {
-        ...fontStyles.userInfoText,
+        fontSize: 16,
+        lineHeight: 24,
         textAlign: 'center',
     },
     actionButtonsContainer: {

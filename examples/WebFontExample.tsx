@@ -22,7 +22,7 @@ const FontDemo = () => (
 
         <Text style={styles.regularText}>
             This is regular text without the Phudu font. The OxyProvider UI components use
-            the Phudu Variable Font for a distinctive look across the application.
+            the Phudu font in various weights for a distinctive look across the application.
         </Text>
 
         <View style={styles.separator} />
@@ -51,7 +51,7 @@ const styles = StyleSheet.create({
         flex: 1,
         padding: 20,
         maxWidth: 600,
-        margin: '0 auto',
+        alignSelf: 'center',
         marginTop: 40,
         backgroundColor: '#f8f8f8',
         borderRadius: 10,
@@ -82,7 +82,9 @@ const styles = StyleSheet.create({
         color: '#666',
     },
     customTitle: {
-        fontFamily: fontFamilies.phudu,
+        // For web: CSS will handle the font-weight with the same font family name
+        // For native: Platform.select in fontFamilies will use the right static font
+        fontFamily: fontFamilies.phuduSemiBold,
         fontSize: 22,
         fontWeight: '600',
         marginBottom: 16,

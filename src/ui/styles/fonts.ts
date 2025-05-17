@@ -3,22 +3,50 @@ import { Platform, TextStyle } from 'react-native';
 /**
  * Font family names for use across the app
  * 
- * For web platforms, we need to use the CSS font name
- * For native platforms, we use the PostScript name of the font file
+ * For web platforms, we use the CSS font name with weights
+ * For native platforms, we use the specific static font file names
  */
 export const fontFamilies = {
+  // Regular weight (400)
   phudu: Platform.select({
     web: 'Phudu',  // Web projects will use standard CSS font name
-    default: 'Phudu-Variable'  // Native projects will use the PostScript name
+    default: 'Phudu-Regular'  // Native projects use the specific weight font
   }),
 
-  /**
-   * Font specifically for bold text in Phudu
-   * Variable fonts on mobile might need explicit weight variants
-   */
+  // Light weight (300)
+  phuduLight: Platform.select({
+    web: 'Phudu',  // Web uses CSS weight
+    default: 'Phudu-Light'  // Native uses specific font
+  }),
+
+  // Medium weight (500)
+  phuduMedium: Platform.select({
+    web: 'Phudu',  // Web uses CSS weight
+    default: 'Phudu-Medium'  // Native uses specific font
+  }),
+
+  // SemiBold weight (600)
+  phuduSemiBold: Platform.select({
+    web: 'Phudu',  // Web uses CSS weight
+    default: 'Phudu-SemiBold'  // Native uses specific font
+  }),
+
+  // Bold weight (700)
   phuduBold: Platform.select({
-    web: 'Phudu',  // Web just uses the same name with weight in CSS
-    default: 'Phudu-Variable-Bold'  // On native, we specify the bold variant directly
+    web: 'Phudu',  // Web uses CSS weight 
+    default: 'Phudu-Bold'  // Native uses specific font
+  }),
+
+  // ExtraBold weight (800)
+  phuduExtraBold: Platform.select({
+    web: 'Phudu',  // Web uses CSS weight
+    default: 'Phudu-ExtraBold'  // Native uses specific font
+  }),
+
+  // Black weight (900)
+  phuduBlack: Platform.select({
+    web: 'Phudu',  // Web uses CSS weight
+    default: 'Phudu-Black'  // Native uses specific font
   }),
 };
 
@@ -27,32 +55,23 @@ export const fontFamilies = {
  */
 export const fontStyles: Record<string, TextStyle> = {
   titleLarge: {
-    fontFamily: Platform.select({
-      web: fontFamilies.phudu,
-      default: fontFamilies.phuduBold
-    }),
-    fontSize: 34,
-    fontWeight: 'bold' as TextStyle['fontWeight'],
+    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontSize: 54,
+    fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
   },
   titleMedium: {
-    fontFamily: Platform.select({
-      web: fontFamilies.phudu,
-      default: fontFamilies.phuduBold
-    }),
+    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
     fontSize: 24,
-    fontWeight: 'bold' as TextStyle['fontWeight'],
+    fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
   },
   titleSmall: {
-    fontFamily: Platform.select({
-      web: fontFamilies.phudu,
-      default: fontFamilies.phuduBold
-    }),
+    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
     fontSize: 20,
-    fontWeight: 'bold' as TextStyle['fontWeight'],
-    },
-    buttonText: {
-        fontFamily: fontFamilies.phudu,
-        fontSize: 16,
-        fontWeight: '600' as TextStyle['fontWeight'],
-    },
+    fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
+  },
+  buttonText: {
+    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-SemiBold',
+    fontSize: 16,
+    fontWeight: Platform.OS === 'web' ? '600' : undefined,  // Only apply fontWeight on web
+  },
 };

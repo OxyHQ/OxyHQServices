@@ -1,40 +1,62 @@
 # Font Weight Handling in React Native
 
 ## Problem
-Variable fonts like Phudu may not display proper weights on native platforms (iOS/Android) even though they work correctly on web.
+Font weights need to be properly managed on native platforms (iOS/Android) to ensure consistent appearance across platforms.
 
 ## Cause
 1. React Native's font handling differs significantly from web browsers
-2. Variable fonts on React Native may not respect CSS-like font weight declarations
-3. Some platforms might require explicit font name registration for each weight
+2. Native platforms may not properly handle font-weight on a single font file
+3. Each weight typically needs its own font file on native platforms
 
 ## Solution
 
 We've implemented the following approach to ensure proper font weights across platforms:
 
-### 1. Register multiple font names for the same font file
+### 1. Use static font files for each weight
 
 ```typescript
 // In FontLoader.tsx
-await Font.loadAsync({
-  'Phudu-Variable': phuduFont,
-  'Phudu-Variable-Bold': phuduFont, // Same font file but registered with explicit bold name
-});
+const phuduFonts = {
+  'Phudu-Regular': require('../../assets/fonts/Phudu/Phudu-Regular.ttf'),
+  'Phudu-Bold': require('../../assets/fonts/Phudu/Phudu-Bold.ttf'),
+  // Other weights...
+};
+
+await Font.loadAsync(phuduFonts);
 ```
 
-### 2. Define platform-specific font family references
+### 2. Use platform-specific fontFamily and fontWeight
 
 ```typescript
-// In fonts.ts
+// In your style definitions
+{
+  fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+  fontWeight: Platform.OS === 'web' ? 'bold' : undefined, // Only apply fontWeight on web
+}
+```
+
+This is the key change. For web, we use CSS font names and weights, but for native platforms:
+- Use the exact font name as registered with Font.loadAsync (e.g., 'Phudu-Bold')
+- Do not set fontWeight on native platforms as it won't apply correctly
+
+### 3. Define platform-specific font family references (LEGACY)
+
+```typescript
+// Old approach in fonts.ts - DEPRECATED
 export const fontFamilies = {
   phudu: Platform.select({
-    web: 'Phudu',  // Web projects use standard CSS name
-    default: 'Phudu-Variable'  // Default name for regular weight
+    web: 'Phudu',  // Web projects use standard CSS name with weight
+    default: 'Phudu-Regular'  // Default name for regular weight
   }),
   phuduBold: Platform.select({
     web: 'Phudu',  // Web can use same name with CSS fontWeight
-    default: 'Phudu-Variable-Bold'  // Native platforms need explicit bold name
+    default: 'Phudu-Bold'  // Native platforms use specific font
   }),
+  phuduMedium: Platform.select({
+    web: 'Phudu',  // Web can use same name with CSS fontWeight
+    default: 'Phudu-Medium'  // Native platforms use specific font
+  }),
+  // Other weights defined similarly...
 };
 ```
 

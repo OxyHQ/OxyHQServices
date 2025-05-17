@@ -37,22 +37,24 @@ export default function App() {
 
 ### Fonts
 
-OxyProvider uses the Phudu variable font for all headings and titles. The font is automatically loaded when using the OxyProvider component.
+OxyProvider uses the Phudu font family for all headings and titles. The fonts are automatically loaded when using the OxyProvider component.
 
 #### For React Native (with Expo)
 No additional setup required. Fonts are loaded automatically.
 
 #### For React Native (without Expo)
-You'll need to ensure the font is properly linked in your native projects:
+You'll need to ensure the fonts are properly linked in your native projects:
 
-1. Copy the font from `node_modules/@oxyhq/services/lib/commonjs/assets/fonts/Phudu-VariableFont_wght.ttf` to your project's font directory
-2. Link the font using React Native's native linking:
+1. Copy the font files from `node_modules/@oxyhq/services/lib/commonjs/assets/fonts/Phudu/` to your project's font directory
+2. Link the fonts using React Native's native linking:
    - For iOS: Add to Info.plist and include in the Xcode project
    - For Android: Place in `android/app/src/main/assets/fonts/`
 3. Call `setupFonts()` from the package before rendering your app
 
 #### For Web
-The font is automatically loaded via CSS when using the OxyProvider component.
+The fonts are automatically loaded via CSS when using the OxyProvider component.
+
+The Phudu font family includes multiple weights (Light, Regular, Medium, SemiBold, Bold, ExtraBold, and Black) for flexible typography.
 
 For more detailed information, see [FONT_INTEGRATION.md](FONT_INTEGRATION.md)
 
