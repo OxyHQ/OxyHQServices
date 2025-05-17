@@ -162,9 +162,8 @@ const styles = StyleSheet.create({
             ? 'Phudu'  // Use CSS font name directly for web
             : 'Phudu-Bold',  // Use exact font name as registered with Font.loadAsync
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
-        fontSize: 34,
+        fontSize: 44,
         marginBottom: 24,
-        textAlign: 'left',
     },
     formContainer: {
         width: '100%',

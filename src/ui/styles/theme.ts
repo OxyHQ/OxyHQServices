@@ -97,7 +97,6 @@ export const createCommonStyles = (theme: 'light' | 'dark') => {
   
   return StyleSheet.create({
     container: {
-      flex: 1,
       backgroundColor: colors.background,
     },
     scrollContainer: {
