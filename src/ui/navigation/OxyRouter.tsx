@@ -7,6 +7,7 @@ import SignInScreen from '../screens/SignInScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import AccountCenterScreen from '../screens/AccountCenterScreen';
 import AccountOverviewScreen from '../screens/AccountOverviewScreen';
+import AboutKarmaScreen from '../screens/AboutKarmaScreen';
 
 // Import types
 import { OxyRouterProps, RouteConfig } from './types';
@@ -28,6 +29,10 @@ const routes: Record<string, RouteConfig> = {
     AccountOverview: {
         component: AccountOverviewScreen,
         snapPoints: ['60%', '85%'],
+    },
+    AboutKarma: {
+        component: AboutKarmaScreen,
+        snapPoints: ['60%', '90%'],
     },
 };
 
