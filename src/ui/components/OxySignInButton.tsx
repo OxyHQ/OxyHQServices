@@ -13,7 +13,7 @@ export interface OxySignInButtonProps {
 
     /**
      * Optional function to handle button press
-     * If not provided, the button will attempt to use bottomSheetRef from OxyContext
+     * If not provided, the button will use the showBottomSheet method from OxyContext
      */
     onPress?: () => void;
 
@@ -80,12 +80,13 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     disabled = false,
     showWhenAuthenticated = false,
 }) => {
-    const { user, bottomSheetRef } = useOxy();
+    // Get all needed values from context in a single call
+    const { user, showBottomSheet } = useOxy();
 
     // Don't show the button if already authenticated (unless explicitly overridden)
     if (user && !showWhenAuthenticated) return null;
 
-    // Default handler that uses the bottomSheetRef from OxyContext
+    // Default handler that uses the context methods
     const handlePress = () => {
         if (onPress) {
             onPress();
@@ -93,15 +94,11 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
         }
 
         // Default behavior: open the bottom sheet and navigate to SignIn
-        if (bottomSheetRef?.current) {
-            // Expand the bottom sheet and immediately navigate to SignIn
-            bottomSheetRef.current.expand();
-
-            // Navigate immediately without delay
-            // @ts-ignore - _navigateToScreen is added at runtime by OxyRouter
-            bottomSheetRef.current._navigateToScreen?.('SignIn');
+        if (showBottomSheet) {
+            // Show the bottom sheet and navigate to SignIn
+            showBottomSheet('SignIn');
         } else {
-            console.warn('OxySignInButton: bottomSheetRef is not available. Either provide an onPress prop or ensure this component is used within an OxyProvider.');
+            console.warn('OxySignInButton: showBottomSheet is not available. Either provide an onPress prop or ensure this component is used within an OxyProvider.');
         }
     };
 

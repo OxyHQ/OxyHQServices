@@ -1,46 +1,57 @@
+/**
+ * OxyHQServices Main Export File
+ */
+
+// ------------- Core Imports -------------
 import OxyCore from './core';
 import { OxyServices } from './core';
 
-// Export UI components and types
+// ------------- UI Imports -------------
 import { 
+  // Context and Hooks
   OxyProvider, 
   OxyContextProvider, 
   useOxy, 
+  
+  // Screens
   SignInScreen, 
   SignUpScreen, 
   AccountCenterScreen,
+  
+  // Components
   OxySignInButton,
   OxyLogo,
+  Avatar,
   FontLoader
 } from './ui';
 
-// Export OxyContext types directly
+// ------------- Type Imports -------------
 import { OxyContextState, OxyContextProviderProps } from './ui/context/OxyContext';
 
-// Create a default export for backward compatibility
-export default OxyCore;
-
-// Export OxyServices class directly from core
+// ------------- Core Exports -------------
+export default OxyCore; // Default export for backward compatibility
 export { OxyServices };
-
-// Export other items from core
 export * from './core';
 
-// Export UI components
+// ------------- UI Exports -------------
 export { 
+  // Context and Hooks
   OxyProvider, 
   OxyContextProvider, 
   useOxy, 
+  
+  // Screens
   SignInScreen, 
   SignUpScreen,
   AccountCenterScreen,
+  
+  // Components
   OxySignInButton,
   OxyLogo,
+  Avatar,
   FontLoader
 };
 
-// Export types explicitly
-export { OxyContextState, OxyContextProviderProps }
-
-// Export navigation types
+// ------------- Type Exports -------------
+export { OxyContextState, OxyContextProviderProps };
 export * from './ui/navigation/types';

@@ -1,7 +1,6 @@
 // filepath: /home/nate/OxyServicesandApi/OxyHQServices/src/ui/components/OxyProvider.tsx
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Dimensions, Platform, Animated, StatusBar, Keyboard, KeyboardEvent } from 'react-native';
-import { BottomSheetModal, BottomSheetBackdrop, BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView } from '@gorhom/bottom-sheet';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { OxyServices } from '../../core';
@@ -12,6 +11,9 @@ import AccountCenterScreen from '../screens/AccountCenterScreen';
 import { OxyContextProvider, useOxy } from '../context/OxyContext';
 import OxyRouter from '../navigation/OxyRouter';
 import { FontLoader, setupFonts } from './FontLoader';
+
+// Import bottom sheet components directly - no longer a peer dependency
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView } from './bottomSheet';
 
 // Initialize fonts automatically
 setupFonts();
@@ -32,9 +34,11 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
         contextOnly = false,
         onAuthStateChange,
         storageKeyPrefix,
-        bottomSheetRef,
         ...bottomSheetProps
     } = props;
+
+    // Create internal bottom sheet ref
+    const internalBottomSheetRef = useRef<BottomSheetModal>(null);
 
     // If contextOnly is true, we just provide the context without the bottom sheet UI
     if (contextOnly) {
@@ -55,13 +59,14 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
             oxyServices={oxyServices}
             storageKeyPrefix={storageKeyPrefix}
             onAuthStateChange={onAuthStateChange}
+            bottomSheetRef={internalBottomSheetRef}
         >
             <FontLoader>
                 <GestureHandlerRootView style={styles.gestureHandlerRoot}>
                     <BottomSheetModalProvider>
                         <StatusBar translucent backgroundColor="transparent" />
                         <SafeAreaProvider>
-                            <OxyBottomSheet {...bottomSheetProps} bottomSheetRef={bottomSheetRef} oxyServices={oxyServices} />
+                            <OxyBottomSheet {...bottomSheetProps} bottomSheetRef={internalBottomSheetRef} oxyServices={oxyServices} />
                             {children}
                         </SafeAreaProvider>
                     </BottomSheetModalProvider>
@@ -84,30 +89,25 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     onAuthenticated,
     theme = 'light',
     customStyles = {},
-    bottomSheetRef: externalRef,
+    bottomSheetRef,
     autoPresent = false,
 }) => {
-    // Use the provided external ref or create an internal one if not provided
-    // Create our own BottomSheetModal ref to handle proper typings
-    const internalRef = useRef<BottomSheetModal>(null);
-
-    // Use a local ref that we know has the right type
+    // Use the internal ref (which is passed as a prop from OxyProvider)
     const modalRef = useRef<BottomSheetModal>(null);
 
-    // Set up effect to sync the external ref with our local ref
+    // Set up effect to sync the internal ref with our modal ref
     useEffect(() => {
-        if (externalRef && modalRef.current) {
-            // We need to expose certain methods to the external ref
-            // This is a workaround for the type incompatibility
+        if (bottomSheetRef && modalRef.current) {
+            // We need to expose certain methods to the internal ref
             const methodsToExpose = ['snapToIndex', 'snapToPosition', 'close', 'expand', 'collapse'];
 
             methodsToExpose.forEach((method) => {
                 if (modalRef.current && typeof modalRef.current[method as keyof typeof modalRef.current] === 'function') {
-                    // Properly forward methods from modalRef to externalRef
+                    // Properly forward methods from modalRef to bottomSheetRef
                     // @ts-ignore - We're doing a runtime compatibility layer
-                    externalRef.current = externalRef.current || {};
+                    bottomSheetRef.current = bottomSheetRef.current || {};
                     // @ts-ignore - Dynamic method assignment
-                    externalRef.current[method] = (...args: any[]) => {
+                    bottomSheetRef.current[method] = (...args: any[]) => {
                         // @ts-ignore - Dynamic method call
                         return modalRef.current?.[method]?.(...args);
                     };
@@ -116,7 +116,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
 
             // Add a method to navigate between screens
             // @ts-ignore - Adding custom method
-            externalRef.current._navigateToScreen = (screenName: string) => {
+            bottomSheetRef.current._navigateToScreen = (screenName: string) => {
                 // Access the navigation function exposed by OxyRouter
                 // Use internal mechanism to notify router about navigation
                 // We'll use a simple event-based approach
@@ -131,7 +131,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 }
             };
         }
-    }, [externalRef, modalRef]);
+    }, [bottomSheetRef, modalRef]);
 
     // Use percentage-based snap points for better cross-platform compatibility
     const [snapPoints, setSnapPoints] = useState<(string | number)[]>(['60%', '85%']);
@@ -185,10 +185,10 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     // Present the modal when component mounts, but only if autoPresent is true
     useEffect(() => {
         // Add expand method that handles presentation and animations
-        if (externalRef && modalRef.current) {
+        if (bottomSheetRef && modalRef.current) {
             // Override expand to handle initial presentation
             // @ts-ignore - Dynamic method assignment
-            externalRef.current.expand = () => {
+            bottomSheetRef.current.expand = () => {
                 // Only present if not already presented
                 modalRef.current?.present();
 
@@ -233,7 +233,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
 
             return () => clearTimeout(timer);
         }
-    }, [externalRef, modalRef, fadeAnim, slideAnim, autoPresent]);
+    }, [bottomSheetRef, modalRef, fadeAnim, slideAnim, autoPresent]);
 
     // Handle authentication success from the bottom sheet screens
     const handleAuthenticated = useCallback((user: any) => {

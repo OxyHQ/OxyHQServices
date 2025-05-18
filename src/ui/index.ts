@@ -6,6 +6,7 @@
 export { default as OxyProvider } from './components/OxyProvider';
 export { default as OxySignInButton } from './components/OxySignInButton';
 export { default as OxyLogo } from './components/OxyLogo';
+export { default as Avatar } from './components/Avatar';
 export { FontLoader, setupFonts } from './components/FontLoader';
 export { 
   OxyContextProvider, 

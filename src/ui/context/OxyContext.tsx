@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { OxyServices } from '../../core';
 import { User, LoginResponse } from '../../models/interfaces';
 
@@ -18,6 +18,10 @@ export interface OxyContextState {
     // Access to services
     oxyServices: OxyServices;
     bottomSheetRef?: React.RefObject<any>;
+
+    // Methods to directly control the bottom sheet
+    showBottomSheet?: (screen?: string) => void;
+    hideBottomSheet?: () => void;
 }
 
 // Create the context with default values
@@ -29,6 +33,7 @@ export interface OxyContextProviderProps {
     oxyServices: OxyServices;
     storageKeyPrefix?: string;
     onAuthStateChange?: (user: User | null) => void;
+    bottomSheetRef?: React.RefObject<any>;
 }
 
 // Platform storage implementation
@@ -99,6 +104,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     oxyServices,
     storageKeyPrefix = 'oxy',
     onAuthStateChange,
+    bottomSheetRef,
 }) => {
     // Authentication state
     const [user, setUser] = useState<User | null>(null);
@@ -285,6 +291,27 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
         }
     };
 
+    // Methods to control the bottom sheet
+    const showBottomSheet = useCallback((screen?: string) => {
+        if (bottomSheetRef?.current) {
+            // Expand the bottom sheet
+            bottomSheetRef.current.expand();
+
+            // If a screen is specified, navigate to it
+            if (screen && bottomSheetRef.current._navigateToScreen) {
+                setTimeout(() => {
+                    bottomSheetRef.current._navigateToScreen(screen);
+                }, 100); // Small delay to ensure the sheet is expanded first
+            }
+        }
+    }, [bottomSheetRef]);
+
+    const hideBottomSheet = useCallback(() => {
+        if (bottomSheetRef?.current) {
+            bottomSheetRef.current.close();
+        }
+    }, [bottomSheetRef]);
+
     // Build context value
     const contextValue: OxyContextState = {
         user,
@@ -295,6 +322,9 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
         logout,
         signUp,
         oxyServices,
+        bottomSheetRef,
+        showBottomSheet,
+        hideBottomSheet,
     };
 
     return (

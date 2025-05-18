@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [5.1.8] - 2025-05-18
+
+### Added
+- New `Avatar` component for displaying user avatars with image or text fallback
+- Added AvatarExample.tsx to demonstrate Avatar component usage and styling
+- Updated AccountOverviewScreen to use the new Avatar component
+- Added comprehensive documentation for Avatar component in UI_COMPONENTS.md
+
 ## [5.1.7] - 2025-05-16
 
 ### Added

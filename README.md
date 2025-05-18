@@ -32,7 +32,7 @@ The `@oxyhq/services` package provides a simple, promise-based client to interac
 ## What's New in 5.1.5
 
 - **Fixed BottomSheet on Native Platforms**: The `OxyProvider` component now correctly displays the authentication UI in a bottom sheet on native platforms.
-- **Added `bottomSheetRef` Prop**: The `OxyProvider` component now accepts a `bottomSheetRef` prop for programmatic control of the bottom sheet.
+- **Added Bottom Sheet Controls**: The `OxyProvider` component now provides methods via context (`showBottomSheet`, `hideBottomSheet`) for programmatic control of the bottom sheet.
 - **Improved Native Animations**: Enhanced animation and layout behavior for a smoother experience on all platforms.
 
 ## Installation
@@ -51,8 +51,10 @@ For React Native applications using the bottom sheet authentication UI:
 
 ```bash
 # npm
-npm install @gorhom/bottom-sheet react-native-gesture-handler react-native-reanimated react-native-safe-area-context
+npm install react-native-gesture-handler react-native-reanimated react-native-safe-area-context
 
 # yarn
-yarn add @gorhom/bottom-sheet react-native-gesture-handler react-native-reanimated react-native-safe-area-context
+yarn add react-native-gesture-handler react-native-reanimated react-native-safe-area-context
 ```
+
+Note: The bottom sheet is now managed internally by the package, so you no longer need to install `@gorhom/bottom-sheet` directly.

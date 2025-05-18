@@ -7,6 +7,7 @@ This document provides details about the UI components available in the `@oxyhq/
 - [OxyProvider](#oxyprovider)
 - [OxySignInButton](#oxysigninbutton)
 - [OxyLogo](#oxylogo)
+- [Avatar](#avatar)
 
 ## OxyProvider
 
@@ -18,7 +19,6 @@ import { OxyProvider } from '@oxyhq/services';
 // In your app
 <OxyProvider
   oxyServices={oxyServicesInstance}
-  bottomSheetRef={bottomSheetRef}
   initialScreen="SignIn"
   autoPresent={false}
   onAuthenticated={(user) => console.log('User authenticated:', user)}
@@ -33,7 +33,6 @@ import { OxyProvider } from '@oxyhq/services';
 | Prop | Type | Required | Description |
 |------|------|----------|-------------|
 | oxyServices | `OxyServices` | Yes | Instance of OxyServices initialized with your API configuration |
-| bottomSheetRef | `RefObject<BottomSheetModal>` | Yes | Ref object to control the bottom sheet |
 | initialScreen | `'SignIn' \| 'SignUp' \| 'AccountCenter'` | No | Initial screen to display when the sheet opens |
 | autoPresent | `boolean` | No | Whether to automatically present the sheet on mount |
 | onAuthenticated | `(user: User) => void` | No | Callback when a user is authenticated |
@@ -71,7 +70,7 @@ import { OxySignInButton } from '@oxyhq/services';
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
 | variant | `'default' \| 'outline' \| 'contained'` | `'default'` | Controls the appearance of the button |
-| onPress | `() => void` | `undefined` | Optional function to handle button press, if not provided, the button will attempt to use bottomSheetRef from OxyContext |
+| onPress | `() => void` | `undefined` | Optional function to handle button press, if not provided, the button will use the `showBottomSheet` method from OxyContext |
 | style | `StyleProp<ViewStyle>` | `undefined` | Additional styles for the button container |
 | textStyle | `StyleProp<TextStyle>` | `undefined` | Additional styles for the button text |
 | text | `string` | `'Sign in with Oxy'` | Custom button text |

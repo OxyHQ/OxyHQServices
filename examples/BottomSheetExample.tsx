@@ -1,6 +1,6 @@
-import React, { useRef, useState, useEffect } from 'react';
+// filepath: /home/nate/OxyServicesandApi/OxyHQServices/examples/BottomSheetExample.tsx
+import React, { useState, useEffect } from 'react';
 import { View, Button, StyleSheet, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { BottomSheetModal } from '@gorhom/bottom-sheet';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 // Note: This import would work in a real project where the package is installed via npm.
 // For development/testing, you might need to use relative imports instead.
@@ -8,14 +8,14 @@ import { OxyServices, OxyProvider, User, useOxy, OxySignInButton, OxyLogo } from
 
 /**
  * Example demonstrating how to use the OxyProvider component
- * with the bottomSheetRef prop for programmatic control
+ * with the internal bottom sheet management
  * 
- * The OxyProvider component exposes methods on the bottomSheetRef:
- * - expand(): Opens the bottom sheet to its full height
- * - close(): Closes the bottom sheet
- * - snapToIndex(index): Positions the sheet at specific snap points
- * - snapToPosition(position): Positions the sheet at a specific position
- * - collapse(): Collapses the sheet to its smallest height
+ * The OxyProvider component now manages the bottom sheet internally:
+ * - No need for external ref
+ * - No need to install @gorhom/bottom-sheet as a peer dependency
+ * - Bottom sheet control is available via useOxy() context methods:
+ *   - showBottomSheet(screen?): Opens the bottom sheet and optionally navigates to a screen
+ *   - hideBottomSheet(): Closes the bottom sheet
  * 
  * This example also demonstrates session management using OxyContext:
  * - The OxyProvider maintains authentication state
@@ -23,9 +23,6 @@ import { OxyServices, OxyProvider, User, useOxy, OxySignInButton, OxyLogo } from
  * - All children of OxyProvider can access auth data via useOxy() hook
  */
 export default function App() {
-    // Create a ref for the bottom sheet
-    const bottomSheetRef = useRef<BottomSheetModal>(null);
-
     // Initialize OxyServices
     const oxyServices = new OxyServices({
         baseURL: 'https://api.example.com', // Replace with your API URL
@@ -87,20 +84,24 @@ export default function App() {
     };
 
     // Component to conditionally show the login button
-    const LoginButton = ({ openSheet }: { openSheet: () => void }) => {
-        const { user } = useOxy();
+    const LoginButton = () => {
+        const { user, showBottomSheet } = useOxy();
+
         if (user) return null;
-        return <Button title="Sign In / Sign Up" onPress={openSheet} />;
+
+        return <Button title="Sign In / Sign Up" onPress={() => showBottomSheet?.('SignIn')} />;
     };
 
     // Component to conditionally show the Account Center button
-    const AccountCenterButton = ({ openAccountCenter }: { openAccountCenter: () => void }) => {
-        const { user } = useOxy();
+    const AccountCenterButton = () => {
+        const { user, showBottomSheet } = useOxy();
+
         if (!user) return null;
+
         return (
             <TouchableOpacity
                 style={styles.accountCenterButton}
-                onPress={openAccountCenter}
+                onPress={() => showBottomSheet?.('AccountCenter')}
             >
                 <View style={styles.buttonContent}>
                     <OxyLogo
@@ -115,58 +116,17 @@ export default function App() {
         );
     };
 
-    // Methods to control the sheet
-    const openSheet = () => {
-        // The OxyProvider exposes an expand method on the bottomSheetRef
-        if (bottomSheetRef.current) {
-            bottomSheetRef.current.expand();
-        }
-    };
-
-    // Open the Account Center screen
-    const openAccountCenter = () => {
-        if (bottomSheetRef.current) {
-            // Set initialScreen to AccountCenter and expand
-            if (oxyServices) {
-                bottomSheetRef.current.expand();
-
-                // Navigate immediately to the AccountCenter screen
-                // @ts-ignore - Access the navigate method via the router
-                bottomSheetRef.current._navigateToScreen?.('AccountCenter');
-            }
-        }
-    };
-
-    const closeSheet = () => {
-        // The OxyProvider exposes a close method on the bottomSheetRef
-        if (bottomSheetRef.current) {
-            bottomSheetRef.current.close();
-        }
-    };
-
-    const snapToIndex = (index: number) => {
-        // The OxyProvider exposes snapToIndex on the bottomSheetRef
-        if (bottomSheetRef.current) {
-            bottomSheetRef.current.snapToIndex(index);
-        }
-    };
-
-    // Handle user authentication
+    // Handle user authentication - no hooks here
     const handleAuthenticated = (authenticatedUser: User) => {
         console.log('User authenticated:', authenticatedUser);
-        // The user will already be available in OxyContext, so we don't need to set it here
-        // Close the sheet after successful authentication
-        setTimeout(() => closeSheet(), 500);
+        // We'll just log the authentication event here
+        // The bottom sheet will be closed by the OxyProvider internally
     };
-
-    // We no longer need this logout function as we're using the one from OxyContext
-    // in the UserInfo component
 
     return (
         <GestureHandlerRootView style={styles.container}>
             <OxyProvider
                 oxyServices={oxyServices}
-                bottomSheetRef={bottomSheetRef}
                 initialScreen="SignIn"
                 autoPresent={false} // Don't auto-present, we'll control it with the button
                 onClose={() => console.log('Sheet closed')}
@@ -181,7 +141,7 @@ export default function App() {
                         <UserInfo />
 
                         {/* Only show login button if not authenticated */}
-                        <LoginButton openSheet={openSheet} />
+                        <LoginButton />
 
                         {/* Use the new OxySignInButton component */}
                         <View style={styles.buttonExamples}>
@@ -209,7 +169,8 @@ export default function App() {
                                 text="Custom Handler"
                                 onPress={() => {
                                     console.log('Custom authentication flow');
-                                    openSheet();
+                                    // We'll use the OxySignInButton's internal handling
+                                    // which already uses the context properly
                                 }}
                             />
 
@@ -223,24 +184,10 @@ export default function App() {
                         </View>
 
                         {/* Only show Account Center button if authenticated */}
-                        <AccountCenterButton openAccountCenter={openAccountCenter} />
+                        <AccountCenterButton />
 
                         {/* Bottom sheet control buttons */}
-                        <View style={styles.controlButtons}>
-                            <Button title="Close Sheet" onPress={closeSheet} />
-                            <Button title="Half Open" onPress={() => snapToIndex(0)} />
-                            <Button title="Fully Open" onPress={() => snapToIndex(1)} />
-                            <Button
-                                title="Open Account Center"
-                                onPress={() => {
-                                    // Expand and immediately navigate to Account Center
-                                    bottomSheetRef.current?.expand();
-                                    // @ts-ignore - _navigateToScreen is added at runtime
-                                    bottomSheetRef.current?._navigateToScreen?.('AccountCenter');
-                                }}
-                                color="#d169e5"
-                            />
-                        </View>
+                        <ButtonControls />
                     </View>
                 </SessionManager>
             </OxyProvider>
@@ -248,8 +195,27 @@ export default function App() {
     );
 }
 
-const styles = StyleSheet.create({
+// Component for bottom sheet control buttons 
+// This is needed to keep the hooks at the component level
+const ButtonControls = () => {
+    const { showBottomSheet, hideBottomSheet } = useOxy();
 
+    return (
+        <View style={styles.controlButtons}>
+            <Button
+                title="Close Sheet"
+                onPress={() => hideBottomSheet?.()}
+            />
+            <Button
+                title="Open Account Center"
+                onPress={() => showBottomSheet?.('AccountCenter')}
+                color="#d169e5"
+            />
+        </View>
+    );
+};
+
+const styles = StyleSheet.create({
     container: {
         flex: 1,
     },

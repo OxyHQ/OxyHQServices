@@ -16,8 +16,10 @@ The OxyProvider is a versatile React Native component that provides authenticati
 The OxyProvider requires the following dependencies:
 
 ```bash
-npm install @gorhom/bottom-sheet@^5 react-native-gesture-handler react-native-reanimated react-native-safe-area-context @react-native-async-storage/async-storage
+npm install react-native-gesture-handler react-native-reanimated react-native-safe-area-context @react-native-async-storage/async-storage
 ```
+
+Note: The bottom sheet is now managed internally by the package, so you no longer need to install `@gorhom/bottom-sheet` separately.
 
 ### Setup
 
@@ -836,19 +838,18 @@ function App() {
 For more control over the bottom sheet:
 
 ```jsx
-import React, { useRef } from 'react';
+import React from 'react';
 import { Button, View } from 'react-native';
-import BottomSheet from '@gorhom/bottom-sheet';
-import { OxyProvider } from '@oxyhq/services';
+import { OxyProvider, useOxy } from '@oxyhq/services';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
-function App() {
-  // Create a ref for the bottom sheet
-  const bottomSheetRef = useRef<BottomSheet>(null);
+// Create a button component that uses the context methods
+const BottomSheetControls = () => {
+  const { showBottomSheet, hideBottomSheet } = useOxy();
   
   // Methods to control the sheet
-  const openSheet = () => bottomSheetRef.current?.expand();
-  const closeSheet = () => bottomSheetRef.current?.close();
+  const openSheet = () => showBottomSheet('SignIn');
+  const closeSheet = () => hideBottomSheet();
   const snapToIndex = (index) => bottomSheetRef.current?.snapToIndex(index);
   
   return (

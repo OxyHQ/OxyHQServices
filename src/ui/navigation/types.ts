@@ -67,10 +67,12 @@ export interface OxyProviderProps {
   theme?: 'light' | 'dark';
   
   /**
-   * Reference to the bottom sheet component
-   * Use this to programmatically control the bottom sheet
+   * @internal
+   * Reference to the bottom sheet component (for internal use only)
+   * @deprecated External bottom sheet ref is no longer required as OxyProvider handles the bottom sheet internally
+   * @hidden
    */
-  bottomSheetRef?: React.RefObject<BottomSheetModal>;
+  bottomSheetRef?: React.RefObject<any>;
   
   /**
    * Whether to automatically present the bottom sheet when component mounts

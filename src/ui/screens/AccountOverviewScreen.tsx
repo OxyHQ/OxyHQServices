@@ -14,6 +14,7 @@ import {
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from '../components/OxyLogo';
+import Avatar from '../components/Avatar';
 import { fontFamilies } from '../styles/fonts';
 
 const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
@@ -140,11 +141,6 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
         );
     }
 
-    // Default avatar if no avatarUrl provided
-    const avatarSource = user.avatarUrl
-        ? { uri: user.avatarUrl }
-        : null; // We'll handle this with a text avatar instead
-
     return (
         <View style={[styles.container, { backgroundColor }]}>
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
@@ -159,15 +155,12 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                 <View style={[styles.profileContainer, { backgroundColor: secondaryBackgroundColor }]}>
                     <View style={styles.avatarContainer}>
-                        {user.avatarUrl ? (
-                            <Image source={{ uri: user.avatarUrl }} style={styles.avatar} />
-                        ) : (
-                            <View style={[styles.avatar, { backgroundColor: primaryColor }]}>
-                                <Text style={styles.avatarText}>
-                                    {user.username.charAt(0).toUpperCase()}
-                                </Text>
-                            </View>
-                        )}
+                        <Avatar
+                            imageUrl={user.avatarUrl}
+                            name={user.username}
+                            size={70}
+                            theme={theme}
+                        />
                     </View>
                     <Text style={[styles.greeting, { color: textColor }]}>Hi, {user.username.split(' ')[0]}!</Text>
 
