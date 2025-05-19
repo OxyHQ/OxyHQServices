@@ -16,6 +16,10 @@ import {
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
+import OxyLogo from '../components/OxyLogo';
+import { BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
+import { Ionicons } from '@expo/vector-icons'; // Add icon import
+import Svg, { Path, Circle } from 'react-native-svg';
 
 const SignUpScreen: React.FC<BaseScreenProps> = ({
     navigate,
@@ -90,9 +94,9 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
 
     if (user && isAuthenticated) {
         return (
-            <View style={[styles.container, { backgroundColor, padding: 20 }]}>
+            <BottomSheetScrollView style={[styles.scrollContainer, { backgroundColor, padding: 20 }]}>
                 <Text style={[
-                    styles.title,
+                    styles.welcomeTitle,
                     {
                         color: textColor,
                         textAlign: 'center'
@@ -118,7 +122,7 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
                         <Text style={styles.buttonText}>Go to Account Center</Text>
                     </TouchableOpacity>
                 </View>
-            </View>
+            </BottomSheetScrollView>
         );
     }
 
@@ -164,13 +168,37 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
             styles.stepContainer,
             { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }
         ]}>
-            <Text style={[styles.welcomeTitle, { color: textColor }]}>
-                Welcome to OxyHQ
-            </Text>
-
             <View style={styles.welcomeImageContainer}>
-                {/* Placeholder for any welcome image or icon */}
-                <View style={[styles.welcomeImagePlaceholder, { backgroundColor: isDarkTheme ? '#333' : '#f0f0f0' }]} />
+                {/* Large illustration, not inside a circle */}
+                <Svg width={220} height={120} viewBox="0 0 220 120">
+                    {/* Example: Abstract friendly illustration */}
+                    <Path
+                        d="M30 100 Q60 20 110 60 Q160 100 190 40"
+                        stroke="#d169e5"
+                        strokeWidth="8"
+                        fill="none"
+                    />
+                    <Circle cx="60" cy="60" r="18" fill="#d169e5" opacity="0.18" />
+                    <Circle cx="110" cy="60" r="24" fill="#d169e5" opacity="0.25" />
+                    <Circle cx="170" cy="50" r="14" fill="#d169e5" opacity="0.15" />
+                    {/* Smiling face */}
+                    <Circle cx="110" cy="60" r="32" fill="#fff" opacity="0.7" />
+                    <Circle cx="100" cy="55" r="4" fill="#d169e5" />
+                    <Circle cx="120" cy="55" r="4" fill="#d169e5" />
+                    <Path
+                        d="M104 68 Q110 75 116 68"
+                        stroke="#d169e5"
+                        strokeWidth="2"
+                        fill="none"
+                        strokeLinecap="round"
+                    />
+                </Svg>
+            </View>
+
+            <View style={styles.header}>
+                {/* Add a close/back icon for better navigation */}
+                <Text style={[styles.welcomeTitle]}>Create a Oxy Account</Text>
+                <View style={styles.placeholder} />
             </View>
 
             <Text style={[styles.welcomeText, { color: textColor }]}>
@@ -399,114 +427,123 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
     };
 
     return (
-        <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={[styles.container, { backgroundColor }]}
+        <BottomSheetScrollView
+            contentContainerStyle={styles.scrollContainer}
+            keyboardShouldPersistTaps="handled"
         >
-            <ScrollView
-                contentContainerStyle={styles.scrollContainer}
-                keyboardShouldPersistTaps="handled"
-            >
-                <View style={styles.header}>
-                    <Text style={[styles.title]}>Create Account</Text>
-                    <View style={styles.placeholder} />
-                </View>
+            <OxyLogo
+                style={{ marginBottom: 24 }}
+                width={50}
+                height={50}
+            />
 
-                {currentStep > 0 && renderProgressIndicators()}
+            <View style={styles.formContainer}>
+                {renderCurrentStep()}
+            </View>
 
-                <View style={styles.formContainer}>
-                    {renderCurrentStep()}
-                </View>
-            </ScrollView>
-        </KeyboardAvoidingView>
+            {currentStep > 0 && renderProgressIndicators()}
+        </BottomSheetScrollView>
     );
 };
 
 const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
     scrollContainer: {
-        flexGrow: 1,
-        padding: 10,
+        padding: 20,
     },
     header: {
         flexDirection: 'row',
+        alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 24,
-    },
-    title: {
-        fontFamily: Platform.OS === 'web'
-            ? 'Phudu'  // Use CSS font name directly for web
-            : 'Phudu-Bold',  // Use exact font name as registered with Font.loadAsync
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
-        fontSize: 54,
     },
     placeholder: {
-        width: 50, // To balance the header
+        width: 40,
     },
     formContainer: {
         width: '100%',
+        marginTop: 8,
     },
     stepContainer: {
         width: '100%',
-        paddingVertical: 20,
+        paddingVertical: 8,
+        paddingHorizontal: 0,
+        marginBottom: 8,
     },
     inputContainer: {
-        marginBottom: 16,
+        marginBottom: 18,
     },
     label: {
-        fontSize: 14,
+        fontSize: 15,
         marginBottom: 8,
+        fontWeight: '500',
+        letterSpacing: 0.1,
     },
     input: {
         height: 48,
-        borderRadius: 35,
+        borderRadius: 16,
         paddingHorizontal: 16,
         borderWidth: 1,
         fontSize: 16,
+        backgroundColor: '#F5F5F5',
+        borderColor: '#E0E0E0',
+        marginBottom: 2,
     },
     button: {
         backgroundColor: '#d169e5',
         height: 48,
-        borderRadius: 35,
+        borderRadius: 24,
         alignItems: 'center',
         justifyContent: 'center',
         marginTop: 24,
+        shadowColor: '#d169e5',
+        shadowOpacity: 0.12,
+        shadowOffset: { width: 0, height: 2 },
+        shadowRadius: 8,
+        elevation: 2,
     },
     buttonText: {
         color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
+        fontSize: 17,
+        fontWeight: '700',
+        letterSpacing: 0.2,
     },
     footerTextContainer: {
         flexDirection: 'row',
         justifyContent: 'center',
-        marginTop: 24,
+        marginTop: 28,
     },
     footerText: {
-        fontSize: 14,
+        fontSize: 15,
+        color: '#888',
     },
     linkText: {
-        fontSize: 14,
-        fontWeight: '600',
+        fontSize: 15,
+        fontWeight: '700',
+        color: '#d169e5',
     },
     errorContainer: {
-        backgroundColor: '#FFEBEE',
-        padding: 12,
-        borderRadius: 35,
+        backgroundColor: '#FFE4EC',
+        padding: 14,
+        borderRadius: 18,
         marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#F8BBD0',
     },
     errorText: {
         color: '#D32F2F',
-        fontSize: 14,
+        fontSize: 15,
+        fontWeight: '500',
     },
     userInfoContainer: {
         padding: 20,
         marginVertical: 20,
         backgroundColor: '#F5F5F5',
-        borderRadius: 35,
+        borderRadius: 24,
         alignItems: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.04,
+        shadowOffset: { width: 0, height: 1 },
+        shadowRadius: 4,
+        elevation: 1,
     },
     userInfoText: {
         fontSize: 16,
@@ -518,75 +555,90 @@ const styles = StyleSheet.create({
     },
     // Multi-step form styles
     welcomeTitle: {
-        fontSize: 32,
-        fontWeight: 'bold',
-        textAlign: 'center',
-        marginBottom: 20,
+        fontFamily: Platform.OS === 'web'
+            ? 'Phudu'  // Use CSS font name directly for web
+            : 'Phudu-Bold',  // Use exact font name as registered with Font.loadAsync
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
+        fontSize: 54,
+        marginBottom: 24,
     },
     welcomeText: {
         fontSize: 16,
-        textAlign: 'center',
+        textAlign: 'left',
         marginBottom: 30,
         lineHeight: 24,
+        color: '#444',
     },
     welcomeImageContainer: {
         alignItems: 'center',
         justifyContent: 'center',
         marginVertical: 30,
     },
-    welcomeImagePlaceholder: {
-        width: 120,
-        height: 120,
-        borderRadius: 60,
-    },
     stepTitle: {
-        fontSize: 24,
-        fontWeight: '600',
+        fontFamily: Platform.OS === 'web'
+            ? 'Phudu'  // Use CSS font name directly for web
+            : 'Phudu-Bold',  // Use exact font name as registered with Font.loadAsync
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
+        fontSize: 34,
         marginBottom: 20,
+        color: '#d169e5',
+        maxWidth: '90%',
     },
     navigationButtons: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginTop: 24,
+        marginTop: 28,
     },
     navButton: {
-        borderRadius: 35,
-        height: 48,
+        borderRadius: 24,
+        height: 44,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingHorizontal: 24,
+        paddingHorizontal: 28,
+        backgroundColor: '#F3E5F5',
     },
     backButton: {
         backgroundColor: 'transparent',
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
     },
     nextButton: {
         minWidth: 100,
+        backgroundColor: '#d169e5',
     },
     navButtonText: {
         fontSize: 16,
-        fontWeight: '600',
-        color: '#FFFFFF',
+        fontWeight: '700',
+        color: '#d169e5',
     },
     passwordHint: {
         fontSize: 12,
         marginTop: 4,
+        color: '#888',
     },
     progressContainer: {
         flexDirection: 'row',
         justifyContent: 'center',
         marginBottom: 20,
+        marginTop: 8,
     },
     progressDot: {
-        height: 8,
-        width: 8,
-        borderRadius: 4,
-        marginHorizontal: 4,
+        height: 10,
+        width: 10,
+        borderRadius: 5,
+        marginHorizontal: 6,
+        backgroundColor: '#E0E0E0',
+        borderWidth: 2,
+        borderColor: '#fff',
+        shadowColor: '#d169e5',
+        shadowOpacity: 0.08,
+        shadowOffset: { width: 0, height: 1 },
+        shadowRadius: 2,
+        elevation: 1,
     },
     summaryContainer: {
-        backgroundColor: '#F5F5F5',
-        borderRadius: 15,
-        padding: 16,
+        padding: 0,
         marginBottom: 24,
     },
     summaryRow: {
@@ -594,13 +646,15 @@ const styles = StyleSheet.create({
         marginBottom: 10,
     },
     summaryLabel: {
-        fontSize: 14,
-        width: 80,
+        fontSize: 15,
+        width: 90,
+        color: '#888',
     },
     summaryValue: {
-        fontSize: 14,
-        fontWeight: '500',
+        fontSize: 15,
+        fontWeight: '600',
         flex: 1,
+        color: '#222',
     },
 });
 

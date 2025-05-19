@@ -16,11 +16,11 @@ import { OxyRouterProps, RouteConfig } from './types';
 const routes: Record<string, RouteConfig> = {
     SignIn: {
         component: SignInScreen,
-        snapPoints: ['60%', '80%'],
+        snapPoints: ['10%', '80%'],
     },
     SignUp: {
         component: SignUpScreen,
-        snapPoints: ['70%', '90%'],
+        snapPoints: ['10%', '90%'],
     },
     AccountCenter: {
         component: AccountCenterScreen,

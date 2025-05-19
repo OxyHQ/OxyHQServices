@@ -14,6 +14,7 @@ import { FontLoader, setupFonts } from './FontLoader';
 
 // Import bottom sheet components directly - no longer a peer dependency
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView } from './bottomSheet';
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 
 // Initialize fonts automatically
 setupFonts();
@@ -94,6 +95,10 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
 }) => {
     // Use the internal ref (which is passed as a prop from OxyProvider)
     const modalRef = useRef<BottomSheetModal>(null);
+
+    // Track content height for dynamic sizing
+    const [contentHeight, setContentHeight] = useState<number>(0);
+    const screenHeight = Dimensions.get('window').height;
 
     // Set up effect to sync the internal ref with our modal ref
     useEffect(() => {
@@ -300,22 +305,37 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             const highestPoint = points[points.length - 1];
             setSnapPoints([highestPoint, highestPoint]);
         } else {
-            setSnapPoints(points);
+            // If we have content height, use it as a constraint
+            if (contentHeight > 0) {
+                // Calculate content height as percentage of screen (plus some padding)
+                const contentHeightPercent = Math.min(Math.ceil((contentHeight + 40) / screenHeight * 100), 90) + '%';
+                // Use content height for first snap point if it's taller than the default
+                const firstPoint = contentHeight / screenHeight > 0.6 ? contentHeightPercent : points[0];
+                setSnapPoints([firstPoint, points[1]]);
+            } else {
+                setSnapPoints(points);
+            }
         }
-    }, [keyboardVisible]);
+    }, [keyboardVisible, contentHeight, screenHeight]);
 
-    // Method to programmatically navigate to a specific screen
-    const navigateToScreen = useCallback((screenName: string) => {
-        // If we have a router component with navigate method, use it
-        if (modalRef.current) {
-            // Store the navigate function on the modal ref so it can be accessed externally
-            // @ts-ignore - Adding custom property for external navigation
-            modalRef.current._navigateToScreen = (screen: string) => {
-                // This will be populated by the OxyRouter component when it renders
-                console.log(`Navigating to ${screen} programmatically`);
-            };
+    // Handle content layout changes to measure height
+    const handleContentLayout = useCallback((event: any) => {
+        const layoutHeight = event.nativeEvent.layout.height;
+        setContentHeight(layoutHeight);
+
+        // Update snap points based on new content height
+        if (keyboardVisible) {
+            // If keyboard is visible, use the highest snap point
+            const highestPoint = snapPoints[snapPoints.length - 1];
+            setSnapPoints([highestPoint, highestPoint]);
+        } else {
+            if (layoutHeight > 0) {
+                const contentHeightPercent = Math.min(Math.ceil((layoutHeight + 40) / screenHeight * 100), 90) + '%';
+                const firstPoint = layoutHeight / screenHeight > 0.6 ? contentHeightPercent : snapPoints[0];
+                setSnapPoints([firstPoint, snapPoints[1]]);
+            }
         }
-    }, []);
+    }, [keyboardVisible, screenHeight, snapPoints]);
 
     // Close the bottom sheet with animation
     const handleClose = useCallback(() => {
@@ -367,6 +387,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             snapPoints={snapPoints}
             enablePanDownToClose
             backdropComponent={renderBackdrop}
+            // Remove enableDynamicSizing as we're implementing our own solution
             handleComponent={() => (
                 <Animated.View
                     style={{
@@ -410,16 +431,13 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 console.log(`Animating from index ${fromIndex} to ${toIndex}`);
             }}
         >
-            <BottomSheetView
+            <BottomSheetScrollView
                 style={[
                     styles.contentContainer,
                     // Override padding if provided in customStyles
                     customStyles.contentPadding !== undefined && { padding: customStyles.contentPadding },
-                    // Add bottom padding when keyboard is visible to ensure content is not covered
-                    keyboardVisible && {
-                        paddingBottom: Math.max(keyboardHeight - insets.bottom, 0)
-                    },
                 ]}
+                onLayout={handleContentLayout}
             >
                 <Animated.View
                     style={[
@@ -443,23 +461,19 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                         adjustSnapPoints={adjustSnapPoints}
                     />
                 </Animated.View>
-            </BottomSheetView>
+            </BottomSheetScrollView>
         </BottomSheetModal>
     );
 };
 
 const styles = StyleSheet.create({
     contentContainer: {
-        flex: 1,
         padding: 16,
         width: '100%',
-        height: '100%',
         backgroundColor: 'transparent', // Make this transparent to let the bottom sheet background show through
     },
     animatedContent: {
-        flex: 1,
         width: '100%',
-        height: '100%',
     },
     indicator: {
         width: 40,

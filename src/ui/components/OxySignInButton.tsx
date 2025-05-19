@@ -44,6 +44,12 @@ export interface OxySignInButtonProps {
      * @default false
      */
     showWhenAuthenticated?: boolean;
+
+    /**
+     * Which screen to open in the bottom sheet
+     * @default 'SignIn'
+     */
+    screen?: string;
 }
 
 /**
@@ -79,6 +85,7 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     text = 'Sign in with Oxy',
     disabled = false,
     showWhenAuthenticated = false,
+    screen = 'SignIn',
 }) => {
     // Get all needed values from context in a single call
     const { user, showBottomSheet } = useOxy();
@@ -93,10 +100,9 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
             return;
         }
 
-        // Default behavior: open the bottom sheet and navigate to SignIn
+        // Allow passing any screen name, including 'SignUp', 'AccountCenter', etc.
         if (showBottomSheet) {
-            // Show the bottom sheet and navigate to SignIn
-            showBottomSheet('SignIn');
+            showBottomSheet(screen);
         } else {
             console.warn('OxySignInButton: showBottomSheet is not available. Either provide an onPress prop or ensure this component is used within an OxyProvider.');
         }
