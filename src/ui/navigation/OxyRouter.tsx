@@ -7,8 +7,12 @@ import SignInScreen from '../screens/SignInScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import AccountCenterScreen from '../screens/AccountCenterScreen';
 import AccountOverviewScreen from '../screens/AccountOverviewScreen';
-import AboutKarmaScreen from '../screens/AboutKarmaScreen';
-import KarmaCenterScreen from '../screens/KarmaCenterScreen';
+import KarmaCenterScreen from '../screens/karma/KarmaCenterScreen';
+import KarmaLeaderboardScreen from '../screens/karma/KarmaLeaderboardScreen';
+import KarmaRulesScreen from '../screens/karma/KarmaRulesScreen';
+import KarmaAboutScreen from '../screens/karma/KarmaAboutScreen';
+import KarmaRewardsScreen from '../screens/karma/KarmaRewardsScreen';
+import KarmaFAQScreen from '../screens/karma/KarmaFAQScreen';
 
 // Import types
 import { OxyRouterProps, RouteConfig } from './types';
@@ -31,14 +35,30 @@ const routes: Record<string, RouteConfig> = {
         component: AccountOverviewScreen,
         snapPoints: ['60%', '85%'],
     },
-    AboutKarma: {
-        component: AboutKarmaScreen,
-        snapPoints: ['60%', '90%'],
-    },
     KarmaCenter: {
         component: KarmaCenterScreen,
         snapPoints: ['60%', '100%'],
-    }
+    },
+    KarmaLeaderboard: {
+        component: KarmaLeaderboardScreen,
+        snapPoints: ['60%', '100%'],
+    },
+    KarmaRules: {
+        component: KarmaRulesScreen,
+        snapPoints: ['60%', '90%'],
+    },
+    AboutKarma: {
+        component: KarmaAboutScreen,
+        snapPoints: ['60%', '90%'],
+    },
+    KarmaRewards: {
+        component: KarmaRewardsScreen,
+        snapPoints: ['60%', '90%'],
+    },
+    KarmaFAQ: {
+        component: KarmaFAQScreen,
+        snapPoints: ['60%', '90%'],
+    },
 };
 
 const OxyRouter: React.FC<OxyRouterProps> = ({

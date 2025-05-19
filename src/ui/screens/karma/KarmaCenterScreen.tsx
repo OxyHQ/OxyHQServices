@@ -9,10 +9,10 @@ import {
     Alert,
     Platform,
 } from 'react-native';
-import { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
-import { fontFamilies } from '../styles/fonts';
-import Avatar from '../components/Avatar';
+import { BaseScreenProps } from '../../navigation/types';
+import { useOxy } from '../../context/OxyContext';
+import { fontFamilies } from '../../styles/fonts';
+import Avatar from '../../components/Avatar';
 import { Ionicons } from '@expo/vector-icons';
 
 const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
@@ -51,13 +51,6 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
             })
             .finally(() => setIsLoading(false));
     }, [user]);
-
-    const handleAwardKarma = () => {
-        Alert.alert('Award Karma', 'Feature coming soon!');
-    };
-    const handleDeductKarma = () => {
-        Alert.alert('Deduct Karma', 'Feature coming soon!');
-    };
 
     if (!user) {
         return (
@@ -107,13 +100,13 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                             </View>
                             <Text style={styles.actionLabel}>About</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionIconWrapper} onPress={() => Alert.alert('Rewards', 'Karma rewards coming soon!')}>
+                        <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaRewards')}>
                             <View style={[styles.actionIcon, { backgroundColor: '#E0E0E0' }]}>
                                 <Ionicons name="gift-outline" size={28} color="#888" />
                             </View>
                             <Text style={styles.actionLabel}>Rewards</Text>
                         </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionIconWrapper} onPress={() => Alert.alert('FAQ', 'Karma FAQ coming soon!')}>
+                        <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaFAQ')}>
                             <View style={[styles.actionIcon, { backgroundColor: '#E0E0E0' }]}>
                                 <Ionicons name="help-circle-outline" size={28} color="#888" />
                             </View>
@@ -189,16 +182,15 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'center',
         marginBottom: 18,
-        flexWrap: 'wrap', // allow icons to wrap to next line
-        rowGap: 0, // no extra vertical gap
-        columnGap: 0, // no extra horizontal gap
-        // Remove 'gap' property for better RN compatibility
+        flexWrap: 'wrap',
+        rowGap: 0,
+        columnGap: 0,
     },
     actionIconWrapper: {
         alignItems: 'center',
-        marginHorizontal: 8, // reduce horizontal margin
-        marginVertical: 4,   // add small vertical margin for wrapping
-        width: 72, // fixed width to help wrapping and alignment
+        marginHorizontal: 8,
+        marginVertical: 4,
+        width: 72,
     },
     actionIcon: {
         width: 56,
@@ -207,7 +199,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 6,
-        opacity: 0.5, // visually disabled
+        opacity: 0.5,
     },
     actionIconText: {
         fontSize: 28,
