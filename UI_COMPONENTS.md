@@ -8,6 +8,8 @@ This document provides details about the UI components available in the `@oxyhq/
 - [OxySignInButton](#oxysigninbutton)
 - [OxyLogo](#oxylogo)
 - [Avatar](#avatar)
+- [Screens](#screens)
+  - [AccountSettingsScreen](#accountsettingsscreen)
 
 ## OxyProvider
 
@@ -141,3 +143,44 @@ npm install react-native-svg
 # or
 yarn add react-native-svg
 ```
+
+## Screens
+
+### AccountSettingsScreen
+
+The AccountSettingsScreen component provides a user interface for editing account settings and profile information.
+
+```tsx
+import { AccountSettingsScreen } from '@oxyhq/services';
+
+// Basic usage
+<AccountSettingsScreen
+  goBack={() => {}}
+  theme="light"
+/>
+
+// Start with a specific tab open
+<AccountSettingsScreen
+  goBack={() => {}}
+  theme="dark"
+  activeTab="password"
+/>
+```
+
+#### Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| activeTab | `'profile' \| 'password' \| 'notifications'` | `'profile'` | Initial active tab |
+| theme | `'light' \| 'dark'` | `'light'` | Theme to use for styling |
+| goBack | `() => void` | | Function to call when the back button is pressed |
+
+#### Features
+
+The screen is divided into three tabs:
+
+1. **Profile**: Update username, email, bio, and avatar
+2. **Password**: Change account password with validation
+3. **Notifications**: Configure notification preferences
+
+For more details, see [the documentation](./docs/screens/AccountSettings.md).

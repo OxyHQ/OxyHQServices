@@ -23,6 +23,7 @@ export { default as SignInScreen } from './screens/SignInScreen';
 export { default as SignUpScreen } from './screens/SignUpScreen';
 export { default as AccountCenterScreen } from './screens/AccountCenterScreen';
 export { default as AccountOverviewScreen } from './screens/AccountOverviewScreen';
+export { default as AccountSettingsScreen } from './screens/AccountSettingsScreen';
 
 // Export types
 export * from './navigation/types';
