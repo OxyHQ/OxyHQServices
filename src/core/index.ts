@@ -24,6 +24,11 @@ import {
   ContentViewer
 } from '../models/interfaces';
 
+/**
+ * Default cloud URL for Oxy services
+ */
+export const OXY_CLOUD_URL = 'https://cloud.oxy.so';
+
 interface JwtPayload {
   exp: number;
   userId: string;
@@ -285,6 +290,26 @@ export class OxyServices {
       if (limit !== undefined) params.limit = limit;
       if (offset !== undefined) params.offset = offset;
       const res = await this.client.get('/profiles/search', { params });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get recommended profiles for the authenticated user
+   * @returns Array of recommended profiles
+   */
+  async getProfileRecommendations(): Promise<Array<{
+    id: string;
+    username: string;
+    name?: { first?: string; last?: string; full?: string };
+    description?: string;
+    _count?: { followers: number; following: number };
+    [key: string]: any;
+  }>> {
+    try {
+      const res = await this.client.get('/profiles/recommendations');
       return res.data;
     } catch (error) {
       throw this.handleError(error);
