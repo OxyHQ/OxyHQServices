@@ -7,6 +7,7 @@ import SignInScreen from '../screens/SignInScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import AccountCenterScreen from '../screens/AccountCenterScreen';
 import AccountOverviewScreen from '../screens/AccountOverviewScreen';
+import AccountSettingsScreen from '../screens/AccountSettingsScreen';
 import KarmaCenterScreen from '../screens/karma/KarmaCenterScreen';
 import KarmaLeaderboardScreen from '../screens/karma/KarmaLeaderboardScreen';
 import KarmaRulesScreen from '../screens/karma/KarmaRulesScreen';
@@ -35,6 +36,10 @@ const routes: Record<string, RouteConfig> = {
     AccountOverview: {
         component: AccountOverviewScreen,
         snapPoints: ['60%', '85%'],
+    },
+    AccountSettings: {
+        component: AccountSettingsScreen,
+        snapPoints: ['60%', '100%'],
     },
     KarmaCenter: {
         component: KarmaCenterScreen,
