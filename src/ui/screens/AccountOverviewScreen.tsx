@@ -39,7 +39,9 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
             id: '2',
             username: 'Albert Isern Alvarez',
             email: 'albert.isern.alvarez@gmail.com',
-            avatarUrl: 'https://example.com/avatar2.jpg',
+            avatar: {
+                url: 'https://example.com/avatar2.jpg',
+            }
         }
     ];
 
@@ -156,13 +158,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 <View style={[styles.profileContainer, { backgroundColor: secondaryBackgroundColor }]}>
                     <View style={styles.avatarContainer}>
                         <Avatar
-                            imageUrl={user.avatarUrl}
-                            name={user.username}
+                            imageUrl={user?.avatar?.url}
+                            name={user?.name?.full}
                             size={70}
                             theme={theme}
                         />
                     </View>
-                    <Text style={[styles.greeting, { color: textColor }]}>Hi, {user.username.split(' ')[0]}!</Text>
+                    <Text style={[styles.greeting, { color: textColor }]}>Hi, {user?.name?.first}!</Text>
 
                     <TouchableOpacity
                         style={[styles.manageAccountButton, { borderColor }]}
@@ -196,8 +198,8 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 onPress={() => Alert.alert('Switch Account', `Switch to ${account.username}?`)}
                             >
                                 <View style={styles.accountItemLeft}>
-                                    {account.avatarUrl ? (
-                                        <Image source={{ uri: account.avatarUrl }} style={styles.accountAvatar} />
+                                    {account.avatar.url ? (
+                                        <Image source={{ uri: account.avatar.url }} style={styles.accountAvatar} />
                                     ) : (
                                         <View style={[styles.accountAvatar, { backgroundColor: primaryColor }]}>
                                             <Text style={styles.avatarText}>

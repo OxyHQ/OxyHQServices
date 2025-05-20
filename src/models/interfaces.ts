@@ -1,13 +1,24 @@
 export interface OxyConfig {
   baseURL: string;
-  // Add other config options as needed
 }
 
 export interface User {
   id: string;
   username: string;
   email?: string;
-  avatarUrl?: string;
+  avatar?: {
+    id?: string;
+    url?: string;
+    [key: string]: any;
+  };
+  name?: {
+    first?: string;
+    last?: string;
+    full?: string;
+    [key: string]: any;
+  };
+  bio?: string;
+  karma?: number;
   // Add other user fields as needed
 }
 

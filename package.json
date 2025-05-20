@@ -1,9 +1,9 @@
 {
     "name": "@oxyhq/services",
-    "version": "5.1.13",
+    "version": "5.1.14",
     "description": "Reusable OxyHQ module to handle authentication, user management, karma system and more 🚀",
-    "main": "lib/commonjs/index.ts",
-    "module": "lib/module/index.ts",
+    "main": "lib/commonjs/index.js",
+    "module": "lib/module/index.js",
     "types": "lib/typescript/index.d.ts",
     "react-native": "src/index.ts",
     "source": "src/index.ts",

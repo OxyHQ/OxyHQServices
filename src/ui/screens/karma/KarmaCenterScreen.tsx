@@ -73,7 +73,7 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
                 <View style={styles.walletHeader}>
                     <Avatar
-                        imageUrl={user.avatarUrl}
+                        imageUrl={user.avatar?.url}
                         name={user.username}
                         size={60}
                         theme={theme}
