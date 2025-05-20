@@ -28,6 +28,9 @@ export default function App() {
         baseURL: 'https://api.example.com', // Replace with your API URL
     });
 
+    // Get user and showBottomSheet from context for use in the main App
+    const { user, showBottomSheet } = useOxy();
+
     // Create a SessionManager wrapper component
     const SessionManager = ({ children }: { children: React.ReactNode }) => {
         // State to track loading state
@@ -198,7 +201,7 @@ export default function App() {
 // Component for bottom sheet control buttons 
 // This is needed to keep the hooks at the component level
 const ButtonControls = () => {
-    const { showBottomSheet, hideBottomSheet } = useOxy();
+    const { showBottomSheet, hideBottomSheet, user } = useOxy();
 
     return (
         <View style={styles.controlButtons}>
@@ -211,6 +214,14 @@ const ButtonControls = () => {
                 onPress={() => showBottomSheet?.('AccountCenter')}
                 color="#d169e5"
             />
+            {/* Button to open ProfileScreen for the current user */}
+            {user && (
+                <Button
+                    title="View My Profile"
+                    onPress={() => showBottomSheet?.({ screen: 'Profile', props: { userId: user.id, username: user.username } })}
+                    color="#d169e5"
+                />
+            )}
         </View>
     );
 };

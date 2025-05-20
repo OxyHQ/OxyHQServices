@@ -20,7 +20,7 @@ export interface OxyContextState {
     bottomSheetRef?: React.RefObject<any>;
 
     // Methods to directly control the bottom sheet
-    showBottomSheet?: (screen?: string) => void;
+    showBottomSheet?: (screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => void;
     hideBottomSheet?: () => void;
 }
 
@@ -292,16 +292,24 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     };
 
     // Methods to control the bottom sheet
-    const showBottomSheet = useCallback((screen?: string) => {
+    const showBottomSheet = useCallback((screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => {
         if (bottomSheetRef?.current) {
             // Expand the bottom sheet
             bottomSheetRef.current.expand();
-
-            // If a screen is specified, navigate to it
-            if (screen && bottomSheetRef.current._navigateToScreen) {
-                setTimeout(() => {
-                    bottomSheetRef.current._navigateToScreen(screen);
-                }, 100); // Small delay to ensure the sheet is expanded first
+            if (typeof screenOrConfig === 'string') {
+                // If a screen is specified, navigate to it
+                if (screenOrConfig && bottomSheetRef.current._navigateToScreen) {
+                    setTimeout(() => {
+                        bottomSheetRef.current._navigateToScreen(screenOrConfig);
+                    }, 100);
+                }
+            } else if (screenOrConfig && typeof screenOrConfig === 'object' && screenOrConfig.screen) {
+                // If an object is passed, navigate and pass props
+                if (bottomSheetRef.current._navigateToScreen) {
+                    setTimeout(() => {
+                        bottomSheetRef.current._navigateToScreen(screenOrConfig.screen, screenOrConfig.props || {});
+                    }, 100);
+                }
             }
         }
     }, [bottomSheetRef]);

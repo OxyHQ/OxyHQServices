@@ -152,7 +152,6 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 };
 
 const styles = StyleSheet.create({
-    // Local screen-specific styles
     title: {
         fontFamily: Platform.OS === 'web'
             ? 'Phudu'  // Use CSS font name directly for web

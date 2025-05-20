@@ -121,18 +121,18 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
 
             // Add a method to navigate between screens
             // @ts-ignore - Adding custom method
-            bottomSheetRef.current._navigateToScreen = (screenName: string) => {
+            bottomSheetRef.current._navigateToScreen = (screenName: string, props?: Record<string, any>) => {
                 // Access the navigation function exposed by OxyRouter
                 // Use internal mechanism to notify router about navigation
                 // We'll use a simple event-based approach
                 if (typeof document !== 'undefined') {
                     // For web - use a custom event
-                    const event = new CustomEvent('oxy:navigate', { detail: screenName });
+                    const event = new CustomEvent('oxy:navigate', { detail: { screen: screenName, props } });
                     document.dispatchEvent(event);
                 } else {
                     // For React Native - use the navigation prop directly if available
-                    console.log(`Requesting navigation to ${screenName}`);
-                    // We'll implement a simpler mechanism in OxyRouter
+                    // We'll implement a mechanism in OxyRouter to listen for this
+                    (global as any).oxyNavigateEvent = { screen: screenName, props };
                 }
             };
         }
@@ -468,7 +468,6 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
 
 const styles = StyleSheet.create({
     contentContainer: {
-        padding: 16,
         width: '100%',
         backgroundColor: 'transparent', // Make this transparent to let the bottom sheet background show through
     },

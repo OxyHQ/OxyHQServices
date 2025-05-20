@@ -1,10 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { BaseScreenProps } from '../../navigation/types';
 import { useOxy } from '../../context/OxyContext';
 import Avatar from '../../components/Avatar';
 
-const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
+const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navigate }) => {
     const { oxyServices } = useOxy();
     const [leaderboard, setLeaderboard] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -37,12 +37,17 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) =>
                         <Text style={[styles.placeholder, { color: textColor }]}>No leaderboard data.</Text>
                     ) : (
                         leaderboard.map((entry, idx) => (
-                            <View key={entry.userId} style={[styles.row, idx < 3 && { backgroundColor: '#f7eaff' }]}>
+                            <TouchableOpacity
+                                key={entry.userId}
+                                style={[styles.row, idx < 3 && { backgroundColor: '#f7eaff' }]}
+                                onPress={() => navigate && navigate('KarmaProfile', { userId: entry.userId, username: entry.username })}
+                                activeOpacity={0.7}
+                            >
                                 <Text style={[styles.rank, { color: primaryColor }]}>{idx + 1}</Text>
                                 <Avatar name={entry.username || 'User'} size={40} theme={theme} style={styles.avatar} />
                                 <Text style={[styles.username, { color: textColor }]}>{entry.username || entry.userId}</Text>
                                 <Text style={[styles.karma, { color: primaryColor }]}>{entry.total}</Text>
-                            </View>
+                            </TouchableOpacity>
                         ))
                     )}
                 </ScrollView>

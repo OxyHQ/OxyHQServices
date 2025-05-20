@@ -13,6 +13,7 @@ import KarmaRulesScreen from '../screens/karma/KarmaRulesScreen';
 import KarmaAboutScreen from '../screens/karma/KarmaAboutScreen';
 import KarmaRewardsScreen from '../screens/karma/KarmaRewardsScreen';
 import KarmaFAQScreen from '../screens/karma/KarmaFAQScreen';
+import ProfileScreen from '../screens/ProfileScreen';
 
 // Import types
 import { OxyRouterProps, RouteConfig } from './types';
@@ -59,6 +60,10 @@ const routes: Record<string, RouteConfig> = {
         component: KarmaFAQScreen,
         snapPoints: ['60%', '90%'],
     },
+    Profile: {
+        component: ProfileScreen,
+        snapPoints: ['60%', '90%'],
+    },
 };
 
 const OxyRouter: React.FC<OxyRouterProps> = ({
@@ -94,9 +99,16 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         // Set up event listener for navigation events
         const handleNavigationEvent = (event: any) => {
             if (event && event.detail) {
-                const screenName = event.detail;
-                console.log(`Navigation event received for screen: ${screenName}`);
-                navigate(screenName);
+                // Support both string and object detail
+                if (typeof event.detail === 'string') {
+                    const screenName = event.detail;
+                    console.log(`Navigation event received for screen: ${screenName}`);
+                    navigate(screenName);
+                } else if (typeof event.detail === 'object' && event.detail.screen) {
+                    const { screen, props } = event.detail;
+                    console.log(`Navigation event received for screen: ${screen} with props`, props);
+                    navigate(screen, props || {});
+                }
             }
         };
 

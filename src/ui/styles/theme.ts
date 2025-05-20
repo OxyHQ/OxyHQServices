@@ -100,7 +100,7 @@ export const createCommonStyles = (theme: 'light' | 'dark') => {
       backgroundColor: colors.background,
     },
     scrollContainer: {
-      padding: 10,
+      padding: 26,
     },
     input: {
       height: 48,
