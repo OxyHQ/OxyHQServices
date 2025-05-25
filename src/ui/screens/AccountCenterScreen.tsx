@@ -17,6 +17,7 @@ import { fontFamilies } from '../styles/fonts';
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
+    navigate,
 }) => {
     const { user, logout, isLoading } = useOxy();
 
@@ -94,14 +95,14 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 <View style={styles.actionsContainer}>
                     <TouchableOpacity
                         style={[styles.actionButton, { borderColor }]}
-                        onPress={() => Alert.alert('Profile', 'Edit Profile feature coming soon!')}
+                        onPress={() => navigate('AccountSettings', { activeTab: 'profile' })}
                     >
                         <Text style={[styles.actionButtonText, { color: textColor }]}>Edit Profile</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
                         style={[styles.actionButton, { borderColor }]}
-                        onPress={() => Alert.alert('Settings', 'Account Settings feature coming soon!')}
+                        onPress={() => navigate('AccountSettings')}
                     >
                         <Text style={[styles.actionButtonText, { color: textColor }]}>Account Settings</Text>
                     </TouchableOpacity>
