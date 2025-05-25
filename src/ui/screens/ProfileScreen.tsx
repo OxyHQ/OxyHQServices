@@ -76,7 +76,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 {/* Avatar overlapping banner */}
                 <View style={styles.avatarRow}>
                     <View style={styles.avatarWrapper}>
-                        <Avatar imageUrl={profile?.avatar?.url} name={profile?.username || username} size={96} theme={theme} />
+                        <Avatar uri={profile?.avatar?.url} name={profile?.username || username} size={96} theme={theme} />
                     </View>
                     {/* Edit Profile/Follow Button placeholder */}
                     <View style={styles.actionButtonWrapper}>

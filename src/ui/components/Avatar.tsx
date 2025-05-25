@@ -7,7 +7,7 @@ export interface AvatarProps {
     /**
      * URL of the avatar image
      */
-    imageUrl?: string;
+    uri?: string;
 
     /**
      * Text to display when no image is available
@@ -51,7 +51,7 @@ export interface AvatarProps {
 
     /**
      * Additional styles for the image
-     * Only used when imageUrl is provided
+     * Only used when uri is provided
      */
     imageStyle?: StyleProp<ImageStyle>;
 
@@ -72,7 +72,7 @@ export interface AvatarProps {
  * Falls back to displaying the first letter of the name if no image is provided
  */
 const Avatar: React.FC<AvatarProps> = ({
-    imageUrl,
+    uri,
     text,
     name,
     size = 40,
@@ -113,10 +113,10 @@ const Avatar: React.FC<AvatarProps> = ({
     }
 
     // If an image URL is provided, use Image component
-    if (imageUrl) {
+    if (uri) {
         return (
             <Image
-                source={{ uri: imageUrl }}
+                source={{ uri: uri }}
                 style={[styles.container, containerStyle, imageStyle]}
             />
         );

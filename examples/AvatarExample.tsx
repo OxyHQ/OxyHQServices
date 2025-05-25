@@ -15,11 +15,11 @@ const AvatarExample = () => {
 
     // Sample user data
     const sampleUsers = [
-        { name: 'John Doe', imageUrl: 'https://i.pravatar.cc/300?u=john' },
-        { name: 'Jane Smith', imageUrl: 'https://i.pravatar.cc/300?u=jane' },
-        { name: 'Alex Johnson', imageUrl: undefined },
-        { name: 'Taylor Swift', imageUrl: 'https://i.pravatar.cc/300?u=taylor' },
-        { name: 'Morgan Freeman', imageUrl: undefined },
+        { name: 'John Doe', uri: 'https://i.pravatar.cc/300?u=john' },
+        { name: 'Jane Smith', uri: 'https://i.pravatar.cc/300?u=jane' },
+        { name: 'Alex Johnson', uri: undefined },
+        { name: 'Taylor Swift', uri: 'https://i.pravatar.cc/300?u=taylor' },
+        { name: 'Morgan Freeman', uri: undefined },
     ];
 
     return (
@@ -58,7 +58,7 @@ const AvatarExample = () => {
                             {sampleUsers.slice(0, 3).map((user, index) => (
                                 <View key={index} style={styles.avatarContainer}>
                                     <Avatar
-                                        imageUrl={user.imageUrl}
+                                        uri={user.uri}
                                         name={user.name}
                                         size={60}
                                         theme={currentTheme}

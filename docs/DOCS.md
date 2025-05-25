@@ -542,6 +542,8 @@ function App() {
 
 ## API Reference
 
+For detailed documentation about file management functionality, see [FILE_MANAGEMENT.md](./FILE_MANAGEMENT.md).
+
 ### Types
 
 ```typescript

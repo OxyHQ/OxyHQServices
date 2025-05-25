@@ -7,7 +7,7 @@ import { Avatar } from '@oxyhq/services';
 
 // Image avatar
 <Avatar 
-  imageUrl="https://example.com/avatar.jpg"
+  uri="https://example.com/avatar.jpg"
   size={40}
   theme="light"
 />
@@ -38,7 +38,7 @@ import { Avatar } from '@oxyhq/services';
 
 | Prop | Type | Default | Description |
 |------|------|---------|-------------|
-| imageUrl | `string` | `undefined` | URL of the avatar image |
+| uri | `string` | `undefined` | URL of the avatar image |
 | text | `string` | `undefined` | Text to display when no image is available |
 | name | `string` | `undefined` | Full name to derive the initials from (takes first letter) |
 | size | `number` | `40` | Size of the avatar in pixels |

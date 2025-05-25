@@ -158,7 +158,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 <View style={[styles.profileContainer, { backgroundColor: secondaryBackgroundColor }]}>
                     <View style={styles.avatarContainer}>
                         <Avatar
-                            imageUrl={user?.avatar?.url}
+                            uri={user?.avatar?.url}
                             name={user?.name?.full}
                             size={70}
                             theme={theme}

@@ -19,7 +19,11 @@ export interface User {
   };
   bio?: string;
   karma?: number;
-  // Add other user fields as needed
+  location?: string;
+  website?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  [key: string]: any;
 }
 
 export interface LoginResponse {
@@ -136,4 +140,50 @@ export interface ContentViewer {
   userId: string;
   viewedAt: string;
   // Add other content viewer fields as needed
+}
+
+/**
+ * File management interfaces
+ */
+export interface FileMetadata {
+  id: string;
+  filename: string;
+  contentType: string;
+  length: number;
+  chunkSize: number;
+  uploadDate: string;
+  metadata?: {
+    userId?: string;
+    description?: string;
+    title?: string;
+    tags?: string[];
+    [key: string]: any;
+  };
+}
+
+export interface FileUploadResponse {
+  success: boolean;
+  file: FileMetadata;
+}
+
+export interface FileListResponse {
+  files: FileMetadata[];
+  total: number;
+  hasMore: boolean;
+}
+
+export interface FileUpdateRequest {
+  filename?: string;
+  metadata?: {
+    description?: string;
+    title?: string;
+    tags?: string[];
+    [key: string]: any;
+  };
+}
+
+export interface FileDeleteResponse {
+  success: boolean;
+  message: string;
+  fileId: string;
 }

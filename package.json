@@ -1,6 +1,6 @@
 {
     "name": "@oxyhq/services",
-    "version": "5.1.15",
+    "version": "5.1.27",
     "description": "Reusable OxyHQ module to handle authentication, user management, karma system and more 🚀",
     "main": "lib/commonjs/index.js",
     "module": "lib/module/index.js",
@@ -43,13 +43,13 @@
         "bootstrap": "yarn install && yarn example"
     },
     "dependencies": {
-        "@gorhom/bottom-sheet": "^5.1.0",
         "@react-native-async-storage/async-storage": "^2.1.2",
         "axios": "^1.9.0",
         "expo-font": "^13.3.1",
         "expo-linear-gradient": "^14.1.4",
         "invariant": "^2.2.4",
         "jwt-decode": "^4.0.0",
+        "react-native-actions-sheet": "^0.9.7",
         "react-native-safe-area-context": "^5.4.0",
         "react-test-renderer": "^18.3.1"
     },

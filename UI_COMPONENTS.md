@@ -8,8 +8,12 @@ This document provides details about the UI components available in the `@oxyhq/
 - [OxySignInButton](#oxysigninbutton)
 - [OxyLogo](#oxylogo)
 - [Avatar](#avatar)
+<<<<<<< HEAD
 - [Screens](#screens)
   - [AccountSettingsScreen](#accountsettingsscreen)
+=======
+- [FollowButton](#followbutton)
+>>>>>>> 4fae97b (feat: Add ModelUsageExample and SocialProfileExample components)
 
 ## OxyProvider
 
@@ -144,6 +148,7 @@ npm install react-native-svg
 yarn add react-native-svg
 ```
 
+<<<<<<< HEAD
 ## Screens
 
 ### AccountSettingsScreen
@@ -184,3 +189,57 @@ The screen is divided into three tabs:
 3. **Notifications**: Configure notification preferences
 
 For more details, see [the documentation](./docs/screens/AccountSettings.md).
+=======
+## FollowButton
+
+An animated button component for social interactions that toggles between "Follow" and "Following" states with smooth transitions.
+
+```tsx
+import { FollowButton } from '@oxyhq/services';
+
+// Basic usage
+<FollowButton userId="123" />
+
+// With custom styling
+<FollowButton 
+  userId="123" 
+  initiallyFollowing={true}
+  size="large"
+  style={{ borderRadius: 12 }}
+  onFollowChange={(isFollowing) => console.log(`User is now ${isFollowing ? 'followed' : 'unfollowed'}`)}
+/>
+
+// Different sizes
+<FollowButton userId="123" size="small" />
+<FollowButton userId="123" size="medium" /> // default
+<FollowButton userId="123" size="large" />
+
+// Disabled state
+<FollowButton userId="123" disabled={true} />
+```
+
+### Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| userId | `string` | *Required* | The ID of the user to follow/unfollow |
+| initiallyFollowing | `boolean` | `false` | Initial follow state, if already known |
+| size | `'small' \| 'medium' \| 'large'` | `'medium'` | Size variant of the button |
+| onFollowChange | `(isFollowing: boolean) => void` | `undefined` | Callback function invoked when follow state changes |
+| style | `StyleProp<ViewStyle>` | `undefined` | Additional styles for the button container |
+| textStyle | `StyleProp<TextStyle>` | `undefined` | Additional styles for the button text |
+| disabled | `boolean` | `false` | Whether the button is disabled |
+| showLoadingState | `boolean` | `true` | Whether to show loading indicator during API calls |
+
+### Requirements
+
+This component requires `react-native-reanimated` to be installed in your project:
+
+```bash
+npm install react-native-reanimated
+# or
+yarn add react-native-reanimated
+```
+
+> **Note:** After installing react-native-reanimated, you may need to set up the Babel plugin. Add `'react-native-reanimated/plugin'` to your Babel plugins in `babel.config.js`.
+>>>>>>> 4fae97b (feat: Add ModelUsageExample and SocialProfileExample components)

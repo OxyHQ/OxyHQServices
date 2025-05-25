@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [5.1.15] - 2025-05-21
+
+### Added
+- New animated `FollowButton` component for social interaction features
+- Added smooth state transitions with color interpolation and scaling effects
+- Loading state indicator for active API calls with showLoadingState prop
+- Multiple size variants (small, medium, large) for flexible UI integration
+- Added comprehensive documentation and examples for the FollowButton component
+- FollowButtonExample.tsx showcasing different button configurations and states
+
 ## [5.1.8] - 2025-05-18
 
 ### Added

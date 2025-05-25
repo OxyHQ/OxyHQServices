@@ -21,7 +21,13 @@ import {
   PaymentResponse,
   AnalyticsData,
   FollowerDetails,
-  ContentViewer
+  ContentViewer,
+  // File management interfaces
+  FileMetadata,
+  FileUploadResponse,
+  FileListResponse,
+  FileUpdateRequest,
+  FileDeleteResponse
 } from '../models/interfaces';
 
 /**
@@ -369,6 +375,52 @@ export class OxyServices {
   async unfollowUser(userId: string): Promise<{ success: boolean; message: string }> {
     try {
       const res = await this.client.delete(`/users/${userId}/follow`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get all followers of a user
+   * @param userId - User ID to get followers for
+   * @param limit - Maximum number of followers to return
+   * @param offset - Number of followers to skip for pagination
+   * @returns Array of users who follow the specified user and pagination info
+   */
+  async getUserFollowers(
+    userId: string,
+    limit?: number,
+    offset?: number
+  ): Promise<{ followers: User[]; total: number; hasMore: boolean }> {
+    try {
+      const params: Record<string, any> = {};
+      if (limit !== undefined) params.limit = limit;
+      if (offset !== undefined) params.offset = offset;
+      const res = await this.client.get(`/users/${userId}/followers`, { params });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get all users that a user is following
+   * @param userId - User ID to get following list for
+   * @param limit - Maximum number of users to return
+   * @param offset - Number of users to skip for pagination
+   * @returns Array of users the specified user follows and pagination info
+   */
+  async getUserFollowing(
+    userId: string,
+    limit?: number,
+    offset?: number
+  ): Promise<{ following: User[]; total: number; hasMore: boolean }> {
+    try {
+      const params: Record<string, any> = {};
+      if (limit !== undefined) params.limit = limit;
+      if (offset !== undefined) params.offset = offset;
+      const res = await this.client.get(`/users/${userId}/following`, { params });
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -761,6 +813,140 @@ export class OxyServices {
   async createOrUpdateKarmaRule(data: Partial<KarmaRule>): Promise<KarmaRule> {
     try {
       const res = await this.client.post('/karma/rules', data);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /* File Management Methods */
+
+  /**
+   * Upload a file using GridFS
+   * @param file - The file to upload (File or Blob in browser, Buffer in Node.js)
+   * @param filename - The name of the file
+   * @param metadata - Optional metadata to associate with the file
+   * @returns File metadata including ID and download URL
+   */
+  async uploadFile(
+    file: File | Blob | Buffer, 
+    filename: string, 
+    metadata?: Record<string, any>
+  ): Promise<FileUploadResponse> {
+    try {
+      // Create form data to handle the file upload
+      const formData = new FormData();
+      
+      // Handle different file types (Browser vs Node.js)
+      if (typeof Buffer !== 'undefined' && file instanceof Buffer) {
+        // Node.js environment with Buffer
+        // Convert Buffer to Blob for FormData compatibility
+        const blob = new Blob([file]);
+        formData.append('file', blob, filename);
+      } else {
+        // Browser environment with File or Blob
+        formData.append('file', file as Blob, filename);
+      }
+      
+      // Add metadata as JSON string if provided
+      if (metadata) {
+        formData.append('metadata', JSON.stringify(metadata));
+      }
+      
+      const res = await this.client.post('/files/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get file metadata by ID
+   * @param fileId - ID of the file to retrieve metadata for
+   * @returns File metadata
+   */
+  async getFileMetadata(fileId: string): Promise<FileMetadata> {
+    try {
+      const res = await this.client.get(`/files/${fileId}/metadata`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Update file metadata
+   * @param fileId - ID of the file to update
+   * @param updates - Metadata updates to apply
+   * @returns Updated file metadata
+   */
+  async updateFileMetadata(fileId: string, updates: FileUpdateRequest): Promise<FileMetadata> {
+    try {
+      const res = await this.client.put(`/files/${fileId}/metadata`, updates);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Delete a file by ID
+   * @param fileId - ID of the file to delete
+   * @returns Status of the delete operation
+   */
+  async deleteFile(fileId: string): Promise<FileDeleteResponse> {
+    try {
+      const res = await this.client.delete(`/files/${fileId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get download URL for a file
+   * @param fileId - ID of the file to get download URL for
+   * @returns Full URL to download the file
+   */
+  getFileDownloadUrl(fileId: string): string {
+    return `${this.client.defaults.baseURL}/files/${fileId}/download`;
+  }
+
+  /**
+   * Stream a file (useful for playing audio/video without full download)
+   * @param fileId - ID of the file to stream
+   * @returns Full URL to stream the file
+   */
+  getFileStreamUrl(fileId: string): string {
+    return `${this.client.defaults.baseURL}/files/${fileId}/stream`;
+  }
+
+  /**
+   * List files for a specific user
+   * @param userId - User ID to list files for
+   * @param limit - Maximum number of files to return
+   * @param offset - Number of files to skip for pagination
+   * @param filters - Optional filters for the file list (e.g., contentType)
+   * @returns Array of file metadata and pagination info
+   */
+  async listUserFiles(
+    userId: string,
+    limit?: number,
+    offset?: number,
+    filters?: Record<string, any>
+  ): Promise<FileListResponse> {
+    try {
+      const params: Record<string, any> = { userId };
+      if (limit !== undefined) params.limit = limit;
+      if (offset !== undefined) params.offset = offset;
+      if (filters) Object.assign(params, filters);
+      
+      const res = await this.client.get('/files', { params });
       return res.data;
     } catch (error) {
       throw this.handleError(error);

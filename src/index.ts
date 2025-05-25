@@ -22,16 +22,22 @@ import {
   OxySignInButton,
   OxyLogo,
   Avatar,
+  FollowButton,
   FontLoader
 } from './ui';
 
 // ------------- Type Imports -------------
 import { OxyContextState, OxyContextProviderProps } from './ui/context/OxyContext';
+import * as Models from './models/interfaces';
 
 // ------------- Core Exports -------------
 export default OxyCore; // Default export for backward compatibility
 export { OxyServices };
 export * from './core';
+
+// ------------- Model Exports -------------
+export { Models };  // Export all models as a namespace
+export * from './models/interfaces';  // Export all models directly
 
 // ------------- UI Exports -------------
 export { 
@@ -49,6 +55,7 @@ export {
   OxySignInButton,
   OxyLogo,
   Avatar,
+  FollowButton,
   FontLoader
 };
 
