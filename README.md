@@ -7,6 +7,8 @@ A unified client library for the Oxy API (authentication, user management, notif
 - [Overview](#overview)
 - [Installation](#installation)
 - [Usage](#usage)
+  - [Using in React Native](#using-in-react-native)
+  - [Using in Node.js / Express](#using-in-nodejs--express)
 - [Configuration](#configuration)
 - [API Reference](#api-reference)
   - [OxyConfig](#oxyconfig)
@@ -74,9 +76,17 @@ npm install @oxyhq/services
 yarn add @oxyhq/services
 ```
 
-### Required Peer Dependencies
+## Usage
 
-For React Native applications using the bottom sheet authentication UI:
+This section details how to use the `@oxyhq/services` package in different JavaScript environments.
+
+### Using in React Native
+
+For React Native applications, ensure you have the core package installed as shown above.
+
+**Required Peer Dependencies:**
+
+If you plan to use UI components that rely on native capabilities, such as the bottom sheet authentication UI, you'll need to install the following peer dependencies:
 
 ```bash
 # npm
@@ -86,9 +96,77 @@ npm install react-native-gesture-handler react-native-reanimated react-native-sa
 yarn add react-native-gesture-handler react-native-reanimated react-native-safe-area-context
 ```
 
-Note: The bottom sheet is now managed internally by the package, so you no longer need to install `@gorhom/bottom-sheet` directly.
+Note: The bottom sheet functionality is managed internally by the package, so you no longer need to install `@gorhom/bottom-sheet` directly.
 
-## Examples
+Refer to the [UI Components](#ui-components) section for more information on available React Native components.
+
+### Using in Node.js / Express
+
+The `@oxyhq/services` package can also be used in Node.js backend environments.
+
+**Installation:**
+
+The installation is the same as for client-side usage:
+```bash
+# npm
+npm install @oxyhq/services
+
+# yarn
+yarn add @oxyhq/services
+```
+
+**Importing the `OxyServices` class:**
+
+You can import the class using either CommonJS or ES Modules syntax.
+
+*CommonJS:*
+```javascript
+const { OxyServices } = require('@oxyhq/services');
+```
+
+*ES Modules:*
+```javascript
+import { OxyServices } from '@oxyhq/services';
+```
+
+**Initializing `OxyServices`:**
+
+Here's a brief example of how to initialize and use `OxyServices` in a Node.js context:
+
+```javascript
+const { OxyServices, OXY_CLOUD_URL } = require('@oxyhq/services'); // Or use import for ES Modules
+
+const oxy = new OxyServices({
+  baseURL: OXY_CLOUD_URL, // or your self-hosted Oxy API URL
+  // In a Node.js environment, you typically don't use client-side storage for tokens.
+  // Token management should be handled per user session or through other server-side mechanisms.
+});
+
+async function loginUser() {
+  try {
+    // Example login - in a real app, credentials would come from a request
+    const { accessToken, refreshToken, user } = await oxy.login('testuser', 'password123');
+    console.log('Login successful for user:', user.username);
+    // IMPORTANT: In a server environment, you would typically not store tokens in the OxyService instance directly.
+    // Instead, you would manage them securely, perhaps in an HTTP-only cookie, a session store,
+    // or by passing them to the client that initiated the request.
+    // The accessToken can then be used to make further API calls on behalf of this user.
+  } catch (error) {
+    console.error('Login failed:', error.message || error);
+  }
+}
+
+// Example usage:
+// loginUser(); 
+// (Call this function based on your application's logic, e.g., in an Express route handler)
+```
+
+**Important Notes for Node.js Usage:**
+
+*   **UI Components Not Available**: The React Native UI components (like `OxyProvider`, `OxySignInButton`, etc.) included in this package are designed for client-side React Native applications and are **not usable** in a Node.js environment.
+*   **Buffer File Uploads**: For file uploads, if you are providing data as a `Buffer` (common in Node.js when handling file streams or direct file reads), the package automatically uses `form-data` internally to correctly construct the multipart/form-data request. This ensures seamless file uploads from server-side buffers.
+
+## Usage Examples
 
 ### File Management
 
