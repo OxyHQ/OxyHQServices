@@ -1,5 +1,15 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { jwtDecode } from 'jwt-decode';
+
+let NodeFormData: any = null;
+if (typeof window === 'undefined') { // Check if in Node.js environment
+  try {
+    NodeFormData = require('form-data');
+  } catch (e) {
+    console.warn('form-data module not found, file uploads from Buffer may fail in Node.js');
+  }
+}
+
 import {
   OxyConfig, 
   User, 
@@ -835,14 +845,16 @@ export class OxyServices {
   ): Promise<FileUploadResponse> {
     try {
       // Create form data to handle the file upload
-      const formData = new FormData();
+      const formData = typeof window === 'undefined' && NodeFormData ? new NodeFormData() : new FormData();
       
       // Handle different file types (Browser vs Node.js)
       if (typeof Buffer !== 'undefined' && file instanceof Buffer) {
         // Node.js environment with Buffer
-        // Convert Buffer to Blob for FormData compatibility
-        const blob = new Blob([file]);
-        formData.append('file', blob, filename);
+        if (!NodeFormData) {
+          throw new Error('form-data module is required for file uploads from Buffer in Node.js but not found.');
+        }
+        // No need to convert to Blob; form-data handles Buffers directly.
+        formData.append('file', file, { filename }); // Pass filename in options for form-data
       } else {
         // Browser environment with File or Blob
         formData.append('file', file as Blob, filename);
