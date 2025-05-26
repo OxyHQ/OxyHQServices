@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [5.1.33] - 2025-05-26
+
+### Changed
+- **BREAKING**: Restructured package exports for better separation of concerns
+- Main export (`@oxyhq/services`) now only includes core services and models (Node.js/server usage)
+- UI components moved to dedicated export path (`@oxyhq/services/ui`)
+- Added full package export (`@oxyhq/services/full`) for applications needing both core and UI
+- Updated all documentation and examples to reflect new import structure
+
+### Added
+- New export maps in package.json for proper module resolution
+- EXPORT_STRUCTURE.md guide explaining the new import paths
+- Import guides in README.md, DOCS.md, and UI_COMPONENTS.md
+
+### Migration Guide
+- Replace `import { OxyProvider } from '@oxyhq/services'` with `import { OxyProvider } from '@oxyhq/services/ui'`
+- Core services (`OxyServices`, `Models`) remain available from main export
+- Use `@oxyhq/services/full` for applications needing both core and UI components
+
 ## [5.1.15] - 2025-05-21
 
 ### Added

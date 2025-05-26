@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { OxyLogo } from '../src/ui/components/OxyLogo';
+import { OxyLogo } from '@oxyhq/services/ui';
 
 /**
  * Example component demonstrating theme-aware OxyLogo

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, SafeAreaView } from 'react-native';
-import { OxyProvider, FollowButton } from '@oxyhq/services';
+import { OxyProvider, FollowButton } from '@oxyhq/services/ui';
 
 /**
  * Example component demonstrating the usage of the FollowButton component

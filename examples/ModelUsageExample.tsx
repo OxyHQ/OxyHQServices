@@ -2,12 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, FlatList } from 'react-native';
 
 // Import both the services class and type models
-import { 
-  OxyServices, 
-  Models,           // Namespace import of all models
-  User,             // Direct import of specific model
-  FollowButton
-} from '@oxyhq/services';
+import { OxyServices, Models, User } from '@oxyhq/services';
+import { FollowButton } from '@oxyhq/services/ui';
 
 /**
  * Example showing how to use Oxy models and components together

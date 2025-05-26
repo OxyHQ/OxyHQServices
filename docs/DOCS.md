@@ -1,6 +1,21 @@
 # OxyProvider Documentation
 
-**Version: 5.1.4**
+**Version: 5.1.33**
+
+## Import Guide
+
+Before using OxyProvider, make sure to import it from the correct path:
+
+```javascript
+// For UI components only
+import { OxyProvider } from '@oxyhq/services/ui';
+
+// For full package (core services + UI)
+import { OxyProvider, OxyServices } from '@oxyhq/services/full';
+
+// Core services only (no UI components)
+import { OxyServices } from '@oxyhq/services';
+```
 
 ## Overview
 
@@ -780,7 +795,7 @@ function CustomAuthFlow() {
 For more advanced theming beyond light/dark:
 
 ```jsx
-import { OxyProvider } from '@oxyhq/services';
+import { OxyProvider } from '@oxyhq/services/ui';
 
 // Create a custom theme object
 const myBrandTheme = {

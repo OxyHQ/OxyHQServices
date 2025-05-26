@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
-import { Avatar } from '../src/ui';
+import { Avatar } from '@oxyhq/services/ui';
 
 /**
  * Example component demonstrating the Avatar component with various configurations

@@ -39,11 +39,14 @@ The `@oxyhq/services` package provides a simple, promise-based client to interac
 The package exports TypeScript interfaces for all data models used by the API. These can be used in your application for type safety and better IntelliSense support.
 
 ```typescript
-// Import specific models directly
+// Import specific models directly from main export
 import { User, LoginResponse, Notification } from '@oxyhq/services';
 
 // Or import all models as a namespace
 import { Models } from '@oxyhq/services';
+
+// For full package usage (includes UI components)
+import { Models, User, LoginResponse } from '@oxyhq/services/full';
 ```
 
 For detailed documentation on using models in your application, see [MODEL_USAGE.md](docs/MODEL_USAGE.md).
@@ -57,6 +60,15 @@ This package includes several UI components that can be used in your React or Re
 - `FollowButton`: Animated button for follow/unfollow interactions
 - `Avatar`: User avatar component with fallback options
 - `OxyLogo`: Brand logo component
+
+**Import UI Components:**
+```javascript
+// Import specific UI components
+import { OxyProvider, OxySignInButton, Avatar } from '@oxyhq/services/ui';
+
+// Or import from full package
+import { OxyProvider, OxySignInButton, Avatar } from '@oxyhq/services/full';
+```
 
 For detailed documentation on UI components, see [UI_COMPONENTS.md](UI_COMPONENTS.md).
 
@@ -76,13 +88,66 @@ npm install @oxyhq/services
 yarn add @oxyhq/services
 ```
 
+## Import Guide
+
+The package provides different entry points for different use cases:
+
+### Node.js/Express (Server-side only)
+For server-side applications that only need core services and models:
+
+```javascript
+// CommonJS
+const { OxyServices, Models } = require('@oxyhq/services');
+
+// ES Modules
+import { OxyServices, Models } from '@oxyhq/services';
+```
+
+### React/React Native (UI components only)
+For client-side applications that only need UI components:
+
+```javascript
+// Import UI components
+import { 
+  OxyProvider, 
+  OxySignInButton, 
+  OxyLogo, 
+  Avatar, 
+  FollowButton 
+} from '@oxyhq/services/ui';
+```
+
+### Full Package (Core + UI)
+For applications that need both core services and UI components:
+
+```javascript
+// Import everything
+import { 
+  OxyServices, 
+  OxyProvider, 
+  OxySignInButton,
+  Models 
+} from '@oxyhq/services/full';
+```
+
 ## Usage
 
 This section details how to use the `@oxyhq/services` package in different JavaScript environments.
 
 ### Using in React Native
 
-For React Native applications, ensure you have the core package installed as shown above.
+For React Native applications, you can import UI components and core services as needed:
+
+```javascript
+// Import core services
+import { OxyServices } from '@oxyhq/services';
+
+// Import UI components
+import { OxyProvider, OxySignInButton } from '@oxyhq/services/ui';
+
+// Or import everything together
+import { OxyServices, OxyProvider, OxySignInButton } from '@oxyhq/services/full';
+```
 
 **Required Peer Dependencies:**
 

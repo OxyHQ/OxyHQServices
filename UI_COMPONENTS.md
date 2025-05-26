@@ -2,6 +2,28 @@
 
 This document provides details about the UI components available in the `@oxyhq/services` package.
 
+## Import Guide
+
+The package provides different entry points for different use cases:
+
+### For Node.js/Express (Server-side only)
+```javascript
+// Only core services and models - no UI components
+import { OxyServices } from '@oxyhq/services';
+```
+
+### For React/React Native apps (UI components only)
+```javascript
+// UI components and context providers
+import { OxyProvider, OxySignInButton, OxyLogo, Avatar } from '@oxyhq/services/ui';
+```
+
+### For full package (Core + UI)
+```javascript
+// Everything - core services, models, and UI components
+import { OxyServices, OxyProvider, OxySignInButton } from '@oxyhq/services/full';
+```
+
 ## Table of Contents
 
 - [OxyProvider](#oxyprovider)
@@ -20,7 +42,7 @@ This document provides details about the UI components available in the `@oxyhq/
 The main provider component that manages authentication state and exposes the bottom sheet for sign-in, sign-up, and account management.
 
 ```tsx
-import { OxyProvider } from '@oxyhq/services';
+import { OxyProvider } from '@oxyhq/services/ui';
 
 // In your app
 <OxyProvider
