@@ -23,17 +23,26 @@ jest.mock('../../../ui/context/OxyContext', () => ({
     },
     isLoading: false
   })),
-  OxyContextProvider: ({ children }) => <>{children}</>
+  OxyContextProvider: ({ children }: { children: React.ReactNode }) => <>{children}</>
 }));
 
 // Mock the Avatar component
 jest.mock('../../../ui/components/Avatar', () => 'Avatar');
 
 describe('AccountSettingsScreen', () => {
+  const mockOxyServices = {
+    updateUser: jest.fn(() => Promise.resolve({ 
+      id: '123', 
+      username: 'testuser', 
+      email: 'test@example.com' 
+    }))
+  } as unknown as OxyServices;
+
   const defaultProps = {
     goBack: jest.fn(),
-    theme: 'light',
+    theme: 'light' as const,
     navigate: jest.fn(),
+    oxyServices: mockOxyServices,
   };
 
   it('renders correctly with default props', () => {

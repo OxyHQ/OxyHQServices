@@ -207,7 +207,7 @@ const AccountSettingsScreen: React.FC<AccountSettingsScreenProps> = ({
         <View style={styles.tabContent}>
             <View style={styles.avatarSection}>
                 <Avatar 
-                    imageUrl={avatarUrl} 
+                    uri={avatarUrl} 
                     name={username} 
                     size={100} 
                     theme={theme} 
