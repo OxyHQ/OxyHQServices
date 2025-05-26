@@ -41,7 +41,7 @@ import {
 } from '../models/interfaces';
 
 /**
- * Default cloud URL for Oxy services
+ * Default cloud URL for Oxy services, cloud is where the user files are. (e.g. images, videos, etc.). Not the API.
  */
 export const OXY_CLOUD_URL = 'https://cloud.oxy.so';
 
