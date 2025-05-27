@@ -13,13 +13,14 @@ import {
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
+import { packageInfo } from '../../constants/version';
 
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     navigate,
 }) => {
-    const { user, logout, isLoading, users } = useOxy();
+    const { user, logout, isLoading, sessions } = useOxy();
 
     const isDarkTheme = theme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
@@ -93,14 +94,14 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 </View>
 
                 <View style={styles.actionsContainer}>
-                    {/* Show Account Switcher if multiple users exist */}
-                    {users && users.length > 1 && (
+                    {/* Show Account Switcher if multiple sessions exist */}
+                    {sessions && sessions.length > 1 && (
                         <TouchableOpacity
                             style={[styles.actionButton, { borderColor }]}
                             onPress={() => navigate('AccountSwitcher')}
                         >
                             <Text style={[styles.actionButtonText, { color: textColor }]}>
-                                Switch Account ({users.length} accounts)
+                                Switch Account ({sessions.length} accounts)
                             </Text>
                         </TouchableOpacity>
                     )}
@@ -149,6 +150,13 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                     >
                         <Text style={[styles.actionButtonText, { color: textColor }]}>Help & Support</Text>
                     </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.actionButton, { borderColor }]}
+                        onPress={() => navigate('AppInfo')}
+                    >
+                        <Text style={[styles.actionButtonText, { color: textColor }]}>App Information</Text>
+                    </TouchableOpacity>
                 </View>
 
                 <TouchableOpacity
@@ -165,7 +173,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 
                 <View style={styles.versionContainer}>
                     <Text style={[styles.versionText, { color: isDarkTheme ? '#666666' : '#999999' }]}>
-                        Version 5.1.4
+                        Version {packageInfo.version}
                     </Text>
                 </View>
             </ScrollView>

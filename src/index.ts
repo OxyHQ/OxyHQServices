@@ -11,7 +11,7 @@ import {
   // Context and Hooks
   OxyProvider, 
   OxyContextProvider, 
-  useOxy, 
+  useOxy,
   
   // Screens
   SignInScreen, 
@@ -45,7 +45,7 @@ export {
   // Context and Hooks
   OxyProvider, 
   OxyContextProvider, 
-  useOxy, 
+  useOxy,
   
   // Screens
   SignInScreen, 

@@ -1,6 +1,6 @@
 {
     "name": "@oxyhq/services",
-    "version": "5.1.38",
+    "version": "5.2.7",
     "description": "Reusable OxyHQ module to handle authentication, user management, karma system and more 🚀",
     "main": "lib/commonjs/node/index.js",
     "module": "lib/module/node/index.js",
@@ -9,6 +9,11 @@
     "source": "src/index.ts",
     "exports": {
         ".": {
+            "import": "./lib/module/index.js",
+            "require": "./lib/commonjs/index.js",
+            "types": "./lib/typescript/index.d.ts"
+        },
+        "./core": {
             "import": "./lib/module/node/index.js",
             "require": "./lib/commonjs/node/index.js",
             "types": "./lib/typescript/node/index.d.ts"

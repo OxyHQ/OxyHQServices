@@ -40,6 +40,9 @@ import {
   FileDeleteResponse
 } from '../models/interfaces';
 
+// Import secure session types
+import { SecureLoginResponse, SecureClientSession } from '../models/secureSession';
+
 /**
  * Default cloud URL for Oxy services, cloud is where the user files are. (e.g. images, videos, etc.). Not the API.
  */
@@ -1017,6 +1020,299 @@ export class OxyServices {
       return res.data;
     } catch (error) {
       throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Secure login that returns only session data (no tokens stored locally)
+   * @param username - User's username or email
+   * @param password - User's password
+   * @param deviceName - Optional device name for session tracking
+   * @returns Secure login response with session data
+   */
+  async secureLogin(username: string, password: string, deviceName?: string): Promise<SecureLoginResponse> {
+    try {
+      const res = await this.client.post('/secure-session/login', { 
+        username, 
+        password, 
+        deviceName 
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get full user data by session ID
+   * @param sessionId - The session ID
+   * @returns Full user data
+   */
+  async getUserBySession(sessionId: string): Promise<User> {
+    try {
+      const res = await this.client.get(`/secure-session/user/${sessionId}`);
+      return res.data.user;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get access token by session ID (for API calls)
+   * @param sessionId - The session ID
+   * @returns Access token and expiry info
+   */
+  async getTokenBySession(sessionId: string): Promise<{ accessToken: string; expiresAt: string }> {
+    try {
+      const res = await this.client.get(`/secure-session/token/${sessionId}`);
+      // Set the token for subsequent API calls
+      this.accessToken = res.data.accessToken;
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get all active sessions for current user
+   * @param sessionId - Current session ID
+   * @returns Array of user sessions
+   */
+  async getSessionsBySessionId(sessionId: string): Promise<any[]> {
+    try {
+      const res = await this.client.get(`/secure-session/sessions/${sessionId}`);
+      return res.data.sessions;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Logout specific session
+   * @param sessionId - Current session ID
+   * @param targetSessionId - Optional target session to logout (defaults to current)
+   */
+  async logoutSecureSession(sessionId: string, targetSessionId?: string): Promise<void> {
+    try {
+      await this.client.post(`/secure-session/logout/${sessionId}`, { 
+        targetSessionId 
+      });
+      
+      // If we're logging out the current session, clear the access token
+      if (!targetSessionId || targetSessionId === sessionId) {
+        this.accessToken = null;
+        this.refreshToken = null;
+      }
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Logout all sessions for current user
+   * @param sessionId - Current session ID
+   */
+  async logoutAllSecureSessions(sessionId: string): Promise<void> {
+    try {
+      await this.client.post(`/secure-session/logout-all/${sessionId}`);
+      // Clear tokens since all sessions are logged out
+      this.accessToken = null;
+      this.refreshToken = null;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Validate session
+   * @param sessionId - The session ID to validate
+   * @returns Session validation status
+   */
+  async validateSession(sessionId: string): Promise<{ valid: boolean; expiresAt: string; lastActivity: string }> {
+    try {
+      const res = await this.client.get(`/secure-session/validate/${sessionId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Utility method to help implement authentication middleware in Express.js applications
+   * This creates a function that can be used as Express middleware to validate tokens
+   * @param options - Configuration options for the middleware
+   * @returns Express middleware function
+   */
+  public createAuthenticateTokenMiddleware(options: {
+    loadFullUser?: boolean; // Whether to load full user object or just user ID
+    onError?: (error: ApiError) => any; // Custom error handler
+  } = {}) {
+    const { loadFullUser = true, onError } = options;
+    
+    return async (req: any, res: any, next: any) => {
+      try {
+        const authHeader = req.headers['authorization'];
+        const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+        
+        if (!token) {
+          const error = {
+            message: 'Access token required',
+            code: 'MISSING_TOKEN',
+            status: 401
+          };
+          
+          if (onError) {
+            return onError(error);
+          }
+          
+          return res.status(401).json({ 
+            message: 'Access token required',
+            code: 'MISSING_TOKEN'
+          });
+        }
+        
+        // Create a temporary OxyServices instance with the token to validate it
+        const tempOxyServices = new OxyServices({
+          baseURL: this.client.defaults.baseURL || ''
+        });
+        tempOxyServices.setTokens(token, ''); // Set access token
+        
+        // Validate token using the validate method
+        const isValid = await tempOxyServices.validate();
+        
+        if (!isValid) {
+          const error = {
+            message: 'Invalid or expired token',
+            code: 'INVALID_TOKEN',
+            status: 403
+          };
+          
+          if (onError) {
+            return onError(error);
+          }
+          
+          return res.status(403).json({ 
+            message: 'Invalid or expired token',
+            code: 'INVALID_TOKEN'
+          });
+        }
+        
+        // Get user ID from token
+        const userId = tempOxyServices.getCurrentUserId();
+        if (!userId) {
+          const error = {
+            message: 'Invalid token payload',
+            code: 'INVALID_PAYLOAD',
+            status: 403
+          };
+          
+          if (onError) {
+            return onError(error);
+          }
+          
+          return res.status(403).json({ 
+            message: 'Invalid token payload',
+            code: 'INVALID_PAYLOAD'
+          });
+        }
+        
+        // Set user information on request object
+        req.userId = userId;
+        req.accessToken = token;
+        
+        // Optionally load full user data
+        if (loadFullUser) {
+          try {
+            const userProfile = await tempOxyServices.getUserById(userId);
+            req.user = userProfile;
+          } catch (userError) {
+            // If we can't load user, continue with just ID
+            req.user = { id: userId };
+          }
+        } else {
+          req.user = { id: userId };
+        }
+        
+        next();
+      } catch (error) {
+        const apiError = this.handleError(error);
+        
+        if (onError) {
+          return onError(apiError);
+        }
+        
+        return res.status(apiError.status || 500).json({ 
+          message: apiError.message,
+          code: apiError.code
+        });
+      }
+    };
+  }
+
+  /**
+   * Helper method for validating tokens without Express middleware
+   * Useful for standalone token validation in various contexts
+   * @param token - The access token to validate
+   * @returns Object with validation result and user information
+   */
+  public async authenticateToken(token: string): Promise<{
+    valid: boolean;
+    userId?: string;
+    user?: any;
+    error?: string;
+  }> {
+    try {
+      if (!token) {
+        return {
+          valid: false,
+          error: 'Token is required'
+        };
+      }
+      
+      // Create a temporary OxyServices instance with the token
+      const tempOxyServices = new OxyServices({
+        baseURL: this.client.defaults.baseURL || ''
+      });
+      tempOxyServices.setTokens(token, '');
+      
+      // Validate token
+      const isValid = await tempOxyServices.validate();
+      
+      if (!isValid) {
+        return {
+          valid: false,
+          error: 'Invalid or expired token'
+        };
+      }
+      
+      // Get user ID from token
+      const userId = tempOxyServices.getCurrentUserId();
+      if (!userId) {
+        return {
+          valid: false,
+          error: 'Invalid token payload'
+        };
+      }
+      
+      // Try to get user profile
+      let user;
+      try {
+        user = await tempOxyServices.getUserById(userId);
+      } catch (error) {
+        // Continue without full user data
+        user = { id: userId };
+      }
+      
+      return {
+        valid: true,
+        userId,
+        user
+      };
+    } catch (error) {
+      return {
+        valid: false,
+        error: error instanceof Error ? error.message : 'Token validation failed'
+      };
     }
   }
 

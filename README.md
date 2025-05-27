@@ -234,6 +234,43 @@ async function loginUser() {
 // (Call this function based on your application's logic, e.g., in an Express route handler)
 ```
 
+#### Server Authentication Utilities
+
+For Express.js applications, OxyServices provides built-in authentication middleware and utilities:
+
+```javascript
+const { OxyServices } = require('@oxyhq/services');
+
+const oxyServices = new OxyServices({
+  baseURL: process.env.OXY_API_URL || 'https://api.oxy.so'
+});
+
+// Built-in Express middleware for token validation
+const authenticateToken = oxyServices.createAuthenticateTokenMiddleware({
+  loadFullUser: true, // Load complete user profile
+  onError: (error) => {
+    // Custom error handling
+    console.error('Auth error:', error);
+  }
+});
+
+// Use middleware to protect routes
+app.get('/api/protected', authenticateToken, (req, res) => {
+  // req.userId - User ID
+  // req.accessToken - Validated token
+  // req.user - Full user object (if loadFullUser: true)
+  res.json({ message: 'Access granted', user: req.user });
+});
+
+// Standalone token validation (for WebSocket, background jobs, etc.)
+async function validateToken(token) {
+  const result = await oxyServices.authenticateToken(token);
+  return result.valid ? result.user : null;
+}
+```
+
+**📖 For comprehensive server-side authentication examples and advanced configurations, see [SERVER_AUTHENTICATION.md](docs/SERVER_AUTHENTICATION.md)**
+
 **Important Notes for Node.js Usage:**
 
 *   **UI Components Not Available**: The React Native UI components (like `OxyProvider`, `OxySignInButton`, etc.) included in this package are designed for client-side React Native applications and are **not usable** in a Node.js environment.
@@ -379,6 +416,76 @@ interface SessionData {
   createdAt: Date;
   isCurrent: boolean;
 }
+```
+
+## Package Version Management
+
+## Version Constants
+
+To avoid runtime dependencies on `package.json`, version information is stored in `/src/constants/version.ts`. This ensures compatibility with bundlers and prevents Metro/Webpack resolution issues.
+
+### Updating Version Information
+
+When updating the package version in `package.json`, also update the version constants:
+
+1. Update `package.json` version
+2. Update `src/constants/version.ts` with the same version number
+3. Run `npm run build` to generate updated library files
+
+### Automatic Version Sync
+
+You can add this script to `package.json` to automatically sync versions:
+
+```json
+{
+  "scripts": {
+    "version": "node scripts/update-version-constants.js && git add src/constants/version.ts"
+  }
+}
+```
+
+Create `scripts/update-version-constants.js`:
+
+```javascript
+const fs = require('fs');
+const packageJson = require('../package.json');
+
+const versionFile = `/**
+ * Package version and metadata constants
+ * This file is auto-generated to avoid runtime dependency on package.json
+ */
+
+export const packageInfo = {
+    name: "${packageJson.name}",
+    version: "${packageJson.version}",
+    description: "${packageJson.description}",
+    main: "${packageJson.main}",
+    module: "${packageJson.module}",
+    types: "${packageJson.types}"
+} as const;
+
+export const { name, version, description } = packageInfo;`;
+
+fs.writeFileSync('src/constants/version.ts', versionFile);
+console.log(`Updated version constants to ${packageJson.version}`);
+```
+
+This ensures version constants stay in sync with package.json automatically.
+
+## Usage in Components
+
+```tsx
+import { packageInfo } from '../../constants/version';
+
+// Display current version
+<Text>Version {packageInfo.version}</Text>
+
+// Use in reports or debugging
+const appInfo = {
+  name: packageInfo.name,
+  version: packageInfo.version,
+  // ... other info
+};
 ```
 
 ## Usage Examples

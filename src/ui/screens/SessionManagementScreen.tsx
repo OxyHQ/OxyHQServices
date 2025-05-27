@@ -31,8 +31,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
 }) => {
-    const { getUserSessions, logoutSession, oxyServices } = useOxy();
-    const [sessions, setSessions] = useState<Session[]>([]);
+    const { sessions: userSessions, activeSessionId, refreshSessions, logout, oxyServices } = useOxy();
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -54,8 +53,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 setLoading(true);
             }
 
-            const userSessions = await getUserSessions();
-            setSessions(userSessions);
+            await refreshSessions();
         } catch (error) {
             console.error('Failed to load sessions:', error);
             Alert.alert(
@@ -81,10 +79,10 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     onPress: async () => {
                         try {
                             setActionLoading(sessionId);
-                            await logoutSession(sessionId);
+                            await logout(sessionId);
                             
-                            // Remove the session from local state
-                            setSessions(prev => prev.filter(s => s.id !== sessionId));
+                            // Refresh sessions to update the list
+                            await refreshSessions();
                             
                             Alert.alert('Success', 'Session logged out successfully');
                         } catch (error) {
@@ -103,7 +101,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     };
 
     const handleLogoutOtherSessions = async () => {
-        const otherSessionsCount = sessions.filter(s => !s.isCurrent).length;
+        const otherSessionsCount = userSessions.filter(s => s.sessionId !== activeSessionId).length;
         
         if (otherSessionsCount === 0) {
             Alert.alert('Info', 'No other sessions to logout.');
@@ -121,10 +119,15 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     onPress: async () => {
                         try {
                             setActionLoading('others');
-                            await oxyServices.logoutOtherSessions();
+                            // Logout each non-active session
+                            for (const session of userSessions) {
+                                if (session.sessionId !== activeSessionId) {
+                                    await logout(session.sessionId);
+                                }
+                            }
                             
-                            // Keep only current session in local state
-                            setSessions(prev => prev.filter(s => s.isCurrent));
+                            // Refresh sessions to update the list
+                            await refreshSessions();
                             
                             Alert.alert('Success', 'Other sessions logged out successfully');
                         } catch (error) {
@@ -232,30 +235,30 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     />
                 }
             >
-                {sessions.length > 0 ? (
+                {userSessions.length > 0 ? (
                     <>
-                        {sessions.map((session) => (
+                        {userSessions.map((session) => (
                             <View
-                                key={session.id}
+                                key={session.sessionId}
                                 style={[
                                     styles.sessionCard,
                                     {
                                         backgroundColor: secondaryBackgroundColor,
                                         borderColor,
-                                        borderLeftColor: session.isCurrent ? successColor : borderColor,
+                                        borderLeftColor: session.sessionId === activeSessionId ? successColor : borderColor,
                                     },
                                 ]}
                             >
                                 <View style={styles.sessionHeader}>
                                     <View style={styles.sessionTitleRow}>
                                         <Text style={styles.deviceIcon}>
-                                            {getDeviceIcon(session.deviceType, session.platform)}
+                                            📱
                                         </Text>
                                         <View style={styles.sessionTitleText}>
                                             <Text style={[styles.deviceName, { color: textColor }]}>
-                                                {session.deviceName || 'Unknown Device'}
+                                                Session {session.sessionId.substring(0, 8)}...
                                             </Text>
-                                            {session.isCurrent && (
+                                            {session.sessionId === activeSessionId && (
                                                 <Text style={[styles.currentBadge, { color: successColor }]}>
                                                     Current Session
                                                 </Text>
@@ -266,30 +269,23 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
 
                                 <View style={styles.sessionDetails}>
                                     <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                        {session.platform} • {session.deviceType}
+                                        Device ID: {session.deviceId.substring(0, 12)}...
                                     </Text>
-                                    {session.browser && (
-                                        <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                            {session.browser}
-                                        </Text>
-                                    )}
                                     <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                        Last active: {formatDate(session.lastActivity)}
+                                        Last active: {new Date(session.lastActive).toLocaleDateString()}
                                     </Text>
-                                    {session.ipAddress && (
-                                        <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                            IP: {session.ipAddress}
-                                        </Text>
-                                    )}
+                                    <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                        Expires: {new Date(session.expiresAt).toLocaleDateString()}
+                                    </Text>
                                 </View>
 
-                                {!session.isCurrent && (
+                                {session.sessionId !== activeSessionId && (
                                     <TouchableOpacity
                                         style={[styles.logoutButton, { backgroundColor: isDarkTheme ? '#400000' : '#FFEBEE' }]}
-                                        onPress={() => handleLogoutSession(session.id)}
-                                        disabled={actionLoading === session.id}
+                                        onPress={() => handleLogoutSession(session.sessionId)}
+                                        disabled={actionLoading === session.sessionId}
                                     >
-                                        {actionLoading === session.id ? (
+                                        {actionLoading === session.sessionId ? (
                                             <ActivityIndicator size="small" color={dangerColor} />
                                         ) : (
                                             <Text style={[styles.logoutButtonText, { color: dangerColor }]}>
@@ -305,7 +301,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                             <TouchableOpacity
                                 style={[styles.bulkActionButton, { backgroundColor: isDarkTheme ? '#1A1A1A' : '#F0F0F0', borderColor }]}
                                 onPress={handleLogoutOtherSessions}
-                                disabled={actionLoading === 'others' || sessions.filter(s => !s.isCurrent).length === 0}
+                                disabled={actionLoading === 'others' || userSessions.filter(s => s.sessionId !== activeSessionId).length === 0}
                             >
                                 {actionLoading === 'others' ? (
                                     <ActivityIndicator size="small" color={primaryColor} />

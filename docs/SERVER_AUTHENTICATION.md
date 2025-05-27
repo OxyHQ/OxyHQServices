@@ -141,6 +141,171 @@ app.get('/api/user/profile', authenticateToken, async (req, res) => {
 });
 ```
 
+## Built-in Authentication Utilities
+
+OxyServices provides built-in utility methods to simplify authentication implementation:
+
+### 1. createAuthenticateTokenMiddleware()
+
+Creates Express.js middleware for token validation with configurable options:
+
+```javascript
+const { OxyServices } = require('@oxyhq/services');
+
+const oxyServices = new OxyServices({
+  baseURL: process.env.OXY_API_URL || 'https://api.oxy.so'
+});
+
+// Create middleware with default options (loads full user data)
+const authenticateToken = oxyServices.createAuthenticateTokenMiddleware();
+
+// Create middleware with custom options
+const authenticateTokenSimple = oxyServices.createAuthenticateTokenMiddleware({
+  loadFullUser: false, // Only load user ID, not full profile
+  onError: (error) => {
+    // Custom error handling
+    console.error('Authentication error:', error);
+    return res.status(error.status || 401).json({
+      success: false,
+      message: error.message,
+      code: error.code
+    });
+  }
+});
+
+// Use the middleware
+app.get('/api/protected', authenticateToken, (req, res) => {
+  // req.userId - User ID
+  // req.accessToken - Validated access token
+  // req.user - Full user object (if loadFullUser: true)
+  
+  res.json({
+    message: 'Access granted',
+    userId: req.userId,
+    user: req.user
+  });
+});
+
+app.get('/api/simple-protected', authenticateTokenSimple, (req, res) => {
+  // Only req.userId and req.accessToken are available
+  res.json({
+    message: 'Access granted',
+    userId: req.userId
+  });
+});
+```
+
+### 2. authenticateToken() Helper Method
+
+Standalone token validation for use outside of Express middleware:
+
+```javascript
+const { OxyServices } = require('@oxyhq/services');
+
+const oxyServices = new OxyServices({
+  baseURL: process.env.OXY_API_URL || 'https://api.oxy.so'
+});
+
+// Validate a token programmatically
+async function validateUserToken(token) {
+  const result = await oxyServices.authenticateToken(token);
+  
+  if (result.valid) {
+    console.log('Token is valid');
+    console.log('User ID:', result.userId);
+    console.log('User data:', result.user);
+    
+    return {
+      success: true,
+      userId: result.userId,
+      user: result.user
+    };
+  } else {
+    console.log('Token validation failed:', result.error);
+    
+    return {
+      success: false,
+      error: result.error
+    };
+  }
+}
+
+// Usage examples
+async function examples() {
+  // Validate token from API request
+  const tokenFromHeader = req.headers.authorization?.split(' ')[1];
+  const validation = await validateUserToken(tokenFromHeader);
+  
+  // Validate token from database
+  const storedToken = await getUserTokenFromDatabase(userId);
+  const dbValidation = await validateUserToken(storedToken);
+  
+  // Validate token in WebSocket connection
+  socket.on('authenticate', async (data) => {
+    const validation = await validateUserToken(data.token);
+    if (validation.success) {
+      socket.userId = validation.userId;
+      socket.emit('authenticated', { success: true });
+    } else {
+      socket.emit('auth-error', { error: validation.error });
+    }
+  });
+}
+```
+
+### 3. Comparison of Authentication Methods
+
+| Method | Use Case | Features |
+|--------|----------|----------|
+| Manual Implementation | Full control over logic | Custom validation, error handling, user loading |
+| `createAuthenticateTokenMiddleware()` | Express.js applications | Pre-built middleware, configurable options, automatic user loading |
+| `authenticateToken()` | Non-Express contexts | Standalone validation, WebSocket, background jobs, utilities |
+
+### 4. Advanced Middleware Configuration
+
+```javascript
+// Advanced middleware with comprehensive error handling
+const advancedAuthMiddleware = oxyServices.createAuthenticateTokenMiddleware({
+  loadFullUser: true,
+  onError: (error) => {
+    // Log security events
+    console.error(`[AUTH] ${error.code}: ${error.message}`, {
+      timestamp: new Date().toISOString(),
+      ip: req.ip,
+      userAgent: req.headers['user-agent']
+    });
+    
+    // Custom response based on error type
+    switch (error.code) {
+      case 'MISSING_TOKEN':
+        return res.status(401).json({
+          success: false,
+          message: 'Authentication required',
+          code: 'AUTH_REQUIRED'
+        });
+      
+      case 'INVALID_TOKEN':
+      case 'INVALID_PAYLOAD':
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid authentication credentials',
+          code: 'INVALID_CREDENTIALS'
+        });
+      
+      default:
+        return res.status(500).json({
+          success: false,
+          message: 'Authentication service unavailable',
+          code: 'AUTH_SERVICE_ERROR'
+        });
+    }
+  }
+});
+
+// Use for all protected routes
+app.use('/api/protected', advancedAuthMiddleware);
+```
+
 ## Token Management
 
 ### Automatic Token Refresh

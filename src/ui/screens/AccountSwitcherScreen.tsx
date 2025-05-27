@@ -10,7 +10,8 @@ import {
     Platform,
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
-import { useOxy, AuthenticatedUser } from '../context/OxyContext';
+import { useOxy } from '../context/OxyContext';
+import { SecureClientSession } from '../../models/secureSession';
 import { fontFamilies } from '../styles/fonts';
 
 const AccountSwitcherScreen: React.FC<BaseScreenProps> = ({
@@ -21,9 +22,10 @@ const AccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const { 
         user, 
-        users, 
-        switchUser, 
-        removeUser, 
+        sessions, 
+        activeSessionId,
+        switchSession, 
+        removeSession, 
         logoutAll,
         isLoading 
     } = useOxy();
@@ -40,31 +42,31 @@ const AccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     const dangerColor = '#D32F2F';
     const successColor = '#2E7D32';
 
-    const handleSwitchUser = async (userId: string) => {
-        if (userId === user?._id) return; // Already active user
+    const handleSwitchSession = async (sessionId: string) => {
+        if (sessionId === user?.sessionId) return; // Already active session
 
-        setSwitchingToUserId(userId);
+        setSwitchingToUserId(sessionId);
         try {
-            await switchUser(userId);
+            await switchSession(sessionId);
             Alert.alert('Success', 'Account switched successfully!');
             if (onClose) {
                 onClose();
             }
         } catch (error) {
-            console.error('Switch user failed:', error);
+            console.error('Switch session failed:', error);
             Alert.alert('Switch Failed', 'There was a problem switching accounts. Please try again.');
         } finally {
             setSwitchingToUserId(null);
         }
     };
 
-    const handleRemoveUser = async (userId: string) => {
-        const userToRemove = users.find(u => u._id === userId);
-        if (!userToRemove) return;
+    const handleRemoveSession = async (sessionId: string) => {
+        const sessionToRemove = sessions.find(s => s.sessionId === sessionId);
+        if (!sessionToRemove) return;
 
         Alert.alert(
             'Remove Account',
-            `Are you sure you want to remove ${userToRemove.username} from this device? You'll need to sign in again to access this account.`,
+            `Are you sure you want to remove this session from this device? You'll need to sign in again to access this account.`,
             [
                 {
                     text: 'Cancel',
@@ -74,12 +76,12 @@ const AccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                     text: 'Remove',
                     style: 'destructive',
                     onPress: async () => {
-                        setRemovingUserId(userId);
+                        setRemovingUserId(sessionId);
                         try {
-                            await removeUser(userId);
+                            await removeSession(sessionId);
                             Alert.alert('Success', 'Account removed successfully!');
                         } catch (error) {
-                            console.error('Remove user failed:', error);
+                            console.error('Remove session failed:', error);
                             Alert.alert('Remove Failed', 'There was a problem removing the account. Please try again.');
                         } finally {
                             setRemovingUserId(null);
@@ -121,14 +123,14 @@ const AccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         );
     };
 
-    const renderUserItem = (userItem: AuthenticatedUser) => {
-        const isActive = userItem._id === user?._id;
-        const isSwitching = switchingToUserId === userItem._id;
-        const isRemoving = removingUserId === userItem._id;
+    const renderSessionItem = (session: SecureClientSession) => {
+        const isActive = session.sessionId === activeSessionId;
+        const isSwitching = switchingToUserId === session.sessionId;
+        const isRemoving = removingUserId === session.sessionId;
 
         return (
             <View
-                key={userItem._id}
+                key={session.sessionId}
                 style={[
                     styles.userItem,
                     {
@@ -138,12 +140,12 @@ const AccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                 ]}
             >
                 <View style={styles.userInfo}>
-                    <Text style={[styles.username, { color: textColor }]}>{userItem.username}</Text>
-                    {userItem.email && (
-                        <Text style={[styles.email, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                            {userItem.email}
-                        </Text>
-                    )}
+                    <Text style={[styles.username, { color: textColor }]}>
+                        {isActive ? user?.username || 'Current Account' : 'Account Session'}
+                    </Text>
+                    <Text style={[styles.email, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        Last active: {new Date(session.lastActive).toLocaleDateString()}
+                    </Text>
                     {isActive && (
                         <View style={[styles.activeBadge, { backgroundColor: successColor }]}>
                             <Text style={styles.activeBadgeText}>Active</Text>
@@ -155,7 +157,7 @@ const AccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                     {!isActive && (
                         <TouchableOpacity
                             style={[styles.switchButton, { borderColor: primaryColor }]}
-                            onPress={() => handleSwitchUser(userItem._id)}
+                            onPress={() => handleSwitchSession(session.sessionId)}
                             disabled={isSwitching || isRemoving}
                         >
                             {isSwitching ? (
@@ -168,8 +170,8 @@ const AccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
                     <TouchableOpacity
                         style={[styles.removeButton, { borderColor: dangerColor }]}
-                        onPress={() => handleRemoveUser(userItem._id)}
-                        disabled={isSwitching || isRemoving || users.length === 1}
+                        onPress={() => handleRemoveSession(session.sessionId)}
+                        disabled={isSwitching || isRemoving || sessions.length === 1}
                     >
                         {isRemoving ? (
                             <ActivityIndicator color={dangerColor} size="small" />
@@ -201,10 +203,10 @@ const AccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
                 <View style={styles.usersContainer}>
                     <Text style={[styles.sectionTitle, { color: textColor }]}>
-                        Accounts ({users.length})
+                        Sessions ({sessions.length})
                     </Text>
                     
-                    {users.map(renderUserItem)}
+                    {sessions.map(renderSessionItem)}
                 </View>
 
                 <View style={styles.actionsContainer}>
@@ -217,7 +219,7 @@ const AccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                         </Text>
                     </TouchableOpacity>
 
-                    {users.length > 1 && (
+                    {sessions.length > 1 && (
                         <TouchableOpacity
                             style={[styles.dangerButton, { backgroundColor: isDarkTheme ? '#300000' : '#FFEBEE' }]}
                             onPress={handleLogoutAll}
@@ -227,7 +229,7 @@ const AccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                 <ActivityIndicator color={dangerColor} size="small" />
                             ) : (
                                 <Text style={[styles.dangerButtonText, { color: dangerColor }]}>
-                                    Sign Out All Accounts
+                                    Sign Out All Sessions
                                 </Text>
                             )}
                         </TouchableOpacity>

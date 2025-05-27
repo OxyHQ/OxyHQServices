@@ -1,6 +1,7 @@
 # Oxy AI Development Instructions
 
-These instructions are for AI assistants to develop applications using the Oxy ecosystem and services. Please follow these conventions and best practices when building apps that integrate with Oxy.
+These instructions are for AI assistants
+ to develop applications using the Oxy ecosystem and services. Please follow these conventions and best practices when building apps that integrate with Oxy.
 
 ## Core Principles
 

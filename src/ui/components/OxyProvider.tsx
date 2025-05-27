@@ -104,7 +104,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     useEffect(() => {
         if (bottomSheetRef && modalRef.current) {
             // We need to expose certain methods to the internal ref
-            const methodsToExpose = ['snapToIndex', 'snapToPosition', 'close', 'expand', 'collapse'];
+            const methodsToExpose = ['snapToIndex', 'snapToPosition', 'close', 'expand', 'collapse', 'present', 'dismiss'];
 
             methodsToExpose.forEach((method) => {
                 if (modalRef.current && typeof modalRef.current[method as keyof typeof modalRef.current] === 'function') {
@@ -142,8 +142,9 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     const [snapPoints, setSnapPoints] = useState<(string | number)[]>(['60%', '85%']);
 
     // Animation values - we'll use these for content animations
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-    const slideAnim = useRef(new Animated.Value(50)).current;
+    // Start with opacity 1 on Android to avoid visibility issues
+    const fadeAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 1 : 0)).current;
+    const slideAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 0 : 50)).current;
     const handleScaleAnim = useRef(new Animated.Value(1)).current;
 
     // Track keyboard status
@@ -195,6 +196,27 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             // @ts-ignore - Dynamic method assignment
             bottomSheetRef.current.expand = () => {
                 // Only present if not already presented
+                modalRef.current?.present();
+
+                // Start content animations after presenting
+                Animated.parallel([
+                    Animated.timing(fadeAnim, {
+                        toValue: 1,
+                        duration: 300,
+                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                    }),
+                    Animated.spring(slideAnim, {
+                        toValue: 0,
+                        friction: 8,
+                        tension: 40,
+                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                    }),
+                ]).start();
+            };
+
+            // Override present to also handle animations
+            // @ts-ignore - Dynamic method assignment
+            bottomSheetRef.current.present = () => {
                 modalRef.current?.present();
 
                 // Start content animations after presenting

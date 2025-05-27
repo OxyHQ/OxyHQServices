@@ -10,6 +10,7 @@ import AccountSwitcherScreen from '../screens/AccountSwitcherScreen';
 import SessionManagementScreen from '../screens/SessionManagementScreen';
 import AccountOverviewScreen from '../screens/AccountOverviewScreen';
 import AccountSettingsScreen from '../screens/AccountSettingsScreen';
+import AppInfoScreen from '../screens/AppInfoScreen';
 import KarmaCenterScreen from '../screens/karma/KarmaCenterScreen';
 import KarmaLeaderboardScreen from '../screens/karma/KarmaLeaderboardScreen';
 import KarmaRulesScreen from '../screens/karma/KarmaRulesScreen';
@@ -50,6 +51,10 @@ const routes: Record<string, RouteConfig> = {
     AccountSettings: {
         component: AccountSettingsScreen,
         snapPoints: ['60%', '100%'],
+    },
+    AppInfo: {
+        component: AppInfoScreen,
+        snapPoints: ['60%', '90%'],
     },
     KarmaCenter: {
         component: KarmaCenterScreen,
@@ -158,12 +163,17 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
     // Render the current screen component
     const renderScreen = () => {
         const CurrentScreen = routes[currentScreen]?.component;
+        
+        console.log('[OxyRouter] Rendering screen:', currentScreen);
+        console.log('[OxyRouter] Available routes:', Object.keys(routes));
+        console.log('[OxyRouter] Current screen component found:', !!CurrentScreen);
 
         if (!CurrentScreen) {
             console.error(`Screen "${currentScreen}" not found`);
             return <View style={styles.errorContainer} />;
         }
 
+        console.log('[OxyRouter] Rendering screen component for:', currentScreen);
         return (
             <CurrentScreen
                 oxyServices={oxyServices}
@@ -177,17 +187,25 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         );
     };
 
-    return <View style={styles.container}>{renderScreen()}</View>;
+    return (
+        <View style={styles.container}>
+            {renderScreen()}
+        </View>
+    );
 };
 
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        minHeight: 200, // Ensure minimum height
+        backgroundColor: 'transparent', // Make sure it's visible
     },
     errorContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
+        minHeight: 100,
+        backgroundColor: 'red', // Make errors visible
     },
 });
 

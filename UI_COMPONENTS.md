@@ -37,6 +37,7 @@ import { OxyServices, OxyProvider, OxySignInButton } from '@oxyhq/services/full'
   - [Enhanced SignInScreen](#enhanced-signinscreen)
 - [Screens](#screens)
   - [AccountCenterScreen](#accountcenterscreen)
+  - [AppInfoScreen](#appinfoscreen)
 
 ## OxyProvider
 
@@ -361,3 +362,76 @@ import { AccountCenterScreen } from '@oxyhq/services';
 | user | `User` | *Required* | The current user object |
 | onEditProfile | `() => void` | `undefined` | Callback function invoked when editing the profile |
 | onChangePassword | `() => void` | `undefined` | Callback function invoked when changing the password |
+
+### AppInfoScreen
+
+The AppInfoScreen component provides comprehensive information about the application, including package details, system information, user data, and diagnostic tools. This screen is useful for debugging, support, and transparency purposes.
+
+```tsx
+import { AppInfoScreen } from '@oxyhq/services/ui';
+
+// Basic usage in OxyRouter
+<AppInfoScreen
+  theme="light"
+  onClose={() => console.log('Closing app info')}
+  navigate={(route) => console.log(`Navigating to ${route}`)}
+/>
+```
+
+#### Features
+
+- **Package Information**: Displays current version, name, description, and module entry points
+- **System Information**: Shows platform details, screen dimensions, and environment data
+- **User Information**: Current authentication status, user details, and multi-user data
+- **API Configuration**: Base URL and connection status
+- **Build Information**: Timestamp, environment, and JavaScript engine details
+- **Dependencies**: Framework versions and enabled features
+- **Interactive Elements**: Copy-to-clipboard functionality and system check tools
+
+#### Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| theme | `'light' \| 'dark'` | `'light'` | Theme mode for styling |
+| onClose | `() => void` | `undefined` | Callback when user closes the screen |
+| navigate | `(route: string, params?: any) => void` | `undefined` | Navigation function for routing |
+
+#### Information Sections
+
+1. **Package Information**
+   - Package name and version (dynamically loaded from package.json)
+   - Description and main entry points
+   - Module and TypeScript definitions
+
+2. **System Information**
+   - Platform (iOS, Android, Web)
+   - Platform version
+   - Screen dimensions
+   - Development/Production environment
+
+3. **User Information**
+   - Authentication status
+   - Current user details (ID, username, email, premium status)
+   - Multi-user account count
+
+4. **API Configuration**
+   - Base API URL
+   - Connection status
+
+5. **Build Information**
+   - Build timestamp
+   - React Native framework
+   - JavaScript engine (Hermes)
+
+6. **Actions**
+   - Copy full report to clipboard (JSON format)
+   - Run system check
+   - Individual field copy functionality
+
+#### Usage in AccountCenter
+
+The AppInfoScreen is accessible from the AccountCenterScreen via the "App Information" button, providing users with transparency about the application and useful debugging information.
+
+#### Copy Functionality
+
+Users can copy individual fields by tapping on values marked as copyable, or generate a complete JSON report with all application information for support purposes.

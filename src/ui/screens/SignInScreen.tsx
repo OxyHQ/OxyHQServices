@@ -25,13 +25,13 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     const [password, setPassword] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
 
-    const { login, isLoading, user, isAuthenticated, users } = useOxy();
+    const { login, isLoading, user, isAuthenticated, sessions } = useOxy();
 
     const colors = useThemeColors(theme);
     const commonStyles = createCommonStyles(theme);
 
     // Check if this should be treated as "Add Account" mode
-    const isAddAccountMode = user && isAuthenticated && users && users.length > 0;
+    const isAddAccountMode = user && isAuthenticated && sessions && sessions.length > 0;
 
     const handleLogin = async () => {
         if (!username || !password) {

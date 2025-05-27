@@ -26,6 +26,7 @@ export { default as AccountCenterScreen } from './screens/AccountCenterScreen';
 export { default as SessionManagementScreen } from './screens/SessionManagementScreen';
 export { default as AccountOverviewScreen } from './screens/AccountOverviewScreen';
 export { default as AccountSettingsScreen } from './screens/AccountSettingsScreen';
+export { default as AppInfoScreen } from './screens/AppInfoScreen';
 
 // Export types
 export * from './navigation/types';
