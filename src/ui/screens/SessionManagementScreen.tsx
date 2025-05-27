@@ -1,0 +1,479 @@
+import React, { useState, useEffect } from 'react';
+import {
+    View,
+    Text,
+    TouchableOpacity,
+    StyleSheet,
+    ScrollView,
+    ActivityIndicator,
+    Alert,
+    Platform,
+    RefreshControl,
+} from 'react-native';
+import { BaseScreenProps } from '../navigation/types';
+import { useOxy } from '../context/OxyContext';
+import { fontFamilies } from '../styles/fonts';
+
+interface Session {
+    id: string;
+    deviceName?: string;
+    deviceType: string;
+    platform: string;
+    browser?: string;
+    ipAddress?: string;
+    userAgent?: string;
+    lastActivity: string;
+    createdAt: string;
+    isCurrent: boolean;
+}
+
+const SessionManagementScreen: React.FC<BaseScreenProps> = ({
+    onClose,
+    theme,
+}) => {
+    const { getUserSessions, logoutSession, oxyServices } = useOxy();
+    const [sessions, setSessions] = useState<Session[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [refreshing, setRefreshing] = useState(false);
+    const [actionLoading, setActionLoading] = useState<string | null>(null);
+
+    const isDarkTheme = theme === 'dark';
+    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
+    const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
+    const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#F5F5F5';
+    const borderColor = isDarkTheme ? '#444444' : '#E0E0E0';
+    const primaryColor = '#0066CC';
+    const dangerColor = '#D32F2F';
+    const successColor = '#2E7D32';
+
+    const loadSessions = async (isRefresh = false) => {
+        try {
+            if (isRefresh) {
+                setRefreshing(true);
+            } else {
+                setLoading(true);
+            }
+
+            const userSessions = await getUserSessions();
+            setSessions(userSessions);
+        } catch (error) {
+            console.error('Failed to load sessions:', error);
+            Alert.alert(
+                'Error',
+                'Failed to load sessions. Please try again.',
+                [{ text: 'OK' }]
+            );
+        } finally {
+            setLoading(false);
+            setRefreshing(false);
+        }
+    };
+
+    const handleLogoutSession = async (sessionId: string) => {
+        Alert.alert(
+            'Logout Session',
+            'Are you sure you want to logout this session?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Logout',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            setActionLoading(sessionId);
+                            await logoutSession(sessionId);
+                            
+                            // Remove the session from local state
+                            setSessions(prev => prev.filter(s => s.id !== sessionId));
+                            
+                            Alert.alert('Success', 'Session logged out successfully');
+                        } catch (error) {
+                            console.error('Logout session failed:', error);
+                            Alert.alert(
+                                'Error',
+                                'Failed to logout session. Please try again.'
+                            );
+                        } finally {
+                            setActionLoading(null);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    const handleLogoutOtherSessions = async () => {
+        const otherSessionsCount = sessions.filter(s => !s.isCurrent).length;
+        
+        if (otherSessionsCount === 0) {
+            Alert.alert('Info', 'No other sessions to logout.');
+            return;
+        }
+
+        Alert.alert(
+            'Logout Other Sessions',
+            `This will logout ${otherSessionsCount} other session${otherSessionsCount > 1 ? 's' : ''}. Continue?`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Logout Others',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            setActionLoading('others');
+                            await oxyServices.logoutOtherSessions();
+                            
+                            // Keep only current session in local state
+                            setSessions(prev => prev.filter(s => s.isCurrent));
+                            
+                            Alert.alert('Success', 'Other sessions logged out successfully');
+                        } catch (error) {
+                            console.error('Logout other sessions failed:', error);
+                            Alert.alert(
+                                'Error',
+                                'Failed to logout other sessions. Please try again.'
+                            );
+                        } finally {
+                            setActionLoading(null);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    const handleLogoutAllSessions = async () => {
+        Alert.alert(
+            'Logout All Sessions',
+            'This will logout all sessions including this one and you will need to sign in again. Continue?',
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Logout All',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            setActionLoading('all');
+                            await oxyServices.logoutAllSessions();
+                            // No need to update local state as user will be logged out
+                        } catch (error) {
+                            console.error('Logout all sessions failed:', error);
+                            Alert.alert(
+                                'Error',
+                                'Failed to logout all sessions. Please try again.'
+                            );
+                            setActionLoading(null);
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    const formatDate = (dateString: string) => {
+        const date = new Date(dateString);
+        const now = new Date();
+        const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
+
+        if (diffInMinutes < 1) return 'Just now';
+        if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
+        if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
+        if (diffInMinutes < 10080) return `${Math.floor(diffInMinutes / 1440)}d ago`;
+        
+        return date.toLocaleDateString();
+    };
+
+    const getDeviceIcon = (deviceType: string, platform: string) => {
+        if (platform.toLowerCase().includes('ios') || platform.toLowerCase().includes('iphone')) {
+            return '📱';
+        }
+        if (platform.toLowerCase().includes('android')) {
+            return '📱';
+        }
+        if (deviceType.toLowerCase().includes('mobile')) {
+            return '📱';
+        }
+        if (deviceType.toLowerCase().includes('tablet')) {
+            return '📱';
+        }
+        return '💻'; // Desktop/web
+    };
+
+    useEffect(() => {
+        loadSessions();
+    }, []);
+
+    if (loading) {
+        return (
+            <View style={[styles.container, styles.centerContent, { backgroundColor }]}>
+                <ActivityIndicator size="large" color={primaryColor} />
+                <Text style={[styles.loadingText, { color: textColor }]}>Loading sessions...</Text>
+            </View>
+        );
+    }
+
+    return (
+        <View style={[styles.container, { backgroundColor }]}>
+            <View style={styles.header}>
+                <Text style={[styles.title, { color: textColor }]}>Active Sessions</Text>
+                <Text style={[styles.subtitle, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                    Manage your active sessions across all devices
+                </Text>
+            </View>
+
+            <ScrollView
+                style={styles.scrollView}
+                contentContainerStyle={styles.scrollContainer}
+                refreshControl={
+                    <RefreshControl
+                        refreshing={refreshing}
+                        onRefresh={() => loadSessions(true)}
+                        tintColor={primaryColor}
+                    />
+                }
+            >
+                {sessions.length > 0 ? (
+                    <>
+                        {sessions.map((session) => (
+                            <View
+                                key={session.id}
+                                style={[
+                                    styles.sessionCard,
+                                    {
+                                        backgroundColor: secondaryBackgroundColor,
+                                        borderColor,
+                                        borderLeftColor: session.isCurrent ? successColor : borderColor,
+                                    },
+                                ]}
+                            >
+                                <View style={styles.sessionHeader}>
+                                    <View style={styles.sessionTitleRow}>
+                                        <Text style={styles.deviceIcon}>
+                                            {getDeviceIcon(session.deviceType, session.platform)}
+                                        </Text>
+                                        <View style={styles.sessionTitleText}>
+                                            <Text style={[styles.deviceName, { color: textColor }]}>
+                                                {session.deviceName || 'Unknown Device'}
+                                            </Text>
+                                            {session.isCurrent && (
+                                                <Text style={[styles.currentBadge, { color: successColor }]}>
+                                                    Current Session
+                                                </Text>
+                                            )}
+                                        </View>
+                                    </View>
+                                </View>
+
+                                <View style={styles.sessionDetails}>
+                                    <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                        {session.platform} • {session.deviceType}
+                                    </Text>
+                                    {session.browser && (
+                                        <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                            {session.browser}
+                                        </Text>
+                                    )}
+                                    <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                        Last active: {formatDate(session.lastActivity)}
+                                    </Text>
+                                    {session.ipAddress && (
+                                        <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                            IP: {session.ipAddress}
+                                        </Text>
+                                    )}
+                                </View>
+
+                                {!session.isCurrent && (
+                                    <TouchableOpacity
+                                        style={[styles.logoutButton, { backgroundColor: isDarkTheme ? '#400000' : '#FFEBEE' }]}
+                                        onPress={() => handleLogoutSession(session.id)}
+                                        disabled={actionLoading === session.id}
+                                    >
+                                        {actionLoading === session.id ? (
+                                            <ActivityIndicator size="small" color={dangerColor} />
+                                        ) : (
+                                            <Text style={[styles.logoutButtonText, { color: dangerColor }]}>
+                                                Logout
+                                            </Text>
+                                        )}
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+                        ))}
+
+                        <View style={styles.bulkActions}>
+                            <TouchableOpacity
+                                style={[styles.bulkActionButton, { backgroundColor: isDarkTheme ? '#1A1A1A' : '#F0F0F0', borderColor }]}
+                                onPress={handleLogoutOtherSessions}
+                                disabled={actionLoading === 'others' || sessions.filter(s => !s.isCurrent).length === 0}
+                            >
+                                {actionLoading === 'others' ? (
+                                    <ActivityIndicator size="small" color={primaryColor} />
+                                ) : (
+                                    <Text style={[styles.bulkActionButtonText, { color: textColor }]}>
+                                        Logout Other Sessions
+                                    </Text>
+                                )}
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.bulkActionButton, styles.dangerButton, { backgroundColor: isDarkTheme ? '#400000' : '#FFEBEE' }]}
+                                onPress={handleLogoutAllSessions}
+                                disabled={actionLoading === 'all'}
+                            >
+                                {actionLoading === 'all' ? (
+                                    <ActivityIndicator size="small" color={dangerColor} />
+                                ) : (
+                                    <Text style={[styles.bulkActionButtonText, { color: dangerColor }]}>
+                                        Logout All Sessions
+                                    </Text>
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    </>
+                ) : (
+                    <View style={styles.emptyState}>
+                        <Text style={[styles.emptyStateText, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                            No active sessions found
+                        </Text>
+                    </View>
+                )}
+            </ScrollView>
+
+            <View style={[styles.footer, { borderTopColor: borderColor }]}>
+                <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+                    <Text style={[styles.closeButtonText, { color: primaryColor }]}>Close</Text>
+                </TouchableOpacity>
+            </View>
+        </View>
+    );
+};
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+    },
+    centerContent: {
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    header: {
+        padding: 20,
+        paddingBottom: 16,
+    },
+    title: {
+        fontFamily: Platform.OS === 'web'
+            ? 'Phudu'
+            : 'phuduSemiBold',
+        fontWeight: Platform.OS === 'web' ? '600' : undefined,
+        fontSize: 24,
+        marginBottom: 8,
+    },
+    subtitle: {
+        fontSize: 16,
+        lineHeight: 20,
+    },
+    scrollView: {
+        flex: 1,
+    },
+    scrollContainer: {
+        padding: 20,
+        paddingTop: 0,
+    },
+    sessionCard: {
+        borderRadius: 12,
+        borderWidth: 1,
+        borderLeftWidth: 4,
+        padding: 16,
+        marginBottom: 12,
+    },
+    sessionHeader: {
+        marginBottom: 12,
+    },
+    sessionTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    deviceIcon: {
+        fontSize: 20,
+        marginRight: 12,
+    },
+    sessionTitleText: {
+        flex: 1,
+    },
+    deviceName: {
+        fontSize: 16,
+        fontWeight: '600',
+        marginBottom: 2,
+    },
+    currentBadge: {
+        fontSize: 12,
+        fontWeight: '500',
+    },
+    sessionDetails: {
+        marginBottom: 12,
+    },
+    sessionDetail: {
+        fontSize: 14,
+        marginBottom: 2,
+    },
+    logoutButton: {
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        borderRadius: 6,
+        alignItems: 'center',
+        alignSelf: 'flex-start',
+    },
+    logoutButtonText: {
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    bulkActions: {
+        marginTop: 20,
+        paddingTop: 20,
+        borderTopWidth: 1,
+        borderTopColor: '#E0E0E0',
+    },
+    bulkActionButton: {
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        borderRadius: 8,
+        borderWidth: 1,
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    dangerButton: {
+        borderColor: 'transparent',
+    },
+    bulkActionButtonText: {
+        fontSize: 16,
+        fontWeight: '500',
+    },
+    emptyState: {
+        alignItems: 'center',
+        paddingVertical: 40,
+    },
+    emptyStateText: {
+        fontSize: 16,
+        fontStyle: 'italic',
+    },
+    loadingText: {
+        fontSize: 16,
+        marginTop: 16,
+    },
+    footer: {
+        padding: 16,
+        borderTopWidth: 1,
+        alignItems: 'center',
+    },
+    closeButton: {
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+    },
+    closeButtonText: {
+        fontSize: 16,
+        fontWeight: '600',
+    },
+});
+
+export default SessionManagementScreen;

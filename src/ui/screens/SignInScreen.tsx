@@ -25,42 +25,13 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     const [password, setPassword] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
 
-    const { login, isLoading, user, isAuthenticated } = useOxy();
+    const { login, isLoading, user, isAuthenticated, users } = useOxy();
 
     const colors = useThemeColors(theme);
     const commonStyles = createCommonStyles(theme);
 
-    // If user is already authenticated, show user info instead of login form
-    if (user && isAuthenticated) {
-        return (
-            <View style={[commonStyles.container, { padding: 20 }]}>
-                <Text style={[
-                    styles.title,
-                    { color: colors.text }
-                ]}>Welcome, {user.username}!</Text>
-
-                <View style={[styles.userInfoContainer, { backgroundColor: colors.inputBackground }]}>
-                    <Text style={[styles.userInfoText, { color: colors.text }]}>
-                        You are already signed in.
-                    </Text>
-                    {user.email && (
-                        <Text style={[styles.userInfoText, { color: colors.secondaryText }]}>
-                            Email: {user.email}
-                        </Text>
-                    )}
-                </View>
-
-                <View style={styles.actionButtonsContainer}>
-                    <TouchableOpacity
-                        style={[commonStyles.button, { backgroundColor: colors.primary }]}
-                        onPress={() => navigate('AccountCenter')}
-                    >
-                        <Text style={commonStyles.buttonText}>Go to Account Center</Text>
-                    </TouchableOpacity>
-                </View>
-            </View>
-        );
-    }
+    // Check if this should be treated as "Add Account" mode
+    const isAddAccountMode = user && isAuthenticated && users && users.length > 0;
 
     const handleLogin = async () => {
         if (!username || !password) {
@@ -90,7 +61,15 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             <Text style={[
                 styles.title,
                 { color: colors.text }
-            ]}>Sign In</Text>
+            ]}>{isAddAccountMode ? 'Add Another Account' : 'Sign In'}</Text>
+
+            {isAddAccountMode && (
+                <View style={[styles.infoContainer, { backgroundColor: colors.inputBackground }]}>
+                    <Text style={[styles.infoText, { color: colors.secondaryText }]}>
+                        Currently signed in as {user?.username}. Sign in with another account to add it to this device.
+                    </Text>
+                </View>
+            )}
 
             {errorMessage ? (
                 <View style={commonStyles.errorContainer}>
@@ -134,7 +113,9 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                     {isLoading ? (
                         <ActivityIndicator color="#FFFFFF" size="small" />
                     ) : (
-                        <Text style={commonStyles.buttonText}>Sign In</Text>
+                        <Text style={commonStyles.buttonText}>
+                            {isAddAccountMode ? 'Add Account' : 'Sign In'}
+                        </Text>
                     )}
                 </TouchableOpacity>
 
@@ -199,6 +180,17 @@ const styles = StyleSheet.create({
     },
     actionButtonsContainer: {
         marginTop: 20,
+    },
+    infoContainer: {
+        padding: 16,
+        marginVertical: 16,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    infoText: {
+        fontSize: 14,
+        lineHeight: 20,
+        textAlign: 'center',
     },
 });
 

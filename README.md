@@ -72,6 +72,14 @@ import { OxyProvider, OxySignInButton, Avatar } from '@oxyhq/services/full';
 
 For detailed documentation on UI components, see [UI_COMPONENTS.md](UI_COMPONENTS.md).
 
+## What's New in 5.2.0
+
+- **Multi-User Authentication**: Support for signing in with multiple accounts simultaneously
+- **Account Switcher**: Built-in UI for switching between authenticated accounts
+- **Session Management**: View and manage active sessions across devices with remote logout capabilities
+- **Enhanced Security**: Comprehensive session tracking with device information
+- **Account Center**: New account management interface with multi-user support
+
 ## What's New in 5.1.5
 
 - **Fixed BottomSheet on Native Platforms**: The `OxyProvider` component now correctly displays the authentication UI in a bottom sheet on native platforms.
@@ -230,6 +238,148 @@ async function loginUser() {
 
 *   **UI Components Not Available**: The React Native UI components (like `OxyProvider`, `OxySignInButton`, etc.) included in this package are designed for client-side React Native applications and are **not usable** in a Node.js environment.
 *   **Buffer File Uploads**: For file uploads, if you are providing data as a `Buffer` (common in Node.js when handling file streams or direct file reads), the package automatically uses `form-data` internally to correctly construct the multipart/form-data request. This ensures seamless file uploads from server-side buffers.
+
+## Multi-User Authentication
+
+The Oxy Services library now supports multi-user authentication, allowing users to sign in with multiple accounts simultaneously and switch between them seamlessly.
+
+### Features
+
+- **Multiple Account Support**: Users can sign in with multiple accounts and switch between them
+- **Account Switcher**: Built-in UI component for easy account switching
+- **Session Management**: View and manage active sessions across all devices
+- **Remote Logout**: Log out from specific sessions remotely
+- **Device Tracking**: Track session activity across different devices and platforms
+
+### Usage
+
+```typescript
+import { OxyProvider, useOxy } from '@oxyhq/services/full';
+
+// The OxyProvider automatically handles multi-user state
+function App() {
+  return (
+    <OxyProvider oxyServices={oxyServices}>
+      <MyApp />
+    </OxyProvider>
+  );
+}
+
+function MyApp() {
+  const { 
+    user,           // Current active user
+    users,          // Array of all authenticated users
+    switchUser,     // Switch to a different user
+    removeUser,     // Remove a user from the account list
+    getUserSessions, // Get sessions for a user
+    logoutSession   // Logout from a specific session
+  } = useOxy();
+
+  // Switch to a different user
+  const handleSwitchUser = async (userId) => {
+    await switchUser(userId);
+  };
+
+  // Remove a user account
+  const handleRemoveUser = async (userId) => {
+    await removeUser(userId);
+  };
+
+  // Get sessions for current user
+  const handleGetSessions = async () => {
+    const sessions = await getUserSessions();
+    console.log('Active sessions:', sessions);
+  };
+
+  return (
+    <div>
+      <h1>Welcome, {user?.username}</h1>
+      <p>You have {users.length} account(s) signed in</p>
+      
+      {/* Account switcher */}
+      {users.length > 1 && (
+        <AccountSwitcher 
+          users={users}
+          currentUser={user}
+          onSwitchUser={handleSwitchUser}
+        />
+      )}
+    </div>
+  );
+}
+```
+
+### Built-in UI Components
+
+The library includes several UI components for multi-user functionality:
+
+#### AccountSwitcherScreen
+Displays all authenticated accounts and allows switching between them:
+
+```typescript
+import { AccountSwitcherScreen } from '@oxyhq/services/full';
+
+// The component is automatically available through OxyProvider navigation
+// Access via: showBottomSheet('AccountSwitcher')
+```
+
+#### SessionManagementScreen
+Shows active sessions across devices with logout capabilities:
+
+```typescript
+import { SessionManagementScreen } from '@oxyhq/services/full';
+
+// Access via: showBottomSheet('SessionManagement')
+```
+
+#### Enhanced SignInScreen
+The sign-in screen now supports adding additional accounts:
+
+```typescript
+// When user is already authenticated, the sign-in screen
+// automatically switches to "Add Account" mode
+const { showBottomSheet } = useOxy();
+
+// Show sign-in screen (will show "Add Account" if user is authenticated)
+showBottomSheet('SignIn');
+```
+
+### API Reference
+
+#### Multi-User Context Methods
+
+```typescript
+interface OxyContextState {
+  // Multi-user state
+  user: User | null;              // Current active user
+  users: AuthenticatedUser[];     // All authenticated users
+  
+  // Multi-user methods
+  switchUser: (userId: string) => Promise<void>;
+  removeUser: (userId: string) => Promise<void>;
+  getUserSessions: (userId?: string) => Promise<SessionData[]>;
+  logoutSession: (sessionId: string, userId?: string) => Promise<void>;
+  logoutAll: () => Promise<void>; // Logout all users
+}
+```
+
+#### Session Data Structure
+
+```typescript
+interface SessionData {
+  id: string;
+  deviceInfo: {
+    deviceType: string;
+    platform: string;
+    browser?: string;
+    os?: string;
+    ipAddress: string;
+    lastActive: Date;
+  };
+  createdAt: Date;
+  isCurrent: boolean;
+}
+```
 
 ## Usage Examples
 

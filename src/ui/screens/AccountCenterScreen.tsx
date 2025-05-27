@@ -19,7 +19,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     theme,
     navigate,
 }) => {
-    const { user, logout, isLoading } = useOxy();
+    const { user, logout, isLoading, users } = useOxy();
 
     const isDarkTheme = theme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
@@ -93,6 +93,26 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 </View>
 
                 <View style={styles.actionsContainer}>
+                    {/* Show Account Switcher if multiple users exist */}
+                    {users && users.length > 1 && (
+                        <TouchableOpacity
+                            style={[styles.actionButton, { borderColor }]}
+                            onPress={() => navigate('AccountSwitcher')}
+                        >
+                            <Text style={[styles.actionButtonText, { color: textColor }]}>
+                                Switch Account ({users.length} accounts)
+                            </Text>
+                        </TouchableOpacity>
+                    )}
+
+                    {/* Add Account button - always shown for multi-user functionality */}
+                    <TouchableOpacity
+                        style={[styles.actionButton, { borderColor }]}
+                        onPress={() => navigate('SignIn')}
+                    >
+                        <Text style={[styles.actionButtonText, { color: textColor }]}>Add Another Account</Text>
+                    </TouchableOpacity>
+
                     <TouchableOpacity
                         style={[styles.actionButton, { borderColor }]}
                         onPress={() => navigate('AccountSettings', { activeTab: 'profile' })}
@@ -105,6 +125,13 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                         onPress={() => navigate('AccountSettings')}
                     >
                         <Text style={[styles.actionButtonText, { color: textColor }]}>Account Settings</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.actionButton, { borderColor }]}
+                        onPress={() => navigate('SessionManagement')}
+                    >
+                        <Text style={[styles.actionButtonText, { color: textColor }]}>Manage Sessions</Text>
                     </TouchableOpacity>
 
                     {Platform.OS !== 'web' && (

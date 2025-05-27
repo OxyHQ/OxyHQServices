@@ -277,6 +277,61 @@ export class OxyServices {
     }
   }
 
+  /* Session Management Methods */
+
+  /**
+   * Get active sessions for the authenticated user
+   * @returns Array of active session objects
+   */
+  async getUserSessions(): Promise<any[]> {
+    try {
+      const res = await this.client.get('/sessions');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Logout from a specific session
+   * @param sessionId - The session ID to logout from
+   * @returns Success status
+   */
+  async logoutSession(sessionId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await this.client.delete(`/sessions/${sessionId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Logout from all other sessions (keep current session active)
+   * @returns Success status
+   */
+  async logoutOtherSessions(): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await this.client.post('/sessions/logout-others');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Logout from all sessions
+   * @returns Success status
+   */
+  async logoutAllSessions(): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await this.client.post('/sessions/logout-all');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
   /* Profile Methods */
 
   /**

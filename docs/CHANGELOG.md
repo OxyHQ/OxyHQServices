@@ -2,6 +2,133 @@
 
 All notable changes to this project will be documented in this file.
 
+## [5.2.0] - Multi-User Authentication System
+
+### 🚀 New Features
+
+#### Multi-User Authentication
+- **Multiple Account Support**: Users can now sign in with multiple accounts simultaneously
+- **Account Switcher**: Built-in UI component for seamless account switching
+- **Session Management**: Comprehensive session management across devices
+- **Remote Logout**: Ability to logout from specific sessions remotely
+- **Enhanced Security**: Session tracking with device information and activity monitoring
+
+#### Backend API Enhancements
+- **Session Management Endpoints**: New `/sessions` API for managing user sessions
+- **Device Tracking**: Enhanced session tracking with device information (platform, browser, OS, IP)
+- **Session Activity**: Automatic session activity updates via authentication middleware
+- **Remote Session Control**: API endpoints for remote session management
+
+#### Frontend UI Components
+- **AccountSwitcherScreen**: New screen for managing multiple accounts
+- **SessionManagementScreen**: Interface for viewing and managing active sessions
+- **Enhanced SignInScreen**: Automatic "Add Account" mode when user is authenticated
+- **Enhanced AccountCenterScreen**: Added multi-user management buttons
+
+#### Core Library Updates
+- **Multi-User Context**: Enhanced `OxyContext` with multi-user state management
+- **Session API Methods**: New methods for session management in `OxyServices` core
+- **Storage Management**: Improved storage handling for multiple authenticated users
+- **Legacy Migration**: Automatic migration from single-user to multi-user format
+
+### 🔧 Technical Improvements
+
+#### Backend
+- **Session Model**: New MongoDB schema for session tracking
+- **Session Utilities**: Extracted session management functions to prevent circular dependencies
+- **Enhanced Auth Middleware**: Added automatic session activity tracking
+- **Device Information**: Comprehensive device fingerprinting for security
+
+#### Frontend
+- **Context Architecture**: Restructured authentication context for multi-user support
+- **Storage Optimization**: Efficient storage management for multiple user tokens
+- **Token Validation**: Enhanced token validation during app initialization
+- **Error Handling**: Improved error handling for multi-user scenarios
+
+#### Security
+- **Session Isolation**: Each user session is properly isolated
+- **Token Security**: Secure token storage and management per user
+- **Device Tracking**: Enhanced security monitoring through device tracking
+- **Session Expiration**: Automatic cleanup of expired sessions
+
+### 🛠️ API Changes
+
+#### New Endpoints
+```
+GET    /sessions                    - List active sessions for user
+DELETE /sessions/:sessionId         - Remote logout from specific session
+POST   /sessions/logout-others      - Logout from all other sessions
+POST   /sessions/logout-all         - Logout from all sessions
+```
+
+#### Enhanced Endpoints
+```
+POST   /auth/login                  - Now creates session records
+GET    /auth/validate               - Enhanced with session validation
+```
+
+#### New Context Methods
+```typescript
+switchUser(userId: string): Promise<void>
+removeUser(userId: string): Promise<void>
+getUserSessions(userId?: string): Promise<SessionData[]>
+logoutSession(sessionId: string, userId?: string): Promise<void>
+logoutAll(): Promise<void>
+```
+
+### 📱 UI/UX Improvements
+
+- **Seamless Account Switching**: Quick switching between authenticated accounts
+- **Visual Account Indicators**: Clear indication of current active account
+- **Session Visibility**: Users can see and manage all their active sessions
+- **Device Information Display**: Sessions show device and location information
+- **Bulk Operations**: Support for bulk session logout operations
+
+### 🐛 Bug Fixes
+
+- **Session Persistence**: Fixed issue where sessions were lost on app refresh
+- **Circular Dependencies**: Resolved circular dependency in session management
+- **Token Validation**: Fixed token validation race conditions during initialization
+- **Storage Conflicts**: Resolved storage key conflicts between multiple users
+- **User ID Consistency**: Fixed User ID field inconsistency (`_id` vs `id`)
+
+### ⚠️ Breaking Changes
+
+- **Storage Format**: Authentication storage format has changed (automatic migration included)
+- **Context Interface**: `OxyContextState` interface has been extended with multi-user properties
+- **Navigation Routes**: New navigation routes added for multi-user screens
+
+### 🔄 Migration Guide
+
+The library automatically handles migration from single-user to multi-user format. No manual intervention required.
+
+For custom implementations:
+1. Update imports to use the enhanced context methods
+2. Handle the new multi-user state properties
+3. Update UI to support multiple account scenarios
+
+### 📚 Documentation Updates
+
+- **Multi-User Authentication Guide**: Comprehensive documentation for the new system
+- **API Reference**: Updated with new session management endpoints
+- **UI Components Guide**: Documentation for new multi-user components
+- **Security Best Practices**: Guidelines for secure multi-user implementation
+
+### 🔍 Testing
+
+- **Multi-User Scenarios**: Comprehensive testing across multiple user accounts
+- **Session Management**: Testing of session creation, validation, and cleanup
+- **Device Tracking**: Verification of device information collection
+- **Storage Migration**: Testing of automatic migration from legacy format
+- **Error Handling**: Edge case testing for network failures and token expiration
+
+### 🚀 Future Enhancements
+
+- **Push Notifications**: Session-specific push notification targeting
+- **Advanced Security**: Geolocation-based session validation
+- **Analytics Integration**: Session-based analytics and user behavior tracking
+- **Offline Support**: Enhanced offline capabilities for multi-user scenarios
+
 ## [5.1.33] - 2025-05-26
 
 ### Changed

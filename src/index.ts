@@ -17,6 +17,7 @@ import {
   SignInScreen, 
   SignUpScreen, 
   AccountCenterScreen,
+  SessionManagementScreen,
   
   // Components
   OxySignInButton,
@@ -50,6 +51,7 @@ export {
   SignInScreen, 
   SignUpScreen,
   AccountCenterScreen,
+  SessionManagementScreen,
   
   // Components
   OxySignInButton,

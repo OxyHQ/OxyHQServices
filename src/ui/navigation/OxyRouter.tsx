@@ -6,6 +6,8 @@ import { OxyServices } from '../../core';
 import SignInScreen from '../screens/SignInScreen';
 import SignUpScreen from '../screens/SignUpScreen';
 import AccountCenterScreen from '../screens/AccountCenterScreen';
+import AccountSwitcherScreen from '../screens/AccountSwitcherScreen';
+import SessionManagementScreen from '../screens/SessionManagementScreen';
 import AccountOverviewScreen from '../screens/AccountOverviewScreen';
 import AccountSettingsScreen from '../screens/AccountSettingsScreen';
 import KarmaCenterScreen from '../screens/karma/KarmaCenterScreen';
@@ -32,6 +34,14 @@ const routes: Record<string, RouteConfig> = {
     AccountCenter: {
         component: AccountCenterScreen,
         snapPoints: ['60%', '100%'],
+    },
+    AccountSwitcher: {
+        component: AccountSwitcherScreen,
+        snapPoints: ['70%', '100%'],
+    },
+    SessionManagement: {
+        component: SessionManagementScreen,
+        snapPoints: ['70%', '100%'],
     },
     AccountOverview: {
         component: AccountOverviewScreen,

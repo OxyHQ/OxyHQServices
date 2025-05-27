@@ -30,12 +30,13 @@ import { OxyServices, OxyProvider, OxySignInButton } from '@oxyhq/services/full'
 - [OxySignInButton](#oxysigninbutton)
 - [OxyLogo](#oxylogo)
 - [Avatar](#avatar)
-<<<<<<< HEAD
-- [Screens](#screens)
-  - [AccountSettingsScreen](#accountsettingsscreen)
-=======
 - [FollowButton](#followbutton)
->>>>>>> 4fae97b (feat: Add ModelUsageExample and SocialProfileExample components)
+- [Multi-User Components](#multi-user-components)
+  - [AccountSwitcherScreen](#accountswitcherscreen)
+  - [SessionManagementScreen](#sessionmanagementscreen)
+  - [Enhanced SignInScreen](#enhanced-signinscreen)
+- [Screens](#screens)
+  - [AccountCenterScreen](#accountcenterscreen)
 
 ## OxyProvider
 
@@ -170,48 +171,6 @@ npm install react-native-svg
 yarn add react-native-svg
 ```
 
-<<<<<<< HEAD
-## Screens
-
-### AccountSettingsScreen
-
-The AccountSettingsScreen component provides a user interface for editing account settings and profile information.
-
-```tsx
-import { AccountSettingsScreen } from '@oxyhq/services';
-
-// Basic usage
-<AccountSettingsScreen
-  goBack={() => {}}
-  theme="light"
-/>
-
-// Start with a specific tab open
-<AccountSettingsScreen
-  goBack={() => {}}
-  theme="dark"
-  activeTab="password"
-/>
-```
-
-#### Props
-
-| Prop | Type | Default | Description |
-|------|------|---------|-------------|
-| activeTab | `'profile' \| 'password' \| 'notifications'` | `'profile'` | Initial active tab |
-| theme | `'light' \| 'dark'` | `'light'` | Theme to use for styling |
-| goBack | `() => void` | | Function to call when the back button is pressed |
-
-#### Features
-
-The screen is divided into three tabs:
-
-1. **Profile**: Update username, email, bio, and avatar
-2. **Password**: Change account password with validation
-3. **Notifications**: Configure notification preferences
-
-For more details, see [the documentation](./docs/screens/AccountSettings.md).
-=======
 ## FollowButton
 
 An animated button component for social interactions that toggles between "Follow" and "Following" states with smooth transitions.
@@ -264,4 +223,141 @@ yarn add react-native-reanimated
 ```
 
 > **Note:** After installing react-native-reanimated, you may need to set up the Babel plugin. Add `'react-native-reanimated/plugin'` to your Babel plugins in `babel.config.js`.
->>>>>>> 4fae97b (feat: Add ModelUsageExample and SocialProfileExample components)
+
+## Multi-User Components
+
+The Oxy Services library includes several components specifically designed for multi-user authentication and session management.
+
+### AccountSwitcherScreen
+
+A screen component that displays all authenticated user accounts and allows switching between them.
+
+**Features:**
+- Display all authenticated user accounts
+- Switch between accounts with a single tap
+- Remove accounts from the list
+- Add new accounts
+- Visual indication of the current active account
+
+**Usage:**
+```tsx
+import { useOxy } from '@oxyhq/services/full';
+
+function MyComponent() {
+  const { showBottomSheet } = useOxy();
+  
+  const openAccountSwitcher = () => {
+    showBottomSheet('AccountSwitcher');
+  };
+  
+  return (
+    <button onClick={openAccountSwitcher}>
+      Switch Account
+    </button>
+  );
+}
+```
+
+**Navigation Path:** Available via `showBottomSheet('AccountSwitcher')`
+
+### SessionManagementScreen
+
+A comprehensive session management interface that shows active sessions across all devices with logout capabilities.
+
+**Features:**
+- View all active sessions across devices
+- Display device information (platform, browser, OS, IP address)
+- Individual session logout
+- Bulk logout operations
+- Session activity timestamps
+- Current session indication
+
+**Usage:**
+```tsx
+import { useOxy } from '@oxyhq/services/full';
+
+function MyComponent() {
+  const { showBottomSheet } = useOxy();
+  
+  const openSessionManager = () => {
+    showBottomSheet('SessionManagement');
+  };
+  
+  return (
+    <button onClick={openSessionManager}>
+      Manage Sessions
+    </button>
+  );
+}
+```
+
+**Navigation Path:** Available via `showBottomSheet('SessionManagement')`
+
+### Enhanced SignInScreen
+
+The sign-in screen has been enhanced to support multi-user functionality. When a user is already authenticated, it automatically switches to "Add Account" mode.
+
+**Features:**
+- Standard sign-in/sign-up functionality
+- Automatic "Add Account" mode when user is authenticated
+- Seamless integration with existing authentication flow
+- Support for multiple account registration
+
+**Usage:**
+```tsx
+import { useOxy } from '@oxyhq/services/full';
+
+function MyComponent() {
+  const { showBottomSheet, user } = useOxy();
+  
+  const openSignIn = () => {
+    // Will show "Add Account" mode if user is already authenticated
+    showBottomSheet('SignIn');
+  };
+  
+  return (
+    <button onClick={openSignIn}>
+      {user ? 'Add Another Account' : 'Sign In'}
+    </button>
+  );
+}
+```
+
+**Multi-User Context Integration:**
+```tsx
+// The enhanced context provides multi-user functionality
+const {
+  user,           // Current active user
+  users,          // All authenticated users
+  switchUser,     // Switch to different user
+  removeUser,     // Remove user from account list
+  getUserSessions, // Get user's active sessions
+  logoutSession,  // Logout from specific session
+  logoutAll       // Logout from all accounts
+} = useOxy();
+```
+
+## Screens
+
+### AccountCenterScreen
+
+The AccountCenterScreen component serves as a central hub for users to access and manage their account settings, preferences, and information.
+
+```tsx
+import { AccountCenterScreen } from '@oxyhq/services';
+
+// Basic usage
+<AccountCenterScreen
+  user={currentUser}
+  onEditProfile={() => console.log('Edit profile')}
+  onChangePassword={() => console.log('Change password')}
+/>
+```
+
+#### Props
+
+| Prop | Type | Default | Description |
+|------|------|---------|-------------|
+| user | `User` | *Required* | The current user object |
+| onEditProfile | `() => void` | `undefined` | Callback function invoked when editing the profile |
+| onChangePassword | `() => void` | `undefined` | Callback function invoked when changing the password |
