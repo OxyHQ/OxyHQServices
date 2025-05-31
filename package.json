@@ -1,7 +1,7 @@
 {
     "name": "@oxyhq/services",
-    "version": "5.2.7",
-    "description": "Reusable OxyHQ module to handle authentication, user management, karma system and more 🚀",
+    "version": "5.3.1",
+    "description": "Reusable OxyHQ module to handle authentication, user management, karma system, device-based session management and more 🚀",
     "main": "lib/commonjs/node/index.js",
     "module": "lib/module/node/index.js",
     "types": "lib/typescript/node/index.d.ts",
@@ -35,6 +35,8 @@
         "lib",
         "mock.js",
         "UI_COMPONENTS.md",
+        "CHANGELOG.md",
+        "MIGRATION_GUIDE.md",
         "assets"
     ],
     "keywords": [

@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, Rea
 import { OxyServices } from '../../core';
 import { User } from '../../models/interfaces';
 import { SecureLoginResponse, SecureClientSession, MinimalUserData } from '../../models/secureSession';
+import { DeviceManager } from '../../utils/deviceManager';
 
 // Define the context shape
 export interface OxyContextState {
@@ -24,6 +25,11 @@ export interface OxyContextState {
   switchSession: (sessionId: string) => Promise<void>;
   removeSession: (sessionId: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
+
+  // Device management methods
+  getDeviceSessions: () => Promise<any[]>;
+  logoutAllDeviceSessions: () => Promise<void>;
+  updateDeviceName: (deviceName: string) => Promise<void>;
 
   // Access to services
   oxyServices: OxyServices;
@@ -295,7 +301,21 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     setError(null);
 
     try {
-      const response: SecureLoginResponse = await oxyServices.secureLogin(username, password, deviceName);
+      // Get device fingerprint for enhanced device identification
+      const deviceFingerprint = DeviceManager.getDeviceFingerprint();
+      
+      // Get or generate persistent device info
+      const deviceInfo = await DeviceManager.getDeviceInfo();
+      
+      console.log('SecureAuth - Using device fingerprint:', deviceFingerprint);
+      console.log('SecureAuth - Using device ID:', deviceInfo.deviceId);
+
+      const response: SecureLoginResponse = await oxyServices.secureLogin(
+        username, 
+        password, 
+        deviceName || deviceInfo.deviceName || DeviceManager.getDefaultDeviceName(),
+        deviceFingerprint
+      );
       
       // Create client session object
       const clientSession: SecureClientSession = {
@@ -432,6 +452,54 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     }
   };
 
+  // Device management methods
+  const getDeviceSessions = async (): Promise<any[]> => {
+    if (!activeSessionId) throw new Error('No active session');
+
+    try {
+      return await oxyServices.getDeviceSessions(activeSessionId);
+    } catch (error) {
+      console.error('Get device sessions error:', error);
+      throw error;
+    }
+  };
+
+  const logoutAllDeviceSessions = async (): Promise<void> => {
+    if (!activeSessionId) throw new Error('No active session');
+
+    try {
+      await oxyServices.logoutAllDeviceSessions(activeSessionId);
+      
+      // Clear all local sessions since we logged out from all devices
+      setSessions([]);
+      setActiveSessionId(null);
+      setUser(null);
+      setMinimalUser(null);
+      await clearAllStorage();
+      
+      if (onAuthStateChange) {
+        onAuthStateChange(null);
+      }
+    } catch (error) {
+      console.error('Logout all device sessions error:', error);
+      throw error;
+    }
+  };
+
+  const updateDeviceName = async (deviceName: string): Promise<void> => {
+    if (!activeSessionId) throw new Error('No active session');
+
+    try {
+      await oxyServices.updateDeviceName(activeSessionId, deviceName);
+      
+      // Update local device info
+      await DeviceManager.updateDeviceName(deviceName);
+    } catch (error) {
+      console.error('Update device name error:', error);
+      throw error;
+    }
+  };
+
   // Bottom sheet control methods
   const showBottomSheet = useCallback((screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => {
     if (bottomSheetRef?.current) {
@@ -478,6 +546,9 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     switchSession,
     removeSession,
     refreshSessions,
+    getDeviceSessions,
+    logoutAllDeviceSessions,
+    updateDeviceName,
     oxyServices,
     bottomSheetRef,
     showBottomSheet,

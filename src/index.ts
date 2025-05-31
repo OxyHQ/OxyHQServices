@@ -6,6 +6,9 @@
 import OxyCore from './core';
 import { OxyServices } from './core';
 
+// ------------- Utility Imports -------------
+import { DeviceManager } from './utils/deviceManager';
+
 // ------------- UI Imports -------------
 import { 
   // Context and Hooks
@@ -13,18 +16,13 @@ import {
   OxyContextProvider, 
   useOxy,
   
-  // Screens
-  SignInScreen, 
-  SignUpScreen, 
-  AccountCenterScreen,
-  SessionManagementScreen,
-  
   // Components
   OxySignInButton,
   OxyLogo,
   Avatar,
   FollowButton,
-  FontLoader
+  FontLoader,
+  OxyIcon
 } from './ui';
 
 // ------------- Type Imports -------------
@@ -35,6 +33,10 @@ import * as Models from './models/interfaces';
 export default OxyCore; // Default export for backward compatibility
 export { OxyServices };
 export * from './core';
+
+// ------------- Utility Exports -------------
+export { DeviceManager } from './utils';
+export type { DeviceFingerprint, StoredDeviceInfo } from './utils';
 
 // ------------- Model Exports -------------
 export { Models };  // Export all models as a namespace
@@ -47,18 +49,13 @@ export {
   OxyContextProvider, 
   useOxy,
   
-  // Screens
-  SignInScreen, 
-  SignUpScreen,
-  AccountCenterScreen,
-  SessionManagementScreen,
-  
   // Components
   OxySignInButton,
   OxyLogo,
   Avatar,
   FollowButton,
-  FontLoader
+  FontLoader,
+  OxyIcon
 };
 
 // ------------- Type Exports -------------

@@ -48,6 +48,9 @@ import { SecureLoginResponse, SecureClientSession } from '../models/secureSessio
  */
 export const OXY_CLOUD_URL = 'https://cloud.oxy.so';
 
+// Export device management utilities
+export { DeviceManager, DeviceFingerprint, StoredDeviceInfo } from '../utils/deviceManager';
+
 interface JwtPayload {
   exp: number;
   userId: string;
@@ -101,17 +104,15 @@ export class OxyServices {
       response => response,
       async (error: AxiosError) => {
         const originalRequest = error.config;
-        
         // If the error is due to an expired token and we haven't tried refreshing yet
         if (
           error.response?.status === 401 &&
           this.refreshToken &&
-          originalRequest && 
+          originalRequest &&
           !originalRequest.headers?.['X-Retry-After-Refresh']
         ) {
           try {
             await this.refreshTokens();
-            
             // Retry the original request with new token
             const newRequest = { ...originalRequest };
             if (newRequest.headers) {
@@ -121,20 +122,24 @@ export class OxyServices {
             return this.client(newRequest);
           } catch (refreshError) {
             // If refresh fails, force user to login again
-            this.accessToken = null;
-            this.refreshToken = null;
+            this.clearTokens();
             return Promise.reject(refreshError);
           }
         }
-        
+
         // Format error response
         const apiError: ApiError = {
-          message: (error.response?.data as any)?.message || 'An unknown error occurred',
+          message: (error.response?.data as any)?.error || (error.response?.data as any)?.message || 'An unknown error occurred',
           code: (error.response?.data as any)?.code || 'UNKNOWN_ERROR',
           status: error.response?.status || 500,
           details: error.response?.data
         };
-        
+
+        // If the error is an invalid session, clear tokens
+        if (apiError.code === 'INVALID_SESSION' || apiError.message === 'Invalid session') {
+          this.clearTokens();
+        }
+
         return Promise.reject(apiError);
       }
     );
@@ -1028,15 +1033,22 @@ export class OxyServices {
    * @param username - User's username or email
    * @param password - User's password
    * @param deviceName - Optional device name for session tracking
+   * @param deviceFingerprint - Device fingerprint for enhanced security
    * @returns Secure login response with session data
    */
-  async secureLogin(username: string, password: string, deviceName?: string): Promise<SecureLoginResponse> {
+  async secureLogin(username: string, password: string, deviceName?: string, deviceFingerprint?: any): Promise<SecureLoginResponse> {
     try {
-      const res = await this.client.post('/secure-session/login', { 
+      const payload: any = { 
         username, 
         password, 
         deviceName 
-      });
+      };
+      
+      if (deviceFingerprint) {
+        payload.deviceFingerprint = deviceFingerprint;
+      }
+      
+      const res = await this.client.post('/secure-session/login', payload);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -1131,6 +1143,58 @@ export class OxyServices {
   async validateSession(sessionId: string): Promise<{ valid: boolean; expiresAt: string; lastActivity: string }> {
     try {
       const res = await this.client.get(`/secure-session/validate/${sessionId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get all active sessions for a specific device
+   * @param sessionId - Current session ID
+   * @param deviceId - Optional device ID (uses current session's device if not provided)
+   * @returns Array of device sessions
+   */
+  async getDeviceSessions(sessionId: string, deviceId?: string): Promise<any[]> {
+    try {
+      const params = deviceId ? `?deviceId=${deviceId}` : '';
+      const res = await this.client.get(`/secure-session/device/sessions/${sessionId}${params}`);
+      return res.data.sessions;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Logout all sessions on a specific device
+   * @param sessionId - Current session ID
+   * @param deviceId - Optional device ID (uses current session's device if not provided)
+   * @param excludeCurrent - Whether to exclude the current session from logout
+   * @returns Success status
+   */
+  async logoutAllDeviceSessions(sessionId: string, deviceId?: string, excludeCurrent: boolean = true): Promise<{ message: string; sessionsTerminated: number }> {
+    try {
+      const res = await this.client.post(`/secure-session/device/logout-all/${sessionId}`, { 
+        deviceId,
+        excludeCurrent 
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Update device name for all sessions on a device
+   * @param sessionId - Current session ID
+   * @param deviceName - New device name
+   * @returns Success status
+   */
+  async updateDeviceName(sessionId: string, deviceName: string): Promise<{ message: string; deviceName: string }> {
+    try {
+      const res = await this.client.put(`/secure-session/device/name/${sessionId}`, { 
+        deviceName 
+      });
       return res.data;
     } catch (error) {
       throw this.handleError(error);

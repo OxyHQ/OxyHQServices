@@ -2,6 +2,31 @@
 
 This document provides details about the UI components available in the `@oxyhq/services` package.
 
+## What's New in v5.3.0
+
+### 🔐 Enhanced Device-Based Session Management
+- **DeviceManager**: Cross-platform device fingerprinting and persistent device ID management
+- **Enhanced Authentication**: Login flow now includes automatic device fingerprinting  
+- **Session Isolation**: Multiple users can sign in on shared devices with isolated sessions
+- **Remote Management**: View and manage sessions across all devices
+
+### 🎨 Complete UI Component Suite
+All screens and components are now fully implemented and exported:
+
+**Authentication & Account Management:**
+- `SignInScreen`, `SignUpScreen`, `AccountCenterScreen`, `SessionManagementScreen`
+- `AccountOverviewScreen`, `AccountSettingsScreen`, `AccountSwitcherScreen`
+
+**Karma System:**
+- `KarmaCenterScreen`, `KarmaLeaderboardScreen`, `KarmaRewardsScreen`
+- `KarmaRulesScreen`, `KarmaAboutScreen`, `KarmaFAQScreen`
+
+**Utility Components:**
+- `OxyIcon`, `Avatar`, `FollowButton`, `OxyLogo`, `FontLoader`
+
+### 📱 Cross-Platform Support
+All components work seamlessly across web browsers and React Native applications.
+
 ## Import Guide
 
 The package provides different entry points for different use cases:

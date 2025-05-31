@@ -1,14 +1,16 @@
 # Oxy Services Module
 
-A unified client library for the Oxy API (authentication, user management, notifications, payments, analytics, wallet, karma, and file management).
+A unified client library for the Oxy API featuring enhanced device-based session management, authentication, user management, notifications, payments, analytics, wallet, karma, and file management.
 
 ## Table of Contents
 
 - [Overview](#overview)
+- [What's New in v5.3.0](#whats-new-in-v530)
 - [Installation](#installation)
 - [Usage](#usage)
   - [Using in React Native](#using-in-react-native)
   - [Using in Node.js / Express](#using-in-nodejs--express)
+  - [Enhanced Device Session Management](#enhanced-device-session-management)
 - [Configuration](#configuration)
 - [API Reference](#api-reference)
   - [OxyConfig](#oxyconfig)
@@ -85,6 +87,50 @@ For detailed documentation on UI components, see [UI_COMPONENTS.md](UI_COMPONENT
 - **Fixed BottomSheet on Native Platforms**: The `OxyProvider` component now correctly displays the authentication UI in a bottom sheet on native platforms.
 - **Added Bottom Sheet Controls**: The `OxyProvider` component now provides methods via context (`showBottomSheet`, `hideBottomSheet`) for programmatic control of the bottom sheet.
 - **Improved Native Animations**: Enhanced animation and layout behavior for a smoother experience on all platforms.
+
+---
+
+## What's New in v5.3.0
+
+### 🔐 Enhanced Device-Based Session Management
+
+This release introduces a comprehensive device-based session management system that enables:
+
+- **Device Fingerprinting**: Consistent device identification across sessions
+- **Multi-User Support**: Multiple users can sign in on shared devices with session isolation
+- **Remote Session Management**: View and manage sessions across all devices
+- **Enhanced Security**: No PII stored locally, server-side session validation
+- **Cross-Platform Support**: Works with both web browsers and React Native apps
+
+```typescript
+import { DeviceManager, OxyServices } from '@oxyhq/services';
+
+// Initialize device manager for fingerprinting
+const deviceManager = new DeviceManager();
+await deviceManager.initialize();
+
+// Enhanced login with device fingerprinting
+const oxyServices = new OxyServices(config);
+const response = await oxyServices.secureLogin(username, password, {
+  deviceFingerprint: await deviceManager.generateFingerprint()
+});
+
+// Manage device sessions
+const deviceSessions = await oxyServices.getDeviceSessions(sessionId);
+await oxyServices.logoutAllDeviceSessions(sessionId);
+await oxyServices.updateDeviceName(sessionId, 'My Device');
+```
+
+### 🎨 Complete UI Component Suite
+
+All UI components and screens are now fully implemented:
+
+- **Authentication Screens**: SignInScreen, SignUpScreen, SessionManagementScreen
+- **Account Management**: AccountCenterScreen, AccountOverviewScreen, AccountSettingsScreen  
+- **Karma System**: KarmaCenterScreen, KarmaLeaderboardScreen, KarmaRewardsScreen, KarmaRulesScreen, KarmaAboutScreen, KarmaFAQScreen
+- **Utility Components**: OxyIcon, Avatar, FollowButton, OxyLogo, FontLoader
+
+---
 
 ## Installation
 
@@ -407,7 +453,7 @@ interface SessionData {
   id: string;
   deviceInfo: {
     deviceType: string;
-    platform: string;
+    platform: string;m 
     browser?: string;
     os?: string;
     ipAddress: string;
@@ -528,3 +574,48 @@ For more comprehensive examples, see:
 - [GridFS Server Example](examples/GridFSServerExample.js) - Server-side implementation using Express and MongoDB
 
 For detailed documentation on file management, see [FILE_MANAGEMENT.md](docs/FILE_MANAGEMENT.md).
+
+### Export Structure
+
+#### 🔧 Public API Components (Exported)
+These are available for external use in your applications:
+
+```typescript
+// Context & Hooks
+import { OxyProvider, OxyContextProvider, useOxy } from '@oxyhq/services';
+
+// UI Components
+import { 
+  OxySignInButton,
+  OxyLogo,
+  Avatar,
+  FollowButton,
+  FontLoader,
+  OxyIcon
+} from '@oxyhq/services';
+
+// Device Management
+import { DeviceManager } from '@oxyhq/services';
+import type { DeviceFingerprint, StoredDeviceInfo } from '@oxyhq/services';
+
+// Core Services
+import { OxyServices } from '@oxyhq/services';
+
+// Types
+import type { 
+  OxyContextState, 
+  OxyContextProviderProps 
+} from '@oxyhq/services';
+```
+
+#### 🚪 Internal Screens (Router Use Only)
+These screens are used internally by the package router and are **not exported**:
+
+- `SignInScreen`, `SignUpScreen`
+- `AccountCenterScreen`, `SessionManagementScreen`
+- `AccountOverviewScreen`, `AccountSettingsScreen`
+- `KarmaCenterScreen`, `KarmaLeaderboardScreen`, `KarmaRewardsScreen`
+- `KarmaRulesScreen`, `KarmaAboutScreen`, `KarmaFAQScreen`
+- `AccountSwitcherScreen`, `AppInfoScreen`
+
+> **Note**: Screens are handled internally by the package routing system. Use the exported components and hooks to build your own UI or trigger the built-in screens through the context methods.
