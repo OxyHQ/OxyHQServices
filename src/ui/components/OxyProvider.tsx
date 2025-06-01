@@ -11,6 +11,7 @@ import AccountCenterScreen from '../screens/AccountCenterScreen';
 import { OxyContextProvider, useOxy } from '../context/OxyContext';
 import OxyRouter from '../navigation/OxyRouter';
 import { FontLoader, setupFonts } from './FontLoader';
+import { Toaster } from '../../lib/sonner';
 
 // Import bottom sheet components directly - no longer a peer dependency
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView } from './bottomSheet';
@@ -71,6 +72,10 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
                             {children}
                         </SafeAreaProvider>
                     </BottomSheetModalProvider>
+                    {/* Move Toaster outside BottomSheetModalProvider to ensure it appears above the modal backdrop */}
+                    <View style={styles.toasterContainer}>
+                        <Toaster position="top-center" swipeToDismissDirection="left" offset={15} />
+                    </View>
                 </GestureHandlerRootView>
             </FontLoader>
         </OxyContextProvider>
@@ -531,6 +536,16 @@ const styles = StyleSheet.create({
                 width: '100%',
             }
         })
+    },
+    toasterContainer: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: 9999,
+        elevation: 9999, // For Android
+        pointerEvents: 'box-none', // Allow touches to pass through to underlying components
     },
 });
 

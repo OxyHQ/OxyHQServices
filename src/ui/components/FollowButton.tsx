@@ -64,10 +64,23 @@ export interface FollowButtonProps {
    * @default true
    */
   showLoadingState?: boolean;
+
+  /**
+   * Whether to prevent default action and stop event propagation
+   * Useful when the button is inside links or other pressable containers
+   * @default true
+   */
+  preventParentActions?: boolean;
+
+  /**
+   * Custom onPress handler - if provided, will override default follow/unfollow behavior
+   * Event object is passed to allow for preventDefault/stopPropagation
+   */
+  onPress?: (event: any) => void;
 }
 
 /**
- * An animated follow button with interactive state changes
+ * An animated follow button with interactive state changes and preventDefault support
  * 
  * @example
  * ```tsx
@@ -82,6 +95,26 @@ export interface FollowButtonProps {
  *   style={{ borderRadius: 12 }}
  *   onFollowChange={(isFollowing) => console.log(`User is now ${isFollowing ? 'followed' : 'unfollowed'}`)}
  * />
+ * 
+ * // Inside a pressable container (prevents parent actions)
+ * <TouchableOpacity onPress={() => navigateToProfile()}>
+ *   <View>
+ *     <Text>User Profile</Text>
+ *     <FollowButton 
+ *       userId="123" 
+ *       preventParentActions={true} // Default: true
+ *     />
+ *   </View>
+ * </TouchableOpacity>
+ * 
+ * // Custom onPress handler
+ * <FollowButton 
+ *   userId="123" 
+ *   onPress={(event) => {
+ *     event.preventDefault(); // Custom preventDefault
+ *     // Custom logic here
+ *   }}
+ * />
  * ```
  */
 const FollowButton: React.FC<FollowButtonProps> = ({
@@ -93,6 +126,8 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   textStyle,
   disabled = false,
   showLoadingState = true,
+  preventParentActions = true,
+  onPress,
 }) => {
   const { oxyServices, isAuthenticated } = useOxy();
   const [isFollowing, setIsFollowing] = useState(initiallyFollowing);
@@ -110,8 +145,32 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     });
   }, [isFollowing, animationProgress]);
 
-  // The button press handler
-  const handlePress = async () => {
+  // The button press handler with preventDefault support
+  const handlePress = async (event?: any) => {
+    // Prevent parent actions if enabled (e.g., if inside a link or pressable container)
+    if (preventParentActions && event) {
+      // For React Native Web compatibility
+      if (Platform.OS === 'web' && event.preventDefault) {
+        event.preventDefault();
+      }
+      
+      // Stop event propagation to prevent parent TouchableOpacity/Pressable actions
+      if (event.stopPropagation) {
+        event.stopPropagation();
+      }
+      
+      // For React Native, prevent gesture bubbling
+      if (event.nativeEvent && event.nativeEvent.stopPropagation) {
+        event.nativeEvent.stopPropagation();
+      }
+    }
+
+    // If custom onPress is provided, use it instead of default behavior
+    if (onPress) {
+      onPress(event);
+      return;
+    }
+
     if (disabled || isLoading || !isAuthenticated) return;
     
     // Touch feedback animation

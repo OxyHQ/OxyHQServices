@@ -187,3 +187,32 @@ export interface FileDeleteResponse {
   message: string;
   fileId: string;
 }
+
+// Device Session interfaces
+export interface DeviceSession {
+  sessionId: string;
+  deviceId: string;
+  deviceName: string;
+  isActive: boolean;
+  lastActive: string;
+  expiresAt: string;
+  isCurrent: boolean;
+  user?: User;
+  createdAt?: string;
+}
+
+export interface DeviceSessionsResponse {
+  deviceId: string;
+  sessions: DeviceSession[];
+}
+
+export interface DeviceSessionLogoutResponse {
+  message: string;
+  deviceId: string;
+  sessionsTerminated: number;
+}
+
+export interface UpdateDeviceNameResponse {
+  message: string;
+  deviceName: string;
+}

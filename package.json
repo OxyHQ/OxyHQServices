@@ -71,13 +71,15 @@
         "@react-native-async-storage/async-storage": "^2.1.2",
         "axios": "^1.9.0",
         "expo-font": "^13.3.1",
-        "form-data": "^4.0.0",
         "expo-linear-gradient": "^14.1.4",
+        "form-data": "^4.0.0",
         "invariant": "^2.2.4",
         "jwt-decode": "^4.0.0",
         "react-native-actions-sheet": "^0.9.7",
         "react-native-safe-area-context": "^5.4.0",
-        "react-test-renderer": "^18.3.1"
+        "react-test-renderer": "^18.3.1",
+        "sonner": "^2.0.4",
+        "sonner-native": "^0.20.0"
     },
     "devDependencies": {
         "@commitlint/cli": "^17.6.5",

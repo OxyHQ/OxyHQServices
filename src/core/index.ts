@@ -37,7 +37,12 @@ import {
   FileUploadResponse,
   FileListResponse,
   FileUpdateRequest,
-  FileDeleteResponse
+  FileDeleteResponse,
+  // Device session interfaces
+  DeviceSession,
+  DeviceSessionsResponse,
+  DeviceSessionLogoutResponse,
+  UpdateDeviceNameResponse
 } from '../models/interfaces';
 
 // Import secure session types
@@ -334,6 +339,69 @@ export class OxyServices {
   async logoutAllSessions(): Promise<{ success: boolean; message: string }> {
     try {
       const res = await this.client.post('/sessions/logout-all');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get device sessions for a specific session ID
+   * @param sessionId - The session ID to get device sessions for
+   * @param deviceId - Optional device ID filter
+   * @returns Array of device sessions
+   */
+  async getDeviceSessions(sessionId: string, deviceId?: string): Promise<DeviceSession[]> {
+    try {
+      const params = deviceId ? { deviceId } : {};
+      const res = await this.client.get(`/secure-session/device/sessions/${sessionId}`, { params });
+      
+      // Map backend response to frontend interface
+      return (res.data.sessions || []).map((session: any) => ({
+        sessionId: session.sessionId,
+        deviceId: res.data.deviceId || '',
+        deviceName: session.deviceInfo?.deviceName || 'Unknown Device',
+        isActive: true, // All returned sessions are active
+        lastActive: session.lastActive,
+        expiresAt: session.expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        isCurrent: session.sessionId === sessionId,
+        user: session.user,
+        createdAt: session.createdAt
+      }));
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Logout all device sessions for a specific device
+   * @param sessionId - The session ID
+   * @param deviceId - Optional device ID (uses current session's device if not provided)
+   * @param excludeCurrent - Whether to exclude the current session from logout
+   * @returns Logout response
+   */
+  async logoutAllDeviceSessions(sessionId: string, deviceId?: string, excludeCurrent?: boolean): Promise<DeviceSessionLogoutResponse> {
+    try {
+      const data: any = {};
+      if (deviceId) data.deviceId = deviceId;
+      if (excludeCurrent !== undefined) data.excludeCurrent = excludeCurrent;
+      
+      const res = await this.client.post(`/secure-session/device/logout-all/${sessionId}`, data);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Update device name for a session
+   * @param sessionId - The session ID
+   * @param deviceName - The new device name
+   * @returns Update response
+   */
+  async updateDeviceName(sessionId: string, deviceName: string): Promise<UpdateDeviceNameResponse> {
+    try {
+      const res = await this.client.put(`/secure-session/device/name/${sessionId}`, { deviceName });
       return res.data;
     } catch (error) {
       throw this.handleError(error);
