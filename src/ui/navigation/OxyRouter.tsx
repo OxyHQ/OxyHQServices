@@ -93,6 +93,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
     onAuthenticated,
     theme,
     adjustSnapPoints,
+    navigationRef,
 }) => {
     const [currentScreen, setCurrentScreen] = useState<string>(initialScreen);
     const [screenHistory, setScreenHistory] = useState<string[]>([initialScreen]);
@@ -114,7 +115,22 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         } else {
             console.error(`Screen "${screen}" not found`);
         }
-    };    // Expose the navigate method to the parent component (OxyProvider)
+    };
+
+    // Expose the navigate function to the parent component
+    useEffect(() => {
+        if (navigationRef) {
+            navigationRef.current = navigate;
+        }
+        
+        return () => {
+            if (navigationRef) {
+                navigationRef.current = null;
+            }
+        };
+    }, [navigate, navigationRef]);
+
+    // Expose the navigate method to the parent component (OxyProvider)
     useEffect(() => {
         // Set up event listener for navigation events
         const handleNavigationEvent = (event: any) => {
@@ -132,15 +148,34 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
             }
         };
 
-        // Add event listener (web only)
+        // For React Native - check for global navigation events
+        let intervalId: NodeJS.Timeout | null = null;
+        
         if (typeof document !== 'undefined') {
+            // Web - use custom event listener
             document.addEventListener('oxy:navigate', handleNavigationEvent);
+        } else {
+            // React Native - poll for global navigation events
+            intervalId = setInterval(() => {
+                const globalNav = (global as any).oxyNavigateEvent;
+                if (globalNav) {
+                    console.log(`RN Navigation event received:`, globalNav);
+                    if (globalNav.screen) {
+                        navigate(globalNav.screen, globalNav.props || {});
+                    }
+                    // Clear the event after processing
+                    (global as any).oxyNavigateEvent = null;
+                }
+            }, 100); // Check every 100ms
         }
 
         // Cleanup
         return () => {
             if (typeof document !== 'undefined') {
                 document.removeEventListener('oxy:navigate', handleNavigationEvent);
+            }
+            if (intervalId) {
+                clearInterval(intervalId);
             }
         };
     }, []);

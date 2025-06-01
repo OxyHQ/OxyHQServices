@@ -1125,12 +1125,24 @@ export class OxyServices {
    * @param sessionId - Current session ID
    */
   async logoutAllSecureSessions(sessionId: string): Promise<void> {
+    console.log('logoutAllSecureSessions called with sessionId:', sessionId);
+    console.log('API client defaults:', this.client.defaults);
+    
     try {
-      await this.client.post(`/secure-session/logout-all/${sessionId}`);
+      const response = await this.client.post(`/secure-session/logout-all/${sessionId}`);
+      console.log('logoutAllSecureSessions response:', response.status, response.data);
+      
       // Clear tokens since all sessions are logged out
       this.accessToken = null;
       this.refreshToken = null;
+      console.log('Tokens cleared successfully');
     } catch (error) {
+      console.error('logoutAllSecureSessions error:', error);
+      if (error && typeof error === 'object' && 'response' in error) {
+        const axiosError = error as any;
+        console.error('Error response data:', axiosError.response?.data);
+        console.error('Error response status:', axiosError.response?.status);
+      }
       throw this.handleError(error);
     }
   }

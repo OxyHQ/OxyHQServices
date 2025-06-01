@@ -161,10 +161,43 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
 
         if (sessionsData) {
           const parsedSessions: SecureClientSession[] = JSON.parse(sessionsData);
-          setSessions(parsedSessions);
+          
+          // Migrate old session format to include user info
+          const migratedSessions: SecureClientSession[] = [];
+          let shouldUpdateStorage = false;
+          
+          for (const session of parsedSessions) {
+            if (!session.userId || !session.username) {
+              // Session is missing user info, try to fetch it
+              try {
+                const sessionUser = await oxyServices.getUserBySession(session.sessionId);
+                migratedSessions.push({
+                  ...session,
+                  userId: sessionUser.id,
+                  username: sessionUser.username
+                });
+                shouldUpdateStorage = true;
+                console.log(`Migrated session ${session.sessionId} for user ${sessionUser.username}`);
+              } catch (error) {
+                // Session might be invalid, skip it
+                console.log(`Removing invalid session ${session.sessionId}:`, error);
+                shouldUpdateStorage = true;
+              }
+            } else {
+              // Session already has user info
+              migratedSessions.push(session);
+            }
+          }
+          
+          // Update storage if we made changes
+          if (shouldUpdateStorage) {
+            await saveSessionsToStorage(migratedSessions);
+          }
+          
+          setSessions(migratedSessions);
 
-          if (storedActiveSessionId && parsedSessions.length > 0) {
-            const activeSession = parsedSessions.find(s => s.sessionId === storedActiveSessionId);
+          if (storedActiveSessionId && migratedSessions.length > 0) {
+            const activeSession = migratedSessions.find(s => s.sessionId === storedActiveSessionId);
             
             if (activeSession) {
               console.log('SecureAuth - activeSession found:', activeSession);
@@ -317,16 +350,42 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
         deviceFingerprint
       );
       
-      // Create client session object
+      // Create client session object with user info for duplicate detection
       const clientSession: SecureClientSession = {
         sessionId: response.sessionId,
         deviceId: response.deviceId,
         expiresAt: response.expiresAt,
-        lastActive: new Date().toISOString()
+        lastActive: new Date().toISOString(),
+        userId: response.user.id,
+        username: response.user.username
       };
 
-      // Add to sessions list
-      const updatedSessions = [...sessions, clientSession];
+      // Check if this user already has a session (prevent duplicate accounts)
+      const existingUserSessionIndex = sessions.findIndex(s => 
+        s.userId === response.user.id || s.username === response.user.username
+      );
+
+      let updatedSessions: SecureClientSession[];
+      
+      if (existingUserSessionIndex !== -1) {
+        // User already has a session - replace it with the new one (reused session scenario)
+        const existingSession = sessions[existingUserSessionIndex];
+        updatedSessions = [...sessions];
+        updatedSessions[existingUserSessionIndex] = clientSession;
+        
+        console.log(`Reusing/updating existing session for user ${response.user.username}. Previous session: ${existingSession.sessionId}, New session: ${response.sessionId}`);
+        
+        // If the replaced session was the active one, update active session
+        if (activeSessionId === existingSession.sessionId) {
+          setActiveSessionId(response.sessionId);
+          await saveActiveSessionId(response.sessionId);
+        }
+      } else {
+        // Add new session for new user
+        updatedSessions = [...sessions, clientSession];
+        console.log(`Added new session for user ${response.user.username} on device ${response.deviceId}`);
+      }
+
       setSessions(updatedSessions);
       await saveSessionsToStorage(updatedSessions);
 
@@ -393,10 +452,24 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
 
   // Logout all sessions
   const logoutAll = async (): Promise<void> => {
-    if (!activeSessionId) return;
+    console.log('logoutAll called with activeSessionId:', activeSessionId);
+    
+    if (!activeSessionId) {
+      console.error('No active session ID found, cannot logout all');
+      setError('No active session found');
+      throw new Error('No active session found');
+    }
+
+    if (!oxyServices) {
+      console.error('OxyServices not initialized');
+      setError('Service not available');
+      throw new Error('Service not available');
+    }
 
     try {
+      console.log('Calling oxyServices.logoutAllSecureSessions with sessionId:', activeSessionId);
       await oxyServices.logoutAllSecureSessions(activeSessionId);
+      console.log('logoutAllSecureSessions completed successfully');
       
       // Clear all local data
       setSessions([]);
@@ -404,13 +477,16 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
       setUser(null);
       setMinimalUser(null);
       await clearAllStorage();
+      console.log('Local storage cleared');
       
       if (onAuthStateChange) {
         onAuthStateChange(null);
+        console.log('Auth state change callback called');
       }
     } catch (error) {
       console.error('Logout all error:', error);
-      setError('Logout all failed');
+      setError(`Logout all failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      throw error;
     }
   };
 
@@ -502,25 +578,39 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
 
   // Bottom sheet control methods
   const showBottomSheet = useCallback((screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => {
+    console.log('showBottomSheet called with:', screenOrConfig);
+    
     if (bottomSheetRef?.current) {
-      // Use expand() instead of present() to trigger animations
+      console.log('bottomSheetRef is available');
+      
+      // First, show the bottom sheet
       if (bottomSheetRef.current.expand) {
+        console.log('Expanding bottom sheet');
         bottomSheetRef.current.expand();
+      } else if (bottomSheetRef.current.present) {
+        console.log('Presenting bottom sheet');
+        bottomSheetRef.current.present();
       } else {
-        // Fallback to present if expand is not available
-        bottomSheetRef.current.present?.();
+        console.warn('No expand or present method available on bottomSheetRef');
       }
       
-      // Navigate to the specified screen if provided
+      // Then navigate to the specified screen if provided
       if (screenOrConfig) {
-        if (typeof screenOrConfig === 'string') {
-          // Simple screen name
-          bottomSheetRef.current._navigateToScreen?.(screenOrConfig);
-        } else {
-          // Screen with props
-          bottomSheetRef.current._navigateToScreen?.(screenOrConfig.screen, screenOrConfig.props);
-        }
+        // Add a small delay to ensure the bottom sheet is opened first
+        setTimeout(() => {
+          if (typeof screenOrConfig === 'string') {
+            // Simple screen name
+            console.log('Navigating to screen:', screenOrConfig);
+            bottomSheetRef.current?._navigateToScreen?.(screenOrConfig);
+          } else {
+            // Screen with props
+            console.log('Navigating to screen with props:', screenOrConfig.screen, screenOrConfig.props);
+            bottomSheetRef.current?._navigateToScreen?.(screenOrConfig.screen, screenOrConfig.props);
+          }
+        }, 100);
       }
+    } else {
+      console.warn('bottomSheetRef is not available');
     }
   }, [bottomSheetRef]);
 

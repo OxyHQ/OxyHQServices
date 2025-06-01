@@ -95,6 +95,9 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
 }) => {
     // Use the internal ref (which is passed as a prop from OxyProvider)
     const modalRef = useRef<BottomSheetModal>(null);
+    
+    // Create a ref to store the navigation function from OxyRouter
+    const navigationRef = useRef<((screen: string, props?: Record<string, any>) => void) | null>(null);
 
     // Track content height for dynamic sizing
     const [contentHeight, setContentHeight] = useState<number>(0);
@@ -122,16 +125,24 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             // Add a method to navigate between screens
             // @ts-ignore - Adding custom method
             bottomSheetRef.current._navigateToScreen = (screenName: string, props?: Record<string, any>) => {
-                // Access the navigation function exposed by OxyRouter
-                // Use internal mechanism to notify router about navigation
-                // We'll use a simple event-based approach
+                console.log(`Navigation requested: ${screenName}`, props);
+                
+                // Try direct navigation function first (most reliable)
+                if (navigationRef.current) {
+                    console.log('Using direct navigation function');
+                    navigationRef.current(screenName, props);
+                    return;
+                }
+                
+                // Fallback to event-based navigation
                 if (typeof document !== 'undefined') {
                     // For web - use a custom event
+                    console.log('Using web event navigation');
                     const event = new CustomEvent('oxy:navigate', { detail: { screen: screenName, props } });
                     document.dispatchEvent(event);
                 } else {
-                    // For React Native - use the navigation prop directly if available
-                    // We'll implement a mechanism in OxyRouter to listen for this
+                    // For React Native - use the global variable approach
+                    console.log('Using React Native global navigation');
                     (global as any).oxyNavigateEvent = { screen: screenName, props };
                 }
             };
@@ -481,6 +492,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                         onAuthenticated={handleAuthenticated}
                         theme={theme}
                         adjustSnapPoints={adjustSnapPoints}
+                        navigationRef={navigationRef}
                     />
                 </Animated.View>
             </BottomSheetScrollView>
