@@ -15,6 +15,7 @@ import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { packageInfo } from '../../constants/version';
+import { toast } from '../../lib/sonner';
 
 interface SystemInfo {
     platform: string;
@@ -58,9 +59,9 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     const copyToClipboard = async (text: string, label: string) => {
         try {
             await Clipboard.setString(text);
-            Alert.alert('Copied', `${label} copied to clipboard`);
+            toast.success(`${label} copied to clipboard`);
         } catch (error) {
-            Alert.alert('Error', 'Failed to copy to clipboard');
+            toast.error('Failed to copy to clipboard');
         }
     };
 
@@ -195,11 +196,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                     <TouchableOpacity 
                         style={[styles.actionButton, { backgroundColor: successColor }]}
                         onPress={() => {
-                            Alert.alert(
-                                'System Check',
-                                'All systems operational',
-                                [{ text: 'OK' }]
-                            );
+                            toast.success('All systems operational');
                         }}
                     >
                         <Text style={styles.actionButtonText}>Run System Check</Text>

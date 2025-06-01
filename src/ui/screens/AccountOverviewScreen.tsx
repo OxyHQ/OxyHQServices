@@ -16,6 +16,7 @@ import { useOxy } from '../context/OxyContext';
 import OxyLogo from '../components/OxyLogo';
 import Avatar from '../components/Avatar';
 import { fontFamilies } from '../styles/fonts';
+import { toast } from '../../lib/sonner';
 
 const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -59,7 +60,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
             }
         } catch (error) {
             console.error('Logout failed:', error);
-            Alert.alert('Logout Failed', 'There was a problem signing you out. Please try again.');
+            toast.error('There was a problem signing you out. Please try again.');
         }
     };
 
@@ -83,7 +84,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     };
 
     const handleAddAccount = () => {
-        Alert.alert('Add Account', 'Add another account feature coming soon!');
+        toast.info('Add another account feature coming soon!');
     };
 
     const handleSignOutAll = () => {
@@ -168,7 +169,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                     <TouchableOpacity
                         style={[styles.manageAccountButton, { borderColor }]}
-                        onPress={() => Alert.alert('Account', 'Manage your Oxy Account feature coming soon!')}
+                        onPress={() => toast.info('Manage your Oxy Account feature coming soon!')}
                     >
                         <Text style={[styles.manageAccountText, { color: textColor }]}>
                             Manage your Oxy Account
@@ -195,7 +196,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             <TouchableOpacity
                                 key={account.id}
                                 style={[styles.accountItem, { borderColor }]}
-                                onPress={() => Alert.alert('Switch Account', `Switch to ${account.username}?`)}
+                                onPress={() => toast.info(`Switch to ${account.username}?`)}
                             >
                                 <View style={styles.accountItemLeft}>
                                     {account.avatar.url ? (
@@ -260,42 +261,42 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         <Text style={{ fontSize: 18 }}>🕒</Text>,
                         'History',
                         'Saving',
-                        () => Alert.alert('History', 'View your history feature coming soon!')
+                        () => toast.info('View your history feature coming soon!')
                     )}
 
                     {renderFeatureItem(
                         <Text style={{ fontSize: 18 }}>⏱️</Text>,
                         'Delete last 15 minutes',
                         null,
-                        () => Alert.alert('Delete History', 'Delete recent history feature coming soon!')
+                        () => toast.info('Delete recent history feature coming soon!')
                     )}
 
                     {renderFeatureItem(
                         <Text style={{ fontSize: 18 }}>📋</Text>,
                         'Saves & Collections',
                         null,
-                        () => Alert.alert('Saves', 'Saved items feature coming soon!')
+                        () => toast.info('Saved items feature coming soon!')
                     )}
 
                     {renderFeatureItem(
                         <Text style={{ fontSize: 18 }}>🔍</Text>,
                         'Search personalization',
                         null,
-                        () => Alert.alert('Personalization', 'Search personalization feature coming soon!')
+                        () => toast.info('Search personalization feature coming soon!')
                     )}
 
                     {renderFeatureItem(
                         <Text style={{ fontSize: 18 }}>🛡️</Text>,
                         'SafeSearch',
                         features.safeSearch ? 'On' : 'Off',
-                        () => Alert.alert('SafeSearch', 'SafeSearch settings feature coming soon!')
+                        () => toast.info('SafeSearch settings feature coming soon!')
                     )}
 
                     {renderFeatureItem(
                         <Text style={{ fontSize: 18 }}>🌐</Text>,
                         'Language',
                         features.language,
-                        () => Alert.alert('Language', 'Language settings feature coming soon!')
+                        () => toast.info('Language settings feature coming soon!')
                     )}
                 </View>
 
@@ -303,7 +304,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                     <View style={styles.footerButtonsRow}>
                         <TouchableOpacity
                             style={styles.footerButton}
-                            onPress={() => Alert.alert('Settings', 'More settings feature coming soon!')}
+                            onPress={() => toast.info('More settings feature coming soon!')}
                         >
                             <Text style={[styles.footerButtonText, { color: textColor }]}>
                                 More settings
@@ -312,7 +313,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                         <TouchableOpacity
                             style={styles.footerButton}
-                            onPress={() => Alert.alert('Help', 'Help & support feature coming soon!')}
+                            onPress={() => toast.info('Help & support feature coming soon!')}
                         >
                             <Text style={[styles.footerButtonText, { color: textColor }]}>
                                 Help
@@ -321,11 +322,11 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                     </View>
 
                     <View style={styles.footerLinksRow}>
-                        <TouchableOpacity onPress={() => Alert.alert('Privacy', 'Privacy Policy feature coming soon!')}>
+                        <TouchableOpacity onPress={() => toast.info('Privacy Policy feature coming soon!')}>
                             <Text style={[styles.footerLink, { color: iconColor }]}>Privacy Policy</Text>
                         </TouchableOpacity>
                         <Text style={[{ color: iconColor, marginHorizontal: 5 }]}>•</Text>
-                        <TouchableOpacity onPress={() => Alert.alert('Terms', 'Terms of Service feature coming soon!')}>
+                        <TouchableOpacity onPress={() => toast.info('Terms of Service feature coming soon!')}>
                             <Text style={[styles.footerLink, { color: iconColor }]}>Terms of Service</Text>
                         </TouchableOpacity>
                     </View>

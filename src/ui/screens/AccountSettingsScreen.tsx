@@ -14,6 +14,7 @@ import {
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import Avatar from '../components/Avatar';
+import { toast } from '../../lib/sonner';
 
 interface AccountSettingsScreenProps extends BaseScreenProps {
     activeTab?: 'profile' | 'password' | 'notifications';
@@ -104,9 +105,9 @@ const AccountSettingsScreen: React.FC<AccountSettingsScreenProps> = ({
 
             // Call API to update user
             await oxyServices.updateUser(user!.id, updates);
-            setSuccessMessage('Profile updated successfully');
+            toast.success('Profile updated successfully');
         } catch (error: any) {
-            setErrorMessage(error.message || 'Failed to update profile');
+            toast.error(error.message || 'Failed to update profile');
         } finally {
             setIsLoading(false);
         }
@@ -115,17 +116,17 @@ const AccountSettingsScreen: React.FC<AccountSettingsScreenProps> = ({
     const handleChangePassword = async () => {
         // Validate inputs
         if (!currentPassword || !newPassword || !confirmPassword) {
-            setErrorMessage('Please fill in all password fields');
+            toast.error('Please fill in all password fields');
             return;
         }
 
         if (newPassword !== confirmPassword) {
-            setErrorMessage('New passwords do not match');
+            toast.error('New passwords do not match');
             return;
         }
 
         if (newPassword.length < 8) {
-            setErrorMessage('Password must be at least 8 characters long');
+            toast.error('Password must be at least 8 characters long');
             return;
         }
 
@@ -144,9 +145,9 @@ const AccountSettingsScreen: React.FC<AccountSettingsScreenProps> = ({
             setCurrentPassword('');
             setNewPassword('');
             setConfirmPassword('');
-            setSuccessMessage('Password updated successfully');
+            toast.success('Password updated successfully');
         } catch (error: any) {
-            setErrorMessage(error.message || 'Failed to update password');
+            toast.error(error.message || 'Failed to update password');
         } finally {
             setIsLoading(false);
         }
@@ -165,9 +166,9 @@ const AccountSettingsScreen: React.FC<AccountSettingsScreenProps> = ({
                     push: pushNotifications,
                 },
             });
-            setSuccessMessage('Notification preferences updated successfully');
+            toast.success('Notification preferences updated successfully');
         } catch (error: any) {
-            setErrorMessage(error.message || 'Failed to update notification preferences');
+            toast.error(error.message || 'Failed to update notification preferences');
         } finally {
             setIsLoading(false);
         }

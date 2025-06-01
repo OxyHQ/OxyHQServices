@@ -13,6 +13,7 @@ import {
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
+import { toast } from '../../lib/sonner';
 
 interface Session {
     id: string;
@@ -84,13 +85,10 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                             // Refresh sessions to update the list
                             await refreshSessions();
                             
-                            Alert.alert('Success', 'Session logged out successfully');
+                            toast.success('Session logged out successfully');
                         } catch (error) {
                             console.error('Logout session failed:', error);
-                            Alert.alert(
-                                'Error',
-                                'Failed to logout session. Please try again.'
-                            );
+                            toast.error('Failed to logout session. Please try again.');
                         } finally {
                             setActionLoading(null);
                         }
@@ -104,7 +102,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         const otherSessionsCount = userSessions.filter(s => s.sessionId !== activeSessionId).length;
         
         if (otherSessionsCount === 0) {
-            Alert.alert('Info', 'No other sessions to logout.');
+            toast.info('No other sessions to logout.');
             return;
         }
 
@@ -129,13 +127,10 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                             // Refresh sessions to update the list
                             await refreshSessions();
                             
-                            Alert.alert('Success', 'Other sessions logged out successfully');
+                            toast.success('Other sessions logged out successfully');
                         } catch (error) {
                             console.error('Logout other sessions failed:', error);
-                            Alert.alert(
-                                'Error',
-                                'Failed to logout other sessions. Please try again.'
-                            );
+                            toast.error('Failed to logout other sessions. Please try again.');
                         } finally {
                             setActionLoading(null);
                         }
@@ -161,10 +156,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                             // No need to update local state as user will be logged out
                         } catch (error) {
                             console.error('Logout all sessions failed:', error);
-                            Alert.alert(
-                                'Error',
-                                'Failed to logout all sessions. Please try again.'
-                            );
+                            toast.error('Failed to logout all sessions. Please try again.');
                             setActionLoading(null);
                         }
                     },

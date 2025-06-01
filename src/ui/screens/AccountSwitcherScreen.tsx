@@ -16,6 +16,7 @@ import { useOxy } from '../context/OxyContext';
 import { SecureClientSession } from '../../models/secureSession';
 import { fontFamilies } from '../styles/fonts';
 import { User } from '../../models/interfaces';
+import { toast } from '../../lib/sonner';
 
 interface SessionWithUser extends SecureClientSession {
     userProfile?: User;
@@ -125,13 +126,13 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         setSwitchingToUserId(sessionId);
         try {
             await switchSession(sessionId);
-            Alert.alert('Success', 'Account switched successfully!');
+            toast.success('Account switched successfully!');
             if (onClose) {
                 onClose();
             }
         } catch (error) {
             console.error('Switch session failed:', error);
-            Alert.alert('Switch Failed', 'There was a problem switching accounts. Please try again.');
+            toast.error('There was a problem switching accounts. Please try again.');
         } finally {
             setSwitchingToUserId(null);
         }
@@ -160,10 +161,10 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                         setRemovingUserId(sessionId);
                         try {
                             await removeSession(sessionId);
-                            Alert.alert('Success', 'Account removed successfully!');
+                            toast.success('Account removed successfully!');
                         } catch (error) {
                             console.error('Remove session failed:', error);
-                            Alert.alert('Remove Failed', 'There was a problem removing the account. Please try again.');
+                            toast.error('There was a problem removing the account. Please try again.');
                         } finally {
                             setRemovingUserId(null);
                         }
@@ -187,13 +188,13 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         // Check if we have the required data
         if (!activeSessionId) {
             console.error('🔴 ERROR: No activeSessionId found!');
-            Alert.alert('Error', 'No active session found. You may already be logged out.');
+            toast.error('No active session found. You may already be logged out.');
             return;
         }
         
         if (typeof logoutAll !== 'function') {
             console.error('🔴 ERROR: logoutAll is not a function!', typeof logoutAll);
-            Alert.alert('Error', 'Logout function not available. Please try refreshing the app.');
+            toast.error('Logout function not available. Please try refreshing the app.');
             return;
         }
         
@@ -203,7 +204,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             console.log('🔴 TESTING: About to call logoutAll() directly');
             await logoutAll();
             console.log('🔴 TESTING: logoutAll() completed successfully');
-            Alert.alert('Success', 'All accounts signed out successfully!');
+            toast.success('All accounts signed out successfully!');
             if (onClose) {
                 console.log('🔴 TESTING: Calling onClose');
                 onClose();
@@ -211,7 +212,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         } catch (error) {
             console.error('🔴 TESTING: Logout all failed:', error);
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-            Alert.alert('Logout Failed', `There was a problem signing out: ${errorMessage}`);
+            toast.error(`There was a problem signing out: ${errorMessage}`);
         }
         
         /* ORIGINAL CODE WITH CONFIRMATION - TEMPORARILY DISABLED
@@ -235,7 +236,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                             console.log('🔴 CONFIRMATION: About to call logoutAll()');
                             await logoutAll();
                             console.log('🔴 CONFIRMATION: logoutAll() completed successfully');
-                            Alert.alert('Success', 'All accounts signed out successfully!');
+                            toast.success('All accounts signed out successfully!');
                             if (onClose) {
                                 console.log('🔴 CONFIRMATION: Calling onClose');
                                 onClose();
@@ -243,7 +244,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                         } catch (error) {
                             console.error('🔴 CONFIRMATION: Logout all failed:', error);
                             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-                            Alert.alert('Logout Failed', `There was a problem signing out: ${errorMessage}`);
+                            toast.error(`There was a problem signing out: ${errorMessage}`);
                         }
                     },
                 },
@@ -264,7 +265,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             setDeviceSessions(allSessions || []);
         } catch (error) {
             console.error('Failed to load device sessions:', error);
-            Alert.alert('Error', 'Failed to load device sessions. Please try again.');
+            toast.error('Failed to load device sessions. Please try again.');
         } finally {
             setLoadingDeviceSessions(false);
         }
@@ -288,10 +289,10 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                             await oxyServices?.logoutSecureSession(user?.sessionId || '', sessionId);
                             // Refresh device sessions list
                             await loadAllDeviceSessions();
-                            Alert.alert('Success', `Signed out from ${deviceName} successfully!`);
+                            toast.success(`Signed out from ${deviceName} successfully!`);
                         } catch (error) {
                             console.error('Remote logout failed:', error);
-                            Alert.alert('Logout Failed', 'There was a problem signing out from the device. Please try again.');
+                            toast.error('There was a problem signing out from the device. Please try again.');
                         } finally {
                             setRemoteLogoutSessionId(null);
                         }
@@ -306,7 +307,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         const otherDevicesCount = deviceSessions.filter(session => !session.isCurrent).length;
         
         if (otherDevicesCount === 0) {
-            Alert.alert('No Other Devices', 'No other device sessions found to sign out from.');
+            toast.info('No other device sessions found to sign out from.');
             return;
         }
 
@@ -327,10 +328,10 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                             await oxyServices?.logoutAllDeviceSessions(user?.sessionId || '', undefined, true);
                             // Refresh device sessions list
                             await loadAllDeviceSessions();
-                            Alert.alert('Success', `Signed out from all other devices successfully!`);
+                            toast.success('Signed out from all other devices successfully!');
                         } catch (error) {
                             console.error('Logout all devices failed:', error);
-                            Alert.alert('Logout Failed', 'There was a problem signing out from other devices. Please try again.');
+                            toast.error('There was a problem signing out from other devices. Please try again.');
                         } finally {
                             setLoggingOutAllDevices(false);
                         }

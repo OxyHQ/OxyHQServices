@@ -14,6 +14,7 @@ import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { packageInfo } from '../../constants/version';
+import { toast } from '../../lib/sonner';
 
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -38,7 +39,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
             }
         } catch (error) {
             console.error('Logout failed:', error);
-            Alert.alert('Logout Failed', 'There was a problem signing you out. Please try again.');
+            toast.error('There was a problem signing you out. Please try again.');
         }
     };
 
@@ -138,7 +139,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                     {Platform.OS !== 'web' && (
                         <TouchableOpacity
                             style={[styles.actionButton, { borderColor }]}
-                            onPress={() => Alert.alert('Notifications', 'Notifications feature coming soon!')}
+                            onPress={() => toast.info('Notifications feature coming soon!')}
                         >
                             <Text style={[styles.actionButtonText, { color: textColor }]}>Notifications</Text>
                         </TouchableOpacity>
@@ -146,7 +147,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 
                     <TouchableOpacity
                         style={[styles.actionButton, { borderColor }]}
-                        onPress={() => Alert.alert('Help', 'Help & Support feature coming soon!')}
+                        onPress={() => toast.info('Help & Support feature coming soon!')}
                     >
                         <Text style={[styles.actionButtonText, { color: textColor }]}>Help & Support</Text>
                     </TouchableOpacity>

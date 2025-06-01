@@ -19,6 +19,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
+import { toast } from '../../lib/sonner';
 
 export interface FollowButtonProps {
   /**
@@ -202,8 +203,12 @@ const FollowButton: React.FC<FollowButtonProps> = ({
       if (onFollowChange) {
         onFollowChange(newFollowingState);
       }
+
+      // Show success toast
+      toast.success(newFollowingState ? 'Following user!' : 'Unfollowed user');
     } catch (error) {
       console.error('Follow action failed:', error);
+      toast.error('Failed to update follow status. Please try again.');
     } finally {
       setIsLoading(false);
     }

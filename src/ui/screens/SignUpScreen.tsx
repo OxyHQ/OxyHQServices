@@ -20,6 +20,7 @@ import OxyLogo from '../components/OxyLogo';
 import { BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
 import { Ionicons } from '@expo/vector-icons'; // Add icon import
 import Svg, { Path, Circle } from 'react-native-svg';
+import { toast } from '../../lib/sonner';
 
 const SignUpScreen: React.FC<BaseScreenProps> = ({
     navigate,
@@ -134,31 +135,32 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
     const handleSignUp = async () => {
         // Validate inputs
         if (!username || !email || !password || !confirmPassword) {
-            setErrorMessage('Please fill in all fields');
+            toast.error('Please fill in all fields');
             return;
         }
 
         if (!validateEmail(email)) {
-            setErrorMessage('Please enter a valid email address');
+            toast.error('Please enter a valid email address');
             return;
         }
 
         if (password !== confirmPassword) {
-            setErrorMessage('Passwords do not match');
+            toast.error('Passwords do not match');
             return;
         }
 
         if (password.length < 8) {
-            setErrorMessage('Password must be at least 8 characters long');
+            toast.error('Password must be at least 8 characters long');
             return;
         }
 
         try {
             setErrorMessage('');
             await signUp(username, email, password);
+            toast.success('Account created successfully! Welcome to Oxy!');
             // The authentication state change will be handled through context
         } catch (error: any) {
-            setErrorMessage(error.message || 'Sign up failed');
+            toast.error(error.message || 'Sign up failed');
         }
     };
 
