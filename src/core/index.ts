@@ -1150,9 +1150,9 @@ export class OxyServices {
   /**
    * Validate session
    * @param sessionId - The session ID to validate
-   * @returns Session validation status
+   * @returns Session validation status with user data
    */
-  async validateSession(sessionId: string): Promise<{ valid: boolean; expiresAt: string; lastActivity: string }> {
+  async validateSession(sessionId: string): Promise<{ valid: boolean; expiresAt: string; lastActivity: string; user: User }> {
     try {
       const res = await this.client.get(`/secure-session/validate/${sessionId}`);
       return res.data;
@@ -1162,34 +1162,22 @@ export class OxyServices {
   }
 
   /**
-   * Get all active sessions for a specific device
-   * @param sessionId - Current session ID
-   * @param deviceId - Optional device ID (uses current session's device if not provided)
-   * @returns Array of device sessions
+   * Validate session using x-session-id header
+   * @param sessionId - The session ID to validate (sent as header)
+   * @param deviceFingerprint - Optional device fingerprint for enhanced security
+   * @returns Session validation status with user data
    */
-  async getDeviceSessions(sessionId: string, deviceId?: string): Promise<any[]> {
+  async validateSessionFromHeader(sessionId: string, deviceFingerprint?: string): Promise<{ valid: boolean; expiresAt: string; lastActivity: string; user: User; sessionId?: string }> {
     try {
-      const params = deviceId ? `?deviceId=${deviceId}` : '';
-      const res = await this.client.get(`/secure-session/device/sessions/${sessionId}${params}`);
-      return res.data.sessions;
-    } catch (error) {
-      throw this.handleError(error);
-    }
-  }
+      const headers: any = {
+        'x-session-id': sessionId
+      };
+      
+      if (deviceFingerprint) {
+        headers['x-device-fingerprint'] = deviceFingerprint;
+      }
 
-  /**
-   * Logout all sessions on a specific device
-   * @param sessionId - Current session ID
-   * @param deviceId - Optional device ID (uses current session's device if not provided)
-   * @param excludeCurrent - Whether to exclude the current session from logout
-   * @returns Success status
-   */
-  async logoutAllDeviceSessions(sessionId: string, deviceId?: string, excludeCurrent: boolean = true): Promise<{ message: string; sessionsTerminated: number }> {
-    try {
-      const res = await this.client.post(`/secure-session/device/logout-all/${sessionId}`, { 
-        deviceId,
-        excludeCurrent 
-      });
+      const res = await this.client.get('/secure-session/validate-header', { headers });
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -1197,16 +1185,25 @@ export class OxyServices {
   }
 
   /**
-   * Update device name for all sessions on a device
-   * @param sessionId - Current session ID
-   * @param deviceName - New device name
-   * @returns Success status
+   * Validate session using automatic header detection
+   * The validateSession endpoint will automatically read from x-session-id header
+   * @param sessionId - The session ID to validate (sent as header)
+   * @param deviceFingerprint - Optional device fingerprint for enhanced security
+   * @returns Session validation status with user data
    */
-  async updateDeviceName(sessionId: string, deviceName: string): Promise<{ message: string; deviceName: string }> {
+  async validateSessionAuto(sessionId: string, deviceFingerprint?: string): Promise<{ valid: boolean; expiresAt: string; lastActivity: string; user: User; source?: string }> {
     try {
-      const res = await this.client.put(`/secure-session/device/name/${sessionId}`, { 
-        deviceName 
-      });
+      const headers: any = {
+        'x-session-id': sessionId
+      };
+      
+      if (deviceFingerprint) {
+        headers['x-device-fingerprint'] = deviceFingerprint;
+      }
+
+      // Call the regular validateSession endpoint which now auto-reads from headers
+      // Use 'auto' as placeholder since the controller reads from header
+      const res = await this.client.get('/secure-session/validate/auto', { headers });
       return res.data;
     } catch (error) {
       throw this.handleError(error);
