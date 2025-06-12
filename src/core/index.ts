@@ -159,8 +159,10 @@ export class OxyServices {
     
     try {
       const decoded = jwtDecode<JwtPayload>(this.accessToken);
-      return decoded.userId;
-    } catch {
+      
+      // Check for both userId (preferred) and id (fallback) for compatibility
+      return decoded.userId || (decoded as any).id || null;
+    } catch (error) {
       return null;
     }
   }
@@ -1340,6 +1342,7 @@ export class OxyServices {
         
         // Get user ID from token
         const userId = tempOxyServices.getCurrentUserId();
+        
         if (!userId) {
           const error = {
             message: 'Invalid token payload',
