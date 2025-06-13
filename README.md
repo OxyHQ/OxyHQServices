@@ -1,6 +1,18 @@
 # OxyHQServices
 
-A TypeScript client libra- [💼 Integration Examples](./docs/examples/)y for the Oxy API providing authentication, user management, and UI components for React and React Native applications.
+A TypeScript client library for the Oxy API providing authentication, user management, and UI components for React and React Native applications.
+
+## Table of Contents
+
+- [Features](#features)
+- [Quick Start](#quick-start)
+- [Documentation](#documentation)
+- [UI Components](#ui-components)
+- [Package Exports](#package-exports)
+- [Requirements](#requirements)
+- [Development](#development)
+- [Integration](#integration)
+- [License](#license)
 
 ## Features
 
@@ -40,14 +52,17 @@ For comprehensive documentation, API reference, and examples:
 - [📚 Full Documentation](./docs/README.md)
 - [🚀 Quick Start Guide](./docs/quick-start.md)
 - [🔐 Core API Reference](./docs/core-api.md)
-- [� Integration Examples](./docs/examples/)
+- [💼 Integration Examples](./docs/examples/)
 
 ## UI Components
 
 Import and use pre-built React components:
 
 ```typescript
-import { OxyProvider, Avatar, FollowButton } from '@oxyhq/services/ui';## Package Exports
+import { OxyProvider, Avatar, FollowButton } from '@oxyhq/services/ui';
+```
+
+## Package Exports
 
 The library provides multiple entry points:
 
