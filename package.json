@@ -79,7 +79,8 @@
         "react-native-safe-area-context": "^5.4.0",
         "react-test-renderer": "^18.3.1",
         "sonner": "^2.0.4",
-        "sonner-native": "^0.20.0"
+        "sonner-native": "^0.20.0",
+        "zustand": "^4.5.0"
     },
     "devDependencies": {
         "@commitlint/cli": "^17.6.5",
