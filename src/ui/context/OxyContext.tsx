@@ -136,7 +136,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
         setStorage(platformStorage);
       } catch (error) {
         console.error('Failed to initialize storage:', error);
-        setError('Failed to initialize storage');
+        authStore.setError('Failed to initialize storage');
       }
     };
 

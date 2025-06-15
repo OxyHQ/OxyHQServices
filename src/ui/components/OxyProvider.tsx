@@ -16,6 +16,7 @@ import { Toaster } from '../../lib/sonner';
 // Import bottom sheet components directly - no longer a peer dependency
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView } from './bottomSheet';
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { useBottomSheetStore } from '../stores/bottomSheetStore';
 
 // Initialize fonts automatically
 setupFonts();
@@ -98,15 +99,32 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     bottomSheetRef,
     autoPresent = false,
 }) => {
+    // Use Zustand store for bottom sheet state
+    const bottomSheetStore = useBottomSheetStore();
+    
     // Use the internal ref (which is passed as a prop from OxyProvider)
     const modalRef = useRef<BottomSheetModal>(null);
     
     // Create a ref to store the navigation function from OxyRouter
     const navigationRef = useRef<((screen: string, props?: Record<string, any>) => void) | null>(null);
 
-    // Track content height for dynamic sizing
-    const [contentHeight, setContentHeight] = useState<number>(0);
+    // Use screen dimensions
     const screenHeight = Dimensions.get('window').height;
+
+    // Create animated values once and store them in refs to avoid re-creation
+    const fadeAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 1 : 0)).current;
+    const slideAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 0 : 50)).current;
+    const handleScaleAnim = useRef(new Animated.Value(1)).current;
+
+    const insets = useSafeAreaInsets();
+
+    // Get the authentication context
+    const oxyContext = useOxy();
+
+    // Initialize store with initial screen
+    useEffect(() => {
+        bottomSheetStore.setCurrentScreen(initialScreen);
+    }, [initialScreen, bottomSheetStore]);
 
     // Set up effect to sync the internal ref with our modal ref
     useEffect(() => {
@@ -154,32 +172,24 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         }
     }, [bottomSheetRef, modalRef]);
 
-    // Use percentage-based snap points for better cross-platform compatibility
-    const [snapPoints, setSnapPoints] = useState<(string | number)[]>(['60%', '85%']);
-
+    // Use percentage-based snap points for better cross-platform compatibility  
+    // Now managed by Zustand store
+    
     // Animation values - we'll use these for content animations
     // Start with opacity 1 on Android to avoid visibility issues
-    const fadeAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 1 : 0)).current;
-    const slideAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 0 : 50)).current;
-    const handleScaleAnim = useRef(new Animated.Value(1)).current;
-
-    // Track keyboard status
-    const [keyboardVisible, setKeyboardVisible] = useState(false);
-    const [keyboardHeight, setKeyboardHeight] = useState(0);
-    const insets = useSafeAreaInsets();
-
-    // Get the authentication context
-    const oxyContext = useOxy();
 
     // Handle keyboard events
     useEffect(() => {
         const keyboardWillShowListener = Keyboard.addListener(
             Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
             (event: KeyboardEvent) => {
-                setKeyboardVisible(true);
+                bottomSheetStore.setKeyboardVisible(true);
                 // Get keyboard height from event
                 const keyboardHeightValue = event.endCoordinates.height;
-                setKeyboardHeight(keyboardHeightValue);
+                bottomSheetStore.setKeyboardHeight(keyboardHeightValue);
+
+                // Update snap points for keyboard and ensure visibility
+                bottomSheetStore.updateSnapPointsForKeyboard(screenHeight);
 
                 // Ensure the bottom sheet remains visible when keyboard opens
                 // by adjusting to the highest snap point
@@ -192,8 +202,8 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         const keyboardWillHideListener = Keyboard.addListener(
             Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
             () => {
-                setKeyboardVisible(false);
-                setKeyboardHeight(0);
+                bottomSheetStore.setKeyboardVisible(false);
+                bottomSheetStore.setKeyboardHeight(0);
             }
         );
 
@@ -202,7 +212,25 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             keyboardWillShowListener.remove();
             keyboardWillHideListener.remove();
         };
-    }, []);
+    }, [bottomSheetStore, screenHeight]);
+
+    // Optimized animation helpers
+    const runPresentationAnimation = useCallback(() => {
+        bottomSheetStore.setPresented(true);
+        Animated.parallel([
+            Animated.timing(fadeAnim, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: Platform.OS === 'ios',
+            }),
+            Animated.spring(slideAnim, {
+                toValue: 0,
+                friction: 8,
+                tension: 40,
+                useNativeDriver: Platform.OS === 'ios',
+            }),
+        ]).start();
+    }, [fadeAnim, slideAnim, bottomSheetStore]);
 
     // Present the modal when component mounts, but only if autoPresent is true
     useEffect(() => {
@@ -211,44 +239,15 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             // Override expand to handle initial presentation
             // @ts-ignore - Dynamic method assignment
             bottomSheetRef.current.expand = () => {
-                // Only present if not already presented
                 modalRef.current?.present();
-
-                // Start content animations after presenting
-                Animated.parallel([
-                    Animated.timing(fadeAnim, {
-                        toValue: 1,
-                        duration: 300,
-                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
-                    }),
-                    Animated.spring(slideAnim, {
-                        toValue: 0,
-                        friction: 8,
-                        tension: 40,
-                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
-                    }),
-                ]).start();
+                runPresentationAnimation();
             };
 
             // Override present to also handle animations
             // @ts-ignore - Dynamic method assignment
             bottomSheetRef.current.present = () => {
                 modalRef.current?.present();
-
-                // Start content animations after presenting
-                Animated.parallel([
-                    Animated.timing(fadeAnim, {
-                        toValue: 1,
-                        duration: 300,
-                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
-                    }),
-                    Animated.spring(slideAnim, {
-                        toValue: 0,
-                        friction: 8,
-                        tension: 40,
-                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
-                    }),
-                ]).start();
+                runPresentationAnimation();
             };
         }
 
@@ -257,26 +256,12 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             // Small delay to allow everything to initialize
             const timer = setTimeout(() => {
                 modalRef.current?.present();
-
-                // Start content animations after presenting
-                Animated.parallel([
-                    Animated.timing(fadeAnim, {
-                        toValue: 1,
-                        duration: 300,
-                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
-                    }),
-                    Animated.spring(slideAnim, {
-                        toValue: 0,
-                        friction: 8,
-                        tension: 40,
-                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
-                    }),
-                ]).start();
+                runPresentationAnimation();
             }, 100);
 
             return () => clearTimeout(timer);
         }
-    }, [bottomSheetRef, modalRef, fadeAnim, slideAnim, autoPresent]);
+    }, [bottomSheetRef, modalRef, autoPresent, runPresentationAnimation]);
 
     // Handle authentication success from the bottom sheet screens
     const handleAuthenticated = useCallback((user: any) => {
@@ -337,46 +322,39 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     // Method to adjust snap points from Router
     const adjustSnapPoints = useCallback((points: string[]) => {
         // Ensure snap points are high enough when keyboard is visible
-        if (keyboardVisible) {
+        if (bottomSheetStore.keyboardVisible) {
             // If keyboard is visible, make sure we use higher snap points
             // to ensure the sheet content remains visible
             const highestPoint = points[points.length - 1];
-            setSnapPoints([highestPoint, highestPoint]);
+            bottomSheetStore.setSnapPoints([highestPoint, highestPoint]);
         } else {
             // If we have content height, use it as a constraint
-            if (contentHeight > 0) {
+            if (bottomSheetStore.contentHeight > 0) {
                 // Calculate content height as percentage of screen (plus some padding)
-                const contentHeightPercent = Math.min(Math.ceil((contentHeight + 40) / screenHeight * 100), 90) + '%';
+                const contentHeightPercent = Math.min(Math.ceil((bottomSheetStore.contentHeight + 40) / screenHeight * 100), 90) + '%';
                 // Use content height for first snap point if it's taller than the default
-                const firstPoint = contentHeight / screenHeight > 0.6 ? contentHeightPercent : points[0];
-                setSnapPoints([firstPoint, points[1]]);
+                const firstPoint = bottomSheetStore.contentHeight / screenHeight > 0.6 ? contentHeightPercent : points[0];
+                bottomSheetStore.setSnapPoints([firstPoint, points[1]]);
             } else {
-                setSnapPoints(points);
+                bottomSheetStore.setSnapPoints(points);
             }
         }
-    }, [keyboardVisible, contentHeight, screenHeight]);
+    }, [bottomSheetStore, screenHeight]);
 
     // Handle content layout changes to measure height
     const handleContentLayout = useCallback((event: any) => {
         const layoutHeight = event.nativeEvent.layout.height;
-        setContentHeight(layoutHeight);
+        bottomSheetStore.setContentHeight(layoutHeight);
 
         // Update snap points based on new content height
-        if (keyboardVisible) {
-            // If keyboard is visible, use the highest snap point
-            const highestPoint = snapPoints[snapPoints.length - 1];
-            setSnapPoints([highestPoint, highestPoint]);
-        } else {
-            if (layoutHeight > 0) {
-                const contentHeightPercent = Math.min(Math.ceil((layoutHeight + 40) / screenHeight * 100), 90) + '%';
-                const firstPoint = layoutHeight / screenHeight > 0.6 ? contentHeightPercent : snapPoints[0];
-                setSnapPoints([firstPoint, snapPoints[1]]);
-            }
-        }
-    }, [keyboardVisible, screenHeight, snapPoints]);
+        bottomSheetStore.updateSnapPointsForContent(screenHeight);
+    }, [bottomSheetStore, screenHeight]);
 
     // Close the bottom sheet with animation
     const handleClose = useCallback(() => {
+        // Update store state
+        bottomSheetStore.setPresented(false);
+        
         // Animate content out
         Animated.timing(fadeAnim, {
             toValue: 0,
@@ -391,11 +369,12 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 }, Platform.OS === 'android' ? 150 : 100);
             }
         });
-    }, [onClose, fadeAnim]);
+    }, [onClose, fadeAnim, bottomSheetStore]);
 
     // Handle sheet index changes
     const handleSheetChanges = useCallback((index: number) => {
         if (index === -1 && onClose) {
+            bottomSheetStore.setPresented(false);
             onClose();
         } else if (index === 1) {
             // Pulse animation when expanded to full height
@@ -411,18 +390,18 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
                 }),
             ]).start();
-        } else if (index === 0 && keyboardVisible) {
+        } else if (index === 0 && bottomSheetStore.keyboardVisible) {
             // If keyboard is visible and user tries to go to a smaller snap point,
             // force the sheet to stay at the highest point for better visibility
             modalRef.current?.snapToIndex(1);
         }
-    }, [onClose, handleScaleAnim, keyboardVisible]);
+    }, [onClose, handleScaleAnim, bottomSheetStore]);
 
     return (
         <BottomSheetModal
             ref={modalRef}
             index={0}
-            snapPoints={snapPoints}
+            snapPoints={bottomSheetStore.snapPoints}
             enablePanDownToClose
             backdropComponent={renderBackdrop}
             // Remove enableDynamicSizing as we're implementing our own solution
@@ -492,7 +471,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 >
                     <OxyRouter
                         oxyServices={oxyServices}
-                        initialScreen={initialScreen}
+                        initialScreen={bottomSheetStore.currentScreen}
                         onClose={handleClose}
                         onAuthenticated={handleAuthenticated}
                         theme={theme}

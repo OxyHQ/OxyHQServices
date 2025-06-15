@@ -21,6 +21,14 @@ export {
   OxyContextProviderProps
 } from './context/OxyContext';
 
+// Export Zustand stores
+export { 
+  useAuthStore, 
+  useBottomSheetStore,
+  type AuthState,
+  type BottomSheetState 
+} from './stores';
+
 // Export styles
 export { fontFamilies, fontStyles } from './styles/fonts';
 
