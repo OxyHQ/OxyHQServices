@@ -15,6 +15,7 @@ import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from '../components/OxyLogo';
 import Avatar from '../components/Avatar';
+import OxyIcon from '../components/icon/OxyIcon';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 
@@ -106,28 +107,6 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
         );
     };
 
-    const renderFeatureItem = (
-        icon: React.ReactNode,
-        title: string,
-        value: string | null | undefined,
-        onPress: () => void
-    ) => (
-        <TouchableOpacity
-            style={[styles.featureItem, { borderColor }]}
-            onPress={onPress}
-        >
-            <View style={styles.featureItemLeft}>
-                <View style={styles.iconContainer}>
-                    {icon}
-                </View>
-                <Text style={[styles.featureItemTitle, { color: textColor }]}>{title}</Text>
-            </View>
-            {value !== undefined && (
-                <Text style={[styles.featureItemValue, { color: iconColor }]}>{value}</Text>
-            )}
-        </TouchableOpacity>
-    );
-
     if (!user) {
         return (
             <View style={[styles.container, { backgroundColor }]}>
@@ -145,191 +124,297 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     }
 
     return (
-        <View style={[styles.container, { backgroundColor }]}>
-            <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
-                <View style={styles.header}>
-                    <Text style={[styles.accountEmail, { color: textColor }]}>
-                        {user.email || user.username}
-                    </Text>
-                    <TouchableOpacity style={styles.closeIcon} onPress={onClose}>
-                        <Text style={{ fontSize: 24, color: textColor }}>×</Text>
+        <View style={[styles.container, { backgroundColor: '#f2f2f2' }]}>
+            {/* Header */}
+            <View style={styles.header}>
+                <Text style={styles.headerTitle}>Account</Text>
+                {onClose && (
+                    <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+                        <Text style={styles.closeButtonText}>×</Text>
                     </TouchableOpacity>
-                </View>
+                )}
+            </View>
 
-                <View style={[styles.profileContainer, { backgroundColor: secondaryBackgroundColor }]}>
-                    <View style={styles.avatarContainer}>
-                        <Avatar
-                            uri={user?.avatar?.url}
-                            name={user?.name?.full}
-                            size={70}
-                            theme={theme}
-                        />
+            <ScrollView style={styles.content}>
+                {/* User Profile Section */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Profile</Text>
+                    
+                    <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
+                        <View style={styles.userIcon}>
+                            <Avatar
+                                uri={user?.avatar?.url}
+                                name={user?.name?.full}
+                                size={40}
+                                theme={theme}
+                            />
+                        </View>
+                        <View style={styles.settingInfo}>
+                            <View>
+                                <Text style={styles.settingLabel}>
+                                    {typeof user.name === 'string' ? user.name : user.name?.full || user.name?.first || user.username}
+                                </Text>
+                                <Text style={styles.settingDescription}>{user.email || user.username}</Text>
+                            </View>
+                        </View>
+                        <TouchableOpacity
+                            style={styles.manageButton}
+                            onPress={() => toast.info('Manage your Oxy Account feature coming soon!')}
+                        >
+                            <Text style={styles.manageButtonText}>Manage</Text>
+                        </TouchableOpacity>
                     </View>
-                    <Text style={[styles.greeting, { color: textColor }]}>Hi, {user?.name?.first}!</Text>
+                </View>
 
-                    <TouchableOpacity
-                        style={[styles.manageAccountButton, { borderColor }]}
-                        onPress={() => toast.info('Manage your Oxy Account feature coming soon!')}
+                {/* Account Settings */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Account Settings</Text>
+                    
+                    <TouchableOpacity 
+                        style={[styles.settingItem, styles.firstSettingItem]}
+                        onPress={() => toast.info('View your history feature coming soon!')}
                     >
-                        <Text style={[styles.manageAccountText, { color: textColor }]}>
-                            Manage your Oxy Account
-                        </Text>
+                        <View style={styles.settingInfo}>
+                            <OxyIcon name="time" size={20} color="#666" style={styles.settingIcon} />
+                            <View>
+                                <Text style={styles.settingLabel}>History</Text>
+                                <Text style={styles.settingDescription}>View and manage your activity</Text>
+                            </View>
+                        </View>
+                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                        style={styles.settingItem}
+                        onPress={() => toast.info('Saved items feature coming soon!')}
+                    >
+                        <View style={styles.settingInfo}>
+                            <OxyIcon name="bookmark" size={20} color="#666" style={styles.settingIcon} />
+                            <View>
+                                <Text style={styles.settingLabel}>Saves & Collections</Text>
+                                <Text style={styles.settingDescription}>Manage your saved content</Text>
+                            </View>
+                        </View>
+                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                        style={styles.settingItem}
+                        onPress={() => toast.info('Search personalization feature coming soon!')}
+                    >
+                        <View style={styles.settingInfo}>
+                            <OxyIcon name="search" size={20} color="#666" style={styles.settingIcon} />
+                            <View>
+                                <Text style={styles.settingLabel}>Search Personalization</Text>
+                                <Text style={styles.settingDescription}>Customize your search experience</Text>
+                            </View>
+                        </View>
+                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity 
+                        style={[styles.settingItem, styles.lastSettingItem]}
+                        onPress={() => toast.info('SafeSearch settings feature coming soon!')}
+                    >
+                        <View style={styles.settingInfo}>
+                            <OxyIcon name="shield-checkmark" size={20} color="#666" style={styles.settingIcon} />
+                            <View>
+                                <Text style={styles.settingLabel}>SafeSearch</Text>
+                                <Text style={styles.settingDescription}>Filter explicit content • {features.safeSearch ? 'On' : 'Off'}</Text>
+                            </View>
+                        </View>
+                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
                     </TouchableOpacity>
                 </View>
 
-                {/* Multiple accounts section */}
-                <TouchableOpacity
-                    style={[styles.sectionHeader, { borderColor }]}
-                    onPress={() => setShowMoreAccounts(!showMoreAccounts)}
-                >
-                    <Text style={[styles.sectionHeaderText, { color: textColor }]}>
-                        {showMoreAccounts ? "Hide more accounts" : "Show more accounts"}
-                    </Text>
-                    <Text style={{ color: textColor, fontSize: 16 }}>
-                        {showMoreAccounts ? "▲" : "▼"}
-                    </Text>
-                </TouchableOpacity>
-
+                {/* Additional Accounts */}
                 {showMoreAccounts && (
-                    <View style={[styles.accountsContainer, { backgroundColor: secondaryBackgroundColor }]}>
+                    <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>Additional Accounts</Text>
+                        
                         {additionalAccounts.map((account) => (
                             <TouchableOpacity
                                 key={account.id}
-                                style={[styles.accountItem, { borderColor }]}
+                                style={[styles.settingItem, styles.firstSettingItem]}
                                 onPress={() => toast.info(`Switch to ${account.username}?`)}
                             >
-                                <View style={styles.accountItemLeft}>
+                                <View style={styles.userIcon}>
                                     {account.avatar.url ? (
-                                        <Image source={{ uri: account.avatar.url }} style={styles.accountAvatar} />
+                                        <Image source={{ uri: account.avatar.url }} style={styles.accountAvatarImage} />
                                     ) : (
-                                        <View style={[styles.accountAvatar, { backgroundColor: primaryColor }]}>
-                                            <Text style={styles.avatarText}>
+                                        <View style={styles.accountAvatarFallback}>
+                                            <Text style={styles.accountAvatarText}>
                                                 {account.username.charAt(0).toUpperCase()}
                                             </Text>
                                         </View>
                                     )}
+                                </View>
+                                <View style={styles.settingInfo}>
                                     <View>
-                                        <Text style={[styles.accountName, { color: textColor }]}>
-                                            {account.username}
-                                        </Text>
-                                        <Text style={[styles.accountEmail, { color: iconColor }]}>
-                                            {account.email}
-                                        </Text>
+                                        <Text style={styles.settingLabel}>{account.username}</Text>
+                                        <Text style={styles.settingDescription}>{account.email}</Text>
                                     </View>
                                 </View>
+                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
                             </TouchableOpacity>
                         ))}
 
                         <TouchableOpacity
-                            style={[styles.accountItem, { borderColor }]}
+                            style={styles.settingItem}
                             onPress={handleAddAccount}
                         >
-                            <View style={styles.accountItemLeft}>
-                                <View style={[styles.accountAvatar, styles.addAccountIcon, { borderColor }]}>
-                                    <Text style={{ fontSize: 20, color: textColor }}>+</Text>
+                            <View style={styles.settingInfo}>
+                                <OxyIcon name="add" size={20} color="#666" style={styles.settingIcon} />
+                                <View>
+                                    <Text style={styles.settingLabel}>Add another account</Text>
+                                    <Text style={styles.settingDescription}>Sign in with a different account</Text>
                                 </View>
-                                <Text style={[styles.accountItemAction, { color: textColor }]}>
-                                    Add another account
-                                </Text>
                             </View>
+                            <OxyIcon name="chevron-forward" size={16} color="#ccc" />
                         </TouchableOpacity>
 
                         <TouchableOpacity
-                            style={[styles.accountItem, { borderColor }]}
+                            style={[styles.settingItem, styles.lastSettingItem]}
                             onPress={handleSignOutAll}
                         >
-                            <View style={styles.accountItemLeft}>
-                                <View style={[styles.accountAvatar, styles.signOutIcon, { borderColor }]}>
-                                    <Text style={{ fontSize: 20, color: textColor }}>←</Text>
+                            <View style={styles.settingInfo}>
+                                <OxyIcon name="log-out" size={20} color="#666" style={styles.settingIcon} />
+                                <View>
+                                    <Text style={styles.settingLabel}>Sign out of all accounts</Text>
+                                    <Text style={styles.settingDescription}>Remove all accounts from this device</Text>
                                 </View>
-                                <Text style={[styles.accountItemAction, { color: textColor }]}>
-                                    Sign out of all accounts
-                                </Text>
                             </View>
+                            <OxyIcon name="chevron-forward" size={16} color="#ccc" />
                         </TouchableOpacity>
                     </View>
                 )}
 
-                <View style={styles.sectionHeader}>
-                    <Text style={[styles.sectionHeaderText, { color: textColor }]}>
-                        More from Oxy
-                    </Text>
+                {/* Quick Actions */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Quick Actions</Text>
+                    
+                    <TouchableOpacity
+                        style={[styles.settingItem, styles.firstSettingItem]}
+                        onPress={() => setShowMoreAccounts(!showMoreAccounts)}
+                    >
+                        <View style={styles.settingInfo}>
+                            <OxyIcon name="people" size={20} color="#666" style={styles.settingIcon} />
+                            <View>
+                                <Text style={styles.settingLabel}>
+                                    {showMoreAccounts ? 'Hide' : 'Show'} Additional Accounts
+                                </Text>
+                                <Text style={styles.settingDescription}>
+                                    {showMoreAccounts ? 'Hide' : 'Manage'} multiple account options
+                                </Text>
+                            </View>
+                        </View>
+                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.settingItem, styles.lastSettingItem]}
+                        onPress={() => toast.info('Delete recent history feature coming soon!')}
+                    >
+                        <View style={styles.settingInfo}>
+                            <OxyIcon name="time-outline" size={20} color="#666" style={styles.settingIcon} />
+                            <View>
+                                <Text style={styles.settingLabel}>Delete Last 15 Minutes</Text>
+                                <Text style={styles.settingDescription}>Clear recent activity quickly</Text>
+                            </View>
+                        </View>
+                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                    </TouchableOpacity>
                 </View>
 
-                <View style={[styles.featuresContainer, { backgroundColor: secondaryBackgroundColor }]}>
-                    {renderFeatureItem(
-                        <Text style={{ fontSize: 18 }}>🕒</Text>,
-                        'History',
-                        'Saving',
-                        () => toast.info('View your history feature coming soon!')
-                    )}
+                {/* Support & Settings */}
+                <View style={styles.section}>
+                    <Text style={styles.sectionTitle}>Support & Settings</Text>
+                    
+                    <TouchableOpacity
+                        style={[styles.settingItem, styles.firstSettingItem]}
+                        onPress={() => toast.info('More settings feature coming soon!')}
+                    >
+                        <View style={styles.settingInfo}>
+                            <OxyIcon name="settings" size={20} color="#666" style={styles.settingIcon} />
+                            <View>
+                                <Text style={styles.settingLabel}>More Settings</Text>
+                                <Text style={styles.settingDescription}>Privacy, accessibility, and more</Text>
+                            </View>
+                        </View>
+                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                    </TouchableOpacity>
 
-                    {renderFeatureItem(
-                        <Text style={{ fontSize: 18 }}>⏱️</Text>,
-                        'Delete last 15 minutes',
-                        null,
-                        () => toast.info('Delete recent history feature coming soon!')
-                    )}
+                    <TouchableOpacity
+                        style={styles.settingItem}
+                        onPress={() => toast.info('Help & support feature coming soon!')}
+                    >
+                        <View style={styles.settingInfo}>
+                            <OxyIcon name="help-circle" size={20} color="#666" style={styles.settingIcon} />
+                            <View>
+                                <Text style={styles.settingLabel}>Help & Support</Text>
+                                <Text style={styles.settingDescription}>Get help and contact support</Text>
+                            </View>
+                        </View>
+                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                    </TouchableOpacity>
 
-                    {renderFeatureItem(
-                        <Text style={{ fontSize: 18 }}>📋</Text>,
-                        'Saves & Collections',
-                        null,
-                        () => toast.info('Saved items feature coming soon!')
-                    )}
+                    <TouchableOpacity
+                        style={styles.settingItem}
+                        onPress={() => toast.info('Language settings feature coming soon!')}
+                    >
+                        <View style={styles.settingInfo}>
+                            <OxyIcon name="language" size={20} color="#666" style={styles.settingIcon} />
+                            <View>
+                                <Text style={styles.settingLabel}>Language</Text>
+                                <Text style={styles.settingDescription}>Current: {features.language}</Text>
+                            </View>
+                        </View>
+                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                    </TouchableOpacity>
 
-                    {renderFeatureItem(
-                        <Text style={{ fontSize: 18 }}>🔍</Text>,
-                        'Search personalization',
-                        null,
-                        () => toast.info('Search personalization feature coming soon!')
-                    )}
+                    <TouchableOpacity
+                        style={styles.settingItem}
+                        onPress={() => toast.info('Privacy Policy feature coming soon!')}
+                    >
+                        <View style={styles.settingInfo}>
+                            <OxyIcon name="lock-closed" size={20} color="#666" style={styles.settingIcon} />
+                            <View>
+                                <Text style={styles.settingLabel}>Privacy Policy</Text>
+                                <Text style={styles.settingDescription}>Learn about data protection</Text>
+                            </View>
+                        </View>
+                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                    </TouchableOpacity>
 
-                    {renderFeatureItem(
-                        <Text style={{ fontSize: 18 }}>🛡️</Text>,
-                        'SafeSearch',
-                        features.safeSearch ? 'On' : 'Off',
-                        () => toast.info('SafeSearch settings feature coming soon!')
-                    )}
-
-                    {renderFeatureItem(
-                        <Text style={{ fontSize: 18 }}>🌐</Text>,
-                        'Language',
-                        features.language,
-                        () => toast.info('Language settings feature coming soon!')
-                    )}
+                    <TouchableOpacity
+                        style={[styles.settingItem, styles.lastSettingItem]}
+                        onPress={() => toast.info('Terms of Service feature coming soon!')}
+                    >
+                        <View style={styles.settingInfo}>
+                            <OxyIcon name="document-text" size={20} color="#666" style={styles.settingIcon} />
+                            <View>
+                                <Text style={styles.settingLabel}>Terms of Service</Text>
+                                <Text style={styles.settingDescription}>Read our terms and conditions</Text>
+                            </View>
+                        </View>
+                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                    </TouchableOpacity>
                 </View>
 
-                <View style={styles.footerContainer}>
-                    <View style={styles.footerButtonsRow}>
-                        <TouchableOpacity
-                            style={styles.footerButton}
-                            onPress={() => toast.info('More settings feature coming soon!')}
-                        >
-                            <Text style={[styles.footerButtonText, { color: textColor }]}>
-                                More settings
-                            </Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={styles.footerButton}
-                            onPress={() => toast.info('Help & support feature coming soon!')}
-                        >
-                            <Text style={[styles.footerButtonText, { color: textColor }]}>
-                                Help
-                            </Text>
-                        </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.footerLinksRow}>
-                        <TouchableOpacity onPress={() => toast.info('Privacy Policy feature coming soon!')}>
-                            <Text style={[styles.footerLink, { color: iconColor }]}>Privacy Policy</Text>
-                        </TouchableOpacity>
-                        <Text style={[{ color: iconColor, marginHorizontal: 5 }]}>•</Text>
-                        <TouchableOpacity onPress={() => toast.info('Terms of Service feature coming soon!')}>
-                            <Text style={[styles.footerLink, { color: iconColor }]}>Terms of Service</Text>
-                        </TouchableOpacity>
-                    </View>
+                {/* Sign Out */}
+                <View style={styles.section}>
+                    <TouchableOpacity 
+                        style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem, styles.signOutButton]}
+                        onPress={confirmLogout}
+                    >
+                        <View style={styles.settingInfo}>
+                            <OxyIcon name="log-out" size={20} color="#ff4757" style={styles.settingIcon} />
+                            <View>
+                                <Text style={[styles.settingLabel, { color: '#ff4757' }]}>Sign Out</Text>
+                                <Text style={styles.settingDescription}>Sign out of your account</Text>
+                            </View>
+                        </View>
+                    </TouchableOpacity>
                 </View>
             </ScrollView>
         </View>
@@ -339,176 +424,121 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-    },
-    scrollView: {
-        flex: 1,
-    },
-    scrollContainer: {
-        padding: 20,
+        backgroundColor: '#f2f2f2',
     },
     header: {
+        paddingHorizontal: 20,
+        paddingTop: 60,
+        paddingBottom: 16,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#e0e0e0',
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 20,
     },
-    closeIcon: {
+    headerTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#000',
+    },
+    closeButton: {
         padding: 8,
     },
-    profileContainer: {
-        padding: 20,
-        borderRadius: 15,
+    closeButtonText: {
+        fontSize: 24,
+        color: '#000',
+        fontWeight: '300',
+    },
+    content: {
+        flex: 1,
+        padding: 16,
+    },
+    section: {
+        marginBottom: 24,
+    },
+    sectionTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#333',
+        marginBottom: 12,
+    },
+    settingItem: {
+        backgroundColor: '#fff',
+        padding: 16,
+        flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 20,
+        justifyContent: 'space-between',
+        marginBottom: 2,
     },
-    avatarContainer: {
-        margin: 10,
+    firstSettingItem: {
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
     },
-    avatar: {
-        width: 70,
-        height: 70,
-        borderRadius: 35,
+    lastSettingItem: {
+        borderBottomLeftRadius: 24,
+        borderBottomRightRadius: 24,
+        marginBottom: 8,
+    },
+    settingInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    settingIcon: {
+        marginRight: 12,
+    },
+    settingLabel: {
+        fontSize: 16,
+        fontWeight: '500',
+        color: '#333',
+        marginBottom: 2,
+    },
+    settingDescription: {
+        fontSize: 14,
+        color: '#666',
+    },
+    userIcon: {
+        marginRight: 12,
+    },
+    manageButton: {
+        backgroundColor: '#007AFF',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 16,
+    },
+    manageButtonText: {
+        color: '#fff',
+        fontSize: 14,
+        fontWeight: '500',
+    },
+    accountAvatarImage: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+    },
+    accountAvatarFallback: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#d169e5',
+        alignItems: 'center',
         justifyContent: 'center',
-        alignItems: 'center',
     },
-    avatarText: {
+    accountAvatarText: {
         color: 'white',
-        fontSize: 30,
+        fontSize: 18,
         fontWeight: 'bold',
     },
-    greeting: {
-        fontFamily: Platform.OS === 'web'
-            ? 'Phudu'  // Use CSS font name directly for web
-            : 'Phudu-Bold',  // Use exact font name as registered with Font.loadAsync
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
-        fontSize: 20,
-        marginVertical: 10,
-    },
-    manageAccountButton: {
-        paddingVertical: 10,
-        paddingHorizontal: 20,
+    signOutButton: {
         borderWidth: 1,
-        borderRadius: 20,
-        marginTop: 10,
-    },
-    manageAccountText: {
-        fontSize: 14,
-    },
-    sectionHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: 15,
-        borderBottomWidth: 1,
-        marginBottom: 10,
-    },
-    sectionHeaderText: {
-        fontFamily: Platform.OS === 'web'
-            ? 'Phudu'  // Use CSS font name directly for web
-            : 'Phudu-Bold',  // Use exact font name as registered with Font.loadAsync
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
-        fontSize: 16,
-    },
-    accountsContainer: {
-        borderRadius: 15,
-        marginBottom: 20,
-        overflow: 'hidden',
-    },
-    accountItem: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: 15,
-        borderBottomWidth: 1,
-    },
-    accountItemLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    accountAvatar: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        marginRight: 15,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    accountName: {
-        fontSize: 15,
-        fontWeight: '500',
-    },
-    accountEmail: {
-        fontSize: 14,
-    },
-    accountItemAction: {
-        fontSize: 15,
-    },
-    addAccountIcon: {
-        backgroundColor: 'transparent',
-        borderWidth: 1,
-    },
-    signOutIcon: {
-        backgroundColor: 'transparent',
-        borderWidth: 1,
-    },
-    featuresContainer: {
-        borderRadius: 15,
-        overflow: 'hidden',
-        marginBottom: 20,
-    },
-    featureItem: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: 15,
-        borderBottomWidth: 1,
-    },
-    featureItemLeft: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    iconContainer: {
-        width: 36,
-        height: 36,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 15,
-    },
-    featureItemTitle: {
-        fontSize: 15,
-        fontWeight: '500',
-    },
-    featureItemValue: {
-        fontSize: 14,
-    },
-    footerContainer: {
-        marginBottom: 30,
-    },
-    footerButtonsRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 20,
-    },
-    footerButton: {
-        flex: 1,
-        padding: 15,
-        alignItems: 'center',
-    },
-    footerButtonText: {
-        fontSize: 15,
-    },
-    footerLinksRow: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    footerLink: {
-        fontSize: 13,
+        borderColor: '#ff4757',
     },
     message: {
         fontSize: 16,
         textAlign: 'center',
         marginTop: 24,
+        color: '#333',
     },
 });
 
