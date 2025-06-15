@@ -22,9 +22,12 @@ import { toast } from '../../lib/sonner';
 const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
+    navigate,
 }) => {
-    const { user, logout, isLoading } = useOxy();
+    const { user, logout, isLoading, sessions, activeSessionId, oxyServices } = useOxy();
     const [showMoreAccounts, setShowMoreAccounts] = useState(false);
+    const [additionalAccountsData, setAdditionalAccountsData] = useState<any[]>([]);
+    const [loadingAdditionalAccounts, setLoadingAdditionalAccounts] = useState(false);
 
     const isDarkTheme = theme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
@@ -35,17 +38,58 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     const dangerColor = '#D32F2F';
     const iconColor = isDarkTheme ? '#BBBBBB' : '#666666';
 
-    // Mock additional accounts (for demo purposes)
-    const additionalAccounts = [
-        {
-            id: '2',
-            username: 'Albert Isern Alvarez',
-            email: 'albert.isern.alvarez@gmail.com',
-            avatar: {
-                url: 'https://example.com/avatar2.jpg',
+    // Get additional accounts from sessions (excluding current user)
+    const additionalAccounts = sessions.filter(session => 
+        session.sessionId !== activeSessionId && session.userId !== user?.id
+    );
+
+    // Load user profiles for additional accounts
+    React.useEffect(() => {
+        const loadAdditionalAccountsData = async () => {
+            if (!oxyServices || additionalAccounts.length === 0) {
+                setAdditionalAccountsData([]);
+                return;
             }
-        }
-    ];
+
+            setLoadingAdditionalAccounts(true);
+            try {
+                const accountsData = await Promise.all(
+                    additionalAccounts.map(async (session) => {
+                        try {
+                            const userProfile = await oxyServices.getUserBySession(session.sessionId);
+                            return {
+                                id: session.sessionId,
+                                sessionId: session.sessionId,
+                                username: userProfile.username,
+                                email: userProfile.email,
+                                name: userProfile.name,
+                                avatar: userProfile.avatar,
+                                userProfile
+                            };
+                        } catch (error) {
+                            console.error(`Failed to load profile for session ${session.sessionId}:`, error);
+                            return {
+                                id: session.sessionId,
+                                sessionId: session.sessionId,
+                                username: session.username || 'Unknown User',
+                                email: 'No email available',
+                                avatar: null,
+                                userProfile: null
+                            };
+                        }
+                    })
+                );
+                setAdditionalAccountsData(accountsData);
+            } catch (error) {
+                console.error('Failed to load additional accounts:', error);
+                setAdditionalAccountsData([]);
+            } finally {
+                setLoadingAdditionalAccounts(false);
+            }
+        };
+
+        loadAdditionalAccountsData();
+    }, [sessions, activeSessionId, user?.id, oxyServices]);
 
     // Feature settings (with mock values)
     const features = {
@@ -172,7 +216,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                     
                     <TouchableOpacity 
                         style={[styles.settingItem, styles.firstSettingItem]}
-                        onPress={() => toast.info('Edit profile feature coming soon!')}
+                        onPress={() => navigate?.('AccountSettings', { activeTab: 'profile' })}
                     >
                         <View style={styles.settingInfo}>
                             <OxyIcon name="person-circle" size={20} color="#007AFF" style={styles.settingIcon} />
@@ -186,7 +230,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                     <TouchableOpacity 
                         style={styles.settingItem}
-                        onPress={() => toast.info('Account security feature coming soon!')}
+                        onPress={() => navigate?.('AccountSettings', { activeTab: 'password' })}
                     >
                         <View style={styles.settingInfo}>
                             <OxyIcon name="shield-checkmark" size={20} color="#30D158" style={styles.settingIcon} />
@@ -200,7 +244,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                     <TouchableOpacity 
                         style={styles.settingItem}
-                        onPress={() => toast.info('Notification preferences coming soon!')}
+                        onPress={() => navigate?.('AccountSettings', { activeTab: 'notifications' })}
                     >
                         <View style={styles.settingInfo}>
                             <OxyIcon name="notifications" size={20} color="#FF9500" style={styles.settingIcon} />
@@ -230,37 +274,78 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 {/* Additional Accounts */}
                 {showMoreAccounts && (
                     <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Additional Accounts</Text>
+                        <Text style={styles.sectionTitle}>Additional Accounts{additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}</Text>
                         
-                        {additionalAccounts.map((account) => (
-                            <TouchableOpacity
-                                key={account.id}
-                                style={[styles.settingItem, styles.firstSettingItem]}
-                                onPress={() => toast.info(`Switch to ${account.username}?`)}
-                            >
-                                <View style={styles.userIcon}>
-                                    {account.avatar.url ? (
-                                        <Image source={{ uri: account.avatar.url }} style={styles.accountAvatarImage} />
-                                    ) : (
-                                        <View style={styles.accountAvatarFallback}>
-                                            <Text style={styles.accountAvatarText}>
-                                                {account.username.charAt(0).toUpperCase()}
-                                            </Text>
-                                        </View>
-                                    )}
+                        {loadingAdditionalAccounts ? (
+                            <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
+                                <View style={styles.loadingContainer}>
+                                    <ActivityIndicator size="small" color="#007AFF" />
+                                    <Text style={styles.loadingText}>Loading accounts...</Text>
                                 </View>
+                            </View>
+                        ) : additionalAccountsData.length > 0 ? (
+                            <>
+                                {additionalAccountsData.map((account, index) => (
+                                    <TouchableOpacity
+                                        key={account.id}
+                                        style={[
+                                            styles.settingItem, 
+                                            index === 0 && styles.firstSettingItem,
+                                            index === additionalAccountsData.length - 1 && styles.lastSettingItem
+                                        ]}
+                                        onPress={() => {
+                                            toast.info(`Switch to ${account.username}?`);
+                                            // TODO: Implement account switching logic
+                                            // switchSession(account.sessionId);
+                                        }}
+                                    >
+                                        <View style={styles.userIcon}>
+                                            {account.avatar?.url ? (
+                                                <Image source={{ uri: account.avatar.url }} style={styles.accountAvatarImage} />
+                                            ) : (
+                                                <View style={styles.accountAvatarFallback}>
+                                                    <Text style={styles.accountAvatarText}>
+                                                        {account.username?.charAt(0).toUpperCase() || '?'}
+                                                    </Text>
+                                                </View>
+                                            )}
+                                        </View>
+                                        <View style={styles.settingInfo}>
+                                            <View>
+                                                <Text style={styles.settingLabel}>
+                                                    {typeof account.name === 'object' 
+                                                        ? account.name?.full || account.name?.first || account.username
+                                                        : account.name || account.username
+                                                    }
+                                                </Text>
+                                                <Text style={styles.settingDescription}>{account.email || account.username}</Text>
+                                            </View>
+                                        </View>
+                                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                                    </TouchableOpacity>
+                                ))}
+                            </>
+                        ) : (
+                            <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
                                 <View style={styles.settingInfo}>
+                                    <OxyIcon name="person-outline" size={20} color="#ccc" style={styles.settingIcon} />
                                     <View>
-                                        <Text style={styles.settingLabel}>{account.username}</Text>
-                                        <Text style={styles.settingDescription}>{account.email}</Text>
+                                        <Text style={styles.settingLabel}>No other accounts</Text>
+                                        <Text style={styles.settingDescription}>Add another account to switch between them</Text>
                                     </View>
                                 </View>
-                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                            </TouchableOpacity>
-                        ))}
+                            </View>
+                        )}
+                    </View>
+                )}
 
+                {/* Account Management */}
+                {showMoreAccounts && (
+                    <View style={styles.section}>
+                        <Text style={styles.sectionTitle}>Account Management</Text>
+                        
                         <TouchableOpacity
-                            style={styles.settingItem}
+                            style={[styles.settingItem, styles.firstSettingItem]}
                             onPress={handleAddAccount}
                         >
                             <View style={styles.settingInfo}>
@@ -304,7 +389,14 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     {showMoreAccounts ? 'Hide' : 'Show'} Account Switcher
                                 </Text>
                                 <Text style={styles.settingDescription}>
-                                    {showMoreAccounts ? 'Hide' : 'Switch between'} multiple accounts
+                                    {showMoreAccounts 
+                                        ? 'Hide account switcher' 
+                                        : additionalAccountsData.length > 0 
+                                            ? `Switch between ${additionalAccountsData.length + 1} accounts`
+                                            : loadingAdditionalAccounts
+                                                ? 'Loading additional accounts...'
+                                                : 'Manage multiple accounts'
+                                    }
                                 </Text>
                             </View>
                         </View>
@@ -553,6 +645,17 @@ const styles = StyleSheet.create({
         textAlign: 'center',
         marginTop: 24,
         color: '#333',
+    },
+    loadingContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 20,
+        gap: 12,
+    },
+    loadingText: {
+        fontSize: 16,
+        color: '#666',
     },
 });
 
