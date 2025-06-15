@@ -17,6 +17,7 @@ import { SecureClientSession } from '../../models/secureSession';
 import { fontFamilies } from '../styles/fonts';
 import { User } from '../../models/interfaces';
 import { toast } from '../../lib/sonner';
+import OxyIcon from '../components/icon/OxyIcon';
 
 interface SessionWithUser extends SecureClientSession {
     userProfile?: User;
@@ -342,331 +343,293 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         );
     };
 
-    const renderDeviceSessionItem = (deviceSession: DeviceSession) => {
-        const isLoggingOut = remotingLogoutSessionId === deviceSession.sessionId;
-        
-        return (
-            <View
-                key={deviceSession.sessionId}
-                style={[
-                    styles.sessionCard,
-                    {
-                        backgroundColor: deviceSession.isCurrent ? colors.activeCard : colors.card,
-                        borderColor: deviceSession.isCurrent ? colors.accent : colors.border,
-                        borderWidth: deviceSession.isCurrent ? 2 : 1,
-                    },
-                ]}
-            >
-                <View style={styles.sessionHeader}>
-                    <View style={styles.userInfo}>
-                        <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
-                            {deviceSession.deviceName}
-                            {deviceSession.isCurrent && (
-                                <Text style={[styles.username, { color: colors.accent }]}>
-                                    {' (This Device)'}
-                                </Text>
-                            )}
-                        </Text>
-                        <Text style={[styles.username, { color: colors.secondaryText }]} numberOfLines={1}>
-                            ID: ...{deviceSession.deviceId.slice(-8)}
-                        </Text>
-                        <Text style={[styles.lastActive, { color: colors.secondaryText }]} numberOfLines={1}>
-                            Last active: {new Date(deviceSession.lastActive).toLocaleDateString()}
-                        </Text>
-                    </View>
-                    
-                    {!deviceSession.isCurrent && (
-                        <TouchableOpacity
-                            style={[styles.removeButton, { 
-                                borderColor: colors.destructive,
-                                backgroundColor: colors.background,
-                            }]}
-                            onPress={() => handleRemoteSessionLogout(deviceSession.sessionId, deviceSession.deviceName)}
-                            disabled={isLoggingOut}
-                        >
-                            {isLoggingOut ? (
-                                <ActivityIndicator color={colors.destructive} size="small" />
-                            ) : (
-                                <Text style={[styles.removeButtonText, { color: colors.destructive }]}>
-                                    Sign Out
-                                </Text>
-                            )}
-                        </TouchableOpacity>
-                    )}
-                </View>
-            </View>
-        );
-    };
-
-    // Load device sessions when device management is shown
-    useEffect(() => {
-        if (showDeviceManagement && deviceSessions.length === 0) {
-            loadAllDeviceSessions();
-        }
-    }, [showDeviceManagement]);
-
-    const renderSessionItem = (sessionWithUser: SessionWithUser) => {
-        const isActive = sessionWithUser.sessionId === activeSessionId;
-        const isSwitching = switchingToUserId === sessionWithUser.sessionId;
-        const isRemoving = removingUserId === sessionWithUser.sessionId;
-        const { userProfile, isLoadingProfile } = sessionWithUser;
-
-        const displayName = typeof userProfile?.name === 'object' 
-            ? userProfile.name.full || userProfile.name.first || userProfile.username 
-            : userProfile?.name || userProfile?.username || 'Unknown User';
-        const username = userProfile?.username || 'unknown';
-        const avatarUrl = userProfile?.avatar?.url;
-
-        return (
-            <View
-                key={sessionWithUser.sessionId}
-                style={[
-                    styles.sessionCard,
-                    {
-                        backgroundColor: isActive ? colors.activeCard : colors.card,
-                        borderColor: isActive ? colors.accent : colors.border,
-                        borderWidth: isActive ? 2 : 1,
-                        shadowColor: colors.shadow,
-                    },
-                ]}
-            >
-                <View style={styles.sessionHeader}>
-                    <View style={styles.avatarContainer}>
-                        {isLoadingProfile ? (
-                            <View style={[styles.avatarPlaceholder, { backgroundColor: colors.surface }]}>
-                                <ActivityIndicator size="small" color={colors.accent} />
-                            </View>
-                        ) : avatarUrl ? (
-                            <Image 
-                                source={{ uri: avatarUrl }} 
-                                style={styles.avatar}
-                            />
-                        ) : (
-                            <View style={[styles.avatarPlaceholder, { backgroundColor: colors.surface }]}>
-                                <Text style={[styles.avatarText, { color: colors.accent }]}>
-                                    {displayName.charAt(0).toUpperCase()}
-                                </Text>
-                            </View>
-                        )}
-                        {isActive && (
-                            <View style={[styles.activeBadge, { backgroundColor: colors.success }]}>
-                                <Text style={styles.activeBadgeText}>✓</Text>
-                            </View>
-                        )}
-                    </View>
-                    
-                    <View style={styles.userInfo}>
-                        <Text style={[styles.displayName, { color: colors.text }]} numberOfLines={1}>
-                            {displayName}
-                        </Text>
-                        <Text style={[styles.username, { color: colors.secondaryText }]} numberOfLines={1}>
-                            @{username}
-                        </Text>
-                        <Text style={[styles.lastActive, { color: colors.secondaryText }]} numberOfLines={1}>
-                            Last active: {new Date(sessionWithUser.lastActive).toLocaleDateString()}
-                        </Text>
-                    </View>
-                </View>
-
-                <View style={styles.sessionActions}>
-                    {!isActive && (
-                        <TouchableOpacity
-                            style={[styles.switchButton, { 
-                                borderColor: colors.accent,
-                                backgroundColor: colors.background,
-                            }]}
-                            onPress={() => handleSwitchSession(sessionWithUser.sessionId)}
-                            disabled={isSwitching || isRemoving}
-                        >
-                            {isSwitching ? (
-                                <ActivityIndicator color={colors.accent} size="small" />
-                            ) : (
-                                <Text style={[styles.switchButtonText, { color: colors.accent }]}>
-                                    Switch
-                                </Text>
-                            )}
-                        </TouchableOpacity>
-                    )}
-                    
-                    <TouchableOpacity
-                        style={[styles.removeButton, { 
-                            borderColor: colors.destructive,
-                            backgroundColor: colors.background,
-                        }]}
-                        onPress={() => handleRemoveSession(sessionWithUser.sessionId)}
-                        disabled={isSwitching || isRemoving}
-                    >
-                        {isRemoving ? (
-                            <ActivityIndicator color={colors.destructive} size="small" />
-                        ) : (
-                            <Text style={[styles.removeButtonText, { color: colors.destructive }]}>
-                                Remove
-                            </Text>
-                        )}
-                    </TouchableOpacity>
-                </View>
-            </View>
-        );
-    };
-
     return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.container, { backgroundColor: '#f2f2f2' }]}>
+            {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity style={styles.backButton} onPress={goBack}>
-                    <Text style={[styles.backButtonText, { color: colors.accent }]}>‹ Back</Text>
+                    <OxyIcon name="chevron-back" size={24} color="#007AFF" />
                 </TouchableOpacity>
-                <Text style={[styles.title, { color: colors.text }]}>Accounts</Text>
-                <View style={styles.headerSpacer} />
+                <Text style={styles.headerTitle}>Account Switcher</Text>
+                {onClose && (
+                    <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+                        <Text style={styles.closeButtonText}>×</Text>
+                    </TouchableOpacity>
+                )}
             </View>
 
-            <ScrollView 
-                style={styles.content} 
-                showsVerticalScrollIndicator={false}
-                contentContainerStyle={styles.scrollContent}
-            >
+            <ScrollView style={styles.content}>
                 {isLoading ? (
                     <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="large" color={colors.accent} />
-                        <Text style={[styles.loadingText, { color: colors.secondaryText }]}>
-                            Loading accounts...
-                        </Text>
+                        <ActivityIndicator size="large" color="#007AFF" />
+                        <Text style={styles.loadingText}>Loading accounts...</Text>
                     </View>
                 ) : (
                     <>
-                        <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                            Saved Accounts ({sessionsWithUsers.length})
-                        </Text>
-                        
-                        {sessionsWithUsers.length === 0 ? (
-                            <View style={styles.emptyState}>
-                                <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
-                                    No saved accounts found
-                                </Text>
+                        {/* Current Account */}
+                        {user && (
+                            <View style={styles.section}>
+                                <Text style={styles.sectionTitle}>Current Account</Text>
+                                
+                                <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem, styles.currentAccountCard]}>
+                                    <View style={styles.userIcon}>
+                                        {user.avatar?.url ? (
+                                            <Image source={{ uri: user.avatar.url }} style={styles.accountAvatarImage} />
+                                        ) : (
+                                            <View style={styles.accountAvatarFallback}>
+                                                <Text style={styles.accountAvatarText}>
+                                                    {(typeof user.name === 'string' ? user.name : user.name?.first || user.username)?.charAt(0).toUpperCase()}
+                                                </Text>
+                                            </View>
+                                        )}
+                                        <View style={styles.activeBadge}>
+                                            <OxyIcon name="checkmark" size={12} color="#fff" />
+                                        </View>
+                                    </View>
+                                    <View style={styles.settingInfo}>
+                                        <View>
+                                            <Text style={styles.settingLabel}>
+                                                {typeof user.name === 'string' ? user.name : user.name?.full || user.name?.first || user.username}
+                                            </Text>
+                                            <Text style={styles.settingDescription}>{user.email || user.username}</Text>
+                                        </View>
+                                    </View>
+                                    <View style={styles.currentBadge}>
+                                        <Text style={styles.currentBadgeText}>Current</Text>
+                                    </View>
+                                </View>
                             </View>
-                        ) : (
-                            sessionsWithUsers.map(renderSessionItem)
                         )}
 
-                        <View style={styles.actionsSection}>
+                        {/* Other Accounts */}
+                        {sessionsWithUsers.filter(s => s.sessionId !== activeSessionId).length > 0 && (
+                            <View style={styles.section}>
+                                <Text style={styles.sectionTitle}>
+                                    Other Accounts ({sessionsWithUsers.filter(s => s.sessionId !== activeSessionId).length})
+                                </Text>
+                                
+                                {sessionsWithUsers
+                                    .filter(s => s.sessionId !== activeSessionId)
+                                    .map((sessionWithUser, index, filteredArray) => {
+                                        const isFirst = index === 0;
+                                        const isLast = index === filteredArray.length - 1;
+                                        const isSwitching = switchingToUserId === sessionWithUser.sessionId;
+                                        const isRemoving = removingUserId === sessionWithUser.sessionId;
+                                        const { userProfile, isLoadingProfile } = sessionWithUser;
+
+                                        const displayName = typeof userProfile?.name === 'object' 
+                                            ? userProfile.name.full || userProfile.name.first || userProfile.username 
+                                            : userProfile?.name || userProfile?.username || 'Unknown User';
+
+                                        return (
+                                            <View
+                                                key={sessionWithUser.sessionId}
+                                                style={[
+                                                    styles.settingItem,
+                                                    isFirst && styles.firstSettingItem,
+                                                    isLast && styles.lastSettingItem,
+                                                ]}
+                                            >
+                                                <View style={styles.userIcon}>
+                                                    {isLoadingProfile ? (
+                                                        <View style={styles.accountAvatarFallback}>
+                                                            <ActivityIndicator size="small" color="#007AFF" />
+                                                        </View>
+                                                    ) : userProfile?.avatar?.url ? (
+                                                        <Image source={{ uri: userProfile.avatar.url }} style={styles.accountAvatarImage} />
+                                                    ) : (
+                                                        <View style={styles.accountAvatarFallback}>
+                                                            <Text style={styles.accountAvatarText}>
+                                                                {displayName.charAt(0).toUpperCase()}
+                                                            </Text>
+                                                        </View>
+                                                    )}
+                                                </View>
+                                                <View style={styles.settingInfo}>
+                                                    <View>
+                                                        <Text style={styles.settingLabel}>{displayName}</Text>
+                                                        <Text style={styles.settingDescription}>
+                                                            @{userProfile?.username || 'unknown'}
+                                                        </Text>
+                                                    </View>
+                                                </View>
+                                                <View style={styles.accountActions}>
+                                                    <TouchableOpacity
+                                                        style={styles.switchButton}
+                                                        onPress={() => handleSwitchSession(sessionWithUser.sessionId)}
+                                                        disabled={isSwitching || isRemoving}
+                                                    >
+                                                        {isSwitching ? (
+                                                            <ActivityIndicator size="small" color="#007AFF" />
+                                                        ) : (
+                                                            <Text style={styles.switchButtonText}>Switch</Text>
+                                                        )}
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity
+                                                        style={styles.removeButton}
+                                                        onPress={() => handleRemoveSession(sessionWithUser.sessionId)}
+                                                        disabled={isSwitching || isRemoving}
+                                                    >
+                                                        {isRemoving ? (
+                                                            <ActivityIndicator size="small" color="#FF3B30" />
+                                                        ) : (
+                                                            <OxyIcon name="trash" size={16} color="#FF3B30" />
+                                                        )}
+                                                    </TouchableOpacity>
+                                                </View>
+                                            </View>
+                                        );
+                                    })}
+                            </View>
+                        )}
+
+                        {/* Quick Actions */}
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Quick Actions</Text>
+                            
                             <TouchableOpacity
-                                style={[styles.actionButton, { 
-                                    borderColor: colors.border,
-                                    backgroundColor: colors.card,
-                                }]}
+                                style={[styles.settingItem, styles.firstSettingItem]}
                                 onPress={() => navigate?.('SignIn')}
                             >
-                                <Text style={[styles.actionButtonText, { color: colors.text }]}>
-                                    + Add Another Account
-                                </Text>
+                                <View style={styles.settingInfo}>
+                                    <OxyIcon name="person-add" size={20} color="#007AFF" style={styles.settingIcon} />
+                                    <View>
+                                        <Text style={styles.settingLabel}>Add Another Account</Text>
+                                        <Text style={styles.settingDescription}>Sign in with a different account</Text>
+                                    </View>
+                                </View>
+                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
                             </TouchableOpacity>
 
-                            {sessionsWithUsers.length > 0 && (
-                                <TouchableOpacity
-                                    style={[styles.actionButton, styles.dangerButton, { 
-                                        borderColor: colors.destructive,
-                                        backgroundColor: colors.background,
-                                    }]}
-                                    onPress={handleLogoutAll}
-                                >
-                                    <Text style={[styles.dangerButtonText, { color: colors.destructive }]}>
-                                        Sign Out All Accounts
-                                    </Text>
-                                </TouchableOpacity>
-                            )}
+                            <TouchableOpacity
+                                style={styles.settingItem}
+                                onPress={() => setShowDeviceManagement(!showDeviceManagement)}
+                            >
+                                <View style={styles.settingInfo}>
+                                    <OxyIcon name="devices" size={20} color="#5856D6" style={styles.settingIcon} />
+                                    <View>
+                                        <Text style={styles.settingLabel}>
+                                            {showDeviceManagement ? 'Hide' : 'Manage'} Device Sessions
+                                        </Text>
+                                        <Text style={styles.settingDescription}>
+                                            View and manage sessions on other devices
+                                        </Text>
+                                    </View>
+                                </View>
+                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[styles.settingItem, styles.lastSettingItem]}
+                                onPress={handleLogoutAll}
+                                disabled={sessionsWithUsers.length === 0}
+                            >
+                                <View style={styles.settingInfo}>
+                                    <OxyIcon name="log-out" size={20} color="#FF3B30" style={styles.settingIcon} />
+                                    <View>
+                                        <Text style={[styles.settingLabel, { color: sessionsWithUsers.length === 0 ? '#ccc' : '#FF3B30' }]}>
+                                            Sign Out All Accounts
+                                        </Text>
+                                        <Text style={styles.settingDescription}>
+                                            Remove all accounts from this device
+                                        </Text>
+                                    </View>
+                                </View>
+                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                            </TouchableOpacity>
                         </View>
 
                         {/* Device Management Section */}
-                        <View style={styles.actionsSection}>
-                            <TouchableOpacity
-                                style={[styles.actionButton, { 
-                                    borderColor: colors.border,
-                                    backgroundColor: colors.card,
-                                }]}
-                                onPress={() => setShowDeviceManagement(!showDeviceManagement)}
-                            >
-                                <Text style={[styles.actionButtonText, { color: colors.text }]}>
-                                    {showDeviceManagement ? '− Hide Device Management' : '+ Manage Device Sessions'}
-                                </Text>
-                            </TouchableOpacity>
-                        </View>
-
                         {showDeviceManagement && (
-                            <View style={[styles.deviceManagementSection, {
-                                backgroundColor: colors.card,
-                                borderColor: colors.border,
-                            }]}>
-                                <Text style={[styles.sectionTitle, { color: colors.text }]}>
-                                    Device Sessions
-                                </Text>
+                            <View style={styles.section}>
+                                <Text style={styles.sectionTitle}>Device Sessions</Text>
                                 
                                 {loadingDeviceSessions ? (
-                                    <View style={styles.loadingContainer}>
-                                        <ActivityIndicator size="large" color={colors.accent} />
-                                        <Text style={[styles.loadingText, { color: colors.secondaryText }]}>
-                                            Loading device sessions...
-                                        </Text>
+                                    <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
+                                        <View style={styles.loadingContainer}>
+                                            <ActivityIndicator size="small" color="#007AFF" />
+                                            <Text style={styles.loadingText}>Loading device sessions...</Text>
+                                        </View>
                                     </View>
                                 ) : deviceSessions.length === 0 ? (
-                                    <View style={styles.emptyState}>
-                                        <Text style={[styles.emptyText, { color: colors.secondaryText }]}>
-                                            No device sessions found
-                                        </Text>
+                                    <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
+                                        <View style={styles.settingInfo}>
+                                            <OxyIcon name="phone-portrait" size={20} color="#ccc" style={styles.settingIcon} />
+                                            <View>
+                                                <Text style={styles.settingLabel}>No device sessions found</Text>
+                                                <Text style={styles.settingDescription}>
+                                                    Device session management not available
+                                                </Text>
+                                            </View>
+                                        </View>
                                     </View>
                                 ) : (
                                     <>
-                                        {deviceSessions.map(renderDeviceSessionItem)}
-                                        
-                                        {deviceSessions.filter(session => !session.isCurrent).length > 0 && (
-                                            <TouchableOpacity
-                                                style={[styles.actionButton, styles.dangerButton, { 
-                                                    borderColor: colors.destructive,
-                                                    backgroundColor: colors.background,
-                                                    marginTop: 20,
-                                                }]}
-                                                onPress={handleLogoutAllDevices}
-                                                disabled={loggingOutAllDevices}
+                                        {deviceSessions.map((session, index) => (
+                                            <View
+                                                key={session.sessionId}
+                                                style={[
+                                                    styles.settingItem,
+                                                    index === 0 && styles.firstSettingItem,
+                                                    index === deviceSessions.length - 1 && styles.lastSettingItem,
+                                                ]}
                                             >
-                                                {loggingOutAllDevices ? (
-                                                    <ActivityIndicator color={colors.destructive} size="small" />
-                                                ) : (
-                                                    <Text style={[styles.dangerButtonText, { color: colors.destructive }]}>
-                                                        Sign Out All Other Devices
-                                                    </Text>
+                                                <View style={styles.settingInfo}>
+                                                    <OxyIcon 
+                                                        name={session.isCurrent ? "phone-portrait" : "phone-portrait-outline"} 
+                                                        size={20} 
+                                                        color={session.isCurrent ? "#34C759" : "#8E8E93"} 
+                                                        style={styles.settingIcon} 
+                                                    />
+                                                    <View>
+                                                        <Text style={styles.settingLabel}>
+                                                            {session.deviceName} {session.isCurrent ? '(This device)' : ''}
+                                                        </Text>
+                                                        <Text style={styles.settingDescription}>
+                                                            Last active: {new Date(session.lastActive).toLocaleDateString()}
+                                                        </Text>
+                                                    </View>
+                                                </View>
+                                                {!session.isCurrent && (
+                                                    <TouchableOpacity
+                                                        style={styles.removeButton}
+                                                        onPress={() => handleRemoteSessionLogout(session.sessionId, session.deviceName)}
+                                                        disabled={remotingLogoutSessionId === session.sessionId}
+                                                    >
+                                                        {remotingLogoutSessionId === session.sessionId ? (
+                                                            <ActivityIndicator size="small" color="#FF3B30" />
+                                                        ) : (
+                                                            <OxyIcon name="log-out" size={16} color="#FF3B30" />
+                                                        )}
+                                                    </TouchableOpacity>
                                                 )}
-                                            </TouchableOpacity>
-                                        )}
+                                            </View>
+                                        ))}
                                     </>
                                 )}
                             </View>
                         )}
 
-                        <View style={styles.actionsSection}>
-                            <TouchableOpacity
-                                style={[styles.actionButton, { 
-                                    borderColor: colors.border,
-                                    backgroundColor: colors.card,
-                                }]}
-                                onPress={() => navigate?.('SignIn')}
-                            >
-                                <Text style={[styles.actionButtonText, { color: colors.text }]}>
-                                    + Add Another Account
-                                </Text>
-                            </TouchableOpacity>
-
-                            {sessionsWithUsers.length > 0 && (
-                                <TouchableOpacity
-                                    style={[styles.actionButton, styles.dangerButton, { 
-                                        borderColor: colors.destructive,
-                                        backgroundColor: colors.background,
-                                    }]}
-                                    onPress={handleLogoutAll}
-                                >
-                                    <Text style={[styles.dangerButtonText, { color: colors.destructive }]}>
-                                        Sign Out All Accounts
-                                    </Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
+                        {/* Empty State */}
+                        {sessionsWithUsers.length === 0 && (
+                            <View style={styles.section}>
+                                <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
+                                    <View style={styles.emptyStateContainer}>
+                                        <OxyIcon name="person-outline" size={48} color="#ccc" />
+                                        <Text style={styles.emptyStateTitle}>No saved accounts</Text>
+                                        <Text style={styles.emptyStateDescription}>
+                                            Add another account to switch between them quickly
+                                        </Text>
+                                        <TouchableOpacity
+                                            style={styles.addAccountButton}
+                                            onPress={() => navigate?.('SignIn')}
+                                        >
+                                            <Text style={styles.addAccountButtonText}>Add Account</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            </View>
+                        )}
                     </>
                 )}
             </ScrollView>
@@ -677,192 +640,201 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+        backgroundColor: '#f2f2f2',
     },
     header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
         paddingHorizontal: 20,
-        paddingTop: 20,
-        paddingBottom: 10,
+        paddingTop: 60,
+        paddingBottom: 16,
+        backgroundColor: '#fff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#e0e0e0',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    headerTitle: {
+        fontSize: 24,
+        fontWeight: 'bold',
+        color: '#000',
     },
     backButton: {
         padding: 8,
     },
-    backButtonText: {
-        fontSize: 18,
-        fontFamily: fontFamilies.phuduMedium,
+    closeButton: {
+        padding: 8,
     },
-    title: {
+    closeButtonText: {
         fontSize: 24,
-        fontFamily: fontFamilies.phuduBold,
-        textAlign: 'center',
-    },
-    headerSpacer: {
-        width: 40,
+        color: '#000',
+        fontWeight: '300',
     },
     content: {
         flex: 1,
-        paddingHorizontal: 20,
+        padding: 16,
     },
-    scrollContent: {
-        paddingBottom: 40,
-    },
-    loadingContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingTop: 60,
-    },
-    loadingText: {
-        marginTop: 16,
-        fontSize: 16,
-        fontFamily: fontFamilies.phudu,
+    section: {
+        marginBottom: 24,
     },
     sectionTitle: {
-        fontSize: 20,
-        fontFamily: fontFamilies.phuduSemiBold,
-        marginBottom: 20,
-        marginTop: 10,
-    },
-    emptyState: {
-        alignItems: 'center',
-        paddingVertical: 40,
-    },
-    emptyText: {
         fontSize: 16,
-        fontFamily: fontFamilies.phudu,
-        textAlign: 'center',
+        fontWeight: '600',
+        color: '#333',
+        marginBottom: 12,
     },
-    sessionCard: {
-        borderRadius: 16,
-        marginBottom: 16,
-        padding: 20,
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-        elevation: 3,
-    },
-    sessionHeader: {
+    settingItem: {
+        backgroundColor: '#fff',
+        padding: 16,
         flexDirection: 'row',
         alignItems: 'center',
-        marginBottom: 16,
+        justifyContent: 'space-between',
+        marginBottom: 2,
     },
-    avatarContainer: {
-        position: 'relative',
-        marginRight: 16,
+    firstSettingItem: {
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
     },
-    avatar: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
+    lastSettingItem: {
+        borderBottomLeftRadius: 24,
+        borderBottomRightRadius: 24,
+        marginBottom: 8,
     },
-    avatarPlaceholder: {
-        width: 60,
-        height: 60,
-        borderRadius: 30,
-        justifyContent: 'center',
+    currentAccountCard: {
+        borderWidth: 2,
+        borderColor: '#007AFF',
+        backgroundColor: '#007AFF08',
+    },
+    settingInfo: {
+        flexDirection: 'row',
         alignItems: 'center',
+        flex: 1,
     },
-    avatarText: {
-        fontSize: 24,
-        fontFamily: fontFamilies.phuduBold,
+    settingIcon: {
+        marginRight: 12,
+    },
+    settingLabel: {
+        fontSize: 16,
+        fontWeight: '500',
+        color: '#333',
+        marginBottom: 2,
+    },
+    settingDescription: {
+        fontSize: 14,
+        color: '#666',
+    },
+    userIcon: {
+        marginRight: 12,
+        position: 'relative',
+    },
+    accountAvatarImage: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+    },
+    accountAvatarFallback: {
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        backgroundColor: '#d169e5',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    accountAvatarText: {
+        color: 'white',
+        fontSize: 18,
+        fontWeight: 'bold',
     },
     activeBadge: {
         position: 'absolute',
-        bottom: -2,
+        top: -2,
         right: -2,
-        width: 20,
-        height: 20,
-        borderRadius: 10,
-        justifyContent: 'center',
+        width: 16,
+        height: 16,
+        borderRadius: 8,
+        backgroundColor: '#34C759',
         alignItems: 'center',
-    },
-    activeBadgeText: {
-        color: 'white',
-        fontSize: 12,
-        fontFamily: fontFamilies.phuduBold,
-    },
-    userInfo: {
-        flex: 1,
         justifyContent: 'center',
+        borderWidth: 2,
+        borderColor: '#fff',
     },
-    displayName: {
-        fontSize: 18,
-        fontFamily: fontFamilies.phuduSemiBold,
-        marginBottom: 4,
+    currentBadge: {
+        backgroundColor: '#007AFF',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
     },
-    username: {
-        fontSize: 14,
-        fontFamily: fontFamilies.phudu,
-        marginBottom: 4,
-    },
-    lastActive: {
+    currentBadgeText: {
+        color: '#fff',
         fontSize: 12,
-        fontFamily: fontFamilies.phudu,
+        fontWeight: '600',
     },
-    sessionActions: {
+    accountActions: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
-        gap: 12,
+        alignItems: 'center',
+        gap: 8,
     },
     switchButton: {
-        flex: 1,
-        paddingVertical: 12,
-        paddingHorizontal: 20,
-        borderWidth: 1,
-        borderRadius: 8,
+        backgroundColor: '#007AFF',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 16,
+        minWidth: 60,
         alignItems: 'center',
-        justifyContent: 'center',
     },
     switchButtonText: {
+        color: '#fff',
         fontSize: 14,
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontWeight: '500',
     },
     removeButton: {
-        flex: 1,
-        paddingVertical: 12,
-        paddingHorizontal: 20,
+        padding: 8,
+        borderRadius: 16,
+        backgroundColor: '#fff',
         borderWidth: 1,
-        borderRadius: 8,
+        borderColor: '#FF3B30',
         alignItems: 'center',
         justifyContent: 'center',
     },
-    removeButtonText: {
+    loadingContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 20,
+        gap: 12,
+    },
+    loadingText: {
+        fontSize: 16,
+        color: '#666',
+    },
+    emptyStateContainer: {
+        alignItems: 'center',
+        paddingVertical: 32,
+        paddingHorizontal: 20,
+    },
+    emptyStateTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        color: '#333',
+        marginTop: 16,
+        marginBottom: 8,
+    },
+    emptyStateDescription: {
         fontSize: 14,
-        fontFamily: fontFamilies.phuduSemiBold,
+        color: '#666',
+        textAlign: 'center',
+        marginBottom: 24,
+        lineHeight: 20,
     },
-    actionsSection: {
-        marginTop: 40,
-        gap: 16,
+    addAccountButton: {
+        backgroundColor: '#007AFF',
+        paddingHorizontal: 24,
+        paddingVertical: 12,
+        borderRadius: 20,
     },
-    actionButton: {
-        paddingVertical: 16,
-        paddingHorizontal: 20,
-        borderWidth: 1,
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    actionButtonText: {
+    addAccountButtonText: {
+        color: '#fff',
         fontSize: 16,
-        fontFamily: fontFamilies.phuduSemiBold,
-    },
-    dangerButton: {
-        // Additional styles for danger buttons if needed
-    },
-    dangerButtonText: {
-        fontSize: 16,
-        fontFamily: fontFamilies.phuduSemiBold,
-    },
-    deviceManagementSection: {
-        marginTop: 20,
-        padding: 16,
-        borderRadius: 12,
-        borderWidth: 1,
+        fontWeight: '600',
     },
 });
 

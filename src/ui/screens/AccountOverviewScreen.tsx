@@ -172,13 +172,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                     
                     <TouchableOpacity 
                         style={[styles.settingItem, styles.firstSettingItem]}
-                        onPress={() => toast.info('View your history feature coming soon!')}
+                        onPress={() => toast.info('Edit profile feature coming soon!')}
                     >
                         <View style={styles.settingInfo}>
-                            <OxyIcon name="time" size={20} color="#666" style={styles.settingIcon} />
+                            <OxyIcon name="person-circle" size={20} color="#007AFF" style={styles.settingIcon} />
                             <View>
-                                <Text style={styles.settingLabel}>History</Text>
-                                <Text style={styles.settingDescription}>View and manage your activity</Text>
+                                <Text style={styles.settingLabel}>Edit Profile</Text>
+                                <Text style={styles.settingDescription}>Update your personal information</Text>
                             </View>
                         </View>
                         <OxyIcon name="chevron-forward" size={16} color="#ccc" />
@@ -186,13 +186,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                     <TouchableOpacity 
                         style={styles.settingItem}
-                        onPress={() => toast.info('Saved items feature coming soon!')}
+                        onPress={() => toast.info('Account security feature coming soon!')}
                     >
                         <View style={styles.settingInfo}>
-                            <OxyIcon name="bookmark" size={20} color="#666" style={styles.settingIcon} />
+                            <OxyIcon name="shield-checkmark" size={20} color="#30D158" style={styles.settingIcon} />
                             <View>
-                                <Text style={styles.settingLabel}>Saves & Collections</Text>
-                                <Text style={styles.settingDescription}>Manage your saved content</Text>
+                                <Text style={styles.settingLabel}>Security & Privacy</Text>
+                                <Text style={styles.settingDescription}>Password, 2FA, and privacy settings</Text>
                             </View>
                         </View>
                         <OxyIcon name="chevron-forward" size={16} color="#ccc" />
@@ -200,13 +200,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                     <TouchableOpacity 
                         style={styles.settingItem}
-                        onPress={() => toast.info('Search personalization feature coming soon!')}
+                        onPress={() => toast.info('Notification preferences coming soon!')}
                     >
                         <View style={styles.settingInfo}>
-                            <OxyIcon name="search" size={20} color="#666" style={styles.settingIcon} />
+                            <OxyIcon name="notifications" size={20} color="#FF9500" style={styles.settingIcon} />
                             <View>
-                                <Text style={styles.settingLabel}>Search Personalization</Text>
-                                <Text style={styles.settingDescription}>Customize your search experience</Text>
+                                <Text style={styles.settingLabel}>Notifications</Text>
+                                <Text style={styles.settingDescription}>Manage your notification preferences</Text>
                             </View>
                         </View>
                         <OxyIcon name="chevron-forward" size={16} color="#ccc" />
@@ -214,13 +214,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                     <TouchableOpacity 
                         style={[styles.settingItem, styles.lastSettingItem]}
-                        onPress={() => toast.info('SafeSearch settings feature coming soon!')}
+                        onPress={() => toast.info('Subscription management coming soon!')}
                     >
                         <View style={styles.settingInfo}>
-                            <OxyIcon name="shield-checkmark" size={20} color="#666" style={styles.settingIcon} />
+                            <OxyIcon name="card" size={20} color="#5856D6" style={styles.settingIcon} />
                             <View>
-                                <Text style={styles.settingLabel}>SafeSearch</Text>
-                                <Text style={styles.settingDescription}>Filter explicit content • {features.safeSearch ? 'On' : 'Off'}</Text>
+                                <Text style={styles.settingLabel}>Subscription & Billing</Text>
+                                <Text style={styles.settingDescription}>Manage your subscription and payments</Text>
                             </View>
                         </View>
                         <OxyIcon name="chevron-forward" size={16} color="#ccc" />
@@ -264,7 +264,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             onPress={handleAddAccount}
                         >
                             <View style={styles.settingInfo}>
-                                <OxyIcon name="add" size={20} color="#666" style={styles.settingIcon} />
+                                <OxyIcon name="add" size={20} color="#007AFF" style={styles.settingIcon} />
                                 <View>
                                     <Text style={styles.settingLabel}>Add another account</Text>
                                     <Text style={styles.settingDescription}>Sign in with a different account</Text>
@@ -278,7 +278,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             onPress={handleSignOutAll}
                         >
                             <View style={styles.settingInfo}>
-                                <OxyIcon name="log-out" size={20} color="#666" style={styles.settingIcon} />
+                                <OxyIcon name="log-out" size={20} color="#FF3B30" style={styles.settingIcon} />
                                 <View>
                                     <Text style={styles.settingLabel}>Sign out of all accounts</Text>
                                     <Text style={styles.settingDescription}>Remove all accounts from this device</Text>
@@ -298,13 +298,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         onPress={() => setShowMoreAccounts(!showMoreAccounts)}
                     >
                         <View style={styles.settingInfo}>
-                            <OxyIcon name="people" size={20} color="#666" style={styles.settingIcon} />
+                            <OxyIcon name="people" size={20} color="#5856D6" style={styles.settingIcon} />
                             <View>
                                 <Text style={styles.settingLabel}>
-                                    {showMoreAccounts ? 'Hide' : 'Show'} Additional Accounts
+                                    {showMoreAccounts ? 'Hide' : 'Show'} Account Switcher
                                 </Text>
                                 <Text style={styles.settingDescription}>
-                                    {showMoreAccounts ? 'Hide' : 'Manage'} multiple account options
+                                    {showMoreAccounts ? 'Hide' : 'Switch between'} multiple accounts
                                 </Text>
                             </View>
                         </View>
@@ -312,14 +312,28 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.settingItem, styles.lastSettingItem]}
-                        onPress={() => toast.info('Delete recent history feature coming soon!')}
+                        style={styles.settingItem}
+                        onPress={() => toast.info('Download account data feature coming soon!')}
                     >
                         <View style={styles.settingInfo}>
-                            <OxyIcon name="time-outline" size={20} color="#666" style={styles.settingIcon} />
+                            <OxyIcon name="download" size={20} color="#34C759" style={styles.settingIcon} />
                             <View>
-                                <Text style={styles.settingLabel}>Delete Last 15 Minutes</Text>
-                                <Text style={styles.settingDescription}>Clear recent activity quickly</Text>
+                                <Text style={styles.settingLabel}>Download My Data</Text>
+                                <Text style={styles.settingDescription}>Export your account information</Text>
+                            </View>
+                        </View>
+                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={[styles.settingItem, styles.lastSettingItem]}
+                        onPress={() => toast.info('Delete account feature coming soon!')}
+                    >
+                        <View style={styles.settingInfo}>
+                            <OxyIcon name="trash" size={20} color="#FF3B30" style={styles.settingIcon} />
+                            <View>
+                                <Text style={styles.settingLabel}>Delete Account</Text>
+                                <Text style={styles.settingDescription}>Permanently delete your account</Text>
                             </View>
                         </View>
                         <OxyIcon name="chevron-forward" size={16} color="#ccc" />
@@ -332,13 +346,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                     
                     <TouchableOpacity
                         style={[styles.settingItem, styles.firstSettingItem]}
-                        onPress={() => toast.info('More settings feature coming soon!')}
+                        onPress={() => toast.info('Account preferences coming soon!')}
                     >
                         <View style={styles.settingInfo}>
-                            <OxyIcon name="settings" size={20} color="#666" style={styles.settingIcon} />
+                            <OxyIcon name="settings" size={20} color="#8E8E93" style={styles.settingIcon} />
                             <View>
-                                <Text style={styles.settingLabel}>More Settings</Text>
-                                <Text style={styles.settingDescription}>Privacy, accessibility, and more</Text>
+                                <Text style={styles.settingLabel}>Account Preferences</Text>
+                                <Text style={styles.settingDescription}>Customize your account experience</Text>
                             </View>
                         </View>
                         <OxyIcon name="chevron-forward" size={16} color="#ccc" />
@@ -349,10 +363,10 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         onPress={() => toast.info('Help & support feature coming soon!')}
                     >
                         <View style={styles.settingInfo}>
-                            <OxyIcon name="help-circle" size={20} color="#666" style={styles.settingIcon} />
+                            <OxyIcon name="help-circle" size={20} color="#007AFF" style={styles.settingIcon} />
                             <View>
                                 <Text style={styles.settingLabel}>Help & Support</Text>
-                                <Text style={styles.settingDescription}>Get help and contact support</Text>
+                                <Text style={styles.settingDescription}>Get help with your account</Text>
                             </View>
                         </View>
                         <OxyIcon name="chevron-forward" size={16} color="#ccc" />
@@ -360,13 +374,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                     <TouchableOpacity
                         style={styles.settingItem}
-                        onPress={() => toast.info('Language settings feature coming soon!')}
+                        onPress={() => toast.info('Connected apps feature coming soon!')}
                     >
                         <View style={styles.settingInfo}>
-                            <OxyIcon name="language" size={20} color="#666" style={styles.settingIcon} />
+                            <OxyIcon name="link" size={20} color="#32D74B" style={styles.settingIcon} />
                             <View>
-                                <Text style={styles.settingLabel}>Language</Text>
-                                <Text style={styles.settingDescription}>Current: {features.language}</Text>
+                                <Text style={styles.settingLabel}>Connected Apps</Text>
+                                <Text style={styles.settingDescription}>Manage third-party app access</Text>
                             </View>
                         </View>
                         <OxyIcon name="chevron-forward" size={16} color="#ccc" />
@@ -377,7 +391,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         onPress={() => toast.info('Privacy Policy feature coming soon!')}
                     >
                         <View style={styles.settingInfo}>
-                            <OxyIcon name="lock-closed" size={20} color="#666" style={styles.settingIcon} />
+                            <OxyIcon name="document-lock" size={20} color="#FF9F0A" style={styles.settingIcon} />
                             <View>
                                 <Text style={styles.settingLabel}>Privacy Policy</Text>
                                 <Text style={styles.settingDescription}>Learn about data protection</Text>
@@ -391,7 +405,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         onPress={() => toast.info('Terms of Service feature coming soon!')}
                     >
                         <View style={styles.settingInfo}>
-                            <OxyIcon name="document-text" size={20} color="#666" style={styles.settingIcon} />
+                            <OxyIcon name="document-text" size={20} color="#5856D6" style={styles.settingIcon} />
                             <View>
                                 <Text style={styles.settingLabel}>Terms of Service</Text>
                                 <Text style={styles.settingDescription}>Read our terms and conditions</Text>
