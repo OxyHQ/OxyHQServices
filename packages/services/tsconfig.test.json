@@ -2,12 +2,16 @@
     "extends": "./tsconfig.json",
     "compilerOptions": {
         "types": [
-            "jest"
-        ]
+            "jest",
+            "node"
+        ],
+        "esModuleInterop": true,
+        "allowSyntheticDefaultImports": true
     },
     "include": [
         "src/**/__tests__/**/*",
         "src/**/*.test.ts",
-        "src/**/*.test.tsx"
+        "src/**/*.test.tsx",
+        "jest.setup.js"
     ]
 }
