@@ -79,10 +79,31 @@ import { OxyServices, OxyProvider } from '@oxyhq/services/full';
 
 ## Requirements
 
-- **Node.js** 16+ (for backend usage)
+- **Node.js** 18+ (for backend usage)
 - **React** 16.8+ (for React components)
 - **React Native** 0.60+ (for mobile components)
-- **TypeScript** 4.0+ (optional but recommended)
+- **TypeScript** 5.0+ (optional but recommended)
+
+### Optional Dependencies
+
+Some UI components require additional peer dependencies. These are optional and the library provides fallbacks:
+
+- **@expo/vector-icons** - For icons (falls back to emoji icons)
+- **@gorhom/bottom-sheet** - For bottom sheet components (falls back to modal)
+- **sonner** / **sonner-native** - For toast notifications (falls back to console logging)
+
+Install them if you want the enhanced experience:
+
+```bash
+# For React Native with Expo
+npm install @expo/vector-icons @gorhom/bottom-sheet sonner-native
+
+# For React web
+npm install sonner
+
+# React Native without Expo (requires additional setup)
+npm install @gorhom/bottom-sheet react-native-svg react-native-reanimated
+```
 
 ## Development
 
@@ -103,10 +124,34 @@ npm run dev
 ## Integration
 
 This library works with:
-- **[Oxy API](../oxy-api/)** - The companion authentication server
+- **[Oxy API](../api/)** - The companion authentication server
 - **Express.js** - Built-in middleware support
 - **React/React Native** - UI components and hooks
 - **Next.js** - SSR/SSG authentication
+
+## Troubleshooting
+
+### Build Issues
+
+**Icons not working?**
+- Install `@expo/vector-icons` or the library will use emoji fallbacks
+- For React Native without Expo, use a compatible icon library
+
+**Bottom sheet not working?**
+- Install `@gorhom/bottom-sheet` or the library will use Modal fallbacks
+- Ensure react-native-reanimated and react-native-gesture-handler are properly linked
+
+**TypeScript errors?**
+- Ensure TypeScript 5.0+ is installed
+- Add `@types/react` and `@types/react-native` to devDependencies
+
+### Common Issues
+
+**"Buffer is not defined" errors:**
+- This is expected in web environments - the library handles this gracefully
+
+**Missing peer dependencies warnings:**
+- These are optional - the library provides fallbacks for better developer experience
 
 ## License
 

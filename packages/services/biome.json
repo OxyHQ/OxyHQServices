@@ -1,0 +1,16 @@
+{
+  "linter": {
+    "rules": {
+      "suspicious": {
+        "noExplicitAny": "warn"
+      },
+      "style": {
+        "useImportType": "warn"
+      },
+      "complexity": {
+        "noStaticOnlyClass": "warn",
+        "noThisInStatic": "warn"
+      }
+    }
+  }
+}

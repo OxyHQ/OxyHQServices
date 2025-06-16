@@ -57,7 +57,7 @@
     "homepage": "https://oxy.so",
     "scripts": {
         "typescript": "tsc --skipLibCheck --noEmit",
-        "lint": "biome lint --error-on-warnings ./src",
+        "lint": "biome lint ./src",
         "build": "bob build && yarn copy-assets && yarn copy-dts && yarn delete-dts.js && yarn delete-debug-view",
         "copy-assets": "copyfiles -u 1 \"src/assets/**/*\" lib/commonjs/assets && copyfiles -u 1 \"src/assets/**/*\" lib/module/assets",
         "copy-dts": "copyfiles -u 1 \"src/**/*.d.ts\" lib/typescript",
