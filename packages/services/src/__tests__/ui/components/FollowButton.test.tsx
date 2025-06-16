@@ -1,8 +1,8 @@
-import React from 'react';
+import type React from 'react';
 import { render, fireEvent, waitFor } from '@testing-library/react-native';
-import { FollowButton } from '../../../ui/components/FollowButton';
+import FollowButton from '../../../ui/components/FollowButton';
 import { OxyContextProvider } from '../../../ui/context/OxyContext';
-import { OxyServices } from '../../../core';
+import type { OxyServices } from '../../../core';
 
 // Mock the OxyServices
 const mockOxyServices = {
