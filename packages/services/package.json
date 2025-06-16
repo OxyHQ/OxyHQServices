@@ -1,0 +1,144 @@
+{
+    "name": "@oxyhq/services",
+    "version": "5.3.10",
+    "description": "Reusable OxyHQ module to handle authentication, user management, karma system, device-based session management and more 🚀",
+    "main": "lib/commonjs/node/index.js",
+    "module": "lib/module/node/index.js",
+    "types": "lib/typescript/node/index.d.ts",
+    "react-native": "src/index.ts",
+    "source": "src/index.ts",
+    "exports": {
+        ".": {
+            "import": "./lib/module/index.js",
+            "require": "./lib/commonjs/index.js",
+            "types": "./lib/typescript/index.d.ts"
+        },
+        "./core": {
+            "import": "./lib/module/node/index.js",
+            "require": "./lib/commonjs/node/index.js",
+            "types": "./lib/typescript/node/index.d.ts"
+        },
+        "./ui": {
+            "import": "./lib/module/ui/index.js",
+            "require": "./lib/commonjs/ui/index.js",
+            "types": "./lib/typescript/ui/index.d.ts"
+        },
+        "./full": {
+            "import": "./lib/module/index.js",
+            "require": "./lib/commonjs/index.js",
+            "types": "./lib/typescript/index.d.ts"
+        },
+        "./package.json": "./package.json"
+    },
+    "files": [
+        "src",
+        "lib",
+        "mock.js",
+        "UI_COMPONENTS.md",
+        "CHANGELOG.md",
+        "MIGRATION_GUIDE.md",
+        "assets"
+    ],
+    "keywords": [
+        "react-native",
+        "ios",
+        "android",
+        "web",
+        "OxyHQ",
+        "authentication",
+        "bottom-sheet"
+    ],
+    "repository": "https://github.com/oxyhq/oxyhqservices",
+    "author": "OxyHQ",
+    "license": "MIT",
+    "bugs": {
+        "url": "https://github.com/oxyhq/oxyhqservices/issues"
+    },
+    "homepage": "https://oxy.so",
+    "scripts": {
+        "typescript": "tsc --skipLibCheck --noEmit",
+        "lint": "biome lint --error-on-warnings ./src",
+        "build": "bob build && yarn copy-assets && yarn copy-dts && yarn delete-dts.js && yarn delete-debug-view",
+        "copy-assets": "copyfiles -u 1 \"src/assets/**/*\" lib/commonjs/assets && copyfiles -u 1 \"src/assets/**/*\" lib/module/assets",
+        "copy-dts": "copyfiles -u 1 \"src/**/*.d.ts\" lib/typescript",
+        "delete-debug-view": "rm -rf ./lib/commonjs/components/bottomSheetDebugView ./lib/module/components/bottomSheetDebugView ./lib/typescript/components/bottomSheetDebugView || true",
+        "delete-dts.js": "find ./lib/commonjs -name '*.d.js*' -delete && find ./lib/module -name '*.d.js*' -delete",
+        "release": "rm -rf lib && yarn build && release-it",
+        "example": "yarn --cwd example",
+        "bootstrap": "yarn install && yarn example"
+    },
+    "dependencies": {
+        "@react-native-async-storage/async-storage": "^2.1.2",
+        "axios": "^1.9.0",
+        "expo-font": "^13.3.1",
+        "expo-linear-gradient": "^14.1.4",
+        "form-data": "^4.0.0",
+        "invariant": "^2.2.4",
+        "jwt-decode": "^4.0.0",
+        "react-native-actions-sheet": "^0.9.7",
+        "react-native-safe-area-context": "^5.4.0",
+        "react-test-renderer": "^18.3.1",
+        "sonner": "^2.0.4",
+        "sonner-native": "^0.20.0"
+    },
+    "devDependencies": {
+        "@commitlint/cli": "^17.6.5",
+        "@commitlint/config-conventional": "^17.6.5",
+        "@release-it/conventional-changelog": "^8.0.1",
+        "@testing-library/jest-dom": "^6.4.2",
+        "@testing-library/react": "^14.2.1",
+        "@testing-library/react-native": "^12.4.3",
+        "@types/invariant": "^2.2.34",
+        "@types/jest": "^29.5.14",
+        "@types/jwt-decode": "^2.2.1",
+        "@types/react": "~18.3.12",
+        "@types/react-native": "~0.73.0",
+        "copyfiles": "^2.4.1",
+        "husky": "^4.3.8",
+        "lint-staged": "^13.2.2",
+        "metro-react-native-babel-preset": "^0.77.0",
+        "react": "18.3.1",
+        "react-native": "0.76.0",
+        "react-native-builder-bob": "^0.30.3",
+        "react-native-gesture-handler": "^2.20.2",
+        "react-native-reanimated": "^3.16.1",
+        "react-native-svg": "^14.2.0",
+        "release-it": "^17.6.0",
+        "typescript": "^5.3.0"
+    },
+    "peerDependencies": {
+        "@types/react": "*",
+        "@types/react-native": "*",
+        "axios": "^1.9.0",
+        "invariant": "^2.2.4",
+        "jwt-decode": "^4.0.0",
+        "react": "*",
+        "react-native": "*",
+        "react-native-gesture-handler": ">=2.16.1",
+        "react-native-reanimated": ">=3.16.0",
+        "react-native-safe-area-context": "^5.4.0",
+        "react-native-svg": ">=13.0.0"
+    },
+    "peerDependenciesMeta": {
+        "@types/react-native": {
+            "optional": true
+        },
+        "@types/react": {
+            "optional": true
+        }
+    },
+    "react-native-builder-bob": {
+        "source": "src",
+        "output": "lib",
+        "targets": [
+            "commonjs",
+            "module",
+            "typescript"
+        ]
+    },
+    "resolutions": {
+        "@gorhom/bottom-sheet": "^5.1.0",
+        "react-native-gesture-handler": "^2.20.2",
+        "react-native-reanimated": "^3.16.1"
+    }
+}

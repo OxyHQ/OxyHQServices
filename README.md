@@ -1,113 +1,103 @@
-# OxyHQServices
+# OxyHQ Monorepo
 
-A TypeScript client library for the Oxy API providing authentication, user management, and UI components for React and React Native applications.
+This monorepo contains all OxyHQ packages including services and API components.
 
-## Table of Contents
+## 📦 Packages
 
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Documentation](#documentation)
-- [UI Components](#ui-components)
-- [Package Exports](#package-exports)
-- [Requirements](#requirements)
-- [Development](#development)
-- [Integration](#integration)
-- [License](#license)
+### [@oxyhq/services](./packages/services)
+Reusable OxyHQ module to handle authentication, user management, karma system, device-based session management and more for React Native and Web applications.
 
-## Features
+### [@oxyhq/api](./packages/api)
+Express.js API server with authentication, user management, real-time features using Socket.IO, and MongoDB integration.
 
-- 🔐 **Authentication**: JWT-based auth with automatic token refresh
-- 👥 **User Management**: Profile operations and social features
-- 🎨 **UI Components**: Pre-built React components for common functionality
-- 📱 **Cross-Platform**: Works in React Native and web applications
-- 🔧 **TypeScript**: Full type safety and IntelliSense support
+## 🚀 Quick Start
 
-## Quick Start
+### Prerequisites
+- Node.js >= 18.0.0
+- npm >= 9.0.0
+
+### Installation
 
 ```bash
-npm install @oxyhq/services
-```
-
-```typescript
-import { OxyServices } from '@oxyhq/services';
-
-const oxy = new OxyServices({
-  baseURL: 'http://localhost:3000'
-});
-
-// Authenticate
-const response = await oxy.auth.login({
-  email: 'user@example.com',
-  password: 'password'
-});
-
-// Get current user
-const user = await oxy.users.getCurrentUser();
-```
-
-## Documentation
-
-For comprehensive documentation, API reference, and examples:
-
-- [📚 Full Documentation](./docs/README.md)
-- [🚀 Quick Start Guide](./docs/quick-start.md)
-- [🔐 Core API Reference](./docs/core-api.md)
-- [💼 Integration Examples](./docs/examples/)
-
-## UI Components
-
-Import and use pre-built React components:
-
-```typescript
-import { OxyProvider, Avatar, FollowButton } from '@oxyhq/services/ui';
-```
-
-## Package Exports
-
-The library provides multiple entry points:
-
-```typescript
-// Core services only (Node.js/Express)
-import { OxyServices } from '@oxyhq/services';
-
-// UI components only (React/React Native)
-import { OxyProvider, Avatar } from '@oxyhq/services/ui';
-
-// Full package (Core + UI)
-import { OxyServices, OxyProvider } from '@oxyhq/services/full';
-```
-
-## Requirements
-
-- **Node.js** 16+ (for backend usage)
-- **React** 16.8+ (for React components)
-- **React Native** 0.60+ (for mobile components)
-- **TypeScript** 4.0+ (optional but recommended)
-
-## Development
-
-```bash
-# Install dependencies
+# Install all dependencies for all packages
 npm install
 
-# Build the library
-npm run build
-
-# Run tests
-npm test
-
-# Development mode
-npm run dev
+# Or install dependencies for all workspaces
+npm run install:all
 ```
 
-## Integration
+### Development
 
-This library works with:
-- **[Oxy API](../oxy-api/)** - The companion authentication server
-- **Express.js** - Built-in middleware support
-- **React/React Native** - UI components and hooks
-- **Next.js** - SSR/SSG authentication
+```bash
+# Build all packages
+npm run build
 
-## License
+# Run tests for all packages
+npm run test
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+# Clean all packages
+npm run clean
+```
+
+### Package-specific Commands
+
+#### Services Package
+```bash
+# Build services package
+npm run services:build
+
+# Test services package
+npm run services:test
+```
+
+#### API Package
+```bash
+# Start API in development mode
+npm run api:dev
+
+# Build API
+npm run api:build
+
+# Start API in production mode
+npm run api:start
+```
+
+## 📁 Project Structure
+
+```
+├── packages/
+│   ├── services/          # @oxyhq/services - React Native/Web library
+│   │   ├── src/          # Source code
+│   │   ├── lib/          # Built output
+│   │   └── package.json  # Package configuration
+│   └── api/              # @oxyhq/api - Express.js API server
+│       ├── src/          # Source code
+│       ├── dist/         # Built output
+│       └── package.json  # Package configuration
+├── package.json          # Root package.json with workspace configuration
+└── README.md            # This file
+```
+
+## 🔧 Development Workflow
+
+1. **Make changes** to any package in the `packages/` directory
+2. **Build** the specific package or all packages
+3. **Test** your changes
+4. **Commit** using conventional commit format
+
+## 📚 Documentation
+
+- [Services Documentation](./packages/services/README.md)
+- [API Documentation](./packages/api/README.md)
+
+## 🤝 Contributing
+
+Please read our [Contributing Guide](./packages/services/CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the individual package LICENSE files for details.
+
+## 🏢 About OxyHQ
+
+Visit [oxy.so](https://oxy.so) to learn more about OxyHQ.
