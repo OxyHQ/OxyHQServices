@@ -3,6 +3,7 @@ import { OxyServices } from '../../core';
 import { User } from '../../models/interfaces';
 import { SecureLoginResponse, SecureClientSession, MinimalUserData } from '../../models/secureSession';
 import { DeviceManager } from '../../utils/deviceManager';
+import { useStableCallback } from '../../utils/stateOptimizations';
 
 // Define the context shape
 export interface OxyContextState {
@@ -576,8 +577,8 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     }
   };
 
-  // Bottom sheet control methods
-  const showBottomSheet = useCallback((screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => {
+  // Bottom sheet control methods - use stable callbacks to prevent re-renders
+  const showBottomSheet = useStableCallback((screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => {
     console.log('showBottomSheet called with:', screenOrConfig);
     
     if (bottomSheetRef?.current) {
@@ -614,7 +615,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     }
   }, [bottomSheetRef]);
 
-  const hideBottomSheet = useCallback(() => {
+  const hideBottomSheet = useStableCallback(() => {
     if (bottomSheetRef?.current) {
       bottomSheetRef.current.dismiss?.();
     }
