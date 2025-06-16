@@ -1,5 +1,5 @@
 // filepath: /home/nate/OxyServicesandApi/OxyHQServices/src/ui/components/OxyProvider.tsx
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions, Platform, Animated, StatusBar, Keyboard, KeyboardEvent } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -12,6 +12,7 @@ import { OxyContextProvider, useOxy } from '../context/OxyContext';
 import OxyRouter from '../navigation/OxyRouter';
 import { FontLoader, setupFonts } from './FontLoader';
 import { Toaster } from '../../lib/sonner';
+import { useStableCallback, StateGarbageCollector } from '../../utils/stateOptimizations';
 
 // Import bottom sheet components directly - no longer a peer dependency
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView, BottomSheetModalRef } from './bottomSheet';
@@ -22,8 +23,14 @@ setupFonts();
 
 const { height, width } = Dimensions.get('window');
 
+// Global garbage collector for animation cleanup
+const animationGC = new StateGarbageCollector({ 
+  maxAge: 10 * 60 * 1000, // 10 minutes
+  maxSize: 50 
+});
+
 /**
- * Enhanced OxyProvider component
+ * Enhanced OxyProvider component with optimizations
  * 
  * This component serves two purposes:
  * 1. As a context provider for authentication and session management across the app
@@ -42,14 +49,18 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
     // Create internal bottom sheet ref
     const internalBottomSheetRef = useRef<BottomSheetModalRef>(null);
 
+    // Memoized context provider props to prevent unnecessary re-renders
+    const contextProviderProps = useMemo(() => ({
+        oxyServices,
+        storageKeyPrefix,
+        onAuthStateChange,
+        bottomSheetRef: contextOnly ? undefined : internalBottomSheetRef,
+    }), [oxyServices, storageKeyPrefix, onAuthStateChange, contextOnly]);
+
     // If contextOnly is true, we just provide the context without the bottom sheet UI
     if (contextOnly) {
         return (
-            <OxyContextProvider
-                oxyServices={oxyServices}
-                storageKeyPrefix={storageKeyPrefix}
-                onAuthStateChange={onAuthStateChange}
-            >
+            <OxyContextProvider {...contextProviderProps}>
                 {children}
             </OxyContextProvider>
         );

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
     View,
     Text,
@@ -46,7 +46,8 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     const dangerColor = '#D32F2F';
     const successColor = '#2E7D32';
 
-    const loadSessions = async (isRefresh = false) => {
+    // Stable callback references to prevent unnecessary re-renders
+    const loadSessions = useCallback(async (isRefresh = false) => {
         try {
             if (isRefresh) {
                 setRefreshing(true);
@@ -66,9 +67,9 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             setLoading(false);
             setRefreshing(false);
         }
-    };
+    }, [refreshSessions]);
 
-    const handleLogoutSession = async (sessionId: string) => {
+    const handleLogoutSession = useCallback(async (sessionId: string) => {
         Alert.alert(
             'Logout Session',
             'Are you sure you want to logout this session?',
@@ -96,9 +97,9 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 },
             ]
         );
-    };
+    }, [logout, refreshSessions]);
 
-    const handleLogoutOtherSessions = async () => {
+    const handleLogoutOtherSessions = useCallback(async () => {
         const otherSessionsCount = userSessions.filter(s => s.sessionId !== activeSessionId).length;
         
         if (otherSessionsCount === 0) {
@@ -138,7 +139,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 },
             ]
         );
-    };
+    }, [userSessions, activeSessionId, logout, refreshSessions]);
 
     const handleLogoutAllSessions = async () => {
         Alert.alert(
@@ -303,20 +304,6 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                                     </Text>
                                 )}
                             </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={[styles.bulkActionButton, styles.dangerButton, { backgroundColor: isDarkTheme ? '#400000' : '#FFEBEE' }]}
-                                onPress={handleLogoutAllSessions}
-                                disabled={actionLoading === 'all'}
-                            >
-                                {actionLoading === 'all' ? (
-                                    <ActivityIndicator size="small" color={dangerColor} />
-                                ) : (
-                                    <Text style={[styles.bulkActionButtonText, { color: dangerColor }]}>
-                                        Logout All Sessions
-                                    </Text>
-                                )}
-                            </TouchableOpacity>
                         </View>
                     </>
                 ) : (
@@ -327,12 +314,6 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     </View>
                 )}
             </ScrollView>
-
-            <View style={[styles.footer, { borderTopColor: borderColor }]}>
-                <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                    <Text style={[styles.closeButtonText, { color: primaryColor }]}>Close</Text>
-                </TouchableOpacity>
-            </View>
         </View>
     );
 };
@@ -429,9 +410,6 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         alignItems: 'center',
         marginBottom: 12,
-    },
-    dangerButton: {
-        borderColor: 'transparent',
     },
     bulkActionButtonText: {
         fontSize: 16,
