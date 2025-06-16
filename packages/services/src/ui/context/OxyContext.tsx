@@ -53,7 +53,7 @@ export interface OxyContextProviderProps {
   bottomSheetRef?: React.RefObject<any>;
 }
 
-// Platform storage implementation
+// Platform storage interface
 interface StorageInterface {
   getItem: (key: string) => Promise<string | null>;
   setItem: (key: string, value: string) => Promise<void>;
@@ -105,12 +105,6 @@ const getStorage = async (): Promise<StorageInterface> => {
 
   return new WebStorage();
 };
-
-// Storage keys for secure sessions
-const getSecureStorageKeys = (prefix = 'oxy_secure') => ({
-  sessions: `${prefix}_sessions`, // Array of SecureClientSession objects
-  activeSessionId: `${prefix}_active_session_id`, // ID of currently active session
-});
 
 export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
   children,
