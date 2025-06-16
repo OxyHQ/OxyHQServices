@@ -148,7 +148,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 } else {
                     // For React Native - use the global variable approach
                     console.log('Using React Native global navigation');
-                    (global as any).oxyNavigateEvent = { screen: screenName, props };
+                    (globalThis as any).oxyNavigateEvent = { screen: screenName, props };
                 }
             };
         }

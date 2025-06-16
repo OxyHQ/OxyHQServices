@@ -1,10 +1,10 @@
 import { Router, Request, Response, RequestHandler } from "express";
-import { ObjectId } from "mongodb";
+import mongoose from 'mongoose';
 import { authMiddleware } from '../middleware/auth';
 import { upload, writeFile, readFile, deleteFile, findFiles } from '../utils/mongoose-gridfs';
 
 interface GridFSFile {
-  _id: ObjectId;
+  _id: mongoose.Types.ObjectId;
   length: number;
   chunkSize: number;
   uploadDate: Date;
@@ -14,10 +14,9 @@ interface GridFSFile {
   aliases?: string[];
 }
 
-// Update interface with proper extension
 interface AuthenticatedRequest extends Request {
   user?: {
-    _id: ObjectId;
+    _id: mongoose.Types.ObjectId;
     [key: string]: any;
   };
   files?: Express.Multer.File[];
@@ -89,7 +88,7 @@ router.post("/upload", ((req: AuthenticatedRequest, res: Response) => {
 
 router.get("/list/:userID", (async (req: AuthenticatedRequest, res: Response) => {
   try {
-    if (!ObjectId.isValid(req.params.userID)) {
+    if (!mongoose.Types.ObjectId.isValid(req.params.userID)) {
       return res.status(400).json({ message: "Invalid userID" });
     }
 
@@ -97,7 +96,7 @@ router.get("/list/:userID", (async (req: AuthenticatedRequest, res: Response) =>
       return res.status(403).json({ message: "Unauthorized to access these files" });
     }
 
-    const files = await findFiles({ "metadata.userID": new ObjectId(req.params.userID) });
+    const files = await findFiles({ "metadata.userID": new mongoose.Types.ObjectId(req.params.userID) });
     res.json(files || []);
   } catch (error) {
     console.error('List files error:', error);
@@ -106,13 +105,13 @@ router.get("/list/:userID", (async (req: AuthenticatedRequest, res: Response) =>
 }) as RequestHandler);
 
 router.delete("/:id", (async (req: AuthenticatedRequest, res: Response) => {
-  if (!ObjectId.isValid(req.params.id)) {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ message: "Invalid file ID" });
   }
 
   try {
     // Verify file ownership before deletion
-    const files = await findFiles({ _id: new ObjectId(req.params.id) });
+    const files = await findFiles({ _id: new mongoose.Types.ObjectId(req.params.id) });
     if (!files || files.length === 0) {
       return res.status(404).json({ message: "File not found" });
     }
@@ -132,7 +131,7 @@ router.delete("/:id", (async (req: AuthenticatedRequest, res: Response) => {
 
 // Helper function to handle streaming files
 async function streamFileHandler(req: Request, res: Response) {
-  if (!ObjectId.isValid(req.params.id)) {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ message: "Invalid file ID" });
   }
 
@@ -160,13 +159,13 @@ async function streamFileHandler(req: Request, res: Response) {
 
 // Helper function to handle file metadata requests
 async function getFileMetadataHandler(req: Request, res: Response) {
-  if (!ObjectId.isValid(req.params.id)) {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
     return res.status(400).json({ message: "Invalid file ID" });
   }
 
   try {
     console.log(`[Files] Metadata request for file: ${req.params.id}`);
-    const files = await findFiles({ _id: new ObjectId(req.params.id) });
+    const files = await findFiles({ _id: new mongoose.Types.ObjectId(req.params.id) });
     if (!files || files.length === 0) {
       console.warn(`[Files] File metadata not found: ${req.params.id}`);
       return res.status(404).json({ message: "File not found" });
@@ -205,8 +204,8 @@ async function getFileDataHandler(req: Request, res: Response) {
     const invalidIds = [];
     
     for (let id of rawIds) {
-      if (ObjectId.isValid(id.trim())) {
-        ids.push(new ObjectId(id.trim()));
+      if (mongoose.Types.ObjectId.isValid(id.trim())) {
+        ids.push(new mongoose.Types.ObjectId(id.trim()));
       } else {
         invalidIds.push(id);
       }

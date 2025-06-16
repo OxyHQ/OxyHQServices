@@ -149,7 +149,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         };
 
         // For React Native - check for global navigation events
-        let intervalId: NodeJS.Timeout | null = null;
+        let intervalId: any = null;
         
         if (typeof document !== 'undefined') {
             // Web - use custom event listener
@@ -157,14 +157,14 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         } else {
             // React Native - poll for global navigation events
             intervalId = setInterval(() => {
-                const globalNav = (global as any).oxyNavigateEvent;
+                const globalNav = (globalThis as any).oxyNavigateEvent;
                 if (globalNav) {
                     console.log(`RN Navigation event received:`, globalNav);
                     if (globalNav.screen) {
                         navigate(globalNav.screen, globalNav.props || {});
                     }
                     // Clear the event after processing
-                    (global as any).oxyNavigateEvent = null;
+                    (globalThis as any).oxyNavigateEvent = null;
                 }
             }, 100); // Check every 100ms
         }
