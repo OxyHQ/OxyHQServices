@@ -2,7 +2,7 @@ import mongoose, { Document, Schema } from "mongoose";
 
 export interface ISubscription extends Document {
   userId: mongoose.Types.ObjectId;
-  plan: "basic" | "pro" | "business";
+  plan: "Free" | "Mention+" | "Oxy+ Insider" | "Oxy+ Connect" | "Oxy+ Premium" | "Oxy+ Creator" | "basic" | "pro" | "business";
   status: "active" | "canceled" | "expired";
   startDate: Date;
   endDate: Date;
@@ -11,11 +11,19 @@ export interface ISubscription extends Document {
   latestInvoice?: string;
   features: {
     analytics: boolean;
+    advancedAnalytics?: boolean;
     premiumBadge: boolean;
     unlimitedFollowing: boolean;
     higherUploadLimits: boolean;
     promotedPosts: boolean;
     businessTools: boolean;
+    undoPosts?: boolean;
+    customThemes?: boolean;
+    prioritySupport?: boolean;
+    advancedPrivacy?: boolean;
+    bulkActions?: boolean;
+    contentScheduling?: boolean;
+    teamCollaboration?: boolean;
   };
   createdAt: Date;
   updatedAt: Date;
@@ -29,8 +37,8 @@ const SubscriptionSchema = new Schema({
   },
   plan: {
     type: String,
-    enum: ["basic", "pro", "business"],
-    default: "basic",
+    enum: ["Free", "Mention+", "Oxy+ Insider", "Oxy+ Connect", "Oxy+ Premium", "Oxy+ Creator", "basic", "pro", "business"],
+    default: "Free",
     required: true,
   },
   status: {
@@ -56,11 +64,19 @@ const SubscriptionSchema = new Schema({
   latestInvoice: String,
   features: {
     analytics: { type: Boolean, default: false },
+    advancedAnalytics: { type: Boolean, default: false },
     premiumBadge: { type: Boolean, default: false },
     unlimitedFollowing: { type: Boolean, default: false },
     higherUploadLimits: { type: Boolean, default: false },
     promotedPosts: { type: Boolean, default: false },
     businessTools: { type: Boolean, default: false },
+    undoPosts: { type: Boolean, default: false },
+    customThemes: { type: Boolean, default: false },
+    prioritySupport: { type: Boolean, default: false },
+    advancedPrivacy: { type: Boolean, default: false },
+    bulkActions: { type: Boolean, default: false },
+    contentScheduling: { type: Boolean, default: false },
+    teamCollaboration: { type: Boolean, default: false },
   },
 }, {
   timestamps: true
