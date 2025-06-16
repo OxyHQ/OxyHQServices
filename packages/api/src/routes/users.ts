@@ -75,21 +75,56 @@ router.put('/:userId', authMiddleware, validateObjectId, async (req: AuthRequest
       return res.status(403).json({ message: 'Not authorized to update this profile' });
     }
 
-    const allowedUpdates = ['name', 'avatar', 'coverPhoto', 'description', 'location', 'website', 'labels'] as const;
+    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'coverPhoto', 'bio', 'description', 'location', 'website', 'labels'] as const;
     type AllowedUpdate = typeof allowedUpdates[number];
     
     const updates = Object.entries(req.body)
       .filter(([key]) => allowedUpdates.includes(key as AllowedUpdate))
-      .reduce((obj, [key, value]) => ({
-        ...obj,
-        [key]: value
-      }), {} as Partial<Pick<IUser, AllowedUpdate>>);
+      .reduce((obj, [key, value]) => {
+        // Special handling for avatar field to ensure it's properly structured
+        if (key === 'avatar' && value && typeof value === 'object') {
+          const avatarValue = value as { id?: string; url?: string };
+          return {
+            ...obj,
+            [key]: {
+              id: avatarValue.id || "",
+              url: avatarValue.url || ""
+            }
+          };
+        }
+        return {
+          ...obj,
+          [key]: value
+        };
+      }, {} as Partial<Pick<IUser, AllowedUpdate>>);
 
     console.log('Profile update request:', {
       userId: req.params.userId,
       requestBody: req.body,
       filteredUpdates: updates
     });
+
+    // Check for email uniqueness if email is being updated
+    if (updates.email) {
+      const existingEmailUser = await User.findOne({ 
+        email: updates.email, 
+        _id: { $ne: req.params.userId } 
+      });
+      if (existingEmailUser) {
+        return res.status(400).json({ message: 'Email already exists' });
+      }
+    }
+
+    // Check for username uniqueness if username is being updated
+    if (updates.username) {
+      const existingUsernameUser = await User.findOne({ 
+        username: updates.username, 
+        _id: { $ne: req.params.userId } 
+      });
+      if (existingUsernameUser) {
+        return res.status(400).json({ message: 'Username already exists' });
+      }
+    }
 
     const user = await User.findByIdAndUpdate(
       req.params.userId,
@@ -103,6 +138,7 @@ router.put('/:userId', authMiddleware, validateObjectId, async (req: AuthRequest
 
     res.json(user);
   } catch (error) {
+    console.log('[ERROR] Error updating user profile:', error);
     logger.error('Error updating user profile:', error);
     res.status(500).json({ message: 'Internal server error' });
   }

@@ -3,7 +3,10 @@ import mongoose from "mongoose";
 export interface IBlockedUser {
     _id?: string;
     username: string;
-    avatar?: string;
+    avatar?: {
+        id?: string;
+        url?: string;
+    };
     blockedAt: Date;
 }
 

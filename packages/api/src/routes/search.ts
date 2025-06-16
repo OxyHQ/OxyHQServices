@@ -28,7 +28,7 @@ router.get("/", async (req: Request, res: Response) => {
         ...user.toObject(),
         name: user.name || { first: '', last: '' },
         description: user.description || '',
-        avatar: user.avatar || ''
+        avatar: user.avatar || { url: '' }
       }));
     }
 
