@@ -32,7 +32,7 @@
     "gridfs-stream": "^1.1.1",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.10.0",
-    "multer": "^2.0.0",
+    "multer": "^2.0.1",
     "nodemailer": "^7.0.3",
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.1",
