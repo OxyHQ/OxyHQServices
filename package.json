@@ -1,5 +1,5 @@
 {
-  "name": "@oxyhq/monorepo",
+  "name": "@oxyhq/services",
   "version": "1.0.0",
   "description": "OxyHQ Monorepo containing services and API packages",
   "private": true,
