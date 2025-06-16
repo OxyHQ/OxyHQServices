@@ -13,11 +13,11 @@ export const checkPremiumAccess = (features?: FeatureType[]) => {
   return async (req: Request, res: Response, next: NextFunction) => {
     try {
       const { userID } = req.query;
-      if (!userID) {
-        return res.status(400).json({ message: "User ID is required" });
+      if (!userID || typeof userID !== 'string') {
+        return res.status(400).json({ message: "Valid User ID is required" });
       }
 
-      const user = await User.findById(userID);
+      const user = await User.findOne({ _id: { $eq: userID } });
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
@@ -88,11 +88,11 @@ export const checkFeatureAccess = (features: FeatureType[]) => checkPremiumAcces
 export const checkPremiumAccessLegacy = async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { userID } = req.query;
-    if (!userID) {
-      return res.status(400).json({ message: "User ID is required" });
+    if (!userID || typeof userID !== 'string') {
+      return res.status(400).json({ message: "Valid User ID is required" });
     }
 
-    const user = await User.findById(userID);
+    const user = await User.findOne({ _id: { $eq: userID } });
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
