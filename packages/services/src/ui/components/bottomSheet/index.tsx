@@ -33,18 +33,40 @@ try {
   // Fallback components
   BottomSheetModalProvider = ({ children }: any) => <>{children}</>;
   
-  BottomSheetModal = React.forwardRef(({ children, snapPoints, ...props }: any, ref: any) => (
-    <Modal
-      visible={false}
-      transparent
-      animationType="slide"
-      {...props}
-    >
-      <View style={styles.fallbackModal}>
-        {children}
-      </View>
-    </Modal>
-  ));
+  BottomSheetModal = React.forwardRef(({ children, snapPoints, ...props }: any, ref: any) => {
+    const [visible, setVisible] = React.useState(false);
+    
+    // Implement ref methods for the fallback modal
+    React.useImperativeHandle(ref, () => ({
+      present: () => setVisible(true),
+      dismiss: () => setVisible(false),
+      close: () => setVisible(false),
+      snapToIndex: () => {}, // Not applicable for modal
+      expand: () => setVisible(true),
+      collapse: () => setVisible(false),
+    }));
+
+    return (
+      <Modal
+        visible={visible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setVisible(false)}
+        {...props}
+      >
+        <View style={styles.fallbackModal}>
+          <TouchableOpacity 
+            style={styles.fallbackBackdrop} 
+            onPress={() => setVisible(false)}
+            activeOpacity={1}
+          />
+          <View style={styles.fallbackBottomSheet}>
+            {children}
+          </View>
+        </View>
+      </Modal>
+    );
+  });
   
   BottomSheetBackdrop = ({ style, ...props }: BottomSheetBackdropProps) => (
     <TouchableOpacity 
@@ -64,7 +86,7 @@ const styles = StyleSheet.create({
   fallbackModal: {
     flex: 1,
     justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'transparent',
   },
   fallbackBackdrop: {
     position: 'absolute',
@@ -76,10 +98,11 @@ const styles = StyleSheet.create({
   },
   fallbackBottomSheet: {
     backgroundColor: '#fff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    padding: 16,
+    borderTopLeftRadius: 35,
+    borderTopRightRadius: 35,
+    padding: 20,
     minHeight: 200,
+    maxHeight: '85%',
   },
 });
 

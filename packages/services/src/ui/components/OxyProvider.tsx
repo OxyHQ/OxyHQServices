@@ -119,60 +119,84 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     const [contentHeight, setContentHeight] = useState<number>(0);
     const screenHeight = Dimensions.get('window').height;
 
+    // Animation values - use refs with stable initial values
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+    const slideAnim = useRef(new Animated.Value(50)).current;
+    const handleScaleAnim = useRef(new Animated.Value(1)).current;
+
+    // Stable animation functions to prevent re-render loops
+    const startPresentAnimation = useStableCallback(() => {
+        Animated.parallel([
+            Animated.timing(fadeAnim, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: true,
+            }),
+            Animated.spring(slideAnim, {
+                toValue: 0,
+                friction: 8,
+                tension: 40,
+                useNativeDriver: true,
+            }),
+        ]).start();
+    }, [fadeAnim, slideAnim]);
+
     // Set up effect to sync the internal ref with our modal ref
+    const stableMethodsToExpose = useStableCallback(() => {
+        if (!bottomSheetRef || !modalRef.current) return;
+        
+        // Create a stable reference to methods that won't change
+        const methods = {
+            present: () => {
+                modalRef.current?.present();
+                startPresentAnimation();
+            },
+            dismiss: () => modalRef.current?.dismiss(),  
+            close: () => modalRef.current?.dismiss(),
+            expand: () => {
+                modalRef.current?.present();
+                startPresentAnimation();
+            },
+            collapse: () => modalRef.current?.dismiss(),
+            snapToIndex: (index: number) => modalRef.current?.snapToIndex?.(index),
+        };
+
+        // Only assign if not already assigned to prevent re-renders
+        if (!bottomSheetRef.current || !bottomSheetRef.current.present) {
+            // @ts-ignore - We need to assign to ref.current for compatibility
+            bottomSheetRef.current = methods;
+        }
+    }, [bottomSheetRef, startPresentAnimation]);
+
     useEffect(() => {
-        if (bottomSheetRef && modalRef.current) {
-            // We need to expose certain methods to the internal ref
-            const methodsToExpose = ['snapToIndex', 'snapToPosition', 'close', 'expand', 'collapse', 'present', 'dismiss'];
+        stableMethodsToExpose();
+    }, [stableMethodsToExpose]);
 
-            methodsToExpose.forEach((method) => {
-                if (modalRef.current && typeof modalRef.current[method as keyof typeof modalRef.current] === 'function') {
-                    // Properly forward methods from modalRef to bottomSheetRef
-                    // @ts-ignore - We're doing a runtime compatibility layer
-                    bottomSheetRef.current = bottomSheetRef.current || {};
-                    // @ts-ignore - Dynamic method assignment
-                    bottomSheetRef.current[method] = (...args: any[]) => {
-                        // @ts-ignore - Dynamic method call
-                        return modalRef.current?.[method]?.(...args);
-                    };
-                }
-            });
-
-            // Add a method to navigate between screens
+    // Add navigation method separately to avoid dependency issues
+    useEffect(() => {
+        if (bottomSheetRef?.current && navigationRef.current) {
             // @ts-ignore - Adding custom method
             bottomSheetRef.current._navigateToScreen = (screenName: string, props?: Record<string, any>) => {
-                console.log(`Navigation requested: ${screenName}`, props);
-                
-                // Try direct navigation function first (most reliable)
                 if (navigationRef.current) {
-                    console.log('Using direct navigation function');
                     navigationRef.current(screenName, props);
-                    return;
-                }
-                
-                // Fallback to event-based navigation
-                if (typeof document !== 'undefined') {
-                    // For web - use a custom event
-                    console.log('Using web event navigation');
-                    const event = new CustomEvent('oxy:navigate', { detail: { screen: screenName, props } });
-                    document.dispatchEvent(event);
-                } else {
-                    // For React Native - use the global variable approach
-                    console.log('Using React Native global navigation');
-                    (globalThis as any).oxyNavigateEvent = { screen: screenName, props };
                 }
             };
         }
-    }, [bottomSheetRef, modalRef]);
+    }, [bottomSheetRef, navigationRef.current]);
 
     // Use percentage-based snap points for better cross-platform compatibility
     const [snapPoints, setSnapPoints] = useState<(string | number)[]>(['60%', '85%']);
 
-    // Animation values - we'll use these for content animations
-    // Start with consistent initial values across platforms
-    const fadeAnim = useRef(new Animated.Value(0)).current;
-    const slideAnim = useRef(new Animated.Value(50)).current;
-    const handleScaleAnim = useRef(new Animated.Value(1)).current;
+    // Memoize animation cleanup to prevent memory leaks
+    useEffect(() => {
+        return () => {
+            // Clean up animations when component unmounts
+            fadeAnim.stopAnimation();
+            slideAnim.stopAnimation(); 
+            handleScaleAnim.stopAnimation();
+            animationGC.cleanup();
+        };
+    }, [fadeAnim, slideAnim, handleScaleAnim]);
 
     // Track keyboard status
     const [keyboardVisible, setKeyboardVisible] = useState(false);
@@ -215,79 +239,16 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         };
     }, []);
 
-    // Present the modal when component mounts, but only if autoPresent is true
+    // Auto-present modal if autoPresent is true
     useEffect(() => {
-        // Add expand method that handles presentation and animations
-        if (bottomSheetRef && modalRef.current) {
-            // Override expand to handle initial presentation
-            // @ts-ignore - Dynamic method assignment
-            bottomSheetRef.current.expand = () => {
-                // Only present if not already presented
-                modalRef.current?.present();
-
-                // Start content animations after presenting
-                Animated.parallel([
-                    Animated.timing(fadeAnim, {
-                        toValue: 1,
-                        duration: 300,
-                        useNativeDriver: true, // Use native driver for better performance
-                    }),
-                    Animated.spring(slideAnim, {
-                        toValue: 0,
-                        friction: 8,
-                        tension: 40,
-                        useNativeDriver: true, // Use native driver for better performance
-                    }),
-                ]).start();
-            };
-
-            // Override present to also handle animations
-            // @ts-ignore - Dynamic method assignment
-            bottomSheetRef.current.present = () => {
-                modalRef.current?.present();
-
-                // Start content animations after presenting
-                Animated.parallel([
-                    Animated.timing(fadeAnim, {
-                        toValue: 1,
-                        duration: 300,
-                        useNativeDriver: true, // Use native driver for better performance
-                    }),
-                    Animated.spring(slideAnim, {
-                        toValue: 0,
-                        friction: 8,
-                        tension: 40,
-                        useNativeDriver: true, // Use native driver for better performance
-                    }),
-                ]).start();
-            };
-        }
-
-        // Auto-present if the autoPresent prop is true
         if (autoPresent && modalRef.current) {
-            // Small delay to allow everything to initialize
             const timer = setTimeout(() => {
                 modalRef.current?.present();
-
-                // Start content animations after presenting
-                Animated.parallel([
-                    Animated.timing(fadeAnim, {
-                        toValue: 1,
-                        duration: 300,
-                        useNativeDriver: true, // Use native driver for better performance
-                    }),
-                    Animated.spring(slideAnim, {
-                        toValue: 0,
-                        friction: 8,
-                        tension: 40,
-                        useNativeDriver: true, // Use native driver for better performance
-                    }),
-                ]).start();
+                startPresentAnimation();
             }, 100);
-
             return () => clearTimeout(timer);
         }
-    }, [bottomSheetRef, modalRef, fadeAnim, slideAnim, autoPresent]);
+    }, [autoPresent, startPresentAnimation]);
 
     // Handle authentication success from the bottom sheet screens
     const handleAuthenticated = useCallback((user: any) => {
@@ -345,54 +306,43 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         };
     };
 
-    // Method to adjust snap points from Router
-    const adjustSnapPoints = useCallback((points: string[]) => {
-        // Ensure snap points are high enough when keyboard is visible
-        if (keyboardVisible) {
-            // If keyboard is visible, make sure we use higher snap points
-            // to ensure the sheet content remains visible
-            const highestPoint = points[points.length - 1];
-            setSnapPoints([highestPoint, highestPoint]);
-        } else {
-            // If we have content height, use it as a constraint
-            if (contentHeight > 0) {
-                // Calculate content height as percentage of screen (plus some padding)
-                const contentHeightPercent = Math.min(Math.ceil((contentHeight + 40) / screenHeight * 100), 90) + '%';
-                // Use content height for first snap point if it's taller than the default
-                const firstPoint = contentHeight / screenHeight > 0.6 ? contentHeightPercent : points[0];
-                setSnapPoints([firstPoint, points[1]]);
+    // Method to adjust snap points from Router - use stable callback
+    const adjustSnapPoints = useStableCallback((points: string[]) => {
+        setSnapPoints(currentPoints => {
+            // Only update if points actually changed
+            if (JSON.stringify(currentPoints) === JSON.stringify(points)) {
+                return currentPoints;
+            }
+            
+            // Ensure snap points are high enough when keyboard is visible
+            if (keyboardVisible) {
+                const highestPoint = points[points.length - 1];
+                return [highestPoint, highestPoint];
             } else {
-                setSnapPoints(points);
+                return points;
             }
-        }
-    }, [keyboardVisible, contentHeight, screenHeight]);
+        });
+    }, [keyboardVisible]);
 
-    // Handle content layout changes to measure height
-    const handleContentLayout = useCallback((event: any) => {
+    // Handle content layout changes to measure height - use stable callback
+    const handleContentLayout = useStableCallback((event: any) => {
         const layoutHeight = event.nativeEvent.layout.height;
-        setContentHeight(layoutHeight);
-
-        // Update snap points based on new content height
-        if (keyboardVisible) {
-            // If keyboard is visible, use the highest snap point
-            const highestPoint = snapPoints[snapPoints.length - 1];
-            setSnapPoints([highestPoint, highestPoint]);
-        } else {
-            if (layoutHeight > 0) {
-                const contentHeightPercent = Math.min(Math.ceil((layoutHeight + 40) / screenHeight * 100), 90) + '%';
-                const firstPoint = layoutHeight / screenHeight > 0.6 ? contentHeightPercent : snapPoints[0];
-                setSnapPoints([firstPoint, snapPoints[1]]);
+        setContentHeight(prevHeight => {
+            // Only update if height actually changed significantly
+            if (Math.abs(prevHeight - layoutHeight) < 10) {
+                return prevHeight;
             }
-        }
-    }, [keyboardVisible, screenHeight, snapPoints]);
+            return layoutHeight;
+        });
+    }, []);
 
-    // Close the bottom sheet with animation
-    const handleClose = useCallback(() => {
+    // Close the bottom sheet with animation - use stable callback
+    const handleClose = useStableCallback(() => {
         // Animate content out
         Animated.timing(fadeAnim, {
             toValue: 0,
-            duration: Platform.OS === 'android' ? 100 : 200, // Faster on Android
-            useNativeDriver: true, // Use native driver for better performance
+            duration: Platform.OS === 'android' ? 100 : 200,
+            useNativeDriver: true,
         }).start(() => {
             // Dismiss the sheet
             modalRef.current?.dismiss();
@@ -404,8 +354,8 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         });
     }, [onClose, fadeAnim]);
 
-    // Handle sheet index changes
-    const handleSheetChanges = useCallback((index: number) => {
+    // Handle sheet index changes - use stable callback
+    const handleSheetChanges = useStableCallback((index: number) => {
         if (index === -1 && onClose) {
             onClose();
         } else if (index === 1) {
@@ -414,12 +364,12 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 Animated.timing(handleScaleAnim, {
                     toValue: 1.2,
                     duration: 200,
-                    useNativeDriver: true, // Use native driver for better performance
+                    useNativeDriver: true,
                 }),
                 Animated.timing(handleScaleAnim, {
                     toValue: 1,
                     duration: 200,
-                    useNativeDriver: true, // Use native driver for better performance
+                    useNativeDriver: true,
                 }),
             ]).start();
         } else if (index === 0 && keyboardVisible) {
