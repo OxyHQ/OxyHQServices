@@ -21,6 +21,10 @@ export {
   OxyContextProviderProps
 } from './context/OxyContext';
 
+// Export the new Zustand store for direct access
+export { useOxyStore } from './stores/oxyStore';
+export type { OxyStore, OxyStoreState, OxyStoreActions } from './stores/oxyStore';
+
 // Export styles
 export { fontFamilies, fontStyles } from './styles/fonts';
 

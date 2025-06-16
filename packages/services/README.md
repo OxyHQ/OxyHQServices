@@ -21,6 +21,8 @@ A TypeScript client library for the Oxy API providing authentication, user manag
 - 🎨 **UI Components**: Pre-built React components for common functionality
 - 📱 **Cross-Platform**: Works in React Native and web applications
 - 🔧 **TypeScript**: Full type safety and IntelliSense support
+- ⚡ **Zustand State Management**: High-performance state management with Expo compatibility
+- 💾 **Automatic Persistence**: Cross-platform state persistence (web & mobile)
 
 ## Quick Start
 
@@ -52,6 +54,7 @@ For comprehensive documentation, API reference, and examples:
 - [📚 Full Documentation](./docs/README.md)
 - [🚀 Quick Start Guide](./docs/quick-start.md)
 - [🔐 Core API Reference](./docs/core-api.md)
+- [⚡ Zustand State Management Guide](./docs/zustand-state-management.md)
 - [💼 Integration Examples](./docs/examples/)
 
 ## UI Components
