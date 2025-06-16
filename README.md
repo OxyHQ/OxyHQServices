@@ -48,6 +48,9 @@ npm run services:build
 
 # Test services package
 npm run services:test
+
+# Lint services package
+cd packages/services && npm run lint
 ```
 
 #### API Package

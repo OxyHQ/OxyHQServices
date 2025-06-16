@@ -13,7 +13,7 @@ import { BaseScreenProps } from '../../navigation/types';
 import { useOxy } from '../../context/OxyContext';
 import { fontFamilies } from '../../styles/fonts';
 import Avatar from '../../components/Avatar';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons } from '../../../lib/icons';
 
 const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,

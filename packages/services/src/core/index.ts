@@ -972,7 +972,7 @@ export class OxyServices {
    * @returns File metadata including ID and download URL
    */
   async uploadFile(
-    file: File | Blob | Buffer, 
+    file: File | Blob | any, // Use any for Buffer to avoid Node.js dependency 
     filename: string, 
     metadata?: Record<string, any>
   ): Promise<FileUploadResponse> {
@@ -981,7 +981,7 @@ export class OxyServices {
       const formData = typeof window === 'undefined' && NodeFormData ? new NodeFormData() : new FormData();
       
       // Handle different file types (Browser vs Node.js)
-      if (typeof Buffer !== 'undefined' && file instanceof Buffer) {
+      if (typeof globalThis !== 'undefined' && (globalThis as any).Buffer && (globalThis as any).Buffer.isBuffer && (globalThis as any).Buffer.isBuffer(file)) {
         // Node.js environment with Buffer
         if (!NodeFormData) {
           throw new Error('form-data module is required for file uploads from Buffer in Node.js but not found.');

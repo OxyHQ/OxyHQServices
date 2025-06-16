@@ -1,10 +1,9 @@
 import mongoose from 'mongoose';
 import multer from 'multer';
-import { GridFSBucket } from 'mongodb';
 import { Request } from 'express';
 import { Readable } from 'stream';
 
-let bucket: GridFSBucket;
+let bucket: mongoose.mongo.GridFSBucket;
 
 // Initialize GridFSBucket
 const initGridFS = () => {

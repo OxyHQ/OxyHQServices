@@ -19,8 +19,8 @@ import { useOxy } from '../context/OxyContext';
 import { fontFamilies, useThemeColors, createCommonStyles } from '../styles';
 import OxyLogo from '../components/OxyLogo';
 import Avatar from '../components/Avatar';
-import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import { Ionicons } from '@expo/vector-icons';
+import { BottomSheetScrollView } from '../../lib/bottomSheet';
+import { Ionicons } from '../../lib/icons';
 import Svg, { Path, Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { toast } from '../../lib/sonner';
 
