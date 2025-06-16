@@ -38,6 +38,26 @@ export * from './core';
 export { DeviceManager } from './utils';
 export type { DeviceFingerprint, StoredDeviceInfo } from './utils';
 
+// State optimization utilities
+export {
+  createSelectiveSubscription,
+  createStateDiff,
+  createMemoizedComputation,
+  useOptimizedMemo,
+  useStableCallback,
+  StateGarbageCollector,
+  StatePerformanceMonitor,
+  globalPerformanceMonitor
+} from './utils/stateOptimizations';
+export type {
+  StateSelector,
+  StateListener,
+  SelectiveSubscription,
+  StateDiff,
+  GarbageCollectionOptions,
+  PerformanceMetrics
+} from './utils/stateOptimizations';
+
 // ------------- Model Exports -------------
 export { Models };  // Export all models as a namespace
 export * from './models/interfaces';  // Export all models directly
