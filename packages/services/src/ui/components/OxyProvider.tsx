@@ -169,9 +169,9 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     const [snapPoints, setSnapPoints] = useState<(string | number)[]>(['60%', '85%']);
 
     // Animation values - we'll use these for content animations
-    // Start with opacity 1 on Android to avoid visibility issues
-    const fadeAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 1 : 0)).current;
-    const slideAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 0 : 50)).current;
+    // Start with consistent initial values across platforms
+    const fadeAnim = useRef(new Animated.Value(0)).current;
+    const slideAnim = useRef(new Animated.Value(50)).current;
     const handleScaleAnim = useRef(new Animated.Value(1)).current;
 
     // Track keyboard status
@@ -230,13 +230,13 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     Animated.timing(fadeAnim, {
                         toValue: 1,
                         duration: 300,
-                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                        useNativeDriver: true, // Use native driver for better performance
                     }),
                     Animated.spring(slideAnim, {
                         toValue: 0,
                         friction: 8,
                         tension: 40,
-                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                        useNativeDriver: true, // Use native driver for better performance
                     }),
                 ]).start();
             };
@@ -251,13 +251,13 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     Animated.timing(fadeAnim, {
                         toValue: 1,
                         duration: 300,
-                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                        useNativeDriver: true, // Use native driver for better performance
                     }),
                     Animated.spring(slideAnim, {
                         toValue: 0,
                         friction: 8,
                         tension: 40,
-                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                        useNativeDriver: true, // Use native driver for better performance
                     }),
                 ]).start();
             };
@@ -274,13 +274,13 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     Animated.timing(fadeAnim, {
                         toValue: 1,
                         duration: 300,
-                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                        useNativeDriver: true, // Use native driver for better performance
                     }),
                     Animated.spring(slideAnim, {
                         toValue: 0,
                         friction: 8,
                         tension: 40,
-                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                        useNativeDriver: true, // Use native driver for better performance
                     }),
                 ]).start();
             }, 100);
@@ -303,12 +303,12 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             Animated.timing(handleScaleAnim, {
                 toValue: 1.1,
                 duration: 300,
-                useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                useNativeDriver: true, // Use native driver for better performance
             }),
             Animated.timing(handleScaleAnim, {
                 toValue: 1,
                 duration: 300,
-                useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                useNativeDriver: true, // Use native driver for better performance
             }),
         ]);
 
@@ -392,7 +392,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         Animated.timing(fadeAnim, {
             toValue: 0,
             duration: Platform.OS === 'android' ? 100 : 200, // Faster on Android
-            useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+            useNativeDriver: true, // Use native driver for better performance
         }).start(() => {
             // Dismiss the sheet
             modalRef.current?.dismiss();
@@ -414,12 +414,12 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 Animated.timing(handleScaleAnim, {
                     toValue: 1.2,
                     duration: 200,
-                    useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                    useNativeDriver: true, // Use native driver for better performance
                 }),
                 Animated.timing(handleScaleAnim, {
                     toValue: 1,
                     duration: 200,
-                    useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+                    useNativeDriver: true, // Use native driver for better performance
                 }),
             ]).start();
         } else if (index === 0 && keyboardVisible) {
@@ -491,14 +491,11 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 <Animated.View
                     style={[
                         styles.animatedContent,
-                        // Apply animations - conditionally for Android
-                        Platform.OS === 'android' ?
-                            {
-                                opacity: 1,  // No fade animation on Android
-                            } : {
-                                opacity: fadeAnim,
-                                transform: [{ translateY: slideAnim }]
-                            }
+                        // Apply animations on all platforms for better performance
+                        {
+                            opacity: fadeAnim,
+                            transform: [{ translateY: slideAnim }]
+                        }
                     ]}
                 >
                     <OxyRouter

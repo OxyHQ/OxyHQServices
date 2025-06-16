@@ -118,7 +118,7 @@ export interface FollowButtonProps {
  * />
  * ```
  */
-const FollowButton: React.FC<FollowButtonProps> = ({
+const FollowButton: React.FC<FollowButtonProps> = React.memo(({
   userId,
   initiallyFollowing = false,
   size = 'medium',
@@ -182,30 +182,32 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     setIsLoading(true);
 
     try {
-      // This should be replaced with actual API call to your services
-      if (isFollowing) {
-        // Unfollow API call would go here
-        // await oxyServices.user.unfollowUser(userId);
-        console.log(`Unfollowing user: ${userId}`);
-        await new Promise(resolve => setTimeout(resolve, 500)); // Simulating API call
-      } else {
-        // Follow API call would go here
-        // await oxyServices.user.followUser(userId);
-        console.log(`Following user: ${userId}`);
-        await new Promise(resolve => setTimeout(resolve, 500)); // Simulating API call
-      }
-
-      // Toggle following state with animation
-      const newFollowingState = !isFollowing;
-      setIsFollowing(newFollowingState);
+      let result: { success: boolean; message: string };
       
-      // Call the callback if provided
-      if (onFollowChange) {
-        onFollowChange(newFollowingState);
+      if (isFollowing) {
+        // Unfollow API call
+        result = await oxyServices.unfollowUser(userId);
+      } else {
+        // Follow API call
+        result = await oxyServices.followUser(userId);
       }
 
-      // Show success toast
-      toast.success(newFollowingState ? 'Following user!' : 'Unfollowed user');
+      if (result.success) {
+        // Toggle following state with animation
+        const newFollowingState = !isFollowing;
+        setIsFollowing(newFollowingState);
+        
+        // Call the callback if provided
+        if (onFollowChange) {
+          onFollowChange(newFollowingState);
+        }
+
+        // Show success toast
+        toast.success(result.message || (newFollowingState ? 'Following user!' : 'Unfollowed user'));
+      } else {
+        // API returned success: false
+        toast.error(result.message || 'Failed to update follow status');
+      }
     } catch (error) {
       console.error('Follow action failed:', error);
       toast.error('Failed to update follow status. Please try again.');
@@ -326,7 +328,7 @@ const FollowButton: React.FC<FollowButtonProps> = ({
       </Animated.View>
     </TouchableOpacity>
   );
-};
+});
 
 const styles = StyleSheet.create({
   button: {

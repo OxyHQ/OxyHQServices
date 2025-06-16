@@ -28,7 +28,7 @@ interface OxyLogoProps {
  * SVG logo component for Oxy
  * This component renders the Oxy logo as an SVG and uses theme colors by default
  */
-export const OxyLogo: React.FC<OxyLogoProps> = ({
+export const OxyLogo: React.FC<OxyLogoProps> = React.memo(({
     width = 24,
     height = 24,
     style,
@@ -68,6 +68,6 @@ export const OxyLogo: React.FC<OxyLogoProps> = ({
             />
         </Svg>
     );
-};
+});
 
 export default OxyLogo;

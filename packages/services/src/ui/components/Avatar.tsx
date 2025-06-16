@@ -71,7 +71,7 @@ export interface AvatarProps {
  * Avatar component that displays either an image or text avatar
  * Falls back to displaying the first letter of the name if no image is provided
  */
-const Avatar: React.FC<AvatarProps> = ({
+const Avatar: React.FC<AvatarProps> = React.memo(({
     uri,
     text,
     name,
@@ -138,7 +138,7 @@ const Avatar: React.FC<AvatarProps> = ({
             </Text>
         </View>
     );
-};
+});
 
 const styles = StyleSheet.create({
     container: {
