@@ -8,12 +8,12 @@ import {
     ScrollView,
     Alert,
     TextInput,
-    Modal,
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import Avatar from '../components/Avatar';
 import OxyIcon from '../components/icon/OxyIcon';
+import { Ionicons } from '../../lib/icons';
 import { toast } from '../../lib/sonner';
 
 const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
@@ -34,15 +34,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const [website, setWebsite] = useState('');
     const [avatarUrl, setAvatarUrl] = useState('');
 
-    // Modal states
-    const [showDisplayNameModal, setShowDisplayNameModal] = useState(false);
-    const [showUsernameModal, setShowUsernameModal] = useState(false);
-    const [showEmailModal, setShowEmailModal] = useState(false);
-    const [showBioModal, setShowBioModal] = useState(false);
-    const [showLocationModal, setShowLocationModal] = useState(false);
-    const [showWebsiteModal, setShowWebsiteModal] = useState(false);
+    // Editing states
+    const [editingField, setEditingField] = useState<string | null>(null);
 
-    // Temporary input states for modals
+    // Temporary input states for inline editing
     const [tempDisplayName, setTempDisplayName] = useState('');
     const [tempUsername, setTempUsername] = useState('');
     const [tempEmail, setTempEmail] = useState('');
@@ -135,114 +130,194 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         );
     };
 
-    const openModal = (type: string, currentValue: string) => {
+    const startEditing = (type: string, currentValue: string) => {
         switch (type) {
             case 'displayName':
                 setTempDisplayName(currentValue);
-                setShowDisplayNameModal(true);
                 break;
             case 'username':
                 setTempUsername(currentValue);
-                setShowUsernameModal(true);
                 break;
             case 'email':
                 setTempEmail(currentValue);
-                setShowEmailModal(true);
                 break;
             case 'bio':
                 setTempBio(currentValue);
-                setShowBioModal(true);
                 break;
             case 'location':
                 setTempLocation(currentValue);
-                setShowLocationModal(true);
                 break;
             case 'website':
                 setTempWebsite(currentValue);
-                setShowWebsiteModal(true);
                 break;
         }
+        setEditingField(type);
     };
 
-    const saveModalInput = (type: string) => {
+    const saveField = (type: string) => {
         switch (type) {
             case 'displayName':
                 setDisplayName(tempDisplayName);
-                setShowDisplayNameModal(false);
                 break;
             case 'username':
                 setUsername(tempUsername);
-                setShowUsernameModal(false);
                 break;
             case 'email':
                 setEmail(tempEmail);
-                setShowEmailModal(false);
                 break;
             case 'bio':
                 setBio(tempBio);
-                setShowBioModal(false);
                 break;
             case 'location':
                 setLocation(tempLocation);
-                setShowLocationModal(false);
                 break;
             case 'website':
                 setWebsite(tempWebsite);
-                setShowWebsiteModal(false);
                 break;
         }
+        setEditingField(null);
     };
 
-    const renderEditModal = (
-        visible: boolean,
-        title: string,
-        value: string,
-        onChangeText: (text: string) => void,
-        onSave: () => void,
-        onCancel: () => void,
-        placeholder: string,
-        multiline = false,
-        keyboardType: 'default' | 'email-address' | 'url' = 'default'
-    ) => (
-        <Modal
-            visible={visible}
-            animationType="slide"
-            presentationStyle="pageSheet"
-            onRequestClose={onCancel}
-        >
-            <View style={[styles.modalContainer, { backgroundColor }]}>
-                <View style={styles.modalHeader}>
-                    <TouchableOpacity onPress={onCancel}>
-                        <Text style={[styles.modalButton, { color: '#666' }]}>Cancel</Text>
-                    </TouchableOpacity>
-                    <Text style={styles.modalTitle}>{title}</Text>
-                    <TouchableOpacity onPress={onSave}>
-                        <Text style={[styles.modalButton, { color: primaryColor }]}>Save</Text>
-                    </TouchableOpacity>
-                </View>
-                <View style={styles.modalContent}>
-                    <TextInput
-                        style={[
-                            multiline ? styles.modalTextArea : styles.modalInput,
-                            { 
-                                backgroundColor: isDarkTheme ? '#333' : '#fff',
-                                color: isDarkTheme ? '#fff' : '#000',
-                                borderColor: isDarkTheme ? '#444' : '#e0e0e0'
-                            }
-                        ]}
-                        value={value}
-                        onChangeText={onChangeText}
-                        placeholder={placeholder}
-                        placeholderTextColor={isDarkTheme ? '#aaa' : '#999'}
-                        multiline={multiline}
-                        numberOfLines={multiline ? 4 : 1}
-                        keyboardType={keyboardType}
-                        autoFocus
-                    />
+    const cancelEditing = () => {
+        setEditingField(null);
+    };
+
+    const getFieldLabel = (type: string) => {
+        const labels = {
+            displayName: 'Display Name',
+            username: 'Username',
+            email: 'Email',
+            bio: 'Bio',
+            location: 'Location',
+            website: 'Website'
+        };
+        return labels[type as keyof typeof labels] || 'Field';
+    };
+
+    const getFieldIcon = (type: string) => {
+        const icons = {
+            displayName: { name: 'person', color: '#007AFF' },
+            username: { name: 'at', color: '#5856D6' },
+            email: { name: 'mail', color: '#FF9500' },
+            bio: { name: 'document-text', color: '#34C759' },
+            location: { name: 'location', color: '#FF3B30' },
+            website: { name: 'link', color: '#32D74B' }
+        };
+        return icons[type as keyof typeof icons] || { name: 'person', color: '#007AFF' };
+    };
+
+    const renderEditingField = (type: string) => {
+        const fieldConfig = {
+            displayName: { label: 'Display Name', value: displayName, placeholder: 'Enter your display name', icon: 'person', color: '#007AFF', multiline: false, keyboardType: 'default' as const },
+            username: { label: 'Username', value: username, placeholder: 'Choose a username', icon: 'at', color: '#5856D6', multiline: false, keyboardType: 'default' as const },
+            email: { label: 'Email', value: email, placeholder: 'Enter your email address', icon: 'mail', color: '#FF9500', multiline: false, keyboardType: 'email-address' as const },
+            bio: { label: 'Bio', value: bio, placeholder: 'Tell people about yourself...', icon: 'document-text', color: '#34C759', multiline: true, keyboardType: 'default' as const },
+            location: { label: 'Location', value: location, placeholder: 'Enter your location', icon: 'location', color: '#FF3B30', multiline: false, keyboardType: 'default' as const },
+            website: { label: 'Website', value: website, placeholder: 'Enter your website URL', icon: 'link', color: '#32D74B', multiline: false, keyboardType: 'url' as const }
+        };
+
+        const config = fieldConfig[type as keyof typeof fieldConfig];
+        if (!config) return null;
+
+        const tempValue = (() => {
+            switch (type) {
+                case 'displayName': return tempDisplayName;
+                case 'username': return tempUsername;
+                case 'email': return tempEmail;
+                case 'bio': return tempBio;
+                case 'location': return tempLocation;
+                case 'website': return tempWebsite;
+                default: return '';
+            }
+        })();
+        
+        const setTempValue = (text: string) => {
+            switch (type) {
+                case 'displayName': setTempDisplayName(text); break;
+                case 'username': setTempUsername(text); break;
+                case 'email': setTempEmail(text); break;
+                case 'bio': setTempBio(text); break;
+                case 'location': setTempLocation(text); break;
+                case 'website': setTempWebsite(text); break;
+            }
+        };
+
+        return (
+            <View style={styles.editingFieldContainer}>
+                <View style={styles.editingFieldContent}>
+                    {config.value ? (
+                        <View style={styles.currentValueSection}>
+                            <Text style={styles.editingFieldLabel}>Current:</Text>
+                            <Text style={styles.editingFieldCurrentValue}>
+                                {config.value}
+                            </Text>
+                        </View>
+                    ) : null}
+                    
+                    <View style={styles.newValueSection}>
+                        <Text style={styles.editingFieldLabel}>
+                            {config.value ? 'New value:' : `Enter ${config.label.toLowerCase()}:`}
+                        </Text>
+                        <TextInput
+                            style={[
+                                config.multiline ? styles.editingFieldTextArea : styles.editingFieldInput,
+                                { 
+                                    backgroundColor: isDarkTheme ? '#333' : '#fff',
+                                    color: isDarkTheme ? '#fff' : '#000',
+                                    borderColor: isDarkTheme ? '#444' : '#e0e0e0'
+                                }
+                            ]}
+                            value={tempValue}
+                            onChangeText={setTempValue}
+                            placeholder={config.placeholder}
+                            placeholderTextColor={isDarkTheme ? '#aaa' : '#999'}
+                            multiline={config.multiline}
+                            numberOfLines={config.multiline ? 6 : 1}
+                            keyboardType={config.keyboardType}
+                            autoFocus
+                        />
+                    </View>
                 </View>
             </View>
-        </Modal>
-    );
+        );
+    };
+
+    const renderField = (
+        type: string,
+        label: string,
+        value: string,
+        placeholder: string,
+        icon: string,
+        iconColor: string,
+        multiline = false,
+        keyboardType: 'default' | 'email-address' | 'url' = 'default',
+        isFirst = false,
+        isLast = false
+    ) => {
+        const itemStyles = [
+            styles.settingItem,
+            isFirst && styles.firstSettingItem,
+            isLast && styles.lastSettingItem
+        ];
+
+        return (
+            <TouchableOpacity 
+                style={itemStyles}
+                onPress={() => startEditing(type, value)}
+            >
+                <View style={styles.settingInfo}>
+                    <OxyIcon name={icon} size={20} color={iconColor} style={styles.settingIcon} />
+                    <View>
+                        <Text style={styles.settingLabel}>{label}</Text>
+                        <Text style={styles.settingDescription}>
+                            {value || placeholder}
+                        </Text>
+                    </View>
+                </View>
+                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+            </TouchableOpacity>
+        );
+    };
 
     if (authLoading || !user) {
         return (
@@ -256,257 +331,197 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor }]}>
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity style={styles.cancelButton} onPress={onClose || goBack}>
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
+                <TouchableOpacity style={styles.cancelButton} onPress={editingField ? cancelEditing : (onClose || goBack)}>
+                    <Ionicons name="close" size={24} color="#666" />
                 </TouchableOpacity>
-                <Text style={styles.headerTitle}>Account Settings</Text>
+                
+                {editingField ? (
+                    <View style={styles.headerTitleWithIcon}>
+                        <OxyIcon 
+                            name={getFieldIcon(editingField).name} 
+                            size={20} 
+                            color={getFieldIcon(editingField).color} 
+                            style={styles.headerIcon} 
+                        />
+                        <Text style={styles.headerTitle}>{getFieldLabel(editingField)}</Text>
+                    </View>
+                ) : (
+                    <Text style={styles.headerTitle}>Account Settings</Text>
+                )}
+                
                 <TouchableOpacity 
                     style={[styles.saveHeaderButton, { opacity: isSaving ? 0.7 : 1 }]} 
-                    onPress={handleSave}
+                    onPress={editingField ? () => saveField(editingField) : handleSave}
                     disabled={isSaving}
                 >
                     {isSaving ? (
                         <ActivityIndicator size="small" color={primaryColor} />
                     ) : (
-                        <Text style={[styles.saveHeaderButtonText, { color: primaryColor }]}>Save</Text>
+                        <Ionicons name="checkmark" size={24} color={primaryColor} />
                     )}
                 </TouchableOpacity>
             </View>
 
-            <ScrollView style={styles.content}>
-                {/* Profile Picture Section */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Profile Picture</Text>
-                    
-                    <TouchableOpacity 
-                        style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}
-                        onPress={handleAvatarUpdate}
-                    >
-                        <View style={styles.userIcon}>
-                            <Avatar
-                                uri={avatarUrl}
-                                name={displayName || username}
-                                size={50}
-                                theme={theme}
-                            />
+            <ScrollView style={editingField ? styles.contentEditing : styles.content}>
+                {editingField ? (
+                    // Show only the editing interface when editing
+                    <View style={styles.editingOnlyContainer}>
+                        {renderEditingField(editingField)}
+                    </View>
+                ) : (
+                    // Show all settings when not editing
+                    <>
+                        {/* Profile Picture Section */}
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Profile Picture</Text>
+                            
+                            <TouchableOpacity 
+                                style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}
+                                onPress={handleAvatarUpdate}
+                            >
+                                <View style={styles.userIcon}>
+                                    <Avatar
+                                        uri={avatarUrl}
+                                        name={displayName || username}
+                                        size={50}
+                                        theme={theme}
+                                    />
+                                </View>
+                                <View style={styles.settingInfo}>
+                                    <View>
+                                        <Text style={styles.settingLabel}>Profile Photo</Text>
+                                        <Text style={styles.settingDescription}>
+                                            {avatarUrl ? 'Tap to change your profile picture' : 'Tap to add a profile picture'}
+                                        </Text>
+                                    </View>
+                                </View>
+                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                            </TouchableOpacity>
                         </View>
-                        <View style={styles.settingInfo}>
-                            <View>
-                                <Text style={styles.settingLabel}>Profile Photo</Text>
-                                <Text style={styles.settingDescription}>
-                                    {avatarUrl ? 'Tap to change your profile picture' : 'Tap to add a profile picture'}
-                                </Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-                </View>
 
-                {/* Basic Information */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Basic Information</Text>
-                    
-                    <TouchableOpacity 
-                        style={[styles.settingItem, styles.firstSettingItem]}
-                        onPress={() => openModal('displayName', displayName)}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="person" size={20} color="#007AFF" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Display Name</Text>
-                                <Text style={styles.settingDescription}>
-                                    {displayName || 'Add your display name'}
-                                </Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
+                        {/* Basic Information */}
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Basic Information</Text>
+                            
+                            {renderField(
+                                'displayName',
+                                'Display Name',
+                                displayName,
+                                'Add your display name',
+                                'person',
+                                '#007AFF',
+                                false,
+                                'default',
+                                true,
+                                false
+                            )}
 
-                    <TouchableOpacity 
-                        style={styles.settingItem}
-                        onPress={() => openModal('username', username)}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="at" size={20} color="#5856D6" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Username</Text>
-                                <Text style={styles.settingDescription}>
-                                    {username ? `@${username}` : 'Choose a username'}
-                                </Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
+                            {renderField(
+                                'username',
+                                'Username',
+                                username,
+                                'Choose a username',
+                                'at',
+                                '#5856D6',
+                                false,
+                                'default',
+                                false,
+                                false
+                            )}
 
-                    <TouchableOpacity 
-                        style={[styles.settingItem, styles.lastSettingItem]}
-                        onPress={() => openModal('email', email)}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="mail" size={20} color="#FF9500" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Email</Text>
-                                <Text style={styles.settingDescription}>
-                                    {email || 'Add your email address'}
-                                </Text>
-                            </View>
+                            {renderField(
+                                'email',
+                                'Email',
+                                email,
+                                'Add your email address',
+                                'mail',
+                                '#FF9500',
+                                false,
+                                'email-address',
+                                false,
+                                true
+                            )}
                         </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-                </View>
 
-                {/* About You */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>About You</Text>
-                    
-                    <TouchableOpacity 
-                        style={[styles.settingItem, styles.firstSettingItem]}
-                        onPress={() => openModal('bio', bio)}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="document-text" size={20} color="#34C759" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Bio</Text>
-                                <Text style={styles.settingDescription}>
-                                    {bio || 'Tell people about yourself'}
-                                </Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
+                        {/* About You */}
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>About You</Text>
+                            
+                            {renderField(
+                                'bio',
+                                'Bio',
+                                bio,
+                                'Tell people about yourself',
+                                'document-text',
+                                '#34C759',
+                                true,
+                                'default',
+                                true,
+                                false
+                            )}
 
-                    <TouchableOpacity 
-                        style={styles.settingItem}
-                        onPress={() => openModal('location', location)}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="location" size={20} color="#FF3B30" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Location</Text>
-                                <Text style={styles.settingDescription}>
-                                    {location || 'Add your location'}
-                                </Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
+                            {renderField(
+                                'location',
+                                'Location',
+                                location,
+                                'Add your location',
+                                'location',
+                                '#FF3B30',
+                                false,
+                                'default',
+                                false,
+                                false
+                            )}
 
-                    <TouchableOpacity 
-                        style={[styles.settingItem, styles.lastSettingItem]}
-                        onPress={() => openModal('website', website)}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="link" size={20} color="#32D74B" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Website</Text>
-                                <Text style={styles.settingDescription}>
-                                    {website || 'Add your website'}
-                                </Text>
-                            </View>
+                            {renderField(
+                                'website',
+                                'Website',
+                                website,
+                                'Add your website',
+                                'link',
+                                '#32D74B',
+                                false,
+                                'url',
+                                false,
+                                true
+                            )}
                         </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-                </View>
 
-                {/* Quick Actions */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Quick Actions</Text>
-                    
-                    <TouchableOpacity 
-                        style={[styles.settingItem, styles.firstSettingItem]}
-                        onPress={() => toast.info('Privacy settings coming soon!')}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="shield-checkmark" size={20} color="#8E8E93" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Privacy Settings</Text>
-                                <Text style={styles.settingDescription}>Control who can see your profile</Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
+                        {/* Quick Actions */}
+                        <View style={styles.section}>
+                            <Text style={styles.sectionTitle}>Quick Actions</Text>
+                            
+                            <TouchableOpacity 
+                                style={[styles.settingItem, styles.firstSettingItem]}
+                                onPress={() => toast.info('Privacy settings coming soon!')}
+                            >
+                                <View style={styles.settingInfo}>
+                                    <OxyIcon name="shield-checkmark" size={20} color="#8E8E93" style={styles.settingIcon} />
+                                    <View>
+                                        <Text style={styles.settingLabel}>Privacy Settings</Text>
+                                        <Text style={styles.settingDescription}>Control who can see your profile</Text>
+                                    </View>
+                                </View>
+                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                            </TouchableOpacity>
 
-                    <TouchableOpacity 
-                        style={[styles.settingItem, styles.lastSettingItem]}
-                        onPress={() => toast.info('Account verification coming soon!')}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="checkmark-circle" size={20} color="#30D158" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Verify Account</Text>
-                                <Text style={styles.settingDescription}>Get a verified badge</Text>
-                            </View>
+                            <TouchableOpacity 
+                                style={[styles.settingItem, styles.lastSettingItem]}
+                                onPress={() => toast.info('Account verification coming soon!')}
+                            >
+                                <View style={styles.settingInfo}>
+                                    <OxyIcon name="checkmark-circle" size={20} color="#30D158" style={styles.settingIcon} />
+                                    <View>
+                                        <Text style={styles.settingLabel}>Verify Account</Text>
+                                        <Text style={styles.settingDescription}>Get a verified badge</Text>
+                                    </View>
+                                </View>
+                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                            </TouchableOpacity>
                         </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-                </View>
+                    </>
+                )}
             </ScrollView>
-
-            {/* Modals */}
-            {renderEditModal(
-                showDisplayNameModal,
-                'Display Name',
-                tempDisplayName,
-                setTempDisplayName,
-                () => saveModalInput('displayName'),
-                () => setShowDisplayNameModal(false),
-                'Enter your display name'
-            )}
-
-            {renderEditModal(
-                showUsernameModal,
-                'Username',
-                tempUsername,
-                setTempUsername,
-                () => saveModalInput('username'),
-                () => setShowUsernameModal(false),
-                'Choose a username'
-            )}
-
-            {renderEditModal(
-                showEmailModal,
-                'Email',
-                tempEmail,
-                setTempEmail,
-                () => saveModalInput('email'),
-                () => setShowEmailModal(false),
-                'Enter your email address',
-                false,
-                'email-address'
-            )}
-
-            {renderEditModal(
-                showBioModal,
-                'Bio',
-                tempBio,
-                setTempBio,
-                () => saveModalInput('bio'),
-                () => setShowBioModal(false),
-                'Tell people about yourself...',
-                true
-            )}
-
-            {renderEditModal(
-                showLocationModal,
-                'Location',
-                tempLocation,
-                setTempLocation,
-                () => saveModalInput('location'),
-                () => setShowLocationModal(false),
-                'Enter your location'
-            )}
-
-            {renderEditModal(
-                showWebsiteModal,
-                'Website',
-                tempWebsite,
-                setTempWebsite,
-                () => saveModalInput('website'),
-                () => setShowWebsiteModal(false),
-                'Enter your website URL',
-                false,
-                'url'
-            )}
         </View>
     );
 };
@@ -532,24 +547,26 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#000',
     },
+    headerTitleWithIcon: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    headerIcon: {
+        marginRight: 8,
+    },
     cancelButton: {
         padding: 8,
-    },
-    cancelButtonText: {
-        fontSize: 16,
-        color: '#666',
-        fontWeight: '400',
     },
     saveHeaderButton: {
         padding: 8,
     },
-    saveHeaderButtonText: {
-        fontSize: 16,
-        fontWeight: '600',
-    },
     content: {
         flex: 1,
         padding: 16,
+    },
+    contentEditing: {
+        flex: 1,
+        padding: 0,
     },
     section: {
         marginBottom: 24,
@@ -598,52 +615,113 @@ const styles = StyleSheet.create({
     userIcon: {
         marginRight: 12,
     },
-    // Modal styles
-    modalContainer: {
+    // Inline editing styles
+    editingContainer: {
         flex: 1,
-        backgroundColor: '#f2f2f2',
     },
-    modalHeader: {
-        paddingHorizontal: 20,
-        paddingTop: 60,
-        paddingBottom: 16,
-        backgroundColor: '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e0e0e0',
+    editingHeader: {
         flexDirection: 'row',
+        alignItems: 'center',
         justifyContent: 'space-between',
+        marginBottom: 12,
+    },
+    editingActions: {
+        flexDirection: 'row',
         alignItems: 'center',
     },
-    modalTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        color: '#000',
+    editingButton: {
+        padding: 8,
     },
-    modalButton: {
+    editingButtonText: {
         fontSize: 16,
         fontWeight: '500',
     },
-    modalContent: {
-        padding: 20,
-    },
-    modalInput: {
-        backgroundColor: '#fff',
+    inlineInput: {
+        backgroundColor: '#f8f8f8',
         borderWidth: 1,
+        borderColor: '#e0e0e0',
+        borderRadius: 8,
+        padding: 12,
+        fontSize: 16,
+        minHeight: 44,
+    },
+    inlineTextArea: {
+        backgroundColor: '#f8f8f8',
+        borderWidth: 1,
+        borderColor: '#e0e0e0',
+        borderRadius: 8,
+        padding: 12,
+        fontSize: 16,
+        minHeight: 100,
+        textAlignVertical: 'top',
+    },
+    // Editing-only mode styles
+    editingOnlyContainer: {
+        flex: 1,
+    },
+    editingFieldContainer: {
+        backgroundColor: '#fff',
+        padding: 16,
+        flex: 1,
+    },
+    editingFieldHeader: {
+        marginBottom: 16,
+    },
+    editingFieldTitleContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
+    editingFieldIcon: {
+        marginRight: 12,
+    },
+    editingFieldTitle: {
+        fontSize: 20,
+        fontWeight: '600',
+        color: '#000',
+    },
+    editingFieldContent: {
+        flex: 1,
+    },
+    currentValueSection: {
+        marginBottom: 20,
+    },
+    newValueSection: {
+        flex: 1,
+    },
+    editingFieldLabel: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#666',
+        marginBottom: 8,
+    },
+    editingFieldCurrentValue: {
+        fontSize: 16,
+        color: '#333',
+        backgroundColor: '#f8f8f8',
+        padding: 12,
+        borderRadius: 8,
+        marginBottom: 4,
+    },
+    editingFieldInput: {
+        backgroundColor: '#fff',
+        borderWidth: 2,
         borderColor: '#e0e0e0',
         borderRadius: 12,
         padding: 16,
-        fontSize: 16,
-        minHeight: 50,
+        fontSize: 17,
+        minHeight: 52,
+        fontWeight: '400',
     },
-    modalTextArea: {
+    editingFieldTextArea: {
         backgroundColor: '#fff',
-        borderWidth: 1,
+        borderWidth: 2,
         borderColor: '#e0e0e0',
         borderRadius: 12,
         padding: 16,
-        fontSize: 16,
+        fontSize: 17,
         minHeight: 120,
         textAlignVertical: 'top',
+        fontWeight: '400',
     },
 });
 

@@ -113,7 +113,7 @@
         "typescript": "^5.3.0"
     },
     "peerDependencies": {
-        "@expo/vector-icons": "*",
+        "@expo/vector-icons": "^14.1.0",
         "@gorhom/bottom-sheet": "*",
         "@types/react": "*",
         "@types/react-native": "*",
