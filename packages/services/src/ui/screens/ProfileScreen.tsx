@@ -30,21 +30,23 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
         setIsLoading(true);
         setError(null);
 
-        // Load user profile and karma total
+        // Load user profile and available data
         Promise.all([
             oxyServices.getUserById(userId),
-            oxyServices.getUserKarmaTotal ? oxyServices.getUserKarmaTotal(userId) : Promise.resolve({ total: undefined })
+            oxyServices.getUserKarmaTotal(userId).catch(() => ({ total: null })),
+            oxyServices.getUserFollowers(userId, 1, 0).catch(() => ({ total: 0 })),
+            oxyServices.getUserFollowing(userId, 1, 0).catch(() => ({ total: 0 }))
         ])
-            .then(([profileRes, karmaRes]) => {
+            .then(([profileRes, karmaRes, followersRes, followingRes]) => {
                 setProfile(profileRes);
-                setKarmaTotal(typeof karmaRes.total === 'number' ? karmaRes.total : null);
+                setKarmaTotal(karmaRes.total);
+                setFollowersCount(followersRes.total);
+                setFollowingCount(followingRes.total);
 
-                // Mock data for other stats
-                // In a real app, these would come from API endpoints
-                setPostsCount(Math.floor(Math.random() * 50));
-                setCommentsCount(Math.floor(Math.random() * 100));
-                setFollowersCount(Math.floor(Math.random() * 200));
-                setFollowingCount(Math.floor(Math.random() * 100));
+                // For posts and comments, we'll show null until specific APIs are available
+                // These could be added when content management APIs are implemented
+                setPostsCount(null);
+                setCommentsCount(null);
             })
             .catch((err: any) => setError(err.message || 'Failed to load profile'))
             .finally(() => setIsLoading(false));
@@ -121,6 +123,14 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         <View style={styles.statItem}>
                             <Text style={[styles.karmaAmount, { color: textColor }]}>{followingCount !== null ? followingCount : '--'}</Text>
                             <Text style={[styles.karmaLabel, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>Following</Text>
+                        </View>
+                        <View style={styles.statItem}>
+                            <Text style={[styles.karmaAmount, { color: textColor }]}>{postsCount !== null ? postsCount : '--'}</Text>
+                            <Text style={[styles.karmaLabel, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>Posts</Text>
+                        </View>
+                        <View style={styles.statItem}>
+                            <Text style={[styles.karmaAmount, { color: textColor }]}>{commentsCount !== null ? commentsCount : '--'}</Text>
+                            <Text style={[styles.karmaLabel, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>Comments</Text>
                         </View>
                     </View>
                 </View>
