@@ -149,7 +149,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         };
 
         // For React Native - check for global navigation events
-        let intervalId: any = null;
+        let intervalId: ReturnType<typeof setInterval> | null = null;
         
         if (typeof document !== 'undefined') {
             // Web - use custom event listener
