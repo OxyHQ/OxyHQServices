@@ -120,6 +120,10 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         }
     }, [currentScreen, adjustSnapPoints, isNavigating]);
 
+    // Add state for managing screen transitions to prevent flicker
+    const [pendingScreen, setPendingScreen] = useState<string | null>(null);
+    const [pendingProps, setPendingProps] = useState<Record<string, any>>({});
+
     // Improved navigation with debouncing and state coordination
     const navigate = useCallback((screen: string, props: Record<string, any> = {}) => {
         const now = Date.now();
@@ -140,15 +144,24 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
             setIsNavigating(true);
             lastNavigationTimeRef.current = now;
             
-            // Batch state updates to prevent conflicts
-            setCurrentScreen(screen);
-            setScreenHistory(prev => [...prev, screen]);
-            setScreenProps(props);
+            // Use pending state to ensure atomic transitions
+            setPendingScreen(screen);
+            setPendingProps(props);
             
-            // Clear navigation flag after animation completes
+            // Update screen state atomically after a minimal delay
             navigationTimeoutRef.current = setTimeout(() => {
-                setIsNavigating(false);
-            }, NAVIGATION_DEBOUNCE_MS);
+                // Batch all state updates together
+                setCurrentScreen(screen);
+                setScreenHistory(prev => [...prev, screen]);
+                setScreenProps(props);
+                setPendingScreen(null);
+                setPendingProps({});
+                
+                // Clear navigation flag after state is updated
+                setTimeout(() => {
+                    setIsNavigating(false);
+                }, 50); // Shorter delay for better responsiveness
+            }, 50); // Minimal delay to ensure atomic update
         } else {
             console.error(`Screen "${screen}" not found`);
         }
@@ -233,13 +246,23 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
             const newHistory = [...screenHistory];
             newHistory.pop();
             const previousScreen = newHistory[newHistory.length - 1];
-            setCurrentScreen(previousScreen);
-            setScreenHistory(newHistory);
             
-            // Clear navigation flag after animation
+            // Use the same atomic update pattern as navigate
+            setPendingScreen(previousScreen);
+            setPendingProps({});
+            
             setTimeout(() => {
-                setIsNavigating(false);
-            }, NAVIGATION_DEBOUNCE_MS);
+                setCurrentScreen(previousScreen);
+                setScreenHistory(newHistory);
+                setScreenProps({});
+                setPendingScreen(null);
+                setPendingProps({});
+                
+                // Clear navigation flag after state is updated
+                setTimeout(() => {
+                    setIsNavigating(false);
+                }, 50);
+            }, 50);
         } else {
             // If no history, close the UI
             if (onClose) {
@@ -248,20 +271,26 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         }
     }, [screenHistory, onClose, isNavigating]);
 
-    // Render the current screen component
+    // Render the current screen component with transition protection
     const renderScreen = () => {
-        const CurrentScreen = routes[currentScreen]?.component;
+        // During navigation transition, continue showing the current screen until the new one is ready
+        // This prevents flicker by not rendering an intermediate state
+        const screenToRender = pendingScreen && !isNavigating ? pendingScreen : currentScreen;
+        const propsToUse = pendingScreen && !isNavigating ? pendingProps : screenProps;
         
-        console.log('[OxyRouter] Rendering screen:', currentScreen);
+        const CurrentScreen = routes[screenToRender]?.component;
+        
+        console.log('[OxyRouter] Rendering screen:', screenToRender);
         console.log('[OxyRouter] Available routes:', Object.keys(routes));
         console.log('[OxyRouter] Current screen component found:', !!CurrentScreen);
+        console.log('[OxyRouter] Is navigating:', isNavigating, 'Pending screen:', pendingScreen);
 
         if (!CurrentScreen) {
-            console.error(`Screen "${currentScreen}" not found`);
+            console.error(`Screen "${screenToRender}" not found`);
             return <View style={styles.errorContainer} />;
         }
 
-        console.log('[OxyRouter] Rendering screen component for:', currentScreen);
+        console.log('[OxyRouter] Rendering screen component for:', screenToRender);
         return (
             <CurrentScreen
                 oxyServices={oxyServices}
@@ -270,7 +299,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
                 onClose={onClose}
                 onAuthenticated={onAuthenticated}
                 theme={theme}
-                {...screenProps}
+                {...propsToUse}
             />
         );
     };
@@ -287,6 +316,11 @@ const styles = StyleSheet.create({
         flex: 1,
         minHeight: 200, // Ensure minimum height
         backgroundColor: 'transparent', // Make sure it's visible
+    },
+    transitionContainer: {
+        flex: 1,
+        minHeight: 200, // Match container minHeight
+        backgroundColor: 'transparent', // Transparent during transition to avoid flicker
     },
     errorContainer: {
         flex: 1,
