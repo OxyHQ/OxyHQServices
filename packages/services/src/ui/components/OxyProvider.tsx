@@ -148,7 +148,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     }, [bottomSheetRef, modalRef]);
 
     // Use percentage-based snap points for better cross-platform compatibility
-    const [snapPoints, setSnapPoints] = useState<(string | number)[]>(['85%']);
+    const [snapPoints, setSnapPoints] = useState<(string | number)[]>(['60%', '90%']);
 
     // Animation values - we'll use these for content animations
     // Start with opacity 1 on Android to avoid visibility issues
@@ -169,15 +169,21 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         const keyboardWillShowListener = Keyboard.addListener(
             Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
             (event: KeyboardEvent) => {
-                setKeyboardVisible(true);
-                // Get keyboard height from event
-                const keyboardHeightValue = event.endCoordinates.height;
-                setKeyboardHeight(keyboardHeightValue);
+                // Debounce rapid keyboard events
+                if (!keyboardVisible) {
+                    setKeyboardVisible(true);
+                    // Get keyboard height from event
+                    const keyboardHeightValue = event.endCoordinates.height;
+                    setKeyboardHeight(keyboardHeightValue);
 
-                // Ensure the bottom sheet remains visible when keyboard opens
-                // by adjusting to the highest snap point
-                if (modalRef.current) {
-                    modalRef.current.snapToIndex(1);
+                    // Ensure the bottom sheet remains visible when keyboard opens
+                    // by adjusting to the highest snap point
+                    if (modalRef.current) {
+                        // Use requestAnimationFrame to avoid conflicts
+                        requestAnimationFrame(() => {
+                            modalRef.current?.snapToIndex(1);
+                        });
+                    }
                 }
             }
         );
@@ -185,8 +191,10 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         const keyboardWillHideListener = Keyboard.addListener(
             Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
             () => {
-                setKeyboardVisible(false);
-                setKeyboardHeight(0);
+                if (keyboardVisible) {
+                    setKeyboardVisible(false);
+                    setKeyboardHeight(0);
+                }
             }
         );
 
@@ -195,7 +203,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             keyboardWillShowListener.remove();
             keyboardWillHideListener.remove();
         };
-    }, []);
+    }, [keyboardVisible]);
 
     // Present the modal when component mounts, but only if autoPresent is true
     useEffect(() => {
@@ -339,10 +347,12 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             // If we have content height, use it as a constraint
             if (contentHeight > 0) {
                 // Calculate content height as percentage of screen (plus some padding)
-                const contentHeightPercent = Math.min(Math.ceil((contentHeight) / screenHeight * 100), 90) + '%';
+                // Clamp to ensure we don't exceed 90% to leave space for UI elements
+                const contentHeightPercent = Math.min(Math.ceil((contentHeight) / screenHeight * 100), 90);
+                const contentHeightPercentStr = `${contentHeightPercent}%`;
                 // Use content height for first snap point if it's taller than the default
-                const firstPoint = contentHeight / screenHeight > 0.6 ? contentHeightPercent : points[0];
-                setSnapPoints([firstPoint, points[1]]);
+                const firstPoint = contentHeight / screenHeight > 0.6 ? contentHeightPercentStr : points[0];
+                setSnapPoints([firstPoint, points[1] || '90%']);
             } else {
                 setSnapPoints(points);
             }
@@ -361,9 +371,11 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             setSnapPoints([highestPoint, highestPoint]);
         } else {
             if (layoutHeight > 0) {
-                const contentHeightPercent = Math.min(Math.ceil((layoutHeight + 40) / screenHeight * 100), 90) + '%';
-                const firstPoint = layoutHeight / screenHeight > 0.6 ? contentHeightPercent : snapPoints[0];
-                setSnapPoints([firstPoint, snapPoints[1]]);
+                // Add padding and clamp to reasonable limits
+                const contentHeightPercent = Math.min(Math.ceil((layoutHeight + 40) / screenHeight * 100), 90);
+                const contentHeightPercentStr = `${contentHeightPercent}%`;
+                const firstPoint = layoutHeight / screenHeight > 0.6 ? contentHeightPercentStr : snapPoints[0];
+                setSnapPoints([firstPoint, snapPoints[1] || '90%']);
             }
         }
     }, [keyboardVisible, screenHeight, snapPoints]);
@@ -391,6 +403,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         if (index === -1 && onClose) {
             onClose();
         } else if (index === 1) {
+            // Only animate if we actually changed to index 1
             // Pulse animation when expanded to full height
             Animated.sequence([
                 Animated.timing(handleScaleAnim, {
@@ -407,7 +420,10 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         } else if (index === 0 && keyboardVisible) {
             // If keyboard is visible and user tries to go to a smaller snap point,
             // force the sheet to stay at the highest point for better visibility
-            modalRef.current?.snapToIndex(1);
+            // Use requestAnimationFrame to avoid conflicts with ongoing animations
+            requestAnimationFrame(() => {
+                modalRef.current?.snapToIndex(1);
+            });
         }
     }, [onClose, handleScaleAnim, keyboardVisible]);
 
