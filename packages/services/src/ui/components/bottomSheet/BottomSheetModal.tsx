@@ -48,9 +48,12 @@ export interface BottomSheetModalRef {
 const getSnapPointHeight = (snapPoint: string | number): number => {
   if (typeof snapPoint === 'string') {
     const percentage = parseInt(snapPoint.replace('%', ''), 10);
-    return (SCREEN_HEIGHT * percentage) / 100;
+    // Clamp percentage to valid range (0-100%)
+    const clampedPercentage = Math.min(Math.max(percentage, 0), 100);
+    return (SCREEN_HEIGHT * clampedPercentage) / 100;
   }
-  return snapPoint;
+  // For fixed heights, clamp to screen height
+  return Math.min(Math.max(snapPoint, 0), SCREEN_HEIGHT);
 };
 
 export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModalProps>(
@@ -84,7 +87,9 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
 
     const getTranslateYForIndex = useCallback((targetIndex: number) => {
       const targetHeight = getSnapPointHeight(snapPoints[targetIndex]);
-      return SCREEN_HEIGHT - targetHeight;
+      const translateY = SCREEN_HEIGHT - targetHeight;
+      // Ensure translateY is never negative (which would put sheet off-screen)
+      return Math.max(translateY, 0);
     }, [snapPoints]);
 
     const animateToPosition = useCallback((toIndex: number, onComplete?: () => void) => {
@@ -155,7 +160,9 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
             const resistedValue = gestureState.dy / resistance;
             translateY.setValue(resistedValue);
           } else if (gestureState.dy < 0 && currentIndex < snapPoints.length - 1) {
-            translateY.setValue(gestureState.dy);
+            // Allow upward movement but with some resistance
+            const resistedValue = gestureState.dy / (resistance * 0.5);
+            translateY.setValue(resistedValue);
           }
         },
         onPanResponderRelease: (_, gestureState) => {
@@ -164,13 +171,17 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
           const currentHeight = getCurrentSnapHeight();
           const { dy: dragDistance, vy: dragVelocity } = gestureState;
 
-          if (dragDistance > 50 || dragVelocity > 0.3) {
+          // Improved gesture detection with better thresholds
+          const dragThreshold = Math.min(currentHeight * 0.2, 50); // Adaptive threshold
+          const velocityThreshold = 0.3;
+
+          if (dragDistance > dragThreshold || dragVelocity > velocityThreshold) {
             if (currentIndex === 0 || dragDistance > currentHeight * 0.25) {
               animateToPosition(-1);
             } else {
               animateToPosition(currentIndex - 1);
             }
-          } else if (dragDistance < -50 || dragVelocity < -0.3) {
+          } else if (dragDistance < -dragThreshold || dragVelocity < -velocityThreshold) {
             if (currentIndex < snapPoints.length - 1) {
               animateToPosition(currentIndex + 1);
             }
@@ -259,17 +270,37 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
             styles.container,
             {
               transform: [{ translateY }],
+              // Ensure the container doesn't exceed screen bounds
               height: SCREEN_HEIGHT,
+              // Add a minimum height to prevent completely hiding the sheet
+              minHeight: 100,
             },
           ]}
         >
           <View 
-            style={[styles.sheet, backgroundStyle]}
+            style={[
+              styles.sheet, 
+              backgroundStyle,
+              {
+                // Ensure sheet takes available height but doesn't overflow
+                maxHeight: SCREEN_HEIGHT,
+                minHeight: 100,
+              }
+            ]}
             {...(enableContentPanningGesture ? panResponder.panHandlers : {})}
           >
             {HandleComponent ? <HandleComponent /> : <DefaultHandle />}
             
-            <ScrollView style={styles.content}>
+            <ScrollView 
+              style={styles.content}
+              contentContainerStyle={{ 
+                flexGrow: 1,
+                // Ensure content doesn't cause overflow
+                maxHeight: SCREEN_HEIGHT - 100, // Reserve space for handle and padding
+              }}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
               {children}
             </ScrollView>
           </View>
