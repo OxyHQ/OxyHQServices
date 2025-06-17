@@ -153,7 +153,10 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
     const panResponder = useRef(
       PanResponder.create({
         onMoveShouldSetPanResponder: (_, gestureState) => {
-          return Math.abs(gestureState.dy) > 5 && (enablePanDownToClose || enableHandlePanningGesture);
+          // Activate if vertical drag is more than 5 pixels.
+          // The PanResponder is attached conditionally (handle or content),
+          // so if this function is called, it means the interaction is on an enabled area.
+          return Math.abs(gestureState.dy) > 5;
         },
         onPanResponderGrant: () => {
           const currentValue = (translateY as any)._value || 0;
@@ -189,17 +192,26 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
           const dragThreshold = Math.min(currentHeight * 0.2, 50); // Adaptive threshold
           const velocityThreshold = 0.3;
 
-          if (dragDistance > dragThreshold || dragVelocity > velocityThreshold) {
-            if (currentIndex === 0 || dragDistance > currentHeight * 0.25) {
-              animateToPosition(-1);
+          if (dragDistance > dragThreshold || dragVelocity > velocityThreshold) { // Downward gesture
+            if (enablePanDownToClose && (currentIndex === 0 || dragDistance > currentHeight * 0.25)) {
+              animateToPosition(-1); // Close sheet
+            } else if (currentIndex > 0) {
+              // If not closing (either disabled or conditions not met for close)
+              // and not already at the lowest snap point (index 0)
+              animateToPosition(currentIndex - 1); // Snap to lower snap point
             } else {
-              animateToPosition(currentIndex - 1);
+              // If already at index 0 and not closing, or if conditions for lower snap not met
+              animateToPosition(currentIndex); // Snap back to current position (index 0)
             }
-          } else if (dragDistance < -dragThreshold || dragVelocity < -velocityThreshold) {
+          } else if (dragDistance < -dragThreshold || dragVelocity < -velocityThreshold) { // Upward gesture
             if (currentIndex < snapPoints.length - 1) {
-              animateToPosition(currentIndex + 1);
+              animateToPosition(currentIndex + 1); // Snap to higher snap point
+            } else {
+              // Already at the highest snap point, snap back to it
+              animateToPosition(currentIndex);
             }
           } else {
+            // No significant drag/velocity, snap back to current position
             animateToPosition(currentIndex);
           }
         },
@@ -312,8 +324,10 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
               style={styles.content}
               contentContainerStyle={{ 
                 flexGrow: 1,
-                // Reserve space for handle and padding, but ensure content doesn't overflow
-                maxHeight: Math.max(getCurrentSnapHeight() - 60, SCREEN_HEIGHT - 160),
+                // The ScrollView is constrained by its parent's height (styles.sheet),
+                // and flex: 1 (from styles.content) makes it fill the available space
+                // after the handle. flexGrow: 1 allows content to expand if it's smaller
+                // than the ScrollView's allocated space. Scrolling occurs if content is larger.
               }}
               showsVerticalScrollIndicator={false}
               bounces={false}
