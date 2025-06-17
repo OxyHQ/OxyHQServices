@@ -47,13 +47,14 @@ export interface BottomSheetModalRef {
 
 const getSnapPointHeight = (snapPoint: string | number): number => {
   if (typeof snapPoint === 'string') {
-    const percentage = parseInt(snapPoint.replace('%', ''), 10);
+    const percentage = Number.parseInt(snapPoint.replace('%', ''), 10);
     // Clamp percentage to valid range (0-100%)
     const clampedPercentage = Math.min(Math.max(percentage, 0), 100);
     return (SCREEN_HEIGHT * clampedPercentage) / 100;
   }
-  // For fixed heights, clamp to screen height
-  return Math.min(Math.max(snapPoint, 0), SCREEN_HEIGHT);
+  // For fixed heights, clamp to screen height with some padding for safe area
+  const maxHeight = SCREEN_HEIGHT - 50; // Reserve 50px for safe area/status bar
+  return Math.min(Math.max(snapPoint, 100), maxHeight);
 };
 
 export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModalProps>(
@@ -82,14 +83,20 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
       if (currentIndex >= 0 && currentIndex < snapPoints.length) {
         return getSnapPointHeight(snapPoints[currentIndex]);
       }
-      return getSnapPointHeight(snapPoints[0]);
+      // Fallback to first snap point if index is invalid
+      if (snapPoints.length > 0) {
+        return getSnapPointHeight(snapPoints[0]);
+      }
+      // Ultimate fallback
+      return 200;
     }, [currentIndex, snapPoints]);
 
     const getTranslateYForIndex = useCallback((targetIndex: number) => {
       const targetHeight = getSnapPointHeight(snapPoints[targetIndex]);
       const translateY = SCREEN_HEIGHT - targetHeight;
       // Ensure translateY is never negative (which would put sheet off-screen)
-      return Math.max(translateY, 0);
+      // and never exceeds SCREEN_HEIGHT (which would hide the sheet completely)
+      return Math.max(Math.min(translateY, SCREEN_HEIGHT), 0);
     }, [snapPoints]);
 
     const animateToPosition = useCallback((toIndex: number, onComplete?: () => void) => {
@@ -155,14 +162,21 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
         },
         onPanResponderMove: (_, gestureState) => {
           const resistance = overDragResistanceFactor;
+          const currentTranslateY = (translateY as any)._value || 0;
+          const currentOffset = (translateY as any)._offset || 0;
+          const totalTranslateY = currentTranslateY + currentOffset;
           
           if (gestureState.dy > 0) {
+            // Downward movement - allow but with resistance and bounds
             const resistedValue = gestureState.dy / resistance;
-            translateY.setValue(resistedValue);
+            const newValue = Math.min(resistedValue, SCREEN_HEIGHT - totalTranslateY);
+            translateY.setValue(newValue);
           } else if (gestureState.dy < 0 && currentIndex < snapPoints.length - 1) {
-            // Allow upward movement but with some resistance
+            // Upward movement - allow but with resistance and bounds
             const resistedValue = gestureState.dy / (resistance * 0.5);
-            translateY.setValue(resistedValue);
+            // Prevent going above screen bounds
+            const newValue = Math.max(resistedValue, -totalTranslateY);
+            translateY.setValue(newValue);
           }
         },
         onPanResponderRelease: (_, gestureState) => {
@@ -228,8 +242,10 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
       collapse: () => animateToPosition(0),
       close: () => animateToPosition(-1),
       snapToIndex: (newIndex: number) => {
-        if (newIndex >= 0 && newIndex < snapPoints.length) {
-          animateToPosition(newIndex);
+        // Ensure index is within valid bounds
+        const clampedIndex = Math.max(0, Math.min(newIndex, snapPoints.length - 1));
+        if (clampedIndex >= 0 && clampedIndex < snapPoints.length) {
+          animateToPosition(clampedIndex);
         }
       },
       snapToPosition: (position: string | number) => {
@@ -282,8 +298,9 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
               styles.sheet, 
               backgroundStyle,
               {
-                // Ensure sheet takes available height but doesn't overflow
-                maxHeight: SCREEN_HEIGHT,
+                // Calculate height based on current snap point to prevent overflow
+                height: Math.min(getCurrentSnapHeight(), SCREEN_HEIGHT - 50),
+                maxHeight: SCREEN_HEIGHT - 50, // Reserve space for safe area
                 minHeight: 100,
               }
             ]}
@@ -295,8 +312,8 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
               style={styles.content}
               contentContainerStyle={{ 
                 flexGrow: 1,
-                // Ensure content doesn't cause overflow
-                maxHeight: SCREEN_HEIGHT - 100, // Reserve space for handle and padding
+                // Reserve space for handle and padding, but ensure content doesn't overflow
+                maxHeight: Math.max(getCurrentSnapHeight() - 60, SCREEN_HEIGHT - 160),
               }}
               showsVerticalScrollIndicator={false}
               bounces={false}
