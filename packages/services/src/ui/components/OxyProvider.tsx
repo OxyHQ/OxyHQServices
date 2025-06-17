@@ -72,7 +72,7 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
                             {children}
                         </SafeAreaProvider>
                     </BottomSheetModalProvider>
-                    {/* Move Toaster outside BottomSheetModalProvider to ensure it appears above the modal backdrop */}
+                    {/* Global Toaster for app-wide notifications outside of Modal contexts */}
                     <View style={styles.toasterContainer}>
                         <Toaster position="top-center" swipeToDismissDirection="left" offset={15} />
                     </View>
@@ -425,6 +425,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             snapPoints={snapPoints}
             enablePanDownToClose
             backdropComponent={renderBackdrop}
+            enableInternalToaster={true}
             // Remove enableDynamicSizing as we're implementing our own solution
             handleComponent={() => (
                 <Animated.View
