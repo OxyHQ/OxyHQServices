@@ -60,7 +60,7 @@ const getSnapPointHeight = (snapPoint: string | number): number => {
 export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModalProps>(
   ({
     children,
-    snapPoints = ['50%', '90%'],
+    snapPoints = [],
     index = 0,
     enablePanDownToClose = true,
     backdropComponent: BackdropComponent,
@@ -72,7 +72,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
     keyboardBehavior = 'interactive',
     keyboardBlurBehavior = 'restore',
     android_keyboardInputMode = 'adjustResize',
-    enableOverDrag = true,
+    enableOverDrag = false,
     enableContentPanningGesture = true,
     enableHandlePanningGesture = true,
     overDragResistanceFactor = 2.5,

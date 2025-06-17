@@ -426,7 +426,6 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             enablePanDownToClose
             backdropComponent={renderBackdrop}
             enableInternalToaster={true}
-            // Remove enableDynamicSizing as we're implementing our own solution
             handleComponent={() => (
                 <Animated.View
                     style={{
@@ -509,7 +508,6 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
 const styles = StyleSheet.create({
     contentContainer: {
         width: '100%',
-        backgroundColor: 'transparent', // Make this transparent to let the bottom sheet background show through
     },
     animatedContent: {
         width: '100%',
