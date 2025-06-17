@@ -84,6 +84,27 @@ import { OxyServices, OxyProvider } from '@oxyhq/services/full';
 - **React Native** 0.60+ (for mobile components)
 - **TypeScript** 4.0+ (optional but recommended)
 
+## Troubleshooting
+
+### FormData Issues in React Native/Expo
+
+If you encounter `ReferenceError: Property 'FormData' doesn't exist` when using Expo with Hermes engine:
+
+The library automatically includes polyfills for React Native environments that lack native FormData support. The `form-data` package is included as a dependency and will be used as a fallback when native FormData is not available.
+
+**For file uploads in React Native/Expo:**
+- The library handles this automatically - no additional setup required
+- File uploads will work with both native FormData (when available) and the polyfilled version
+- Ensure you're using the latest version of the package
+
+### Additional Dependencies
+
+For React Native projects, you may need to install peer dependencies:
+
+```bash
+npm install axios jwt-decode invariant
+```
+
 ## Development
 
 ```bash

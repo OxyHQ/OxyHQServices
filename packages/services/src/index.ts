@@ -2,6 +2,9 @@
  * OxyHQServices Main Export File
  */
 
+// ------------- Polyfills -------------
+import './utils/polyfills';
+
 // ------------- Core Imports -------------
 import OxyCore from './core';
 import { OxyServices } from './core';

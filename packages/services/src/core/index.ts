@@ -1,8 +1,11 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { jwtDecode } from 'jwt-decode';
+import { getFormDataConstructor } from '../utils/polyfills';
 
 let NodeFormData: any = null;
-if (typeof window === 'undefined') { // Check if in Node.js environment
+
+// Check if we're in Node.js environment
+if (typeof window === 'undefined') {
   try {
     NodeFormData = require('form-data');
   } catch (e) {
@@ -972,24 +975,38 @@ export class OxyServices {
    * @returns File metadata including ID and download URL
    */
   async uploadFile(
-    file: File | Blob | Buffer, 
+    file: File | Blob | any, // Use 'any' to handle Buffer type in cross-platform scenarios
     filename: string, 
     metadata?: Record<string, any>
   ): Promise<FileUploadResponse> {
     try {
       // Create form data to handle the file upload
-      const formData = typeof window === 'undefined' && NodeFormData ? new NodeFormData() : new FormData();
+      let formData: any;
       
-      // Handle different file types (Browser vs Node.js)
-      if (typeof Buffer !== 'undefined' && file instanceof Buffer) {
+      if (typeof window === 'undefined' && NodeFormData) {
+        // Node.js environment - prefer node-specific form-data
+        formData = new NodeFormData();
+      } else {
+        // Browser/React Native environment - use polyfilled or native FormData
+        const FormDataConstructor = getFormDataConstructor();
+        formData = new FormDataConstructor();
+      }
+      
+      // Handle different file types (Browser vs Node.js vs React Native)
+      const isNodeBuffer = typeof window === 'undefined' && 
+                          file && 
+                          typeof file.constructor === 'function' && 
+                          file.constructor.name === 'Buffer';
+      
+      if (isNodeBuffer) {
         // Node.js environment with Buffer
         if (!NodeFormData) {
-          throw new Error('form-data module is required for file uploads from Buffer in Node.js but not found.');
+          throw new Error('form-data module is required for file uploads from Buffer but not found.');
         }
-        // No need to convert to Blob; form-data handles Buffers directly.
+        // form-data handles Buffers directly.
         formData.append('file', file, { filename }); // Pass filename in options for form-data
       } else {
-        // Browser environment with File or Blob
+        // Browser/React Native environment with File or Blob
         formData.append('file', file as Blob, filename);
       }
       

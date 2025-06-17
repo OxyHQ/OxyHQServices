@@ -2,6 +2,9 @@
  * OxyHQServices Node.js Entry Point
  */
 
+// ------------- Polyfills -------------
+import '../utils/polyfills';
+
 // ------------- Core Imports -------------
 import { OxyServices, OXY_CLOUD_URL } from '../core'; // Adjusted path
 import * as Models from '../models/interfaces'; // Adjusted path
