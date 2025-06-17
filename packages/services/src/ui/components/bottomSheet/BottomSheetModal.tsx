@@ -85,7 +85,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
       return (screenHeight * clampedPercentage) / 100;
     }
     // For fixed heights, clamp to screen height with some padding for safe area
-    const maxHeightForFixed = screenHeight - 50;
+    const maxHeightForFixed = screenHeight - 50; 
     return Math.min(Math.max(snapPointValue, MIN_SHEET_HEIGHT), maxHeightForFixed);
   }, [screenHeight]);
 
@@ -93,7 +93,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
   // considering snap points and potentially content height.
   const getTargetSheetHeight = useCallback((snapPointIndexToCalculateFor: number): number => {
     if (snapPointIndexToCalculateFor < 0 || snapPointIndexToCalculateFor >= snapPoints.length) {
-      // This case should ideally not be reached if for closing/dismiss,
+      // This case should ideally not be reached if for closing/dismiss, 
       // as height isn't relevant for translateY calculation there.
       // If snapPoints is empty, this could be an issue.
       if (snapPoints.length === 0 && adjustToContentHeightUpToSnapPoint && measuredContentHeight !== null) {
@@ -112,10 +112,10 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
     }
     return snapHeight;
   }, [
-    snapPoints,
-    adjustToContentHeightUpToSnapPoint,
-    measuredContentHeight,
-    calculateHeightForSnapPointValue,
+    snapPoints, 
+    adjustToContentHeightUpToSnapPoint, 
+    measuredContentHeight, 
+    calculateHeightForSnapPointValue, 
     screenHeight // Added screenHeight as calculateHeightForSnapPointValue might not be enough if snapPoints is empty
   ]);
 
@@ -129,10 +129,10 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
       // For actual snap points, calculate target height.
       const targetSheetActualHeight = targetIndex === -1 ? 0 : getTargetSheetHeight(targetIndex);
       // Corrected: use targetSheetActualHeight instead of undefined targetHeight
-      const calculatedTranslateY = screenHeight - targetSheetActualHeight;
+      const calculatedTranslateY = screenHeight - targetSheetActualHeight; 
       return Math.max(Math.min(calculatedTranslateY, screenHeight), 0);
       // Corrected: remove snapPoints and getSnapPointHeight, use getTargetSheetHeight
-  }, [getTargetSheetHeight, screenHeight]);
+  }, [getTargetSheetHeight, screenHeight]); 
 
     const animateToPosition = useCallback((toIndex: number, onComplete?: () => void) => {
       const fromIndex = currentIndex;
@@ -225,7 +225,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
           setIsPanning(false);
           
           // Corrected: use getTargetSheetHeight(currentIndex) for current sheet's actual height
-          const currentActualSheetHeight = getTargetSheetHeight(currentIndex);
+          const currentActualSheetHeight = getTargetSheetHeight(currentIndex); 
           const { dy: dragDistance, vy: dragVelocity } = gestureState;
 
           // Improved gesture detection with better thresholds
@@ -235,7 +235,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
           if (dragDistance > dragThreshold || dragVelocity > velocityThreshold) { // Downward gesture
             if (enablePanDownToClose && (currentIndex === 0 || dragDistance > currentActualSheetHeight * 0.25)) {
               animateToPosition(-1); // Close sheet
-            } else if (currentIndex > 0) {
+            } else if (currentIndex > 0) { 
               // If not closing (either disabled or conditions not met for close)
               // and not already at the lowest snap point (index 0)
               animateToPosition(currentIndex - 1); // Snap to lower snap point
@@ -259,9 +259,9 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
           setIsPanning(false);
           // Optionally, decide if you want to snap back or to a specific position on terminate
           // For now, flattenOffset similar to release might be safest if mid-gesture
-          translateY.flattenOffset();
+          translateY.flattenOffset(); 
           // And then snap to current index, or perhaps a more sophisticated logic based on current position
-          animateToPosition(currentIndex);
+          animateToPosition(currentIndex); 
         },
       })
     ).current;
@@ -289,10 +289,10 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
 
     useImperativeHandle(ref, () => ({
       present: () => {
-        translateY.setValue(screenHeight);
+        translateY.setValue(screenHeight); 
         setIsVisible(true);
         setMeasuredContentHeight(null); // Reset on present for fresh measurement
-        setCurrentIndex(index);
+        setCurrentIndex(index); 
         animateToPosition(index);
       },
       dismiss: () => animateToPosition(-1),
@@ -330,7 +330,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
           const currentVisualTranslateY = (translateY as any)._value + ((translateY as any)._offset || 0) ;
           const currentVisualHeight = screenHeight - currentVisualTranslateY;
           const targetSheetHeight = getTargetSheetHeight(currentIndex);
-
+          
           if (Math.abs(currentVisualHeight - targetSheetHeight) > 1) { // Threshold to avoid tiny adjustments
             animateToPosition(currentIndex);
           }
@@ -383,8 +383,8 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
               backgroundStyle,
               {
                 // Use currentSheetHeightForStyle for the dynamic height
-                height: Math.min(currentSheetHeightForStyle(), screenHeight - 50),
-                maxHeight: screenHeight - 50,
+                height: Math.min(currentSheetHeightForStyle(), screenHeight - 50), 
+                maxHeight: screenHeight - 50, 
                 minHeight: MIN_SHEET_HEIGHT, // Use constant
               }
             ]}
