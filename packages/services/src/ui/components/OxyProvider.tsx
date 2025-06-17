@@ -339,7 +339,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             // If we have content height, use it as a constraint
             if (contentHeight > 0) {
                 // Calculate content height as percentage of screen (plus some padding)
-                const contentHeightPercent = Math.min(Math.ceil((contentHeight + 40) / screenHeight * 100), 90) + '%';
+                const contentHeightPercent = Math.min(Math.ceil((contentHeight) / screenHeight * 100), 90) + '%';
                 // Use content height for first snap point if it's taller than the default
                 const firstPoint = contentHeight / screenHeight > 0.6 ? contentHeightPercent : points[0];
                 setSnapPoints([firstPoint, points[1]]);

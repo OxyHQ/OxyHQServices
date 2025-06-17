@@ -1,4 +1,4 @@
-import React, { forwardRef, useImperativeHandle, useState, useRef, useEffect, useCallback } from 'react';
+import React, { forwardRef, useImperativeHandle, useState, useRef, useCallback } from 'react';
 import {
   View,
   Modal,
@@ -7,14 +7,11 @@ import {
   PanResponder,
   StyleSheet,
   Platform,
-  StatusBar,
 } from 'react-native';
 import { ScrollView } from 'react-native-gesture-handler';
-
-// Import Toaster for internal toast rendering
 import { Toaster } from '../../../lib/sonner';
 
-const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get('window');
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 export interface BottomSheetModalProps {
   children?: React.ReactNode;
@@ -35,7 +32,7 @@ export interface BottomSheetModalProps {
   enableHandlePanningGesture?: boolean;
   overDragResistanceFactor?: number;
   enableBlurKeyboardOnGesture?: boolean;
-  enableInternalToaster?: boolean; // New prop to enable internal toaster
+  enableInternalToaster?: boolean;
 }
 
 export interface BottomSheetModalRef {
@@ -48,10 +45,9 @@ export interface BottomSheetModalRef {
   snapToPosition: (position: string | number) => void;
 }
 
-// Helper function to convert snap point to actual height
 const getSnapPointHeight = (snapPoint: string | number): number => {
   if (typeof snapPoint === 'string') {
-    const percentage = parseInt(snapPoint.replace('%', ''));
+    const percentage = parseInt(snapPoint.replace('%', ''), 10);
     return (SCREEN_HEIGHT * percentage) / 100;
   }
   return snapPoint;
@@ -69,22 +65,16 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
     handleIndicatorStyle,
     onChange,
     onAnimate,
-    keyboardBehavior = 'interactive',
-    keyboardBlurBehavior = 'restore',
-    android_keyboardInputMode = 'adjustResize',
-    enableOverDrag = false,
     enableContentPanningGesture = true,
     enableHandlePanningGesture = true,
     overDragResistanceFactor = 2.5,
-    enableBlurKeyboardOnGesture = true,
-    enableInternalToaster = false, // Default to false
+    enableInternalToaster = false,
   }, ref) => {
     const [isVisible, setIsVisible] = useState(false);
     const [currentIndex, setCurrentIndex] = useState(index);
     const translateY = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
     const backdropOpacity = useRef(new Animated.Value(0)).current;
 
-    // Get the height for current snap point
     const getCurrentSnapHeight = useCallback(() => {
       if (currentIndex >= 0 && currentIndex < snapPoints.length) {
         return getSnapPointHeight(snapPoints[currentIndex]);
@@ -92,41 +82,39 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
       return getSnapPointHeight(snapPoints[0]);
     }, [currentIndex, snapPoints]);
 
-    // Get the translateY value for a specific snap point
     const getTranslateYForIndex = useCallback((targetIndex: number) => {
       const targetHeight = getSnapPointHeight(snapPoints[targetIndex]);
       return SCREEN_HEIGHT - targetHeight;
     }, [snapPoints]);
 
-    // Animation to show/hide the modal
     const animateToPosition = useCallback((toIndex: number, onComplete?: () => void) => {
       const fromIndex = currentIndex;
       
-      if (onAnimate) {
-        onAnimate(fromIndex, toIndex);
-      }
+      onAnimate?.(fromIndex, toIndex);
+
+      const duration = 300;
+      const animationConfig = {
+        duration,
+        useNativeDriver: Platform.OS !== 'web',
+      };
 
       if (toIndex === -1) {
-        // Dismiss animation
         Animated.parallel([
           Animated.timing(translateY, {
             toValue: SCREEN_HEIGHT,
-            duration: 300,
-            useNativeDriver: false, // Don't use native driver due to layout properties
+            ...animationConfig,
           }),
           Animated.timing(backdropOpacity, {
             toValue: 0,
-            duration: 300,
-            useNativeDriver: Platform.OS !== 'web',
+            ...animationConfig,
           }),
         ]).start(() => {
           setIsVisible(false);
           setCurrentIndex(-1);
-          if (onChange) onChange(-1);
-          if (onComplete) onComplete();
+          onChange?.(-1);
+          onComplete?.();
         });
       } else {
-        // Show/snap animation
         const targetTranslateY = getTranslateYForIndex(toIndex);
 
         if (!isVisible) {
@@ -136,119 +124,70 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
         Animated.parallel([
           Animated.timing(translateY, {
             toValue: targetTranslateY,
-            duration: 300,
-            useNativeDriver: false, // Don't use native driver due to layout properties
+            ...animationConfig,
           }),
           Animated.timing(backdropOpacity, {
             toValue: 1,
-            duration: 300,
-            useNativeDriver: Platform.OS !== 'web',
+            ...animationConfig,
           }),
         ]).start(() => {
           setCurrentIndex(toIndex);
-          if (onChange) onChange(toIndex);
-          if (onComplete) onComplete();
+          onChange?.(toIndex);
+          onComplete?.();
         });
       }
-    }, [currentIndex, snapPoints, translateY, backdropOpacity, onChange, onAnimate, getTranslateYForIndex, isVisible]);
+    }, [currentIndex, translateY, backdropOpacity, onChange, onAnimate, getTranslateYForIndex, isVisible]);
 
-    // Pan responder for drag gestures
     const panResponder = useRef(
       PanResponder.create({
-        onMoveShouldSetPanResponder: (evt, gestureState) => {
-          // More sensitive gesture detection - allow both up and down gestures
+        onMoveShouldSetPanResponder: (_, gestureState) => {
           return Math.abs(gestureState.dy) > 5 && (enablePanDownToClose || enableHandlePanningGesture);
         },
         onPanResponderGrant: () => {
-          // Get current offset value
           const currentValue = (translateY as any)._value || 0;
           translateY.setOffset(currentValue);
           translateY.setValue(0);
         },
-        onPanResponderMove: (evt, gestureState) => {
-          // Allow both upward and downward drags for better UX
-          const resistance = overDragResistanceFactor || 2.5;
+        onPanResponderMove: (_, gestureState) => {
+          const resistance = overDragResistanceFactor;
           
           if (gestureState.dy > 0) {
-            // Downward drag - apply resistance for overdrag
             const resistedValue = gestureState.dy / resistance;
             translateY.setValue(resistedValue);
           } else if (gestureState.dy < 0 && currentIndex < snapPoints.length - 1) {
-            // Upward drag - allow direct movement to expand
             translateY.setValue(gestureState.dy);
           }
         },
-        onPanResponderRelease: (evt, gestureState) => {
+        onPanResponderRelease: (_, gestureState) => {
           translateY.flattenOffset();
           
           const currentHeight = getCurrentSnapHeight();
-          const dragDistance = gestureState.dy;
-          const dragVelocity = gestureState.vy;
+          const { dy: dragDistance, vy: dragVelocity } = gestureState;
 
-          // Improved gesture detection for better UX
           if (dragDistance > 50 || dragVelocity > 0.3) {
-            // Downward gesture - dismiss or snap to lower position
             if (currentIndex === 0 || dragDistance > currentHeight * 0.25) {
-              animateToPosition(-1); // Dismiss
+              animateToPosition(-1);
             } else {
-              animateToPosition(currentIndex - 1); // Snap to lower position
+              animateToPosition(currentIndex - 1);
             }
           } else if (dragDistance < -50 || dragVelocity < -0.3) {
-            // Upward gesture - snap to higher position
             if (currentIndex < snapPoints.length - 1) {
               animateToPosition(currentIndex + 1);
             }
           } else {
-            // Small movement - snap back to current position
             animateToPosition(currentIndex);
           }
         },
       })
     ).current;
 
-    // Imperative handle for ref methods
-    useImperativeHandle(ref, () => ({
-      present: () => {
-        setIsVisible(true);
-        setCurrentIndex(index);
-        animateToPosition(index);
-      },
-      dismiss: () => {
-        animateToPosition(-1);
-      },
-      expand: () => {
-        if (currentIndex < snapPoints.length - 1) {
-          animateToPosition(snapPoints.length - 1);
-        }
-      },
-      collapse: () => {
-        animateToPosition(0);
-      },
-      close: () => {
-        animateToPosition(-1);
-      },
-      snapToIndex: (newIndex: number) => {
-        if (newIndex >= 0 && newIndex < snapPoints.length) {
-          animateToPosition(newIndex);
-        }
-      },
-      snapToPosition: (position: string | number) => {
-        const index = snapPoints.findIndex(sp => sp === position);
-        if (index !== -1) {
-          animateToPosition(index);
-        }
-      },
-    }));
-
-    // Handle backdrop press
     const handleBackdropPress = useCallback(() => {
       if (enablePanDownToClose) {
         animateToPosition(-1);
       }
     }, [enablePanDownToClose, animateToPosition]);
 
-    // Default handle component
-    const DefaultHandle = () => (
+    const DefaultHandle = useCallback(() => (
       <View 
         style={styles.handleContainer}
         {...(enableHandlePanningGesture ? panResponder.panHandlers : {})}
@@ -256,13 +195,39 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
         <View style={[
           styles.handle, 
           handleIndicatorStyle,
-          // Apply the same default styling as the original
           !handleIndicatorStyle?.backgroundColor && {
             backgroundColor: '#CCCCCC'
           }
         ]} />
       </View>
-    );
+    ), [enableHandlePanningGesture, panResponder.panHandlers, handleIndicatorStyle]);
+
+    useImperativeHandle(ref, () => ({
+      present: () => {
+        setIsVisible(true);
+        setCurrentIndex(index);
+        animateToPosition(index);
+      },
+      dismiss: () => animateToPosition(-1),
+      expand: () => {
+        if (currentIndex < snapPoints.length - 1) {
+          animateToPosition(snapPoints.length - 1);
+        }
+      },
+      collapse: () => animateToPosition(0),
+      close: () => animateToPosition(-1),
+      snapToIndex: (newIndex: number) => {
+        if (newIndex >= 0 && newIndex < snapPoints.length) {
+          animateToPosition(newIndex);
+        }
+      },
+      snapToPosition: (position: string | number) => {
+        const targetIndex = snapPoints.findIndex(sp => sp === position);
+        if (targetIndex !== -1) {
+          animateToPosition(targetIndex);
+        }
+      },
+    }), [index, currentIndex, snapPoints, animateToPosition]);
 
     if (!isVisible) {
       return null;
@@ -276,13 +241,10 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
         statusBarTranslucent
         onRequestClose={() => animateToPosition(-1)}
       >
-        {/* Backdrop */}
         <Animated.View
           style={[
             styles.backdrop,
-            {
-              opacity: backdropOpacity,
-            },
+            { opacity: backdropOpacity },
           ]}
         >
           {BackdropComponent ? (
@@ -292,13 +254,12 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
           )}
         </Animated.View>
 
-        {/* Bottom Sheet Container */}
         <Animated.View
           style={[
             styles.container,
             {
               transform: [{ translateY }],
-              height: SCREEN_HEIGHT, // Full height container
+              height: SCREEN_HEIGHT,
             },
           ]}
         >
@@ -306,17 +267,14 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
             style={[styles.sheet, backgroundStyle]}
             {...(enableContentPanningGesture ? panResponder.panHandlers : {})}
           >
-            {/* Handle */}
             {HandleComponent ? <HandleComponent /> : <DefaultHandle />}
             
-            {/* Content */}
             <ScrollView style={styles.content}>
               {children}
             </ScrollView>
           </View>
         </Animated.View>
 
-        {/* Internal Toaster - Renders on top of the backdrop */}
         {enableInternalToaster && (
           <View style={styles.toasterContainer}>
             <Toaster position="top-center" swipeToDismissDirection="left" offset={15} />
@@ -345,24 +303,21 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     top: 0,
-    alignItems: 'center', // Center the sheet horizontally
-    justifyContent: 'flex-end', // Align to bottom
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    maxWidth: 800,
+    marginHorizontal: 'auto',
   },
   sheet: {
     backgroundColor: 'white',
     borderTopLeftRadius: 35,
     borderTopRightRadius: 35,
-    minHeight: 200,
-    height: '100%', // Take full available height
-    width: '100%', // Full width by default
-    maxWidth: 800, // Maximum width for larger screens
+    minHeight: 100,
+    width: '100%',
     ...Platform.select({
       ios: {
         shadowColor: '#000',
-        shadowOffset: {
-          width: 0,
-          height: -2,
-        },
+        shadowOffset: { width: 0, height: -2 },
         shadowOpacity: 0.25,
         shadowRadius: 10,
       },
@@ -371,7 +326,6 @@ const styles = StyleSheet.create({
       },
       web: {
         boxShadow: '0 -2px 10px rgba(0, 0, 0, 0.25)',
-        // For web, ensure the sheet is centered properly
         marginLeft: 'auto',
         marginRight: 'auto',
       },
@@ -380,9 +334,8 @@ const styles = StyleSheet.create({
   handleContainer: {
     alignItems: 'center',
     paddingVertical: 12,
-    // Make the handle area more touch-friendly
     paddingHorizontal: 20,
-    minHeight: 40, // Ensure minimum touch target
+    minHeight: 40,
   },
   handle: {
     width: 40,
@@ -400,10 +353,9 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    // Ensure toaster is above everything in the Modal context
     zIndex: 10000,
-    elevation: 10000, // For Android
-    pointerEvents: 'box-none', // Allow touches to pass through to underlying components
+    elevation: 10000,
+    pointerEvents: 'box-none',
   },
 });
 
