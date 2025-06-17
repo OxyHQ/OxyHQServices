@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { View, Text, Button, StyleSheet, ScrollView as RNScrollView } from 'react-native';
 // Assuming BottomSheetModal is exported from here or a similar path
-import { BottomSheetModal, BottomSheetModalRef } from '../src/ui/components/bottomSheet/BottomSheetModal';
+import { BottomSheetModal, BottomSheetModalRef } from '../src/ui/components/bottomSheet/BottomSheetModal'; 
 
 const LIPSUM_SHORT = "Lorem ipsum dolor sit amet.";
 const LIPSUM_MEDIUM = "Lorem ipsum dolor sit amet, consectetur adipiscing elit. Sed do eiusmod tempor incididunt ut labore et dolore magna aliqua. Ut enim ad minim veniam, quis nostrud exercitation ullamco laboris nisi ut aliquip ex ea commodo consequat.";
@@ -27,6 +27,32 @@ const ShortContent = () => <ContentComponent text={LIPSUM_SHORT} />;
 const MediumContent = () => <ContentComponent text={LIPSUM_MEDIUM} />;
 const TallContent = () => <ContentComponent text={LIPSUM_LONG} />; // Height will be determined by scrollview
 
+const DynamicContentComponent: React.FC = () => {
+  const [text, setText] = useState(LIPSUM_SHORT);
+  const [extraContentVisible, setExtraContentVisible] = useState(false);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setText(LIPSUM_MEDIUM + (extraContentVisible ? "" : "\n\nMore dynamic content loaded!"));
+      setExtraContentVisible(!extraContentVisible); // Toggle for subsequent presses if sheet is re-opened
+    }, 2000); // Simulate loading delay
+    return () => clearTimeout(timer);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Run once on mount, or re-run if key changes for the component instance
+
+  return (
+    <View style={{ padding: 20 }}>
+      <Text style={{ marginBottom: 10, fontWeight: 'bold' }}>Dynamic Content</Text>
+      <Text>{text}</Text>
+      {extraContentVisible && <View style={{marginTop: 10, padding:10, backgroundColor: '#e0e0e0'}}><Text>This is extra content that appeared.</Text></View>}
+      <Button title="Toggle More Content Manually" onPress={() => {
+         setText(LIPSUM_MEDIUM + (!extraContentVisible ? "\n\nManually added more dynamic content!" : ""));
+         setExtraContentVisible(!extraContentVisible);
+      }}/>
+    </View>
+  );
+};
+
 const BottomSheetTestScreen: React.FC = () => {
   const sheet1Ref = useRef<BottomSheetModalRef>(null);
   const sheet2Ref = useRef<BottomSheetModalRef>(null);
@@ -36,6 +62,9 @@ const BottomSheetTestScreen: React.FC = () => {
   const sheet6Ref = useRef<BottomSheetModalRef>(null);
   const sheet7Ref = useRef<BottomSheetModalRef>(null);
   const sheet8Ref = useRef<BottomSheetModalRef>(null);
+  const sheet9Ref = useRef<BottomSheetModalRef>(null); // For adjustToContentHeightUpToSnapPoint={true}
+  const sheet10Ref = useRef<BottomSheetModalRef>(null); // For adjustToContentHeightUpToSnapPoint={false}
+  const sheet11Ref = useRef<BottomSheetModalRef>(null); // For screen orientation change test
 
   return (
     <View style={styles.container}>
@@ -50,18 +79,21 @@ const BottomSheetTestScreen: React.FC = () => {
         <Button title="Pan Close Enabled" onPress={() => sheet6Ref.current?.present()} />
         <Button title="Event Callbacks" onPress={() => sheet7Ref.current?.present()} />
         <Button title="Initial Index 1" onPress={() => sheet8Ref.current?.present()} />
+        <Button title="Dynamic Content (Adjust True)" onPress={() => sheet9Ref.current?.present()} />
+        <Button title="Dynamic Content (Adjust False)" onPress={() => sheet10Ref.current?.present()} />
+        <Button title="Orientation Change Test" onPress={() => sheet11Ref.current?.present()} />
       </View>
 
       <Text style={styles.instructions}>
         {`Instructions:
-1. Press a button to show a BottomSheetModal with a specific configuration.
-2. Interact with the sheet (drag, tap backdrop, scroll content).
+1. Press a button to show a BottomSheetModal.
+2. Interact with the sheet (drag, scroll, etc.).
 3. Observe behavior for:
-    - Correct snap point heights.
-    - Content scrolling and visibility.
-    - Gesture interactions (snapping, closing).
-    - Animation smoothness.
-4. Dismiss the sheet by panning down (if enabled), tapping backdrop, or a dismiss button if provided inside.
+    - Correct snap point heights & content fit.
+    - Scrolling, gesture interactions, animations.
+    - For "Dynamic Content (Adjust True)": sheet should resize after ~2s.
+    - For "Orientation Change Test": open sheet, rotate device/simulator, observe sheet adapts to new screen height and percentages. Drag and snap.
+4. Dismiss the sheet.
 Note: This example is for manual/visual verification.`}
       </Text>
 
@@ -89,12 +121,12 @@ Note: This example is for manual/visual verification.`}
       <BottomSheetModal ref={sheet5Ref} snapPoints={["50%", "85%"]} index={0}>
         <TallContent />
       </BottomSheetModal>
-
+      
       {/* Test Case 6: Pan Down to Close enabled (default) vs disabled */}
       {/* For this, we might need two buttons or a toggle, or just trust default */}
-      <BottomSheetModal
-        ref={sheet6Ref}
-        snapPoints={["50%"]}
+      <BottomSheetModal 
+        ref={sheet6Ref} 
+        snapPoints={["50%"]} 
         enablePanDownToClose={true} // Explicitly true (default)
       >
         <ContentComponent text="Pan down to close is enabled. Drag down to test." />
@@ -114,8 +146,8 @@ Note: This example is for manual/visual verification.`}
       <BottomSheetModal ref={sheet8Ref} snapPoints={["25%", "50%", "80%"]} index={1}>
         <ContentComponent text="Opens to 2nd snap point (index 1) initially." />
       </BottomSheetModal>
-
-      {/*
+      
+      {/* 
         Further test cases to consider adding:
         - Sheet with no handle (handleComponent={() => null})
         - Sheet with custom handle
@@ -125,6 +157,35 @@ Note: This example is for manual/visual verification.`}
         - Snap points that are very close together or far apart
         - Behavior on different screen sizes (requires running on multiple devices/simulators)
       */}
+
+      {/* Test Case 9: Dynamic Content with adjustToContentHeightUpToSnapPoint = true */}
+      <BottomSheetModal
+        ref={sheet9Ref}
+        snapPoints={["50%", "80%"]} // Snap points act as max heights
+        adjustToContentHeightUpToSnapPoint={true}
+        index={0}
+      >
+        <DynamicContentComponent key="dynamicTrue" />
+      </BottomSheetModal>
+
+      {/* Test Case 10: Dynamic Content with adjustToContentHeightUpToSnapPoint = false (default) */}
+      <BottomSheetModal
+        ref={sheet10Ref}
+        snapPoints={["50%", "80%"]}
+        adjustToContentHeightUpToSnapPoint={false}
+        index={0}
+      >
+        <DynamicContentComponent key="dynamicFalse" />
+      </BottomSheetModal>
+
+      {/* Test Case 11: Screen Orientation Change Test */}
+      <BottomSheetModal
+        ref={sheet11Ref}
+        snapPoints={["30%", "60%", "90%"]} // Percentages are good for this test
+        index={1}
+      >
+        <ContentComponent text="Rotate the screen. Sheet should adapt to new height based on percentage snap points. Test dragging and snapping after rotation." />
+      </BottomSheetModal>
     </View>
   );
 };
@@ -132,28 +193,29 @@ Note: This example is for manual/visual verification.`}
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    paddingVertical: 50, // Added padding for better visibility on device
+    paddingVertical: 30, // Adjusted padding
     paddingHorizontal: 10,
     alignItems: 'center',
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
-    marginBottom: 20,
+    marginBottom: 15, // Adjusted margin
     textAlign: 'center',
   },
   buttonGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     justifyContent: 'center',
-    marginBottom: 20,
+    marginBottom: 15, // Adjusted margin
   },
   instructions: {
     fontSize: 14,
     color: '#555',
-    textAlign: 'center',
+    textAlign: 'left', // Align left for better readability of multi-line
     paddingHorizontal: 15,
     marginBottom: 10,
+    lineHeight: 20, // Added for spacing
   },
   // Button style can be added if needed, for now using default
 });
