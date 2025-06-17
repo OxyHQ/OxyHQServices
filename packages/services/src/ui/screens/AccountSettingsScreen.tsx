@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     View,
     Text,
@@ -8,6 +8,7 @@ import {
     ScrollView,
     Alert,
     TextInput,
+    Animated,
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
@@ -15,6 +16,7 @@ import Avatar from '../components/Avatar';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '../../lib/icons';
 import { toast } from '../../lib/sonner';
+import { fontFamilies } from '../styles/fonts';
 
 const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -24,6 +26,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const { user, oxyServices, isLoading: authLoading } = useOxy();
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+
+    // Animation refs
+    const saveButtonScale = useRef(new Animated.Value(1)).current;
 
     // Form state
     const [displayName, setDisplayName] = useState('');
@@ -49,6 +54,16 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const backgroundColor = isDarkTheme ? '#121212' : '#f2f2f2';
     const primaryColor = '#007AFF';
 
+    // Animation functions
+    const animateSaveButton = (toValue: number) => {
+        Animated.spring(saveButtonScale, {
+            toValue,
+            useNativeDriver: true,
+            tension: 150,
+            friction: 8,
+        }).start();
+    };
+
     // Load user data
     useEffect(() => {
         if (user) {
@@ -71,6 +86,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
         try {
             setIsSaving(true);
+            animateSaveButton(0.95); // Scale down slightly for animation
 
             const updates: Record<string, any> = {
                 username,
@@ -93,6 +109,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             await oxyServices.updateUser(user.id, updates);
             toast.success('Profile updated successfully');
             
+            animateSaveButton(1); // Scale back to normal
+            
             if (onClose) {
                 onClose();
             } else if (goBack) {
@@ -100,6 +118,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             }
         } catch (error: any) {
             toast.error(error.message || 'Failed to update profile');
+            animateSaveButton(1); // Scale back to normal on error
         } finally {
             setIsSaving(false);
         }
@@ -155,6 +174,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     };
 
     const saveField = (type: string) => {
+        animateSaveButton(0.95); // Scale down slightly for animation
+        
         switch (type) {
             case 'displayName':
                 setDisplayName(tempDisplayName);
@@ -175,7 +196,12 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 setWebsite(tempWebsite);
                 break;
         }
-        setEditingField(null);
+        
+        // Brief delay for animation, then reset and close editing
+        setTimeout(() => {
+            animateSaveButton(1);
+            setEditingField(null);
+        }, 150);
     };
 
     const cancelEditing = () => {
@@ -245,18 +271,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         return (
             <View style={styles.editingFieldContainer}>
                 <View style={styles.editingFieldContent}>
-                    {config.value ? (
-                        <View style={styles.currentValueSection}>
-                            <Text style={styles.editingFieldLabel}>Current:</Text>
-                            <Text style={styles.editingFieldCurrentValue}>
-                                {config.value}
-                            </Text>
-                        </View>
-                    ) : null}
-                    
                     <View style={styles.newValueSection}>
                         <Text style={styles.editingFieldLabel}>
-                            {config.value ? 'New value:' : `Enter ${config.label.toLowerCase()}:`}
+                            {`Enter ${config.label.toLowerCase()}:`}
                         </Text>
                         <TextInput
                             style={[
@@ -264,7 +281,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                 { 
                                     backgroundColor: isDarkTheme ? '#333' : '#fff',
                                     color: isDarkTheme ? '#fff' : '#000',
-                                    borderColor: isDarkTheme ? '#444' : '#e0e0e0'
+                                    borderColor: primaryColor
                                 }
                             ]}
                             value={tempValue}
@@ -275,6 +292,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                             numberOfLines={config.multiline ? 6 : 1}
                             keyboardType={config.keyboardType}
                             autoFocus
+                            selectionColor={primaryColor}
                         />
                     </View>
                 </View>
@@ -331,35 +349,59 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor }]}>
             {/* Header */}
             <View style={styles.header}>
-                <TouchableOpacity style={styles.cancelButton} onPress={editingField ? cancelEditing : (onClose || goBack)}>
-                    <Ionicons name="close" size={24} color="#666" />
-                </TouchableOpacity>
-                
                 {editingField ? (
-                    <View style={styles.headerTitleWithIcon}>
-                        <OxyIcon 
-                            name={getFieldIcon(editingField).name} 
-                            size={20} 
-                            color={getFieldIcon(editingField).color} 
-                            style={styles.headerIcon} 
-                        />
-                        <Text style={styles.headerTitle}>{getFieldLabel(editingField)}</Text>
+                    <View style={styles.editingHeader}>
+                        <View style={styles.editingHeaderTop}>
+                            <TouchableOpacity style={styles.cancelButton} onPress={cancelEditing}>
+                                <Ionicons name="close" size={24} color="#666" />
+                            </TouchableOpacity>
+                            <Animated.View style={{ transform: [{ scale: saveButtonScale }] }}>
+                                <TouchableOpacity 
+                                    style={[styles.saveHeaderButton, { opacity: isSaving ? 0.7 : 1 }]} 
+                                    onPress={() => saveField(editingField)}
+                                    disabled={isSaving}
+                                >
+                                    {isSaving ? (
+                                        <ActivityIndicator size="small" color="#fff" />
+                                    ) : (
+                                        <Text style={styles.saveButtonText}>Save</Text>
+                                    )}
+                                </TouchableOpacity>
+                            </Animated.View>
+                        </View>
+                        <View style={styles.editingHeaderBottom}>
+                            <View style={styles.headerTitleWithIcon}>
+                                <OxyIcon 
+                                    name={getFieldIcon(editingField).name} 
+                                    size={50} 
+                                    color={getFieldIcon(editingField).color} 
+                                    style={styles.headerIcon} 
+                                />
+                                <Text style={styles.headerTitleLarge}>{getFieldLabel(editingField)}</Text>
+                            </View>
+                        </View>
                     </View>
                 ) : (
-                    <Text style={styles.headerTitle}>Account Settings</Text>
+                    <View style={styles.normalHeader}>
+                        <TouchableOpacity style={styles.cancelButton} onPress={onClose || goBack}>
+                            <Ionicons name="close" size={24} color="#666" />
+                        </TouchableOpacity>
+                        <Text style={styles.headerTitle}>Account Settings</Text>
+                        <Animated.View style={{ transform: [{ scale: saveButtonScale }] }}>
+                            <TouchableOpacity 
+                                style={[styles.saveIconButton, { opacity: isSaving ? 0.7 : 1 }]} 
+                                onPress={handleSave}
+                                disabled={isSaving}
+                            >
+                                {isSaving ? (
+                                    <ActivityIndicator size="small" color={primaryColor} />
+                                ) : (
+                                    <Ionicons name="checkmark" size={24} color={primaryColor} />
+                                )}
+                            </TouchableOpacity>
+                        </Animated.View>
+                    </View>
                 )}
-                
-                <TouchableOpacity 
-                    style={[styles.saveHeaderButton, { opacity: isSaving ? 0.7 : 1 }]} 
-                    onPress={editingField ? () => saveField(editingField) : handleSave}
-                    disabled={isSaving}
-                >
-                    {isSaving ? (
-                        <ActivityIndicator size="small" color={primaryColor} />
-                    ) : (
-                        <Ionicons name="checkmark" size={24} color={primaryColor} />
-                    )}
-                </TouchableOpacity>
             </View>
 
             <ScrollView style={editingField ? styles.contentEditing : styles.content}>
@@ -533,32 +575,73 @@ const styles = StyleSheet.create({
     },
     header: {
         paddingHorizontal: 20,
-        paddingTop: 60,
-        paddingBottom: 16,
+        paddingVertical: 10,
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#e0e0e0',
+    },
+    normalHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+    },
+    editingHeader: {
+        flexDirection: 'column',
+    },
+    editingHeaderTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 16,
+    },
+    editingHeaderBottom: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'flex-start',
     },
     headerTitle: {
         fontSize: 24,
         fontWeight: 'bold',
         color: '#000',
+        fontFamily: fontFamilies.phuduBold,
     },
     headerTitleWithIcon: {
-        flexDirection: 'row',
-        alignItems: 'center',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        flex: 1,
+        justifyContent: 'flex-start',
+        maxWidth: '90%',
+    },
+    headerTitleLarge: {
+        fontSize: 48,
+        fontWeight: '800',
+        color: '#000',
+        fontFamily: fontFamilies.phuduExtraBold,
+        textAlign: 'left',
     },
     headerIcon: {
-        marginRight: 8,
+        marginBottom: 2,
     },
     cancelButton: {
-        padding: 8,
+        padding: 5,
     },
     saveHeaderButton: {
-        padding: 8,
+        backgroundColor: '#007AFF',
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 20,
+        minWidth: 60,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    saveIconButton: {
+        padding: 5,
+    },
+    saveButtonText: {
+        color: '#fff',
+        fontSize: 16,
+        fontWeight: '600',
+        fontFamily: fontFamilies.phuduSemiBold,
     },
     content: {
         flex: 1,
@@ -576,6 +659,7 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#333',
         marginBottom: 12,
+        fontFamily: fontFamilies.phuduSemiBold,
     },
     settingItem: {
         backgroundColor: '#fff',
@@ -618,12 +702,6 @@ const styles = StyleSheet.create({
     // Inline editing styles
     editingContainer: {
         flex: 1,
-    },
-    editingHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 12,
     },
     editingActions: {
         flexDirection: 'row',
@@ -682,25 +760,15 @@ const styles = StyleSheet.create({
     editingFieldContent: {
         flex: 1,
     },
-    currentValueSection: {
-        marginBottom: 20,
-    },
     newValueSection: {
         flex: 1,
     },
     editingFieldLabel: {
-        fontSize: 14,
-        fontWeight: '500',
-        color: '#666',
-        marginBottom: 8,
-    },
-    editingFieldCurrentValue: {
         fontSize: 16,
+        fontWeight: '600',
         color: '#333',
-        backgroundColor: '#f8f8f8',
-        padding: 12,
-        borderRadius: 8,
-        marginBottom: 4,
+        marginBottom: 12,
+        fontFamily: fontFamilies.phuduSemiBold,
     },
     editingFieldInput: {
         backgroundColor: '#fff',

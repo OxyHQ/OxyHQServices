@@ -36,6 +36,32 @@ This document outlines the improvements made to address UI issues, bottom sheet 
 - Added comprehensive tests for FollowButton API integration
 - Tests verify proper API calls and error handling
 
+## Recent Navigation Transition Fixes (December 2024) ✅
+
+### 6. Bottom Sheet Navigation Transition Issues ✅
+- **Problem**: Buggy transitions when navigating between screens in the bottom sheet
+- **Root Causes**:
+  - Race conditions from simultaneous navigation events
+  - Animation conflicts between bottom sheet and screen transitions
+  - Lack of debouncing for rapid navigation calls
+  - Snap point changes interfering with navigation animations
+  - 100ms polling interval causing timing conflicts
+
+- **Solutions Implemented**:
+  - **Navigation Debouncing**: Added 150ms debounce to prevent rapid navigation conflicts
+  - **Animation Coordination**: Created `coordinateNavigationAnimation()` for smooth transitions
+  - **Snap Point Timing**: Added 200ms delay for snap point changes during navigation
+  - **State Management**: Implemented navigation state tracking to prevent conflicts
+  - **Polling Optimization**: Reduced polling from 100ms to 200ms and added state checks
+  - **Navigation State Hook**: Created reusable `useNavigationState` hook for consistent behavior
+
+- **Benefits**:
+  - Smooth transitions between all screen types
+  - No more jarring or interrupted animations
+  - Better performance with reduced unnecessary updates
+  - Future-proof navigation state management
+  - Backward compatible with existing code
+
 ## Performance Impact
 
 The optimizations provide:
