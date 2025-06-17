@@ -151,8 +151,8 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
                 // Clear navigation flag after state is updated
                 setTimeout(() => {
                     setIsNavigating(false);
-                }, 50); // Short delay for better responsiveness
-            }, 50); // Minimal delay to ensure atomic update
+                }, RESPONSIVENESS_DELAY_MS); // Short delay for better responsiveness
+            }, RESPONSIVENESS_DELAY_MS); // Minimal delay to ensure atomic update
         } else {
             console.error(`Screen "${screen}" not found`);
         }
