@@ -232,7 +232,14 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
     // Default handle component
     const DefaultHandle = () => (
       <View style={styles.handleContainer}>
-        <View style={[styles.handle, handleIndicatorStyle]} />
+        <View style={[
+          styles.handle, 
+          handleIndicatorStyle,
+          // Apply the same default styling as the original
+          !handleIndicatorStyle?.backgroundColor && {
+            backgroundColor: '#CCCCCC'
+          }
+        ]} />
       </View>
     );
 
@@ -315,8 +322,8 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     backgroundColor: 'white',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 35, // Match the original styling
+    borderTopRightRadius: 35,
     minHeight: 200,
     height: '100%', // Take full available height
     ...Platform.select({
@@ -346,6 +353,7 @@ const styles = StyleSheet.create({
     height: 4,
     backgroundColor: '#CCCCCC',
     borderRadius: 2,
+    alignSelf: 'center',
   },
   content: {
     flex: 1,
