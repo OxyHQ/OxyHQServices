@@ -213,7 +213,11 @@ export class SecureSessionController {
       session.deviceInfo.lastActive = new Date();
       await session.save();
 
-      res.json({ user });
+      // Transform user data to include id field for frontend compatibility
+      const userData = user.toObject();
+      userData.id = user._id.toString();
+
+      res.json({ user: userData });
     } catch (error) {
       console.error('Get user by session error:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -452,11 +456,15 @@ export class SecureSessionController {
       
       await session.save();
 
+      // Transform user data to include id field for frontend compatibility
+      const userData = (session.userId as any).toObject();
+      userData.id = (session.userId as any)._id.toString();
+
       res.json({ 
         valid: true,
         expiresAt: session.expiresAt,
         lastActivity: session.deviceInfo.lastActive,
-        user: session.userId, // Include user data directly
+        user: userData,
         source: req.header('x-session-id') ? 'header' : 'parameter' // Debug info
       });
     } catch (error) {
@@ -503,11 +511,15 @@ export class SecureSessionController {
       
       await session.save();
 
+      // Transform user data to include id field for frontend compatibility
+      const userData = (session.userId as any).toObject();
+      userData.id = (session.userId as any)._id.toString();
+
       res.json({ 
         valid: true,
         expiresAt: session.expiresAt,
         lastActivity: session.deviceInfo.lastActive,
-        user: session.userId, // Include user data directly
+        user: userData,
         sessionId: sessionId.substring(0, 8) + '...' // Masked session ID for reference
       });
     } catch (error) {

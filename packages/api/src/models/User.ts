@@ -35,8 +35,13 @@ export interface IUser extends Document {
     autoFilter: boolean;
     muteKeywords: boolean;
   };
-  avatar?: string;
+  avatar?: {
+    id?: string;
+    url?: string;
+    [key: string]: any;
+  };
   labels?: string[];
+  bio?: string;
   description?: string;
   coverPhoto?: string;
   location?: string;
@@ -133,7 +138,13 @@ const UserSchema: Schema = new Schema(
       autoFilter: { type: Boolean, default: true },
       muteKeywords: { type: Boolean, default: false },
     },
-    avatar: { type: String },
+    avatar: {
+      type: {
+        id: { type: String, default: "" },
+        url: { type: String, default: "" }
+      },
+      default: { id: "", url: "" }
+    },
     associated: {
       lists: { type: Number, default: 0 },
       feedgens: { type: Number, default: 0 },
@@ -141,6 +152,7 @@ const UserSchema: Schema = new Schema(
       labeler: { type: Boolean, default: false },
     },
     labels: { type: [String], default: [] },
+    bio: { type: String },
     description: { type: String },
     coverPhoto: { type: String },
     location: { type: String },
