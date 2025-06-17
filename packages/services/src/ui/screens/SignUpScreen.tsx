@@ -17,7 +17,7 @@ import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import OxyLogo from '../components/OxyLogo';
-import { BottomSheetScrollView, BottomSheetView } from '@gorhom/bottom-sheet';
+import { BottomSheetScrollView, BottomSheetView } from '../components/bottomSheet';
 import { Ionicons } from '@expo/vector-icons'; // Add icon import
 import Svg, { Path, Circle } from 'react-native-svg';
 import { toast } from '../../lib/sonner';
