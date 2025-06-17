@@ -1,13 +1,8 @@
-// filepath: /home/nate/OxyServicesandApi/OxyHQServices/src/ui/components/OxyProvider.tsx
 import React, { useCallback, useRef, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Dimensions, Platform, Animated, StatusBar, Keyboard, KeyboardEvent } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { OxyServices } from '../../core';
 import { OxyProviderProps } from '../navigation/types';
-import SignInScreen from '../screens/SignInScreen';
-import SignUpScreen from '../screens/SignUpScreen';
-import AccountCenterScreen from '../screens/AccountCenterScreen';
 import { OxyContextProvider, useOxy } from '../context/OxyContext';
 import OxyRouter from '../navigation/OxyRouter';
 import { FontLoader, setupFonts } from './FontLoader';
@@ -19,8 +14,6 @@ import type { BottomSheetModalRef } from './bottomSheet';
 
 // Initialize fonts automatically
 setupFonts();
-
-const { height, width } = Dimensions.get('window');
 
 /**
  * Enhanced OxyProvider component
@@ -155,7 +148,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     }, [bottomSheetRef, modalRef]);
 
     // Use percentage-based snap points for better cross-platform compatibility
-    const [snapPoints, setSnapPoints] = useState<(string | number)[]>(['60%', '85%']);
+    const [snapPoints, setSnapPoints] = useState<(string | number)[]>(['85%']);
 
     // Animation values - we'll use these for content animations
     // Start with opacity 1 on Android to avoid visibility issues
