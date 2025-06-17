@@ -1,7 +1,7 @@
 import { OxyServices } from '../../core';
 import { User } from '../../models/interfaces';
 import { ComponentType, ReactNode } from 'react';
-import { BottomSheetModal } from '@gorhom/bottom-sheet';
+import { BottomSheetModalRef } from '../components/bottomSheet';
 
 /**
  * Base props for all screens in the Oxy UI system

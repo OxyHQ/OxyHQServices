@@ -1,12 +1,14 @@
 import React from 'react';
-import { BottomSheetModal, BottomSheetBackdrop, BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView } from '@gorhom/bottom-sheet';
 
-// Re-export components from @gorhom/bottom-sheet
-// This allows us to use these components internally without requiring the consumer to install @gorhom/bottom-sheet
-export {
-    BottomSheetModal,
-    BottomSheetBackdrop,
-    BottomSheetBackdropProps,
-    BottomSheetModalProvider,
-    BottomSheetView
-};
+// Export our custom bottom sheet components
+// This replaces the @gorhom/bottom-sheet dependency with our own implementation
+export { BottomSheetModal } from './BottomSheetModal';
+export type { BottomSheetModalRef, BottomSheetModalProps } from './BottomSheetModal';
+export { BottomSheetBackdrop } from './BottomSheetBackdrop';
+export type { BottomSheetBackdropProps } from './BottomSheetBackdrop';
+export { BottomSheetModalProvider } from './BottomSheetModalProvider';
+export type { BottomSheetModalProviderProps } from './BottomSheetModalProvider';
+export { BottomSheetView } from './BottomSheetView';
+export type { BottomSheetViewProps } from './BottomSheetView';
+export { BottomSheetScrollView } from './BottomSheetScrollView';
+export type { BottomSheetScrollViewProps } from './BottomSheetScrollView';

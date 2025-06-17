@@ -14,8 +14,8 @@ import { FontLoader, setupFonts } from './FontLoader';
 import { Toaster } from '../../lib/sonner';
 
 // Import bottom sheet components directly - no longer a peer dependency
-import { BottomSheetModal, BottomSheetBackdrop, BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView } from './bottomSheet';
-import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop, BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView, BottomSheetScrollView } from './bottomSheet';
+import type { BottomSheetModalRef } from './bottomSheet';
 
 // Initialize fonts automatically
 setupFonts();
@@ -40,7 +40,7 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
     } = props;
 
     // Create internal bottom sheet ref
-    const internalBottomSheetRef = useRef<BottomSheetModal>(null);
+    const internalBottomSheetRef = useRef<BottomSheetModalRef>(null);
 
     // If contextOnly is true, we just provide the context without the bottom sheet UI
     if (contextOnly) {
@@ -99,7 +99,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     autoPresent = false,
 }) => {
     // Use the internal ref (which is passed as a prop from OxyProvider)
-    const modalRef = useRef<BottomSheetModal>(null);
+    const modalRef = useRef<BottomSheetModalRef>(null);
     
     // Create a ref to store the navigation function from OxyRouter
     const navigationRef = useRef<((screen: string, props?: Record<string, any>) => void) | null>(null);
