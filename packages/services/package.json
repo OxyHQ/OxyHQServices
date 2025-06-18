@@ -1,6 +1,6 @@
 {
     "name": "@oxyhq/services",
-    "version": "5.3.10",
+    "version": "5.4.0",
     "description": "Reusable OxyHQ module to handle authentication, user management, karma system, device-based session management and more 🚀",
     "main": "lib/commonjs/node/index.js",
     "module": "lib/module/node/index.js",
@@ -69,6 +69,7 @@
     },
     "dependencies": {
         "@gorhom/bottom-sheet": "^5.1.6",
+        "@oxyhq/services": "^5.4.0",
         "@react-native-async-storage/async-storage": "^2.1.2",
         "axios": "^1.9.0",
         "expo-font": "^13.3.1",

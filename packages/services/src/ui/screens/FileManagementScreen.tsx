@@ -1552,39 +1552,104 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             } : {})}
         >
             {/* Header */}
-            <View style={[styles.header, { borderBottomColor: borderColor }]}>
-                <TouchableOpacity style={styles.backButton} onPress={onClose || goBack}>
-                    <Ionicons name="arrow-back" size={24} color={textColor} />
+            <View style={[
+                styles.header, 
+                { 
+                    borderBottomColor: borderColor,
+                    backgroundColor: isDarkTheme ? '#1A1A1A' : '#FFFFFF',
+                    shadowColor: '#000000',
+                    shadowOffset: {
+                        width: 0,
+                        height: 2,
+                    },
+                    shadowOpacity: isDarkTheme ? 0.3 : 0.1,
+                    shadowRadius: 8,
+                    elevation: 4,
+                }
+            ]}>
+                <TouchableOpacity 
+                    style={[
+                        styles.backButton, 
+                        { 
+                            backgroundColor: isDarkTheme ? '#2A2A2A' : '#F8F9FA',
+                            borderRadius: 12,
+                        }
+                    ]} 
+                    onPress={onClose || goBack}
+                >
+                    <Ionicons name="arrow-back" size={22} color={textColor} />
                 </TouchableOpacity>
-                <Text style={[styles.headerTitle, { color: textColor }]}>
-                    {viewMode === 'photos' ? 'Photos' : 'File Management'}
-                </Text>
+                
+                <View style={styles.headerTitleContainer}>
+                    <Text style={[styles.headerTitle, { color: textColor }]}>
+                        {viewMode === 'photos' ? 'Photos' : 'File Management'}
+                    </Text>
+                    <Text style={[styles.headerSubtitle, { color: isDarkTheme ? '#AAAAAA' : '#666666' }]}>
+                        {filteredFiles.length} {filteredFiles.length === 1 ? 'item' : 'items'}
+                    </Text>
+                </View>
+                
                 <View style={styles.headerActions}>
                     {/* View Mode Toggle */}
-                    <View style={[styles.viewModeToggle, { backgroundColor: isDarkTheme ? '#333333' : '#F0F0F0' }]}>
+                    <View style={[
+                        styles.viewModeToggle, 
+                        { 
+                            backgroundColor: isDarkTheme ? '#2A2A2A' : '#F8F9FA',
+                            borderWidth: 1,
+                            borderColor: isDarkTheme ? '#3A3A3A' : '#E8E9EA',
+                            shadowColor: '#000000',
+                            shadowOffset: {
+                                width: 0,
+                                height: 1,
+                            },
+                            shadowOpacity: isDarkTheme ? 0.3 : 0.05,
+                            shadowRadius: 4,
+                            elevation: 2,
+                        }
+                    ]}>
                         <TouchableOpacity
                             style={[
                                 styles.viewModeButton,
-                                viewMode === 'all' && { backgroundColor: primaryColor }
+                                viewMode === 'all' && { 
+                                    backgroundColor: primaryColor,
+                                    shadowColor: primaryColor,
+                                    shadowOffset: {
+                                        width: 0,
+                                        height: 2,
+                                    },
+                                    shadowOpacity: 0.3,
+                                    shadowRadius: 4,
+                                    elevation: 3,
+                                }
                             ]}
                             onPress={() => setViewMode('all')}
                         >
                             <Ionicons 
                                 name="folder" 
-                                size={16} 
+                                size={18} 
                                 color={viewMode === 'all' ? '#FFFFFF' : textColor} 
                             />
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[
                                 styles.viewModeButton,
-                                viewMode === 'photos' && { backgroundColor: primaryColor }
+                                viewMode === 'photos' && { 
+                                    backgroundColor: primaryColor,
+                                    shadowColor: primaryColor,
+                                    shadowOffset: {
+                                        width: 0,
+                                        height: 2,
+                                    },
+                                    shadowOpacity: 0.3,
+                                    shadowRadius: 4,
+                                    elevation: 3,
+                                }
                             ]}
                             onPress={() => setViewMode('photos')}
                         >
                             <Ionicons 
                                 name="images" 
-                                size={16} 
+                                size={18} 
                                 color={viewMode === 'photos' ? '#FFFFFF' : textColor} 
                             />
                         </TouchableOpacity>
@@ -1592,7 +1657,21 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     
                     {user?.id === targetUserId && (
                         <TouchableOpacity
-                            style={[styles.uploadButton, { backgroundColor: primaryColor }]}
+                            style={[
+                                styles.uploadButton, 
+                                { 
+                                    backgroundColor: primaryColor,
+                                    shadowColor: primaryColor,
+                                    shadowOffset: {
+                                        width: 0,
+                                        height: 3,
+                                    },
+                                    shadowOpacity: 0.4,
+                                    shadowRadius: 6,
+                                    elevation: 5,
+                                    transform: uploading ? [{ scale: 0.95 }] : [{ scale: 1 }],
+                                }
+                            ]}
                             onPress={handleFileUpload}
                             disabled={uploading}
                         >
@@ -1606,7 +1685,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                     )}
                                 </View>
                             ) : (
-                                <Ionicons name="add" size={24} color="#FFFFFF" />
+                                <Ionicons name="add" size={26} color="#FFFFFF" />
                             )}
                         </TouchableOpacity>
                     )}
@@ -1615,8 +1694,22 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {/* Search Bar */}
             {files.length > 0 && (viewMode === 'all' || files.some(f => f.contentType.startsWith('image/'))) && (
-                <View style={[styles.searchContainer, { backgroundColor: secondaryBackgroundColor, borderColor }]}>
-                    <Ionicons name="search" size={20} color={isDarkTheme ? '#888888' : '#666666'} />
+                <View style={[
+                    styles.searchContainer, 
+                    { 
+                        backgroundColor: isDarkTheme ? '#1A1A1A' : '#FFFFFF', 
+                        borderColor: isDarkTheme ? '#3A3A3A' : '#E8E9EA',
+                        shadowColor: '#000000',
+                        shadowOffset: {
+                            width: 0,
+                            height: 1,
+                        },
+                        shadowOpacity: isDarkTheme ? 0.2 : 0.05,
+                        shadowRadius: 4,
+                        elevation: 2,
+                    }
+                ]}>
+                    <Ionicons name="search" size={22} color={isDarkTheme ? '#888888' : '#666666'} />
                     <TextInput
                         style={[styles.searchInput, { color: textColor }]}
                         placeholder={viewMode === 'photos' ? 'Search photos...' : 'Search files...'}
@@ -1625,8 +1718,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         onChangeText={setSearchQuery}
                     />
                     {searchQuery.length > 0 && (
-                        <TouchableOpacity onPress={() => setSearchQuery('')}>
-                            <Ionicons name="close-circle" size={20} color={isDarkTheme ? '#888888' : '#666666'} />
+                        <TouchableOpacity 
+                            onPress={() => setSearchQuery('')}
+                            style={styles.searchClearButton}
+                        >
+                            <Ionicons name="close-circle" size={22} color={isDarkTheme ? '#888888' : '#666666'} />
                         </TouchableOpacity>
                     )}
                 </View>
@@ -1634,7 +1730,21 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {/* File Stats */}
             {files.length > 0 && (
-                <View style={[styles.statsContainer, { backgroundColor: secondaryBackgroundColor, borderColor }]}>
+                <View style={[
+                    styles.statsContainer, 
+                    { 
+                        backgroundColor: isDarkTheme ? '#1A1A1A' : '#FFFFFF', 
+                        borderColor: isDarkTheme ? '#3A3A3A' : '#E8E9EA',
+                        shadowColor: '#000000',
+                        shadowOffset: {
+                            width: 0,
+                            height: 1,
+                        },
+                        shadowOpacity: isDarkTheme ? 0.2 : 0.05,
+                        shadowRadius: 4,
+                        elevation: 2,
+                    }
+                ]}>
                     <View style={styles.statItem}>
                         <Text style={[styles.statValue, { color: textColor }]}>{filteredFiles.length}</Text>
                         <Text style={[styles.statLabel, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
@@ -1736,24 +1846,43 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
+        paddingHorizontal: 24,
+        paddingVertical: 20,
         borderBottomWidth: 1,
+        position: 'relative',
     },
     backButton: {
-        padding: 8,
+        padding: 12,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+        minWidth: 44,
+        minHeight: 44,
+    },
+    headerTitleContainer: {
+        flex: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginHorizontal: 16,
     },
     headerTitle: {
-        fontSize: 20,
-        fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
-        flex: 1,
-        textAlign: 'center',
+        fontSize: 22,
+        fontWeight: '700',
+        fontFamily: fontFamilies.phuduBold,
+        letterSpacing: -0.5,
+        lineHeight: 28,
+    },
+    headerSubtitle: {
+        fontSize: 13,
+        fontWeight: '500',
+        fontFamily: fontFamilies.phuduMedium,
+        marginTop: 2,
+        letterSpacing: 0.2,
     },
     uploadButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         alignItems: 'center',
         justifyContent: 'center',
     },
@@ -1770,43 +1899,56 @@ const styles = StyleSheet.create({
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        marginHorizontal: 20,
-        marginTop: 16,
-        borderRadius: 12,
+        paddingHorizontal: 20,
+        paddingVertical: 16,
+        marginHorizontal: 24,
+        marginTop: 20,
+        borderRadius: 16,
         borderWidth: 1,
-        gap: 12,
+        gap: 16,
     },
     searchInput: {
         flex: 1,
         fontSize: 16,
-        paddingVertical: 4,
+        fontFamily: fontFamilies.phudu,
+        lineHeight: 20,
+    },
+    searchClearButton: {
+        padding: 4,
+        borderRadius: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     searchIcon: {
         marginRight: 8,
     },
     statsContainer: {
         flexDirection: 'row',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
-        marginHorizontal: 20,
-        marginTop: 16,
-        borderRadius: 12,
+        paddingHorizontal: 24,
+        paddingVertical: 20,
+        marginHorizontal: 24,
+        marginTop: 20,
+        borderRadius: 16,
         borderWidth: 1,
     },
     statItem: {
         flex: 1,
         alignItems: 'center',
+        paddingVertical: 4,
     },
     statValue: {
-        fontSize: 24,
-        fontWeight: 'bold',
+        fontSize: 28,
+        fontWeight: '800',
         fontFamily: fontFamilies.phuduBold,
+        letterSpacing: -0.5,
+        lineHeight: 32,
     },
     statLabel: {
-        fontSize: 14,
+        fontSize: 15,
+        fontWeight: '500',
+        fontFamily: fontFamilies.phuduMedium,
         marginTop: 4,
+        letterSpacing: 0.3,
     },
     scrollView: {
         flex: 1,
@@ -2243,20 +2385,22 @@ const styles = StyleSheet.create({
     headerActions: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
+        gap: 16,
     },
     viewModeToggle: {
         flexDirection: 'row',
-        borderRadius: 20,
-        padding: 2,
+        borderRadius: 24,
+        padding: 3,
+        overflow: 'hidden',
     },
     viewModeButton: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 18,
-        minWidth: 40,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 20,
+        minWidth: 44,
         alignItems: 'center',
         justifyContent: 'center',
+        marginHorizontal: 1,
     },
     
     // Photo Grid styles
