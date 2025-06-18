@@ -434,7 +434,6 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             snapPoints={snapPoints}
             enablePanDownToClose
             backdropComponent={renderBackdrop}
-            enableInternalToaster={true}
             handleComponent={() => (
                 <Animated.View
                     style={{
@@ -510,6 +509,9 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     />
                 </Animated.View>
             </BottomSheetScrollView>
+            <View style={styles.toasterContainer}>
+                <Toaster position="top-center" swipeToDismissDirection="left" offset={15} />
+            </View>
         </BottomSheetModal>
     );
 };
