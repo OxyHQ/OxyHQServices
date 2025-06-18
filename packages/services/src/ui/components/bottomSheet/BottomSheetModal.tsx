@@ -49,7 +49,7 @@ export interface BottomSheetModalRef {
 // const getSnapPointHeight (old one using SCREEN_HEIGHT) ...
 
 const MIN_SHEET_HEIGHT = 100; // A general minimum height for the sheet
-const HANDLE_HEIGHT_ESTIMATE = 50; // Estimated height of the handle area (padding + handle itself)
+const HANDLE_HEIGHT_ESTIMATE = 50; // Fallback estimated height of the handle area
 
 export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModalProps>(
   ({
@@ -73,6 +73,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
     const [isVisible, setIsVisible] = useState(false);
     const [currentIndex, setCurrentIndex] = useState(index);
     const [measuredContentHeight, setMeasuredContentHeight] = useState<number | null>(null);
+    const [handleHeight, setHandleHeight] = useState<number>(HANDLE_HEIGHT_ESTIMATE);
     const [isPanning, setIsPanning] = useState(false); // New state for gesture tracking
   // Initialize translateY with the initial screen height. It will adapt if sheet is presented after a screen size change.
   const translateY = useRef(new Animated.Value(screenHeight)).current;
@@ -106,7 +107,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
       // as height isn't relevant for translateY calculation there.
       // If snapPoints is empty, this could be an issue.
       if (snapPoints.length === 0 && adjustToContentHeightUpToSnapPoint && measuredContentHeight !== null) {
-         const contentPlusHandle = measuredContentHeight + HANDLE_HEIGHT_ESTIMATE;
+         const contentPlusHandle = measuredContentHeight + handleHeight;
          return Math.min(Math.max(MIN_SHEET_HEIGHT, contentPlusHandle), screenHeight - 50);
       }
       return snapPoints.length > 0 ? calculateHeightForSnapPointValue(snapPoints[0]) : MIN_SHEET_HEIGHT * 2; // Fallback for empty snapPoints
@@ -115,7 +116,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
     const snapHeight = calculateHeightForSnapPointValue(snapPoints[snapPointIndexToCalculateFor]);
 
     if (adjustToContentHeightUpToSnapPoint && measuredContentHeight !== null) {
-      const contentPlusHandle = measuredContentHeight + HANDLE_HEIGHT_ESTIMATE;
+      const contentPlusHandle = measuredContentHeight + handleHeight;
       // Ensure sheet is at least MIN_SHEET_HEIGHT, and content-driven height doesn't exceed current snap point height.
       return Math.min(snapHeight, Math.max(MIN_SHEET_HEIGHT, contentPlusHandle));
     }
@@ -123,8 +124,9 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
   }, [
     snapPoints, 
     adjustToContentHeightUpToSnapPoint, 
-    measuredContentHeight, 
-    calculateHeightForSnapPointValue, 
+    measuredContentHeight,
+    handleHeight,
+    calculateHeightForSnapPointValue,
     screenHeight // Added screenHeight as calculateHeightForSnapPointValue might not be enough if snapPoints is empty
   ]);
 
@@ -255,8 +257,9 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
     }, [enablePanDownToClose, animateToPosition]);
 
     const DefaultHandle = useCallback(() => (
-      <View 
+      <View
         style={styles.handleContainer}
+        onLayout={(e) => setHandleHeight(e.nativeEvent.layout.height)}
         {...(enableHandlePanningGesture ? panResponder.panHandlers : {})}
       >
         <View style={[
@@ -330,7 +333,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
       // Intentionally not including animateToPosition in deps to avoid loops if it's not perfectly stable,
       // relying on currentIndex, isVisible, and measuredContentHeight as triggers.
       // getTargetSheetHeight is also a dependency as it changes with measuredContentHeight.
-    }, [measuredContentHeight, adjustToContentHeightUpToSnapPoint, isVisible, currentIndex, screenHeight, getTargetSheetHeight, translateY, animateToPosition, isPanning]);
+    }, [measuredContentHeight, adjustToContentHeightUpToSnapPoint, isVisible, currentIndex, screenHeight, handleHeight, getTargetSheetHeight, translateY, animateToPosition, isPanning]);
 
 
     if (!isVisible) {
@@ -383,7 +386,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
           >
             {HandleComponent ? <HandleComponent /> : <DefaultHandle />}
             
-            <ScrollView 
+            <ScrollView
               style={styles.content}
               // Note on ScrollView vs. PanResponder conflict:
               // If enableContentPanningGesture is true, the sheet's PanResponder is on a parent of this ScrollView.
@@ -392,9 +395,6 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
               // the user intends to scroll content, or vice-versa.
               // Using react-native-gesture-handler's PanGestureHandler for the sheet itself would offer
               // more advanced coordination capabilities (e.g., simultaneousHandlers, waitFor) to mitigate this.
-              contentContainerStyle={{ 
-                flexGrow: 1,
-              }}
               showsVerticalScrollIndicator={false}
               bounces={false}
             >
@@ -488,7 +488,7 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
   },
   content: {
-    flex: 1,
+    flexGrow: 0,
   },
   toasterContainer: {
     position: 'absolute',
