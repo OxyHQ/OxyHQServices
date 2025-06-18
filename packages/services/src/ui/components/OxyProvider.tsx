@@ -472,6 +472,8 @@ const styles = StyleSheet.create({
     },
     contentContainer: {
         width: '100%',
+        borderTopLeftRadius: 35,
+        borderTopRightRadius: 35,
     },
     centeredContentWrapper: {
         width: '100%',

@@ -83,39 +83,46 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     return (
         <View style={[styles.container, { backgroundColor }]}>
             {/* Header with user profile */}
-            <View style={[styles.header, { borderBottomColor: borderColor }]}>
-                <View style={styles.userProfile}>
-                    <Avatar
-                        uri={user?.avatar?.url}
-                        name={user?.name?.full || user?.username}
-                        size={60}
-                        theme={theme}
-                    />
-                    <View style={styles.userInfo}>
-                        <Text style={[styles.userName, { color: textColor }]}>{user.username}</Text>
-                        {user.email && (
-                            <Text style={[styles.userEmail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                {user.email}
-                            </Text>
-                        )}
-                        <TouchableOpacity 
-                            style={styles.editProfileButton}
-                            onPress={() => navigate('AccountSettings', { activeTab: 'profile' })}
-                        >
-                            <Text style={[styles.editProfileText, { color: primaryColor }]}>Edit Profile</Text>
-                        </TouchableOpacity>
+            <View style={styles.headerSection}>
+                <View style={[
+                    styles.profileCard,
+                    styles.firstGroupedItem,
+                    styles.lastGroupedItem,
+                    { backgroundColor: secondaryBackgroundColor }
+                ]}>
+                    <View style={styles.userProfile}>
+                        <Avatar
+                            uri={user?.avatar?.url}
+                            name={user?.name?.full || user?.username}
+                            size={60}
+                            theme={theme}
+                        />
+                        <View style={styles.userInfo}>
+                            <Text style={[styles.userName, { color: textColor }]}>{user.username}</Text>
+                            {user.email && (
+                                <Text style={[styles.userEmail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                    {user.email}
+                                </Text>
+                            )}
+                            <TouchableOpacity 
+                                style={styles.editProfileButton}
+                                onPress={() => navigate('AccountSettings', { activeTab: 'profile' })}
+                            >
+                                <Text style={[styles.editProfileText, { color: primaryColor }]}>Edit Profile</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
+                    {onClose && (
+                        <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+                            <Ionicons name="close" size={24} color={textColor} />
+                        </TouchableOpacity>
+                    )}
                 </View>
-                {onClose && (
-                    <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                        <Ionicons name="close" size={24} color={textColor} />
-                    </TouchableOpacity>
-                )}
             </View>
 
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
                 {/* Quick Actions */}
-                <View style={styles.section}>
+                <View style={[styles.section, styles.firstSection]}>
                     <Text style={[styles.sectionTitle, { color: textColor }]}>Quick Actions</Text>
                     
                     <View style={[
@@ -548,6 +555,16 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
+    headerSection: {
+        padding: 16,
+        paddingTop: 20,
+    },
+    profileCard: {
+        padding: 20,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
     header: {
         paddingHorizontal: 20,
         paddingTop: 20,
@@ -595,6 +612,9 @@ const styles = StyleSheet.create({
     },
     section: {
         marginBottom: 24,
+    },
+    firstSection: {
+        marginTop: 8,
     },
     sectionTitle: {
         fontSize: 16,
