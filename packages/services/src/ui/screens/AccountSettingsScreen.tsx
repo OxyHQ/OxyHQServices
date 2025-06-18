@@ -22,6 +22,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     goBack,
+    navigate,
 }) => {
     const { user, oxyServices, isLoading: authLoading } = useOxy();
     const [isLoading, setIsLoading] = useState(false);

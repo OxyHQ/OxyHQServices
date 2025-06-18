@@ -14,6 +14,7 @@ import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
+import { Ionicons } from '@expo/vector-icons';
 
 interface Session {
     id: string;

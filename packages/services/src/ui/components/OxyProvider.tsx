@@ -234,27 +234,6 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     }),
                 ]).start();
             };
-
-            // Override present to also handle animations
-            // @ts-ignore - Dynamic method assignment
-            bottomSheetRef.current.present = () => {
-                modalRef.current?.present();
-
-                // Start content animations after presenting
-                Animated.parallel([
-                    Animated.timing(fadeAnim, {
-                        toValue: 1,
-                        duration: 300,
-                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
-                    }),
-                    Animated.spring(slideAnim, {
-                        toValue: 0,
-                        friction: 8,
-                        tension: 40,
-                        useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
-                    }),
-                ]).start();
-            };
         }
 
         // Auto-present if the autoPresent prop is true

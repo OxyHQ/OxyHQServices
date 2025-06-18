@@ -18,6 +18,8 @@ import { fontFamilies } from '../styles/fonts';
 import { User } from '../../models/interfaces';
 import { toast } from '../../lib/sonner';
 import OxyIcon from '../components/icon/OxyIcon';
+import { Ionicons } from '@expo/vector-icons';
+import Avatar from '../components/Avatar';
 
 interface SessionWithUser extends SecureClientSession {
     userProfile?: User;

@@ -15,6 +15,8 @@ import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { packageInfo } from '../../constants/version';
 import { toast } from '../../lib/sonner';
+import { Ionicons } from '@expo/vector-icons';
+import Avatar from '../components/Avatar';
 
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -80,97 +82,242 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <View style={[styles.container, { backgroundColor }]}>
-            <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
-                <View style={styles.header}>
-                    <Text style={[styles.title, { color: textColor }]}>Account</Text>
+            {/* Header with user profile */}
+            <View style={[styles.header, { borderBottomColor: borderColor }]}>
+                <View style={styles.userProfile}>
+                    <Avatar
+                        uri={user?.avatar?.url}
+                        name={user?.name?.full || user?.username}
+                        size={60}
+                        theme={theme}
+                    />
+                    <View style={styles.userInfo}>
+                        <Text style={[styles.userName, { color: textColor }]}>{user.username}</Text>
+                        {user.email && (
+                            <Text style={[styles.userEmail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                {user.email}
+                            </Text>
+                        )}
+                        <TouchableOpacity 
+                            style={styles.editProfileButton}
+                            onPress={() => navigate('AccountSettings', { activeTab: 'profile' })}
+                        >
+                            <Text style={[styles.editProfileText, { color: primaryColor }]}>Edit Profile</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+                {onClose && (
+                    <TouchableOpacity style={styles.closeButton} onPress={onClose}>
+                        <Ionicons name="close" size={24} color={textColor} />
+                    </TouchableOpacity>
+                )}
+            </View>
+
+            <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
+                {/* Quick Actions */}
+                <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: textColor }]}>Quick Actions</Text>
+                    <View style={styles.quickActionsGrid}>
+                        <TouchableOpacity
+                            style={[styles.quickActionCard, { backgroundColor: secondaryBackgroundColor, borderColor }]}
+                            onPress={() => navigate('AccountOverview')}
+                        >
+                            <Ionicons name="person-circle" size={24} color="#007AFF" />
+                            <Text style={[styles.quickActionText, { color: textColor }]}>Overview</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.quickActionCard, { backgroundColor: secondaryBackgroundColor, borderColor }]}
+                            onPress={() => navigate('AccountSettings')}
+                        >
+                            <Ionicons name="settings" size={24} color="#5856D6" />
+                            <Text style={[styles.quickActionText, { color: textColor }]}>Settings</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.quickActionCard, { backgroundColor: secondaryBackgroundColor, borderColor }]}
+                            onPress={() => navigate('SessionManagement')}
+                        >
+                            <Ionicons name="shield-checkmark" size={24} color="#30D158" />
+                            <Text style={[styles.quickActionText, { color: textColor }]}>Sessions</Text>
+                        </TouchableOpacity>
+
+                        {sessions && sessions.length > 1 && (
+                            <TouchableOpacity
+                                style={[styles.quickActionCard, { backgroundColor: secondaryBackgroundColor, borderColor }]}
+                                onPress={() => navigate('AccountSwitcher')}
+                            >
+                                <Ionicons name="swap-horizontal" size={24} color="#FF9500" />
+                                <Text style={[styles.quickActionText, { color: textColor }]}>Switch</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
                 </View>
 
-                <View style={[styles.userInfoContainer, { backgroundColor: secondaryBackgroundColor, borderColor }]}>
-                    <Text style={[styles.userName, { color: textColor }]}>{user.username}</Text>
-                    {user.email && (
-                        <Text style={[styles.userEmail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                            {user.email}
-                        </Text>
-                    )}
-                </View>
-
-                <View style={styles.actionsContainer}>
+                {/* Account Management */}
+                <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: textColor }]}>Account Management</Text>
+                    
                     {/* Show Account Switcher if multiple sessions exist */}
                     {sessions && sessions.length > 1 && (
                         <TouchableOpacity
-                            style={[styles.actionButton, { borderColor }]}
+                            style={[styles.actionButton, { borderColor, backgroundColor: secondaryBackgroundColor }]}
                             onPress={() => navigate('AccountSwitcher')}
                         >
-                            <Text style={[styles.actionButtonText, { color: textColor }]}>
-                                Switch Account ({sessions.length} accounts)
-                            </Text>
+                            <View style={styles.actionButtonContent}>
+                                <Ionicons name="people" size={20} color="#FF9500" style={styles.actionIcon} />
+                                <View style={styles.actionTextContainer}>
+                                    <Text style={[styles.actionButtonText, { color: textColor }]}>
+                                        Switch Account
+                                    </Text>
+                                    <Text style={[styles.actionButtonSubtext, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                        {sessions.length} accounts available
+                                    </Text>
+                                </View>
+                                <Ionicons name="chevron-forward" size={16} color={isDarkTheme ? '#666666' : '#999999'} />
+                            </View>
                         </TouchableOpacity>
                     )}
+
+                    {/* Add Account Overview button for comprehensive account view */}
+                    <TouchableOpacity
+                        style={[styles.actionButton, { borderColor, backgroundColor: secondaryBackgroundColor }]}
+                        onPress={() => navigate('AccountOverview')}
+                    >
+                        <View style={styles.actionButtonContent}>
+                            <Ionicons name="person-circle" size={20} color="#007AFF" style={styles.actionIcon} />
+                            <View style={styles.actionTextContainer}>
+                                <Text style={[styles.actionButtonText, { color: textColor }]}>Account Overview</Text>
+                                <Text style={[styles.actionButtonSubtext, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                    Complete account information
+                                </Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={16} color={isDarkTheme ? '#666666' : '#999999'} />
+                        </View>
+                    </TouchableOpacity>
 
                     {/* Add Account button - always shown for multi-user functionality */}
                     <TouchableOpacity
-                        style={[styles.actionButton, { borderColor }]}
+                        style={[styles.actionButton, { borderColor, backgroundColor: secondaryBackgroundColor }]}
                         onPress={() => navigate('SignIn')}
                     >
-                        <Text style={[styles.actionButtonText, { color: textColor }]}>Add Another Account</Text>
+                        <View style={styles.actionButtonContent}>
+                            <Ionicons name="person-add" size={20} color="#30D158" style={styles.actionIcon} />
+                            <View style={styles.actionTextContainer}>
+                                <Text style={[styles.actionButtonText, { color: textColor }]}>Add Another Account</Text>
+                                <Text style={[styles.actionButtonSubtext, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                    Sign in with a different account
+                                </Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={16} color={isDarkTheme ? '#666666' : '#999999'} />
+                        </View>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.actionButton, { borderColor }]}
-                        onPress={() => navigate('AccountSettings', { activeTab: 'profile' })}
-                    >
-                        <Text style={[styles.actionButtonText, { color: textColor }]}>Edit Profile</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.actionButton, { borderColor }]}
+                        style={[styles.actionButton, { borderColor, backgroundColor: secondaryBackgroundColor }]}
                         onPress={() => navigate('AccountSettings')}
                     >
-                        <Text style={[styles.actionButtonText, { color: textColor }]}>Account Settings</Text>
+                        <View style={styles.actionButtonContent}>
+                            <Ionicons name="settings" size={20} color="#5856D6" style={styles.actionIcon} />
+                            <View style={styles.actionTextContainer}>
+                                <Text style={[styles.actionButtonText, { color: textColor }]}>Account Settings</Text>
+                                <Text style={[styles.actionButtonSubtext, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                    Manage your preferences
+                                </Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={16} color={isDarkTheme ? '#666666' : '#999999'} />
+                        </View>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.actionButton, { borderColor }]}
+                        style={[styles.actionButton, { borderColor, backgroundColor: secondaryBackgroundColor }]}
                         onPress={() => navigate('SessionManagement')}
                     >
-                        <Text style={[styles.actionButtonText, { color: textColor }]}>Manage Sessions</Text>
+                        <View style={styles.actionButtonContent}>
+                            <Ionicons name="shield-checkmark" size={20} color="#30D158" style={styles.actionIcon} />
+                            <View style={styles.actionTextContainer}>
+                                <Text style={[styles.actionButtonText, { color: textColor }]}>Manage Sessions</Text>
+                                <Text style={[styles.actionButtonSubtext, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                    Security and active devices
+                                </Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={16} color={isDarkTheme ? '#666666' : '#999999'} />
+                        </View>
                     </TouchableOpacity>
+                </View>
+
+                {/* Additional Options */}
+                <View style={styles.section}>
+                    <Text style={[styles.sectionTitle, { color: textColor }]}>More Options</Text>
 
                     {Platform.OS !== 'web' && (
                         <TouchableOpacity
-                            style={[styles.actionButton, { borderColor }]}
+                            style={[styles.actionButton, { borderColor, backgroundColor: secondaryBackgroundColor }]}
                             onPress={() => toast.info('Notifications feature coming soon!')}
                         >
-                            <Text style={[styles.actionButtonText, { color: textColor }]}>Notifications</Text>
+                            <View style={styles.actionButtonContent}>
+                                <Ionicons name="notifications" size={20} color="#FF9500" style={styles.actionIcon} />
+                                <View style={styles.actionTextContainer}>
+                                    <Text style={[styles.actionButtonText, { color: textColor }]}>Notifications</Text>
+                                    <Text style={[styles.actionButtonSubtext, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                        Manage notification settings
+                                    </Text>
+                                </View>
+                                <Ionicons name="chevron-forward" size={16} color={isDarkTheme ? '#666666' : '#999999'} />
+                            </View>
                         </TouchableOpacity>
                     )}
 
                     <TouchableOpacity
-                        style={[styles.actionButton, { borderColor }]}
+                        style={[styles.actionButton, { borderColor, backgroundColor: secondaryBackgroundColor }]}
                         onPress={() => toast.info('Help & Support feature coming soon!')}
                     >
-                        <Text style={[styles.actionButtonText, { color: textColor }]}>Help & Support</Text>
+                        <View style={styles.actionButtonContent}>
+                            <Ionicons name="help-circle" size={20} color="#007AFF" style={styles.actionIcon} />
+                            <View style={styles.actionTextContainer}>
+                                <Text style={[styles.actionButtonText, { color: textColor }]}>Help & Support</Text>
+                                <Text style={[styles.actionButtonSubtext, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                    Get help and contact support
+                                </Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={16} color={isDarkTheme ? '#666666' : '#999999'} />
+                        </View>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.actionButton, { borderColor }]}
+                        style={[styles.actionButton, { borderColor, backgroundColor: secondaryBackgroundColor }]}
                         onPress={() => navigate('AppInfo')}
                     >
-                        <Text style={[styles.actionButtonText, { color: textColor }]}>App Information</Text>
+                        <View style={styles.actionButtonContent}>
+                            <Ionicons name="information-circle" size={20} color="#8E8E93" style={styles.actionIcon} />
+                            <View style={styles.actionTextContainer}>
+                                <Text style={[styles.actionButtonText, { color: textColor }]}>App Information</Text>
+                                <Text style={[styles.actionButtonSubtext, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                    Version and system details
+                                </Text>
+                            </View>
+                            <Ionicons name="chevron-forward" size={16} color={isDarkTheme ? '#666666' : '#999999'} />
+                        </View>
                     </TouchableOpacity>
                 </View>
 
-                <TouchableOpacity
-                    style={[styles.logoutButton, { backgroundColor: isDarkTheme ? '#300000' : '#FFEBEE' }]}
-                    onPress={confirmLogout}
-                    disabled={isLoading}
-                >
-                    {isLoading ? (
-                        <ActivityIndicator color={dangerColor} size="small" />
-                    ) : (
-                        <Text style={[styles.logoutButtonText, { color: dangerColor }]}>Sign Out</Text>
-                    )}
-                </TouchableOpacity>
+                {/* Sign Out Section */}
+                <View style={styles.section}>
+                    <TouchableOpacity
+                        style={[styles.logoutButton, { backgroundColor: isDarkTheme ? '#400000' : '#FFEBEE', borderColor: dangerColor }]}
+                        onPress={confirmLogout}
+                        disabled={isLoading}
+                    >
+                        {isLoading ? (
+                            <ActivityIndicator color={dangerColor} size="small" />
+                        ) : (
+                            <View style={styles.logoutContent}>
+                                <Ionicons name="log-out" size={20} color={dangerColor} style={styles.actionIcon} />
+                                <Text style={[styles.logoutButtonText, { color: dangerColor }]}>Sign Out</Text>
+                            </View>
+                        )}
+                    </TouchableOpacity>
+                </View>
 
                 <View style={styles.versionContainer}>
                     <Text style={[styles.versionText, { color: isDarkTheme ? '#666666' : '#999999' }]}>
@@ -178,12 +325,6 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                     </Text>
                 </View>
             </ScrollView>
-
-            <View style={styles.footer}>
-                <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                    <Text style={[styles.closeButtonText, { color: primaryColor }]}>Close</Text>
-                </TouchableOpacity>
-            </View>
         </View>
     );
 };
@@ -192,80 +333,133 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
+    header: {
+        paddingHorizontal: 20,
+        paddingTop: 20,
+        paddingBottom: 16,
+        borderBottomWidth: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    userProfile: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+    },
+    userInfo: {
+        marginLeft: 16,
+        flex: 1,
+    },
+    userName: {
+        fontSize: 22,
+        fontWeight: 'bold',
+        fontFamily: fontFamilies.phuduBold,
+        marginBottom: 4,
+    },
+    userEmail: {
+        fontSize: 14,
+        marginBottom: 8,
+    },
+    editProfileButton: {
+        alignSelf: 'flex-start',
+    },
+    editProfileText: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    closeButton: {
+        padding: 8,
+    },
     scrollView: {
         flex: 1,
     },
     scrollContainer: {
-        padding: 20,
+        paddingBottom: 20,
     },
-    header: {
-        marginBottom: 24,
-        alignItems: 'center',
+    section: {
+        marginTop: 24,
+        paddingHorizontal: 20,
     },
-    title: {
-        fontFamily: Platform.OS === 'web'
-            ? 'Phudu'  // Use CSS font name directly for web
-            : 'Phudu-Bold',  // Use exact font name as registered with Font.loadAsync
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
-        fontSize: 24,
+    sectionTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        fontFamily: fontFamilies.phuduSemiBold,
+        marginBottom: 16,
     },
-    userInfoContainer: {
-        padding: 20,
-        borderRadius: 35,
+    quickActionsGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        marginHorizontal: -6,
+    },
+    quickActionCard: {
+        width: '23%',
+        aspectRatio: 1,
+        marginHorizontal: '1%',
+        marginBottom: 12,
+        borderRadius: 12,
         borderWidth: 1,
-        marginBottom: 24,
         alignItems: 'center',
+        justifyContent: 'center',
+        padding: 8,
     },
-    userName: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        marginBottom: 8,
-    },
-    userEmail: {
-        fontSize: 16,
-    },
-    actionsContainer: {
-        marginBottom: 24,
+    quickActionText: {
+        fontSize: 12,
+        fontWeight: '500',
+        marginTop: 6,
+        textAlign: 'center',
     },
     actionButton: {
-        paddingVertical: 16,
-        paddingHorizontal: 20,
-        borderBottomWidth: 1,
+        borderRadius: 12,
+        borderWidth: 1,
+        marginBottom: 12,
+        overflow: 'hidden',
+    },
+    actionButtonContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+    },
+    actionIcon: {
+        marginRight: 12,
+    },
+    actionTextContainer: {
+        flex: 1,
     },
     actionButtonText: {
         fontSize: 16,
+        fontWeight: '500',
+        marginBottom: 2,
+    },
+    actionButtonSubtext: {
+        fontSize: 13,
+        lineHeight: 18,
     },
     logoutButton: {
-        height: 50,
-        borderRadius: 35,
+        borderRadius: 12,
+        borderWidth: 1,
+        marginTop: 8,
+        overflow: 'hidden',
+    },
+    logoutContent: {
+        flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 24,
+        padding: 16,
     },
     logoutButtonText: {
         fontSize: 16,
         fontWeight: '600',
+        marginLeft: 8,
     },
     versionContainer: {
         alignItems: 'center',
-        marginBottom: 20,
+        marginTop: 20,
+        paddingHorizontal: 20,
     },
     versionText: {
-        fontSize: 14,
-    },
-    footer: {
-        padding: 16,
-        borderTopWidth: 1,
-        borderTopColor: '#E0E0E0',
-        alignItems: 'center',
-    },
-    closeButton: {
-        paddingVertical: 8,
-        paddingHorizontal: 16,
-    },
-    closeButtonText: {
-        fontSize: 16,
-        fontWeight: '600',
+        fontSize: 12,
+        fontFamily: fontFamilies.phudu,
     },
     message: {
         fontSize: 16,

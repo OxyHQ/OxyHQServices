@@ -18,6 +18,7 @@ import Avatar from '../components/Avatar';
 import OxyIcon from '../components/icon/OxyIcon';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
+import { Ionicons } from '@expo/vector-icons';
 
 const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     onClose,
