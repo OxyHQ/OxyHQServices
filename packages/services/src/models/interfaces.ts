@@ -162,8 +162,7 @@ export interface FileMetadata {
 }
 
 export interface FileUploadResponse {
-  success: boolean;
-  file: FileMetadata;
+  files: FileMetadata[];
 }
 
 export interface FileListResponse {

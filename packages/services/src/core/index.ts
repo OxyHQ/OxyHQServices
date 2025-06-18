@@ -978,8 +978,28 @@ export class OxyServices {
     file: File | Blob | any, // Use 'any' to handle Buffer type in cross-platform scenarios
     filename: string, 
     metadata?: Record<string, any>
+  ): Promise<FileMetadata> {
+    const response = await this.uploadFiles([file], [filename], metadata);
+    return response.files[0];
+  }
+
+  /**
+   * Upload multiple files using GridFS
+   * @param files - Array of files to upload
+   * @param filenames - Array of filenames (must match files array length)
+   * @param metadata - Optional metadata to associate with all files
+   * @returns Array of file metadata
+   */
+  async uploadFiles(
+    files: (File | Blob | any)[], 
+    filenames: string[], 
+    metadata?: Record<string, any>
   ): Promise<FileUploadResponse> {
     try {
+      if (files.length !== filenames.length) {
+        throw new Error('Files and filenames arrays must have the same length');
+      }
+
       // Create form data to handle the file upload
       let formData: any;
       
@@ -992,23 +1012,28 @@ export class OxyServices {
         formData = new FormDataConstructor();
       }
       
-      // Handle different file types (Browser vs Node.js vs React Native)
-      const isNodeBuffer = typeof window === 'undefined' && 
-                          file && 
-                          typeof file.constructor === 'function' && 
-                          file.constructor.name === 'Buffer';
-      
-      if (isNodeBuffer) {
-        // Node.js environment with Buffer
-        if (!NodeFormData) {
-          throw new Error('form-data module is required for file uploads from Buffer but not found.');
+      // Add all files to the form data
+      files.forEach((file, index) => {
+        const filename = filenames[index];
+        
+        // Handle different file types (Browser vs Node.js vs React Native)
+        const isNodeBuffer = typeof window === 'undefined' && 
+                            file && 
+                            typeof file.constructor === 'function' && 
+                            file.constructor.name === 'Buffer';
+        
+        if (isNodeBuffer) {
+          // Node.js environment with Buffer
+          if (!NodeFormData) {
+            throw new Error('form-data module is required for file uploads from Buffer but not found.');
+          }
+          // form-data handles Buffers directly.
+          formData.append('files', file, { filename }); // Pass filename in options for form-data
+        } else {
+          // Browser/React Native environment with File or Blob
+          formData.append('files', file as Blob, filename);
         }
-        // form-data handles Buffers directly.
-        formData.append('file', file, { filename }); // Pass filename in options for form-data
-      } else {
-        // Browser/React Native environment with File or Blob
-        formData.append('file', file as Blob, filename);
-      }
+      });
       
       // Add metadata as JSON string if provided
       if (metadata) {
@@ -1063,9 +1088,24 @@ export class OxyServices {
    */
   async deleteFile(fileId: string): Promise<FileDeleteResponse> {
     try {
+      console.log('Deleting file with ID:', fileId);
       const res = await this.client.delete(`/files/${fileId}`);
+      console.log('Delete response:', res.data);
       return res.data;
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Delete file error:', error);
+      console.error('Error response:', error.response?.data);
+      console.error('Error status:', error.response?.status);
+      
+      // Provide more specific error messages based on status code
+      if (error.response?.status === 404) {
+        throw new Error('File not found or already deleted');
+      } else if (error.response?.status === 403) {
+        throw new Error('You do not have permission to delete this file');
+      } else if (error.response?.status === 400) {
+        throw new Error('Invalid file ID format');
+      }
+      
       throw this.handleError(error);
     }
   }
@@ -1076,7 +1116,7 @@ export class OxyServices {
    * @returns Full URL to download the file
    */
   getFileDownloadUrl(fileId: string): string {
-    return `${this.client.defaults.baseURL}/files/${fileId}/download`;
+    return `${this.client.defaults.baseURL}/files/${fileId}`;
   }
 
   /**
@@ -1085,7 +1125,7 @@ export class OxyServices {
    * @returns Full URL to stream the file
    */
   getFileStreamUrl(fileId: string): string {
-    return `${this.client.defaults.baseURL}/files/${fileId}/stream`;
+    return `${this.client.defaults.baseURL}/files/${fileId}`;
   }
 
   /**
@@ -1103,13 +1143,29 @@ export class OxyServices {
     filters?: Record<string, any>
   ): Promise<FileListResponse> {
     try {
-      const params: Record<string, any> = { userId };
+      const params: Record<string, any> = {};
       if (limit !== undefined) params.limit = limit;
       if (offset !== undefined) params.offset = offset;
       if (filters) Object.assign(params, filters);
       
-      const res = await this.client.get('/files', { params });
-      return res.data;
+      const res = await this.client.get(`/files/list/${userId}`, { params });
+      
+      // Handle backend response format: backend returns FileMetadata[] directly
+      // but interface expects { files: FileMetadata[], total: number, hasMore: boolean }
+      const rawFiles = Array.isArray(res.data) ? res.data : res.data.files || [];
+      
+      // Transform GridFS files to match FileMetadata interface (map _id to id)
+      const filesArray = rawFiles.map((file: any) => ({
+        ...file,
+        id: file._id?.toString() || file.id,
+        uploadDate: file.uploadDate?.toISOString ? file.uploadDate.toISOString() : file.uploadDate
+      }));
+      
+      return {
+        files: filesArray,
+        total: filesArray.length,
+        hasMore: false // No pagination in current backend implementation
+      };
     } catch (error) {
       throw this.handleError(error);
     }

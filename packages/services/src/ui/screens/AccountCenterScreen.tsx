@@ -141,6 +141,14 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 onPress: () => navigate('SessionManagement'),
                             },
                             {
+                                id: 'files',
+                                icon: 'folder',
+                                iconColor: '#FF9500',
+                                title: 'File Management',
+                                subtitle: 'Upload, download, and manage your files',
+                                onPress: () => navigate('FileManagement'),
+                            },
+                            {
                                 id: 'premium',
                                 icon: 'star',
                                 iconColor: '#FFD700',
