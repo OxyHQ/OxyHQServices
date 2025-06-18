@@ -194,6 +194,8 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
       }
     }, [currentIndex, translateY, backdropOpacity, onChange, onAnimate, getTranslateYForIndex, isVisible, screenHeight]);
 
+    const panStartTranslateY = useRef(0);
+
     const panResponder = useRef(
       PanResponder.create({
         onMoveShouldSetPanResponder: (_, gestureState) => {
@@ -204,73 +206,44 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
         },
         onPanResponderGrant: () => {
           setIsPanning(true);
-          const currentValue = (translateY as Animated.Value).__getValue();
-          translateY.setOffset(currentValue);
-          translateY.setValue(0);
+          panStartTranslateY.current = (translateY as Animated.Value).__getValue();
         },
         onPanResponderMove: (_, gestureState) => {
-          const resistance = overDragResistanceFactor;
-          const currentTranslateY = (translateY as Animated.Value).__getValue();
-          const currentOffset = (translateY as unknown as { _offset?: number })._offset || 0;
-          const totalTranslateY = currentTranslateY + currentOffset;
-          
-          if (gestureState.dy > 0) {
-            // Downward movement - allow but with resistance and bounds
-            const resistedValue = gestureState.dy / resistance;
-            // Ensure sheet cannot be dragged below the bottom of the screen
-            const maxTranslateValue = screenHeight - totalTranslateY;
-            const newValue = Math.min(resistedValue, maxTranslateValue);
-            translateY.setValue(newValue);
-          } else if (gestureState.dy < 0 && currentIndex < snapPoints.length - 1) {
-            // Upward movement - allow but with resistance and bounds
-            const resistedValue = gestureState.dy / (resistance * 0.5);
-            // Prevent going above screen bounds
-            const newValue = Math.max(resistedValue, -totalTranslateY);
-            translateY.setValue(newValue);
-          }
+          // Calculate new translateY based on gesture and starting value
+          const minTranslate = getTranslateYForIndex(snapPoints.length - 1);
+          let newValue = panStartTranslateY.current + gestureState.dy;
+          newValue = Math.min(Math.max(newValue, minTranslate), screenHeight);
+          translateY.setValue(newValue);
         },
         onPanResponderRelease: (_, gestureState) => {
-          translateY.flattenOffset();
           setIsPanning(false);
-          
-          // Corrected: use getTargetSheetHeight(currentIndex) for current sheet's actual height
-          const currentActualSheetHeight = getTargetSheetHeight(currentIndex); 
-          const { dy: dragDistance, vy: dragVelocity } = gestureState;
 
-          // Improved gesture detection with better thresholds
+          const currentActualSheetHeight = getTargetSheetHeight(currentIndex);
+          const { dy: dragDistance, vy: dragVelocity } = gestureState;
           const dragThreshold = Math.min(currentActualSheetHeight * 0.2, 50); // Adaptive threshold
           const velocityThreshold = 0.3;
 
-          if (dragDistance > dragThreshold || dragVelocity > velocityThreshold) { // Downward gesture
+          if (dragDistance > dragThreshold || dragVelocity > velocityThreshold) {
             if (enablePanDownToClose && (currentIndex === 0 || dragDistance > currentActualSheetHeight * 0.25)) {
-              animateToPosition(-1); // Close sheet
-            } else if (currentIndex > 0) { 
-              // If not closing (either disabled or conditions not met for close)
-              // and not already at the lowest snap point (index 0)
-              animateToPosition(currentIndex - 1); // Snap to lower snap point
+              animateToPosition(-1);
+            } else if (currentIndex > 0) {
+              animateToPosition(currentIndex - 1);
             } else {
-              // If already at index 0 and not closing, or if conditions for lower snap not met
-              animateToPosition(currentIndex); // Snap back to current position (index 0)
+              animateToPosition(currentIndex);
             }
-          } else if (dragDistance < -dragThreshold || dragVelocity < -velocityThreshold) { // Upward gesture
+          } else if (dragDistance < -dragThreshold || dragVelocity < -velocityThreshold) {
             if (currentIndex < snapPoints.length - 1) {
-              animateToPosition(currentIndex + 1); // Snap to higher snap point
+              animateToPosition(currentIndex + 1);
             } else {
-              // Already at the highest snap point, snap back to it
               animateToPosition(currentIndex);
             }
           } else {
-            // No significant drag/velocity, snap back to current position
             animateToPosition(currentIndex);
           }
         },
-        onPanResponderTerminate: () => { // Handle gesture termination
+        onPanResponderTerminate: () => {
           setIsPanning(false);
-          // Optionally, decide if you want to snap back or to a specific position on terminate
-          // For now, flattenOffset similar to release might be safest if mid-gesture
-          translateY.flattenOffset(); 
-          // And then snap to current index, or perhaps a more sophisticated logic based on current position
-          animateToPosition(currentIndex); 
+          animateToPosition(currentIndex);
         },
       })
     ).current;
@@ -327,6 +300,15 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
       },
     }), [index, currentIndex, snapPoints, animateToPosition, screenHeight, translateY]);
 
+    // Recalculate position when screen height changes (e.g., orientation change)
+    useEffect(() => {
+      if (isVisible) {
+        animateToPosition(currentIndex);
+      } else {
+        translateY.setValue(screenHeight);
+      }
+    }, [screenHeight, isVisible, currentIndex, animateToPosition, translateY]);
+
     // Effect to re-animate if content height changes and sheet is set to adjust
     useEffect(() => {
       if (isVisible && adjustToContentHeightUpToSnapPoint && measuredContentHeight !== null) {
@@ -336,8 +318,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
           // Note: Reading _value and _offset directly from Animated.Value for logic is generally discouraged
           // outside gesture contexts as it breaks the declarative model.
           // However, for this specific check to prevent redundant animations, it's a pragmatic approach.
-          const currentVisualTranslateY = (translateY as Animated.Value).__getValue() +
-            ((translateY as unknown as { _offset?: number })._offset || 0);
+          const currentVisualTranslateY = (translateY as Animated.Value).__getValue();
           const currentVisualHeight = screenHeight - currentVisualTranslateY;
           const targetSheetHeight = getTargetSheetHeight(currentIndex);
           
