@@ -1,5 +1,3 @@
-import React from 'react';
-
 // Re-export bottom sheet components from @gorhom/bottom-sheet
 export {
   BottomSheetModal,
