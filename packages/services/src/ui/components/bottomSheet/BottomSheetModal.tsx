@@ -408,6 +408,12 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
               bounces={false}
             >
               <View onLayout={(event) => {
+                if (isPanning) {
+                  // Ignore layout changes while actively dragging to prevent
+                  // jitter from rapid height recalculations
+                  return;
+                }
+
                 const height = event.nativeEvent.layout.height;
                 // Update only if height has meaningfully changed to avoid rapid state updates.
                 // Using a small threshold like 1px.
