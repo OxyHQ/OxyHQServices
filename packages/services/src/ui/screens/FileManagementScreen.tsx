@@ -63,6 +63,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [isDragging, setIsDragging] = useState(false);
     const [photoDimensions, setPhotoDimensions] = useState<{[key: string]: {width: number, height: number}}>({});
     const [loadingDimensions, setLoadingDimensions] = useState(false);
+    const [hoveredPreview, setHoveredPreview] = useState<string | null>(null);
 
     const isDarkTheme = theme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
@@ -683,6 +684,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }, [loadFiles]);
 
     const renderFileItem = (file: FileMetadata) => {
+        const isImage = file.contentType.startsWith('image/');
+        const isPDF = file.contentType.includes('pdf');
+        const isVideo = file.contentType.startsWith('video/');
+        const isAudio = file.contentType.startsWith('audio/');
+        const hasPreview = isImage || isPDF || isVideo;
+
         return (
             <View
                 key={file.id}
@@ -692,12 +699,89 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     style={styles.fileContent}
                     onPress={() => handleFileOpen(file)}
                 >
-                    <View style={styles.fileIconContainer}>
-                        <Ionicons
-                            name={getFileIcon(file.contentType) as any}
-                            size={32}
-                            color={primaryColor}
-                        />
+                    {/* Preview Thumbnail */}
+                    <View style={styles.filePreviewContainer}>
+                        {hasPreview ? (
+                            <View 
+                                style={styles.filePreview}
+                                {...(Platform.OS === 'web' && {
+                                    onMouseEnter: () => setHoveredPreview(file.id),
+                                    onMouseLeave: () => setHoveredPreview(null),
+                                })}
+                            >
+                                {isImage && (
+                                    Platform.OS === 'web' ? (
+                                        <img
+                                            src={oxyServices.getFileDownloadUrl(file.id)}
+                                            style={{
+                                                width: '100%',
+                                                height: '100%',
+                                                objectFit: 'cover',
+                                                borderRadius: 8,
+                                                transition: 'transform 0.2s ease',
+                                                transform: hoveredPreview === file.id ? 'scale(1.05)' : 'scale(1)',
+                                            }}
+                                            onError={(e) => {
+                                                // Show fallback icon if image fails to load
+                                                e.currentTarget.style.display = 'none';
+                                                const fallbackElement = e.currentTarget.parentElement?.querySelector('[data-fallback="true"]');
+                                                if (fallbackElement) {
+                                                    (fallbackElement as HTMLElement).style.display = 'flex';
+                                                }
+                                            }}
+                                        />
+                                    ) : (
+                                        <Image
+                                            source={{ uri: oxyServices.getFileDownloadUrl(file.id) }}
+                                            style={styles.previewImage}
+                                            resizeMode="cover"
+                                            onError={() => {
+                                                // For React Native, you might want to set an error state
+                                                console.warn('Failed to load image preview for file:', file.id);
+                                            }}
+                                        />
+                                    )
+                                )}
+                                {isPDF && (
+                                    <View style={styles.pdfPreview}>
+                                        <Ionicons name="document" size={32} color={primaryColor} />
+                                        <Text style={[styles.pdfLabel, { color: primaryColor }]}>PDF</Text>
+                                    </View>
+                                )}
+                                {isVideo && (
+                                    <View style={styles.videoPreview}>
+                                        <Ionicons name="play-circle" size={32} color={primaryColor} />
+                                        <Text style={[styles.videoLabel, { color: primaryColor }]}>VIDEO</Text>
+                                    </View>
+                                )}
+                                {/* Fallback icon (hidden by default for images) */}
+                                <View 
+                                    style={[styles.fallbackIcon, { display: isImage ? 'none' : 'flex' }]}
+                                    {...(Platform.OS === 'web' && { 'data-fallback': 'true' })}
+                                >
+                                    <Ionicons
+                                        name={getFileIcon(file.contentType) as any}
+                                        size={32}
+                                        color={primaryColor}
+                                    />
+                                </View>
+                                
+                                {/* Preview overlay for hover effect */}
+                                {Platform.OS === 'web' && hoveredPreview === file.id && isImage && (
+                                    <View style={styles.previewOverlay}>
+                                        <Ionicons name="eye" size={24} color="#FFFFFF" />
+                                    </View>
+                                )}
+                            </View>
+                        ) : (
+                            <View style={styles.fileIconContainer}>
+                                <Ionicons
+                                    name={getFileIcon(file.contentType) as any}
+                                    size={32}
+                                    color={primaryColor}
+                                />
+                            </View>
+                        )}
                     </View>
                     
                     <View style={styles.fileInfo}>
@@ -719,6 +803,16 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </TouchableOpacity>
 
                 <View style={styles.fileActions}>
+                    {/* Preview button for supported files */}
+                    {hasPreview && (
+                        <TouchableOpacity
+                            style={[styles.actionButton, { backgroundColor: isDarkTheme ? '#333333' : '#F0F0F0' }]}
+                            onPress={() => handleFileOpen(file)}
+                        >
+                            <Ionicons name="eye" size={20} color={primaryColor} />
+                        </TouchableOpacity>
+                    )}
+                    
                     <TouchableOpacity
                         style={[styles.actionButton, { backgroundColor: isDarkTheme ? '#333333' : '#F0F0F0' }]}
                         onPress={() => handleFileDownload(file.id, file.filename)}
@@ -1739,6 +1833,72 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: 12,
+    },
+    filePreviewContainer: {
+        width: 60,
+        height: 60,
+        marginRight: 12,
+    },
+    filePreview: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 8,
+        backgroundColor: '#F5F5F5',
+        alignItems: 'center',
+        justifyContent: 'center',
+        overflow: 'hidden',
+        position: 'relative',
+    },
+    previewImage: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 8,
+    },
+    pdfPreview: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+        height: '100%',
+        backgroundColor: '#FF6B6B20',
+    },
+    pdfLabel: {
+        fontSize: 8,
+        fontWeight: 'bold',
+        marginTop: 2,
+    },
+    videoPreview: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: '100%',
+        height: '100%',
+        backgroundColor: '#4ECDC420',
+    },
+    videoLabel: {
+        fontSize: 8,
+        fontWeight: 'bold',
+        marginTop: 2,
+    },
+    fallbackIcon: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#F5F5F5',
+        borderRadius: 8,
+    },
+    previewOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: 8,
     },
     fileInfo: {
         flex: 1,
