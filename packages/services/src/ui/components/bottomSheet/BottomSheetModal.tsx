@@ -1,4 +1,5 @@
-import React, { forwardRef, useImperativeHandle, useState, useRef, useCallback } from 'react';
+import type { ReactNode, ComponentType, StyleProp, ViewStyle } from 'react';
+import { forwardRef, useImperativeHandle, useState, useRef, useCallback, useEffect } from 'react';
 import {
   View,
   Modal,
@@ -12,14 +13,14 @@ import { ScrollView } from 'react-native-gesture-handler';
 import { Toaster } from '../../../lib/sonner';
 
 export interface BottomSheetModalProps {
-  children?: React.ReactNode;
+  children?: ReactNode;
   snapPoints?: (string | number)[];
   index?: number;
   enablePanDownToClose?: boolean;
-  backdropComponent?: React.ComponentType<any>;
-  handleComponent?: React.ComponentType<any>;
-  backgroundStyle?: any;
-  handleIndicatorStyle?: any;
+  backdropComponent?: ComponentType<Record<string, unknown>>;
+  handleComponent?: ComponentType<Record<string, unknown>>;
+  backgroundStyle?: StyleProp<ViewStyle>;
+  handleIndicatorStyle?: StyleProp<ViewStyle>;
   onChange?: (index: number) => void;
   onAnimate?: (fromIndex: number, toIndex: number) => void;
   keyboardBehavior?: 'interactive' | 'fillParent' | 'extend';
@@ -75,7 +76,15 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
     const [isPanning, setIsPanning] = useState(false); // New state for gesture tracking
   // Initialize translateY with the initial screen height. It will adapt if sheet is presented after a screen size change.
   const translateY = useRef(new Animated.Value(screenHeight)).current;
-    const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const backdropOpacity = useRef(new Animated.Value(0)).current;
+  const previousChildrenRef = useRef(children);
+
+  useEffect(() => {
+    if (previousChildrenRef.current !== children) {
+      previousChildrenRef.current = children;
+      setMeasuredContentHeight(null);
+    }
+  }, [children]);
 
   // Renamed to avoid confusion, this calculates height based *only* on a snap point value
   const calculateHeightForSnapPointValue = useCallback((snapPointValue: string | number): number => {
@@ -183,7 +192,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
           onComplete?.();
         });
       }
-    }, [currentIndex, translateY, backdropOpacity, onChange, onAnimate, getTranslateYForIndex, isVisible]);
+    }, [currentIndex, translateY, backdropOpacity, onChange, onAnimate, getTranslateYForIndex, isVisible, screenHeight]);
 
     const panResponder = useRef(
       PanResponder.create({
@@ -195,14 +204,14 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
         },
         onPanResponderGrant: () => {
           setIsPanning(true);
-          const currentValue = (translateY as any)._value || 0;
+          const currentValue = (translateY as Animated.Value).__getValue();
           translateY.setOffset(currentValue);
           translateY.setValue(0);
         },
         onPanResponderMove: (_, gestureState) => {
           const resistance = overDragResistanceFactor;
-          const currentTranslateY = (translateY as any)._value || 0;
-          const currentOffset = (translateY as any)._offset || 0;
+          const currentTranslateY = (translateY as Animated.Value).__getValue();
+          const currentOffset = (translateY as unknown as { _offset?: number })._offset || 0;
           const totalTranslateY = currentTranslateY + currentOffset;
           
           if (gestureState.dy > 0) {
@@ -316,7 +325,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
           animateToPosition(targetIndex);
         }
       },
-    }), [index, currentIndex, snapPoints, animateToPosition, screenHeight]);
+    }), [index, currentIndex, snapPoints, animateToPosition, screenHeight, translateY]);
 
     // Effect to re-animate if content height changes and sheet is set to adjust
     useEffect(() => {
@@ -327,7 +336,8 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
           // Note: Reading _value and _offset directly from Animated.Value for logic is generally discouraged
           // outside gesture contexts as it breaks the declarative model.
           // However, for this specific check to prevent redundant animations, it's a pragmatic approach.
-          const currentVisualTranslateY = (translateY as any)._value + ((translateY as any)._offset || 0) ;
+          const currentVisualTranslateY = (translateY as Animated.Value).__getValue() +
+            ((translateY as unknown as { _offset?: number })._offset || 0);
           const currentVisualHeight = screenHeight - currentVisualTranslateY;
           const targetSheetHeight = getTargetSheetHeight(currentIndex);
           
@@ -339,7 +349,7 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
       // Intentionally not including animateToPosition in deps to avoid loops if it's not perfectly stable,
       // relying on currentIndex, isVisible, and measuredContentHeight as triggers.
       // getTargetSheetHeight is also a dependency as it changes with measuredContentHeight.
-    }, [measuredContentHeight, adjustToContentHeightUpToSnapPoint, isVisible, currentIndex, screenHeight, getTargetSheetHeight, translateY]);
+    }, [measuredContentHeight, adjustToContentHeightUpToSnapPoint, isVisible, currentIndex, screenHeight, getTargetSheetHeight, translateY, animateToPosition, isPanning]);
 
 
     if (!isVisible) {
@@ -408,6 +418,12 @@ export const BottomSheetModal = forwardRef<BottomSheetModalRef, BottomSheetModal
               bounces={false}
             >
               <View onLayout={(event) => {
+                if (isPanning) {
+                  // Ignore layout changes while actively dragging to prevent
+                  // jitter from rapid height recalculations
+                  return;
+                }
+
                 const height = event.nativeEvent.layout.height;
                 // Update only if height has meaningfully changed to avoid rapid state updates.
                 // Using a small threshold like 1px.
