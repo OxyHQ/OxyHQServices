@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import Avatar from '../components/Avatar';
@@ -11,7 +11,7 @@ interface ProfileScreenProps extends BaseScreenProps {
 }
 
 const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, goBack }) => {
-    const { oxyServices } = useOxy();
+    const { oxyServices, user: currentUser } = useOxy();
     const [profile, setProfile] = useState<any>(null);
     const [karmaTotal, setKarmaTotal] = useState<number | null>(null);
     const [postsCount, setPostsCount] = useState<number | null>(null);
@@ -27,15 +27,38 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     const primaryColor = '#d169e5';
 
     useEffect(() => {
+        console.log('ProfileScreen - userId:', userId);
+        console.log('ProfileScreen - username:', username);
+        
+        if (!userId) {
+            setError('No user ID provided');
+            setIsLoading(false);
+            return;
+        }
+
         setIsLoading(true);
         setError(null);
 
         // Load user profile and karma total
         Promise.all([
-            oxyServices.getUserById(userId),
-            oxyServices.getUserKarmaTotal ? oxyServices.getUserKarmaTotal(userId) : Promise.resolve({ total: undefined })
+            oxyServices.getUserById(userId).catch(err => {
+                console.error('getUserById error:', err);
+                // If this is the current user and the API call fails, use current user data as fallback
+                if (currentUser && currentUser.id === userId) {
+                    console.log('API call failed, using current user as fallback:', currentUser);
+                    return currentUser;
+                }
+                throw err;
+            }),
+            oxyServices.getUserKarmaTotal ? 
+                oxyServices.getUserKarmaTotal(userId).catch(err => {
+                    console.warn('getUserKarmaTotal error:', err);
+                    return { total: undefined };
+                }) : 
+                Promise.resolve({ total: undefined })
         ])
             .then(([profileRes, karmaRes]) => {
+                console.log('Profile loaded:', profileRes);
                 setProfile(profileRes);
                 setKarmaTotal(typeof karmaRes.total === 'number' ? karmaRes.total : null);
 
@@ -46,7 +69,27 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 setFollowersCount(Math.floor(Math.random() * 200));
                 setFollowingCount(Math.floor(Math.random() * 100));
             })
-            .catch((err: any) => setError(err.message || 'Failed to load profile'))
+            .catch((err: any) => {
+                console.error('Profile loading error:', err);
+                // Provide user-friendly error messages based on the error type
+                let errorMessage = 'Failed to load profile';
+                
+                if (err.status === 404 || err.message?.includes('not found') || err.message?.includes('Resource not found')) {
+                    if (currentUser && currentUser.id === userId) {
+                        errorMessage = 'Unable to load your profile from the server. This may be due to a temporary service issue.';
+                    } else {
+                        errorMessage = 'This user profile could not be found or may have been removed.';
+                    }
+                } else if (err.status === 403) {
+                    errorMessage = 'You do not have permission to view this profile.';
+                } else if (err.status === 500) {
+                    errorMessage = 'Server error occurred while loading the profile. Please try again later.';
+                } else if (err.message) {
+                    errorMessage = err.message;
+                }
+                
+                setError(errorMessage);
+            })
             .finally(() => setIsLoading(false));
     }, [userId]);
 
@@ -60,8 +103,22 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
     if (error) {
         return (
-            <View style={[styles.container, { backgroundColor, justifyContent: 'center' }]}>
-                <Text style={{ color: '#D32F2F', textAlign: 'center' }}>{error}</Text>
+            <View style={[styles.container, { backgroundColor }]}>
+                <View style={styles.errorHeader}>
+                    {goBack && (
+                        <TouchableOpacity onPress={goBack} style={styles.backButton}>
+                            <Ionicons name="arrow-back" size={24} color={textColor} />
+                        </TouchableOpacity>
+                    )}
+                    <Text style={[styles.errorTitle, { color: textColor }]}>Profile Error</Text>
+                </View>
+                <View style={styles.errorContent}>
+                    <Ionicons name="alert-circle" size={48} color="#D32F2F" style={styles.errorIcon} />
+                    <Text style={[styles.errorText, { color: '#D32F2F' }]}>{error}</Text>
+                    <Text style={[styles.errorSubtext, { color: textColor }]}>
+                        This could happen if the user doesn't exist or the profile service is unavailable.
+                    </Text>
+                </View>
             </View>
         );
     }
@@ -150,6 +207,43 @@ const styles = StyleSheet.create({
     statItem: { flex: 1, alignItems: 'center', minWidth: 50, marginBottom: 12 },
     karmaLabel: { fontSize: 14, marginBottom: 2, textAlign: 'center', color: '#a0a0a0' },
     karmaAmount: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', letterSpacing: 0.2 },
+    // Error handling styles
+    errorHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#E0E0E0',
+    },
+    backButton: {
+        padding: 8,
+        marginRight: 16,
+    },
+    errorTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+    },
+    errorContent: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        paddingHorizontal: 32,
+    },
+    errorIcon: {
+        marginBottom: 16,
+    },
+    errorText: {
+        fontSize: 18,
+        fontWeight: '600',
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    errorSubtext: {
+        fontSize: 14,
+        textAlign: 'center',
+        opacity: 0.7,
+    },
 });
 
 export default ProfileScreen;

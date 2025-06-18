@@ -122,4 +122,11 @@ export interface OxyProviderProps {
    * @default "oxy"
    */
   storageKeyPrefix?: string;
+
+  /**
+   * Whether to show the internal toaster in the bottom sheet
+   * If false, only the provider's global toaster will be shown
+   * @default true
+   */
+  showInternalToaster?: boolean;
 }

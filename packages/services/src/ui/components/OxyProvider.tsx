@@ -29,6 +29,7 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
         contextOnly = false,
         onAuthStateChange,
         storageKeyPrefix,
+        showInternalToaster = true,
         ...bottomSheetProps
     } = props;
 
@@ -65,10 +66,12 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
                             {children}
                         </SafeAreaProvider>
                     </BottomSheetModalProvider>
-                    {/* Global Toaster for app-wide notifications outside of Modal contexts */}
-                    <View style={styles.toasterContainer}>
-                        <Toaster position="top-center" swipeToDismissDirection="left" offset={15} />
-                    </View>
+                    {/* Global Toaster for app-wide notifications outside of Modal contexts - only show if internal toaster is disabled */}
+                    {!showInternalToaster && (
+                        <View style={styles.toasterContainer}>
+                            <Toaster position="top-center" swipeToDismissDirection="left" offset={15} />
+                        </View>
+                    )}
                 </GestureHandlerRootView>
             </FontLoader>
         </OxyContextProvider>
@@ -90,6 +93,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     customStyles = {},
     bottomSheetRef,
     autoPresent = false,
+    showInternalToaster = true,
 }) => {
     // Use the internal ref (which is passed as a prop from OxyProvider)
     const modalRef = useRef<BottomSheetModalRef>(null);
@@ -375,7 +379,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 const contentHeightPercent = Math.min(Math.ceil((layoutHeight + 40) / screenHeight * 100), 90);
                 const contentHeightPercentStr = `${contentHeightPercent}%`;
                 const firstPoint = layoutHeight / screenHeight > 0.6 ? contentHeightPercentStr : snapPoints[0];
-                setSnapPoints([firstPoint, snapPoints[1] || '90%']);
+                setSnapPoints([firstPoint, snapPoints[1]]);
             }
         }
     }, [keyboardVisible, screenHeight, snapPoints]);
@@ -400,31 +404,6 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
 
     // Handle sheet index changes
     const handleSheetChanges = useCallback((index: number) => {
-        if (index === -1 && onClose) {
-            onClose();
-        } else if (index === 1) {
-            // Only animate if we actually changed to index 1
-            // Pulse animation when expanded to full height
-            Animated.sequence([
-                Animated.timing(handleScaleAnim, {
-                    toValue: 1.2,
-                    duration: 200,
-                    useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
-                }),
-                Animated.timing(handleScaleAnim, {
-                    toValue: 1,
-                    duration: 200,
-                    useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
-                }),
-            ]).start();
-        } else if (index === 0 && keyboardVisible) {
-            // If keyboard is visible and user tries to go to a smaller snap point,
-            // force the sheet to stay at the highest point for better visibility
-            // Use requestAnimationFrame to avoid conflicts with ongoing animations
-            requestAnimationFrame(() => {
-                modalRef.current?.snapToIndex(1);
-            });
-        }
     }, [onClose, handleScaleAnim, keyboardVisible]);
 
     return (
@@ -434,22 +413,6 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             snapPoints={snapPoints}
             enablePanDownToClose
             backdropComponent={renderBackdrop}
-            handleComponent={() => (
-                <Animated.View
-                    style={{
-                        alignItems: 'center',
-                        paddingVertical: 8,
-                        ...(Platform.OS === 'ios' ? {
-                            transform: [{ scale: handleScaleAnim }]
-                        } : {})
-                    }}
-                >
-                    <View style={[
-                        styles.indicator,
-                        { backgroundColor: customStyles.handleColor || (theme === 'light' ? '#CCCCCC' : '#444444') }
-                    ]} />
-                </Animated.View>
-            )}
             backgroundStyle={[
                 getBackgroundStyle(),
                 {
@@ -463,6 +426,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 height: 4,
             }}
             onChange={handleSheetChanges}
+            style={styles.bottomSheetContainer}
             // Adding additional props to improve layout behavior
             keyboardBehavior="interactive"
             keyboardBlurBehavior="restore"
@@ -485,40 +449,54 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 ]}
                 onLayout={handleContentLayout}
             >
-                <Animated.View
-                    style={[
-                        styles.animatedContent,
-                        // Apply animations - conditionally for Android
-                        Platform.OS === 'android' ?
-                            {
-                                opacity: 1,  // No fade animation on Android
-                            } : {
-                                opacity: fadeAnim,
-                                transform: [{ translateY: slideAnim }]
-                            }
-                    ]}
-                >
-                    <OxyRouter
-                        oxyServices={oxyServices}
-                        initialScreen={initialScreen}
-                        onClose={handleClose}
-                        onAuthenticated={handleAuthenticated}
-                        theme={theme}
-                        adjustSnapPoints={adjustSnapPoints}
-                        navigationRef={navigationRef}
-                    />
-                </Animated.View>
+                <View style={styles.centeredContentWrapper}>
+                    <Animated.View
+                        style={[
+                            styles.animatedContent,
+                            // Apply animations - conditionally for Android
+                            Platform.OS === 'android' ?
+                                {
+                                    opacity: 1,  // No fade animation on Android
+                                } : {
+                                    opacity: fadeAnim,
+                                    transform: [{ translateY: slideAnim }]
+                                }
+                        ]}
+                    >
+                        <OxyRouter
+                            oxyServices={oxyServices}
+                            initialScreen={initialScreen}
+                            onClose={handleClose}
+                            onAuthenticated={handleAuthenticated}
+                            theme={theme}
+                            adjustSnapPoints={adjustSnapPoints}
+                            navigationRef={navigationRef}
+                        />
+                    </Animated.View>
+                </View>
             </BottomSheetScrollView>
-            <View style={styles.toasterContainer}>
-                <Toaster position="top-center" swipeToDismissDirection="left" offset={15} />
-            </View>
+            {/* Internal toaster - only show if showInternalToaster is true */}
+            {showInternalToaster && (
+                <View style={styles.toasterContainer}>
+                    <Toaster position="top-center" swipeToDismissDirection="left" />
+                </View>
+            )}
         </BottomSheetModal>
     );
 };
 
 const styles = StyleSheet.create({
+    bottomSheetContainer: {
+        maxWidth: 800,
+        width: '100%',
+        marginHorizontal: 'auto',
+    },
     contentContainer: {
         width: '100%',
+    },
+    centeredContentWrapper: {
+        width: '100%',
+        marginHorizontal: 'auto',
     },
     animatedContent: {
         width: '100%',
@@ -526,7 +504,6 @@ const styles = StyleSheet.create({
     indicator: {
         width: 40,
         height: 4,
-        alignSelf: 'center',
         marginTop: 8,
         marginBottom: 8,
         borderRadius: 35,
@@ -541,6 +518,7 @@ const styles = StyleSheet.create({
         position: 'relative',
         backgroundColor: 'transparent',
         ...Platform.select({
+
             android: {
                 height: '100%',
                 width: '100%',
