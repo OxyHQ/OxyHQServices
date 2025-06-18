@@ -67,7 +67,21 @@ const readFile = async (id: string) => {
   const bucket = initGridFS();
   if (!bucket) throw new Error('GridFS not initialized');
   
-  return bucket.openDownloadStream(new mongoose.Types.ObjectId(id));
+  try {
+    // First check if the file exists before attempting to open download stream
+    const files = await bucket.find({ _id: new mongoose.Types.ObjectId(id) }).toArray();
+    if (files.length === 0) {
+      return null; // File not found
+    }
+    
+    return bucket.openDownloadStream(new mongoose.Types.ObjectId(id));
+  } catch (error: any) {
+    // Handle GridFS errors
+    if (error.code === 'ENOENT' || error.message?.includes('FileNotFound')) {
+      return null; // File not found
+    }
+    throw error; // Re-throw other errors
+  }
 };
 
 // Helper function to delete file from GridFS
@@ -75,7 +89,20 @@ const deleteFile = async (id: string) => {
   const bucket = initGridFS();
   if (!bucket) throw new Error('GridFS not initialized');
 
-  return bucket.delete(new mongoose.Types.ObjectId(id));
+  try {
+    // Check if file exists before attempting deletion
+    const exists = await fileExists(id);
+    if (!exists) {
+      throw new Error(`File with id ${id} not found`);
+    }
+
+    return await bucket.delete(new mongoose.Types.ObjectId(id));
+  } catch (error: any) {
+    if (error.code === 'ENOENT' || error.message?.includes('FileNotFound')) {
+      throw new Error(`File with id ${id} not found`);
+    }
+    throw error;
+  }
 };
 
 // Helper function to find files
@@ -83,7 +110,27 @@ const findFiles = async (query: any) => {
   const bucket = initGridFS();
   if (!bucket) throw new Error('GridFS not initialized');
 
-  return bucket.find(query).toArray();
+  try {
+    return await bucket.find(query).toArray();
+  } catch (error: any) {
+    console.error('Error finding files in GridFS:', error);
+    // Return empty array instead of throwing to prevent crashes
+    return [];
+  }
+};
+
+// Helper function to check if file exists
+const fileExists = async (id: string): Promise<boolean> => {
+  const bucket = initGridFS();
+  if (!bucket) throw new Error('GridFS not initialized');
+
+  try {
+    const files = await bucket.find({ _id: new mongoose.Types.ObjectId(id) }).limit(1).toArray();
+    return files.length > 0;
+  } catch (error: any) {
+    console.error('Error checking file existence:', error);
+    return false;
+  }
 };
 
 export {
@@ -92,5 +139,6 @@ export {
   writeFile,
   readFile,
   deleteFile,
-  findFiles
+  findFiles,
+  fileExists
 };

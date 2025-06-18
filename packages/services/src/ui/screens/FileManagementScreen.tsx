@@ -43,6 +43,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         // - Available content width = containerWidth - 32
         const availableContentWidth = containerWidth - 32;
         console.log('[FileManagementScreen] Available content width:', availableContentWidth);
+        console.log('[FileManagementScreen] Spacing fix applied: 4px uniform gap both horizontal and vertical');
     }, [containerWidth]);
     const [files, setFiles] = useState<FileMetadata[]>([]);
     const [loading, setLoading] = useState(true);
@@ -354,7 +355,19 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         } catch (error: any) {
             console.error('Delete error:', error);
             console.error('Error details:', error.response?.data || error.message);
-            toast.error(error.message || 'Failed to delete file');
+            
+            // Provide specific error messages
+            if (error.message?.includes('File not found') || error.message?.includes('404')) {
+                toast.error('File not found. It may have already been deleted.');
+                // Still reload files to refresh the list
+                setTimeout(async () => {
+                    await loadFiles();
+                }, 500);
+            } else if (error.message?.includes('permission') || error.message?.includes('403')) {
+                toast.error('You do not have permission to delete this file.');
+            } else {
+                toast.error(error.message || 'Failed to delete file');
+            }
         } finally {
             setDeleting(null);
         }
@@ -418,7 +431,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     // Method 2: Fallback to fetch download
                     const response = await fetch(downloadUrl);
                     if (!response.ok) {
-                        throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+                        if (response.status === 404) {
+                            throw new Error('File not found. It may have been deleted.');
+                        } else {
+                            throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+                        }
                     }
                     
                     const blob = await response.blob();
@@ -497,10 +514,20 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             setFileContent(content);
                         }
                     } else {
+                        if (response.status === 404) {
+                            toast.error('File not found. It may have been deleted.');
+                        } else {
+                            toast.error(`Failed to load file: ${response.status} ${response.statusText}`);
+                        }
                         setFileContent(null);
                     }
-                } catch (error) {
+                } catch (error: any) {
                     console.error('Failed to load file content:', error);
+                    if (error.message?.includes('404') || error.message?.includes('not found')) {
+                        toast.error('File not found. It may have been deleted.');
+                    } else {
+                        toast.error('Failed to load file content');
+                    }
                     setFileContent(null);
                 }
             } else {
@@ -537,7 +564,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         
         // Account for the photoScrollContainer padding (16px on each side = 32px total)
         const scrollContainerPadding = 32; // Total horizontal padding from photoScrollContainer
-        const gaps = (itemsPerRow - 1) * 4; // Gap between items
+        const gaps = (itemsPerRow - 1) * 4; // Gap between items (4px)
         const availableWidth = containerWidth - scrollContainerPadding;
         const itemWidth = (availableWidth - gaps) / itemsPerRow;
         
@@ -550,7 +577,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         width: itemWidth,
                         height: itemWidth,
                         marginRight: (index + 1) % itemsPerRow === 0 ? 0 : 4,
-                        marginBottom: 4,
                     }
                 ]}
                 onPress={() => handleFileOpen(photo)}
@@ -605,7 +631,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     {
                         width,
                         height,
-                        marginRight: isLast ? 0 : 4,
                     }
                 ]}
                 onPress={() => handleFileOpen(photo)}
@@ -647,41 +672,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                 console.error('Photo failed to load:', e);
                             }}
                         />
-                    )}
-                    
-                    {/* Hover overlay for web */}
-                    {Platform.OS === 'web' && (
-                        <div 
-                            className="photo-overlay"
-                            style={{
-                                position: 'absolute',
-                                top: 0,
-                                left: 0,
-                                right: 0,
-                                bottom: 0,
-                                backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                                opacity: 0,
-                                transition: 'opacity 0.2s ease',
-                                display: 'flex',
-                                justifyContent: 'flex-end',
-                                flexDirection: 'column',
-                                padding: '12px',
-                                borderRadius: '6px',
-                            }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.opacity = '1';
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.opacity = '0';
-                            }}
-                        >
-                            <div style={{ color: '#FFFFFF', fontSize: '14px', fontWeight: '600', marginBottom: '4px' }}>
-                                {photo.filename.length > 20 ? photo.filename.substring(0, 20) + '...' : photo.filename}
-                            </div>
-                            <div style={{ color: '#CCCCCC', fontSize: '12px' }}>
-                                {formatFileSize(photo.length)}
-                            </div>
-                        </div>
                     )}
                 </View>
             </TouchableOpacity>
@@ -915,8 +905,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                                 styles.justifiedPhotoRow, 
                                                 { 
                                                     height: rowHeight,
-                                                    marginBottom: 4,
                                                     maxWidth: containerWidth - 32, // Account for scroll container padding
+                                                    gap: 4, // Add horizontal gap between photos in row
                                                 }
                                             ]}
                                         >
@@ -957,7 +947,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         
         // Account for the photoScrollContainer padding (16px on each side = 32px total)
         const scrollContainerPadding = 32; // Total horizontal padding from photoScrollContainer
-        const gaps = (itemsPerRow - 1) * 2; // Gap between items
+        const gaps = (itemsPerRow - 1) * 4; // Gap between items
         const availableWidth = containerWidth - scrollContainerPadding;
         const itemWidth = (availableWidth - gaps) / itemsPerRow;
         
@@ -1008,16 +998,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             }}
                         />
                     )}
-                    
-                    {/* Photo overlay with file info - only show on hover/press */}
-                    <View style={styles.photoOverlay}>
-                        <Text style={styles.photoName} numberOfLines={1}>
-                            {photo.filename}
-                        </Text>
-                        <Text style={styles.photoSize}>
-                            {formatFileSize(photo.length)}
-                        </Text>
-                    </View>
                 </View>
             </TouchableOpacity>
         );
@@ -2136,11 +2116,10 @@ const styles = StyleSheet.create({
     photoGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: 2,
+        gap: 4,
         justifyContent: 'flex-start',
     },
     photoItem: {
-        marginBottom: 2,
         borderRadius: 8,
         overflow: 'hidden',
     },
@@ -2154,26 +2133,6 @@ const styles = StyleSheet.create({
     photoImage: {
         width: '100%',
         height: '100%',
-    },
-    photoOverlay: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.7)',
-        padding: 6,
-        borderBottomLeftRadius: 8,
-        borderBottomRightRadius: 8,
-    },
-    photoName: {
-        color: '#FFFFFF',
-        fontSize: 12,
-        fontWeight: '500',
-        marginBottom: 2,
-    },
-    photoSize: {
-        color: '#CCCCCC',
-        fontSize: 10,
     },
     
     // Justified Grid styles
@@ -2193,7 +2152,6 @@ const styles = StyleSheet.create({
     },
     justifiedPhotoRow: {
         flexDirection: 'row',
-        marginBottom: 4,
     },
     justifiedPhotoItem: {
         borderRadius: 6,
@@ -2212,30 +2170,6 @@ const styles = StyleSheet.create({
         width: '100%',
         height: '100%',
         borderRadius: 6,
-    },
-    justifiedPhotoHoverOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
-        opacity: 0,
-        justifyContent: 'flex-end',
-        padding: 12,
-    },
-    justifiedPhotoInfo: {
-        // Web styles will be applied inline
-    },
-    justifiedPhotoName: {
-        color: '#FFFFFF',
-        fontSize: 14,
-        fontWeight: '600',
-        marginBottom: 4,
-    },
-    justifiedPhotoSize: {
-        color: '#CCCCCC',
-        fontSize: 12,
     },
     
     // Simple Photo Grid styles  

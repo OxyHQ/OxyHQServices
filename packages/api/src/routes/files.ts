@@ -1,7 +1,7 @@
 import { Router, Request, Response, RequestHandler } from "express";
 import mongoose from 'mongoose';
 import { authMiddleware } from '../middleware/auth';
-import { upload, writeFile, readFile, deleteFile, findFiles } from '../utils/mongoose-gridfs';
+import { upload, writeFile, readFile, deleteFile, findFiles, fileExists } from '../utils/mongoose-gridfs';
 
 interface GridFSFile {
   _id: mongoose.Types.ObjectId;
@@ -129,6 +129,54 @@ router.delete("/:id", (async (req: AuthenticatedRequest, res: Response) => {
   }
 }) as RequestHandler);
 
+// Cleanup broken file references
+router.post("/cleanup/:userID", (async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.userID)) {
+      return res.status(400).json({ message: "Invalid userID" });
+    }
+
+    if (!req.user?._id || req.user._id.toString() !== req.params.userID) {
+      return res.status(403).json({ message: "Unauthorized to cleanup files for this user" });
+    }
+
+    // Get all file metadata for the user
+    const files = await findFiles({ "metadata.userID": new mongoose.Types.ObjectId(req.params.userID) });
+    const brokenFiles = [];
+    const validFiles = [];
+
+    // Check each file's actual existence in GridFS
+    for (const file of files) {
+      try {
+        const readStream = await readFile(file._id.toString());
+        if (readStream) {
+          validFiles.push(file);
+          // Close the stream immediately since we're just checking existence
+          readStream.destroy();
+        } else {
+          brokenFiles.push(file);
+        }
+      } catch (error: any) {
+        brokenFiles.push(file);
+      }
+    }
+
+    // For now, just return the count of broken files
+    // In the future, you could implement actual cleanup logic here
+    res.json({
+      message: "File validation completed",
+      total: files.length,
+      valid: validFiles.length,
+      broken: brokenFiles.length,
+      brokenFileIds: brokenFiles.map(f => f._id.toString())
+    });
+
+  } catch (error) {
+    console.error('Cleanup files error:', error);
+    res.status(500).json({ message: "Error during file cleanup", error });
+  }
+}) as RequestHandler);
+
 // Helper function to handle streaming files
 async function streamFileHandler(req: Request, res: Response) {
   if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -148,11 +196,27 @@ async function streamFileHandler(req: Request, res: Response) {
       'Expires': new Date(Date.now() + 31536000000).toUTCString()
     });
     
+    // Handle stream errors to prevent server crashes
+    readStream.on('error', (streamErr: any) => {
+      console.error(`[Files] Stream error for file ${req.params.id}:`, streamErr);
+      if (!res.headersSent) {
+        if (streamErr.code === 'ENOENT' || streamErr.message?.includes('FileNotFound')) {
+          res.status(404).json({ message: "File not found" });
+        } else {
+          res.status(500).json({ message: "Error streaming file", error: streamErr.message });
+        }
+      }
+    });
+    
     readStream.pipe(res);
   } catch (err: any) {
     console.error(`[Files] Error reading file ${req.params.id}:`, err);
     if (!res.headersSent) {
-      res.status(500).json({ message: "Error retrieving file", error: err.message });
+      if (err.code === 'ENOENT' || err.message?.includes('FileNotFound')) {
+        res.status(404).json({ message: "File not found" });
+      } else {
+        res.status(500).json({ message: "Error retrieving file", error: err.message });
+      }
     }
   }
 }
