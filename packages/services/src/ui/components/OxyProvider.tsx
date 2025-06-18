@@ -350,7 +350,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         setContainerWidth(layoutWidth);
         
         // Debug: log container dimensions
-        console.log('[OxyProvider] Container dimensions:', { width: layoutWidth, height: layoutHeight });
+        console.log('[OxyProvider] Container dimensions (full):', { width: layoutWidth, height: layoutHeight });
 
         // Update snap points based on new content height
         if (keyboardVisible) {

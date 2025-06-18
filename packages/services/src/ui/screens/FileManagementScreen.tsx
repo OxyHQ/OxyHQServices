@@ -36,7 +36,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     
     // Debug: log the actual container width
     useEffect(() => {
-        console.log('[FileManagementScreen] Container width:', containerWidth);
+        console.log('[FileManagementScreen] Container width (full):', containerWidth);
+        // Padding structure:
+        // - containerWidth = full bottom sheet container width (measured from OxyProvider)
+        // - photoScrollContainer adds padding: 16 (32px total horizontal padding)
+        // - Available content width = containerWidth - 32
+        const availableContentWidth = containerWidth - 32;
+        console.log('[FileManagementScreen] Available content width:', availableContentWidth);
     }, [containerWidth]);
     const [files, setFiles] = useState<FileMetadata[]>([]);
     const [loading, setLoading] = useState(true);
@@ -529,9 +535,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         if (containerWidth > 768) itemsPerRow = 4; // Desktop/tablet
         else if (containerWidth > 480) itemsPerRow = 3; // Large mobile
         
-        const containerPadding = 32; // Total horizontal padding
+        // Account for the photoScrollContainer padding (16px on each side = 32px total)
+        const scrollContainerPadding = 32; // Total horizontal padding from photoScrollContainer
         const gaps = (itemsPerRow - 1) * 4; // Gap between items
-        const itemWidth = (containerWidth - containerPadding - gaps) / itemsPerRow;
+        const availableWidth = containerWidth - scrollContainerPadding;
+        const itemWidth = (availableWidth - gaps) / itemsPerRow;
         
         return (
             <TouchableOpacity
@@ -891,8 +899,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                         totalAspectRatio += aspectRatio;
                                     });
                                     
-                                    // Calculate the height that makes the row fill the container width
-                                    const availableWidth = containerWidth - (gap * (row.length - 1));
+                                    // Calculate the height that makes the row fill the available width
+                                    // Account for photoScrollContainer padding (32px total) and gaps between photos
+                                    const scrollContainerPadding = 32;
+                                    const availableWidth = containerWidth - scrollContainerPadding - (gap * (row.length - 1));
                                     const calculatedHeight = availableWidth / totalAspectRatio;
                                     
                                     // Clamp height for visual consistency
@@ -906,7 +916,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                                 { 
                                                     height: rowHeight,
                                                     marginBottom: 4,
-                                                    maxWidth: containerWidth,
+                                                    maxWidth: containerWidth - 32, // Account for scroll container padding
                                                 }
                                             ]}
                                         >
@@ -945,9 +955,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         if (containerWidth > 768) itemsPerRow = 6; // Tablet/Desktop
         else if (containerWidth > 480) itemsPerRow = 4; // Large mobile
         
-        const containerPadding = 32; // Total horizontal padding
+        // Account for the photoScrollContainer padding (16px on each side = 32px total)
+        const scrollContainerPadding = 32; // Total horizontal padding from photoScrollContainer
         const gaps = (itemsPerRow - 1) * 2; // Gap between items
-        const itemWidth = (containerWidth - containerPadding - gaps) / itemsPerRow;
+        const availableWidth = containerWidth - scrollContainerPadding;
+        const itemWidth = (availableWidth - gaps) / itemsPerRow;
         
         return (
             <TouchableOpacity
