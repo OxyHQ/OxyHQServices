@@ -103,6 +103,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
 
     // Track content height for dynamic sizing
     const [contentHeight, setContentHeight] = useState<number>(0);
+    const [containerWidth, setContainerWidth] = useState<number>(800); // Track actual container width
     const screenHeight = Dimensions.get('window').height;
 
     // Set up effect to sync the internal ref with our modal ref
@@ -342,10 +343,14 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         }
     }, [keyboardVisible, contentHeight, screenHeight]);
 
-    // Handle content layout changes to measure height
+    // Handle content layout changes to measure height and width
     const handleContentLayout = useCallback((event: any) => {
-        const layoutHeight = event.nativeEvent.layout.height;
+        const { height: layoutHeight, width: layoutWidth } = event.nativeEvent.layout;
         setContentHeight(layoutHeight);
+        setContainerWidth(layoutWidth);
+        
+        // Debug: log container dimensions
+        console.log('[OxyProvider] Container dimensions:', { width: layoutWidth, height: layoutHeight });
 
         // Update snap points based on new content height
         if (keyboardVisible) {
@@ -450,6 +455,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                             theme={theme}
                             adjustSnapPoints={adjustSnapPoints}
                             navigationRef={navigationRef}
+                            containerWidth={containerWidth}
                         />
                     </Animated.View>
                 </View>

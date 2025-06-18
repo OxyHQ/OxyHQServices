@@ -13,6 +13,7 @@ export interface BaseScreenProps {
   onClose?: () => void;
   onAuthenticated?: (user: User) => void;
   theme: 'light' | 'dark';
+  containerWidth?: number;
 }
 
 /**
@@ -34,6 +35,7 @@ export interface OxyRouterProps {
   theme: 'light' | 'dark';
   adjustSnapPoints: (snapPoints: string[]) => void;
   navigationRef?: React.MutableRefObject<((screen: string, props?: Record<string, any>) => void) | null>;
+  containerWidth?: number;
 }
 
 /**

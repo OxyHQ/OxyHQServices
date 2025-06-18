@@ -109,6 +109,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
     theme,
     adjustSnapPoints,
     navigationRef,
+    containerWidth,
 }) => {
     const [currentScreen, setCurrentScreen] = useState<string>(initialScreen);
     const [screenHistory, setScreenHistory] = useState<string[]>([initialScreen]);
@@ -232,6 +233,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
                 onClose={onClose}
                 onAuthenticated={onAuthenticated}
                 theme={theme}
+                containerWidth={containerWidth}
                 {...screenProps}
             />
         );
