@@ -217,44 +217,6 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
             toast.error(`There was a problem signing out: ${errorMessage}`);
         }
-        
-        /* ORIGINAL CODE WITH CONFIRMATION - TEMPORARILY DISABLED
-        Alert.alert(
-            'Sign Out All',
-            'Are you sure you want to sign out of all accounts on this device?',
-            [
-                {
-                    text: 'Cancel',
-                    style: 'cancel',
-                    onPress: () => {
-                        console.log('🔴 User cancelled logout');
-                    }
-                },
-                {
-                    text: 'Sign Out All',
-                    style: 'destructive',
-                    onPress: async () => {
-                        console.log('🔴 CONFIRMATION: User confirmed logout all - proceeding...');
-                        try {
-                            console.log('🔴 CONFIRMATION: About to call logoutAll()');
-                            await logoutAll();
-                            console.log('🔴 CONFIRMATION: logoutAll() completed successfully');
-                            toast.success('All accounts signed out successfully!');
-                            if (onClose) {
-                                console.log('🔴 CONFIRMATION: Calling onClose');
-                                onClose();
-                            }
-                        } catch (error) {
-                            console.error('🔴 CONFIRMATION: Logout all failed:', error);
-                            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-                            toast.error(`There was a problem signing out: ${errorMessage}`);
-                        }
-                    },
-                },
-            ],
-            { cancelable: true }
-        );
-        */
     };
 
     // Device session management functions

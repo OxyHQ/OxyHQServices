@@ -10,6 +10,8 @@ import AccountSwitcherScreen from '../screens/AccountSwitcherScreen';
 import SessionManagementScreen from '../screens/SessionManagementScreen';
 import AccountOverviewScreen from '../screens/AccountOverviewScreen';
 import AccountSettingsScreen from '../screens/AccountSettingsScreen';
+import PremiumSubscriptionScreen from '../screens/PremiumSubscriptionScreen';
+import BillingManagementScreen from '../screens/BillingManagementScreen';
 import AppInfoScreen from '../screens/AppInfoScreen';
 import KarmaCenterScreen from '../screens/karma/KarmaCenterScreen';
 import KarmaLeaderboardScreen from '../screens/karma/KarmaLeaderboardScreen';
@@ -51,6 +53,14 @@ const routes: Record<string, RouteConfig> = {
     AccountSettings: {
         component: AccountSettingsScreen,
         snapPoints: ['60%', '100%'],
+    },
+    PremiumSubscription: {
+        component: PremiumSubscriptionScreen,
+        snapPoints: ['70%', '100%'],
+    },
+    BillingManagement: {
+        component: BillingManagementScreen,
+        snapPoints: ['70%', '100%'],
     },
     AppInfo: {
         component: AppInfoScreen,

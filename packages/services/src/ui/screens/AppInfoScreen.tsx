@@ -18,6 +18,8 @@ import { packageInfo } from '../../constants/version';
 import { toast } from '../../lib/sonner';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
+import OxyServicesLogo from '../../assets/icons/OxyServices';
+
 
 interface SystemInfo {
     platform: string;
@@ -269,6 +271,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
         value: string; 
         copyable?: boolean;
         icon?: string;
+        iconComponent?: React.ReactNode;
         color?: string;
         isFirst?: boolean;
         isLast?: boolean;
@@ -279,6 +282,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
         value, 
         copyable = false,
         icon = 'information-circle',
+        iconComponent,
         color = '#8E8E93',
         isFirst = false,
         isLast = false,
@@ -306,7 +310,11 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 disabled={!isInteractive}
             >
                 <View style={styles.settingInfo}>
-                    <OxyIcon name={icon} size={20} color={color} style={styles.settingIcon} />
+                    {iconComponent ? (
+                        React.cloneElement(iconComponent as React.ReactElement, { style: styles.settingIcon })
+                    ) : (
+                        <OxyIcon name={icon} size={20} color={color} style={styles.settingIcon} />
+                    )}
                     <View style={styles.settingDetails}>
                         <Text style={styles.settingLabel}>{label}</Text>
                         <Text style={[
@@ -343,7 +351,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         label="Name" 
                         value={packageInfo.name} 
                         copyable 
-                        icon="apps"
+                        iconComponent={<OxyServicesLogo width={20} height={20} />}
                         color="#007AFF"
                         isFirst
                     />

@@ -258,18 +258,34 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                     </TouchableOpacity>
 
                     <TouchableOpacity 
-                        style={[styles.settingItem, styles.lastSettingItem]}
-                        onPress={() => toast.info('Subscription management coming soon!')}
+                        style={[styles.settingItem]}
+                        onPress={() => navigate?.('PremiumSubscription')}
                     >
                         <View style={styles.settingInfo}>
-                            <OxyIcon name="card" size={20} color="#5856D6" style={styles.settingIcon} />
+                            <OxyIcon name="star" size={20} color="#FFD700" style={styles.settingIcon} />
                             <View>
-                                <Text style={styles.settingLabel}>Subscription & Billing</Text>
-                                <Text style={styles.settingDescription}>Manage your subscription and payments</Text>
+                                <Text style={styles.settingLabel}>Oxy+ Subscriptions</Text>
+                                <Text style={styles.settingDescription}>{user.isPremium ? 'Manage your premium plan' : 'Upgrade to premium features'}</Text>
                             </View>
                         </View>
                         <OxyIcon name="chevron-forward" size={16} color="#ccc" />
                     </TouchableOpacity>
+
+                    {user.isPremium && (
+                        <TouchableOpacity 
+                            style={[styles.settingItem, styles.lastSettingItem]}
+                            onPress={() => navigate?.('BillingManagement')}
+                        >
+                            <View style={styles.settingInfo}>
+                                <OxyIcon name="card" size={20} color="#34C759" style={styles.settingIcon} />
+                                <View>
+                                    <Text style={styles.settingLabel}>Billing Management</Text>
+                                    <Text style={styles.settingDescription}>Payment methods and invoices</Text>
+                                </View>
+                            </View>
+                            <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                        </TouchableOpacity>
+                    )}
                 </View>
 
                 {/* Additional Accounts */}
