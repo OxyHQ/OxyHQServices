@@ -34,8 +34,10 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     theme,
     navigate,
 }) => {
-    const { user, sessions } = useOxy();
+    const { user, sessions, oxyServices } = useOxy();
     const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
+    const [isRunningSystemCheck, setIsRunningSystemCheck] = useState(false);
+    const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'unknown'>('unknown');
 
     const isDarkTheme = theme === 'dark';
     const backgroundColor = isDarkTheme ? '#121212' : '#f2f2f2';
@@ -62,6 +64,28 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
         // Listen for dimension changes
         const subscription = Dimensions.addEventListener('change', updateDimensions);
 
+        // Check API connection on mount
+        const checkConnection = async () => {
+            setConnectionStatus('checking');
+            const apiBaseUrl = 'http://localhost:3001';
+            try {
+                const response = await fetch(`${apiBaseUrl}/`, {
+                    method: 'GET',
+                    timeout: 3000,
+                } as any);
+                
+                if (response.ok) {
+                    setConnectionStatus('connected');
+                } else {
+                    setConnectionStatus('disconnected');
+                }
+            } catch (error) {
+                setConnectionStatus('disconnected');
+            }
+        };
+
+        checkConnection();
+
         // Cleanup listener on unmount
         return () => {
             subscription?.remove();
@@ -74,6 +98,138 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
             toast.success(`${label} copied to clipboard`);
         } catch (error) {
             toast.error('Failed to copy to clipboard');
+        }
+    };
+
+    const runSystemCheck = async () => {
+        if (!oxyServices) {
+            toast.error('OxyServices not initialized');
+            return;
+        }
+
+        setIsRunningSystemCheck(true);
+        const checks = [];
+        
+        // Get the API base URL from the services instance
+        const apiBaseUrl = 'http://localhost:3001'; // Default for now, could be made configurable
+        
+        try {
+            // Check 1: API Server Health
+            checks.push('🔍 Checking API server connection...');
+            toast.info('Running system checks...', { duration: 2000 });
+            
+            try {
+                const response = await fetch(`${apiBaseUrl}/`, {
+                    method: 'GET',
+                    timeout: 5000,
+                } as any);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    checks.push('✅ API server is responding');
+                    checks.push(`📊 Server stats: ${data.users || 0} users`);
+                    checks.push(`🌐 API URL: ${apiBaseUrl}`);
+                    setConnectionStatus('connected');
+                } else {
+                    checks.push('❌ API server returned error status');
+                    checks.push(`   Status: ${response.status} ${response.statusText}`);
+                    setConnectionStatus('disconnected');
+                }
+            } catch (error) {
+                checks.push('❌ API server connection failed');
+                checks.push(`   Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                checks.push(`   URL: ${apiBaseUrl}`);
+                setConnectionStatus('disconnected');
+            }
+
+            // Check 2: Authentication Status
+            checks.push('🔍 Checking authentication...');
+            if (oxyServices.isAuthenticated()) {
+                checks.push('✅ User is authenticated');
+                
+                // Check 3: Token Validation
+                try {
+                    const isValid = await oxyServices.validate();
+                    if (isValid) {
+                        checks.push('✅ Authentication token is valid');
+                    } else {
+                        checks.push('❌ Authentication token is invalid');
+                    }
+                } catch (error) {
+                    checks.push('❌ Token validation failed');
+                    checks.push(`   Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
+            } else {
+                checks.push('⚠️ User is not authenticated');
+            }
+
+            // Check 4: Session Validation (if user has active sessions)
+            if (user && sessions && sessions.length > 0) {
+                checks.push('🔍 Checking active sessions...');
+                try {
+                    // Just check if we can fetch sessions
+                    const userSessions = await oxyServices.getUserSessions();
+                    checks.push(`✅ Session validation successful (${userSessions.length} sessions)`);
+                } catch (error) {
+                    checks.push('❌ Session validation failed');
+                    checks.push(`   Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                }
+            }
+
+            // Check 5: Platform Information
+            checks.push('🔍 Checking platform information...');
+            checks.push(`✅ Platform: ${Platform.OS} ${Platform.Version || 'Unknown'}`);
+            checks.push(`✅ Screen: ${systemInfo?.screenDimensions.width || 0}x${systemInfo?.screenDimensions.height || 0}`);
+            checks.push(`✅ Environment: ${__DEV__ ? 'Development' : 'Production'}`);
+
+            // Check 6: Package Information
+            checks.push('🔍 Checking package information...');
+            checks.push(`✅ Package: ${packageInfo.name}@${packageInfo.version}`);
+            
+            // Check 7: Memory and Performance (basic)
+            checks.push('🔍 Checking performance metrics...');
+            const memoryUsage = (performance as any).memory;
+            if (memoryUsage) {
+                const usedMB = Math.round(memoryUsage.usedJSHeapSize / 1024 / 1024);
+                const totalMB = Math.round(memoryUsage.totalJSHeapSize / 1024 / 1024);
+                checks.push(`✅ Memory usage: ${usedMB}MB / ${totalMB}MB`);
+            } else {
+                checks.push('✅ Performance metrics not available on this platform');
+            }
+
+            // Final summary
+            const errorCount = checks.filter(check => check.includes('❌')).length;
+            const warningCount = checks.filter(check => check.includes('⚠️')).length;
+            
+            checks.push('');
+            checks.push('📋 SYSTEM CHECK SUMMARY:');
+            if (errorCount === 0 && warningCount === 0) {
+                checks.push('✅ All systems operational');
+                toast.success('System check completed - All systems operational!');
+            } else if (errorCount === 0) {
+                checks.push(`⚠️ ${warningCount} warning(s) found`);
+                toast.warning(`System check completed with ${warningCount} warning(s)`);
+            } else {
+                checks.push(`❌ ${errorCount} error(s) and ${warningCount} warning(s) found`);
+                toast.error(`System check failed with ${errorCount} error(s)`);
+            }
+
+            // Show results in an alert and copy to clipboard
+            const report = checks.join('\n');
+            Alert.alert(
+                'System Check Results',
+                `Check completed. Results copied to clipboard.\n\nSummary: ${errorCount} errors, ${warningCount} warnings`,
+                [
+                    { text: 'View Full Report', onPress: () => copyToClipboard(report, 'System check report') },
+                    { text: 'OK', style: 'default' }
+                ]
+            );
+
+        } catch (error) {
+            toast.error('System check failed to run');
+            console.error('System check error:', error);
+        } finally {
+            setIsRunningSystemCheck(false);
         }
     };
 
@@ -334,9 +490,44 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                     />
                     <InfoRow 
                         label="Connection Status" 
-                        value="Unknown" 
-                        icon="wifi"
-                        color="#8E8E93"
+                        value={
+                            connectionStatus === 'checking' ? 'Checking...' :
+                            connectionStatus === 'connected' ? 'Connected' :
+                            connectionStatus === 'disconnected' ? 'Disconnected' :
+                            'Unknown'
+                        }
+                        icon={
+                            connectionStatus === 'checking' ? 'sync' :
+                            connectionStatus === 'connected' ? 'wifi' :
+                            'wifi-off'
+                        }
+                        color={
+                            connectionStatus === 'checking' ? '#FF9500' :
+                            connectionStatus === 'connected' ? '#34C759' :
+                            '#FF3B30'
+                        }
+                        onPress={async () => {
+                            setConnectionStatus('checking');
+                            const apiBaseUrl = 'http://localhost:3001';
+                            try {
+                                const response = await fetch(`${apiBaseUrl}/`, {
+                                    method: 'GET',
+                                    timeout: 3000,
+                                } as any);
+                                
+                                if (response.ok) {
+                                    setConnectionStatus('connected');
+                                    toast.success('API connection successful');
+                                } else {
+                                    setConnectionStatus('disconnected');
+                                    toast.error(`API server error: ${response.status}`);
+                                }
+                            } catch (error) {
+                                setConnectionStatus('disconnected');
+                                toast.error('Failed to connect to API server');
+                            }
+                        }}
+                        showChevron={true}
                         isLast
                     />
                 </View>
@@ -389,21 +580,37 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                     </TouchableOpacity>
                     
                     <TouchableOpacity 
-                        style={[styles.settingItem, styles.lastSettingItem]}
-                        onPress={() => {
-                            toast.success('All systems operational');
-                        }}
+                        style={[
+                            styles.settingItem, 
+                            styles.lastSettingItem,
+                            isRunningSystemCheck && styles.disabledSettingItem
+                        ]}
+                        onPress={runSystemCheck}
+                        disabled={isRunningSystemCheck}
                     >
                         <View style={styles.settingInfo}>
-                            <OxyIcon name="checkmark-circle" size={20} color="#34C759" style={styles.settingIcon} />
+                            <OxyIcon 
+                                name={isRunningSystemCheck ? "sync" : "checkmark-circle"} 
+                                size={20} 
+                                color={isRunningSystemCheck ? "#FF9500" : "#34C759"} 
+                                style={[
+                                    styles.settingIcon,
+                                    isRunningSystemCheck && styles.spinningIcon
+                                ]} 
+                            />
                             <View style={styles.settingDetails}>
-                                <Text style={styles.settingLabel}>Run System Check</Text>
+                                <Text style={styles.settingLabel}>
+                                    {isRunningSystemCheck ? 'Running System Check...' : 'Run System Check'}
+                                </Text>
                                 <Text style={styles.settingDescription}>
-                                    Verify application health and status
+                                    {isRunningSystemCheck 
+                                        ? 'Checking API, authentication, and platform status...' 
+                                        : 'Verify application health and status'
+                                    }
                                 </Text>
                             </View>
                         </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                        {!isRunningSystemCheck && <OxyIcon name="chevron-forward" size={16} color="#ccc" />}
                     </TouchableOpacity>
                 </View>
             </ScrollView>
@@ -482,17 +689,21 @@ const styles = StyleSheet.create({
         fontWeight: '500',
         color: '#333',
         marginBottom: 2,
-        fontFamily: fontFamilies.phuduMedium,
     },
     settingValue: {
         fontSize: 14,
         color: '#666',
-        fontFamily: fontFamilies.phudu,
     },
     settingDescription: {
         fontSize: 14,
         color: '#999',
-        fontFamily: fontFamilies.phudu,
+    },
+    disabledSettingItem: {
+        opacity: 0.6,
+    },
+    spinningIcon: {
+        // Note: Animation would need to be implemented with Animated API
+        // For now, just showing the sync icon to indicate loading
     },
 });
 
