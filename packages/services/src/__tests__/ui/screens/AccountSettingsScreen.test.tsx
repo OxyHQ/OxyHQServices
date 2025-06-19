@@ -15,10 +15,10 @@ jest.mock('../../../ui/context/OxyContext', () => ({
       avatar: { url: 'https://example.com/avatar.jpg' }
     },
     oxyServices: {
-      updateUser: jest.fn(() => Promise.resolve({ 
-        id: '123', 
-        username: 'testuser', 
-        email: 'test@example.com' 
+      updateProfile: jest.fn(() => Promise.resolve({
+        id: '123',
+        username: 'testuser',
+        email: 'test@example.com'
       }))
     },
     isLoading: false
@@ -31,10 +31,10 @@ jest.mock('../../../ui/components/Avatar', () => 'Avatar');
 
 describe('AccountSettingsScreen', () => {
   const mockOxyServices = {
-    updateUser: jest.fn(() => Promise.resolve({ 
-      id: '123', 
-      username: 'testuser', 
-      email: 'test@example.com' 
+    updateProfile: jest.fn(() => Promise.resolve({
+      id: '123',
+      username: 'testuser',
+      email: 'test@example.com'
     }))
   } as unknown as OxyServices;
 
