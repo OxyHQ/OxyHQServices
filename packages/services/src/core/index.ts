@@ -485,6 +485,33 @@ export class OxyServices {
   }
 
   /**
+   * Get the currently authenticated user's profile
+   * @returns User data for the current user
+   */
+  async getCurrentUser(): Promise<User> {
+    try {
+      const res = await this.client.get('/users/me');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Update the authenticated user's profile
+   * @param updates - Object containing fields to update
+   * @returns Updated user data
+   */
+  async updateProfile(updates: Record<string, any>): Promise<User> {
+    try {
+      const res = await this.client.put('/users/me', updates);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
    * Update user profile (requires auth)
    * @param userId - User ID to update (must match authenticated user or have admin rights)
    * @param updates - Object containing fields to update
