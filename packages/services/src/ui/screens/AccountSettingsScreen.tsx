@@ -107,7 +107,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 updates.avatar = { url: avatarUrl };
             }
 
-            await oxyServices.updateUser(user.id, updates);
+            await oxyServices.updateProfile(updates);
             toast.success('Profile updated successfully');
             
             animateSaveButton(1); // Scale back to normal

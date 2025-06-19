@@ -86,3 +86,7 @@ jspm_packages/
 
 # Stores VSCode versions used for testing VSCode extensions
 .vscode-test
+
+# Allow library wrappers
+!/packages/services/src/lib/
+!/packages/services/src/lib/sonner.ts

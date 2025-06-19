@@ -23,6 +23,53 @@ const validateObjectId = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
+// Get current authenticated user
+router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const user = await User.findById(req.user?.id).select('-password -refreshToken');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    res.json(user);
+  } catch (error) {
+    logger.error('Error fetching current user:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Update current authenticated user
+router.put('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
+  try {
+    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'coverPhoto', 'bio', 'description', 'location', 'website', 'labels'] as const;
+    type AllowedUpdate = typeof allowedUpdates[number];
+
+    const updates = Object.entries(req.body)
+      .filter(([key]) => allowedUpdates.includes(key as AllowedUpdate))
+      .reduce((obj, [key, value]) => {
+        if (key === 'avatar' && value && typeof value === 'object') {
+          const avatarValue = value as { id?: string; url?: string };
+          return { ...obj, [key]: { id: avatarValue.id || '', url: avatarValue.url || '' } };
+        }
+        return { ...obj, [key]: value };
+      }, {} as Partial<Pick<IUser, AllowedUpdate>>);
+
+    const user = await User.findByIdAndUpdate(
+      req.user?.id,
+      { $set: updates },
+      { new: true }
+    ).select('-password -refreshToken');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json(user);
+  } catch (error) {
+    logger.error('Error updating current user:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Get user by ID
 router.get('/:userId', validateObjectId, async (req: Request, res: Response) => {
   try {
