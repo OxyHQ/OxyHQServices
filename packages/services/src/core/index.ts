@@ -154,6 +154,14 @@ export class OxyServices {
   }
 
   /**
+   * Gets the base URL configured for this OxyServices instance
+   * @returns The base URL
+   */
+  public getBaseURL(): string {
+    return this.client.defaults.baseURL || '';
+  }
+
+  /**
    * Gets the currently authenticated user ID from the token
    * @returns The user ID or null if not authenticated
    */

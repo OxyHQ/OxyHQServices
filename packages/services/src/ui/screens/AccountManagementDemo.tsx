@@ -9,7 +9,7 @@ import { OxyServices } from '../../core';
  */
 const AccountManagementDemo: React.FC = () => {
     const oxyServices = new OxyServices({
-        baseURL: 'http://localhost:3001'
+        baseURL: 'https://api.oxy.so'
     });
 
     return (

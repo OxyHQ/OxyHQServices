@@ -69,7 +69,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
         // Check API connection on mount
         const checkConnection = async () => {
             setConnectionStatus('checking');
-            const apiBaseUrl = 'http://localhost:3001';
+            const apiBaseUrl = oxyServices?.getBaseURL() || 'https://api.oxy.so';
             try {
                 const response = await fetch(`${apiBaseUrl}/`, {
                     method: 'GET',
@@ -113,7 +113,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
         const checks = [];
         
         // Get the API base URL from the services instance
-        const apiBaseUrl = 'http://localhost:3001'; // Default for now, could be made configurable
+        const apiBaseUrl = oxyServices?.getBaseURL() || 'https://api.oxy.so'; // Default for now, could be made configurable
         
         try {
             // Check 1: API Server Health
@@ -250,7 +250,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 totalUsers: sessions?.length || 0,
             },
             apiConfiguration: {
-                apiUrl: 'http://localhost:3001',
+                apiUrl: oxyServices?.getBaseURL() || 'Not configured',
             },
             buildInfo: {
                 timestamp: new Date().toISOString(),
@@ -490,7 +490,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                     
                     <InfoRow 
                         label="API Base URL" 
-                        value="http://localhost:3001" 
+                        value={oxyServices?.getBaseURL() || 'Not configured'} 
                         copyable 
                         icon="server"
                         color="#007AFF"
@@ -516,7 +516,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         }
                         onPress={async () => {
                             setConnectionStatus('checking');
-                            const apiBaseUrl = 'http://localhost:3001';
+                            const apiBaseUrl = oxyServices?.getBaseURL() || 'https://api.oxy.so';
                             try {
                                 const response = await fetch(`${apiBaseUrl}/`, {
                                     method: 'GET',
