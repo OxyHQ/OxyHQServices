@@ -34,6 +34,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     const [password, setPassword] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
     const [userProfile, setUserProfile] = useState<any>(null);
+    const [showPassword, setShowPassword] = useState(false);
 
     // Multi-step form states
     const [currentStep, setCurrentStep] = useState(0);
@@ -385,9 +386,9 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                 { transform: [{ scale: inputScaleAnim }] }
             ]}>
                 <View style={[styles.inputWrapper, { borderColor: isInputFocused ? colors.primary : colors.border }]}>
-                    <Ionicons 
-                        name="lock-closed-outline" 
-                        size={20} 
+                    <Ionicons
+                        name="lock-closed-outline"
+                        size={20}
                         color={isInputFocused ? colors.primary : colors.secondaryText}
                         style={styles.inputIcon}
                     />
@@ -399,9 +400,16 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                         onChangeText={setPassword}
                         onFocus={handleInputFocus}
                         onBlur={handleInputBlur}
-                        secureTextEntry
+                        secureTextEntry={!showPassword}
                         testID="password-input"
                     />
+                    <TouchableOpacity onPress={() => setShowPassword(prev => !prev)} style={styles.passwordToggle}>
+                        <Ionicons
+                            name={showPassword ? 'eye-off' : 'eye'}
+                            size={20}
+                            color={isInputFocused ? colors.primary : colors.secondaryText}
+                        />
+                    </TouchableOpacity>
                 </View>
             </Animated.View>
 
@@ -664,6 +672,10 @@ const styles = StyleSheet.create({
     },
     inputIcon: {
         marginRight: 12,
+    },
+    passwordToggle: {
+        paddingHorizontal: 4,
+        paddingVertical: 4,
     },
     modernInput: {
         flex: 1,

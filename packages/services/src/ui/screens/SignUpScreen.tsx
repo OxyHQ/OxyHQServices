@@ -32,6 +32,8 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
     const [confirmPassword, setConfirmPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
 
     // Multi-step form states
@@ -294,18 +296,30 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
 
             <View style={styles.inputContainer}>
                 <Text style={[styles.label, { color: textColor }]}>Password</Text>
-                <TextInput
-                    style={[
-                        styles.input,
-                        { backgroundColor: inputBackgroundColor, borderColor, color: textColor }
-                    ]}
-                    placeholder="Create a password"
-                    placeholderTextColor={placeholderColor}
-                    value={password}
-                    onChangeText={setPassword}
-                    secureTextEntry
-                    testID="password-input"
-                />
+                <View style={{ position: 'relative' }}>
+                    <TextInput
+                        style={[
+                            styles.input,
+                            { backgroundColor: inputBackgroundColor, borderColor, color: textColor }
+                        ]}
+                        placeholder="Create a password"
+                        placeholderTextColor={placeholderColor}
+                        value={password}
+                        onChangeText={setPassword}
+                        secureTextEntry={!showPassword}
+                        testID="password-input"
+                    />
+                    <TouchableOpacity
+                        onPress={() => setShowPassword(prev => !prev)}
+                        style={styles.passwordToggle}
+                    >
+                        <Ionicons
+                            name={showPassword ? 'eye-off' : 'eye'}
+                            size={20}
+                            color={placeholderColor}
+                        />
+                    </TouchableOpacity>
+                </View>
                 <Text style={[styles.passwordHint, { color: isDarkTheme ? '#AAAAAA' : '#666666' }]}>
                     Password must be at least 8 characters long
                 </Text>
@@ -313,18 +327,30 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
 
             <View style={styles.inputContainer}>
                 <Text style={[styles.label, { color: textColor }]}>Confirm Password</Text>
-                <TextInput
-                    style={[
-                        styles.input,
-                        { backgroundColor: inputBackgroundColor, borderColor, color: textColor }
-                    ]}
-                    placeholder="Confirm your password"
-                    placeholderTextColor={placeholderColor}
-                    value={confirmPassword}
-                    onChangeText={setConfirmPassword}
-                    secureTextEntry
-                    testID="confirm-password-input"
-                />
+                <View style={{ position: 'relative' }}>
+                    <TextInput
+                        style={[
+                            styles.input,
+                            { backgroundColor: inputBackgroundColor, borderColor, color: textColor }
+                        ]}
+                        placeholder="Confirm your password"
+                        placeholderTextColor={placeholderColor}
+                        value={confirmPassword}
+                        onChangeText={setConfirmPassword}
+                        secureTextEntry={!showConfirmPassword}
+                        testID="confirm-password-input"
+                    />
+                    <TouchableOpacity
+                        onPress={() => setShowConfirmPassword(prev => !prev)}
+                        style={styles.passwordToggle}
+                    >
+                        <Ionicons
+                            name={showConfirmPassword ? 'eye-off' : 'eye'}
+                            size={20}
+                            color={placeholderColor}
+                        />
+                    </TouchableOpacity>
+                </View>
             </View>
 
             <View style={styles.navigationButtons}>
@@ -618,6 +644,12 @@ const styles = StyleSheet.create({
         fontSize: 12,
         marginTop: 4,
         color: '#888',
+    },
+    passwordToggle: {
+        position: 'absolute',
+        right: 16,
+        top: 14,
+        padding: 4,
     },
     progressContainer: {
         flexDirection: 'row',
