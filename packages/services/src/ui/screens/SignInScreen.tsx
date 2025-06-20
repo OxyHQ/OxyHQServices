@@ -21,6 +21,7 @@ import OxyLogo from '../components/OxyLogo';
 import Avatar from '../components/Avatar';
 import { BottomSheetScrollView } from '../components/bottomSheet';
 import { Ionicons } from '@expo/vector-icons';
+import PasswordInput from '../components/PasswordInput';
 import Svg, { Path, Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
 import { toast } from '../../lib/sonner';
 
@@ -385,13 +386,13 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                 { transform: [{ scale: inputScaleAnim }] }
             ]}>
                 <View style={[styles.inputWrapper, { borderColor: isInputFocused ? colors.primary : colors.border }]}>
-                    <Ionicons 
-                        name="lock-closed-outline" 
-                        size={20} 
+                    <Ionicons
+                        name="lock-closed-outline"
+                        size={20}
                         color={isInputFocused ? colors.primary : colors.secondaryText}
                         style={styles.inputIcon}
                     />
-                    <TextInput
+                    <PasswordInput
                         style={[styles.modernInput, { color: colors.text }]}
                         placeholder="Enter your password"
                         placeholderTextColor={colors.placeholder}
@@ -399,7 +400,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                         onChangeText={setPassword}
                         onFocus={handleInputFocus}
                         onBlur={handleInputBlur}
-                        secureTextEntry
+                        iconColor={isInputFocused ? colors.primary : colors.secondaryText}
                         testID="password-input"
                     />
                 </View>

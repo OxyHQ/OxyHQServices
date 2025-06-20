@@ -18,7 +18,7 @@ import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import OxyLogo from '../components/OxyLogo';
 import { BottomSheetScrollView, BottomSheetView } from '../components/bottomSheet';
-import { Ionicons } from '@expo/vector-icons'; // Add icon import
+import PasswordInput from '../components/PasswordInput';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { toast } from '../../lib/sonner';
 
@@ -294,7 +294,7 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
 
             <View style={styles.inputContainer}>
                 <Text style={[styles.label, { color: textColor }]}>Password</Text>
-                <TextInput
+                <PasswordInput
                     style={[
                         styles.input,
                         { backgroundColor: inputBackgroundColor, borderColor, color: textColor }
@@ -303,7 +303,7 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
                     placeholderTextColor={placeholderColor}
                     value={password}
                     onChangeText={setPassword}
-                    secureTextEntry
+                    iconColor={placeholderColor}
                     testID="password-input"
                 />
                 <Text style={[styles.passwordHint, { color: isDarkTheme ? '#AAAAAA' : '#666666' }]}>
@@ -313,7 +313,7 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
 
             <View style={styles.inputContainer}>
                 <Text style={[styles.label, { color: textColor }]}>Confirm Password</Text>
-                <TextInput
+                <PasswordInput
                     style={[
                         styles.input,
                         { backgroundColor: inputBackgroundColor, borderColor, color: textColor }
@@ -322,7 +322,7 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
                     placeholderTextColor={placeholderColor}
                     value={confirmPassword}
                     onChangeText={setConfirmPassword}
-                    secureTextEntry
+                    iconColor={placeholderColor}
                     testID="confirm-password-input"
                 />
             </View>
