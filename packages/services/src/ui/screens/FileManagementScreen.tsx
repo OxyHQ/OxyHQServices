@@ -70,12 +70,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         const isDarkTheme = theme === 'dark';
         return {
             isDarkTheme,
-            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
-            backgroundColor: isDarkTheme ? '#121212' : '#f2f2f2',
-            secondaryBackgroundColor: isDarkTheme ? '#222222' : '#FFFFFF',
-            borderColor: isDarkTheme ? '#444444' : '#E0E0E0',
-            primaryColor: '#007AFF',
-            dangerColor: '#FF3B30',
+            themeStyles.textColor: themeStyles.isDarkTheme ? '#FFFFFF' : '#000000',
+            backgroundColor: themeStyles.isDarkTheme ? '#121212' : '#f2f2f2',
+            themeStyles.secondaryBackgroundColor: themeStyles.isDarkTheme ? '#222222' : '#FFFFFF',
+            borderColor: themeStyles.isDarkTheme ? '#444444' : '#E0E0E0',
+            themeStyles.primaryColor: '#007AFF',
+            themeStyles.dangerColor: '#FF3B30',
             successColor: '#34C759',
         };
     }, [theme]);
@@ -699,7 +699,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         return (
             <View
                 key={file.id}
-                style={[styles.fileItem, { backgroundColor: secondaryBackgroundColor, borderColor }]}
+                style={[styles.fileItem, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }]}
             >
                 <TouchableOpacity
                     style={styles.fileContent}
@@ -750,14 +750,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                 )}
                                 {isPDF && (
                                     <View style={styles.pdfPreview}>
-                                        <Ionicons name="document" size={32} color={primaryColor} />
-                                        <Text style={[styles.pdfLabel, { color: primaryColor }]}>PDF</Text>
+                                        <Ionicons name="document" size={32} color={themeStyles.primaryColor} />
+                                        <Text style={[styles.pdfLabel, { color: themeStyles.primaryColor }]}>PDF</Text>
                                     </View>
                                 )}
                                 {isVideo && (
                                     <View style={styles.videoPreview}>
-                                        <Ionicons name="play-circle" size={32} color={primaryColor} />
-                                        <Text style={[styles.videoLabel, { color: primaryColor }]}>VIDEO</Text>
+                                        <Ionicons name="play-circle" size={32} color={themeStyles.primaryColor} />
+                                        <Text style={[styles.videoLabel, { color: themeStyles.primaryColor }]}>VIDEO</Text>
                                     </View>
                                 )}
                                 {/* Fallback icon (hidden by default for images) */}
@@ -768,7 +768,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                     <Ionicons
                                         name={getFileIcon(file.contentType) as any}
                                         size={32}
-                                        color={primaryColor}
+                                        color={themeStyles.primaryColor}
                                     />
                                 </View>
                                 
@@ -784,22 +784,22 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                 <Ionicons
                                     name={getFileIcon(file.contentType) as any}
                                     size={32}
-                                    color={primaryColor}
+                                    color={themeStyles.primaryColor}
                                 />
                             </View>
                         )}
                     </View>
                     
                     <View style={styles.fileInfo}>
-                        <Text style={[styles.fileName, { color: textColor }]} numberOfLines={1}>
+                        <Text style={[styles.fileName, { color: themeStyles.textColor }]} numberOfLines={1}>
                             {file.filename}
                         </Text>
-                        <Text style={[styles.fileDetails, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[styles.fileDetails, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                             {formatFileSize(file.length)} • {new Date(file.uploadDate).toLocaleDateString()}
                         </Text>
                         {file.metadata?.description && (
                             <Text
-                                style={[styles.fileDescription, { color: isDarkTheme ? '#AAAAAA' : '#888888' }]}
+                                style={[styles.fileDescription, { color: themeStyles.isDarkTheme ? '#AAAAAA' : '#888888' }]}
                                 numberOfLines={2}
                             >
                                 {file.metadata.description}
@@ -939,7 +939,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         createJustifiedRows, 
         renderJustifiedPhotoItem, 
         renderSimplePhotoItem, 
-        textColor,
+        themeStyles.textColor,
         containerWidth
     }: {
         photos: FileMetadata[];
@@ -948,7 +948,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         createJustifiedRows: (photos: FileMetadata[], containerWidth: number) => FileMetadata[][];
         renderJustifiedPhotoItem: (photo: FileMetadata, width: number, height: number, isLast: boolean) => JSX.Element;
         renderSimplePhotoItem: (photo: FileMetadata, index: number) => JSX.Element;
-        textColor: string;
+        themeStyles.textColor: string;
         containerWidth: number;
     }) => {
         // Load dimensions for new photos
@@ -982,7 +982,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     
                     return (
                         <View key={date} style={styles.photoDateSection}>
-                            <Text style={[styles.photoDateHeader, { color: textColor }]}>
+                            <Text style={[styles.photoDateHeader, { color: themeStyles.textColor }]}>
                                 {new Date(date).toLocaleDateString('en-US', { 
                                     weekday: 'long', 
                                     year: 'numeric', 
@@ -1132,61 +1132,61 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         style={styles.modalCloseButton}
                         onPress={() => setShowFileDetails(false)}
                     >
-                        <Ionicons name="close" size={24} color={textColor} />
+                        <Ionicons name="close" size={24} color={themeStyles.textColor} />
                     </TouchableOpacity>
-                    <Text style={[styles.modalTitle, { color: textColor }]}>File Details</Text>
+                    <Text style={[styles.modalTitle, { color: themeStyles.textColor }]}>File Details</Text>
                     <View style={styles.modalPlaceholder} />
                 </View>
 
                 {selectedFile && (
                     <ScrollView style={styles.modalContent}>
-                        <View style={[styles.fileDetailCard, { backgroundColor: secondaryBackgroundColor, borderColor }]}>
+                        <View style={[styles.fileDetailCard, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }]}>
                             <View style={styles.fileDetailIcon}>
                                 <Ionicons
                                     name={getFileIcon(selectedFile.contentType) as any}
                                     size={64}
-                                    color={primaryColor}
+                                    color={themeStyles.primaryColor}
                                 />
                             </View>
 
-                            <Text style={[styles.fileDetailName, { color: textColor }]}>
+                            <Text style={[styles.fileDetailName, { color: themeStyles.textColor }]}>
                                 {selectedFile.filename}
                             </Text>
 
                             <View style={styles.fileDetailInfo}>
                                 <View style={styles.detailRow}>
-                                    <Text style={[styles.detailLabel, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                    <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                         Size:
                                     </Text>
-                                    <Text style={[styles.detailValue, { color: textColor }]}>
+                                    <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
                                         {formatFileSize(selectedFile.length)}
                                     </Text>
                                 </View>
 
                                 <View style={styles.detailRow}>
-                                    <Text style={[styles.detailLabel, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                    <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                         Type:
                                     </Text>
-                                    <Text style={[styles.detailValue, { color: textColor }]}>
+                                    <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
                                         {selectedFile.contentType}
                                     </Text>
                                 </View>
 
                                 <View style={styles.detailRow}>
-                                    <Text style={[styles.detailLabel, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                    <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                         Uploaded:
                                     </Text>
-                                    <Text style={[styles.detailValue, { color: textColor }]}>
+                                    <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
                                         {new Date(selectedFile.uploadDate).toLocaleString()}
                                     </Text>
                                 </View>
 
                                 {selectedFile.metadata?.description && (
                                     <View style={styles.detailRow}>
-                                        <Text style={[styles.detailLabel, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                        <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                             Description:
                                         </Text>
-                                        <Text style={[styles.detailValue, { color: textColor }]}>
+                                        <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
                                             {selectedFile.metadata.description}
                                         </Text>
                                     </View>
@@ -1195,7 +1195,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                             <View style={styles.modalActions}>
                                 <TouchableOpacity
-                                    style={[styles.modalActionButton, { backgroundColor: primaryColor }]}
+                                    style={[styles.modalActionButton, { backgroundColor: themeStyles.primaryColor }]}
                                     onPress={() => {
                                         handleFileDownload(selectedFile.id, selectedFile.filename);
                                         setShowFileDetails(false);
@@ -1207,7 +1207,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                                 {(user?.id === targetUserId) && (
                                     <TouchableOpacity
-                                        style={[styles.modalActionButton, { backgroundColor: dangerColor }]}
+                                        style={[styles.modalActionButton, { backgroundColor: themeStyles.dangerColor }]}
                                         onPress={() => {
                                             setShowFileDetails(false);
                                             handleFileDelete(selectedFile.id, selectedFile.filename);
@@ -1246,30 +1246,30 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         style={styles.backButton}
                         onPress={handleCloseFile}
                     >
-                        <Ionicons name="arrow-back" size={24} color={textColor} />
+                        <Ionicons name="arrow-back" size={24} color={themeStyles.textColor} />
                     </TouchableOpacity>
                     <View style={styles.fileViewerTitleContainer}>
-                        <Text style={[styles.fileViewerTitle, { color: textColor }]} numberOfLines={1}>
+                        <Text style={[styles.fileViewerTitle, { color: themeStyles.textColor }]} numberOfLines={1}>
                             {openedFile.filename}
                         </Text>
-                        <Text style={[styles.fileViewerSubtitle, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[styles.fileViewerSubtitle, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                             {formatFileSize(openedFile.length)} • {openedFile.contentType}
                         </Text>
                     </View>
                     <View style={styles.fileViewerActions}>
                         <TouchableOpacity
-                            style={[styles.actionButton, { backgroundColor: isDarkTheme ? '#333333' : '#F0F0F0' }]}
+                            style={[styles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
                             onPress={() => handleFileDownload(openedFile.id, openedFile.filename)}
                         >
-                            <Ionicons name="download" size={20} color={primaryColor} />
+                            <Ionicons name="download" size={20} color={themeStyles.primaryColor} />
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[
                                 styles.actionButton, 
                                 { 
                                     backgroundColor: showFileDetailsInViewer 
-                                        ? primaryColor 
-                                        : (isDarkTheme ? '#333333' : '#F0F0F0') 
+                                        ? themeStyles.primaryColor 
+                                        : (themeStyles.isDarkTheme ? '#333333' : '#F0F0F0') 
                                 }
                             ]}
                             onPress={() => setShowFileDetailsInViewer(!showFileDetailsInViewer)}
@@ -1277,7 +1277,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             <Ionicons 
                                 name={showFileDetailsInViewer ? "chevron-up" : "information-circle"} 
                                 size={20} 
-                                color={showFileDetailsInViewer ? "#FFFFFF" : primaryColor} 
+                                color={showFileDetailsInViewer ? "#FFFFFF" : themeStyles.primaryColor} 
                             />
                         </TouchableOpacity>
                     </View>
@@ -1285,72 +1285,72 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                 {/* File Details Section */}
                 {showFileDetailsInViewer && (
-                    <View style={[styles.fileDetailsSection, { backgroundColor: secondaryBackgroundColor, borderColor }]}>
+                    <View style={[styles.fileDetailsSection, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }]}>
                         <View style={styles.fileDetailsSectionHeader}>
-                            <Text style={[styles.fileDetailsSectionTitle, { color: textColor }]}>
+                            <Text style={[styles.fileDetailsSectionTitle, { color: themeStyles.textColor }]}>
                                 File Details
                             </Text>
                             <TouchableOpacity
                                 style={styles.fileDetailsSectionToggle}
                                 onPress={() => setShowFileDetailsInViewer(false)}
                             >
-                                <Ionicons name="chevron-up" size={20} color={isDarkTheme ? '#BBBBBB' : '#666666'} />
+                                <Ionicons name="chevron-up" size={20} color={themeStyles.isDarkTheme ? '#BBBBBB' : '#666666'} />
                             </TouchableOpacity>
                         </View>
                         
                         <View style={styles.fileDetailInfo}>
                             <View style={styles.detailRow}>
-                                <Text style={[styles.detailLabel, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                     File Name:
                                 </Text>
-                                <Text style={[styles.detailValue, { color: textColor }]}>
+                                <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
                                     {openedFile.filename}
                                 </Text>
                             </View>
 
                             <View style={styles.detailRow}>
-                                <Text style={[styles.detailLabel, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                     Size:
                                 </Text>
-                                <Text style={[styles.detailValue, { color: textColor }]}>
+                                <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
                                     {formatFileSize(openedFile.length)}
                                 </Text>
                             </View>
 
                             <View style={styles.detailRow}>
-                                <Text style={[styles.detailLabel, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                     Type:
                                 </Text>
-                                <Text style={[styles.detailValue, { color: textColor }]}>
+                                <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
                                     {openedFile.contentType}
                                 </Text>
                             </View>
 
                             <View style={styles.detailRow}>
-                                <Text style={[styles.detailLabel, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                     Uploaded:
                                 </Text>
-                                <Text style={[styles.detailValue, { color: textColor }]}>
+                                <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
                                     {new Date(openedFile.uploadDate).toLocaleString()}
                                 </Text>
                             </View>
 
                             {openedFile.metadata?.description && (
                                 <View style={styles.detailRow}>
-                                    <Text style={[styles.detailLabel, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                    <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                         Description:
                                     </Text>
-                                    <Text style={[styles.detailValue, { color: textColor }]}>
+                                    <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
                                         {openedFile.metadata.description}
                                     </Text>
                                 </View>
                             )}
 
                             <View style={styles.detailRow}>
-                                <Text style={[styles.detailLabel, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                     File ID:
                                 </Text>
-                                <Text style={[styles.detailValue, { color: textColor, fontSize: 12, fontFamily: Platform.OS === 'web' ? 'monospace' : 'Courier' }]}>
+                                <Text style={[styles.detailValue, { color: themeStyles.textColor, fontSize: 12, fontFamily: Platform.OS === 'web' ? 'monospace' : 'Courier' }]}>
                                     {openedFile.id}
                                 </Text>
                             </View>
@@ -1358,7 +1358,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                         <View style={styles.fileDetailsActions}>
                             <TouchableOpacity
-                                style={[styles.fileDetailsActionButton, { backgroundColor: primaryColor }]}
+                                style={[styles.fileDetailsActionButton, { backgroundColor: themeStyles.primaryColor }]}
                                 onPress={() => handleFileDownload(openedFile.id, openedFile.filename)}
                             >
                                 <Ionicons name="download" size={16} color="#FFFFFF" />
@@ -1367,7 +1367,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                             {(user?.id === targetUserId) && (
                                 <TouchableOpacity
-                                    style={[styles.fileDetailsActionButton, { backgroundColor: dangerColor }]}
+                                    style={[styles.fileDetailsActionButton, { backgroundColor: themeStyles.dangerColor }]}
                                     onPress={() => {
                                         handleCloseFile();
                                         handleFileDelete(openedFile.id, openedFile.filename);
@@ -1391,8 +1391,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 >
                     {loadingFileContent ? (
                         <View style={styles.fileViewerLoading}>
-                            <ActivityIndicator size="large" color={primaryColor} />
-                            <Text style={[styles.fileViewerLoadingText, { color: textColor }]}>
+                            <ActivityIndicator size="large" color={themeStyles.primaryColor} />
+                            <Text style={[styles.fileViewerLoadingText, { color: themeStyles.textColor }]}>
                                 Loading file content...
                             </Text>
                         </View>
@@ -1428,9 +1428,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             )}
                         </View>
                     ) : isText && fileContent ? (
-                        <View style={[styles.textContainer, { backgroundColor: secondaryBackgroundColor, borderColor }]}>
+                        <View style={[styles.textContainer, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }]}>
                             <ScrollView style={{ flex: 1 }} nestedScrollEnabled>
-                                <Text style={[styles.textContent, { color: textColor }]}>
+                                <Text style={[styles.textContent, { color: themeStyles.textColor }]}>
                                     {fileContent}
                                 </Text>
                             </ScrollView>
@@ -1460,7 +1460,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                     Your browser does not support the video tag.
                                 </video>
                             ) : (
-                                <Text style={[styles.unsupportedText, { color: textColor }]}>
+                                <Text style={[styles.unsupportedText, { color: themeStyles.textColor }]}>
                                     Video playback not supported on mobile
                                 </Text>
                             )}
@@ -1479,7 +1479,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                     Your browser does not support the audio tag.
                                 </audio>
                             ) : (
-                                <Text style={[styles.unsupportedText, { color: textColor }]}>
+                                <Text style={[styles.unsupportedText, { color: themeStyles.textColor }]}>
                                     Audio playback not supported on mobile
                                 </Text>
                             )}
@@ -1489,17 +1489,17 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             <Ionicons 
                                 name={getFileIcon(openedFile.contentType) as any} 
                                 size={64} 
-                                color={isDarkTheme ? '#666666' : '#CCCCCC'} 
+                                color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} 
                             />
-                            <Text style={[styles.unsupportedFileTitle, { color: textColor }]}>
+                            <Text style={[styles.unsupportedFileTitle, { color: themeStyles.textColor }]}>
                                 Preview Not Available
                             </Text>
-                            <Text style={[styles.unsupportedFileDescription, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                            <Text style={[styles.unsupportedFileDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                 This file type cannot be previewed in the browser.{'\n'}
                                 Download the file to view its contents.
                             </Text>
                             <TouchableOpacity
-                                style={[styles.downloadButtonLarge, { backgroundColor: primaryColor }]}
+                                style={[styles.downloadButtonLarge, { backgroundColor: themeStyles.primaryColor }]}
                                 onPress={() => handleFileDownload(openedFile.id, openedFile.filename)}
                             >
                                 <Ionicons name="download" size={20} color="#FFFFFF" />
@@ -1514,9 +1514,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     const renderEmptyState = () => (
         <View style={styles.emptyState}>
-            <Ionicons name="folder-open-outline" size={64} color={isDarkTheme ? '#666666' : '#CCCCCC'} />
-            <Text style={[styles.emptyStateTitle, { color: textColor }]}>No Files Yet</Text>
-            <Text style={[styles.emptyStateDescription, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+            <Ionicons name="folder-open-outline" size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
+            <Text style={[styles.emptyStateTitle, { color: themeStyles.textColor }]}>No Files Yet</Text>
+            <Text style={[styles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                 {user?.id === targetUserId 
                     ? `Upload files to get started. You can select multiple files at once${Platform.OS === 'web' ? ' or drag & drop them here.' : '.'}`
                     : "This user hasn't uploaded any files yet"
@@ -1524,7 +1524,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             </Text>
             {user?.id === targetUserId && (
                 <TouchableOpacity
-                    style={[styles.emptyStateButton, { backgroundColor: primaryColor }]}
+                    style={[styles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
                     onPress={handleFileUpload}
                     disabled={uploading}
                 >
@@ -1544,8 +1544,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     if (loading) {
         return (
             <View style={[styles.container, styles.centerContent, { backgroundColor }]}>
-                <ActivityIndicator size="large" color={primaryColor} />
-                <Text style={[styles.loadingText, { color: textColor }]}>Loading files...</Text>
+                <ActivityIndicator size="large" color={themeStyles.primaryColor} />
+                <Text style={[styles.loadingText, { color: themeStyles.textColor }]}>Loading files...</Text>
             </View>
         );
     }
@@ -1578,13 +1578,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 styles.header, 
                 { 
                     borderBottomColor: borderColor,
-                    backgroundColor: isDarkTheme ? '#1A1A1A' : '#FFFFFF',
+                    backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF',
                     shadowColor: '#000000',
                     shadowOffset: {
                         width: 0,
                         height: 2,
                     },
-                    shadowOpacity: isDarkTheme ? 0.3 : 0.1,
+                    shadowOpacity: themeStyles.isDarkTheme ? 0.3 : 0.1,
                     shadowRadius: 8,
                     elevation: 4,
                 }
@@ -1593,20 +1593,20 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     style={[
                         styles.backButton, 
                         { 
-                            backgroundColor: isDarkTheme ? '#2A2A2A' : '#F8F9FA',
+                            backgroundColor: themeStyles.isDarkTheme ? '#2A2A2A' : '#F8F9FA',
                             borderRadius: 12,
                         }
                     ]} 
                     onPress={onClose || goBack}
                 >
-                    <Ionicons name="arrow-back" size={22} color={textColor} />
+                    <Ionicons name="arrow-back" size={22} color={themeStyles.textColor} />
                 </TouchableOpacity>
                 
                 <View style={styles.headerTitleContainer}>
-                    <Text style={[styles.headerTitle, { color: textColor }]}>
+                    <Text style={[styles.headerTitle, { color: themeStyles.textColor }]}>
                         {viewMode === 'photos' ? 'Photos' : 'File Management'}
                     </Text>
-                    <Text style={[styles.headerSubtitle, { color: isDarkTheme ? '#AAAAAA' : '#666666' }]}>
+                    <Text style={[styles.headerSubtitle, { color: themeStyles.isDarkTheme ? '#AAAAAA' : '#666666' }]}>
                         {filteredFiles.length} {filteredFiles.length === 1 ? 'item' : 'items'}
                     </Text>
                 </View>
@@ -1616,15 +1616,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     <View style={[
                         styles.viewModeToggle, 
                         { 
-                            backgroundColor: isDarkTheme ? '#2A2A2A' : '#F8F9FA',
+                            backgroundColor: themeStyles.isDarkTheme ? '#2A2A2A' : '#F8F9FA',
                             borderWidth: 1,
-                            borderColor: isDarkTheme ? '#3A3A3A' : '#E8E9EA',
+                            borderColor: themeStyles.isDarkTheme ? '#3A3A3A' : '#E8E9EA',
                             shadowColor: '#000000',
                             shadowOffset: {
                                 width: 0,
                                 height: 1,
                             },
-                            shadowOpacity: isDarkTheme ? 0.3 : 0.05,
+                            shadowOpacity: themeStyles.isDarkTheme ? 0.3 : 0.05,
                             shadowRadius: 4,
                             elevation: 2,
                         }
@@ -1633,8 +1633,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             style={[
                                 styles.viewModeButton,
                                 viewMode === 'all' && { 
-                                    backgroundColor: primaryColor,
-                                    shadowColor: primaryColor,
+                                    backgroundColor: themeStyles.primaryColor,
+                                    shadowColor: themeStyles.primaryColor,
                                     shadowOffset: {
                                         width: 0,
                                         height: 2,
@@ -1649,15 +1649,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             <Ionicons 
                                 name="folder" 
                                 size={18} 
-                                color={viewMode === 'all' ? '#FFFFFF' : textColor} 
+                                color={viewMode === 'all' ? '#FFFFFF' : themeStyles.textColor} 
                             />
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[
                                 styles.viewModeButton,
                                 viewMode === 'photos' && { 
-                                    backgroundColor: primaryColor,
-                                    shadowColor: primaryColor,
+                                    backgroundColor: themeStyles.primaryColor,
+                                    shadowColor: themeStyles.primaryColor,
                                     shadowOffset: {
                                         width: 0,
                                         height: 2,
@@ -1672,7 +1672,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             <Ionicons 
                                 name="images" 
                                 size={18} 
-                                color={viewMode === 'photos' ? '#FFFFFF' : textColor} 
+                                color={viewMode === 'photos' ? '#FFFFFF' : themeStyles.textColor} 
                             />
                         </TouchableOpacity>
                     </View>
@@ -1682,8 +1682,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             style={[
                                 styles.uploadButton, 
                                 { 
-                                    backgroundColor: primaryColor,
-                                    shadowColor: primaryColor,
+                                    backgroundColor: themeStyles.primaryColor,
+                                    shadowColor: themeStyles.primaryColor,
                                     shadowOffset: {
                                         width: 0,
                                         height: 3,
@@ -1719,23 +1719,23 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 <View style={[
                     styles.searchContainer, 
                     { 
-                        backgroundColor: isDarkTheme ? '#1A1A1A' : '#FFFFFF', 
-                        borderColor: isDarkTheme ? '#3A3A3A' : '#E8E9EA',
+                        backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF', 
+                        borderColor: themeStyles.isDarkTheme ? '#3A3A3A' : '#E8E9EA',
                         shadowColor: '#000000',
                         shadowOffset: {
                             width: 0,
                             height: 1,
                         },
-                        shadowOpacity: isDarkTheme ? 0.2 : 0.05,
+                        shadowOpacity: themeStyles.isDarkTheme ? 0.2 : 0.05,
                         shadowRadius: 4,
                         elevation: 2,
                     }
                 ]}>
-                    <Ionicons name="search" size={22} color={isDarkTheme ? '#888888' : '#666666'} />
+                    <Ionicons name="search" size={22} color={themeStyles.isDarkTheme ? '#888888' : '#666666'} />
                     <TextInput
-                        style={[styles.searchInput, { color: textColor }]}
+                        style={[styles.searchInput, { color: themeStyles.textColor }]}
                         placeholder={viewMode === 'photos' ? 'Search photos...' : 'Search files...'}
-                        placeholderTextColor={isDarkTheme ? '#888888' : '#999999'}
+                        placeholderTextColor={themeStyles.isDarkTheme ? '#888888' : '#999999'}
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                     />
@@ -1744,7 +1744,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             onPress={() => setSearchQuery('')}
                             style={styles.searchClearButton}
                         >
-                            <Ionicons name="close-circle" size={22} color={isDarkTheme ? '#888888' : '#666666'} />
+                            <Ionicons name="close-circle" size={22} color={themeStyles.isDarkTheme ? '#888888' : '#666666'} />
                         </TouchableOpacity>
                     )}
                 </View>
@@ -1755,36 +1755,36 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 <View style={[
                     styles.statsContainer, 
                     { 
-                        backgroundColor: isDarkTheme ? '#1A1A1A' : '#FFFFFF', 
-                        borderColor: isDarkTheme ? '#3A3A3A' : '#E8E9EA',
+                        backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF', 
+                        borderColor: themeStyles.isDarkTheme ? '#3A3A3A' : '#E8E9EA',
                         shadowColor: '#000000',
                         shadowOffset: {
                             width: 0,
                             height: 1,
                         },
-                        shadowOpacity: isDarkTheme ? 0.2 : 0.05,
+                        shadowOpacity: themeStyles.isDarkTheme ? 0.2 : 0.05,
                         shadowRadius: 4,
                         elevation: 2,
                     }
                 ]}>
                     <View style={styles.statItem}>
-                        <Text style={[styles.statValue, { color: textColor }]}>{filteredFiles.length}</Text>
-                        <Text style={[styles.statLabel, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[styles.statValue, { color: themeStyles.textColor }]}>{filteredFiles.length}</Text>
+                        <Text style={[styles.statLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                             {searchQuery.length > 0 ? 'Found' : (filteredFiles.length === 1 ? (viewMode === 'photos' ? 'Photo' : 'File') : (viewMode === 'photos' ? 'Photos' : 'Files'))}
                         </Text>
                     </View>
                     <View style={styles.statItem}>
-                        <Text style={[styles.statValue, { color: textColor }]}>
+                        <Text style={[styles.statValue, { color: themeStyles.textColor }]}>
                             {formatFileSize(filteredFiles.reduce((total, file) => total + file.length, 0))}
                         </Text>
-                        <Text style={[styles.statLabel, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[styles.statLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                             {searchQuery.length > 0 ? 'Size' : 'Total Size'}
                         </Text>
                     </View>
                     {searchQuery.length > 0 && (
                         <View style={styles.statItem}>
-                            <Text style={[styles.statValue, { color: textColor }]}>{files.length}</Text>
-                            <Text style={[styles.statLabel, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                            <Text style={[styles.statValue, { color: themeStyles.textColor }]}>{files.length}</Text>
+                            <Text style={[styles.statLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                 Total
                             </Text>
                         </View>
@@ -1803,19 +1803,19 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         <RefreshControl
                             refreshing={refreshing}
                             onRefresh={() => loadFiles(true)}
-                            tintColor={primaryColor}
+                            tintColor={themeStyles.primaryColor}
                         />
                     }
                 >
                     {filteredFiles.length === 0 && searchQuery.length > 0 ? (
                         <View style={styles.emptyState}>
-                            <Ionicons name="search" size={64} color={isDarkTheme ? '#666666' : '#CCCCCC'} />
-                            <Text style={[styles.emptyStateTitle, { color: textColor }]}>No Results Found</Text>
-                            <Text style={[styles.emptyStateDescription, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                            <Ionicons name="search" size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
+                            <Text style={[styles.emptyStateTitle, { color: themeStyles.textColor }]}>No Results Found</Text>
+                            <Text style={[styles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                 No files match your search for "{searchQuery}"
                             </Text>
                             <TouchableOpacity
-                                style={[styles.emptyStateButton, { backgroundColor: primaryColor }]}
+                                style={[styles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
                                 onPress={() => setSearchQuery('')}
                             >
                                 <Ionicons name="refresh" size={20} color="#FFFFFF" />
@@ -1836,11 +1836,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             {isDragging && Platform.OS === 'web' && (
                 <View style={styles.dragDropOverlay}>
                     <View style={styles.dragDropContent}>
-                        <Ionicons name="cloud-upload" size={64} color={primaryColor} />
-                        <Text style={[styles.dragDropTitle, { color: primaryColor }]}>
+                        <Ionicons name="cloud-upload" size={64} color={themeStyles.primaryColor} />
+                        <Text style={[styles.dragDropTitle, { color: themeStyles.primaryColor }]}>
                             Drop files to upload
                         </Text>
-                        <Text style={[styles.dragDropSubtitle, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[styles.dragDropSubtitle, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                             Release to upload{uploadProgress ? ` (${uploadProgress.current}/${uploadProgress.total})` : ' multiple files'}
                         </Text>
                     </View>
