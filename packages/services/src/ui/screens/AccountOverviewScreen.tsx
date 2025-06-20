@@ -20,6 +20,15 @@ import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 
+/**
+ * AccountOverviewScreen - Optimized for performance
+ * 
+ * Performance optimizations implemented:
+ * - useMemo for theme calculations (only recalculates when theme changes)
+ * - useMemo for additional accounts filtering (only recalculates when dependencies change)
+ * - useCallback for event handlers to prevent unnecessary re-renders
+ * - React.memo wrapper to prevent re-renders when props haven't changed
+ */
 const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
@@ -685,4 +694,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default AccountOverviewScreen;
+export default React.memo(AccountOverviewScreen);

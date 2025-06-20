@@ -34,6 +34,15 @@ const FAQS = [
     },
 ];
 
+/**
+ * KarmaFAQScreen - Optimized for performance
+ * 
+ * Performance optimizations implemented:
+ * - useMemo for theme calculations (only recalculates when theme changes)
+ * - useMemo for filtered FAQs (only recalculates when search changes)
+ * - useCallback for event handlers to prevent unnecessary re-renders
+ * - React.memo wrapper to prevent re-renders when props haven't changed
+ */
 const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const [expanded, setExpanded] = useState<number | null>(0);
     const [search, setSearch] = useState('');
@@ -173,4 +182,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default KarmaFAQScreen;
+export default React.memo(KarmaFAQScreen);

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
@@ -51,19 +51,25 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const [tempLocation, setTempLocation] = useState('');
     const [tempWebsite, setTempWebsite] = useState('');
 
-    const isDarkTheme = theme === 'dark';
-    const backgroundColor = isDarkTheme ? '#121212' : '#f2f2f2';
-    const primaryColor = '#007AFF';
+    // Memoize theme-related calculations to prevent unnecessary recalculations
+    const themeStyles = useMemo(() => {
+        const isDarkTheme = theme === 'dark';
+        return {
+            isDarkTheme,
+            backgroundColor: isDarkTheme ? '#121212' : '#f2f2f2',
+            primaryColor: '#007AFF',
+        };
+    }, [theme]);
 
-    // Animation functions
-    const animateSaveButton = (toValue: number) => {
+    // Memoize animation function to prevent recreation on every render
+    const animateSaveButton = useCallback((toValue: number) => {
         Animated.spring(saveButtonScale, {
             toValue,
             useNativeDriver: true,
             tension: 150,
             friction: 8,
         }).start();
-    };
+    }, [saveButtonScale]);
 
     // Load user data
     useEffect(() => {
@@ -799,4 +805,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default AccountSettingsScreen;
+export default React.memo(AccountSettingsScreen);
