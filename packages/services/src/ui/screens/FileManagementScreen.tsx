@@ -70,15 +70,19 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         const isDarkTheme = theme === 'dark';
         return {
             isDarkTheme,
-            themeStyles.textColor: themeStyles.isDarkTheme ? '#FFFFFF' : '#000000',
-            backgroundColor: themeStyles.isDarkTheme ? '#121212' : '#f2f2f2',
-            themeStyles.secondaryBackgroundColor: themeStyles.isDarkTheme ? '#222222' : '#FFFFFF',
-            borderColor: themeStyles.isDarkTheme ? '#444444' : '#E0E0E0',
-            themeStyles.primaryColor: '#007AFF',
-            themeStyles.dangerColor: '#FF3B30',
+            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
+            backgroundColor: isDarkTheme ? '#121212' : '#f2f2f2',
+            secondaryBackgroundColor: isDarkTheme ? '#222222' : '#FFFFFF',
+            borderColor: isDarkTheme ? '#444444' : '#E0E0E0',
+            primaryColor: '#007AFF',
+            dangerColor: '#FF3B30',
             successColor: '#34C759',
         };
     }, [theme]);
+
+    // Extract commonly used theme variables
+    const backgroundColor = themeStyles.backgroundColor;
+    const borderColor = themeStyles.borderColor;
 
     const targetUserId = userId || user?.id;
 
@@ -205,7 +209,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }, [oxyServices, photoDimensions]);
 
     // Create justified rows from photos with responsive algorithm
-    const createJustifiedRows = useCallback((photos: FileMetadata[]) => {
+    const createJustifiedRows = useCallback((photos: FileMetadata[], containerWidth: number) => {
         if (photos.length === 0) return [];
         
         const rows: FileMetadata[][] = [];
@@ -695,6 +699,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         const isVideo = file.contentType.startsWith('video/');
         const isAudio = file.contentType.startsWith('audio/');
         const hasPreview = isImage || isPDF || isVideo;
+        const borderColor = themeStyles.borderColor;
 
         return (
             <View
@@ -845,6 +850,72 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         );
     };
 
+    const renderPhotoItem = (photo: FileMetadata, index: number) => {
+        const downloadUrl = oxyServices.getFileDownloadUrl(photo.id);
+        
+        // Calculate photo item width based on actual container size from bottom sheet
+        let itemsPerRow = 3; // Default for mobile
+        if (containerWidth > 768) itemsPerRow = 6; // Tablet/Desktop
+        else if (containerWidth > 480) itemsPerRow = 4; // Large mobile
+        
+        // Account for the photoScrollContainer padding (16px on each side = 32px total)
+        const scrollContainerPadding = 32; // Total horizontal padding from photoScrollContainer
+        const gaps = (itemsPerRow - 1) * 4; // Gap between items
+        const availableWidth = containerWidth - scrollContainerPadding;
+        const itemWidth = (availableWidth - gaps) / itemsPerRow;
+        
+        return (
+            <TouchableOpacity
+                key={photo.id}
+                style={[
+                    styles.photoItem,
+                    {
+                        width: itemWidth,
+                        height: itemWidth,
+                    }
+                ]}
+                onPress={() => handleFileOpen(photo)}
+                activeOpacity={0.8}
+            >
+                <View style={styles.photoContainer}>
+                    {Platform.OS === 'web' ? (
+                        <img
+                            src={downloadUrl}
+                            alt={photo.filename}
+                            style={{
+                                width: '100%',
+                                height: '100%',
+                                objectFit: 'cover',
+                                borderRadius: 8,
+                                transition: 'transform 0.2s ease',
+                            }}
+                            loading="lazy"
+                            onError={(e) => {
+                                console.error('Photo failed to load:', e);
+                                // Could replace with placeholder image
+                            }}
+                            onMouseEnter={(e) => {
+                                e.currentTarget.style.transform = 'scale(1.02)';
+                            }}
+                            onMouseLeave={(e) => {
+                                e.currentTarget.style.transform = 'scale(1)';
+                            }}
+                        />
+                    ) : (
+                        <Image
+                            source={{ uri: downloadUrl }}
+                            style={styles.photoImage}
+                            resizeMode="cover"
+                            onError={(e) => {
+                                console.error('Photo failed to load:', e);
+                            }}
+                        />
+                    )}
+                </View>
+            </TouchableOpacity>
+        );
+    };
+
     const renderPhotoGrid = useCallback(() => {
         const photos = filteredFiles.filter(file => file.contentType.startsWith('image/'));
         
@@ -939,7 +1010,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         createJustifiedRows, 
         renderJustifiedPhotoItem, 
         renderSimplePhotoItem, 
-        themeStyles.textColor,
+        textColor,
         containerWidth
     }: {
         photos: FileMetadata[];
@@ -948,7 +1019,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         createJustifiedRows: (photos: FileMetadata[], containerWidth: number) => FileMetadata[][];
         renderJustifiedPhotoItem: (photo: FileMetadata, width: number, height: number, isLast: boolean) => JSX.Element;
         renderSimplePhotoItem: (photo: FileMetadata, index: number) => JSX.Element;
-        themeStyles.textColor: string;
+        textColor: string;
         containerWidth: number;
     }) => {
         // Load dimensions for new photos
@@ -1053,85 +1124,23 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         );
     });
 
-    const renderPhotoItem = (photo: FileMetadata, index: number) => {
-        const downloadUrl = oxyServices.getFileDownloadUrl(photo.id);
-        
-        // Calculate photo item width based on actual container size from bottom sheet
-        let itemsPerRow = 3; // Default for mobile
-        if (containerWidth > 768) itemsPerRow = 6; // Tablet/Desktop
-        else if (containerWidth > 480) itemsPerRow = 4; // Large mobile
-        
-        // Account for the photoScrollContainer padding (16px on each side = 32px total)
-        const scrollContainerPadding = 32; // Total horizontal padding from photoScrollContainer
-        const gaps = (itemsPerRow - 1) * 4; // Gap between items
-        const availableWidth = containerWidth - scrollContainerPadding;
-        const itemWidth = (availableWidth - gaps) / itemsPerRow;
+    const renderFileDetailsModal = () => {
+        const backgroundColor = themeStyles.backgroundColor;
+        const borderColor = themeStyles.borderColor;
         
         return (
-            <TouchableOpacity
-                key={photo.id}
-                style={[
-                    styles.photoItem,
-                    {
-                        width: itemWidth,
-                        height: itemWidth,
-                    }
-                ]}
-                onPress={() => handleFileOpen(photo)}
-                activeOpacity={0.8}
+            <Modal
+                visible={showFileDetails}
+                animationType="slide"
+                presentationStyle="pageSheet"
+                onRequestClose={() => setShowFileDetails(false)}
             >
-                <View style={styles.photoContainer}>
-                    {Platform.OS === 'web' ? (
-                        <img
-                            src={downloadUrl}
-                            alt={photo.filename}
-                            style={{
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover',
-                                borderRadius: 8,
-                                transition: 'transform 0.2s ease',
-                            }}
-                            loading="lazy"
-                            onError={(e) => {
-                                console.error('Photo failed to load:', e);
-                                // Could replace with placeholder image
-                            }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.transform = 'scale(1.02)';
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.transform = 'scale(1)';
-                            }}
-                        />
-                    ) : (
-                        <Image
-                            source={{ uri: downloadUrl }}
-                            style={styles.photoImage}
-                            resizeMode="cover"
-                            onError={(e) => {
-                                console.error('Photo failed to load:', e);
-                            }}
-                        />
-                    )}
-                </View>
-            </TouchableOpacity>
-        );
-    };
-
-    const renderFileDetailsModal = () => (
-        <Modal
-            visible={showFileDetails}
-            animationType="slide"
-            presentationStyle="pageSheet"
-            onRequestClose={() => setShowFileDetails(false)}
-        >
-            <View style={[styles.modalContainer, { backgroundColor }]}>
-                <View style={[styles.modalHeader, { borderBottomColor: borderColor }]}>
-                    <TouchableOpacity
-                        style={styles.modalCloseButton}
-                        onPress={() => setShowFileDetails(false)}
-                    >
+                <View style={[styles.modalContainer, { backgroundColor }]}>
+                    <View style={[styles.modalHeader, { borderBottomColor: borderColor }]}>
+                        <TouchableOpacity
+                            style={styles.modalCloseButton}
+                            onPress={() => setShowFileDetails(false)}
+                        >
                         <Ionicons name="close" size={24} color={themeStyles.textColor} />
                     </TouchableOpacity>
                     <Text style={[styles.modalTitle, { color: themeStyles.textColor }]}>File Details</Text>
@@ -1223,10 +1232,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 )}
             </View>
         </Modal>
-    );
+        );
+    };
 
     const renderFileViewer = () => {
         if (!openedFile) return null;
+
+        const backgroundColor = themeStyles.backgroundColor;
+        const borderColor = themeStyles.borderColor;
 
         const isImage = openedFile.contentType.startsWith('image/');
         const isText = openedFile.contentType.startsWith('text/') || 
