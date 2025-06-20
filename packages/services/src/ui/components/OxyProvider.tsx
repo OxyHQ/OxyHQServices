@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState, useEffect } from 'react';
+import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions, Platform, Animated, StatusBar, Keyboard, KeyboardEvent } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -303,8 +303,8 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         []
     );
 
-    // Background style based on theme
-    const getBackgroundStyle = () => {
+    // Memoize background style based on theme to prevent recalculation on every render
+    const backgroundStyle = useMemo(() => {
         const baseColor = customStyles.backgroundColor || (theme === 'light' ? '#FFFFFF' : '#121212');
         return {
             backgroundColor: baseColor,
@@ -317,7 +317,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 }
             })
         };
-    };
+    }, [customStyles.backgroundColor, theme]);
 
     // Method to adjust snap points from Router
     const adjustSnapPoints = useCallback((points: string[]) => {
@@ -398,7 +398,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             enablePanDownToClose
             backdropComponent={renderBackdrop}
             backgroundStyle={[
-                getBackgroundStyle(),
+                backgroundStyle,
                 {
                     borderTopLeftRadius: 35,
                     borderTopRightRadius: 35,

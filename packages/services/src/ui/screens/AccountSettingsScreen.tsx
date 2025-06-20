@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
@@ -51,19 +51,25 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const [tempLocation, setTempLocation] = useState('');
     const [tempWebsite, setTempWebsite] = useState('');
 
-    const isDarkTheme = theme === 'dark';
-    const backgroundColor = isDarkTheme ? '#121212' : '#f2f2f2';
-    const primaryColor = '#007AFF';
+    // Memoize theme-related calculations to prevent unnecessary recalculations
+    const themeStyles = useMemo(() => {
+        const isDarkTheme = theme === 'dark';
+        return {
+            isDarkTheme,
+            backgroundColor: isDarkTheme ? '#121212' : '#f2f2f2',
+            primaryColor: '#007AFF',
+        };
+    }, [theme]);
 
-    // Animation functions
-    const animateSaveButton = (toValue: number) => {
+    // Memoize animation function to prevent recreation on every render
+    const animateSaveButton = useCallback((toValue: number) => {
         Animated.spring(saveButtonScale, {
             toValue,
             useNativeDriver: true,
             tension: 150,
             friction: 8,
         }).start();
-    };
+    }, [saveButtonScale]);
 
     // Load user data
     useEffect(() => {
@@ -280,20 +286,20 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                             style={[
                                 config.multiline ? styles.editingFieldTextArea : styles.editingFieldInput,
                                 { 
-                                    backgroundColor: isDarkTheme ? '#333' : '#fff',
-                                    color: isDarkTheme ? '#fff' : '#000',
-                                    borderColor: primaryColor
+                                    backgroundColor: themeStyles.isDarkTheme ? '#333' : '#fff',
+                                    color: themeStyles.isDarkTheme ? '#fff' : '#000',
+                                    borderColor: themeStyles.primaryColor
                                 }
                             ]}
                             value={tempValue}
                             onChangeText={setTempValue}
                             placeholder={config.placeholder}
-                            placeholderTextColor={isDarkTheme ? '#aaa' : '#999'}
+                            placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
                             multiline={config.multiline}
                             numberOfLines={config.multiline ? 6 : 1}
                             keyboardType={config.keyboardType}
                             autoFocus
-                            selectionColor={primaryColor}
+                            selectionColor={themeStyles.primaryColor}
                         />
                     </View>
                 </View>
@@ -340,14 +346,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
     if (authLoading || !user) {
         return (
-            <View style={[styles.container, { backgroundColor, justifyContent: 'center' }]}>
-                <ActivityIndicator size="large" color={primaryColor} />
+            <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor, justifyContent: 'center' }]}>
+                <ActivityIndicator size="large" color={themeStyles.primaryColor} />
             </View>
         );
     }
 
     return (
-        <View style={[styles.container, { backgroundColor }]}>
+        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             {/* Header */}
             <View style={styles.header}>
                 {editingField ? (
@@ -401,9 +407,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                 disabled={isSaving}
                             >
                                 {isSaving ? (
-                                    <ActivityIndicator size="small" color={primaryColor} />
+                                    <ActivityIndicator size="small" color={themeStyles.primaryColor} />
                                 ) : (
-                                    <Ionicons name="checkmark" size={24} color={primaryColor} />
+                                    <Ionicons name="checkmark" size={24} color={themeStyles.primaryColor} />
                                 )}
                             </TouchableOpacity>
                         </Animated.View>
@@ -799,4 +805,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default AccountSettingsScreen;
+export default React.memo(AccountSettingsScreen);

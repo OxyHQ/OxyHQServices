@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, TextInput, LayoutAnimation, UIManager } from 'react-native';
 import { BaseScreenProps } from '../../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
@@ -34,37 +34,58 @@ const FAQS = [
     },
 ];
 
+/**
+ * KarmaFAQScreen - Optimized for performance
+ * 
+ * Performance optimizations implemented:
+ * - useMemo for theme calculations (only recalculates when theme changes)
+ * - useMemo for filtered FAQs (only recalculates when search changes)
+ * - useCallback for event handlers to prevent unnecessary re-renders
+ * - React.memo wrapper to prevent re-renders when props haven't changed
+ */
 const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
-    const isDarkTheme = theme === 'dark';
-    const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
-    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
-    const cardColor = isDarkTheme ? '#23232b' : '#f7f7fa';
-    const primaryColor = '#d169e5';
-    const inputBg = isDarkTheme ? '#23232b' : '#f2f2f7';
-    const inputBorder = isDarkTheme ? '#444' : '#e0e0e0';
-
     const [expanded, setExpanded] = useState<number | null>(0);
     const [search, setSearch] = useState('');
 
-    const filteredFaqs = FAQS.filter(faq =>
-        faq.q.toLowerCase().includes(search.toLowerCase()) ||
-        faq.a.toLowerCase().includes(search.toLowerCase())
-    );
+    // Memoize theme-related calculations to prevent unnecessary recalculations
+    const themeStyles = useMemo(() => {
+        const isDarkTheme = theme === 'dark';
+        return {
+            isDarkTheme,
+            backgroundColor: isDarkTheme ? '#121212' : '#FFFFFF',
+            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
+            cardColor: isDarkTheme ? '#23232b' : '#f7f7fa',
+            primaryColor: '#d169e5',
+            inputBg: isDarkTheme ? '#23232b' : '#f2f2f7',
+            inputBorder: isDarkTheme ? '#444' : '#e0e0e0',
+        };
+    }, [theme]);
 
-    const handleToggle = (idx: number) => {
+    // Memoize filtered FAQs to prevent filtering on every render
+    const filteredFaqs = useMemo(() => {
+        if (!search.trim()) return FAQS;
+        const searchLower = search.toLowerCase();
+        return FAQS.filter(faq =>
+            faq.q.toLowerCase().includes(searchLower) ||
+            faq.a.toLowerCase().includes(searchLower)
+        );
+    }, [search]);
+
+    // Memoize toggle handler to prevent recreation on every render
+    const handleToggle = useCallback((idx: number) => {
         LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-        setExpanded(expanded === idx ? null : idx);
-    };
+        setExpanded(prev => prev === idx ? null : idx);
+    }, []);
 
     return (
-        <View style={[styles.container, { backgroundColor }]}>
-            <Text style={[styles.title, { color: textColor }]}>Karma FAQ</Text>
-            <View style={[styles.searchBar, { backgroundColor: inputBg, borderColor: inputBorder }]}>
-                <Ionicons name="search-outline" size={20} color={primaryColor} style={{ marginRight: 8 }} />
+        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+            <Text style={[styles.title, { color: themeStyles.textColor }]}>Karma FAQ</Text>
+            <View style={[styles.searchBar, { backgroundColor: themeStyles.inputBg, borderColor: themeStyles.inputBorder }]}>
+                <Ionicons name="search-outline" size={20} color={themeStyles.primaryColor} style={{ marginRight: 8 }} />
                 <TextInput
-                    style={[styles.searchInput, { color: textColor }]}
+                    style={[styles.searchInput, { color: themeStyles.textColor }]}
                     placeholder="Search FAQ..."
-                    placeholderTextColor={isDarkTheme ? '#aaa' : '#888'}
+                    placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#888'}
                     value={search}
                     onChangeText={setSearch}
                     returnKeyType="search"
@@ -72,29 +93,29 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             </View>
             <ScrollView contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
                 {filteredFaqs.length === 0 ? (
-                    <Text style={[styles.noResults, { color: textColor }]}>No results found.</Text>
+                    <Text style={[styles.noResults, { color: themeStyles.textColor }]}>No results found.</Text>
                 ) : (
                     filteredFaqs.map((item, idx) => {
                         const isOpen = expanded === idx;
                         return (
                             <TouchableOpacity
                                 key={idx}
-                                style={[styles.card, { backgroundColor: cardColor, shadowColor: isDarkTheme ? '#000' : '#d169e5' }]}
+                                style={[styles.card, { backgroundColor: themeStyles.cardColor, shadowColor: themeStyles.isDarkTheme ? '#000' : '#d169e5' }]}
                                 activeOpacity={0.95}
                                 onPress={() => handleToggle(idx)}
                             >
                                 <View style={styles.questionRow}>
-                                    <Ionicons name={isOpen ? 'chevron-down' : 'chevron-forward'} size={22} color={primaryColor} style={{ marginRight: 8 }} />
-                                    <Text style={[styles.question, { color: primaryColor }]}>{item.q}</Text>
+                                    <Ionicons name={isOpen ? 'chevron-down' : 'chevron-forward'} size={22} color={themeStyles.primaryColor} style={{ marginRight: 8 }} />
+                                    <Text style={[styles.question, { color: themeStyles.primaryColor }]}>{item.q}</Text>
                                 </View>
                                 {isOpen && (
-                                    <Text style={[styles.answer, { color: textColor }]}>{item.a}</Text>
+                                    <Text style={[styles.answer, { color: themeStyles.textColor }]}>{item.a}</Text>
                                 )}
                             </TouchableOpacity>
                         );
                     })
                 )}
-                <Text style={[styles.paragraph, { color: textColor, marginTop: 32, textAlign: 'center' }]}>Still have questions? Contact support!</Text>
+                <Text style={[styles.paragraph, { color: themeStyles.textColor, marginTop: 32, textAlign: 'center' }]}>Still have questions? Contact support!</Text>
             </ScrollView>
         </View>
     );
@@ -161,4 +182,4 @@ const styles = StyleSheet.create({
     },
 });
 
-export default KarmaFAQScreen;
+export default React.memo(KarmaFAQScreen);
