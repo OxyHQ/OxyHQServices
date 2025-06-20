@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -65,14 +65,20 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [loadingDimensions, setLoadingDimensions] = useState(false);
     const [hoveredPreview, setHoveredPreview] = useState<string | null>(null);
 
-    const isDarkTheme = theme === 'dark';
-    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
-    const backgroundColor = isDarkTheme ? '#121212' : '#f2f2f2';
-    const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#FFFFFF';
-    const borderColor = isDarkTheme ? '#444444' : '#E0E0E0';
-    const primaryColor = '#007AFF';
-    const dangerColor = '#FF3B30';
-    const successColor = '#34C759';
+    // Memoize theme-related calculations to prevent unnecessary recalculations
+    const themeStyles = useMemo(() => {
+        const isDarkTheme = theme === 'dark';
+        return {
+            isDarkTheme,
+            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
+            backgroundColor: isDarkTheme ? '#121212' : '#f2f2f2',
+            secondaryBackgroundColor: isDarkTheme ? '#222222' : '#FFFFFF',
+            borderColor: isDarkTheme ? '#444444' : '#E0E0E0',
+            primaryColor: '#007AFF',
+            dangerColor: '#FF3B30',
+            successColor: '#34C759',
+        };
+    }, [theme]);
 
     const targetUserId = userId || user?.id;
 
@@ -806,32 +812,32 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     {/* Preview button for supported files */}
                     {hasPreview && (
                         <TouchableOpacity
-                            style={[styles.actionButton, { backgroundColor: isDarkTheme ? '#333333' : '#F0F0F0' }]}
+                            style={[styles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
                             onPress={() => handleFileOpen(file)}
                         >
-                            <Ionicons name="eye" size={20} color={primaryColor} />
+                            <Ionicons name="eye" size={20} color={themeStyles.primaryColor} />
                         </TouchableOpacity>
                     )}
                     
                     <TouchableOpacity
-                        style={[styles.actionButton, { backgroundColor: isDarkTheme ? '#333333' : '#F0F0F0' }]}
+                        style={[styles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
                         onPress={() => handleFileDownload(file.id, file.filename)}
                     >
-                        <Ionicons name="download" size={20} color={primaryColor} />
+                        <Ionicons name="download" size={20} color={themeStyles.primaryColor} />
                     </TouchableOpacity>
 
                     {/* Always show delete button for debugging */}
                     <TouchableOpacity
-                        style={[styles.actionButton, { backgroundColor: isDarkTheme ? '#400000' : '#FFEBEE' }]}
+                        style={[styles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#400000' : '#FFEBEE' }]}
                         onPress={() => {
                             handleFileDelete(file.id, file.filename);
                         }}
                         disabled={deleting === file.id}
                     >
                         {deleting === file.id ? (
-                            <ActivityIndicator size="small" color={dangerColor} />
+                            <ActivityIndicator size="small" color={themeStyles.dangerColor} />
                         ) : (
-                            <Ionicons name="trash" size={20} color={dangerColor} />
+                            <Ionicons name="trash" size={20} color={themeStyles.dangerColor} />
                         )}
                     </TouchableOpacity>
                 </View>
@@ -845,9 +851,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         if (photos.length === 0) {
             return (
                 <View style={styles.emptyState}>
-                    <Ionicons name="images-outline" size={64} color={isDarkTheme ? '#666666' : '#CCCCCC'} />
-                    <Text style={[styles.emptyStateTitle, { color: textColor }]}>No Photos Yet</Text>
-                    <Text style={[styles.emptyStateDescription, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                    <Ionicons name="images-outline" size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
+                    <Text style={[styles.emptyStateTitle, { color: themeStyles.textColor }]}>No Photos Yet</Text>
+                    <Text style={[styles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                         {user?.id === targetUserId 
                             ? `Upload photos to get started. You can select multiple photos at once${Platform.OS === 'web' ? ' or drag & drop them here.' : '.'}`
                             : "This user hasn't uploaded any photos yet"
@@ -855,7 +861,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     </Text>
                     {user?.id === targetUserId && (
                         <TouchableOpacity
-                            style={[styles.emptyStateButton, { backgroundColor: primaryColor }]}
+                            style={[styles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
                             onPress={handleFileUpload}
                             disabled={uploading}
                         >
@@ -881,15 +887,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     <RefreshControl
                         refreshing={refreshing}
                         onRefresh={() => loadFiles(true)}
-                        tintColor={primaryColor}
+                        tintColor={themeStyles.primaryColor}
                     />
                 }
                 showsVerticalScrollIndicator={false}
             >
                 {loadingDimensions && (
                     <View style={styles.dimensionsLoadingIndicator}>
-                        <ActivityIndicator size="small" color={primaryColor} />
-                        <Text style={[styles.dimensionsLoadingText, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <ActivityIndicator size="small" color={themeStyles.primaryColor} />
+                        <Text style={[styles.dimensionsLoadingText, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                             Loading photo layout...
                         </Text>
                     </View>
@@ -902,12 +908,28 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     createJustifiedRows={createJustifiedRows}
                     renderJustifiedPhotoItem={renderJustifiedPhotoItem}
                     renderSimplePhotoItem={renderPhotoItem}
-                    textColor={textColor}
+                    textColor={themeStyles.textColor}
                     containerWidth={containerWidth}
                 />
             </ScrollView>
         );
-    }, [filteredFiles, isDarkTheme, textColor, user?.id, targetUserId, uploading, primaryColor, handleFileUpload, refreshing, loadFiles, loadingDimensions, photoDimensions, loadPhotoDimensions, createJustifiedRows, renderJustifiedPhotoItem]);
+    }, [
+        filteredFiles, 
+        themeStyles, 
+        user?.id, 
+        targetUserId, 
+        uploading, 
+        handleFileUpload, 
+        refreshing, 
+        loadFiles, 
+        loadingDimensions, 
+        photoDimensions, 
+        loadPhotoDimensions, 
+        createJustifiedRows, 
+        renderJustifiedPhotoItem, 
+        renderPhotoItem, 
+        containerWidth
+    ]);
 
     // Separate component for the photo grid to optimize rendering
     const JustifiedPhotoGrid = React.memo(({ 

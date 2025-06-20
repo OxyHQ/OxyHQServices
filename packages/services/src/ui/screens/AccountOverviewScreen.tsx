@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
@@ -30,18 +30,26 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     const [additionalAccountsData, setAdditionalAccountsData] = useState<any[]>([]);
     const [loadingAdditionalAccounts, setLoadingAdditionalAccounts] = useState(false);
 
-    const isDarkTheme = theme === 'dark';
-    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
-    const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
-    const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#F5F5F5';
-    const borderColor = isDarkTheme ? '#444444' : '#E0E0E0';
-    const primaryColor = '#d169e5';
-    const dangerColor = '#D32F2F';
-    const iconColor = isDarkTheme ? '#BBBBBB' : '#666666';
+    // Memoize theme-related calculations to prevent unnecessary recalculations
+    const themeStyles = useMemo(() => {
+        const isDarkTheme = theme === 'dark';
+        return {
+            isDarkTheme,
+            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
+            backgroundColor: isDarkTheme ? '#121212' : '#FFFFFF',
+            secondaryBackgroundColor: isDarkTheme ? '#222222' : '#F5F5F5',
+            borderColor: isDarkTheme ? '#444444' : '#E0E0E0',
+            primaryColor: '#d169e5',
+            dangerColor: '#D32F2F',
+            iconColor: isDarkTheme ? '#BBBBBB' : '#666666',
+        };
+    }, [theme]);
 
-    // Get additional accounts from sessions (excluding current user)
-    const additionalAccounts = sessions.filter(session => 
-        session.sessionId !== activeSessionId && session.userId !== user?.id
+    // Memoize additional accounts filtering to prevent recalculation on every render
+    const additionalAccounts = useMemo(() => 
+        sessions.filter(session => 
+            session.sessionId !== activeSessionId && session.userId !== user?.id
+        ), [sessions, activeSessionId, user?.id]
     );
 
     // Load user profiles for additional accounts
@@ -98,7 +106,8 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
         language: 'English',
     };
 
-    const handleLogout = async () => {
+    // Memoize event handlers to prevent recreation on every render
+    const handleLogout = useCallback(async () => {
         try {
             await logout();
             if (onClose) {
@@ -108,9 +117,9 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
             console.error('Logout failed:', error);
             toast.error('There was a problem signing you out. Please try again.');
         }
-    };
+    }, [logout, onClose]);
 
-    const confirmLogout = () => {
+    const confirmLogout = useCallback(() => {
         Alert.alert(
             'Sign Out',
             'Are you sure you want to sign out?',
@@ -127,13 +136,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
             ],
             { cancelable: true }
         );
-    };
+    }, [handleLogout]);
 
-    const handleAddAccount = () => {
+    const handleAddAccount = useCallback(() => {
         toast.info('Add another account feature coming soon!');
-    };
+    }, []);
 
-    const handleSignOutAll = () => {
+    const handleSignOutAll = useCallback(() => {
         Alert.alert(
             'Sign Out of All Accounts',
             'Are you sure you want to sign out of all accounts?',
@@ -150,20 +159,20 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
             ],
             { cancelable: true }
         );
-    };
+    }, [handleLogout]);
 
     if (!user) {
         return (
-            <View style={[styles.container, { backgroundColor }]}>
-                <Text style={[styles.message, { color: textColor }]}>Not signed in</Text>
+            <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+                <Text style={[styles.message, { color: themeStyles.textColor }]}>Not signed in</Text>
             </View>
         );
     }
 
     if (isLoading) {
         return (
-            <View style={[styles.container, { backgroundColor, justifyContent: 'center' }]}>
-                <ActivityIndicator size="large" color={primaryColor} />
+            <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor, justifyContent: 'center' }]}>
+                <ActivityIndicator size="large" color={themeStyles.primaryColor} />
             </View>
         );
     }
