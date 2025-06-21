@@ -161,11 +161,11 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
 
         if (sessionsData) {
           const parsedSessions: SecureClientSession[] = JSON.parse(sessionsData);
-          
+
           // Migrate old session format to include user info
           const migratedSessions: SecureClientSession[] = [];
           let shouldUpdateStorage = false;
-          
+
           for (const session of parsedSessions) {
             if (!session.userId || !session.username) {
               // Session is missing user info, try to fetch it
@@ -188,31 +188,31 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
               migratedSessions.push(session);
             }
           }
-          
+
           // Update storage if we made changes
           if (shouldUpdateStorage) {
             await saveSessionsToStorage(migratedSessions);
           }
-          
+
           setSessions(migratedSessions);
 
           if (storedActiveSessionId && migratedSessions.length > 0) {
             const activeSession = migratedSessions.find(s => s.sessionId === storedActiveSessionId);
-            
+
             if (activeSession) {
               console.log('SecureAuth - activeSession found:', activeSession);
-              
+
               // Validate session
               try {
                 const validation = await oxyServices.validateSession(activeSession.sessionId);
-                
+
                 if (validation.valid) {
                   console.log('SecureAuth - session validated successfully');
                   setActiveSessionId(activeSession.sessionId);
-                  
+
                   // Get access token for API calls
                   await oxyServices.getTokenBySession(activeSession.sessionId);
-                  
+
                   // Load full user data
                   const fullUser = await oxyServices.getUserBySession(activeSession.sessionId);
                   setUser(fullUser);
@@ -221,7 +221,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
                     username: fullUser.username,
                     avatar: fullUser.avatar
                   });
-                  
+
                   if (onAuthStateChange) {
                     onAuthStateChange(fullUser);
                   }
@@ -254,7 +254,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     const filteredSessions = sessions.filter(s => s.sessionId !== sessionId);
     setSessions(filteredSessions);
     await saveSessionsToStorage(filteredSessions);
-    
+
     // If there are other sessions, switch to the first one
     if (filteredSessions.length > 0) {
       await switchToSession(filteredSessions[0].sessionId);
@@ -264,7 +264,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
       setUser(null);
       setMinimalUser(null);
       await storage?.removeItem(keys.activeSessionId);
-      
+
       if (onAuthStateChange) {
         onAuthStateChange(null);
       }
@@ -298,13 +298,13 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
   const switchToSession = useCallback(async (sessionId: string): Promise<void> => {
     try {
       setIsLoading(true);
-      
+
       // Get access token for this session
       await oxyServices.getTokenBySession(sessionId);
-      
+
       // Load full user data
       const fullUser = await oxyServices.getUserBySession(sessionId);
-      
+
       setActiveSessionId(sessionId);
       setUser(fullUser);
       setMinimalUser({
@@ -312,9 +312,9 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
         username: fullUser.username,
         avatar: fullUser.avatar
       });
-      
+
       await saveActiveSessionId(sessionId);
-      
+
       if (onAuthStateChange) {
         onAuthStateChange(fullUser);
       }
@@ -336,20 +336,20 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     try {
       // Get device fingerprint for enhanced device identification
       const deviceFingerprint = DeviceManager.getDeviceFingerprint();
-      
+
       // Get or generate persistent device info
       const deviceInfo = await DeviceManager.getDeviceInfo();
-      
+
       console.log('SecureAuth - Using device fingerprint:', deviceFingerprint);
       console.log('SecureAuth - Using device ID:', deviceInfo.deviceId);
 
       const response: SecureLoginResponse = await oxyServices.secureLogin(
-        username, 
-        password, 
+        username,
+        password,
         deviceName || deviceInfo.deviceName || DeviceManager.getDefaultDeviceName(),
         deviceFingerprint
       );
-      
+
       // Create client session object with user info for duplicate detection
       const clientSession: SecureClientSession = {
         sessionId: response.sessionId,
@@ -361,20 +361,20 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
       };
 
       // Check if this user already has a session (prevent duplicate accounts)
-      const existingUserSessionIndex = sessions.findIndex(s => 
+      const existingUserSessionIndex = sessions.findIndex(s =>
         s.userId === response.user.id || s.username === response.user.username
       );
 
       let updatedSessions: SecureClientSession[];
-      
+
       if (existingUserSessionIndex !== -1) {
         // User already has a session - replace it with the new one (reused session scenario)
         const existingSession = sessions[existingUserSessionIndex];
         updatedSessions = [...sessions];
         updatedSessions[existingUserSessionIndex] = clientSession;
-        
+
         console.log(`Reusing/updating existing session for user ${response.user.username}. Previous session: ${existingSession.sessionId}, New session: ${response.sessionId}`);
-        
+
         // If the replaced session was the active one, update active session
         if (activeSessionId === existingSession.sessionId) {
           setActiveSessionId(response.sessionId);
@@ -438,7 +438,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
           setUser(null);
           setMinimalUser(null);
           await storage?.removeItem(keys.activeSessionId);
-          
+
           if (onAuthStateChange) {
             onAuthStateChange(null);
           }
@@ -453,7 +453,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
   // Logout all sessions
   const logoutAll = async (): Promise<void> => {
     console.log('logoutAll called with activeSessionId:', activeSessionId);
-    
+
     if (!activeSessionId) {
       console.error('No active session ID found, cannot logout all');
       setError('No active session found');
@@ -470,7 +470,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
       console.log('Calling oxyServices.logoutAllSecureSessions with sessionId:', activeSessionId);
       await oxyServices.logoutAllSecureSessions(activeSessionId);
       console.log('logoutAllSecureSessions completed successfully');
-      
+
       // Clear all local data
       setSessions([]);
       setActiveSessionId(null);
@@ -478,7 +478,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
       setMinimalUser(null);
       await clearAllStorage();
       console.log('Local storage cleared');
-      
+
       if (onAuthStateChange) {
         onAuthStateChange(null);
         console.log('Auth state change callback called');
@@ -490,10 +490,30 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     }
   };
 
-  // Sign up method (placeholder - you can implement based on your needs)
+  // Sign up method
   const signUp = async (username: string, email: string, password: string): Promise<User> => {
-    // Implement sign up logic similar to secureLogin
-    throw new Error('Sign up not implemented yet');
+    if (!storage) throw new Error('Storage not initialized');
+
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      // Create new account using the OxyServices signUp method
+      const response = await oxyServices.signUp(username, email, password);
+
+      console.log('SignUp successful:', response);
+
+      // Now log the user in securely to create a session
+      // This will handle the session creation and device registration
+      const user = await login(username, password);
+
+      return user;
+    } catch (error: any) {
+      setError(error.message || 'Sign up failed');
+      throw error;
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // Switch session method
@@ -512,7 +532,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
 
     try {
       const serverSessions = await oxyServices.getSessionsBySessionId(activeSessionId);
-      
+
       // Update local sessions with server data
       const updatedSessions: SecureClientSession[] = serverSessions.map(serverSession => ({
         sessionId: serverSession.sessionId,
@@ -520,7 +540,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
         expiresAt: new Date().toISOString(), // You might want to get this from server
         lastActive: new Date().toISOString()
       }));
-      
+
       setSessions(updatedSessions);
       await saveSessionsToStorage(updatedSessions);
     } catch (error) {
@@ -545,14 +565,14 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
 
     try {
       await oxyServices.logoutAllDeviceSessions(activeSessionId);
-      
+
       // Clear all local sessions since we logged out from all devices
       setSessions([]);
       setActiveSessionId(null);
       setUser(null);
       setMinimalUser(null);
       await clearAllStorage();
-      
+
       if (onAuthStateChange) {
         onAuthStateChange(null);
       }
@@ -567,7 +587,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
 
     try {
       await oxyServices.updateDeviceName(activeSessionId, deviceName);
-      
+
       // Update local device info
       await DeviceManager.updateDeviceName(deviceName);
     } catch (error) {
@@ -579,10 +599,10 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
   // Bottom sheet control methods
   const showBottomSheet = useCallback((screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => {
     console.log('showBottomSheet called with:', screenOrConfig);
-    
+
     if (bottomSheetRef?.current) {
       console.log('bottomSheetRef is available');
-      
+
       // First, show the bottom sheet
       if (bottomSheetRef.current.expand) {
         console.log('Expanding bottom sheet');
@@ -593,7 +613,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
       } else {
         console.warn('No expand or present method available on bottomSheetRef');
       }
-      
+
       // Then navigate to the specified screen if provided
       if (screenOrConfig) {
         // Add a small delay to ensure the bottom sheet is opened first

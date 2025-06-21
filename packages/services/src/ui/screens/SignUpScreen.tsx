@@ -59,50 +59,6 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
     // Memoized styles to prevent rerenders
     const styles = useMemo(() => createStyles(colors, theme), [colors, theme]);
 
-    // If user is already authenticated, show user info and account center option
-    if (user && isAuthenticated) {
-        return (
-            <KeyboardAvoidingView
-                style={[styles.container, { backgroundColor: colors.background }]}
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            >
-                <StatusBar
-                    barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
-                    backgroundColor={colors.background}
-                />
-
-                <ScrollView
-                    contentContainerStyle={styles.scrollContent}
-                    showsVerticalScrollIndicator={false}
-                >
-                    <Text style={[styles.welcomeTitle, { color: colors.text }]}>
-                        Welcome, {user.username}!
-                    </Text>
-
-                    <View style={[styles.userInfoContainer, { backgroundColor: colors.inputBackground }]}>
-                        <Text style={[styles.userInfoText, { color: colors.text }]}>
-                            You are already signed in.
-                        </Text>
-                        {user.email && (
-                            <Text style={[styles.userInfoText, { color: colors.secondaryText }]}>
-                                Email: {user.email}
-                            </Text>
-                        )}
-                    </View>
-
-                    <View style={styles.actionButtonsContainer}>
-                        <TouchableOpacity
-                            style={[styles.button, { backgroundColor: colors.primary }]}
-                            onPress={() => navigate('AccountCenter')}
-                        >
-                            <Text style={styles.buttonText}>Go to Account Center</Text>
-                        </TouchableOpacity>
-                    </View>
-                </ScrollView>
-            </KeyboardAvoidingView>
-        );
-    }
-
     // Input focus animations
     const handleInputFocus = useCallback(() => {
         setIsInputFocused(true);
@@ -593,6 +549,50 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
                 return renderWelcomeStep;
         }
     }, [currentStep, renderWelcomeStep, renderIdentityStep, renderSecurityStep, renderSummaryStep]);
+
+    // If user is already authenticated, show user info and account center option
+    if (user && isAuthenticated) {
+        return (
+            <KeyboardAvoidingView
+                style={[styles.container, { backgroundColor: colors.background }]}
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            >
+                <StatusBar
+                    barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
+                    backgroundColor={colors.background}
+                />
+
+                <ScrollView
+                    contentContainerStyle={styles.scrollContent}
+                    showsVerticalScrollIndicator={false}
+                >
+                    <Text style={[styles.welcomeTitle, { color: colors.text }]}>
+                        Welcome, {user.username}!
+                    </Text>
+
+                    <View style={[styles.userInfoContainer, { backgroundColor: colors.inputBackground }]}>
+                        <Text style={[styles.userInfoText, { color: colors.text }]}>
+                            You are already signed in.
+                        </Text>
+                        {user.email && (
+                            <Text style={[styles.userInfoText, { color: colors.secondaryText }]}>
+                                Email: {user.email}
+                            </Text>
+                        )}
+                    </View>
+
+                    <View style={styles.actionButtonsContainer}>
+                        <TouchableOpacity
+                            style={[styles.button, { backgroundColor: colors.primary }]}
+                            onPress={() => navigate('AccountCenter')}
+                        >
+                            <Text style={styles.buttonText}>Go to Account Center</Text>
+                        </TouchableOpacity>
+                    </View>
+                </ScrollView>
+            </KeyboardAvoidingView>
+        );
+    }
 
     return (
         <KeyboardAvoidingView
