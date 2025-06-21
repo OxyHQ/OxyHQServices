@@ -54,8 +54,11 @@ router.get("/check-username/:username", async (req: Request, res: Response) => {
   try {
     const { username } = req.params;
 
+    console.log('Username check request:', { username, timestamp: new Date().toISOString() });
+
     // Basic validation
     if (!username || username.length < 3) {
+      console.log('Username validation failed: too short');
       return res.status(400).json({
         available: false,
         message: "Username must be at least 3 characters long"
@@ -64,25 +67,89 @@ router.get("/check-username/:username", async (req: Request, res: Response) => {
 
     // Check if username matches allowed pattern
     if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+      console.log('Username validation failed: invalid characters');
       return res.status(400).json({
         available: false,
         message: "Username can only contain letters, numbers, and underscores"
       });
     }
 
-    // Check if username exists
-    const existingUser = await User.findOne({ username });
+    // Check if username exists (case-insensitive)
+    const existingUser = await User.findOne({ 
+      username: { $regex: new RegExp(`^${username}$`, 'i') }
+    }).select('username email');
+
+    console.log('Database query result:', { 
+      username, 
+      existingUser: existingUser ? { username: existingUser.username, email: existingUser.email } : null 
+    });
+
+    const isAvailable = !existingUser;
 
     return res.status(200).json({
-      available: !existingUser,
+      available: isAvailable,
       message: existingUser ? "Username is already taken" : "Username is available"
     });
 
   } catch (error) {
+    console.error('Username check error:', error);
     logger.error('Username check error:', error);
     return res.status(500).json({
       available: false,
       message: "Error checking username availability"
+    });
+  }
+});
+
+// Email availability check endpoint
+router.post("/check-email", async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+
+    console.log('Email check request:', { email, timestamp: new Date().toISOString() });
+
+    // Basic validation
+    if (!email || email.length < 5) {
+      console.log('Email validation failed: too short');
+      return res.status(400).json({
+        available: false,
+        message: "Email must be at least 5 characters long"
+      });
+    }
+
+    // Check if email matches basic pattern
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      console.log('Email validation failed: invalid format');
+      return res.status(400).json({
+        available: false,
+        message: "Please enter a valid email address"
+      });
+    }
+
+    // Check if email exists (case-insensitive)
+    const existingUser = await User.findOne({ 
+      email: { $regex: new RegExp(`^${email}$`, 'i') }
+    }).select('username email');
+
+    console.log('Database query result:', { 
+      email, 
+      existingUser: existingUser ? { username: existingUser.username, email: existingUser.email } : null 
+    });
+
+    const isAvailable = !existingUser;
+
+    return res.status(200).json({
+      available: isAvailable,
+      message: existingUser ? "Email is already registered" : "Email is available"
+    });
+
+  } catch (error) {
+    console.error('Email check error:', error);
+    logger.error('Email check error:', error);
+    return res.status(500).json({
+      available: false,
+      message: "Error checking email availability"
     });
   }
 });

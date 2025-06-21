@@ -1589,6 +1589,74 @@ export class OxyServices {
     
     return apiError;
   }
+
+  /**
+   * Check if a username is available
+   * @param username - The username to check
+   * @returns Promise with availability status
+   */
+  async checkUsernameAvailability(username: string): Promise<{ available: boolean; message: string }> {
+    try {
+      const res = await this.client.get(`/auth/check-username/${username}`);
+      return res.data;
+    } catch (error: any) {
+      // If the endpoint doesn't exist, fall back to basic validation
+      if (error.response?.status === 404) {
+        console.warn('Username validation endpoint not found, using fallback validation');
+        return { available: true, message: 'Username validation not available' };
+      }
+      
+      // If it's a validation error (400), return the error message
+      if (error.response?.status === 400) {
+        return error.response.data;
+      }
+      
+      // For other errors, log and return a fallback
+      console.error('Username validation error:', error);
+      return { available: true, message: 'Unable to validate username' };
+    }
+  }
+
+  /**
+   * Check if an email is available
+   * @param email - The email to check
+   * @returns Promise with availability status
+   */
+  async checkEmailAvailability(email: string): Promise<{ available: boolean; message: string }> {
+    try {
+      const res = await this.client.post('/auth/check-email', { email });
+      return res.data;
+    } catch (error: any) {
+      // If the endpoint doesn't exist, fall back to basic validation
+      if (error.response?.status === 404) {
+        console.warn('Email validation endpoint not found, using fallback validation');
+        return { available: true, message: 'Email validation not available' };
+      }
+      
+      // If it's a validation error (400), return the error message
+      if (error.response?.status === 400) {
+        return error.response.data;
+      }
+      
+      // For other errors, log and return a fallback
+      console.error('Email validation error:', error);
+      return { available: true, message: 'Unable to validate email' };
+    }
+  }
+
+  /**
+   * Get user profile by username
+   * @param username - The username to look up
+   * @returns Promise with user profile
+   */
+  async getUserProfileByUsername(username: string): Promise<User> {
+    try {
+      const res = await this.client.get(`/profiles/username/${username}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
 }
 
 export default OxyServices;
