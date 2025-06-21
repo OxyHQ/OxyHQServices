@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
-    "typescript": "^5.0.0"
+    "typescript": "^5.8.3"
   },
   "engines": {
     "node": ">=18.0.0",
@@ -39,5 +39,8 @@
     "user-management"
   ],
   "author": "OxyHQ",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@expo/vector-icons": "^14.1.0"
+  }
 }
