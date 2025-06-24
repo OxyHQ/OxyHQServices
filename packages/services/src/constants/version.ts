@@ -5,7 +5,7 @@
 
 export const packageInfo = {
     name: "@oxyhq/services",
-    version: "5.2.1",
+    version: "5.4.3",
     description: "Reusable OxyHQ module to handle authentication, user management, karma system and more 🚀",
     main: "lib/commonjs/node/index.js",
     module: "lib/module/node/index.js",

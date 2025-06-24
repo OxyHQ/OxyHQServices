@@ -22,7 +22,7 @@
         "esModuleInterop": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
-        "jsx": "react-jsx"
+        "jsx": "react-native"
     },
     "include": [
         "src/**/*",

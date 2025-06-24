@@ -1,37 +1,19 @@
-declare module 'react' {
-  namespace JSX {
-    interface ElementClass {
-      render(): any;
-    }
-  }
-}
-
-// Fix for React Native SVG components
+// React Native SVG component fixes
 declare module 'react-native-svg' {
-  export interface SvgProps {
-    [key: string]: any;
-  }
+  import { Component } from 'react';
   
-  export interface PathProps {
-    [key: string]: any;
-  }
-  
-  export interface CircleProps {
-    [key: string]: any;
-  }
-  
-  export interface LinearGradientProps {
-    [key: string]: any;
-  }
-  
-  export interface StopProps {
-    [key: string]: any;
-  }
+  export default class Svg extends Component<any, any> {}
+  export class Circle extends Component<any, any> {}
+  export class Path extends Component<any, any> {}
+  export class LinearGradient extends Component<any, any> {}
+  export class Stop extends Component<any, any> {}
 }
 
-// Fix for Expo Vector Icons
+// Expo Vector Icons fixes  
 declare module '@expo/vector-icons' {
-  export interface IconProps<T = any> {
-    [key: string]: any;
+  import { Component } from 'react';
+  
+  export namespace Ionicons {
+    class Icon extends Component<any, any> {}
   }
 } 
