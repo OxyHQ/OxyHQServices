@@ -69,52 +69,50 @@
     },
     "dependencies": {
         "@gorhom/bottom-sheet": "^5.1.6",
-        "@oxyhq/services": "^5.4.0",
         "@react-native-async-storage/async-storage": "^2.1.2",
         "axios": "^1.9.0",
         "expo-font": "^13.3.1",
         "expo-linear-gradient": "^14.1.4",
-        "form-data": "^4.0.0",
+        "form-data": "^4.0.1",
         "invariant": "^2.2.4",
         "jwt-decode": "^4.0.0",
         "react-native-safe-area-context": "^5.4.0",
-        "react-test-renderer": "^18.3.1",
-        "sonner": "^2.0.4",
+        "sonner": "^2.0.5",
         "sonner-native": "^0.20.0"
     },
     "devDependencies": {
         "@biomejs/biome": "^1.9.4",
-        "@commitlint/cli": "^17.6.5",
-        "@commitlint/config-conventional": "^17.6.5",
-        "@release-it/conventional-changelog": "^8.0.1",
-        "@testing-library/jest-dom": "^6.4.2",
-        "@testing-library/react": "^14.2.1",
-        "@testing-library/react-native": "^12.4.3",
-        "@types/invariant": "^2.2.34",
+        "@commitlint/cli": "^19.5.0",
+        "@commitlint/config-conventional": "^19.5.0",
+        "@release-it/conventional-changelog": "^8.0.2",
+        "@testing-library/jest-dom": "^6.6.3",
+        "@testing-library/react": "^14.3.1",
+        "@testing-library/react-native": "^12.8.1",
+        "@types/invariant": "^2.2.37",
         "@types/jest": "^29.5.14",
         "@types/jwt-decode": "^2.2.1",
-        "@types/node": "^20.5.1",
-        "@types/react": "~18.3.12",
-        "@types/react-native": "~0.73.0",
+        "@types/node": "^22.10.2",
+        "@types/react": "^18.2.6",
         "copyfiles": "^2.4.1",
         "husky": "^4.3.8",
         "jest": "^30.0.0",
-        "lint-staged": "^13.2.2",
+        "lint-staged": "^15.2.10",
         "metro-react-native-babel-preset": "^0.77.0",
-        "react": "18.3.1",
-        "react-native": "0.76.0",
+        "react": "^18.3.1",
+        "react-dom": "^18.3.1",
+        "react-native": "0.76.3",
         "react-native-builder-bob": "^0.30.3",
-        "react-native-gesture-handler": "^2.20.2",
+        "react-native-gesture-handler": "^2.22.1",
         "react-native-reanimated": "^3.16.1",
-        "react-native-svg": "^14.2.0",
-        "release-it": "^17.6.0",
-        "ts-jest": "^29.4.0",
-        "typescript": "^5.3.0"
+        "react-native-svg": "^15.9.0",
+        "react-test-renderer": "^18.3.1",
+        "release-it": "^17.8.2",
+        "ts-jest": "^29.2.5",
+        "typescript": "^5.8.3"
     },
     "peerDependencies": {
         "@expo/vector-icons": "^14.1.0",
         "@types/react": "*",
-        "@types/react-native": "*",
         "axios": "^1.9.0",
         "invariant": "^2.2.4",
         "jwt-decode": "^4.0.0",
@@ -127,9 +125,6 @@
     },
     "peerDependenciesMeta": {
         "@expo/vector-icons": {
-            "optional": true
-        },
-        "@types/react-native": {
             "optional": true
         },
         "@types/react": {
@@ -162,7 +157,9 @@
         ]
     },
     "resolutions": {
-        "react-native-gesture-handler": "^2.20.2",
+        "react": "^18.2.0",
+        "react-dom": "^18.2.0",
+        "react-native-gesture-handler": "^2.22.1",
         "react-native-reanimated": "^3.16.1"
     }
 }

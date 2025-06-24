@@ -11,5 +11,7 @@ export { default as Avatar } from './Avatar';
 export { default as FollowButton } from './FollowButton';
 export { FontLoader, setupFonts } from './FontLoader';
 export { default as OxyLogo } from './OxyLogo';
-export { default as OxyProvider } from './OxyProvider';
 export { default as OxySignInButton } from './OxySignInButton';
+
+// Note: OxyProvider is not exported here to avoid circular dependencies
+// Import it directly from './OxyProvider' when needed

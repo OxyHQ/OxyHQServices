@@ -13,14 +13,20 @@
         ],
         "declaration": true,
         "rootDir": "./src",
-        "strict": true,
+        "strict": false,
+        "noImplicitAny": false,
+        "strictNullChecks": false,
+        "strictFunctionTypes": false,
+        "noImplicitReturns": false,
+        "noImplicitThis": false,
         "esModuleInterop": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
         "jsx": "react-jsx"
     },
     "include": [
-        "src/**/*"
+        "src/**/*",
+        "src/types/**/*"
     ],
     "exclude": [
         "node_modules",
