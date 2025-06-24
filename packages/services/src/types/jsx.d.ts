@@ -29,11 +29,14 @@ declare module 'react-native-reanimated' {
   export function runOnJS(callback: (...args: any[]) => any): (...args: any[]) => any;
   export const Easing: any;
   
-  export const Animated: {
+  interface AnimatedComponents {
     View: any;
     Text: any;
     ScrollView: any;
-  };
+  }
+  
+  const Animated: AnimatedComponents;
+  export default Animated;
 }
 
 // BottomSheet component fixes
