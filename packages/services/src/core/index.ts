@@ -102,7 +102,7 @@ export class OxyServices {
         console.warn('Error decoding JWT token', error);
       }
       
-      req.headers = req.headers || {};
+      req.headers = req.headers || {} as any;
       req.headers.Authorization = `Bearer ${this.accessToken}`;
       return req;
     });

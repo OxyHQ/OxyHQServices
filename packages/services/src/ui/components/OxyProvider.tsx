@@ -392,7 +392,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
 
     return (
         <BottomSheetModal
-            ref={modalRef}
+            ref={modalRef as any}
             index={0}
             snapPoints={snapPoints}
             enablePanDownToClose
