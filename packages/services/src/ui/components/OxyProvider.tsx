@@ -4,6 +4,8 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { OxyProviderProps } from '../navigation/types';
 import { OxyContextProvider, useOxy } from '../context/OxyContext';
+import { Provider } from 'react-redux';
+import { store } from '../store';
 import OxyRouter from '../navigation/OxyRouter';
 import { FontLoader, setupFonts } from './FontLoader';
 import { Toaster } from '../../lib/sonner';
@@ -39,25 +41,28 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
     // If contextOnly is true, we just provide the context without the bottom sheet UI
     if (contextOnly) {
         return (
-            <OxyContextProvider
-                oxyServices={oxyServices}
-                storageKeyPrefix={storageKeyPrefix}
-                onAuthStateChange={onAuthStateChange}
-            >
-                {children}
-            </OxyContextProvider>
+            <Provider store={store}>
+                <OxyContextProvider
+                    oxyServices={oxyServices}
+                    storageKeyPrefix={storageKeyPrefix}
+                    onAuthStateChange={onAuthStateChange}
+                >
+                    {children}
+                </OxyContextProvider>
+            </Provider>
         );
     }
 
     // Otherwise, provide both the context and the bottom sheet UI
     return (
-        <OxyContextProvider
-            oxyServices={oxyServices}
-            storageKeyPrefix={storageKeyPrefix}
-            onAuthStateChange={onAuthStateChange}
-            bottomSheetRef={internalBottomSheetRef}
-        >
-            <FontLoader>
+        <Provider store={store}>
+            <OxyContextProvider
+                oxyServices={oxyServices}
+                storageKeyPrefix={storageKeyPrefix}
+                onAuthStateChange={onAuthStateChange}
+                bottomSheetRef={internalBottomSheetRef}
+            >
+                <FontLoader>
                 <GestureHandlerRootView style={styles.gestureHandlerRoot}>
                     <BottomSheetModalProvider>
                         <StatusBar translucent backgroundColor="transparent" />
@@ -75,6 +80,7 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
                 </GestureHandlerRootView>
             </FontLoader>
         </OxyContextProvider>
+        </Provider>
     );
 };
 
