@@ -14,12 +14,16 @@ export { FontLoader, setupFonts } from './components/FontLoader';
 export { OxyIcon } from './components/icon';
 export type { IconProps } from './components/icon';
 
-export { 
-  OxyContextProvider, 
+export {
+  OxyContextProvider,
   useOxy,
   OxyContextState,
   OxyContextProviderProps
 } from './context/OxyContext';
+
+// Redux store exports
+export { store } from './store';
+export type { RootState, AppDispatch } from './store';
 
 // Export styles
 export { fontFamilies, fontStyles } from './styles/fonts';

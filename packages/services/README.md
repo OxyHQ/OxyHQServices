@@ -77,6 +77,20 @@ import { OxyProvider, Avatar } from '@oxyhq/services/ui';
 import { OxyServices, OxyProvider } from '@oxyhq/services/full';
 ```
 
+## Zero-Config Express Router
+
+Quickly mount authentication routes in any Express app:
+
+```typescript
+import express from 'express';
+import { createAuth } from '@oxyhq/services/core';
+
+const app = express();
+app.use('/auth', createAuth({ baseURL: 'http://localhost:3000' }).middleware());
+```
+
+This automatically provides sign-up, login, logout, refresh, and session management endpoints.
+
 ## Requirements
 
 - **Node.js** 16+ (for backend usage)
