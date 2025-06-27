@@ -96,24 +96,84 @@ const generateTokens = (user: User) => {
 
 ### Token Validation
 
+The API provides a flexible way to handle token validation via an authentication middleware factory.
+
+**New Auth Factory (`authFactory.ts`)**
+
+A new middleware factory `createAuth` has been introduced in `src/middleware/authFactory.ts`. This allows for a more streamlined and configurable way to protect routes.
+
 ```typescript
-// Middleware for protecting routes
-export const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.split(' ')[1];
+// src/middleware/authFactory.ts
+import { Request, Response, NextFunction } from 'express';
+import jwt from 'jsonwebtoken';
+import User, { IUser } from '../models/User';
+import { logger } from '../utils/logger';
 
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
+export interface AuthFactoryOptions {
+  tokenSecret: string;
+  userModel?: any;
+}
 
-  try {
-    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as JwtPayload;
-    req.userId = decoded.id || decoded.userId;
-    req.user = decoded;
-    next();
-  } catch (error) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
+export interface AuthenticatedRequest extends Request {
+  user?: IUser | any;
+}
+
+export function createAuthMiddleware(options: AuthFactoryOptions) {
+  const UserEntity = options.userModel || User;
+  return async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
+    // ... (implementation details: checks Bearer token, verifies, fetches user)
+    // On success, attaches user to req.user
+    // On failure, sends appropriate 401 or 500 response.
+  };
+}
+
+export function createAuth(options: AuthFactoryOptions) {
+  if (!options.tokenSecret) {
+    throw new Error('[AuthFactory] Token secret must be provided.');
   }
+  return {
+    middleware: () => createAuthMiddleware(options),
+  };
+}
+```
+
+**Usage in `server.ts`:**
+
+The `server.ts` file initializes this auth factory and applies the middleware to relevant routes.
+
+```typescript
+// In server.ts
+import { createAuth } from './middleware/authFactory';
+
+// ...
+dotenv.config();
+
+const tokenSecret = process.env.ACCESS_TOKEN_SECRET;
+if (!tokenSecret) {
+  console.error("ACCESS_TOKEN_SECRET is not defined...");
+  process.exit(1);
+}
+const auth = createAuth({ tokenSecret });
+
+// ...
+
+// Apply to routes that require authentication
+app.use("/sessions", auth.middleware(), sessionsRouter);
+app.use("/secure-session", auth.middleware(), secureSessionRouter);
+// ... and other routes like /analytics, /payments, etc.
+```
+
+This new factory standardizes how authentication is applied across different parts of the API. Routes that require simple token-based authentication can use `auth.middleware()`. More complex authentication scenarios (like public sign-up/login routes in `authRouter.ts` or routes with optional authentication) might still use specific internal middleware or checks.
+
+**Previously Used Middleware (`auth.ts`)**
+
+The existing `authMiddleware` in `src/middleware/auth.ts` (and similar patterns in specific route files) is still in use for some routes, particularly those with more granular control requirements or those not yet migrated to the new factory. The goal is to gradually consolidate authentication logic using the new `authFactory` where appropriate.
+
+```typescript
+// Example of previously used middleware (still active in some parts)
+// src/middleware/auth.ts
+export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
+  // ... (older implementation)
 };
 ```
 

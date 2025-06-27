@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
+    "@types/react-redux": "^7.1.34",
     "typescript": "^5.0.0"
   },
   "engines": {
@@ -39,5 +40,10 @@
     "user-management"
   ],
   "author": "OxyHQ",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@reduxjs/toolkit": "^2.8.2",
+    "react-redux": "^9.2.0",
+    "redux": "^5.0.1"
+  }
 }

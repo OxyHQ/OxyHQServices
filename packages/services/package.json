@@ -65,7 +65,8 @@
         "delete-dts.js": "find ./lib/commonjs -name '*.d.js*' -delete && find ./lib/module -name '*.d.js*' -delete",
         "release": "rm -rf lib && yarn build && release-it",
         "example": "yarn --cwd example",
-        "bootstrap": "yarn install && yarn example"
+        "bootstrap": "yarn install && yarn example",
+        "test": "jest"
     },
     "dependencies": {
         "@gorhom/bottom-sheet": "^5.1.6",

@@ -40,35 +40,95 @@ const response = await oxy.auth.login({
 const user = await oxy.users.getCurrentUser();
 ```
 
-### React/React Native Integration
+### React/React Native Integration with Redux
+
+The `OxyProvider` now integrates with Redux for state management.
 
 ```typescript
-import { OxyProvider, useOxy } from '@oxyhq/services/ui';
+import React from 'react';
+import { OxyProvider } from '@oxyhq/services'; // Main provider
+import { OxyServices, User } from '@oxyhq/services'; // Core services and types
+import { useAppSelector, useAppDispatch } from '@oxyhq/services'; // Redux hooks (assuming path)
+import { login as loginAction, logout as logoutAction } from '@oxyhq/services'; // Auth actions (assuming path)
+
+// Initialize OxyServices (typically once)
+const oxyServices = new OxyServices({
+  baseURL: process.env.REACT_APP_API_URL || 'http://localhost:3001',
+});
 
 function App() {
   return (
-    <OxyProvider config={{ baseURL: 'http://localhost:3001' }}>
+    // OxyProvider now sets up Redux Provider internally
+    <OxyProvider oxyServices={oxyServices}>
       <MyComponent />
     </OxyProvider>
   );
 }
 
 function MyComponent() {
-  const { user, login, logout } = useOxy();
+  // Consume state from Redux store
+  const { user, isAuthenticated, isLoading, error } = useAppSelector(state => state.auth);
+  const dispatch = useAppDispatch();
+
+  const handleLogin = async () => {
+    try {
+      // Dispatch login thunk
+      // Note: The actual login thunk from authSlice.ts expects more parameters
+      // like storage, currentSessions, etc. This is a simplified example.
+      // You'd typically call a wrapper function from useOxy() or handle this in a service layer.
+      await dispatch(loginAction({
+        username: 'user',
+        password: 'password',
+        oxyServices,
+        storage: window.localStorage, // Example for web
+        currentSessions: [], // Provide existing sessions if any
+        currentActiveSessionId: null // Provide active session ID if any
+      })).unwrap(); // .unwrap() to get payload or throw error
+      console.log('Login successful');
+    } catch (loginError) {
+      console.error('Login failed:', loginError);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      // Similar to login, logout thunk also needs parameters
+      await dispatch(logoutAction({
+        oxyServices,
+        storage: window.localStorage,
+        currentSessions: [], // Provide from store
+        currentActiveSessionId: null // Provide from store
+      })).unwrap();
+      console.log('Logout successful');
+    } catch (logoutError) {
+      console.error('Logout failed:', logoutError);
+    }
+  };
   
+  if (isLoading) return <p>Loading...</p>;
+  if (error) return <p>Error: {error}</p>;
+
   return (
     <div>
-      {user ? (
-        <p>Welcome, {user.username}!</p>
+      {isAuthenticated && user ? (
+        <>
+          <p>Welcome, {user.username}!</p>
+          <button onClick={handleLogout}>Logout</button>
+        </>
       ) : (
-        <button onClick={() => login('user', 'pass')}>
-          Login
-        </button>
+        <button onClick={handleLogin}>Login</button>
       )}
     </div>
   );
 }
+
+// Make sure to expose useAppSelector, useAppDispatch, and actions correctly from the library.
+// For example, an index.ts in 'store' or 'hooks' directory.
+// import { useAppSelector, useAppDispatch } from '@oxyhq/services/store';
+// import { login, logout } from '@oxyhq/services/store/auth';
 ```
+
+The `useOxy()` hook is still available but its role has shifted. It now primarily provides methods that dispatch Redux actions or interact directly with `OxyServices` for operations not managed by Redux. State itself (like `user`, `isAuthenticated`) should be accessed using `useAppSelector`.
 
 ## 🏗️ Architecture
 

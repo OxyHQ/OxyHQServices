@@ -4,7 +4,7 @@ import mongoose from "mongoose";
 import { Server as SocketIOServer, Socket } from "socket.io";
 import profilesRouter from "./routes/profiles";
 import usersRouter from "./routes/users";
-import authRouter from "./routes/auth";
+import authRouter from "./routes/auth"; // This is the existing auth router
 import notificationsRouter from "./routes/notifications.routes";
 import sessionsRouter from "./routes/sessions";
 import secureSessionRouter from "./routes/secureSession";
@@ -17,10 +17,20 @@ import privacyRoutes from "./routes/privacy";
 import analyticsRoutes from "./routes/analytics.routes";
 import paymentRoutes from './routes/payment.routes';
 import walletRoutes from './routes/wallet.routes';
-import karmaRoutes from './routes/karma.routes';
+// import karmaRoutes from './routes/karma.routes'; // Was commented out
 import jwt from 'jsonwebtoken';
+import { createAuth } from './middleware/authFactory'; // Import the new auth factory
 
 dotenv.config();
+
+// Initialize the new auth factory
+// Ensure ACCESS_TOKEN_SECRET is set in your .env file
+const tokenSecret = process.env.ACCESS_TOKEN_SECRET;
+if (!tokenSecret) {
+  console.error("ACCESS_TOKEN_SECRET is not defined in environment variables. Auth factory will not work.");
+  process.exit(1); // Or handle this more gracefully depending on your app's needs
+}
+const auth = createAuth({ tokenSecret });
 
 const app = express();
 
@@ -181,18 +191,36 @@ app.get("/", async (req, res) => {
   }
 });
 
-app.use("/search", searchRoutes);
-app.use("/profiles", profilesRouter);
-app.use("/users", usersRouter);
-app.use("/auth", authRouter);
-app.use("/sessions", sessionsRouter);
-app.use("/secure-session", secureSessionRouter);
+app.use("/search", searchRoutes); // Public or uses its own auth
+app.use("/profiles", profilesRouter); // Requires auth for some operations, uses its own or needs update
+app.use("/users", usersRouter); // Requires auth for many operations, uses its own or needs update
+
+// Example of using the new auth middleware for a specific group of routes
+// If you want to protect all /auth related routes (except login/signup/refresh which are public)
+// you might need to structure your authRouter to apply middleware selectively or
+// apply this middleware globally after public routes.
+// For now, existing authRouter handles its own logic.
+app.use("/auth", authRouter); // Existing auth routes (login, signup, refresh etc.)
+
+// Apply the new middleware to routes that require authentication
+// For example, if '/sessions' and '/secure-session' always require auth:
+app.use("/sessions", auth.middleware(), sessionsRouter);
+app.use("/secure-session", auth.middleware(), secureSessionRouter);
+
+// For other routes, you can apply it similarly if they always need auth,
+// or apply it selectively within their routers.
+// Example:
+// app.use("/privacy", auth.middleware(), privacyRoutes);
+// Or if privacyRoutes has mixed public/private, it handles auth internally or selectively.
 app.use("/privacy", privacyRoutes);
-app.use("/analytics", analyticsRoutes);
-app.use('/payments', paymentRoutes);
-app.use('/notifications', notificationsRouter);
-// app.use('/karma', karmaRoutes); // Temporarily disabled due to headers error
-app.use('/wallet', walletRoutes);
+
+
+app.use("/analytics", auth.middleware(), analyticsRoutes); // Assuming analytics needs auth
+app.use('/payments', auth.middleware(), paymentRoutes); // Assuming payments needs auth
+app.use('/notifications', auth.middleware(), notificationsRouter); // Assuming notifications needs auth
+// app.use('/karma', auth.middleware(), karmaRoutes); // If karma routes need auth
+app.use('/wallet', auth.middleware(), walletRoutes); // Assuming wallet needs auth
+
 
 // Global error handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

@@ -9,6 +9,7 @@
     "typeRoots": [
       "./node_modules/@types"
     ],
+    "types": ["jest", "node"], // Added "jest" and "node" for better type resolution
     "baseUrl": ".",
     "paths": {
       "*": [
