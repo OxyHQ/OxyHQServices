@@ -39,7 +39,11 @@ export const fetchFollowStatus = createAsyncThunk(
       const response = await oxyServices.getFollowStatus(userId);
       return { userId, isFollowing: response.isFollowing };
     } catch (error: any) {
-      // If API call fails, return false as default
+      // Ignore authentication errors when user isn't signed in
+      if (error?.status === 401 || error?.message?.includes('Authentication')) {
+        return { userId, isFollowing: false };
+      }
+      // Log other failures and default to not following
       console.warn(`Failed to fetch follow status for user ${userId}:`, error);
       return { userId, isFollowing: false };
     }

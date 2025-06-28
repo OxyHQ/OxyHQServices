@@ -7,6 +7,7 @@ The `FollowButton` component now uses Redux for state management, ensuring that 
 - **Synchronized State**: All follow buttons for the same user ID update simultaneously
 - **Global State Management**: Follow status is managed in Redux store
 - **Backend Synchronization**: Uses core services to sync with backend API
+- **Automatic Initial Sync**: When authenticated, each button fetches follow status from the backend on mount
 - **Loading States**: Individual loading states per user
 - **Error Handling**: Proper error handling with toast notifications
 - **Unified Hook**: Single `useFollow` hook handles both single and multiple users
@@ -222,6 +223,10 @@ await oxyServices.unfollowUser(userId);  // Unfollow - returns { success: boolea
 const { fetchStatus } = useFollow(userId);
 await fetchStatus(); // Syncs with backend state
 ```
+
+## Automatic Initial Fetch
+
+Each `FollowButton` dispatches `fetchFollowStatus` on mount when the user is authenticated and the follow state for that ID isn't already in the Redux store. This keeps the button in sync with the backend even when the page first loads.
 
 ## State Structure
 
