@@ -67,6 +67,9 @@ interface JwtPayload {
 
 /**
  * OxyServices - Client library for interacting with the Oxy API
+ * 
+ * Note: For authentication status in UI components, use `isAuthenticated` from useOxy() context
+ * instead of checking token status directly on this service.
  */
 export class OxyServices {
   private client: AxiosInstance;
@@ -179,10 +182,12 @@ export class OxyServices {
   }
   
   /**
-   * Checks if the user is currently authenticated
-   * @returns Boolean indicating authentication status
+   * Internal method to check if we have an access token
+   * @private
+   * @returns Boolean indicating if access token exists
+   * @internal - Use `isAuthenticated` from useOxy() context in UI components instead
    */
-  public isAuthenticated(): boolean {
+  private hasAccessToken(): boolean {
     return this.accessToken !== null;
   }
 

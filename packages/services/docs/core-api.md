@@ -133,16 +133,21 @@ if (oxy.auth.hasStoredTokens()) {
 }
 ```
 
-#### isAuthenticated()
+#### Authentication Status (UI Components)
 
-Check if user is currently authenticated.
+For UI components, use the context's `isAuthenticated` instead of checking service methods:
 
 ```typescript
-const isAuth = oxy.auth.isAuthenticated();
-if (isAuth) {
-  console.log('User is logged in');
-} else {
-  console.log('User needs to login');
+import { useOxy } from '@oxyhq/services/ui';
+
+function MyComponent() {
+  const { isAuthenticated, user } = useOxy();
+  
+  if (isAuthenticated) {
+    return <div>Welcome {user?.username}!</div>;
+  } else {
+    return <div>Please sign in</div>;
+  }
 }
 ```
 

@@ -45,12 +45,8 @@ try {
 const user = await oxy.users.getCurrentUser();
 console.log('Current user:', user);
 
-// Check if user is authenticated
-if (oxy.auth.isAuthenticated()) {
-  console.log('User is logged in');
-} else {
-  console.log('User is not logged in');
-}
+// Note: For UI components, use the useOxy() hook for authentication status
+// This is just for standalone service usage in Node.js/backend
 ```
 
 ## React/React Native Integration
@@ -257,29 +253,23 @@ const oxy = new OxyServices({
 ### Auto-Login on App Start
 
 ```typescript
-// Check for existing tokens on app initialization
-async function initializeAuth() {
-  if (oxy.auth.hasStoredTokens()) {
-    try {
-      const isValid = await oxy.auth.validate();
-      if (isValid) {
-        console.log('User automatically logged in');
-        return await oxy.users.getCurrentUser();
-      }
-    } catch (error) {
-      console.log('Stored tokens invalid, clearing...');
-      oxy.auth.clearTokens();
-    }
+// For UI components, the OxyProvider automatically handles session restoration
+function App() {
+  const { user, isAuthenticated, isLoading } = useOxy();
+  
+  if (isLoading) {
+    return <div>Loading...</div>;
   }
-  return null;
+  
+  if (isAuthenticated) {
+    console.log('User automatically logged in:', user);
+    return <AuthenticatedApp user={user} />;
+  }
+  
+  return <LoginScreen />;
 }
 
-// Use in your app initialization
-initializeAuth().then(user => {
-  if (user) {
-    // Update UI to show logged in state
-  }
-});
+// The context automatically restores sessions on app start
 ```
 
 ### Token Refresh Handling

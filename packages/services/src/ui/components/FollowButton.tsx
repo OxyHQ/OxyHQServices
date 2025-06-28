@@ -144,7 +144,7 @@ const FollowButton: React.FC<FollowButtonProps> = ({
 
   // Optimized single selector to prevent multiple re-renders
   const followState = useSelector((state: RootState) => ({
-    isFollowing: state.follow.followingUsers[userId] ?? initiallyFollowing,
+    isFollowing: state.follow.followingUsers[userId] ?? initiallyFollowing ?? false,
     isLoading: state.follow.loadingUsers[userId] ?? false,
     error: state.follow.errors[userId]
   }));
@@ -160,20 +160,22 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   const animationProgress = useSharedValue(isFollowing ? 1 : 0);
   const scale = useSharedValue(1);
 
-  // Initialize Redux state with initial value if not already set (run only once)
+  // Initialize Redux state with initial value if not already set
   useEffect(() => {
-    if (userId && initiallyFollowing !== undefined && followState.isFollowing === initiallyFollowing) {
-      // Only set if the current state matches initial value (likely uninitialized)
-      dispatch(setFollowingStatus({ userId, isFollowing: initiallyFollowing }));
+    if (userId && !isStatusKnown) {
+      // Set the initial state regardless of whether initiallyFollowing is defined
+      const initialState = initiallyFollowing ?? false;
+      dispatch(setFollowingStatus({ userId, isFollowing: initialState }));
     }
-  }, [userId, initiallyFollowing]); // Removed dispatch and isFollowing to prevent unnecessary runs
+  }, [userId, initiallyFollowing, isStatusKnown, dispatch]);
 
-  // Fetch latest follow status from backend on mount if authenticated and not already known
+  // Fetch latest follow status from backend on mount if authenticated
+  // This runs separately and will overwrite the initial state with actual data
   useEffect(() => {
-    if (userId && !isStatusKnown && isAuthenticated) {
+    if (userId && isAuthenticated) {
       dispatch(fetchFollowStatus({ userId, oxyServices }));
     }
-  }, [userId, oxyServices, isStatusKnown, isAuthenticated]);
+  }, [userId, oxyServices, isAuthenticated, dispatch]);
 
   // Update the animation value when isFollowing changes
   useEffect(() => {

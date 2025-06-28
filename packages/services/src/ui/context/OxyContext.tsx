@@ -11,7 +11,7 @@ export interface OxyContextState {
   minimalUser: MinimalUserData | null; // Minimal user data for UI
   sessions: SecureClientSession[]; // All active sessions
   activeSessionId: string | null;
-  isAuthenticated: boolean;
+  isAuthenticated: boolean; // Single source of truth for authentication - use this instead of service methods
   isLoading: boolean;
   error: string | null;
 
@@ -640,13 +640,23 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     }
   }, [bottomSheetRef]);
 
+  // Compute comprehensive authentication status
+  // This is the single source of truth for authentication across the entire app
+  const isAuthenticated = useMemo(() => {
+    // User is authenticated if:
+    // 1. We have a full user object loaded, OR
+    // 2. We have an active session with a valid token
+    // This covers both the loaded state and the loading-but-authenticated state
+    return !!user || (!!activeSessionId && !!oxyServices?.getCurrentUserId());
+  }, [user, activeSessionId, oxyServices]);
+
   // Context value
   const contextValue: OxyContextState = {
     user,
     minimalUser,
     sessions,
     activeSessionId,
-    isAuthenticated: !!user,
+    isAuthenticated,
     isLoading,
     error,
     login,

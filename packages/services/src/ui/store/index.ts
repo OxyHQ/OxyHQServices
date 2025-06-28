@@ -33,19 +33,19 @@ const initialFollowState: FollowState = {
 // Async thunk for fetching follow status from backend
 export const fetchFollowStatus = createAsyncThunk(
   'follow/fetchFollowStatus',
-  async ({ userId, oxyServices }: { userId: string; oxyServices: any }) => {
+  async ({ userId, oxyServices }: { userId: string; oxyServices: any }, { rejectWithValue }) => {
     try {
       // Use the proper core service method
       const response = await oxyServices.getFollowStatus(userId);
       return { userId, isFollowing: response.isFollowing };
     } catch (error: any) {
-      // Ignore authentication errors when user isn't signed in
+      // Ignore authentication errors when user isn't signed in - don't update state
       if (error?.status === 401 || error?.message?.includes('Authentication')) {
-        return { userId, isFollowing: false };
+        return rejectWithValue('Not authenticated');
       }
-      // Log other failures and default to not following
+      // Log other failures and reject to not update state
       console.warn(`Failed to fetch follow status for user ${userId}:`, error);
-      return { userId, isFollowing: false };
+      return rejectWithValue(error?.message || 'Failed to fetch follow status');
     }
   }
 );
@@ -174,6 +174,13 @@ const followSlice = createSlice({
         const { userId, isFollowing } = action.payload;
         state.followingUsers[userId] = isFollowing;
         state.errors[userId] = null;
+      })
+      .addCase(fetchFollowStatus.rejected, (state, action) => {
+        const { userId } = action.meta.arg;
+        // Don't update follow state on fetch errors - preserve existing/initial state
+        if (action.payload !== 'Not authenticated') {
+          console.warn(`Failed to fetch follow status for user ${userId}:`, action.payload);
+        }
       })
       // Handle toggleFollowUser
       .addCase(toggleFollowUser.pending, (state, action) => {

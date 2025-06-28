@@ -36,7 +36,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     theme,
     navigate,
 }) => {
-    const { user, sessions, oxyServices } = useOxy();
+    const { user, sessions, oxyServices, isAuthenticated } = useOxy();
     const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
     const [isRunningSystemCheck, setIsRunningSystemCheck] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'unknown'>('unknown');
@@ -75,7 +75,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                     method: 'GET',
                     timeout: 3000,
                 } as any);
-                
+
                 if (response.ok) {
                     setConnectionStatus('connected');
                 } else {
@@ -111,21 +111,21 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
 
         setIsRunningSystemCheck(true);
         const checks = [];
-        
+
         // Get the API base URL from the services instance
         const apiBaseUrl = oxyServices?.getBaseURL() || 'https://api.oxy.so'; // Default for now, could be made configurable
-        
+
         try {
             // Check 1: API Server Health
             checks.push('🔍 Checking API server connection...');
             toast.info('Running system checks...', { duration: 2000 });
-            
+
             try {
                 const response = await fetch(`${apiBaseUrl}/`, {
                     method: 'GET',
                     timeout: 5000,
                 } as any);
-                
+
                 if (response.ok) {
                     const data = await response.json();
                     checks.push('✅ API server is responding');
@@ -146,9 +146,9 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
 
             // Check 2: Authentication Status
             checks.push('🔍 Checking authentication...');
-            if (oxyServices.isAuthenticated()) {
-                checks.push('✅ User is authenticated');
-                
+            checks.push(`🔐 Authentication Status: ${isAuthenticated ? '✅ Authenticated' : '❌ Not authenticated'}`);
+
+            if (isAuthenticated) {
                 // Check 3: Token Validation
                 try {
                     const isValid = await oxyServices.validate();
@@ -161,8 +161,6 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                     checks.push('❌ Token validation failed');
                     checks.push(`   Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
                 }
-            } else {
-                checks.push('⚠️ User is not authenticated');
             }
 
             // Check 4: Session Validation (if user has active sessions)
@@ -187,7 +185,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
             // Check 6: Package Information
             checks.push('🔍 Checking package information...');
             checks.push(`✅ Package: ${packageInfo.name}@${packageInfo.version}`);
-            
+
             // Check 7: Memory and Performance (basic)
             checks.push('🔍 Checking performance metrics...');
             const memoryUsage = (performance as any).memory;
@@ -202,7 +200,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
             // Final summary
             const errorCount = checks.filter(check => check.includes('❌')).length;
             const warningCount = checks.filter(check => check.includes('⚠️')).length;
-            
+
             checks.push('');
             checks.push('📋 SYSTEM CHECK SUMMARY:');
             if (errorCount === 0 && warningCount === 0) {
@@ -266,9 +264,9 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
         copyToClipboard(report, 'Full application report');
     };
 
-    const InfoRow: React.FC<{ 
-        label: string; 
-        value: string; 
+    const InfoRow: React.FC<{
+        label: string;
+        value: string;
         copyable?: boolean;
         icon?: string;
         iconComponent?: React.ReactNode;
@@ -277,9 +275,9 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
         isLast?: boolean;
         onPress?: () => void;
         showChevron?: boolean;
-    }> = ({ 
-        label, 
-        value, 
+    }> = ({
+        label,
+        value,
         copyable = false,
         icon = 'information-circle',
         iconComponent,
@@ -289,47 +287,47 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
         onPress,
         showChevron = false,
     }) => {
-        const handlePress = () => {
-            if (onPress) {
-                onPress();
-            } else if (copyable) {
-                copyToClipboard(value, label);
-            }
-        };
+            const handlePress = () => {
+                if (onPress) {
+                    onPress();
+                } else if (copyable) {
+                    copyToClipboard(value, label);
+                }
+            };
 
-        const isInteractive = copyable || !!onPress;
+            const isInteractive = copyable || !!onPress;
 
-        return (
-            <TouchableOpacity 
-                style={[
-                    styles.settingItem,
-                    isFirst && styles.firstSettingItem,
-                    isLast && styles.lastSettingItem,
-                ]}
-                onPress={isInteractive ? handlePress : undefined}
-                disabled={!isInteractive}
-            >
-                <View style={styles.settingInfo}>
-                    {iconComponent ? (
-                        React.cloneElement(iconComponent as React.ReactElement, { style: styles.settingIcon })
-                    ) : (
-                        <OxyIcon name={icon} size={20} color={color} style={styles.settingIcon} />
-                    )}
-                    <View style={styles.settingDetails}>
-                        <Text style={styles.settingLabel}>{label}</Text>
-                        <Text style={[
-                            styles.settingValue,
-                            (copyable || onPress) && { color: primaryColor }
-                        ]}>
-                            {value}
-                        </Text>
+            return (
+                <TouchableOpacity
+                    style={[
+                        styles.settingItem,
+                        isFirst && styles.firstSettingItem,
+                        isLast && styles.lastSettingItem,
+                    ]}
+                    onPress={isInteractive ? handlePress : undefined}
+                    disabled={!isInteractive}
+                >
+                    <View style={styles.settingInfo}>
+                        {iconComponent ? (
+                            React.cloneElement(iconComponent as React.ReactElement, { style: styles.settingIcon })
+                        ) : (
+                            <OxyIcon name={icon} size={20} color={color} style={styles.settingIcon} />
+                        )}
+                        <View style={styles.settingDetails}>
+                            <Text style={styles.settingLabel}>{label}</Text>
+                            <Text style={[
+                                styles.settingValue,
+                                (copyable || onPress) && { color: primaryColor }
+                            ]}>
+                                {value}
+                            </Text>
+                        </View>
                     </View>
-                </View>
-                {copyable && <OxyIcon name="copy" size={16} color="#ccc" />}
-                {showChevron && <OxyIcon name="chevron-forward" size={16} color="#ccc" />}
-            </TouchableOpacity>
-        );
-    };
+                    {copyable && <OxyIcon name="copy" size={16} color="#ccc" />}
+                    {showChevron && <OxyIcon name="chevron-forward" size={16} color="#ccc" />}
+                </TouchableOpacity>
+            );
+        };
 
     return (
         <View style={[styles.container, { backgroundColor }]}>
@@ -346,43 +344,43 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 {/* Package Information */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Package Information</Text>
-                    
-                    <InfoRow 
-                        label="Name" 
-                        value={packageInfo.name} 
-                        copyable 
+
+                    <InfoRow
+                        label="Name"
+                        value={packageInfo.name}
+                        copyable
                         iconComponent={<OxyServicesLogo width={20} height={20} />}
                         color="#007AFF"
                         isFirst
                     />
-                    <InfoRow 
-                        label="Version" 
-                        value={packageInfo.version} 
-                        copyable 
+                    <InfoRow
+                        label="Version"
+                        value={packageInfo.version}
+                        copyable
                         icon="pricetag"
                         color="#5856D6"
                     />
-                    <InfoRow 
-                        label="Description" 
-                        value={packageInfo.description || 'No description'} 
+                    <InfoRow
+                        label="Description"
+                        value={packageInfo.description || 'No description'}
                         icon="document-text"
                         color="#34C759"
                     />
-                    <InfoRow 
-                        label="Main Entry" 
-                        value={packageInfo.main || 'N/A'} 
+                    <InfoRow
+                        label="Main Entry"
+                        value={packageInfo.main || 'N/A'}
                         icon="code"
                         color="#FF9500"
                     />
-                    <InfoRow 
-                        label="Module Entry" 
-                        value={packageInfo.module || 'N/A'} 
+                    <InfoRow
+                        label="Module Entry"
+                        value={packageInfo.module || 'N/A'}
                         icon="library"
                         color="#FF3B30"
                     />
-                    <InfoRow 
-                        label="Types Entry" 
-                        value={packageInfo.types || 'N/A'} 
+                    <InfoRow
+                        label="Types Entry"
+                        value={packageInfo.types || 'N/A'}
                         icon="construct"
                         color="#32D74B"
                         isLast
@@ -392,35 +390,35 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 {/* System Information */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>System Information</Text>
-                    
-                    <InfoRow 
-                        label="Platform" 
-                        value={Platform.OS} 
+
+                    <InfoRow
+                        label="Platform"
+                        value={Platform.OS}
                         icon="phone-portrait"
                         color="#007AFF"
                         isFirst
                     />
-                    <InfoRow 
-                        label="Platform Version" 
-                        value={systemInfo?.version || 'Loading...'} 
+                    <InfoRow
+                        label="Platform Version"
+                        value={systemInfo?.version || 'Loading...'}
                         icon="hardware-chip"
                         color="#5856D6"
                     />
-                    <InfoRow 
-                        label="Screen Width" 
-                        value={`${systemInfo?.screenDimensions.width || 0}px`} 
+                    <InfoRow
+                        label="Screen Width"
+                        value={`${systemInfo?.screenDimensions.width || 0}px`}
                         icon="resize"
                         color="#FF9500"
                     />
-                    <InfoRow 
-                        label="Screen Height" 
-                        value={`${systemInfo?.screenDimensions.height || 0}px`} 
+                    <InfoRow
+                        label="Screen Height"
+                        value={`${systemInfo?.screenDimensions.height || 0}px`}
                         icon="resize"
                         color="#FF3B30"
                     />
-                    <InfoRow 
-                        label="Environment" 
-                        value={__DEV__ ? 'Development' : 'Production'} 
+                    <InfoRow
+                        label="Environment"
+                        value={__DEV__ ? 'Development' : 'Production'}
                         icon="settings"
                         color="#34C759"
                         isLast
@@ -430,26 +428,26 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 {/* User Information */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>User Information</Text>
-                    
-                    <InfoRow 
-                        label="Authentication Status" 
-                        value={user ? 'Authenticated' : 'Not Authenticated'} 
+
+                    <InfoRow
+                        label="Authentication Status"
+                        value={user ? 'Authenticated' : 'Not Authenticated'}
                         icon="shield-checkmark"
                         color={user ? '#34C759' : '#FF3B30'}
                         isFirst
                     />
                     {user && (
                         <>
-                            <InfoRow 
-                                label="User ID" 
-                                value={user.id} 
-                                copyable 
+                            <InfoRow
+                                label="User ID"
+                                value={user.id}
+                                copyable
                                 icon="person"
                                 color="#007AFF"
                             />
-                            <InfoRow 
-                                label="Username" 
-                                value={user.username || 'N/A'} 
+                            <InfoRow
+                                label="Username"
+                                value={user.username || 'N/A'}
                                 icon="at"
                                 color="#5856D6"
                                 onPress={() => {
@@ -461,23 +459,23 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                                 }}
                                 showChevron={true}
                             />
-                            <InfoRow 
-                                label="Email" 
-                                value={user.email || 'N/A'} 
+                            <InfoRow
+                                label="Email"
+                                value={user.email || 'N/A'}
                                 icon="mail"
                                 color="#FF9500"
                             />
-                            <InfoRow 
-                                label="Premium Status" 
-                                value={user.isPremium ? 'Premium' : 'Standard'} 
+                            <InfoRow
+                                label="Premium Status"
+                                value={user.isPremium ? 'Premium' : 'Standard'}
                                 icon="star"
                                 color={user.isPremium ? '#FFD700' : '#8E8E93'}
                             />
                         </>
                     )}
-                    <InfoRow 
-                        label="Total Active Sessions" 
-                        value={sessions?.length?.toString() || '0'} 
+                    <InfoRow
+                        label="Total Active Sessions"
+                        value={sessions?.length?.toString() || '0'}
                         icon="people"
                         color="#32D74B"
                         isLast
@@ -487,32 +485,32 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 {/* API Configuration */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>API Configuration</Text>
-                    
-                    <InfoRow 
-                        label="API Base URL" 
-                        value={oxyServices?.getBaseURL() || 'Not configured'} 
-                        copyable 
+
+                    <InfoRow
+                        label="API Base URL"
+                        value={oxyServices?.getBaseURL() || 'Not configured'}
+                        copyable
                         icon="server"
                         color="#007AFF"
                         isFirst
                     />
-                    <InfoRow 
-                        label="Connection Status" 
+                    <InfoRow
+                        label="Connection Status"
                         value={
                             connectionStatus === 'checking' ? 'Checking...' :
-                            connectionStatus === 'connected' ? 'Connected' :
-                            connectionStatus === 'disconnected' ? 'Disconnected' :
-                            'Unknown'
+                                connectionStatus === 'connected' ? 'Connected' :
+                                    connectionStatus === 'disconnected' ? 'Disconnected' :
+                                        'Unknown'
                         }
                         icon={
                             connectionStatus === 'checking' ? 'sync' :
-                            connectionStatus === 'connected' ? 'wifi' :
-                            'wifi-off'
+                                connectionStatus === 'connected' ? 'wifi' :
+                                    'wifi-off'
                         }
                         color={
                             connectionStatus === 'checking' ? '#FF9500' :
-                            connectionStatus === 'connected' ? '#34C759' :
-                            '#FF3B30'
+                                connectionStatus === 'connected' ? '#34C759' :
+                                    '#FF3B30'
                         }
                         onPress={async () => {
                             setConnectionStatus('checking');
@@ -522,7 +520,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                                     method: 'GET',
                                     timeout: 3000,
                                 } as any);
-                                
+
                                 if (response.ok) {
                                     setConnectionStatus('connected');
                                     toast.success('API connection successful');
@@ -543,24 +541,24 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 {/* Build Information */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Build Information</Text>
-                    
-                    <InfoRow 
-                        label="Build Timestamp" 
-                        value={systemInfo?.timestamp || 'Loading...'} 
-                        copyable 
+
+                    <InfoRow
+                        label="Build Timestamp"
+                        value={systemInfo?.timestamp || 'Loading...'}
+                        copyable
                         icon="time"
                         color="#007AFF"
                         isFirst
                     />
-                    <InfoRow 
-                        label="React Native" 
-                        value="Expo/React Native" 
+                    <InfoRow
+                        label="React Native"
+                        value="Expo/React Native"
                         icon="logo-react"
                         color="#61DAFB"
                     />
-                    <InfoRow 
-                        label="JavaScript Engine" 
-                        value="Hermes" 
+                    <InfoRow
+                        label="JavaScript Engine"
+                        value="Hermes"
                         icon="flash"
                         color="#FF3B30"
                         isLast
@@ -570,8 +568,8 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 {/* Quick Actions */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Quick Actions</Text>
-                    
-                    <TouchableOpacity 
+
+                    <TouchableOpacity
                         style={[styles.settingItem, styles.firstSettingItem]}
                         onPress={handleCopyFullReport}
                     >
@@ -586,10 +584,10 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         </View>
                         <OxyIcon name="chevron-forward" size={16} color="#ccc" />
                     </TouchableOpacity>
-                    
-                    <TouchableOpacity 
+
+                    <TouchableOpacity
                         style={[
-                            styles.settingItem, 
+                            styles.settingItem,
                             styles.lastSettingItem,
                             isRunningSystemCheck && styles.disabledSettingItem
                         ]}
@@ -597,22 +595,22 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         disabled={isRunningSystemCheck}
                     >
                         <View style={styles.settingInfo}>
-                            <OxyIcon 
-                                name={isRunningSystemCheck ? "sync" : "checkmark-circle"} 
-                                size={20} 
-                                color={isRunningSystemCheck ? "#FF9500" : "#34C759"} 
+                            <OxyIcon
+                                name={isRunningSystemCheck ? "sync" : "checkmark-circle"}
+                                size={20}
+                                color={isRunningSystemCheck ? "#FF9500" : "#34C759"}
                                 style={[
                                     styles.settingIcon,
                                     isRunningSystemCheck && styles.spinningIcon
-                                ]} 
+                                ]}
                             />
                             <View style={styles.settingDetails}>
                                 <Text style={styles.settingLabel}>
                                     {isRunningSystemCheck ? 'Running System Check...' : 'Run System Check'}
                                 </Text>
                                 <Text style={styles.settingDescription}>
-                                    {isRunningSystemCheck 
-                                        ? 'Checking API, authentication, and platform status...' 
+                                    {isRunningSystemCheck
+                                        ? 'Checking API, authentication, and platform status...'
                                         : 'Verify application health and status'
                                     }
                                 </Text>
