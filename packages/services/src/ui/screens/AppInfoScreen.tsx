@@ -431,9 +431,9 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
 
                     <InfoRow
                         label="Authentication Status"
-                        value={user ? 'Authenticated' : 'Not Authenticated'}
+                        value={isAuthenticated ? 'Authenticated' : 'Not Authenticated'}
                         icon="shield-checkmark"
-                        color={user ? '#34C759' : '#FF3B30'}
+                        color={isAuthenticated ? '#34C759' : '#FF3B30'}
                         isFirst
                     />
                     {user && (

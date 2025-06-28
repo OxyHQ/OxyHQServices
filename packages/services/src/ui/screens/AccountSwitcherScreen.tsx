@@ -43,20 +43,21 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     goBack,
     oxyServices,
 }) => {
-    const { 
-        user, 
-        sessions, 
+    const {
+        user,
+        sessions,
         activeSessionId,
-        switchSession, 
-        removeSession, 
+        switchSession,
+        removeSession,
         logoutAll,
-        isLoading 
+        isLoading,
+        isAuthenticated
     } = useOxy();
 
     const [sessionsWithUsers, setSessionsWithUsers] = useState<SessionWithUser[]>([]);
     const [switchingToUserId, setSwitchingToUserId] = useState<string | null>(null);
     const [removingUserId, setRemovingUserId] = useState<string | null>(null);
-    
+
     // Device session management state
     const [showDeviceManagement, setShowDeviceManagement] = useState(false);
     const [deviceSessions, setDeviceSessions] = useState<DeviceSession[]>([]);
@@ -66,7 +67,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
     const screenWidth = Dimensions.get('window').width;
     const isDarkTheme = theme === 'dark';
-    
+
     // Modern color scheme
     const colors = {
         background: isDarkTheme ? '#000000' : '#FFFFFF',
@@ -99,19 +100,19 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                 try {
                     // Try to get user profile using the session
                     const userProfile = await oxyServices.getUserBySession(session.sessionId);
-                    
-                    setSessionsWithUsers(prev => 
-                        prev.map(s => 
-                            s.sessionId === session.sessionId 
+
+                    setSessionsWithUsers(prev =>
+                        prev.map(s =>
+                            s.sessionId === session.sessionId
                                 ? { ...s, userProfile, isLoadingProfile: false }
                                 : s
                         )
                     );
                 } catch (error) {
                     console.error(`Failed to load profile for session ${session.sessionId}:`, error);
-                    setSessionsWithUsers(prev => 
-                        prev.map(s => 
-                            s.sessionId === session.sessionId 
+                    setSessionsWithUsers(prev =>
+                        prev.map(s =>
+                            s.sessionId === session.sessionId
                                 ? { ...s, isLoadingProfile: false }
                                 : s
                         )
@@ -145,7 +146,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         const sessionToRemove = sessionsWithUsers.find(s => s.sessionId === sessionId);
         if (!sessionToRemove) return;
 
-        const displayName = typeof sessionToRemove.userProfile?.name === 'object' 
+        const displayName = typeof sessionToRemove.userProfile?.name === 'object'
             ? sessionToRemove.userProfile.name.full || sessionToRemove.userProfile.name.first || sessionToRemove.userProfile.username
             : sessionToRemove.userProfile?.name || sessionToRemove.userProfile?.username || 'this account';
 
@@ -187,20 +188,20 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         console.log('🔴 sessions array:', sessions);
         console.log('🔴 isLoading:', isLoading);
         console.log('🔴 logoutAll function type:', typeof logoutAll);
-        
+
         // Check if we have the required data
         if (!activeSessionId) {
             console.error('🔴 ERROR: No activeSessionId found!');
             toast.error('No active session found. You may already be logged out.');
             return;
         }
-        
+
         if (typeof logoutAll !== 'function') {
             console.error('🔴 ERROR: logoutAll is not a function!', typeof logoutAll);
             toast.error('Logout function not available. Please try refreshing the app.');
             return;
         }
-        
+
         // TEMPORARY: Skip confirmation dialog to test direct logout
         console.log('🔴 TESTING: Bypassing confirmation dialog for direct test');
         try {
@@ -222,7 +223,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     // Device session management functions
     const loadAllDeviceSessions = async () => {
         if (!oxyServices || !user?.sessionId) return;
-        
+
         setLoadingDeviceSessions(true);
         try {
             // This would call the API to get all device sessions for the current user
@@ -270,7 +271,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
     const handleLogoutAllDevices = async () => {
         const otherDevicesCount = deviceSessions.filter(session => !session.isCurrent).length;
-        
+
         if (otherDevicesCount === 0) {
             toast.info('No other device sessions found to sign out from.');
             return;
@@ -331,10 +332,10 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                 ) : (
                     <>
                         {/* Current Account */}
-                        {user && (
+                        {isAuthenticated && user && (
                             <View style={styles.section}>
                                 <Text style={styles.sectionTitle}>Current Account</Text>
-                                
+
                                 <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem, styles.currentAccountCard]}>
                                     <View style={styles.userIcon}>
                                         {user.avatar?.url ? (
@@ -371,7 +372,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                 <Text style={styles.sectionTitle}>
                                     Other Accounts ({sessionsWithUsers.filter(s => s.sessionId !== activeSessionId).length})
                                 </Text>
-                                
+
                                 {sessionsWithUsers
                                     .filter(s => s.sessionId !== activeSessionId)
                                     .map((sessionWithUser, index, filteredArray) => {
@@ -381,8 +382,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                         const isRemoving = removingUserId === sessionWithUser.sessionId;
                                         const { userProfile, isLoadingProfile } = sessionWithUser;
 
-                                        const displayName = typeof userProfile?.name === 'object' 
-                                            ? userProfile.name.full || userProfile.name.first || userProfile.username 
+                                        const displayName = typeof userProfile?.name === 'object'
+                                            ? userProfile.name.full || userProfile.name.first || userProfile.username
                                             : userProfile?.name || userProfile?.username || 'Unknown User';
 
                                         return (
@@ -450,7 +451,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                         {/* Quick Actions */}
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Quick Actions</Text>
-                            
+
                             <TouchableOpacity
                                 style={[styles.settingItem, styles.firstSettingItem]}
                                 onPress={() => navigate?.('SignIn')}
@@ -507,7 +508,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                         {showDeviceManagement && (
                             <View style={styles.section}>
                                 <Text style={styles.sectionTitle}>Device Sessions</Text>
-                                
+
                                 {loadingDeviceSessions ? (
                                     <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
                                         <View style={styles.loadingContainer}>
@@ -539,11 +540,11 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                 ]}
                                             >
                                                 <View style={styles.settingInfo}>
-                                                    <OxyIcon 
-                                                        name={session.isCurrent ? "phone-portrait" : "phone-portrait-outline"} 
-                                                        size={20} 
-                                                        color={session.isCurrent ? "#34C759" : "#8E8E93"} 
-                                                        style={styles.settingIcon} 
+                                                    <OxyIcon
+                                                        name={session.isCurrent ? "phone-portrait" : "phone-portrait-outline"}
+                                                        size={20}
+                                                        color={session.isCurrent ? "#34C759" : "#8E8E93"}
+                                                        style={styles.settingIcon}
                                                     />
                                                     <View>
                                                         <Text style={styles.settingLabel}>

@@ -21,7 +21,7 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     navigate,
     goBack,
 }) => {
-    const { user, oxyServices } = useOxy();
+    const { user, oxyServices, isAuthenticated } = useOxy();
     const [karmaTotal, setKarmaTotal] = useState<number | null>(null);
     const [karmaHistory, setKarmaHistory] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -52,7 +52,7 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
             .finally(() => setIsLoading(false));
     }, [user]);
 
-    if (!user) {
+    if (!isAuthenticated) {
         return (
             <View style={[styles.container, { backgroundColor }]}>
                 <Text style={[styles.message, { color: textColor }]}>Not signed in</Text>
@@ -73,8 +73,8 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
                 <View style={styles.walletHeader}>
                     <Avatar
-                        uri={user.avatar?.url}
-                        name={user.username}
+                        uri={user?.avatar?.url}
+                        name={user?.username}
                         size={60}
                         theme={theme}
                         style={styles.avatar}

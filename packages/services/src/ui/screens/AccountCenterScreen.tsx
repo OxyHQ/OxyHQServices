@@ -15,12 +15,12 @@ import { packageInfo } from '../../constants/version';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 import { fontFamilies } from '../styles/fonts';
-import { 
-    ProfileCard, 
-    Section, 
-    QuickActions, 
-    GroupedSection, 
-    GroupedItem 
+import {
+    ProfileCard,
+    Section,
+    QuickActions,
+    GroupedSection,
+    GroupedItem
 } from '../components';
 
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
@@ -28,7 +28,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     theme,
     navigate,
 }) => {
-    const { user, logout, isLoading, sessions } = useOxy();
+    const { user, logout, isLoading, sessions, isAuthenticated } = useOxy();
 
     const isDarkTheme = theme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
@@ -69,7 +69,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
         );
     };
 
-    if (!user) {
+    if (!isAuthenticated) {
         return (
             <View style={[styles.container, { backgroundColor }]}>
                 <Text style={[styles.message, { color: textColor }]}>Not signed in</Text>
@@ -88,13 +88,15 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     return (
         <View style={[styles.container, { backgroundColor }]}>
             {/* Header with user profile */}
-            <ProfileCard
-                user={user}
-                theme={theme}
-                onEditPress={() => navigate('AccountSettings', { activeTab: 'profile' })}
-                onClosePress={onClose}
-                showCloseButton={!!onClose}
-            />
+            {user && (
+                <ProfileCard
+                    user={user}
+                    theme={theme}
+                    onEditPress={() => navigate('AccountSettings', { activeTab: 'profile' })}
+                    onClosePress={onClose}
+                    showCloseButton={!!onClose}
+                />
+            )}
 
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
                 {/* Quick Actions */}

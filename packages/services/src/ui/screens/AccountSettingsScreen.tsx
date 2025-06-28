@@ -24,7 +24,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     goBack,
     navigate,
 }) => {
-    const { user, oxyServices, isLoading: authLoading } = useOxy();
+    const { user, oxyServices, isLoading: authLoading, isAuthenticated } = useOxy();
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -74,10 +74,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     // Load user data
     useEffect(() => {
         if (user) {
-            const userDisplayName = typeof user.name === 'string' 
-                ? user.name 
+            const userDisplayName = typeof user.name === 'string'
+                ? user.name
                 : user.name?.full || user.name?.first || '';
-            
+
             setDisplayName(userDisplayName);
             setUsername(user.username || '');
             setEmail(user.email || '');
@@ -115,9 +115,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
             await oxyServices.updateProfile(updates);
             toast.success('Profile updated successfully');
-            
+
             animateSaveButton(1); // Scale back to normal
-            
+
             if (onClose) {
                 onClose();
             } else if (goBack) {
@@ -182,7 +182,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
     const saveField = (type: string) => {
         animateSaveButton(0.95); // Scale down slightly for animation
-        
+
         switch (type) {
             case 'displayName':
                 setDisplayName(tempDisplayName);
@@ -203,7 +203,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 setWebsite(tempWebsite);
                 break;
         }
-        
+
         // Brief delay for animation, then reset and close editing
         setTimeout(() => {
             animateSaveButton(1);
@@ -263,7 +263,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 default: return '';
             }
         })();
-        
+
         const setTempValue = (text: string) => {
             switch (type) {
                 case 'displayName': setTempDisplayName(text); break;
@@ -285,7 +285,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         <TextInput
                             style={[
                                 config.multiline ? styles.editingFieldTextArea : styles.editingFieldInput,
-                                { 
+                                {
                                     backgroundColor: themeStyles.isDarkTheme ? '#333' : '#fff',
                                     color: themeStyles.isDarkTheme ? '#fff' : '#000',
                                     borderColor: themeStyles.primaryColor
@@ -326,7 +326,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         ];
 
         return (
-            <TouchableOpacity 
+            <TouchableOpacity
                 style={itemStyles}
                 onPress={() => startEditing(type, value)}
             >
@@ -344,7 +344,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         );
     };
 
-    if (authLoading || !user) {
+    if (authLoading || !isAuthenticated) {
         return (
             <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor, justifyContent: 'center' }]}>
                 <ActivityIndicator size="large" color={themeStyles.primaryColor} />
@@ -363,14 +363,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                 <Ionicons name="close" size={24} color="#666" />
                             </TouchableOpacity>
                             <Animated.View style={{ transform: [{ scale: saveButtonScale }] }}>
-                                <TouchableOpacity 
+                                <TouchableOpacity
                                     style={[
-                                        styles.saveHeaderButton, 
-                                        { 
+                                        styles.saveHeaderButton,
+                                        {
                                             opacity: isSaving ? 0.7 : 1,
                                             backgroundColor: editingField ? getFieldIcon(editingField).color : '#007AFF'
                                         }
-                                    ]} 
+                                    ]}
                                     onPress={() => saveField(editingField)}
                                     disabled={isSaving}
                                 >
@@ -384,11 +384,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         </View>
                         <View style={styles.editingHeaderBottom}>
                             <View style={styles.headerTitleWithIcon}>
-                                <OxyIcon 
-                                    name={getFieldIcon(editingField).name} 
-                                    size={50} 
-                                    color={getFieldIcon(editingField).color} 
-                                    style={styles.headerIcon} 
+                                <OxyIcon
+                                    name={getFieldIcon(editingField).name}
+                                    size={50}
+                                    color={getFieldIcon(editingField).color}
+                                    style={styles.headerIcon}
                                 />
                                 <Text style={styles.headerTitleLarge}>{getFieldLabel(editingField)}</Text>
                             </View>
@@ -401,8 +401,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         </TouchableOpacity>
                         <Text style={styles.headerTitle}>Account Settings</Text>
                         <Animated.View style={{ transform: [{ scale: saveButtonScale }] }}>
-                            <TouchableOpacity 
-                                style={[styles.saveIconButton, { opacity: isSaving ? 0.7 : 1 }]} 
+                            <TouchableOpacity
+                                style={[styles.saveIconButton, { opacity: isSaving ? 0.7 : 1 }]}
                                 onPress={handleSave}
                                 disabled={isSaving}
                             >
@@ -429,8 +429,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         {/* Profile Picture Section */}
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Profile Picture</Text>
-                            
-                            <TouchableOpacity 
+
+                            <TouchableOpacity
                                 style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}
                                 onPress={handleAvatarUpdate}
                             >
@@ -457,7 +457,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         {/* Basic Information */}
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Basic Information</Text>
-                            
+
                             {renderField(
                                 'displayName',
                                 'Display Name',
@@ -501,7 +501,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         {/* About You */}
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>About You</Text>
-                            
+
                             {renderField(
                                 'bio',
                                 'Bio',
@@ -545,8 +545,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         {/* Quick Actions */}
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Quick Actions</Text>
-                            
-                            <TouchableOpacity 
+
+                            <TouchableOpacity
                                 style={[styles.settingItem, styles.firstSettingItem]}
                                 onPress={() => toast.info('Privacy settings coming soon!')}
                             >
@@ -560,7 +560,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                 <OxyIcon name="chevron-forward" size={16} color="#ccc" />
                             </TouchableOpacity>
 
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={[styles.settingItem, styles.lastSettingItem]}
                                 onPress={() => toast.info('Account verification coming soon!')}
                             >

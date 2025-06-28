@@ -88,10 +88,10 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     screen = 'SignIn',
 }) => {
     // Get all needed values from context in a single call
-    const { user, showBottomSheet } = useOxy();
+    const { isAuthenticated, showBottomSheet } = useOxy();
 
     // Don't show the button if already authenticated (unless explicitly overridden)
-    if (user && !showWhenAuthenticated) return null;
+    if (isAuthenticated && !showWhenAuthenticated) return null;
 
     // Default handler that uses the context methods
     const handlePress = () => {

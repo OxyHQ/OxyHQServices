@@ -34,7 +34,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     theme,
     navigate,
 }) => {
-    const { user, logout, isLoading, sessions, activeSessionId, oxyServices } = useOxy();
+    const { user, logout, isLoading, sessions, activeSessionId, oxyServices, isAuthenticated } = useOxy();
     const [showMoreAccounts, setShowMoreAccounts] = useState(false);
     const [additionalAccountsData, setAdditionalAccountsData] = useState<any[]>([]);
     const [loadingAdditionalAccounts, setLoadingAdditionalAccounts] = useState(false);
@@ -55,8 +55,8 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     }, [theme]);
 
     // Memoize additional accounts filtering to prevent recalculation on every render
-    const additionalAccounts = useMemo(() => 
-        sessions.filter(session => 
+    const additionalAccounts = useMemo(() =>
+        sessions.filter(session =>
             session.sessionId !== activeSessionId && session.userId !== user?.id
         ), [sessions, activeSessionId, user?.id]
     );
@@ -170,7 +170,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
         );
     }, [handleLogout]);
 
-    if (!user) {
+    if (!isAuthenticated) {
         return (
             <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
                 <Text style={[styles.message, { color: themeStyles.textColor }]}>Not signed in</Text>
@@ -202,7 +202,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 {/* User Profile Section */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Profile</Text>
-                    
+
                     <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
                         <View style={styles.userIcon}>
                             <Avatar
@@ -215,9 +215,9 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         <View style={styles.settingInfo}>
                             <View>
                                 <Text style={styles.settingLabel}>
-                                    {typeof user.name === 'string' ? user.name : user.name?.full || user.name?.first || user.username}
+                                    {user ? (typeof user.name === 'string' ? user.name : user.name?.full || user.name?.first || user.username) : 'Loading...'}
                                 </Text>
-                                <Text style={styles.settingDescription}>{user.email || user.username}</Text>
+                                <Text style={styles.settingDescription}>{user ? (user.email || user.username) : 'Loading...'}</Text>
                             </View>
                         </View>
                         <TouchableOpacity
@@ -232,8 +232,8 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 {/* Account Settings */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Account Settings</Text>
-                    
-                    <TouchableOpacity 
+
+                    <TouchableOpacity
                         style={[styles.settingItem, styles.firstSettingItem]}
                         onPress={() => navigate?.('AccountSettings', { activeTab: 'profile' })}
                     >
@@ -247,7 +247,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         <OxyIcon name="chevron-forward" size={16} color="#ccc" />
                     </TouchableOpacity>
 
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.settingItem}
                         onPress={() => navigate?.('AccountSettings', { activeTab: 'password' })}
                     >
@@ -261,7 +261,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         <OxyIcon name="chevron-forward" size={16} color="#ccc" />
                     </TouchableOpacity>
 
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={styles.settingItem}
                         onPress={() => navigate?.('AccountSettings', { activeTab: 'notifications' })}
                     >
@@ -275,7 +275,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         <OxyIcon name="chevron-forward" size={16} color="#ccc" />
                     </TouchableOpacity>
 
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={[styles.settingItem]}
                         onPress={() => navigate?.('PremiumSubscription')}
                     >
@@ -283,14 +283,14 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             <OxyIcon name="star" size={20} color="#FFD700" style={styles.settingIcon} />
                             <View>
                                 <Text style={styles.settingLabel}>Oxy+ Subscriptions</Text>
-                                <Text style={styles.settingDescription}>{user.isPremium ? 'Manage your premium plan' : 'Upgrade to premium features'}</Text>
+                                <Text style={styles.settingDescription}>{user?.isPremium ? 'Manage your premium plan' : 'Upgrade to premium features'}</Text>
                             </View>
                         </View>
                         <OxyIcon name="chevron-forward" size={16} color="#ccc" />
                     </TouchableOpacity>
 
-                    {user.isPremium && (
-                        <TouchableOpacity 
+                    {user?.isPremium && (
+                        <TouchableOpacity
                             style={[styles.settingItem, styles.lastSettingItem]}
                             onPress={() => navigate?.('BillingManagement')}
                         >
@@ -310,7 +310,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 {showMoreAccounts && (
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>Additional Accounts{additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}</Text>
-                        
+
                         {loadingAdditionalAccounts ? (
                             <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
                                 <View style={styles.loadingContainer}>
@@ -324,7 +324,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     <TouchableOpacity
                                         key={account.id}
                                         style={[
-                                            styles.settingItem, 
+                                            styles.settingItem,
                                             index === 0 && styles.firstSettingItem,
                                             index === additionalAccountsData.length - 1 && styles.lastSettingItem
                                         ]}
@@ -348,7 +348,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                         <View style={styles.settingInfo}>
                                             <View>
                                                 <Text style={styles.settingLabel}>
-                                                    {typeof account.name === 'object' 
+                                                    {typeof account.name === 'object'
                                                         ? account.name?.full || account.name?.first || account.username
                                                         : account.name || account.username
                                                     }
@@ -378,7 +378,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 {showMoreAccounts && (
                     <View style={styles.section}>
                         <Text style={styles.sectionTitle}>Account Management</Text>
-                        
+
                         <TouchableOpacity
                             style={[styles.settingItem, styles.firstSettingItem]}
                             onPress={handleAddAccount}
@@ -412,7 +412,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 {/* Quick Actions */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Quick Actions</Text>
-                    
+
                     <TouchableOpacity
                         style={[styles.settingItem, styles.firstSettingItem]}
                         onPress={() => setShowMoreAccounts(!showMoreAccounts)}
@@ -424,9 +424,9 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     {showMoreAccounts ? 'Hide' : 'Show'} Account Switcher
                                 </Text>
                                 <Text style={styles.settingDescription}>
-                                    {showMoreAccounts 
-                                        ? 'Hide account switcher' 
-                                        : additionalAccountsData.length > 0 
+                                    {showMoreAccounts
+                                        ? 'Hide account switcher'
+                                        : additionalAccountsData.length > 0
                                             ? `Switch between ${additionalAccountsData.length + 1} accounts`
                                             : loadingAdditionalAccounts
                                                 ? 'Loading additional accounts...'
@@ -470,7 +470,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 {/* Support & Settings */}
                 <View style={styles.section}>
                     <Text style={styles.sectionTitle}>Support & Settings</Text>
-                    
+
                     <TouchableOpacity
                         style={[styles.settingItem, styles.firstSettingItem]}
                         onPress={() => toast.info('Account preferences coming soon!')}
@@ -544,7 +544,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                 {/* Sign Out */}
                 <View style={styles.section}>
-                    <TouchableOpacity 
+                    <TouchableOpacity
                         style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem, styles.signOutButton]}
                         onPress={confirmLogout}
                     >

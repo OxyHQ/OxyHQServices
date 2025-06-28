@@ -64,8 +64,8 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
     // Check if this should be treated as "Add Account" mode
     const isAddAccountMode = useMemo(() =>
-        user && isAuthenticated && sessions && sessions.length > 0,
-        [user, isAuthenticated, sessions]
+        isAuthenticated && sessions && sessions.length > 0,
+        [isAuthenticated, sessions]
     );
 
     // Memoized styles to prevent rerenders
