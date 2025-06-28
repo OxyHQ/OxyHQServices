@@ -1,1 +1,1 @@
-export { useFollow, useMultipleFollow } from './useFollow'; 
+export { useOxyFollow, useFollow } from './useOxyFollow'; 

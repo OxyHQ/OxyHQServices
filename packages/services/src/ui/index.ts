@@ -21,7 +21,38 @@ export {
   OxyContextProviderProps
 } from './context/OxyContext';
 
-// Redux store exports
+// Redux store exports - NEW ARCHITECTURE
+export { 
+  setupOxyStore, 
+  oxyReducers,
+  // Individual slices
+  authSlice,
+  authActions,
+  authSelectors,
+  authReducer,
+  followSlice,
+  followActions,
+  followSelectors,
+  followThunks,
+  followReducer,
+  // Action creators
+  loginStart,
+  loginSuccess,
+  loginFailure,
+  logout,
+  setFollowingStatus,
+  clearFollowError,
+  resetFollowState,
+  fetchFollowStatus,
+  toggleFollowUser,
+  // Types
+  AuthState,
+  FollowState,
+  initialAuthState,
+  initialFollowState
+} from './store';
+
+// Legacy store exports (deprecated)
 export { store } from './store';
 export type { RootState, AppDispatch } from './store';
 
@@ -32,7 +63,7 @@ export { fontFamilies, fontStyles } from './styles/fonts';
 export * from './navigation/types';
 
 // Hooks
-export { useFollow } from './hooks';
+export { useOxyFollow, useFollow } from './hooks';
 
 // Screens
 export { default as ProfileScreen } from './screens/ProfileScreen';
