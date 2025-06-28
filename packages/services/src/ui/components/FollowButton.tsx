@@ -168,12 +168,12 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     }
   }, [userId, initiallyFollowing]); // Removed dispatch and isFollowing to prevent unnecessary runs
 
-  // Fetch latest follow status from backend on mount if not already known
+  // Fetch latest follow status from backend on mount if authenticated and not already known
   useEffect(() => {
-    if (userId && !isStatusKnown) {
+    if (userId && !isStatusKnown && isAuthenticated) {
       dispatch(fetchFollowStatus({ userId, oxyServices }));
     }
-  }, [userId, oxyServices, isStatusKnown]);
+  }, [userId, oxyServices, isStatusKnown, isAuthenticated]);
 
   // Update the animation value when isFollowing changes
   useEffect(() => {
