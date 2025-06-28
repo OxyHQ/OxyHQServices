@@ -21,7 +21,7 @@ import OxyLogo from '../components/OxyLogo';
 import Avatar from '../components/Avatar';
 import { BottomSheetScrollView } from '../components/bottomSheet';
 import { Ionicons } from '@expo/vector-icons';
-import Svg, { Path, Circle, Defs, LinearGradient, Stop } from 'react-native-svg';
+import HighFive from '../../assets/illustrations/HighFive';
 import { toast } from '../../lib/sonner';
 
 const SignInScreen: React.FC<BaseScreenProps> = ({
@@ -355,48 +355,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                 ]
             }
         ]}>
-            <View style={styles.modernImageContainer}>
-                <Svg width={280} height={160} viewBox="0 0 280 160">
-                    <Defs>
-                        <LinearGradient id="primaryGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <Stop offset="0%" stopColor={colors.primary} stopOpacity="0.8" />
-                            <Stop offset="100%" stopColor={colors.primary} stopOpacity="0.2" />
-                        </LinearGradient>
-                        <LinearGradient id="secondaryGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-                            <Stop offset="0%" stopColor={colors.primary} stopOpacity="0.1" />
-                            <Stop offset="100%" stopColor={colors.primary} stopOpacity="0.3" />
-                        </LinearGradient>
-                    </Defs>
-
-                    {/* Modern abstract shapes */}
-                    <Circle cx="80" cy="80" r="45" fill="url(#primaryGradient)" />
-                    <Circle cx="200" cy="80" r="35" fill="url(#secondaryGradient)" />
-                    <Path
-                        d="M40 120 Q80 40 140 80 Q200 120 240 60"
-                        stroke={colors.primary}
-                        strokeWidth="4"
-                        fill="none"
-                        strokeLinecap="round"
-                    />
-
-                    {/* Floating elements */}
-                    <Circle cx="60" cy="50" r="8" fill={colors.primary} opacity="0.6" />
-                    <Circle cx="220" cy="120" r="6" fill={colors.primary} opacity="0.4" />
-                    <Circle cx="250" cy="40" r="4" fill={colors.primary} opacity="0.8" />
-
-                    {/* Central focus element */}
-                    <Circle cx="140" cy="80" r="25" fill={colors.background} opacity="0.9" />
-                    <Circle cx="135" cy="75" r="3" fill={colors.primary} />
-                    <Circle cx="145" cy="75" r="3" fill={colors.primary} />
-                    <Path
-                        d="M132 85 Q140 92 148 85"
-                        stroke={colors.primary}
-                        strokeWidth="2"
-                        fill="none"
-                        strokeLinecap="round"
-                    />
-                </Svg>
-            </View>
+            <HighFive width={100} height={100} />
 
             <View style={styles.modernHeader}>
                 <Text style={[styles.modernTitle, { color: colors.text }]}>
@@ -435,53 +394,131 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                     {
                         borderColor: validationStatus === 'valid' ? colors.success :
                             validationStatus === 'invalid' ? colors.error :
-                                isInputFocused ? colors.primary : colors.border
+                                isInputFocused ? colors.primary : colors.border,
+                        height: 64,
+                        shadowColor: isInputFocused ? colors.primary : 'transparent',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: isInputFocused ? 0.2 : 0,
+                        shadowRadius: 12,
+                        elevation: isInputFocused ? 6 : 3,
                     }
                 ]}>
                     <Ionicons
                         name="person-outline"
-                        size={20}
+                        size={22}
                         color={isInputFocused ? colors.primary : colors.secondaryText}
                         style={styles.inputIcon}
                     />
-                    <TextInput
-                        style={[styles.modernInput, { color: colors.text }]}
-                        placeholder="Enter your username"
-                        placeholderTextColor={colors.placeholder}
-                        value={username}
-                        onChangeText={handleUsernameChange}
-                        onFocus={handleInputFocus}
-                        onBlur={handleInputBlur}
-                        autoCapitalize="none"
-                        testID="username-input"
-                    />
+                    <View style={{ flex: 1 }}>
+                        <Text style={[
+                            styles.modernLabel,
+                            {
+                                color: isInputFocused ? colors.primary : colors.secondaryText,
+                                fontSize: 12,
+                                marginBottom: 2,
+                            }
+                        ]}>
+                            Username
+                        </Text>
+                        <TextInput
+                            style={[styles.modernInput, {
+                                color: colors.text,
+                                height: 24,
+                                paddingVertical: 0,
+                            }]}
+                            value={username}
+                            onChangeText={handleUsernameChange}
+                            onFocus={handleInputFocus}
+                            onBlur={handleInputBlur}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            testID="username-input"
+                            placeholderTextColor="transparent"
+                        />
+                    </View>
                     {validationStatus === 'validating' && (
                         <ActivityIndicator size="small" color={colors.primary} style={styles.validationIndicator} />
                     )}
                     {validationStatus === 'valid' && (
-                        <Ionicons name="checkmark-circle" size={20} color={colors.success} style={styles.validationIndicator} />
+                        <Ionicons name="checkmark-circle" size={22} color={colors.success} style={styles.validationIndicator} />
                     )}
                     {validationStatus === 'invalid' && username.length >= 3 && (
-                        <Ionicons name="close-circle" size={20} color={colors.error} style={styles.validationIndicator} />
+                        <Ionicons name="close-circle" size={22} color={colors.error} style={styles.validationIndicator} />
                     )}
                 </View>
 
-                {/* Validation feedback */}
+                {/* Enhanced Validation feedback */}
                 {validationStatus === 'valid' && userProfile && (
-                    <View style={[styles.validationSuccessCard, { backgroundColor: colors.success + '15' }]}>
-                        <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-                        <Text style={[styles.validationText, { color: colors.success }]}>
-                            Found user: {userProfile.displayName}
-                        </Text>
+                    <View style={[styles.validationSuccessCard, {
+                        backgroundColor: colors.success + '10',
+                        borderWidth: 1,
+                        borderColor: colors.success + '30',
+                        padding: 16,
+                    }]}>
+                        <View style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            backgroundColor: colors.success + '20',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginRight: 12,
+                        }}>
+                            <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.validationText, {
+                                color: colors.success,
+                                fontWeight: '600',
+                                marginBottom: 2,
+                            }]}>
+                                User Found
+                            </Text>
+                            <Text style={[styles.validationText, {
+                                color: colors.text,
+                                fontSize: 11,
+                                opacity: 0.8,
+                            }]}>
+                                {userProfile.displayName}
+                            </Text>
+                        </View>
                     </View>
                 )}
 
                 {validationStatus === 'invalid' && username.length >= 3 && !errorMessage && (
-                    <View style={[styles.validationErrorCard, { backgroundColor: colors.error + '15' }]}>
-                        <Ionicons name="alert-circle" size={16} color={colors.error} />
-                        <Text style={[styles.validationText, { color: colors.error }]}>
-                            Username not found
-                        </Text>
+                    <View style={[styles.validationErrorCard, {
+                        backgroundColor: colors.error + '10',
+                        borderWidth: 1,
+                        borderColor: colors.error + '30',
+                        padding: 16,
+                    }]}>
+                        <View style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            backgroundColor: colors.error + '20',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginRight: 12,
+                        }}>
+                            <Ionicons name="alert-circle" size={16} color={colors.error} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.validationText, {
+                                color: colors.error,
+                                fontWeight: '600',
+                                marginBottom: 2,
+                            }]}>
+                                Username not found
+                            </Text>
+                            <Text style={[styles.validationText, {
+                                color: colors.secondaryText,
+                                fontSize: 11,
+                                opacity: 0.8,
+                            }]}>
+                                Check spelling or sign up
+                            </Text>
+                        </View>
                     </View>
                 )}
             </Animated.View>
@@ -491,8 +528,11 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                     styles.modernButton,
                     {
                         backgroundColor: colors.primary,
-                        opacity: (!username || validationStatus !== 'valid') ? 0.5 : 1,
+                        opacity: (!username || validationStatus !== 'valid') ? 0.6 : 1,
                         shadowColor: colors.primary,
+                        shadowOpacity: (!username || validationStatus !== 'valid') ? 0.3 : 0.5,
+                        height: 58,
+                        borderRadius: 20,
                     }
                 ]}
                 onPress={handleUsernameNext}
@@ -503,7 +543,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                     <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
                     <>
-                        <Text style={styles.modernButtonText}>Continue</Text>
+                        <Text style={[styles.modernButtonText, { fontWeight: '700' }]}>Continue</Text>
                         <Ionicons name="arrow-forward" size={20} color="#FFFFFF" style={styles.buttonIcon} />
                     </>
                 )}
@@ -577,32 +617,60 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                 styles.modernInputContainer,
                 { transform: [{ scale: inputScaleAnim }] }
             ]}>
-                <View style={[styles.inputWrapper, { borderColor: isInputFocused ? colors.primary : colors.border }]}>
+                <View style={[
+                    styles.inputWrapper,
+                    {
+                        borderColor: isInputFocused ? colors.primary : colors.border,
+                        height: 64,
+                        shadowColor: isInputFocused ? colors.primary : 'transparent',
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: isInputFocused ? 0.2 : 0,
+                        shadowRadius: 12,
+                        elevation: isInputFocused ? 6 : 3,
+                    }
+                ]}>
                     <Ionicons
                         name="lock-closed-outline"
-                        size={20}
+                        size={22}
                         color={isInputFocused ? colors.primary : colors.secondaryText}
                         style={styles.inputIcon}
                     />
-                    <TextInput
-                        style={[styles.modernInput, { color: colors.text }]}
-                        placeholder="Enter your password"
-                        placeholderTextColor={colors.placeholder}
-                        value={password}
-                        onChangeText={handlePasswordChange}
-                        onFocus={handleInputFocus}
-                        onBlur={handleInputBlur}
-                        secureTextEntry={!showPassword}
-                        autoCapitalize="none"
-                        testID="password-input"
-                    />
+                    <View style={{ flex: 1 }}>
+                        <Text style={[
+                            styles.modernLabel,
+                            {
+                                color: isInputFocused ? colors.primary : colors.secondaryText,
+                                fontSize: 12,
+                                marginBottom: 2,
+                            }
+                        ]}>
+                            Password
+                        </Text>
+                        <TextInput
+                            style={[styles.modernInput, {
+                                color: colors.text,
+                                height: 24,
+                                paddingVertical: 0,
+                            }]}
+                            value={password}
+                            onChangeText={handlePasswordChange}
+                            onFocus={handleInputFocus}
+                            onBlur={handleInputBlur}
+                            secureTextEntry={!showPassword}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            testID="password-input"
+                            placeholderTextColor="transparent"
+                        />
+                    </View>
                     <TouchableOpacity
                         style={styles.passwordToggle}
                         onPress={() => setShowPassword(!showPassword)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
                         <Ionicons
                             name={showPassword ? "eye-off" : "eye"}
-                            size={20}
+                            size={22}
                             color={colors.secondaryText}
                         />
                     </TouchableOpacity>
@@ -614,8 +682,11 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                     styles.modernButton,
                     {
                         backgroundColor: colors.primary,
-                        opacity: !password ? 0.5 : 1,
+                        opacity: !password ? 0.6 : 1,
                         shadowColor: colors.primary,
+                        shadowOpacity: !password ? 0.3 : 0.5,
+                        height: 58,
+                        borderRadius: 20,
                     }
                 ]}
                 onPress={handleLogin}
@@ -626,7 +697,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                     <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
                     <>
-                        <Text style={styles.modernButtonText}>Sign In</Text>
+                        <Text style={[styles.modernButtonText, { fontWeight: '700' }]}>Sign In</Text>
                         <Ionicons name="log-in" size={20} color="#FFFFFF" style={styles.buttonIcon} />
                     </>
                 )}
@@ -700,13 +771,8 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
     },
     stepContainer: {
         flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: 600,
-    },
-    modernImageContainer: {
-        alignItems: 'center',
-        marginBottom: 40,
+        justifyContent: 'flex-start',
+        alignItems: 'flex-start',
     },
     modernHeader: {
         alignItems: 'flex-start',
@@ -828,6 +894,13 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
     },
     buttonIcon: {
         marginLeft: 4,
+    },
+
+    // Enhanced Label Styles
+    modernLabel: {
+        fontSize: 12,
+        fontWeight: '500',
+        marginBottom: 2,
     },
     modernLinkText: {
         fontSize: 14,

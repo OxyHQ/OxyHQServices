@@ -315,66 +315,161 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
             <Text style={[styles.stepTitle, { color: colors.text }]}>Who are you?</Text>
 
             <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: colors.text }]}>Username</Text>
-                <View style={{ position: 'relative' }}>
-                    <TextInput
-                        style={[
-                            styles.input,
-                            { backgroundColor: colors.inputBackground, borderColor: colors.border, color: colors.text }
-                        ]}
-                        placeholder="Choose a username"
-                        placeholderTextColor={colors.placeholder}
-                        value={username}
-                        onChangeText={handleUsernameChange}
-                        autoCapitalize="none"
-                        testID="username-input"
+                <View style={[
+                    styles.premiumInputWrapper,
+                    {
+                        borderColor: validationStatus === 'valid' ? colors.success :
+                            validationStatus === 'invalid' ? colors.error : colors.border,
+                        backgroundColor: colors.inputBackground,
+                        shadowColor: colors.primary,
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 12,
+                        elevation: 3,
+                    }
+                ]}>
+                    <Ionicons
+                        name="person-outline"
+                        size={22}
+                        color={colors.secondaryText}
+                        style={styles.inputIcon}
                     />
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.modernLabel, { color: colors.secondaryText }]}>
+                            Username
+                        </Text>
+                        <TextInput
+                            style={[styles.modernInput, { color: colors.text }]}
+                            value={username}
+                            onChangeText={handleUsernameChange}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            testID="username-input"
+                            placeholderTextColor="transparent"
+                        />
+                    </View>
                     {validationStatus === 'validating' && (
                         <ActivityIndicator size="small" color={colors.primary} style={styles.validationIndicator} />
                     )}
                     {validationStatus === 'valid' && (
-                        <Ionicons name="checkmark-circle" size={20} color={colors.success} style={styles.validationIndicator} />
+                        <Ionicons name="checkmark-circle" size={22} color={colors.success} style={styles.validationIndicator} />
                     )}
                     {validationStatus === 'invalid' && username.length >= 3 && (
-                        <Ionicons name="close-circle" size={20} color={colors.error} style={styles.validationIndicator} />
+                        <Ionicons name="close-circle" size={22} color={colors.error} style={styles.validationIndicator} />
                     )}
                 </View>
 
-                {/* Validation feedback */}
+                {/* Enhanced Validation feedback */}
                 {validationStatus === 'valid' && (
-                    <View style={[styles.validationSuccessCard, { backgroundColor: colors.success + '15' }]}>
-                        <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-                        <Text style={[styles.validationText, { color: colors.success }]}>
-                            Username is available
-                        </Text>
+                    <View style={[styles.validationSuccessCard, {
+                        backgroundColor: colors.success + '10',
+                        borderWidth: 1,
+                        borderColor: colors.success + '30',
+                        padding: 16,
+                    }]}>
+                        <View style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            backgroundColor: colors.success + '20',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginRight: 12,
+                        }}>
+                            <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.validationText, {
+                                color: colors.success,
+                                fontWeight: '600',
+                                marginBottom: 2,
+                            }]}>
+                                Username Available
+                            </Text>
+                            <Text style={[styles.validationText, {
+                                color: colors.text,
+                                fontSize: 11,
+                                opacity: 0.8,
+                            }]}>
+                                Good choice! This username is available
+                            </Text>
+                        </View>
                     </View>
                 )}
 
                 {validationStatus === 'invalid' && username.length >= 3 && (
-                    <View style={[styles.validationErrorCard, { backgroundColor: colors.error + '15' }]}>
-                        <Ionicons name="alert-circle" size={16} color={colors.error} />
-                        <Text style={[styles.validationText, { color: colors.error }]}>
-                            {errorMessage || 'Username is already taken'}
-                        </Text>
+                    <View style={[styles.validationErrorCard, {
+                        backgroundColor: colors.error + '10',
+                        borderWidth: 1,
+                        borderColor: colors.error + '30',
+                        padding: 16,
+                    }]}>
+                        <View style={{
+                            width: 32,
+                            height: 32,
+                            borderRadius: 16,
+                            backgroundColor: colors.error + '20',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            marginRight: 12,
+                        }}>
+                            <Ionicons name="alert-circle" size={16} color={colors.error} />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.validationText, {
+                                color: colors.error,
+                                fontWeight: '600',
+                                marginBottom: 2,
+                            }]}>
+                                Username Taken
+                            </Text>
+                            <Text style={[styles.validationText, {
+                                color: colors.secondaryText,
+                                fontSize: 11,
+                                opacity: 0.8,
+                            }]}>
+                                {errorMessage || 'Try a different username'}
+                            </Text>
+                        </View>
                     </View>
                 )}
             </View>
 
             <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: colors.text }]}>Email</Text>
-                <TextInput
-                    style={[
-                        styles.input,
-                        { backgroundColor: colors.inputBackground, borderColor: colors.border, color: colors.text }
-                    ]}
-                    placeholder="Enter your email"
-                    placeholderTextColor={colors.placeholder}
-                    value={email}
-                    onChangeText={handleEmailChange}
-                    autoCapitalize="none"
-                    keyboardType="email-address"
-                    testID="email-input"
-                />
+                <View style={[
+                    styles.premiumInputWrapper,
+                    {
+                        borderColor: colors.border,
+                        backgroundColor: colors.inputBackground,
+                        shadowColor: colors.primary,
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 12,
+                        elevation: 3,
+                    }
+                ]}>
+                    <Ionicons
+                        name="mail-outline"
+                        size={22}
+                        color={colors.secondaryText}
+                        style={styles.inputIcon}
+                    />
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.modernLabel, { color: colors.secondaryText }]}>
+                            Email
+                        </Text>
+                        <TextInput
+                            style={[styles.modernInput, { color: colors.text }]}
+                            value={email}
+                            onChangeText={handleEmailChange}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            keyboardType="email-address"
+                            testID="email-input"
+                            placeholderTextColor="transparent"
+                        />
+                    </View>
+                </View>
             </View>
 
             <View style={styles.navigationButtons}>
@@ -404,28 +499,48 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
             <Text style={[styles.stepTitle, { color: colors.text }]}>Secure your account</Text>
 
             <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: colors.text }]}>Password</Text>
-                <View style={{ position: 'relative' }}>
-                    <TextInput
-                        style={[
-                            styles.input,
-                            { backgroundColor: colors.inputBackground, borderColor: colors.border, color: colors.text }
-                        ]}
-                        placeholder="Create a password"
-                        placeholderTextColor={colors.placeholder}
-                        value={password}
-                        onChangeText={handlePasswordChange}
-                        secureTextEntry={!showPassword}
-                        testID="password-input"
+                <View style={[
+                    styles.premiumInputWrapper,
+                    {
+                        borderColor: colors.border,
+                        backgroundColor: colors.inputBackground,
+                        shadowColor: colors.primary,
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 12,
+                        elevation: 3,
+                    }
+                ]}>
+                    <Ionicons
+                        name="lock-closed-outline"
+                        size={22}
+                        color={colors.secondaryText}
+                        style={styles.inputIcon}
                     />
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.modernLabel, { color: colors.secondaryText }]}>
+                            Password
+                        </Text>
+                        <TextInput
+                            style={[styles.modernInput, { color: colors.text }]}
+                            value={password}
+                            onChangeText={handlePasswordChange}
+                            secureTextEntry={!showPassword}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            testID="password-input"
+                            placeholderTextColor="transparent"
+                        />
+                    </View>
                     <TouchableOpacity
                         style={styles.passwordToggle}
                         onPress={() => setShowPassword(!showPassword)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
                         <Ionicons
                             name={showPassword ? 'eye-off' : 'eye'}
-                            size={20}
-                            color={colors.placeholder}
+                            size={22}
+                            color={colors.secondaryText}
                         />
                     </TouchableOpacity>
                 </View>
@@ -435,28 +550,48 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
             </View>
 
             <View style={styles.inputContainer}>
-                <Text style={[styles.label, { color: colors.text }]}>Confirm Password</Text>
-                <View style={{ position: 'relative' }}>
-                    <TextInput
-                        style={[
-                            styles.input,
-                            { backgroundColor: colors.inputBackground, borderColor: colors.border, color: colors.text }
-                        ]}
-                        placeholder="Confirm your password"
-                        placeholderTextColor={colors.placeholder}
-                        value={confirmPassword}
-                        onChangeText={handleConfirmPasswordChange}
-                        secureTextEntry={!showConfirmPassword}
-                        testID="confirm-password-input"
+                <View style={[
+                    styles.premiumInputWrapper,
+                    {
+                        borderColor: colors.border,
+                        backgroundColor: colors.inputBackground,
+                        shadowColor: colors.primary,
+                        shadowOffset: { width: 0, height: 4 },
+                        shadowOpacity: 0.1,
+                        shadowRadius: 12,
+                        elevation: 3,
+                    }
+                ]}>
+                    <Ionicons
+                        name="lock-closed-outline"
+                        size={22}
+                        color={colors.secondaryText}
+                        style={styles.inputIcon}
                     />
+                    <View style={{ flex: 1 }}>
+                        <Text style={[styles.modernLabel, { color: colors.secondaryText }]}>
+                            Confirm Password
+                        </Text>
+                        <TextInput
+                            style={[styles.modernInput, { color: colors.text }]}
+                            value={confirmPassword}
+                            onChangeText={handleConfirmPasswordChange}
+                            secureTextEntry={!showConfirmPassword}
+                            autoCapitalize="none"
+                            autoCorrect={false}
+                            testID="confirm-password-input"
+                            placeholderTextColor="transparent"
+                        />
+                    </View>
                     <TouchableOpacity
                         style={styles.passwordToggle}
                         onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     >
                         <Ionicons
                             name={showConfirmPassword ? 'eye-off' : 'eye'}
-                            size={20}
-                            color={colors.placeholder}
+                            size={22}
+                            color={colors.secondaryText}
                         />
                     </TouchableOpacity>
                 </View>
@@ -668,7 +803,7 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         textAlign: 'left',
     },
     inputContainer: {
-        marginBottom: 18,
+        marginBottom: 28,
         width: '100%',
     },
     label: {
@@ -685,10 +820,34 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         fontSize: 16,
         marginBottom: 2,
     },
+    premiumInputWrapper: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        height: 64,
+        borderRadius: 20,
+        borderWidth: 2,
+        paddingHorizontal: 20,
+        paddingVertical: 12,
+    },
+    inputIcon: {
+        marginRight: 16,
+    },
+    modernLabel: {
+        fontSize: 12,
+        fontWeight: '500',
+        marginBottom: 2,
+    },
+    modernInput: {
+        fontSize: 16,
+        lineHeight: 20,
+        height: 24,
+        paddingVertical: 0,
+        ...Platform.select({
+            web: { outline: 'none' },
+        }),
+    },
     validationIndicator: {
-        position: 'absolute',
-        right: 16,
-        top: 14,
+        marginLeft: 8,
     },
     validationSuccessCard: {
         flexDirection: 'row',
@@ -711,10 +870,8 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         fontWeight: '500',
     },
     passwordToggle: {
-        position: 'absolute',
-        right: 16,
-        top: 14,
-        padding: 4,
+        padding: 8,
+        marginLeft: 8,
     },
     passwordHint: {
         fontSize: 12,
