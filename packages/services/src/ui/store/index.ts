@@ -13,6 +13,8 @@ interface FollowState {
   followingUsers: Record<string, boolean>;
   // Track loading state for each user ID
   loadingUsers: Record<string, boolean>;
+  // Track which user IDs are currently being fetched (to prevent duplicate requests)
+  fetchingUsers: Record<string, boolean>;
   // Track any follow/unfollow errors
   errors: Record<string, string | null>;
 }
@@ -27,10 +29,11 @@ const initialAuthState: AuthState = {
 const initialFollowState: FollowState = {
   followingUsers: {},
   loadingUsers: {},
+  fetchingUsers: {},
   errors: {},
 };
 
-// Async thunk for fetching follow status from backend
+// Async thunk for fetching follow status from backend with deduplication
 export const fetchFollowStatus = createAsyncThunk(
   'follow/fetchFollowStatus',
   async ({ userId, oxyServices }: { userId: string; oxyServices: any }, { rejectWithValue }) => {
@@ -46,6 +49,20 @@ export const fetchFollowStatus = createAsyncThunk(
       // Log other failures and reject to not update state
       console.warn(`Failed to fetch follow status for user ${userId}:`, error);
       return rejectWithValue(error?.message || 'Failed to fetch follow status');
+    }
+  },
+  {
+    // Prevent duplicate requests for the same user ID
+    condition: ({ userId }, { getState }) => {
+      const state = getState() as RootState;
+      const isAlreadyFetching = state.follow.fetchingUsers[userId];
+      
+      if (isAlreadyFetching) {
+        console.log(`⚡ Deduplicating fetch request for user ${userId} - already in progress`);
+        return false; // Cancel this request
+      }
+      
+      return true; // Allow this request
     }
   }
 );
@@ -164,19 +181,27 @@ const followSlice = createSlice({
     resetFollowState(state: FollowState) {
       state.followingUsers = {};
       state.loadingUsers = {};
+      state.fetchingUsers = {};
       state.errors = {};
     },
   },
   extraReducers: (builder) => {
     builder
       // Handle fetchFollowStatus
+      .addCase(fetchFollowStatus.pending, (state, action) => {
+        const { userId } = action.meta.arg;
+        state.fetchingUsers[userId] = true;
+        state.errors[userId] = null;
+      })
       .addCase(fetchFollowStatus.fulfilled, (state, action) => {
         const { userId, isFollowing } = action.payload;
         state.followingUsers[userId] = isFollowing;
+        state.fetchingUsers[userId] = false;
         state.errors[userId] = null;
       })
       .addCase(fetchFollowStatus.rejected, (state, action) => {
         const { userId } = action.meta.arg;
+        state.fetchingUsers[userId] = false;
         // Don't update follow state on fetch errors - preserve existing/initial state
         if (action.payload !== 'Not authenticated') {
           console.warn(`Failed to fetch follow status for user ${userId}:`, action.payload);
@@ -204,6 +229,10 @@ const followSlice = createSlice({
 
 export const { loginStart, loginSuccess, loginFailure, logout } = authSlice.actions;
 export const { setFollowingStatus, clearFollowError, resetFollowState } = followSlice.actions;
+
+// Selectors for follow state
+export const selectIsUserBeingFetched = (state: RootState, userId: string) => 
+  state.follow.fetchingUsers[userId] ?? false;
 
 export const store = configureStore({
   reducer: {
