@@ -21,7 +21,12 @@ import { useDispatch, useSelector } from 'react-redux';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
-import { toggleFollowUser, setFollowingStatus, clearFollowError } from '../store';
+import {
+  toggleFollowUser,
+  setFollowingStatus,
+  clearFollowError,
+  fetchFollowStatus
+} from '../store';
 import type { RootState, AppDispatch } from '../store';
 
 export interface FollowButtonProps {
@@ -144,6 +149,11 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     error: state.follow.errors[userId]
   }));
 
+  // Whether the follow status has been loaded from the store
+  const isStatusKnown = useSelector((state: RootState) =>
+    Object.prototype.hasOwnProperty.call(state.follow.followingUsers, userId)
+  );
+
   const { isFollowing, isLoading, error } = followState;
 
   // Animation values
@@ -157,6 +167,13 @@ const FollowButton: React.FC<FollowButtonProps> = ({
       dispatch(setFollowingStatus({ userId, isFollowing: initiallyFollowing }));
     }
   }, [userId, initiallyFollowing]); // Removed dispatch and isFollowing to prevent unnecessary runs
+
+  // Fetch latest follow status from backend on mount if not already known
+  useEffect(() => {
+    if (userId && !isStatusKnown) {
+      dispatch(fetchFollowStatus({ userId, oxyServices }));
+    }
+  }, [userId, oxyServices, isStatusKnown]);
 
   // Update the animation value when isFollowing changes
   useEffect(() => {
