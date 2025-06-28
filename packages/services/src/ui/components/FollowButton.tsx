@@ -142,17 +142,31 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   const dispatch = useDispatch();
   const { oxyServices, isAuthenticated } = useOxy();
 
-  // Optimized single selector to prevent multiple re-renders
-  const followState = useSelector((state: RootState) => ({
-    isFollowing: state.follow.followingUsers[userId] ?? initiallyFollowing ?? false,
-    isLoading: state.follow.loadingUsers[userId] ?? false,
-    error: state.follow.errors[userId]
-  }));
+  // Optimized single selector to prevent multiple re-renders with defensive checks
+  const followState = useSelector((state: RootState) => {
+    // Defensive check to handle cases where follow state might not be initialized yet
+    if (!state.follow) {
+      return {
+        isFollowing: initiallyFollowing ?? false,
+        isLoading: false,
+        error: null
+      };
+    }
 
-  // Whether the follow status has been loaded from the store
-  const isStatusKnown = useSelector((state: RootState) =>
-    Object.prototype.hasOwnProperty.call(state.follow.followingUsers, userId)
-  );
+    return {
+      isFollowing: state.follow.followingUsers?.[userId] ?? initiallyFollowing ?? false,
+      isLoading: state.follow.loadingUsers?.[userId] ?? false,
+      error: state.follow.errors?.[userId] ?? null
+    };
+  });
+
+  // Whether the follow status has been loaded from the store with defensive check
+  const isStatusKnown = useSelector((state: RootState) => {
+    if (!state.follow?.followingUsers) {
+      return false;
+    }
+    return Object.prototype.hasOwnProperty.call(state.follow.followingUsers, userId);
+  });
 
   const { isFollowing, isLoading, error } = followState;
 

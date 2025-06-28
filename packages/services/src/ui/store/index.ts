@@ -55,6 +55,11 @@ export const fetchFollowStatus = createAsyncThunk(
     // Prevent duplicate requests for the same user ID
     condition: ({ userId }, { getState }) => {
       const state = getState() as RootState;
+      // Defensive check for follow state
+      if (!state.follow?.fetchingUsers) {
+        return true; // Allow request if state not initialized
+      }
+      
       const isAlreadyFetching = state.follow.fetchingUsers[userId];
       
       if (isAlreadyFetching) {
@@ -232,7 +237,7 @@ export const { setFollowingStatus, clearFollowError, resetFollowState } = follow
 
 // Selectors for follow state
 export const selectIsUserBeingFetched = (state: RootState, userId: string) => 
-  state.follow.fetchingUsers[userId] ?? false;
+  state.follow?.fetchingUsers?.[userId] ?? false;
 
 export const store = configureStore({
   reducer: {

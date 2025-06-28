@@ -6,9 +6,9 @@ import { useOxy } from '../context/OxyContext';
 
 // Memoized selector to prevent unnecessary re-renders
 const createFollowSelector = (userId: string) => (state: RootState) => ({
-  isFollowing: state.follow.followingUsers[userId] ?? false,
-  isLoading: state.follow.loadingUsers[userId] ?? false,
-  error: state.follow.errors[userId] ?? null,
+  isFollowing: state.follow?.followingUsers?.[userId] ?? false,
+  isLoading: state.follow?.loadingUsers?.[userId] ?? false,
+  error: state.follow?.errors?.[userId] ?? null,
 });
 
 // Memoized selector for multiple users
@@ -16,20 +16,40 @@ const createMultipleFollowSelector = (userIds: string[]) => (state: RootState) =
   const followData: Record<string, { isFollowing: boolean; isLoading: boolean; error: string | null }> = {};
   const followState = state.follow;
   
+  // Defensive check for follow state
+  if (!followState) {
+    // Return default values if follow state is not initialized
+    for (const userId of userIds) {
+      followData[userId] = {
+        isFollowing: false,
+        isLoading: false,
+        error: null,
+      };
+    }
+    
+    return {
+      followData,
+      isAnyLoading: false,
+      hasAnyError: false,
+      allFollowing: false,
+      allNotFollowing: true,
+    };
+  }
+  
   for (const userId of userIds) {
     followData[userId] = {
-      isFollowing: followState.followingUsers[userId] ?? false,
-      isLoading: followState.loadingUsers[userId] ?? false,
-      error: followState.errors[userId] ?? null,
+      isFollowing: followState.followingUsers?.[userId] ?? false,
+      isLoading: followState.loadingUsers?.[userId] ?? false,
+      error: followState.errors?.[userId] ?? null,
     };
   }
   
   return {
     followData,
-    isAnyLoading: userIds.some(uid => followState.loadingUsers[uid]),
-    hasAnyError: userIds.some(uid => followState.errors[uid]),
-    allFollowing: userIds.every(uid => followState.followingUsers[uid]),
-    allNotFollowing: userIds.every(uid => !followState.followingUsers[uid]),
+    isAnyLoading: userIds.some(uid => followState.loadingUsers?.[uid]),
+    hasAnyError: userIds.some(uid => followState.errors?.[uid]),
+    allFollowing: userIds.every(uid => followState.followingUsers?.[uid]),
+    allNotFollowing: userIds.every(uid => !followState.followingUsers?.[uid]),
   };
 };
 
