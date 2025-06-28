@@ -65,13 +65,45 @@ export {
   FollowButton,
   FontLoader,
   OxyIcon,
+  useOxyFollow,
   useFollow,
   ProfileScreen,
   OxyRouter,
+  
+  // Redux Store - NEW ARCHITECTURE
+  setupOxyStore,
+  oxyReducers,
+  // Individual slices
+  authSlice,
+  authActions,
+  authSelectors,
+  authReducer,
+  followSlice,
+  followActions,
+  followSelectors,
+  followThunks,
+  followReducer,
+  // Action creators
+  loginStart,
+  loginSuccess,
+  loginFailure,
+  logout,
+  setFollowingStatus,
+  clearFollowError,
+  resetFollowState,
+  fetchFollowStatus,
+  toggleFollowUser,
+  // Types
+  type AuthState,
+  type FollowState,
+  initialAuthState,
+  initialFollowState,
+  
+  // Legacy exports (deprecated)
   store,
   type RootState,
   type AppDispatch,
-};
+} from './ui';
 
 // ------------- Type Exports -------------
 export { OxyContextState, OxyContextProviderProps };

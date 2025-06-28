@@ -32,56 +32,72 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
         onAuthStateChange,
         storageKeyPrefix,
         showInternalToaster = true,
+        store: externalStore,
+        skipReduxProvider = false,
         ...bottomSheetProps
     } = props;
 
     // Create internal bottom sheet ref
     const internalBottomSheetRef = useRef<BottomSheetModalRef>(null);
 
-    // If contextOnly is true, we just provide the context without the bottom sheet UI
-    if (contextOnly) {
+    // Determine which store to use
+    const storeToUse = externalStore || store;
+
+    // Helper function to wrap content with Redux Provider if needed
+    const wrapWithReduxProvider = (content: React.ReactNode) => {
+        if (skipReduxProvider) {
+            // App manages Redux Provider externally
+            return content;
+        }
+        
         return (
-            <Provider store={store}>
-                <OxyContextProvider
-                    oxyServices={oxyServices}
-                    storageKeyPrefix={storageKeyPrefix}
-                    onAuthStateChange={onAuthStateChange}
-                >
-                    {children}
-                </OxyContextProvider>
+            <Provider store={storeToUse}>
+                {content}
             </Provider>
         );
-    }
+    };
 
-    // Otherwise, provide both the context and the bottom sheet UI
-    return (
-        <Provider store={store}>
+    // If contextOnly is true, we just provide the context without the bottom sheet UI
+    if (contextOnly) {
+        return wrapWithReduxProvider(
             <OxyContextProvider
                 oxyServices={oxyServices}
                 storageKeyPrefix={storageKeyPrefix}
                 onAuthStateChange={onAuthStateChange}
-                bottomSheetRef={internalBottomSheetRef}
             >
-                <FontLoader>
-                    <GestureHandlerRootView style={styles.gestureHandlerRoot}>
-                        <BottomSheetModalProvider>
-                            <StatusBar translucent backgroundColor="transparent" />
-                            <SafeAreaProvider>
-                                <OxyBottomSheet {...bottomSheetProps} bottomSheetRef={internalBottomSheetRef} oxyServices={oxyServices} />
-                                {children}
-                            </SafeAreaProvider>
-                        </BottomSheetModalProvider>
-                        {/* Global Toaster for app-wide notifications outside of Modal contexts - only show if internal toaster is disabled */}
-                        {!showInternalToaster && (
-                            <View style={styles.toasterContainer}>
-                                <Toaster position="top-center" swipeToDismissDirection="left" offset={15} />
-                            </View>
-                        )}
-                    </GestureHandlerRootView>
-                </FontLoader>
+                {children}
             </OxyContextProvider>
-        </Provider>
+        );
+    }
+
+    // Otherwise, provide both the context and the bottom sheet UI
+    return wrapWithReduxProvider(
+        <OxyContextProvider
+            oxyServices={oxyServices}
+            storageKeyPrefix={storageKeyPrefix}
+            onAuthStateChange={onAuthStateChange}
+            bottomSheetRef={internalBottomSheetRef}
+        >
+            <FontLoader>
+                <GestureHandlerRootView style={styles.gestureHandlerRoot}>
+                    <BottomSheetModalProvider>
+                        <StatusBar translucent backgroundColor="transparent" />
+                        <SafeAreaProvider>
+                            <OxyBottomSheet {...bottomSheetProps} bottomSheetRef={internalBottomSheetRef} oxyServices={oxyServices} />
+                            {children}
+                        </SafeAreaProvider>
+                    </BottomSheetModalProvider>
+                    {/* Global Toaster for app-wide notifications outside of Modal contexts - only show if internal toaster is disabled */}
+                    {!showInternalToaster && (
+                        <View style={styles.toasterContainer}>
+                            <Toaster position="top-center" swipeToDismissDirection="left" offset={15} />
+                        </View>
+                    )}
+                </GestureHandlerRootView>
+            </FontLoader>
+        </OxyContextProvider>
     );
+};
 };
 
 /**
