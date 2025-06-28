@@ -63,23 +63,23 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
                 bottomSheetRef={internalBottomSheetRef}
             >
                 <FontLoader>
-                <GestureHandlerRootView style={styles.gestureHandlerRoot}>
-                    <BottomSheetModalProvider>
-                        <StatusBar translucent backgroundColor="transparent" />
-                        <SafeAreaProvider>
-                            <OxyBottomSheet {...bottomSheetProps} bottomSheetRef={internalBottomSheetRef} oxyServices={oxyServices} />
-                            {children}
-                        </SafeAreaProvider>
-                    </BottomSheetModalProvider>
-                    {/* Global Toaster for app-wide notifications outside of Modal contexts - only show if internal toaster is disabled */}
-                    {!showInternalToaster && (
-                        <View style={styles.toasterContainer}>
-                            <Toaster position="top-center" swipeToDismissDirection="left" offset={15} />
-                        </View>
-                    )}
-                </GestureHandlerRootView>
-            </FontLoader>
-        </OxyContextProvider>
+                    <GestureHandlerRootView style={styles.gestureHandlerRoot}>
+                        <BottomSheetModalProvider>
+                            <StatusBar translucent backgroundColor="transparent" />
+                            <SafeAreaProvider>
+                                <OxyBottomSheet {...bottomSheetProps} bottomSheetRef={internalBottomSheetRef} oxyServices={oxyServices} />
+                                {children}
+                            </SafeAreaProvider>
+                        </BottomSheetModalProvider>
+                        {/* Global Toaster for app-wide notifications outside of Modal contexts - only show if internal toaster is disabled */}
+                        {!showInternalToaster && (
+                            <View style={styles.toasterContainer}>
+                                <Toaster position="top-center" swipeToDismissDirection="left" offset={15} />
+                            </View>
+                        )}
+                    </GestureHandlerRootView>
+                </FontLoader>
+            </OxyContextProvider>
         </Provider>
     );
 };
@@ -103,7 +103,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
 }) => {
     // Use the internal ref (which is passed as a prop from OxyProvider)
     const modalRef = useRef<BottomSheetModalRef>(null);
-    
+
     // Create a ref to store the navigation function from OxyRouter
     const navigationRef = useRef<((screen: string, props?: Record<string, any>) => void) | null>(null);
 
@@ -135,14 +135,14 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             // @ts-ignore - Adding custom method
             bottomSheetRef.current._navigateToScreen = (screenName: string, props?: Record<string, any>) => {
                 console.log(`Navigation requested: ${screenName}`, props);
-                
+
                 // Try direct navigation function first (most reliable)
                 if (navigationRef.current) {
                     console.log('Using direct navigation function');
                     navigationRef.current(screenName, props);
                     return;
                 }
-                
+
                 // Fallback to event-based navigation
                 if (typeof document !== 'undefined') {
                     // For web - use a custom event
@@ -165,36 +165,24 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     // Start with opacity 1 on Android to avoid visibility issues
     const fadeAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 1 : 0)).current;
     const slideAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 0 : 50)).current;
-    const handleScaleAnim = useRef(new Animated.Value(1)).current;
 
     // Track keyboard status
     const [keyboardVisible, setKeyboardVisible] = useState(false);
-    const [keyboardHeight, setKeyboardHeight] = useState(0);
     const insets = useSafeAreaInsets();
 
-    // Get the authentication context
-    const oxyContext = useOxy();
-
-    // Handle keyboard events
+    // Handle keyboard events - memoized to prevent re-registration
     useEffect(() => {
         const keyboardWillShowListener = Keyboard.addListener(
             Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
             (event: KeyboardEvent) => {
-                // Debounce rapid keyboard events
-                if (!keyboardVisible) {
-                    setKeyboardVisible(true);
-                    // Get keyboard height from event
-                    const keyboardHeightValue = event.endCoordinates.height;
-                    setKeyboardHeight(keyboardHeightValue);
-
-                    // Ensure the bottom sheet remains visible when keyboard opens
-                    // by adjusting to the highest snap point
-                    if (modalRef.current) {
-                        // Use requestAnimationFrame to avoid conflicts
-                        requestAnimationFrame(() => {
-                            modalRef.current?.snapToIndex(1);
-                        });
-                    }
+                setKeyboardVisible(true);
+                // Ensure the bottom sheet remains visible when keyboard opens
+                // by adjusting to the highest snap point
+                if (modalRef.current) {
+                    // Use requestAnimationFrame to avoid conflicts
+                    requestAnimationFrame(() => {
+                        modalRef.current?.snapToIndex(1);
+                    });
                 }
             }
         );
@@ -202,10 +190,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         const keyboardWillHideListener = Keyboard.addListener(
             Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
             () => {
-                if (keyboardVisible) {
-                    setKeyboardVisible(false);
-                    setKeyboardHeight(0);
-                }
+                setKeyboardVisible(false);
             }
         );
 
@@ -214,7 +199,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             keyboardWillShowListener.remove();
             keyboardWillHideListener.remove();
         };
-    }, [keyboardVisible]);
+    }, []); // Remove keyboardVisible dependency to prevent re-registration
 
     // Present the modal when component mounts, but only if autoPresent is true
     useEffect(() => {
@@ -269,32 +254,48 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         }
     }, [bottomSheetRef, modalRef, fadeAnim, slideAnim, autoPresent]);
 
+    // Close the bottom sheet with animation
+    const handleClose = useCallback(() => {
+        // Animate content out
+        Animated.timing(fadeAnim, {
+            toValue: 0,
+            duration: Platform.OS === 'android' ? 100 : 200, // Faster on Android
+            useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
+        }).start(() => {
+            // Dismiss the sheet
+            modalRef.current?.dismiss();
+            if (onClose) {
+                setTimeout(() => {
+                    onClose();
+                }, Platform.OS === 'android' ? 150 : 100);
+            }
+        });
+    }, [onClose, fadeAnim]);
+
     // Handle authentication success from the bottom sheet screens
     const handleAuthenticated = useCallback((user: any) => {
+        // Stop any ongoing animations that might interfere with dismissal
+        fadeAnim.stopAnimation();
+        slideAnim.stopAnimation();
+
         // Call the prop callback if provided
         if (onAuthenticated) {
             onAuthenticated(user);
         }
-    }, [onAuthenticated]);
 
-    // Handle indicator animation - subtle pulse effect
-    useEffect(() => {
-        const pulseAnimation = Animated.sequence([
-            Animated.timing(handleScaleAnim, {
-                toValue: 1.1,
-                duration: 300,
-                useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
-            }),
-            Animated.timing(handleScaleAnim, {
-                toValue: 1,
-                duration: 300,
-                useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
-            }),
-        ]);
+        // Automatically dismiss the bottom sheet after successful authentication
+        // Use direct dismissal for immediate closure
+        modalRef.current?.dismiss();
 
-        // Run the animation once when component mounts
-        pulseAnimation.start();
-    }, []);
+        // Call onClose callback if provided
+        if (onClose) {
+            setTimeout(() => {
+                onClose();
+            }, 100);
+        }
+    }, [onAuthenticated, onClose, fadeAnim, slideAnim]);
+
+    // Remove handle animation to prevent conflicts with bottom sheet animations
 
     // Handle backdrop rendering
     const renderBackdrop = useCallback(
@@ -325,76 +326,70 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         };
     }, [customStyles.backgroundColor, theme]);
 
-    // Method to adjust snap points from Router
+    // Method to adjust snap points from Router - memoized with stable dependencies
     const adjustSnapPoints = useCallback((points: string[]) => {
-        // Ensure snap points are high enough when keyboard is visible
-        if (keyboardVisible) {
-            // If keyboard is visible, make sure we use higher snap points
-            // to ensure the sheet content remains visible
-            const highestPoint = points[points.length - 1];
-            setSnapPoints([highestPoint, highestPoint]);
-        } else {
-            // If we have content height, use it as a constraint
-            if (contentHeight > 0) {
-                // Calculate content height as percentage of screen (plus some padding)
-                // Clamp to ensure we don't exceed 90% to leave space for UI elements
-                const contentHeightPercent = Math.min(Math.ceil((contentHeight) / screenHeight * 100), 90);
-                const contentHeightPercentStr = `${contentHeightPercent}%`;
-                // Use content height for first snap point if it's taller than the default
-                const firstPoint = contentHeight / screenHeight > 0.6 ? contentHeightPercentStr : points[0];
-                setSnapPoints([firstPoint, points[1] || '90%']);
+        setSnapPoints(prevSnapPoints => {
+            // Ensure snap points are high enough when keyboard is visible
+            if (keyboardVisible) {
+                // If keyboard is visible, make sure we use higher snap points
+                // to ensure the sheet content remains visible
+                const highestPoint = points[points.length - 1];
+                const newSnapPoints = [highestPoint, highestPoint];
+                // Only update if actually different
+                if (JSON.stringify(prevSnapPoints) !== JSON.stringify(newSnapPoints)) {
+                    return newSnapPoints;
+                }
+                return prevSnapPoints;
             } else {
-                setSnapPoints(points);
-            }
-        }
-    }, [keyboardVisible, contentHeight, screenHeight]);
-
-    // Handle content layout changes to measure height and width
-    const handleContentLayout = useCallback((event: any) => {
-        const { height: layoutHeight, width: layoutWidth } = event.nativeEvent.layout;
-        setContentHeight(layoutHeight);
-        setContainerWidth(layoutWidth);
-        
-        // Debug: log container dimensions
-        console.log('[OxyProvider] Container dimensions (full):', { width: layoutWidth, height: layoutHeight });
-
-        // Update snap points based on new content height
-        if (keyboardVisible) {
-            // If keyboard is visible, use the highest snap point
-            const highestPoint = snapPoints[snapPoints.length - 1];
-            setSnapPoints([highestPoint, highestPoint]);
-        } else {
-            if (layoutHeight > 0) {
-                // Add padding and clamp to reasonable limits
-                const contentHeightPercent = Math.min(Math.ceil((layoutHeight + 40) / screenHeight * 100), 90);
-                const contentHeightPercentStr = `${contentHeightPercent}%`;
-                const firstPoint = layoutHeight / screenHeight > 0.6 ? contentHeightPercentStr : snapPoints[0];
-                setSnapPoints([firstPoint, snapPoints[1]]);
-            }
-        }
-    }, [keyboardVisible, screenHeight, snapPoints]);
-
-    // Close the bottom sheet with animation
-    const handleClose = useCallback(() => {
-        // Animate content out
-        Animated.timing(fadeAnim, {
-            toValue: 0,
-            duration: Platform.OS === 'android' ? 100 : 200, // Faster on Android
-            useNativeDriver: Platform.OS === 'ios', // Only use native driver on iOS
-        }).start(() => {
-            // Dismiss the sheet
-            modalRef.current?.dismiss();
-            if (onClose) {
-                setTimeout(() => {
-                    onClose();
-                }, Platform.OS === 'android' ? 150 : 100);
+                // If we have content height, use it as a constraint
+                if (contentHeight > 0) {
+                    // Calculate content height as percentage of screen (plus some padding)
+                    // Clamp to ensure we don't exceed 90% to leave space for UI elements
+                    const contentHeightPercent = Math.min(Math.ceil((contentHeight) / screenHeight * 100), 90);
+                    const contentHeightPercentStr = `${contentHeightPercent}%`;
+                    // Use content height for first snap point if it's taller than the default
+                    const firstPoint = contentHeight / screenHeight > 0.6 ? contentHeightPercentStr : points[0];
+                    const newSnapPoints = [firstPoint, points[1] || '90%'];
+                    // Only update if actually different
+                    if (JSON.stringify(prevSnapPoints) !== JSON.stringify(newSnapPoints)) {
+                        return newSnapPoints;
+                    }
+                    return prevSnapPoints;
+                } else {
+                    // Only update if actually different
+                    if (JSON.stringify(prevSnapPoints) !== JSON.stringify(points)) {
+                        return points;
+                    }
+                    return prevSnapPoints;
+                }
             }
         });
-    }, [onClose, fadeAnim]);
+    }, [keyboardVisible, contentHeight, screenHeight]);
 
-    // Handle sheet index changes
+    // Handle content layout changes to measure height and width - prevent rerender loops
+    const handleContentLayout = useCallback((event: any) => {
+        const { height: layoutHeight, width: layoutWidth } = event.nativeEvent.layout;
+
+        // Only update if values actually changed to prevent unnecessary rerenders
+        setContentHeight(prevHeight => {
+            if (Math.abs(prevHeight - layoutHeight) > 5) { // 5px threshold to prevent minor fluctuations
+                return layoutHeight;
+            }
+            return prevHeight;
+        });
+
+        setContainerWidth(prevWidth => {
+            if (Math.abs(prevWidth - layoutWidth) > 5) { // 5px threshold to prevent minor fluctuations
+                return layoutWidth;
+            }
+            return prevWidth;
+        });
+    }, []); // Remove dependencies that cause rerender loops
+
+    // Handle sheet index changes - simplified to prevent unnecessary rerenders
     const handleSheetChanges = useCallback((index: number) => {
-    }, [onClose, handleScaleAnim, keyboardVisible]);
+        // Sheet change handling can be added here if needed
+    }, []);
 
     return (
         <BottomSheetModal

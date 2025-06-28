@@ -26,6 +26,7 @@ import { toast } from '../../lib/sonner';
 const SignUpScreen: React.FC<BaseScreenProps> = ({
     navigate,
     goBack,
+    onAuthenticated,
     theme,
 }) => {
     // Form data states
@@ -239,12 +240,16 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
 
         try {
             setErrorMessage('');
-            await signUp(username, email, password);
+            const user = await signUp(username, email, password);
             toast.success('Account created successfully! Welcome to Oxy!');
+            // Call the onAuthenticated callback to notify parent components
+            if (onAuthenticated) {
+                onAuthenticated(user);
+            }
         } catch (error: any) {
             toast.error(error.message || 'Sign up failed');
         }
-    }, [username, email, password, confirmPassword, validationStatus, validateEmail, signUp]);
+    }, [username, email, password, confirmPassword, validationStatus, validateEmail, signUp, onAuthenticated]);
 
     // Step components
     const renderWelcomeStep = useMemo(() => (

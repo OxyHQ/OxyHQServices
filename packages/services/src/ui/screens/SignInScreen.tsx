@@ -27,6 +27,7 @@ import { toast } from '../../lib/sonner';
 const SignInScreen: React.FC<BaseScreenProps> = ({
     navigate,
     goBack,
+    onAuthenticated,
     theme,
 }) => {
     // Form data states
@@ -332,12 +333,15 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
         try {
             setErrorMessage('');
-            await login(username, password);
-            // The authentication state change will be handled through context
+            const user = await login(username, password);
+            // Call the onAuthenticated callback to notify parent components
+            if (onAuthenticated) {
+                onAuthenticated(user);
+            }
         } catch (error: any) {
             toast.error(error.message || 'Login failed');
         }
-    }, [username, password, login]);
+    }, [username, password, login, onAuthenticated]);
 
     // Memoized step components
     const renderUsernameStep = useMemo(() => (
