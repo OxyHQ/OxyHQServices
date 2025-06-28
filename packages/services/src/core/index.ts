@@ -1676,6 +1676,72 @@ export class OxyServices {
       throw this.handleError(error);
     }
   }
+
+  /**
+   * Health check endpoint to verify API connectivity
+   * @returns Health status and basic server info
+   */
+  async healthCheck(): Promise<{ 
+    status: string; 
+    users?: number; 
+    timestamp?: string; 
+    [key: string]: any 
+  }> {
+    try {
+      const res = await this.client.get('/');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Download file content using authenticated request
+   * @param fileId - The file ID to download
+   * @returns Response object for further processing
+   */
+  async downloadFileContent(fileId: string): Promise<Response> {
+    try {
+      const downloadUrl = this.getFileDownloadUrl(fileId);
+      const response = await fetch(downloadUrl);
+      
+      if (!response.ok) {
+        throw new Error(`Download failed: ${response.status} ${response.statusText}`);
+      }
+      
+      return response;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get file content as text using authenticated request
+   * @param fileId - The file ID to get content for
+   * @returns File content as string
+   */
+  async getFileContentAsText(fileId: string): Promise<string> {
+    try {
+      const response = await this.downloadFileContent(fileId);
+      return await response.text();
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get file content as blob using authenticated request  
+   * @param fileId - The file ID to get content for
+   * @returns File content as blob
+   */
+  async getFileContentAsBlob(fileId: string): Promise<Blob> {
+    try {
+      const response = await this.downloadFileContent(fileId);
+      return await response.blob();
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
 }
 
 export default OxyServices;

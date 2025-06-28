@@ -69,18 +69,15 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
         // Check API connection on mount
         const checkConnection = async () => {
             setConnectionStatus('checking');
-            const apiBaseUrl = oxyServices?.getBaseURL() || 'https://api.oxy.so';
-            try {
-                const response = await fetch(`${apiBaseUrl}/`, {
-                    method: 'GET',
-                    timeout: 3000,
-                } as any);
 
-                if (response.ok) {
-                    setConnectionStatus('connected');
-                } else {
-                    setConnectionStatus('disconnected');
-                }
+            if (!oxyServices) {
+                setConnectionStatus('disconnected');
+                return;
+            }
+
+            try {
+                await oxyServices.healthCheck();
+                setConnectionStatus('connected');
             } catch (error) {
                 setConnectionStatus('disconnected');
             }
@@ -121,22 +118,11 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
             toast.info('Running system checks...', { duration: 2000 });
 
             try {
-                const response = await fetch(`${apiBaseUrl}/`, {
-                    method: 'GET',
-                    timeout: 5000,
-                } as any);
-
-                if (response.ok) {
-                    const data = await response.json();
-                    checks.push('✅ API server is responding');
-                    checks.push(`📊 Server stats: ${data.users || 0} users`);
-                    checks.push(`🌐 API URL: ${apiBaseUrl}`);
-                    setConnectionStatus('connected');
-                } else {
-                    checks.push('❌ API server returned error status');
-                    checks.push(`   Status: ${response.status} ${response.statusText}`);
-                    setConnectionStatus('disconnected');
-                }
+                const data = await oxyServices.healthCheck();
+                checks.push('✅ API server is responding');
+                checks.push(`📊 Server stats: ${data.users || 0} users`);
+                checks.push(`🌐 API URL: ${apiBaseUrl}`);
+                setConnectionStatus('connected');
             } catch (error) {
                 checks.push('❌ API server connection failed');
                 checks.push(`   Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -514,20 +500,17 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         }
                         onPress={async () => {
                             setConnectionStatus('checking');
-                            const apiBaseUrl = oxyServices?.getBaseURL() || 'https://api.oxy.so';
-                            try {
-                                const response = await fetch(`${apiBaseUrl}/`, {
-                                    method: 'GET',
-                                    timeout: 3000,
-                                } as any);
 
-                                if (response.ok) {
-                                    setConnectionStatus('connected');
-                                    toast.success('API connection successful');
-                                } else {
-                                    setConnectionStatus('disconnected');
-                                    toast.error(`API server error: ${response.status}`);
-                                }
+                            if (!oxyServices) {
+                                setConnectionStatus('disconnected');
+                                toast.error('OxyServices not initialized');
+                                return;
+                            }
+
+                            try {
+                                await oxyServices.healthCheck();
+                                setConnectionStatus('connected');
+                                toast.success('API connection successful');
                             } catch (error) {
                                 setConnectionStatus('disconnected');
                                 toast.error('Failed to connect to API server');
