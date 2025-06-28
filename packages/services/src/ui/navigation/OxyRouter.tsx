@@ -13,6 +13,7 @@ import AccountSettingsScreen from '../screens/AccountSettingsScreen';
 import PremiumSubscriptionScreen from '../screens/PremiumSubscriptionScreen';
 import BillingManagementScreen from '../screens/BillingManagementScreen';
 import AppInfoScreen from '../screens/AppInfoScreen';
+import FeedbackScreen from '../screens/FeedbackScreen';
 import KarmaCenterScreen from '../screens/karma/KarmaCenterScreen';
 import KarmaLeaderboardScreen from '../screens/karma/KarmaLeaderboardScreen';
 import KarmaRulesScreen from '../screens/karma/KarmaRulesScreen';
@@ -66,6 +67,10 @@ const routes: Record<string, RouteConfig> = {
     AppInfo: {
         component: AppInfoScreen,
         snapPoints: ['60%', '90%'],
+    },
+    Feedback: {
+        component: FeedbackScreen,
+        snapPoints: ['70%', '100%'],
     },
     KarmaCenter: {
         component: KarmaCenterScreen,
@@ -138,7 +143,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         if (navigationRef) {
             navigationRef.current = navigate;
         }
-        
+
         return () => {
             if (navigationRef) {
                 navigationRef.current = null;
@@ -166,7 +171,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
 
         // For React Native - check for global navigation events
         let intervalId: any = null;
-        
+
         if (typeof document !== 'undefined') {
             // Web - use custom event listener
             document.addEventListener('oxy:navigate', handleNavigationEvent);
@@ -214,7 +219,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
     // Render the current screen component
     const renderScreen = () => {
         const CurrentScreen = routes[currentScreen]?.component;
-        
+
         console.log('[OxyRouter] Rendering screen:', currentScreen);
         console.log('[OxyRouter] Available routes:', Object.keys(routes));
         console.log('[OxyRouter] Current screen component found:', !!CurrentScreen);

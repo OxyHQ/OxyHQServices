@@ -25,7 +25,13 @@ import {
   Avatar,
   FollowButton,
   FontLoader,
-  OxyIcon
+  OxyIcon,
+  useFollow,
+  ProfileScreen,
+  OxyRouter,
+  store,
+  type RootState,
+  type AppDispatch,
 } from './ui';
 
 // ------------- Type Imports -------------
@@ -58,9 +64,19 @@ export {
   Avatar,
   FollowButton,
   FontLoader,
-  OxyIcon
+  OxyIcon,
+  useFollow,
+  ProfileScreen,
+  OxyRouter,
+  store,
+  type RootState,
+  type AppDispatch,
 };
 
 // ------------- Type Exports -------------
 export { OxyContextState, OxyContextProviderProps };
 export * from './ui/navigation/types';
+export * from './models/secureSession';
+
+// Sonner toast integration
+export { toast } from './lib/sonner';

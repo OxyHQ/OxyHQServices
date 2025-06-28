@@ -1,25 +1,28 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  TouchableOpacity, 
-  Text, 
-  StyleSheet, 
-  ViewStyle, 
-  TextStyle, 
-  StyleProp, 
+import React, { useEffect, useCallback } from 'react';
+import {
+  TouchableOpacity,
+  Text,
+  StyleSheet,
+  ViewStyle,
+  TextStyle,
+  StyleProp,
   Platform,
   ActivityIndicator
 } from 'react-native';
-import Animated, { 
-  useSharedValue, 
-  useAnimatedStyle, 
-  withSpring, 
+import Animated, {
+  useSharedValue,
+  useAnimatedStyle,
+  withSpring,
   interpolateColor,
-  Easing, 
-  withTiming 
+  Easing,
+  withTiming
 } from 'react-native-reanimated';
+import { useDispatch, useSelector } from 'react-redux';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
+import { toggleFollowUser, setFollowingStatus, clearFollowError } from '../store';
+import type { RootState, AppDispatch } from '../store';
 
 export interface FollowButtonProps {
   /**
@@ -59,7 +62,7 @@ export interface FollowButtonProps {
    * @default false
    */
   disabled?: boolean;
-  
+
   /**
    * Whether to show loading indicator during API calls
    * @default true
@@ -82,6 +85,7 @@ export interface FollowButtonProps {
 
 /**
  * An animated follow button with interactive state changes and preventDefault support
+ * Uses Redux for state management to ensure all buttons with the same user ID stay synchronized
  * 
  * @example
  * ```tsx
@@ -130,36 +134,60 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   preventParentActions = true,
   onPress,
 }) => {
+  const dispatch = useDispatch();
   const { oxyServices, isAuthenticated } = useOxy();
-  const [isFollowing, setIsFollowing] = useState(initiallyFollowing);
-  const [isLoading, setIsLoading] = useState(false);
+
+  // Optimized single selector to prevent multiple re-renders
+  const followState = useSelector((state: RootState) => ({
+    isFollowing: state.follow.followingUsers[userId] ?? initiallyFollowing,
+    isLoading: state.follow.loadingUsers[userId] ?? false,
+    error: state.follow.errors[userId]
+  }));
+
+  const { isFollowing, isLoading, error } = followState;
 
   // Animation values
-  const animationProgress = useSharedValue(initiallyFollowing ? 1 : 0);
+  const animationProgress = useSharedValue(isFollowing ? 1 : 0);
   const scale = useSharedValue(1);
-  
+
+  // Initialize Redux state with initial value if not already set (run only once)
+  useEffect(() => {
+    if (userId && initiallyFollowing !== undefined && followState.isFollowing === initiallyFollowing) {
+      // Only set if the current state matches initial value (likely uninitialized)
+      dispatch(setFollowingStatus({ userId, isFollowing: initiallyFollowing }));
+    }
+  }, [userId, initiallyFollowing]); // Removed dispatch and isFollowing to prevent unnecessary runs
+
   // Update the animation value when isFollowing changes
   useEffect(() => {
     animationProgress.value = withTiming(isFollowing ? 1 : 0, {
       duration: 300,
       easing: Easing.bezier(0.25, 0.1, 0.25, 1),
     });
-  }, [isFollowing, animationProgress]);
+  }, [isFollowing]); // Removed animationProgress from dependencies as it's stable
 
-  // The button press handler with preventDefault support
-  const handlePress = async (event?: any) => {
+  // Show error toast when error occurs
+  useEffect(() => {
+    if (error) {
+      toast.error(error);
+      dispatch(clearFollowError(userId));
+    }
+  }, [error]); // Removed userId and dispatch to prevent unnecessary runs
+
+  // The button press handler with preventDefault support - memoized to prevent recreation
+  const handlePress = useCallback(async (event?: any) => {
     // Prevent parent actions if enabled (e.g., if inside a link or pressable container)
     if (preventParentActions && event) {
       // For React Native Web compatibility
       if (Platform.OS === 'web' && event.preventDefault) {
         event.preventDefault();
       }
-      
+
       // Stop event propagation to prevent parent TouchableOpacity/Pressable actions
       if (event.stopPropagation) {
         event.stopPropagation();
       }
-      
+
       // For React Native, prevent gesture bubbling
       if (event.nativeEvent && event.nativeEvent.stopPropagation) {
         event.nativeEvent.stopPropagation();
@@ -172,47 +200,58 @@ const FollowButton: React.FC<FollowButtonProps> = ({
       return;
     }
 
-    if (disabled || isLoading || !isAuthenticated) return;
-    
+    if (disabled || followState.isLoading) return;
+
+    // Check if user is authenticated - show toast instead of disabling
+    if (!isAuthenticated) {
+      toast.error('Please sign in to follow users');
+      return;
+    }
+
     // Touch feedback animation
     scale.value = withSpring(0.95, { damping: 10 }, () => {
       scale.value = withSpring(1);
     });
 
-    setIsLoading(true);
-
     try {
-      // This should be replaced with actual API call to your services
-      if (isFollowing) {
-        // Unfollow API call would go here
-        // await oxyServices.user.unfollowUser(userId);
-        console.log(`Unfollowing user: ${userId}`);
-        await new Promise(resolve => setTimeout(resolve, 500)); // Simulating API call
-      } else {
-        // Follow API call would go here
-        // await oxyServices.user.followUser(userId);
-        console.log(`Following user: ${userId}`);
-        await new Promise(resolve => setTimeout(resolve, 500)); // Simulating API call
-      }
+      // Dispatch the async action to follow/unfollow
+      const result = await dispatch(toggleFollowUser({
+        userId,
+        oxyServices,
+        isCurrentlyFollowing: followState.isFollowing
+      })).unwrap();
 
-      // Toggle following state with animation
-      const newFollowingState = !isFollowing;
-      setIsFollowing(newFollowingState);
-      
       // Call the callback if provided
       if (onFollowChange) {
-        onFollowChange(newFollowingState);
+        onFollowChange(result.isFollowing);
       }
 
       // Show success toast
-      toast.success(newFollowingState ? 'Following user!' : 'Unfollowed user');
-    } catch (error) {
+      toast.success(result.isFollowing ? 'Following user!' : 'Unfollowed user');
+    } catch (error: any) {
       console.error('Follow action failed:', error);
-      toast.error('Failed to update follow status. Please try again.');
-    } finally {
-      setIsLoading(false);
+
+      // Show user-friendly error messages for state mismatches
+      const errorMessage = error?.toString() || 'Unknown error';
+      if (errorMessage.includes('State synced with backend')) {
+        toast.info('Status updated. Please try again.');
+      } else {
+        toast.error(`Failed to ${followState.isFollowing ? 'unfollow' : 'follow'} user. Please try again.`);
+      }
     }
-  };
+  }, [
+    preventParentActions,
+    onPress,
+    disabled,
+    followState.isLoading,
+    followState.isFollowing,
+    isAuthenticated,
+    scale,
+    dispatch,
+    userId,
+    oxyServices,
+    onFollowChange
+  ]);
 
   // Animated styles for the button
   const animatedButtonStyle = useAnimatedStyle(() => {
@@ -221,7 +260,7 @@ const FollowButton: React.FC<FollowButtonProps> = ({
       [0, 1],
       ['#d169e5', '#FFFFFF']
     );
-    
+
     const borderColor = interpolateColor(
       animationProgress.value,
       [0, 1],
@@ -296,7 +335,7 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     <TouchableOpacity
       activeOpacity={0.8}
       onPress={handlePress}
-      disabled={disabled || isLoading || !isAuthenticated}
+      disabled={disabled || isLoading}
     >
       <Animated.View
         style={[
@@ -307,9 +346,9 @@ const FollowButton: React.FC<FollowButtonProps> = ({
         ]}
       >
         {isLoading && showLoadingState ? (
-          <ActivityIndicator 
-            size="small" 
-            color={isFollowing ? '#d169e5' : '#FFFFFF'} 
+          <ActivityIndicator
+            size="small"
+            color={isFollowing ? '#d169e5' : '#FFFFFF'}
           />
         ) : (
           <Animated.Text

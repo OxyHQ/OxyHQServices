@@ -361,19 +361,38 @@ router.delete('/:userId/follow', authMiddleware, validateObjectId, async (req: A
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Check if not following
-    const targetUserObjectId = new Types.ObjectId(targetUser._id);
-    if (!currentUser.following?.some(id => id.equals(targetUserObjectId))) {
+    // Check if following using the Follow collection (consistent with other endpoints)
+    const existingFollow = await Follow.findOne({
+      followerUserId: currentUserId,
+      followType: FollowType.USER,
+      followedId: targetUserId
+    });
+
+    if (!existingFollow) {
       return res.status(400).json({ message: 'Not following this user' });
     }
 
-    // Update both users
+    // Remove the follow relationship and update counts
     await Promise.all([
-      User.findByIdAndUpdate(currentUserId, { $pull: { following: targetUser._id } }),
-      User.findByIdAndUpdate(targetUserId, { $pull: { followers: currentUser._id } })
+      Follow.deleteOne({ _id: existingFollow._id }),
+      User.findByIdAndUpdate(targetUserId, { $inc: { '_count.followers': -1 } }),
+      User.findByIdAndUpdate(currentUserId, { $inc: { '_count.following': -1 } })
     ]);
 
-    res.json({ message: 'Successfully unfollowed user' });
+    const [updatedTarget, updatedCurrent] = await Promise.all([
+      User.findById(targetUserId).select('_count'),
+      User.findById(currentUserId).select('_count')
+    ]);
+
+    res.json({
+      message: 'Successfully unfollowed user',
+      action: 'unfollow',
+      success: true,
+      counts: {
+        followers: updatedTarget?._count?.followers || 0,
+        following: updatedCurrent?._count?.following || 0
+      }
+    });
   } catch (error) {
     logger.error('Error unfollowing user:', error);
     res.status(500).json({ message: 'Internal server error' });

@@ -563,6 +563,20 @@ export class OxyServices {
   }
 
   /**
+   * Get follow status for a user
+   * @param userId - User ID to check follow status for
+   * @returns Whether the current user is following the specified user
+   */
+  async getFollowStatus(userId: string): Promise<{ isFollowing: boolean }> {
+    try {
+      const res = await this.client.get(`/users/${userId}/following-status`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
    * Get all followers of a user
    * @param userId - User ID to get followers for
    * @param limit - Maximum number of followers to return

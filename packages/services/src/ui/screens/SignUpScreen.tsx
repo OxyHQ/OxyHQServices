@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -9,159 +9,386 @@ import {
     Platform,
     KeyboardAvoidingView,
     ScrollView,
-    TextStyle,
     Animated,
-    Dimensions,
     StatusBar,
+    Alert,
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
-import { fontFamilies, useThemeColors, createCommonStyles } from '../styles';
-import OxyLogo from '../components/OxyLogo';
-import { BottomSheetScrollView, BottomSheetView } from '../components/bottomSheet';
+import { useThemeColors, createCommonStyles } from '../styles';
+import { BottomSheetScrollView } from '../components/bottomSheet';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { toast } from '../../lib/sonner';
+import HighFive from '../../assets/illustrations/HighFive';
+import GroupedPillButtons from '../components/internal/GroupedPillButtons';
+import TextField from '../components/internal/TextField';
 
-const SignUpScreen: React.FC<BaseScreenProps> = ({
-    navigate,
-    goBack,
-    onAuthenticated,
-    theme,
-}) => {
-    // Form data states
-    const [username, setUsername] = useState('');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
-    const [showPassword, setShowPassword] = useState(false);
-    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-    const [errorMessage, setErrorMessage] = useState('');
+// Types for better type safety
+interface FormData {
+    username: string;
+    email: string;
+    password: string;
+    confirmPassword: string;
+}
 
-    // Multi-step form states
-    const [currentStep, setCurrentStep] = useState(0);
-    const [isInputFocused, setIsInputFocused] = useState(false);
-    const [isValidating, setIsValidating] = useState(false);
-    const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
+interface ValidationState {
+    status: 'idle' | 'validating' | 'valid' | 'invalid';
+    message: string;
+}
 
-    // Cache for validation results
+interface PasswordVisibility {
+    password: boolean;
+    confirmPassword: boolean;
+}
+
+// Constants
+const USERNAME_MIN_LENGTH = 3;
+const PASSWORD_MIN_LENGTH = 8;
+const VALIDATION_DEBOUNCE_MS = 800;
+const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
+
+// Email validation regex
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Styles factory function
+const createStyles = (colors: any, theme: string) => StyleSheet.create({
+    container: {
+        flex: 1,
+    },
+    scrollContent: {
+        flexGrow: 1,
+        paddingHorizontal: 24,
+        paddingTop: 4,
+        paddingBottom: 20,
+    },
+    stepContainer: {
+        flex: 1,
+        justifyContent: 'flex-start',
+        alignItems: 'flex-start',
+    },
+    modernHeader: {
+        alignItems: 'flex-start',
+        width: '100%',
+        marginBottom: 24,
+    },
+    modernTitle: {
+        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+        fontSize: 42,
+        lineHeight: 48,
+        marginBottom: 12,
+        textAlign: 'left',
+        letterSpacing: -1,
+    },
+    modernSubtitle: {
+        fontSize: 18,
+        lineHeight: 24,
+        textAlign: 'left',
+        opacity: 0.8,
+        marginBottom: 24,
+    },
+    welcomeImageContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginVertical: 20,
+    },
+    welcomeTitle: {
+        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+        fontSize: 42,
+        lineHeight: 48,
+        marginBottom: 12,
+        textAlign: 'left',
+        letterSpacing: -1,
+    },
+    welcomeText: {
+        fontSize: 18,
+        lineHeight: 24,
+        textAlign: 'left',
+        opacity: 0.8,
+        marginBottom: 24,
+    },
+    stepTitle: {
+        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+        fontSize: 42,
+        lineHeight: 48,
+        marginBottom: 12,
+        textAlign: 'left',
+        letterSpacing: -1,
+    },
+    inputContainer: {
+        width: '100%',
+        marginBottom: 24,
+    },
+    premiumInputWrapper: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        height: 56,
+        borderRadius: 16,
+        paddingHorizontal: 20,
+        borderWidth: 2,
+        backgroundColor: colors.inputBackground,
+    },
+    inputIcon: {
+        marginRight: 12,
+    },
+    inputContent: {
+        flex: 1,
+    },
+    modernLabel: {
+        fontSize: 12,
+        fontWeight: '500',
+        marginBottom: 2,
+    },
+    modernInput: {
+        flex: 1,
+        fontSize: 16,
+        height: '100%',
+    },
+    validationIndicator: {
+        marginLeft: 8,
+    },
+    validationCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        borderRadius: 12,
+        marginTop: 8,
+        gap: 8,
+    },
+    validationIconContainer: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginRight: 12,
+    },
+    validationTextContainer: {
+        flex: 1,
+    },
+    validationTitle: {
+        fontSize: 12,
+        fontWeight: '600',
+        marginBottom: 2,
+    },
+    validationSubtitle: {
+        fontSize: 11,
+        opacity: 0.8,
+    },
+    passwordToggle: {
+        padding: 4,
+    },
+    passwordHint: {
+        fontSize: 12,
+        marginTop: 4,
+    },
+    button: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 18,
+        paddingHorizontal: 32,
+        borderRadius: 16,
+        marginVertical: 8,
+        shadowOffset: {
+            width: 0,
+            height: 4,
+        },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+        gap: 8,
+        width: '100%',
+    },
+    buttonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '600',
+        letterSpacing: 0.5,
+    },
+    footerTextContainer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        marginTop: 16,
+    },
+    footerText: {
+        fontSize: 15,
+    },
+    linkText: {
+        fontSize: 14,
+        lineHeight: 20,
+        fontWeight: '600',
+        textDecorationLine: 'underline',
+    },
+    userInfoContainer: {
+        padding: 20,
+        marginVertical: 20,
+        borderRadius: 24,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.04,
+        shadowOffset: { width: 0, height: 1 },
+        shadowRadius: 4,
+        elevation: 1,
+    },
+    userInfoText: {
+        fontSize: 16,
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    actionButtonsContainer: {
+        marginTop: 24,
+    },
+    navigationButtons: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        marginTop: 16,
+        marginBottom: 8,
+        width: '100%',
+        gap: 8,
+    },
+    navButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        gap: 6,
+        minWidth: 70,
+        borderWidth: 1,
+        shadowOffset: {
+            width: 0,
+            height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    backButton: {
+        backgroundColor: 'transparent',
+        borderTopLeftRadius: 35,
+        borderBottomLeftRadius: 35,
+        borderTopRightRadius: 12,
+        borderBottomRightRadius: 12,
+    },
+    nextButton: {
+        backgroundColor: 'transparent',
+        borderTopRightRadius: 35,
+        borderBottomRightRadius: 35,
+        borderTopLeftRadius: 12,
+        borderBottomLeftRadius: 12,
+    },
+    navButtonText: {
+        fontSize: 13,
+        fontWeight: '500',
+    },
+    progressContainer: {
+        flexDirection: 'row',
+        justifyContent: 'center',
+        marginBottom: 20,
+        marginTop: 8,
+    },
+    progressDot: {
+        height: 10,
+        width: 10,
+        borderRadius: 5,
+        marginHorizontal: 6,
+        borderWidth: 2,
+        borderColor: '#fff',
+        shadowColor: colors.primary,
+        shadowOpacity: 0.08,
+        shadowOffset: { width: 0, height: 1 },
+        shadowRadius: 2,
+        elevation: 1,
+    },
+    summaryContainer: {
+        padding: 0,
+        marginBottom: 24,
+        width: '100%',
+    },
+    summaryRow: {
+        flexDirection: 'row',
+        marginBottom: 10,
+    },
+    summaryLabel: {
+        fontSize: 15,
+        width: 90,
+    },
+    summaryValue: {
+        fontSize: 15,
+        fontWeight: '600',
+        flex: 1,
+    },
+});
+
+// Custom hooks for better separation of concerns
+const useFormValidation = (oxyServices: any) => {
+    const [validationState, setValidationState] = useState<ValidationState>({
+        status: 'idle',
+        message: ''
+    });
+
     const validationCache = useRef<Map<string, { available: boolean; timestamp: number }>>(new Map());
 
-    const fadeAnim = useRef(new Animated.Value(1)).current;
-    const slideAnim = useRef(new Animated.Value(0)).current;
-    const heightAnim = useRef(new Animated.Value(400)).current;
-    const [containerHeight, setContainerHeight] = useState(400);
-
-    const { signUp, isLoading, user, isAuthenticated, oxyServices } = useOxy();
-
-    const colors = useThemeColors(theme);
-    const commonStyles = createCommonStyles(theme);
-
-    // Memoized styles to prevent rerenders
-    const styles = useMemo(() => createStyles(colors, theme), [colors, theme]);
-
-    // Input focus animations
-    const handleInputFocus = useCallback(() => {
-        setIsInputFocused(true);
-    }, []);
-
-    const handleInputBlur = useCallback(() => {
-        setIsInputFocused(false);
-    }, []);
-
-    // Memoized input change handlers
-    const handleUsernameChange = useCallback((text: string) => {
-        setUsername(text);
-        if (validationStatus === 'invalid') {
-            setErrorMessage('');
-            setValidationStatus('idle');
-        }
-    }, [validationStatus]);
-
-    const handleEmailChange = useCallback((text: string) => {
-        setEmail(text);
-        setErrorMessage('');
-    }, []);
-
-    const handlePasswordChange = useCallback((text: string) => {
-        setPassword(text);
-        setErrorMessage('');
-    }, []);
-
-    const handleConfirmPasswordChange = useCallback((text: string) => {
-        setConfirmPassword(text);
-        setErrorMessage('');
-    }, []);
-
-    // Username availability validation using core services
-    const validateUsername = useCallback(async (usernameToValidate: string) => {
-        if (!usernameToValidate || usernameToValidate.length < 3) {
-            setValidationStatus('invalid');
+    const validateUsername = useCallback(async (username: string): Promise<boolean> => {
+        if (!username || username.length < USERNAME_MIN_LENGTH) {
+            setValidationState({ status: 'invalid', message: '' });
             return false;
         }
 
-        // Check cache first (cache valid for 5 minutes)
-        const cached = validationCache.current.get(usernameToValidate);
+        // Check cache first
+        const cached = validationCache.current.get(username);
         const now = Date.now();
-        if (cached && (now - cached.timestamp) < 5 * 60 * 1000) {
-            setValidationStatus(cached.available ? 'valid' : 'invalid');
-            setErrorMessage(cached.available ? '' : 'Username is already taken');
-            return cached.available;
+        if (cached && (now - cached.timestamp) < CACHE_DURATION_MS) {
+            const isValid = cached.available;
+            setValidationState({
+                status: isValid ? 'valid' : 'invalid',
+                message: isValid ? '' : 'Username is already taken'
+            });
+            return isValid;
         }
 
-        setIsValidating(true);
-        setValidationStatus('validating');
+        setValidationState({ status: 'validating', message: '' });
 
         try {
-            const result = await oxyServices.checkUsernameAvailability(usernameToValidate);
+            const result = await oxyServices.checkUsernameAvailability(username);
+            const isValid = result.available;
 
-            if (result.available) {
-                setValidationStatus('valid');
-                setErrorMessage('');
+            // Cache the result
+            validationCache.current.set(username, {
+                available: isValid,
+                timestamp: now
+            });
 
-                // Cache the result
-                validationCache.current.set(usernameToValidate, {
-                    available: true,
-                    timestamp: now
-                });
+            setValidationState({
+                status: isValid ? 'valid' : 'invalid',
+                message: isValid ? '' : (result.message || 'Username is already taken')
+            });
 
-                return true;
-            } else {
-                setValidationStatus('invalid');
-                setErrorMessage(result.message || 'Username is already taken');
-
-                // Cache the result
-                validationCache.current.set(usernameToValidate, {
-                    available: false,
-                    timestamp: now
-                });
-
-                return false;
-            }
+            return isValid;
         } catch (error: any) {
             console.error('Username validation error:', error);
-            setValidationStatus('invalid');
-            setErrorMessage('Unable to validate username. Please try again.');
+            setValidationState({
+                status: 'invalid',
+                message: 'Unable to validate username. Please try again.'
+            });
             return false;
-        } finally {
-            setIsValidating(false);
         }
     }, [oxyServices]);
 
-    // Debounced username validation
-    useEffect(() => {
-        if (!username || username.length < 3) {
-            setValidationStatus('idle');
-            setErrorMessage('');
-            return;
-        }
+    const validateEmail = useCallback((email: string): boolean => {
+        return EMAIL_REGEX.test(email);
+    }, []);
 
-        const timeoutId = setTimeout(() => {
-            validateUsername(username);
-        }, 800);
+    const validatePassword = useCallback((password: string): boolean => {
+        return password.length >= PASSWORD_MIN_LENGTH;
+    }, []);
 
-        return () => clearTimeout(timeoutId);
-    }, [username, validateUsername]);
+    const validatePasswordsMatch = useCallback((password: string, confirmPassword: string): boolean => {
+        return password === confirmPassword;
+    }, []);
 
     // Cleanup cache on unmount
     useEffect(() => {
@@ -169,6 +396,223 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
             validationCache.current.clear();
         };
     }, []);
+
+    return {
+        validationState,
+        validateUsername,
+        validateEmail,
+        validatePassword,
+        validatePasswordsMatch
+    };
+};
+
+const useFormData = () => {
+    const [formData, setFormData] = useState<FormData>({
+        username: '',
+        email: '',
+        password: '',
+        confirmPassword: ''
+    });
+
+    const [passwordVisibility, setPasswordVisibility] = useState<PasswordVisibility>({
+        password: false,
+        confirmPassword: false
+    });
+
+    const updateField = useCallback((field: keyof FormData, value: string) => {
+        setFormData(prev => ({ ...prev, [field]: value }));
+    }, []);
+
+    const togglePasswordVisibility = useCallback((field: keyof PasswordVisibility) => {
+        setPasswordVisibility(prev => ({ ...prev, [field]: !prev[field] }));
+    }, []);
+
+    const resetForm = useCallback(() => {
+        setFormData({
+            username: '',
+            email: '',
+            password: '',
+            confirmPassword: ''
+        });
+        setPasswordVisibility({
+            password: false,
+            confirmPassword: false
+        });
+    }, []);
+
+    return {
+        formData,
+        passwordVisibility,
+        updateField,
+        togglePasswordVisibility,
+        resetForm
+    };
+};
+
+// Reusable components
+const ValidationIndicator: React.FC<{ status: ValidationState['status']; colors: any; styles: any }> = React.memo(({ status, colors, styles }) => {
+    if (status === 'validating') {
+        return <ActivityIndicator size="small" color={colors.primary} style={styles.validationIndicator} />;
+    }
+    if (status === 'valid') {
+        return <Ionicons name="checkmark-circle" size={22} color={colors.success} style={styles.validationIndicator} />;
+    }
+    if (status === 'invalid') {
+        return <Ionicons name="close-circle" size={22} color={colors.error} style={styles.validationIndicator} />;
+    }
+    return null;
+});
+
+const ValidationMessage: React.FC<{ validationState: ValidationState; colors: any; styles: any }> = React.memo(({ validationState, colors, styles }) => {
+    if (validationState.status === 'idle' || !validationState.message) return null;
+
+    const isSuccess = validationState.status === 'valid';
+    const backgroundColor = isSuccess ? colors.success + '10' : colors.error + '10';
+    const borderColor = isSuccess ? colors.success + '30' : colors.error + '30';
+    const iconColor = isSuccess ? colors.success : colors.error;
+    const iconName = isSuccess ? 'checkmark-circle' : 'alert-circle';
+    const title = isSuccess ? 'Username Available' : 'Username Taken';
+    const subtitle = isSuccess ? 'Good choice! This username is available' : validationState.message;
+
+    return (
+        <View style={[styles.validationCard, { backgroundColor, borderColor }]}>
+            <View style={[styles.validationIconContainer, { backgroundColor: iconColor + '20' }]}>
+                <Ionicons name={iconName} size={16} color={iconColor} />
+            </View>
+            <View style={styles.validationTextContainer}>
+                <Text style={[styles.validationTitle, { color: iconColor }]}>
+                    {title}
+                </Text>
+                <Text style={[styles.validationSubtitle, { color: colors.secondaryText }]}>
+                    {subtitle}
+                </Text>
+            </View>
+        </View>
+    );
+});
+
+const FormInput: React.FC<{
+    icon: string;
+    label: string;
+    value: string;
+    onChangeText: (text: string) => void;
+    secureTextEntry?: boolean;
+    keyboardType?: 'default' | 'email-address';
+    autoCapitalize?: 'none' | 'sentences';
+    autoCorrect?: boolean;
+    testID?: string;
+    colors: any;
+    styles: any;
+    borderColor?: string;
+    rightComponent?: React.ReactNode;
+}> = React.memo(({
+    icon,
+    label,
+    value,
+    onChangeText,
+    secureTextEntry = false,
+    keyboardType = 'default',
+    autoCapitalize = 'sentences',
+    autoCorrect = true,
+    testID,
+    colors,
+    styles,
+    borderColor,
+    rightComponent
+}) => (
+    <View style={styles.inputContainer}>
+        <View style={[
+            styles.premiumInputWrapper,
+            {
+                borderColor: borderColor || colors.border,
+                backgroundColor: colors.inputBackground,
+                shadowColor: colors.primary,
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.1,
+                shadowRadius: 12,
+                elevation: 3,
+            }
+        ]}>
+            <Ionicons
+                name={icon as any}
+                size={22}
+                color={colors.secondaryText}
+                style={styles.inputIcon}
+            />
+            <View style={styles.inputContent}>
+                <Text style={[styles.modernLabel, { color: colors.secondaryText }]}>
+                    {label}
+                </Text>
+                <TextInput
+                    style={[styles.modernInput, { color: colors.text }]}
+                    value={value}
+                    onChangeText={onChangeText}
+                    secureTextEntry={secureTextEntry}
+                    keyboardType={keyboardType}
+                    autoCapitalize={autoCapitalize}
+                    autoCorrect={autoCorrect}
+                    testID={testID}
+                    placeholderTextColor="transparent"
+                />
+            </View>
+            {rightComponent}
+        </View>
+    </View>
+));
+
+const ProgressIndicator: React.FC<{ currentStep: number; totalSteps: number; colors: any; styles: any }> = React.memo(({ currentStep, totalSteps, colors, styles }) => (
+    <View style={styles.progressContainer}>
+        {Array.from({ length: totalSteps }, (_, index) => (
+            <View
+                key={index}
+                style={[
+                    styles.progressDot,
+                    currentStep === index ?
+                        { backgroundColor: colors.primary, width: 24 } :
+                        { backgroundColor: colors.border }
+                ]}
+            />
+        ))}
+    </View>
+));
+
+// Main component
+const SignUpScreen: React.FC<BaseScreenProps> = ({
+    navigate,
+    goBack,
+    onAuthenticated,
+    theme,
+}) => {
+    const { signUp, isLoading, user, isAuthenticated, oxyServices } = useOxy();
+    const colors = useThemeColors(theme);
+
+    // Form state
+    const { formData, passwordVisibility, updateField, togglePasswordVisibility, resetForm } = useFormData();
+    const { validationState, validateUsername, validateEmail, validatePassword, validatePasswordsMatch } = useFormValidation(oxyServices);
+
+    // UI state
+    const [currentStep, setCurrentStep] = useState(0);
+    const [errorMessage, setErrorMessage] = useState('');
+
+    // Animation refs
+    const fadeAnim = useRef(new Animated.Value(1)).current;
+    const slideAnim = useRef(new Animated.Value(0)).current;
+
+    // Memoized styles
+    const styles = useMemo(() => createStyles(colors, theme), [colors, theme]);
+
+    // Debounced username validation
+    useEffect(() => {
+        if (!formData.username || formData.username.length < USERNAME_MIN_LENGTH) {
+            return;
+        }
+
+        const timeoutId = setTimeout(() => {
+            validateUsername(formData.username);
+        }, VALIDATION_DEBOUNCE_MS);
+
+        return () => clearTimeout(timeoutId);
+    }, [formData.username, validateUsername]);
 
     // Animation functions
     const animateTransition = useCallback((nextStep: number) => {
@@ -207,94 +651,88 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
         }
     }, [currentStep, animateTransition]);
 
-    const validateEmail = useCallback((email: string) => {
-        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        return emailRegex.test(email);
-    }, []);
+    // Form validation helpers
+    const isIdentityStepValid = useCallback(() => {
+        return formData.username &&
+            formData.email &&
+            validateEmail(formData.email) &&
+            validationState.status === 'valid';
+    }, [formData.username, formData.email, validateEmail, validationState.status]);
 
+    const isSecurityStepValid = useCallback(() => {
+        return formData.password &&
+            validatePassword(formData.password) &&
+            validatePasswordsMatch(formData.password, formData.confirmPassword);
+    }, [formData.password, formData.confirmPassword, validatePassword, validatePasswordsMatch]);
+
+    // Custom next handlers for validation
+    const handleIdentityNext = useCallback(() => {
+        if (!isIdentityStepValid()) {
+            toast.error('Please enter a valid username and email.');
+            return;
+        }
+        nextStep();
+    }, [isIdentityStepValid, nextStep]);
+
+    const handleSecurityNext = useCallback(() => {
+        if (!isSecurityStepValid()) {
+            toast.error('Please enter a valid password and confirm it.');
+            return;
+        }
+        nextStep();
+    }, [isSecurityStepValid, nextStep]);
+
+    // Sign up handler
     const handleSignUp = useCallback(async () => {
-        if (!username || !email || !password || !confirmPassword) {
-            toast.error('Please fill in all fields');
-            return;
-        }
-
-        if (!validateEmail(email)) {
-            toast.error('Please enter a valid email address');
-            return;
-        }
-
-        if (validationStatus !== 'valid') {
-            toast.error('Please enter a valid username');
-            return;
-        }
-
-        if (password !== confirmPassword) {
-            toast.error('Passwords do not match');
-            return;
-        }
-
-        if (password.length < 8) {
-            toast.error('Password must be at least 8 characters long');
+        if (!isIdentityStepValid() || !isSecurityStepValid()) {
+            toast.error('Please fill in all fields correctly');
             return;
         }
 
         try {
             setErrorMessage('');
-            const user = await signUp(username, email, password);
+            const user = await signUp(formData.username, formData.email, formData.password);
             toast.success('Account created successfully! Welcome to Oxy!');
-            // Call the onAuthenticated callback to notify parent components
+
             if (onAuthenticated) {
                 onAuthenticated(user);
             }
+
+            resetForm();
         } catch (error: any) {
             toast.error(error.message || 'Sign up failed');
         }
-    }, [username, email, password, confirmPassword, validationStatus, validateEmail, signUp, onAuthenticated]);
+    }, [formData, isIdentityStepValid, isSecurityStepValid, signUp, onAuthenticated, resetForm]);
 
     // Step components
-    const renderWelcomeStep = useMemo(() => (
+    const renderWelcomeStep = useCallback(() => (
         <Animated.View style={[
             styles.stepContainer,
             { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }
         ]}>
-            <View style={styles.welcomeImageContainer}>
-                {/* Large illustration, not inside a circle */}
-                <Svg width={220} height={120} viewBox="0 0 220 120">
-                    {/* Example: Abstract friendly illustration */}
-                    <Path
-                        d="M30 100 Q60 20 110 60 Q160 100 190 40"
-                        stroke={colors.primary}
-                        strokeWidth="8"
-                        fill="none"
-                    />
-                    <Circle cx="60" cy="60" r="18" fill={colors.primary} opacity="0.18" />
-                    <Circle cx="110" cy="60" r="24" fill={colors.primary} opacity="0.25" />
-                    <Circle cx="170" cy="50" r="14" fill={colors.primary} opacity="0.15" />
-                    {/* Smiling face */}
-                    <Circle cx="110" cy="60" r="32" fill="#fff" opacity="0.7" />
-                    <Circle cx="100" cy="55" r="4" fill={colors.primary} />
-                    <Circle cx="120" cy="55" r="4" fill={colors.primary} />
-                    <Path
-                        d="M104 68 Q110 75 116 68"
-                        stroke={colors.primary}
-                        strokeWidth="2"
-                        fill="none"
-                        strokeLinecap="round"
-                    />
-                </Svg>
+            <HighFive width={100} height={100} />
+
+            <View style={styles.modernHeader}>
+                <Text style={[styles.modernTitle, { color: colors.text }]}>
+                    Welcome to Oxy
+                </Text>
+                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
+                    We're excited to have you join us. Let's get your account set up in just a few easy steps.
+                </Text>
             </View>
 
-            <Text style={[styles.welcomeText, { color: colors.text }]}>
-                We're excited to have you join us. Let's get your account set up in just a few easy steps.
-            </Text>
-
-            <TouchableOpacity
-                style={[styles.button, { backgroundColor: colors.primary }]}
-                onPress={nextStep}
-                testID="welcome-next-button"
-            >
-                <Text style={styles.buttonText}>Get Started</Text>
-            </TouchableOpacity>
+            <GroupedPillButtons
+                buttons={[
+                    {
+                        text: 'Get Started',
+                        onPress: nextStep,
+                        icon: 'arrow-forward',
+                        variant: 'primary',
+                        testID: 'welcome-next-button',
+                    },
+                ]}
+                colors={colors}
+            />
 
             <View style={styles.footerTextContainer}>
                 <Text style={[styles.footerText, { color: colors.text }]}>
@@ -307,390 +745,179 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
         </Animated.View>
     ), [fadeAnim, slideAnim, colors, nextStep, navigate, styles]);
 
-    const renderIdentityStep = useMemo(() => (
+    const renderIdentityStep = useCallback(() => (
         <Animated.View style={[
             styles.stepContainer,
             { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }
         ]}>
-            <Text style={[styles.stepTitle, { color: colors.text }]}>Who are you?</Text>
+            <View style={styles.modernHeader}>
+                <Text style={[styles.stepTitle, { color: colors.text }]}>Who are you?</Text>
+            </View>
 
-            <View style={styles.inputContainer}>
-                <View style={[
-                    styles.premiumInputWrapper,
+            <TextField
+                icon="person-outline"
+                label="Username"
+                value={formData.username}
+                onChangeText={(text) => {
+                    updateField('username', text);
+                    setErrorMessage('');
+                }}
+                autoCapitalize="none"
+                autoCorrect={false}
+                testID="username-input"
+                colors={colors}
+                variant="filled"
+                error={validationState.status === 'invalid' ? validationState.message : undefined}
+                loading={validationState.status === 'validating'}
+                success={validationState.status === 'valid'}
+            />
+
+            <ValidationMessage validationState={validationState} colors={colors} styles={styles} />
+
+            <TextField
+                icon="mail-outline"
+                label="Email"
+                value={formData.email}
+                onChangeText={(text) => {
+                    updateField('email', text);
+                }}
+                keyboardType="email-address"
+                autoCapitalize="none"
+                autoCorrect={false}
+                testID="email-input"
+                colors={colors}
+                variant="filled"
+                error={formData.email && !validateEmail(formData.email) ? 'Please enter a valid email address' : undefined}
+            />
+
+            <GroupedPillButtons
+                buttons={[
                     {
-                        borderColor: validationStatus === 'valid' ? colors.success :
-                            validationStatus === 'invalid' ? colors.error : colors.border,
-                        backgroundColor: colors.inputBackground,
-                        shadowColor: colors.primary,
-                        shadowOffset: { width: 0, height: 4 },
-                        shadowOpacity: 0.1,
-                        shadowRadius: 12,
-                        elevation: 3,
-                    }
-                ]}>
-                    <Ionicons
-                        name="person-outline"
-                        size={22}
-                        color={colors.secondaryText}
-                        style={styles.inputIcon}
-                    />
-                    <View style={{ flex: 1 }}>
-                        <Text style={[styles.modernLabel, { color: colors.secondaryText }]}>
-                            Username
-                        </Text>
-                        <TextInput
-                            style={[styles.modernInput, { color: colors.text }]}
-                            value={username}
-                            onChangeText={handleUsernameChange}
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            testID="username-input"
-                            placeholderTextColor="transparent"
-                        />
-                    </View>
-                    {validationStatus === 'validating' && (
-                        <ActivityIndicator size="small" color={colors.primary} style={styles.validationIndicator} />
-                    )}
-                    {validationStatus === 'valid' && (
-                        <Ionicons name="checkmark-circle" size={22} color={colors.success} style={styles.validationIndicator} />
-                    )}
-                    {validationStatus === 'invalid' && username.length >= 3 && (
-                        <Ionicons name="close-circle" size={22} color={colors.error} style={styles.validationIndicator} />
-                    )}
-                </View>
-
-                {/* Enhanced Validation feedback */}
-                {validationStatus === 'valid' && (
-                    <View style={[styles.validationSuccessCard, {
-                        backgroundColor: colors.success + '10',
-                        borderWidth: 1,
-                        borderColor: colors.success + '30',
-                        padding: 16,
-                    }]}>
-                        <View style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: 16,
-                            backgroundColor: colors.success + '20',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            marginRight: 12,
-                        }}>
-                            <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Text style={[styles.validationText, {
-                                color: colors.success,
-                                fontWeight: '600',
-                                marginBottom: 2,
-                            }]}>
-                                Username Available
-                            </Text>
-                            <Text style={[styles.validationText, {
-                                color: colors.text,
-                                fontSize: 11,
-                                opacity: 0.8,
-                            }]}>
-                                Good choice! This username is available
-                            </Text>
-                        </View>
-                    </View>
-                )}
-
-                {validationStatus === 'invalid' && username.length >= 3 && (
-                    <View style={[styles.validationErrorCard, {
-                        backgroundColor: colors.error + '10',
-                        borderWidth: 1,
-                        borderColor: colors.error + '30',
-                        padding: 16,
-                    }]}>
-                        <View style={{
-                            width: 32,
-                            height: 32,
-                            borderRadius: 16,
-                            backgroundColor: colors.error + '20',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            marginRight: 12,
-                        }}>
-                            <Ionicons name="alert-circle" size={16} color={colors.error} />
-                        </View>
-                        <View style={{ flex: 1 }}>
-                            <Text style={[styles.validationText, {
-                                color: colors.error,
-                                fontWeight: '600',
-                                marginBottom: 2,
-                            }]}>
-                                Username Taken
-                            </Text>
-                            <Text style={[styles.validationText, {
-                                color: colors.secondaryText,
-                                fontSize: 11,
-                                opacity: 0.8,
-                            }]}>
-                                {errorMessage || 'Try a different username'}
-                            </Text>
-                        </View>
-                    </View>
-                )}
-            </View>
-
-            <View style={styles.inputContainer}>
-                <View style={[
-                    styles.premiumInputWrapper,
+                        text: 'Back',
+                        onPress: prevStep,
+                        icon: 'arrow-back',
+                        variant: 'transparent',
+                    },
                     {
-                        borderColor: colors.border,
-                        backgroundColor: colors.inputBackground,
-                        shadowColor: colors.primary,
-                        shadowOffset: { width: 0, height: 4 },
-                        shadowOpacity: 0.1,
-                        shadowRadius: 12,
-                        elevation: 3,
-                    }
-                ]}>
-                    <Ionicons
-                        name="mail-outline"
-                        size={22}
-                        color={colors.secondaryText}
-                        style={styles.inputIcon}
-                    />
-                    <View style={{ flex: 1 }}>
-                        <Text style={[styles.modernLabel, { color: colors.secondaryText }]}>
-                            Email
-                        </Text>
-                        <TextInput
-                            style={[styles.modernInput, { color: colors.text }]}
-                            value={email}
-                            onChangeText={handleEmailChange}
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            keyboardType="email-address"
-                            testID="email-input"
-                            placeholderTextColor="transparent"
-                        />
-                    </View>
-                </View>
-            </View>
-
-            <View style={styles.navigationButtons}>
-                <TouchableOpacity
-                    style={[styles.navButton, styles.backButton, { borderColor: colors.border }]}
-                    onPress={prevStep}
-                >
-                    <Text style={[styles.navButtonText, { color: colors.text }]}>Back</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={[styles.navButton, styles.nextButton, { backgroundColor: colors.primary }]}
-                    onPress={nextStep}
-                    disabled={!username || !email || !validateEmail(email) || validationStatus !== 'valid'}
-                >
-                    <Text style={[styles.navButtonText, { color: '#FFFFFF' }]}>Next</Text>
-                </TouchableOpacity>
-            </View>
+                        text: 'Next',
+                        onPress: handleIdentityNext,
+                        icon: 'arrow-forward',
+                        variant: 'primary',
+                    },
+                ]}
+                colors={colors}
+            />
         </Animated.View>
-    ), [fadeAnim, slideAnim, colors, username, email, validationStatus, errorMessage, handleUsernameChange, handleEmailChange, validateEmail, prevStep, nextStep, styles]);
+    ), [fadeAnim, slideAnim, colors, formData, validationState, updateField, setErrorMessage, prevStep, handleIdentityNext, styles]);
 
-    const renderSecurityStep = useMemo(() => (
+    const renderSecurityStep = useCallback(() => (
         <Animated.View style={[
             styles.stepContainer,
             { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }
         ]}>
-            <Text style={[styles.stepTitle, { color: colors.text }]}>Secure your account</Text>
+            <View style={styles.modernHeader}>
+                <Text style={[styles.stepTitle, { color: colors.text }]}>Secure your account</Text>
+            </View>
 
-            <View style={styles.inputContainer}>
-                <View style={[
-                    styles.premiumInputWrapper,
+            <TextField
+                icon="lock-closed-outline"
+                label="Password"
+                value={formData.password}
+                onChangeText={(text) => {
+                    updateField('password', text);
+                }}
+                secureTextEntry={!passwordVisibility.password}
+                autoCapitalize="none"
+                autoCorrect={false}
+                testID="password-input"
+                colors={colors}
+                variant="filled"
+                error={formData.password && !validatePassword(formData.password) ? `Password must be at least ${PASSWORD_MIN_LENGTH} characters` : undefined}
+            />
+
+            <Text style={[styles.passwordHint, { color: colors.secondaryText }]}>Password must be at least {PASSWORD_MIN_LENGTH} characters long</Text>
+
+            <TextField
+                icon="lock-closed-outline"
+                label="Confirm Password"
+                value={formData.confirmPassword}
+                onChangeText={(text) => {
+                    updateField('confirmPassword', text);
+                }}
+                secureTextEntry={!passwordVisibility.confirmPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                testID="confirm-password-input"
+                colors={colors}
+                variant="filled"
+                error={formData.confirmPassword && !validatePasswordsMatch(formData.password, formData.confirmPassword) ? 'Passwords do not match' : undefined}
+            />
+
+            <GroupedPillButtons
+                buttons={[
                     {
-                        borderColor: colors.border,
-                        backgroundColor: colors.inputBackground,
-                        shadowColor: colors.primary,
-                        shadowOffset: { width: 0, height: 4 },
-                        shadowOpacity: 0.1,
-                        shadowRadius: 12,
-                        elevation: 3,
-                    }
-                ]}>
-                    <Ionicons
-                        name="lock-closed-outline"
-                        size={22}
-                        color={colors.secondaryText}
-                        style={styles.inputIcon}
-                    />
-                    <View style={{ flex: 1 }}>
-                        <Text style={[styles.modernLabel, { color: colors.secondaryText }]}>
-                            Password
-                        </Text>
-                        <TextInput
-                            style={[styles.modernInput, { color: colors.text }]}
-                            value={password}
-                            onChangeText={handlePasswordChange}
-                            secureTextEntry={!showPassword}
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            testID="password-input"
-                            placeholderTextColor="transparent"
-                        />
-                    </View>
-                    <TouchableOpacity
-                        style={styles.passwordToggle}
-                        onPress={() => setShowPassword(!showPassword)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                        <Ionicons
-                            name={showPassword ? 'eye-off' : 'eye'}
-                            size={22}
-                            color={colors.secondaryText}
-                        />
-                    </TouchableOpacity>
-                </View>
-                <Text style={[styles.passwordHint, { color: colors.secondaryText }]}>
-                    Password must be at least 8 characters long
-                </Text>
-            </View>
-
-            <View style={styles.inputContainer}>
-                <View style={[
-                    styles.premiumInputWrapper,
+                        text: 'Back',
+                        onPress: prevStep,
+                        icon: 'arrow-back',
+                        variant: 'transparent',
+                    },
                     {
-                        borderColor: colors.border,
-                        backgroundColor: colors.inputBackground,
-                        shadowColor: colors.primary,
-                        shadowOffset: { width: 0, height: 4 },
-                        shadowOpacity: 0.1,
-                        shadowRadius: 12,
-                        elevation: 3,
-                    }
-                ]}>
-                    <Ionicons
-                        name="lock-closed-outline"
-                        size={22}
-                        color={colors.secondaryText}
-                        style={styles.inputIcon}
-                    />
-                    <View style={{ flex: 1 }}>
-                        <Text style={[styles.modernLabel, { color: colors.secondaryText }]}>
-                            Confirm Password
-                        </Text>
-                        <TextInput
-                            style={[styles.modernInput, { color: colors.text }]}
-                            value={confirmPassword}
-                            onChangeText={handleConfirmPasswordChange}
-                            secureTextEntry={!showConfirmPassword}
-                            autoCapitalize="none"
-                            autoCorrect={false}
-                            testID="confirm-password-input"
-                            placeholderTextColor="transparent"
-                        />
-                    </View>
-                    <TouchableOpacity
-                        style={styles.passwordToggle}
-                        onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                    >
-                        <Ionicons
-                            name={showConfirmPassword ? 'eye-off' : 'eye'}
-                            size={22}
-                            color={colors.secondaryText}
-                        />
-                    </TouchableOpacity>
-                </View>
-            </View>
-
-            <View style={styles.navigationButtons}>
-                <TouchableOpacity
-                    style={[styles.navButton, styles.backButton, { borderColor: colors.border }]}
-                    onPress={prevStep}
-                >
-                    <Text style={[styles.navButtonText, { color: colors.text }]}>Back</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                    style={[styles.navButton, styles.nextButton, { backgroundColor: colors.primary }]}
-                    onPress={nextStep}
-                    disabled={!password || password.length < 8 || password !== confirmPassword}
-                >
-                    <Text style={[styles.navButtonText, { color: '#FFFFFF' }]}>Next</Text>
-                </TouchableOpacity>
-            </View>
+                        text: 'Next',
+                        onPress: handleSecurityNext,
+                        icon: 'arrow-forward',
+                        variant: 'primary',
+                    },
+                ]}
+                colors={colors}
+            />
         </Animated.View>
-    ), [fadeAnim, slideAnim, colors, password, confirmPassword, showPassword, showConfirmPassword, handlePasswordChange, handleConfirmPasswordChange, prevStep, nextStep, styles]);
+    ), [fadeAnim, slideAnim, colors, formData, passwordVisibility, updateField, setErrorMessage, togglePasswordVisibility, prevStep, handleSecurityNext, styles]);
 
-    const renderSummaryStep = useMemo(() => (
+    const renderSummaryStep = useCallback(() => (
         <Animated.View style={[
             styles.stepContainer,
             { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }
         ]}>
-            <Text style={[styles.stepTitle, { color: colors.text }]}>Ready to join</Text>
+            <View style={styles.modernHeader}>
+                <Text style={[styles.stepTitle, { color: colors.text }]}>Ready to join</Text>
+            </View>
 
             <View style={styles.summaryContainer}>
                 <View style={styles.summaryRow}>
                     <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>Username:</Text>
-                    <Text style={[styles.summaryValue, { color: colors.text }]}>{username}</Text>
+                    <Text style={[styles.summaryValue, { color: colors.text }]}>{formData.username}</Text>
                 </View>
 
                 <View style={styles.summaryRow}>
                     <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>Email:</Text>
-                    <Text style={[styles.summaryValue, { color: colors.text }]}>{email}</Text>
+                    <Text style={[styles.summaryValue, { color: colors.text }]}>{formData.email}</Text>
                 </View>
             </View>
 
-            <TouchableOpacity
-                style={[styles.button, { backgroundColor: colors.primary }]}
-                onPress={handleSignUp}
-                disabled={isLoading}
-                testID="signup-button"
-            >
-                {isLoading ? (
-                    <ActivityIndicator color="#FFFFFF" size="small" />
-                ) : (
-                    <Text style={styles.buttonText}>Create Account</Text>
-                )}
-            </TouchableOpacity>
-
-            <View style={styles.navigationButtons}>
-                <TouchableOpacity
-                    style={[styles.navButton, styles.backButton, { borderColor: colors.border }]}
-                    onPress={prevStep}
-                >
-                    <Text style={[styles.navButtonText, { color: colors.text }]}>Back</Text>
-                </TouchableOpacity>
-            </View>
+            <GroupedPillButtons
+                buttons={[
+                    {
+                        text: 'Back',
+                        onPress: prevStep,
+                        icon: 'arrow-back',
+                        variant: 'transparent',
+                    },
+                    {
+                        text: 'Create Account',
+                        onPress: handleSignUp,
+                        icon: 'checkmark',
+                        variant: 'primary',
+                        disabled: isLoading,
+                        loading: isLoading,
+                        testID: 'signup-button',
+                    },
+                ]}
+                colors={colors}
+            />
         </Animated.View>
-    ), [fadeAnim, slideAnim, colors, username, email, isLoading, handleSignUp, prevStep, styles]);
+    ), [fadeAnim, slideAnim, colors, formData, isLoading, handleSignUp, prevStep, styles]);
 
-    const renderProgressIndicators = useMemo(() => (
-        <View style={styles.progressContainer}>
-            {[0, 1, 2, 3].map((step) => (
-                <View
-                    key={step}
-                    style={[
-                        styles.progressDot,
-                        currentStep === step ?
-                            { backgroundColor: colors.primary, width: 24 } :
-                            { backgroundColor: colors.border }
-                    ]}
-                />
-            ))}
-        </View>
-    ), [currentStep, colors, styles]);
-
-    const renderCurrentStep = useCallback(() => {
-        switch (currentStep) {
-            case 0:
-                return renderWelcomeStep;
-            case 1:
-                return renderIdentityStep;
-            case 2:
-                return renderSecurityStep;
-            case 3:
-                return renderSummaryStep;
-            default:
-                return renderWelcomeStep;
-        }
-    }, [currentStep, renderWelcomeStep, renderIdentityStep, renderSecurityStep, renderSummaryStep]);
-
-    // If user is already authenticated, show user info and account center option
+    // If user is already authenticated, show user info
     if (user && isAuthenticated) {
         return (
             <KeyboardAvoidingView
@@ -734,6 +961,17 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
         );
     }
 
+    // Render current step
+    const renderCurrentStep = useCallback(() => {
+        switch (currentStep) {
+            case 0: return renderWelcomeStep();
+            case 1: return renderIdentityStep();
+            case 2: return renderSecurityStep();
+            case 3: return renderSummaryStep();
+            default: return renderWelcomeStep();
+        }
+    }, [currentStep, renderWelcomeStep, renderIdentityStep, renderSecurityStep, renderSummaryStep]);
+
     return (
         <KeyboardAvoidingView
             style={[styles.container, { backgroundColor: colors.background }]}
@@ -749,247 +987,11 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
             >
-                {renderProgressIndicators}
+                <ProgressIndicator currentStep={currentStep} totalSteps={4} colors={colors} styles={styles} />
                 {renderCurrentStep()}
             </ScrollView>
         </KeyboardAvoidingView>
     );
 };
-
-// Memoized styles creation
-const createStyles = (colors: any, theme: string) => StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    scrollContent: {
-        flexGrow: 1,
-        paddingHorizontal: 24,
-        paddingTop: 40,
-        paddingBottom: 40,
-    },
-    stepContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        minHeight: 500,
-    },
-    welcomeImageContainer: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginVertical: 30,
-    },
-    welcomeTitle: {
-        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontSize: 42,
-        lineHeight: 48,
-        marginBottom: 24,
-        textAlign: 'left',
-        letterSpacing: -1,
-    },
-    welcomeText: {
-        fontSize: 16,
-        textAlign: 'left',
-        marginBottom: 30,
-        lineHeight: 24,
-    },
-    stepTitle: {
-        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontSize: 34,
-        marginBottom: 20,
-        color: colors.primary,
-        maxWidth: '90%',
-        textAlign: 'left',
-    },
-    inputContainer: {
-        marginBottom: 28,
-        width: '100%',
-    },
-    label: {
-        fontSize: 15,
-        marginBottom: 8,
-        fontWeight: '500',
-        letterSpacing: 0.1,
-    },
-    input: {
-        height: 48,
-        borderRadius: 16,
-        paddingHorizontal: 16,
-        borderWidth: 1,
-        fontSize: 16,
-        marginBottom: 2,
-    },
-    premiumInputWrapper: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        height: 64,
-        borderRadius: 20,
-        borderWidth: 2,
-        paddingHorizontal: 20,
-        paddingVertical: 12,
-    },
-    inputIcon: {
-        marginRight: 16,
-    },
-    modernLabel: {
-        fontSize: 12,
-        fontWeight: '500',
-        marginBottom: 2,
-    },
-    modernInput: {
-        fontSize: 16,
-        lineHeight: 20,
-        height: 24,
-        paddingVertical: 0,
-        ...Platform.select({
-            web: { outline: 'none' },
-        }),
-    },
-    validationIndicator: {
-        marginLeft: 8,
-    },
-    validationSuccessCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 12,
-        borderRadius: 12,
-        marginTop: 8,
-        gap: 8,
-    },
-    validationErrorCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 12,
-        borderRadius: 12,
-        marginTop: 8,
-        gap: 8,
-    },
-    validationText: {
-        fontSize: 12,
-        fontWeight: '500',
-    },
-    passwordToggle: {
-        padding: 8,
-        marginLeft: 8,
-    },
-    passwordHint: {
-        fontSize: 12,
-        marginTop: 4,
-    },
-    button: {
-        height: 48,
-        borderRadius: 24,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginTop: 24,
-        shadowColor: colors.primary,
-        shadowOpacity: 0.12,
-        shadowOffset: { width: 0, height: 2 },
-        shadowRadius: 8,
-        elevation: 2,
-        width: '100%',
-    },
-    buttonText: {
-        color: '#FFFFFF',
-        fontSize: 17,
-        fontWeight: '700',
-        letterSpacing: 0.2,
-    },
-    footerTextContainer: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        marginTop: 28,
-    },
-    footerText: {
-        fontSize: 15,
-    },
-    linkText: {
-        fontSize: 15,
-        fontWeight: '700',
-    },
-    userInfoContainer: {
-        padding: 20,
-        marginVertical: 20,
-        borderRadius: 24,
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOpacity: 0.04,
-        shadowOffset: { width: 0, height: 1 },
-        shadowRadius: 4,
-        elevation: 1,
-    },
-    userInfoText: {
-        fontSize: 16,
-        marginBottom: 8,
-        textAlign: 'center',
-    },
-    actionButtonsContainer: {
-        marginTop: 24,
-    },
-    navigationButtons: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginTop: 28,
-        width: '100%',
-    },
-    navButton: {
-        borderRadius: 24,
-        height: 44,
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingHorizontal: 28,
-        backgroundColor: '#F3E5F5',
-    },
-    backButton: {
-        backgroundColor: 'transparent',
-        borderWidth: 1,
-    },
-    nextButton: {
-        minWidth: 100,
-    },
-    navButtonText: {
-        fontSize: 16,
-        fontWeight: '700',
-    },
-    progressContainer: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        marginBottom: 20,
-        marginTop: 8,
-    },
-    progressDot: {
-        height: 10,
-        width: 10,
-        borderRadius: 5,
-        marginHorizontal: 6,
-        borderWidth: 2,
-        borderColor: '#fff',
-        shadowColor: colors.primary,
-        shadowOpacity: 0.08,
-        shadowOffset: { width: 0, height: 1 },
-        shadowRadius: 2,
-        elevation: 1,
-    },
-    summaryContainer: {
-        padding: 0,
-        marginBottom: 24,
-        width: '100%',
-    },
-    summaryRow: {
-        flexDirection: 'row',
-        marginBottom: 10,
-    },
-    summaryLabel: {
-        fontSize: 15,
-        width: 90,
-    },
-    summaryValue: {
-        fontSize: 15,
-        fontWeight: '600',
-        flex: 1,
-    },
-});
 
 export default SignUpScreen;
