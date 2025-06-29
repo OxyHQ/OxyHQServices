@@ -1,11 +1,15 @@
 export interface SecureClientSession {
   sessionId: string;
+  deviceName?: string;
   deviceId?: string;
   expiresAt?: string;
-  lastActive: string;
+  lastActivity: string;
+  lastActive?: string; // Backward compatibility
+  isCurrentSession?: boolean;
   // Add user info for efficient duplicate detection
   userId?: string;
   username?: string;
+  minimalUser?: MinimalUserData | null;
 }
 
 export interface SecureStorageKeys {
