@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { BaseScreenProps } from '../../navigation/types';
+import { shadows } from '../../styles';
 
 const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const isDarkTheme = theme === 'dark';
@@ -41,11 +42,7 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         padding: 18,
         marginBottom: 18,
-        shadowColor: '#000',
-        shadowOpacity: 0.04,
-        shadowOffset: { width: 0, height: 1 },
-        shadowRadius: 4,
-        elevation: 1,
+        ...shadows.small,
     },
     rewardTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 6 },
     rewardDesc: { fontSize: 15 },

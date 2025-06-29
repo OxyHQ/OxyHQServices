@@ -2,7 +2,7 @@ import React from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, ViewStyle, TextStyle, StyleProp, Platform } from 'react-native';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
-import { fontFamilies } from '../styles/fonts';
+import { fontFamilies, shadows } from '../styles';
 
 export interface OxySignInButtonProps {
     /**
@@ -168,11 +168,7 @@ const styles = StyleSheet.create({
         backgroundColor: '#FFFFFF',
         borderWidth: 1,
         borderColor: '#DDDDDD',
-        shadowColor: '#000000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2,
+        ...shadows.button,
     },
     buttonOutline: {
         backgroundColor: 'transparent',

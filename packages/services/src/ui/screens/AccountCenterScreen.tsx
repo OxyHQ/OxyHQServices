@@ -15,13 +15,11 @@ import { packageInfo } from '../../constants/version';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 import { fontFamilies } from '../styles/fonts';
-import {
-    ProfileCard,
-    Section,
-    QuickActions,
-    GroupedSection,
-    GroupedItem
-} from '../components';
+import ProfileCard from '../components/ProfileCard';
+import Section from '../components/Section';
+import QuickActions from '../components/QuickActions';
+import GroupedSection from '../components/GroupedSection';
+import GroupedItem from '../components/GroupedItem';
 
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,
