@@ -90,6 +90,8 @@ For comprehensive documentation, API reference, and examples:
 - [🚀 Quick Start Guide](./docs/quick-start.md)
 - [🔐 Authentication Guide](./docs/AUTHENTICATION.md) - Hook-based API for components
 - [⚡ Non-Hook API Guide](./docs/NON_HOOK_API_GUIDE.md) - **Core API for Redux, thunks, and utility functions**
+- [🔧 Redux Practical Example](./docs/REDUX_PRACTICAL_EXAMPLE.md) - **Complete working example for Redux usage**
+- [🔄 Hook vs Core API](./docs/HOOK_VS_CORE_API.md) - Side-by-side comparison with examples
 - [🔧 Redux Integration](./docs/redux-integration.md) - Both managed and custom approaches
 - [🔗 Core API Reference](./docs/core-api.md)
 - [💼 Integration Examples](./docs/examples/)

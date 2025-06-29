@@ -11,6 +11,7 @@ Complete reference for the OxyHQServices TypeScript client library.
 ### 🔑 API Documentation
 - **[Authentication Guide](./AUTHENTICATION.md)** - Hook-based API for React components
 - **[Non-Hook API Guide](./NON_HOOK_API_GUIDE.md)** - **Core API for Redux, thunks, and utility functions**
+- **[Redux Practical Example](./REDUX_PRACTICAL_EXAMPLE.md)** - **Complete working example answering "how to use in Redux"**
 - **[Hook vs Core API](./HOOK_VS_CORE_API.md)** - Side-by-side comparison with examples
 - **[Core API Reference](./core-api.md)** - Complete method reference
 
