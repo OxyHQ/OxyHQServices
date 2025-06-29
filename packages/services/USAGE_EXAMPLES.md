@@ -7,9 +7,9 @@ This document shows how to use the new Zustand-based architecture that replaces 
 ```tsx
 import React from 'react';
 import { 
-  NewOxyContextProvider, 
-  useNewOxy,
-  useNewFollow,
+  OxyContextProvider, 
+  useOxy,
+  useFollow,
   OxyServices 
 } from '@oxyhq/services';
 
@@ -28,7 +28,7 @@ function AuthComponent() {
     login, 
     logout,
     clearError 
-  } = useNewOxy();
+  } = useOxy();
 
   const handleLogin = async () => {
     try {
@@ -64,7 +64,7 @@ function AuthComponent() {
 
 // Follow Component using new architecture  
 function FollowButton({ userId }: { userId: string }) {
-  const { isFollowing, isLoading, toggleFollow } = useNewFollow(userId);
+  const { isFollowing, isLoading, toggleFollow } = useFollow(userId);
 
   return (
     <button 
@@ -79,13 +79,13 @@ function FollowButton({ userId }: { userId: string }) {
 // Main App
 function App() {
   return (
-    <NewOxyContextProvider oxyServices={oxyServices}>
+    <OxyContextProvider oxyServices={oxyServices}>
       <div>
         <h1>My App</h1>
         <AuthComponent />
         <FollowButton userId="user-123" />
       </div>
-    </NewOxyContextProvider>
+    </OxyContextProvider>
   );
 }
 
@@ -98,7 +98,7 @@ export default App;
 
 ```tsx
 function UserList({ userIds }: { userIds: string[] }) {
-  const { followData, toggleFollowForUser } = useNewFollow(userIds);
+  const { followData, toggleFollowForUser } = useFollow(userIds);
 
   return (
     <div>
@@ -134,7 +134,7 @@ function LoginStatus() {
 // Only re-renders when this specific user's follow status changes
 function SpecificFollowButton({ userId }: { userId: string }) {
   const { isFollowing, isLoading } = useUserFollowStatus(userId);
-  const { toggleFollow } = useNewFollow(userId);
+  const { toggleFollow } = useFollow(userId);
   
   return (
     <button onClick={() => toggleFollow()}>
@@ -179,8 +179,8 @@ function ProfileCard() {
 import React from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { 
-  NewOxyContextProvider, 
-  useNewOxy,
+  OxyContextProvider, 
+  useOxy,
   OxyServices 
 } from '@oxyhq/services';
 
@@ -195,7 +195,7 @@ function AuthScreen() {
     isLoading, 
     login, 
     logout 
-  } = useNewOxy();
+  } = useOxy();
 
   const handleLogin = async () => {
     try {
@@ -225,9 +225,9 @@ function AuthScreen() {
 
 export default function App() {
   return (
-    <NewOxyContextProvider oxyServices={oxyServices}>
+    <OxyContextProvider oxyServices={oxyServices}>
       <AuthScreen />
-    </NewOxyContextProvider>
+    </OxyContextProvider>
   );
 }
 ```
@@ -254,7 +254,7 @@ function MyComponent() {
 
 ```tsx
 function FollowButton({ userId }: { userId: string }) {
-  const { toggleFollow } = useNewFollow(userId);
+  const { toggleFollow } = useFollow(userId);
   
   // ✅ toggleFollow is already memoized in the hook
   return <button onClick={toggleFollow}>Follow</button>;
@@ -265,7 +265,7 @@ function FollowButton({ userId }: { userId: string }) {
 
 ```tsx
 function UserListActions({ userIds }: { userIds: string[] }) {
-  const { fetchMultipleStatuses } = useNewFollow(userIds);
+  const { fetchMultipleStatuses } = useFollow(userIds);
   
   useEffect(() => {
     // ✅ Fetch all statuses in one batch operation
@@ -280,7 +280,7 @@ function UserListActions({ userIds }: { userIds: string[] }) {
 
 ```tsx
 function ErrorBoundaryExample() {
-  const { error, clearError } = useNewOxy();
+  const { error, clearError } = useOxy();
   
   if (error) {
     return (
@@ -300,7 +300,7 @@ function ErrorBoundaryExample() {
 
 ```tsx
 import { render, screen } from '@testing-library/react';
-import { NewOxyContextProvider } from '@oxyhq/services';
+import { OxyContextProvider } from '@oxyhq/services';
 
 function TestWrapper({ children }: { children: React.ReactNode }) {
   const mockOxyServices = {
@@ -311,9 +311,9 @@ function TestWrapper({ children }: { children: React.ReactNode }) {
   };
   
   return (
-    <NewOxyContextProvider oxyServices={mockOxyServices as any}>
+    <OxyContextProvider oxyServices={mockOxyServices as any}>
       {children}
-    </NewOxyContextProvider>
+    </OxyContextProvider>
   );
 }
 
@@ -345,10 +345,10 @@ function OldAuthComponent() {
 }
 
 // NEW WAY (Zustand)
-import { useNewOxy } from '@oxyhq/services';
+import { useOxy } from '@oxyhq/services';
 
-function NewAuthComponent() {
-  const { user, isLoading, login } = useNewOxy();
+function AuthComponent() {
+  const { user, isLoading, login } = useOxy();
   
   const handleLogin = async () => {
     await login('username', 'password');
