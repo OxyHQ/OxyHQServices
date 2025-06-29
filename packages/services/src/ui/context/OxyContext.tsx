@@ -645,10 +645,10 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
   const isAuthenticated = useMemo(() => {
     // User is authenticated if:
     // 1. We have a full user object loaded, OR
-    // 2. We have an active session with a valid token
+    // 2. We have an active session (token will be fetched on-demand)
     // This covers both the loaded state and the loading-but-authenticated state
-    return !!user || (!!activeSessionId && !!oxyServices?.getCurrentUserId());
-  }, [user, activeSessionId, oxyServices]);
+    return !!user || !!activeSessionId;
+  }, [user, activeSessionId]);
 
   // Context value
   const contextValue: OxyContextState = {
