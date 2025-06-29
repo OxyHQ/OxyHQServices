@@ -165,6 +165,17 @@ export class OxyServices {
   }
 
   /**
+   * Sets/updates the base URL for this OxyServices instance
+   * @param baseURL - The new base URL to use for API requests
+   */
+  public setBaseURL(baseURL: string): void {
+    if (!baseURL) {
+      throw new Error('Base URL cannot be empty');
+    }
+    this.client.defaults.baseURL = baseURL;
+  }
+
+  /**
    * Gets the currently authenticated user ID from the token
    * @returns The user ID or null if not authenticated
    */

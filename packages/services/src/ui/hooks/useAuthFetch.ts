@@ -33,6 +33,9 @@ export interface AuthFetchAPI {
   login: (username: string, password: string) => Promise<any>;
   logout: () => Promise<void>;
   signUp: (username: string, email: string, password: string) => Promise<any>;
+  
+  // API configuration
+  setApiUrl: (url: string) => void;
 }
 
 /**
@@ -40,10 +43,19 @@ export interface AuthFetchAPI {
  * Uses the existing OxyServices instance from useOxy context
  */
 export function useAuthFetch(): AuthFetchAPI {
-  const { oxyServices, isAuthenticated, user, login, logout, signUp, activeSessionId } = useOxy();
+  const { oxyServices, isAuthenticated, user, login, logout, signUp, activeSessionId, setApiUrl } = useOxy();
+
+  // Validate that we have the required dependencies
+  if (!oxyServices) {
+    throw new Error('useAuthFetch requires OxyServices to be initialized. Make sure your app is wrapped with OxyProvider.');
+  }
 
   // Main fetch function with automatic auth headers
   const authFetch = useCallback(async (input: RequestInfo | URL, init?: AuthFetchOptions): Promise<Response> => {
+    if (!oxyServices) {
+      throw new Error('OxyServices not initialized. Make sure to wrap your app in OxyProvider.');
+    }
+
     const url = resolveURL(input, oxyServices.getBaseURL());
     const options = await addAuthHeaders(init, oxyServices, activeSessionId || undefined, isAuthenticated);
 
@@ -52,22 +64,29 @@ export function useAuthFetch(): AuthFetchAPI {
 
       // Handle token expiry and automatic refresh
       if (response.status === 401 && isAuthenticated) {
-        // Try to refresh token and retry
-        try {
-          await oxyServices.refreshTokens();
-          const retryOptions = await addAuthHeaders(init, oxyServices, activeSessionId || undefined, isAuthenticated);
-          response = await fetch(url, retryOptions);
-        } catch (refreshError) {
-          // Refresh failed, user needs to login again
-          console.warn('Token refresh failed, user needs to re-authenticate');
-          throw new Error('Authentication expired. Please login again.');
+        // Try to refresh token if we have refresh capability
+        if (oxyServices.refreshTokens) {
+          try {
+            await oxyServices.refreshTokens();
+            const retryOptions = await addAuthHeaders(init, oxyServices, activeSessionId || undefined, isAuthenticated);
+            response = await fetch(url, retryOptions);
+          } catch (refreshError) {
+            // Refresh failed, throw authentication error
+            const error = new Error('Authentication expired. Please login again.') as any;
+            error.status = 401;
+            error.code = 'AUTH_EXPIRED';
+            throw error;
+          }
         }
       }
 
       return response;
     } catch (error) {
-      console.error('AuthFetch error:', error);
-      throw error;
+      // Re-throw with additional context if needed
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Request failed');
     }
   }, [oxyServices, activeSessionId, isAuthenticated]);
 
@@ -119,6 +138,7 @@ export function useAuthFetch(): AuthFetchAPI {
   fetchWithMethods.login = login;
   fetchWithMethods.logout = logout;
   fetchWithMethods.signUp = signUp;
+  fetchWithMethods.setApiUrl = setApiUrl;
 
   return fetchWithMethods;
 }
@@ -128,58 +148,54 @@ export function useAuthFetch(): AuthFetchAPI {
  */
 
 function resolveURL(input: RequestInfo | URL, baseURL: string): string {
+  if (!baseURL) {
+    throw new Error('Base URL not configured. Please provide a baseURL in OxyServices configuration.');
+  }
+
   const url = input.toString();
   
-  // If it's already a full URL, return as is
+  // If it's already a full URL (http/https), return as is
   if (url.startsWith('http://') || url.startsWith('https://')) {
     return url;
   }
   
-  // If it starts with /, it's relative to base URL
+  // Normalize base URL (remove trailing slash)
+  const normalizedBaseURL = baseURL.replace(/\/$/, '');
+  
+  // If URL starts with /, it's relative to base URL
   if (url.startsWith('/')) {
-    return `${baseURL}${url}`;
+    return `${normalizedBaseURL}${url}`;
   }
   
   // Otherwise, append to base URL with /
-  return `${baseURL}/${url}`;
+  return `${normalizedBaseURL}/${url}`;
 }
 
 async function addAuthHeaders(init?: AuthFetchOptions, oxyServices?: any, activeSessionId?: string, isAuthenticated?: boolean): Promise<RequestInit> {
   const headers = new Headers(init?.headers);
   
-  // Debug logging
-  console.log('[Auth API Debug] isAuthenticated:', isAuthenticated, 'activeSessionId:', activeSessionId, 'oxyServices:', !!oxyServices);
-  
-  // Add auth header if user is authenticated (use context state instead of getCurrentUserId)
+  // Add auth header if user is authenticated
   if (isAuthenticated && oxyServices && !headers.has('Authorization')) {
     try {
       // First try to get regular JWT access token
       let accessToken = oxyServices.getAccessToken?.();
-      console.log('[Auth API Debug] JWT accessToken from getAccessToken():', !!accessToken);
       
       // If no JWT token but we have a secure session, try to get token from session
       if (!accessToken && activeSessionId) {
-        console.log('[Auth API] No JWT token, trying to get token from secure session:', activeSessionId);
         try {
           const tokenData = await oxyServices.getTokenBySession(activeSessionId);
           accessToken = tokenData.accessToken;
-          console.log('[Auth API] Got token from session successfully');
         } catch (error) {
-          console.warn('[Auth API] Failed to get token from session:', error);
+          // Silent fail - will attempt request without token
         }
       }
       
       if (accessToken) {
         headers.set('Authorization', `Bearer ${accessToken}`);
-        console.log('[Auth API] Added Authorization header successfully');
-      } else {
-        console.warn('[Auth API] No authentication token available - JWT token:', !!oxyServices.getAccessToken?.(), 'activeSessionId:', activeSessionId);
       }
     } catch (error) {
-      console.error('[Auth API] Error getting access token:', error);
+      // Silent fail - will attempt request without token
     }
-  } else {
-    console.warn('[Auth API] Cannot authenticate - isAuthenticated:', isAuthenticated, 'oxyServices:', !!oxyServices, 'hasAuthHeader:', headers.has('Authorization'));
   }
 
   const body = init?.body;

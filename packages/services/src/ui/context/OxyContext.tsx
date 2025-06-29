@@ -35,6 +35,9 @@ export interface OxyContextState {
   oxyServices: OxyServices;
   bottomSheetRef?: React.RefObject<any>;
 
+  // API configuration
+  setApiUrl: (url: string) => void;
+
   // Methods to directly control the bottom sheet
   showBottomSheet?: (screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => void;
   hideBottomSheet?: () => void;
@@ -640,6 +643,16 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     }
   }, [bottomSheetRef]);
 
+  // API URL configuration
+  const setApiUrl = useCallback((url: string) => {
+    try {
+      oxyServices.setBaseURL(url);
+    } catch (error) {
+      console.error('Failed to update API URL:', error);
+      setError(`Failed to update API URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  }, [oxyServices]);
+
   // Compute comprehensive authentication status
   // This is the single source of truth for authentication across the entire app
   const isAuthenticated = useMemo(() => {
@@ -670,6 +683,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     logoutAllDeviceSessions,
     updateDeviceName,
     oxyServices,
+    setApiUrl,
     bottomSheetRef,
     showBottomSheet,
     hideBottomSheet,
