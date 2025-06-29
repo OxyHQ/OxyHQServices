@@ -40,22 +40,22 @@ export interface AuthFetchAPI {
  * Uses the existing OxyServices instance from useOxy context
  */
 export function useAuthFetch(): AuthFetchAPI {
-  const { oxyServices, isAuthenticated, user, login, logout, signUp } = useOxy();
+  const { oxyServices, isAuthenticated, user, login, logout, signUp, activeSessionId } = useOxy();
 
   // Main fetch function with automatic auth headers
   const authFetch = useCallback(async (input: RequestInfo | URL, init?: AuthFetchOptions): Promise<Response> => {
     const url = resolveURL(input, oxyServices.getBaseURL());
-    const options = await addAuthHeaders(init, oxyServices);
+    const options = await addAuthHeaders(init, oxyServices, activeSessionId || undefined, isAuthenticated);
 
     try {
       let response = await fetch(url, options);
 
       // Handle token expiry and automatic refresh
-      if (response.status === 401 && oxyServices.getCurrentUserId()) {
+      if (response.status === 401 && isAuthenticated) {
         // Try to refresh token and retry
         try {
           await oxyServices.refreshTokens();
-          const retryOptions = await addAuthHeaders(init, oxyServices);
+          const retryOptions = await addAuthHeaders(init, oxyServices, activeSessionId || undefined, isAuthenticated);
           response = await fetch(url, retryOptions);
         } catch (refreshError) {
           // Refresh failed, user needs to login again
@@ -69,7 +69,7 @@ export function useAuthFetch(): AuthFetchAPI {
       console.error('AuthFetch error:', error);
       throw error;
     }
-  }, [oxyServices]);
+  }, [oxyServices, activeSessionId, isAuthenticated]);
 
   // JSON convenience methods
   const get = useCallback(async (endpoint: string, options?: AuthFetchOptions) => {
@@ -144,20 +144,42 @@ function resolveURL(input: RequestInfo | URL, baseURL: string): string {
   return `${baseURL}/${url}`;
 }
 
-async function addAuthHeaders(init?: AuthFetchOptions, oxyServices?: any): Promise<RequestInit> {
+async function addAuthHeaders(init?: AuthFetchOptions, oxyServices?: any, activeSessionId?: string, isAuthenticated?: boolean): Promise<RequestInit> {
   const headers = new Headers(init?.headers);
   
-  // Add auth header if user is authenticated
-  if (oxyServices?.getCurrentUserId() && !headers.has('Authorization')) {
-    // Try to get current access token
+  // Debug logging
+  console.log('[Auth API Debug] isAuthenticated:', isAuthenticated, 'activeSessionId:', activeSessionId, 'oxyServices:', !!oxyServices);
+  
+  // Add auth header if user is authenticated (use context state instead of getCurrentUserId)
+  if (isAuthenticated && oxyServices && !headers.has('Authorization')) {
     try {
-      const accessToken = oxyServices.getAccessToken?.() || oxyServices.accessToken;
+      // First try to get regular JWT access token
+      let accessToken = oxyServices.getAccessToken?.();
+      console.log('[Auth API Debug] JWT accessToken from getAccessToken():', !!accessToken);
+      
+      // If no JWT token but we have a secure session, try to get token from session
+      if (!accessToken && activeSessionId) {
+        console.log('[Auth API] No JWT token, trying to get token from secure session:', activeSessionId);
+        try {
+          const tokenData = await oxyServices.getTokenBySession(activeSessionId);
+          accessToken = tokenData.accessToken;
+          console.log('[Auth API] Got token from session successfully');
+        } catch (error) {
+          console.warn('[Auth API] Failed to get token from session:', error);
+        }
+      }
+      
       if (accessToken) {
         headers.set('Authorization', `Bearer ${accessToken}`);
+        console.log('[Auth API] Added Authorization header successfully');
+      } else {
+        console.warn('[Auth API] No authentication token available - JWT token:', !!oxyServices.getAccessToken?.(), 'activeSessionId:', activeSessionId);
       }
     } catch (error) {
-      // Ignore auth header errors
+      console.error('[Auth API] Error getting access token:', error);
     }
+  } else {
+    console.warn('[Auth API] Cannot authenticate - isAuthenticated:', isAuthenticated, 'oxyServices:', !!oxyServices, 'hasAuthHeader:', headers.has('Authorization'));
   }
 
   const body = init?.body;

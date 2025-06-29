@@ -192,6 +192,14 @@ export class OxyServices {
   }
 
   /**
+   * Get the current access token
+   * @returns Current access token or null if not authenticated
+   */
+  public getAccessToken(): string | null {
+    return this.accessToken;
+  }
+
+  /**
    * Sets authentication tokens directly (useful for initializing from storage)
    * @param accessToken - JWT access token
    * @param refreshToken - Refresh token for getting new access tokens
