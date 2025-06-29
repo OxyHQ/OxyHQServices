@@ -49,7 +49,7 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
             // App manages Redux Provider externally
             return content;
         }
-        
+
         return (
             <Provider store={storeToUse}>
                 {content}
@@ -97,7 +97,6 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
             </FontLoader>
         </OxyContextProvider>
     );
-};
 };
 
 /**

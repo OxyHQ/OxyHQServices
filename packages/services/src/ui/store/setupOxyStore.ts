@@ -39,11 +39,12 @@ export function setupOxyStore() {
  */
 setupOxyStore.pick = function(...keys: Array<'auth' | 'follow'>) {
   const allReducers = setupOxyStore();
-  const pickedReducers: Partial<ReturnType<typeof setupOxyStore>> = {};
+  const pickedReducers = {} as Partial<ReturnType<typeof setupOxyStore>>;
   
   for (const key of keys) {
     if (key in allReducers) {
-      pickedReducers[key] = allReducers[key];
+      // Use bracket notation with explicit typing
+      (pickedReducers as Record<string, any>)[key] = allReducers[key];
     }
   }
   
