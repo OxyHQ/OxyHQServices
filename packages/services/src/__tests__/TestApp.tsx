@@ -3,7 +3,7 @@
  */
 
 import React from 'react';
-import { OxyContextProvider, useOxy } from '../context/NewOxyContext';
+import { OxyContextProvider, useOxy } from '../ui/context/OxyContext';
 import { OxyServices } from '../../core';
 
 // Mock OxyServices for testing
