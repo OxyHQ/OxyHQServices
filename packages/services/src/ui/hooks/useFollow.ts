@@ -1,173 +1,216 @@
-import { useDispatch, useSelector } from 'react-redux';
+/**
+ * Follow hooks using Zustand
+ * Replaces the complex Redux-based useFollow hooks
+ */
+
 import { useCallback, useMemo } from 'react';
-import { toggleFollowUser, setFollowingStatus, clearFollowError, fetchFollowStatus } from '../store';
-import type { RootState } from '../store';
-import { useOxy } from '../context/OxyContext';
+import { 
+  useFollow as useFollowStore, 
+  useUserFollowStatus, 
+  useMultipleFollowStatuses 
+} from '../../stores';
 
-// Memoized selector to prevent unnecessary re-renders
-const createFollowSelector = (userId: string) => (state: RootState) => ({
-  isFollowing: state.follow.followingUsers[userId] ?? false,
-  isLoading: state.follow.loadingUsers[userId] ?? false,
-  error: state.follow.errors[userId] ?? null,
-});
+/**
+ * Hook for managing follow/unfollow functionality for a single user
+ */
+export const useFollowUser = (userId: string) => {
+  const followStore = useFollowStore();
+  const userStatus = useUserFollowStatus(userId);
 
-// Memoized selector for multiple users
-const createMultipleFollowSelector = (userIds: string[]) => (state: RootState) => {
-  const followData: Record<string, { isFollowing: boolean; isLoading: boolean; error: string | null }> = {};
-  const followState = state.follow;
-  
-  for (const userId of userIds) {
-    followData[userId] = {
-      isFollowing: followState.followingUsers[userId] ?? false,
-      isLoading: followState.loadingUsers[userId] ?? false,
-      error: followState.errors[userId] ?? null,
-    };
-  }
-  
+  const toggleFollow = useCallback(async () => {
+    try {
+      const result = await followStore.toggleFollow(userId);
+      return result;
+    } catch (error) {
+      throw error;
+    }
+  }, [followStore, userId]);
+
+  const followUser = useCallback(async () => {
+    try {
+      await followStore.followUser(userId);
+    } catch (error) {
+      throw error;
+    }
+  }, [followStore, userId]);
+
+  const unfollowUser = useCallback(async () => {
+    try {
+      await followStore.unfollowUser(userId);
+    } catch (error) {
+      throw error;
+    }
+  }, [followStore, userId]);
+
+  const fetchStatus = useCallback(async () => {
+    try {
+      await followStore.fetchFollowStatus(userId);
+    } catch (error) {
+      console.warn(`Failed to fetch follow status for user ${userId}:`, error);
+    }
+  }, [followStore, userId]);
+
+  const setFollowStatus = useCallback((isFollowing: boolean) => {
+    followStore.setFollowingStatus(userId, isFollowing);
+  }, [followStore, userId]);
+
+  const clearError = useCallback(() => {
+    followStore.clearFollowError(userId);
+  }, [followStore, userId]);
+
   return {
-    followData,
-    isAnyLoading: userIds.some(uid => followState.loadingUsers[uid]),
-    hasAnyError: userIds.some(uid => followState.errors[uid]),
-    allFollowing: userIds.every(uid => followState.followingUsers[uid]),
-    allNotFollowing: userIds.every(uid => !followState.followingUsers[uid]),
+    isFollowing: userStatus.isFollowing,
+    isLoading: userStatus.isLoading,
+    error: userStatus.error,
+    toggleFollow,
+    followUser,
+    unfollowUser,
+    fetchStatus,
+    setFollowStatus,
+    clearError,
   };
 };
 
 /**
- * Custom hook for managing follow/unfollow functionality
- * Optimized to prevent unnecessary re-renders
- * Can handle both single user and multiple users
+ * Hook for managing follow/unfollow functionality for multiple users
  */
-export const useFollow = (userId?: string | string[]) => {
-  const dispatch = useDispatch();
-  const { oxyServices } = useOxy();
-  
-  // Memoize user IDs to prevent recreation on every render
-  const userIds = useMemo(() => {
-    return Array.isArray(userId) ? userId : userId ? [userId] : [];
-  }, [userId]);
-  
-  const isSingleUser = typeof userId === 'string';
-  
-  // Memoize selectors to prevent recreation
-  const singleUserSelector = useMemo(() => {
-    return isSingleUser && userId ? createFollowSelector(userId) : null;
-  }, [isSingleUser, userId]);
-  
-  const multipleUserSelector = useMemo(() => {
-    return !isSingleUser ? createMultipleFollowSelector(userIds) : null;
-  }, [isSingleUser, userIds]);
-  
-  // Use appropriate selector based on mode
-  const singleUserData = useSelector(singleUserSelector || (() => ({ isFollowing: false, isLoading: false, error: null })));
-  const multipleUserData = useSelector(multipleUserSelector || (() => ({ 
-    followData: {}, 
-    isAnyLoading: false, 
-    hasAnyError: false, 
-    allFollowing: false, 
-    allNotFollowing: true 
-  })));
+export const useFollowMultipleUsers = (userIds: string[]) => {
+  const followStore = useFollowStore();
+  const userStatuses = useMultipleFollowStatuses(userIds);
 
-  // Memoized callbacks to prevent recreation on every render
-  const toggleFollow = useCallback(async () => {
-    if (!isSingleUser || !userId) throw new Error('toggleFollow is only available for single user mode');
-    
-    try {
-      const result = await dispatch(toggleFollowUser({
-        userId,
-        oxyServices,
-        isCurrentlyFollowing: singleUserData.isFollowing
-      })).unwrap();
-      return result;
-    } catch (error) {
-      throw error;
-    }
-  }, [dispatch, userId, oxyServices, singleUserData.isFollowing, isSingleUser]);
-
-  const setFollowStatus = useCallback((following: boolean) => {
-    if (!isSingleUser || !userId) throw new Error('setFollowStatus is only available for single user mode');
-    dispatch(setFollowingStatus({ userId, isFollowing: following }));
-  }, [dispatch, userId, isSingleUser]);
-
-  const fetchStatus = useCallback(async () => {
-    if (!isSingleUser || !userId) throw new Error('fetchStatus is only available for single user mode');
-    
-    try {
-      await dispatch(fetchFollowStatus({ userId, oxyServices })).unwrap();
-    } catch (error) {
-      console.warn(`Failed to fetch follow status for user ${userId}:`, error);
-    }
-  }, [dispatch, userId, oxyServices, isSingleUser]);
-
-  const clearError = useCallback(() => {
-    if (!isSingleUser || !userId) throw new Error('clearError is only available for single user mode');
-    dispatch(clearFollowError(userId));
-  }, [dispatch, userId, isSingleUser]);
-
-  // Multiple user callbacks
   const toggleFollowForUser = useCallback(async (targetUserId: string) => {
-    const currentState = multipleUserData.followData[targetUserId]?.isFollowing ?? false;
     try {
-      const result = await dispatch(toggleFollowUser({
-        userId: targetUserId,
-        oxyServices,
-        isCurrentlyFollowing: currentState
-      })).unwrap();
+      const result = await followStore.toggleFollow(targetUserId);
       return result;
     } catch (error) {
       throw error;
     }
-  }, [dispatch, oxyServices, multipleUserData.followData]);
+  }, [followStore]);
 
-  const setFollowStatusForUser = useCallback((targetUserId: string, following: boolean) => {
-    dispatch(setFollowingStatus({ userId: targetUserId, isFollowing: following }));
-  }, [dispatch]);
+  const followUserById = useCallback(async (targetUserId: string) => {
+    try {
+      await followStore.followUser(targetUserId);
+    } catch (error) {
+      throw error;
+    }
+  }, [followStore]);
+
+  const unfollowUserById = useCallback(async (targetUserId: string) => {
+    try {
+      await followStore.unfollowUser(targetUserId);
+    } catch (error) {
+      throw error;
+    }
+  }, [followStore]);
 
   const fetchStatusForUser = useCallback(async (targetUserId: string) => {
     try {
-      await dispatch(fetchFollowStatus({ userId: targetUserId, oxyServices })).unwrap();
+      await followStore.fetchFollowStatus(targetUserId);
     } catch (error) {
       console.warn(`Failed to fetch follow status for user ${targetUserId}:`, error);
     }
-  }, [dispatch, oxyServices]);
+  }, [followStore]);
 
   const fetchAllStatuses = useCallback(async () => {
-    const promises = userIds.map(uid => 
-      dispatch(fetchFollowStatus({ userId: uid, oxyServices })).unwrap().catch((error: any) => {
-        console.warn(`Failed to fetch follow status for user ${uid}:`, error);
-      })
-    );
-    await Promise.all(promises);
-  }, [dispatch, userIds, oxyServices]);
+    try {
+      await followStore.fetchMultipleStatuses(userIds);
+    } catch (error) {
+      console.warn('Failed to fetch follow statuses:', error);
+    }
+  }, [followStore, userIds]);
+
+  const setFollowStatusForUser = useCallback((targetUserId: string, isFollowing: boolean) => {
+    followStore.setFollowingStatus(targetUserId, isFollowing);
+  }, [followStore]);
 
   const clearErrorForUser = useCallback((targetUserId: string) => {
-    dispatch(clearFollowError(targetUserId));
-  }, [dispatch]);
+    followStore.clearFollowError(targetUserId);
+  }, [followStore]);
 
-  // Return appropriate interface based on mode
-  if (isSingleUser && userId) {
+  // Computed values
+  const isAnyLoading = useMemo(() => 
+    userIds.some(userId => userStatuses[userId]?.isLoading), 
+    [userIds, userStatuses]
+  );
+
+  const hasAnyError = useMemo(() => 
+    userIds.some(userId => userStatuses[userId]?.error), 
+    [userIds, userStatuses]
+  );
+
+  const allFollowing = useMemo(() => 
+    userIds.every(userId => userStatuses[userId]?.isFollowing), 
+    [userIds, userStatuses]
+  );
+
+  const allNotFollowing = useMemo(() => 
+    userIds.every(userId => !userStatuses[userId]?.isFollowing), 
+    [userIds, userStatuses]
+  );
+
+  return {
+    followData: userStatuses,
+    toggleFollowForUser,
+    followUserById,
+    unfollowUserById,
+    fetchStatusForUser,
+    fetchAllStatuses,
+    setFollowStatusForUser,
+    clearErrorForUser,
+    
+    // Helper computed values
+    isAnyLoading,
+    hasAnyError,
+    allFollowing,
+    allNotFollowing,
+  };
+};
+
+/**
+ * Unified follow hook that can handle both single user and multiple users
+ * This replaces both useFollow and useOxyFollow from the old system
+ */
+export const useFollow = (userId?: string | string[]) => {
+  // Determine mode based on input
+  const isSingleUser = typeof userId === 'string';
+  const isMultipleUsers = Array.isArray(userId);
+  const singleUserId = isSingleUser ? userId as string : '';
+  const multipleUserIds = isMultipleUsers ? userId as string[] : [];
+
+  // Use appropriate hook based on mode
+  const singleUserHook = useFollowUser(singleUserId);
+  const multipleUsersHook = useFollowMultipleUsers(multipleUserIds);
+
+  if (isSingleUser && singleUserId) {
     return {
-      isFollowing: singleUserData.isFollowing,
-      isLoading: singleUserData.isLoading,
-      error: singleUserData.error,
-      toggleFollow,
-      setFollowStatus,
-      fetchStatus,
-      clearError,
+      mode: 'single' as const,
+      ...singleUserHook,
     };
   }
   
+  if (isMultipleUsers) {
+    return {
+      mode: 'multiple' as const,
+      ...multipleUsersHook,
+    };
+  }
+
+  // Default empty state
   return {
-    followData: multipleUserData.followData,
-    toggleFollowForUser,
-    setFollowStatusForUser,
-    fetchStatusForUser,
-    fetchAllStatuses,
-    clearErrorForUser,
-    // Helper methods
-    isAnyLoading: multipleUserData.isAnyLoading,
-    hasAnyError: multipleUserData.hasAnyError,
-    allFollowing: multipleUserData.allFollowing,
-    allNotFollowing: multipleUserData.allNotFollowing,
+    mode: 'none' as const,
+    isFollowing: false,
+    isLoading: false,
+    error: null,
+    followData: {},
+    toggleFollow: async () => { throw new Error('No user ID provided'); },
+    followUser: async () => { throw new Error('No user ID provided'); },
+    unfollowUser: async () => { throw new Error('No user ID provided'); },
+    fetchStatus: async () => { throw new Error('No user ID provided'); },
+    setFollowStatus: () => { throw new Error('No user ID provided'); },
+    clearError: () => { throw new Error('No user ID provided'); },
+    isAnyLoading: false,
+    hasAnyError: false,
+    allFollowing: false,
+    allNotFollowing: true,
   };
-}; 
+};

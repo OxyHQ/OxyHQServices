@@ -105,6 +105,33 @@ export {
   type AppDispatch,
 } from './ui';
 
+// ------------- Zustand Store Exports -------------
+// Zustand-based state management
+export { 
+  useOxyStore,
+  initializeOxyStore,
+  useAuth,
+  useAuthUser,
+  useIsAuthenticated,
+  useAuthLoading,
+  useAuthError,
+  useAuthSessions,
+  useUserFollowStatus,
+  useMultipleFollowStatuses
+} from './stores';
+
+export {
+  ApiUtils,
+  createApiUtils
+} from './utils/api';
+
+// Export types
+export type { 
+  OxyStore,
+  AuthState,
+  FollowState
+} from './stores';
+
 // ------------- Type Exports -------------
 export { OxyContextState, OxyContextProviderProps };
 export * from './ui/navigation/types';

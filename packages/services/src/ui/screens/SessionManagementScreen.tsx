@@ -265,7 +265,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                                         Device ID: {session.deviceId?.substring(0, 12) ?? 'N/A'}...
                                     </Text>
                                     <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                        Last active: {new Date(session.lastActive).toLocaleDateString()}
+                                        Last active: {(session.lastActivity || session.lastActive) ? new Date(session.lastActivity || session.lastActive!).toLocaleDateString() : 'N/A'}
                                     </Text>
                                     <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                         Expires: {session.expiresAt ? new Date(session.expiresAt).toLocaleDateString() : 'N/A'}
