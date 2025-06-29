@@ -66,7 +66,24 @@ interface JwtPayload {
 }
 
 /**
+ * Standard API response format from the updated API
+ */
+interface ApiResponse<T = any> {
+  success: boolean;
+  data?: T;
+  message?: string;
+  error?: {
+    code: string;
+    message: string;
+    details?: any;
+  };
+}
+
+/**
  * OxyServices - Client library for interacting with the Oxy API
+ * 
+ * Updated to work with the improved API structure with standardized responses
+ * and better error handling.
  * 
  * Note: For authentication status in UI components, use `isAuthenticated` from useOxy() context
  * instead of checking token status directly on this service.
@@ -91,10 +108,12 @@ export class OxyServices {
     this.client.interceptors.request.use(async (req: InternalAxiosRequestConfig) => {
       if (!this.accessToken) {
         return req;
-      }        // Check if token is expired and refresh if needed
-        try {
-          const decoded = jwtDecode<JwtPayload>(this.accessToken);
-          const currentTime = Math.floor(Date.now() / 1000);
+      }
+      
+      // Check if token is expired and refresh if needed
+      try {
+        const decoded = jwtDecode<JwtPayload>(this.accessToken);
+        const currentTime = Math.floor(Date.now() / 1000);
         
         // If token expires in less than 60 seconds, refresh it
         if (decoded.exp - currentTime < 60) {
@@ -110,11 +129,33 @@ export class OxyServices {
       return req;
     });
     
-    // Response interceptor for handling errors
+    // Response interceptor for handling errors and standardized responses
     this.client.interceptors.response.use(
-      response => response,
+      response => {
+        // Handle standardized API responses
+        if (response.data && typeof response.data === 'object' && 'success' in response.data) {
+          const apiResponse = response.data as ApiResponse;
+          
+          if (!apiResponse.success) {
+            // Convert API error to ApiError format
+            const apiError: ApiError = {
+              message: apiResponse.error?.message || 'API request failed',
+              code: apiResponse.error?.code || 'API_ERROR',
+              status: response.status,
+              details: apiResponse.error?.details
+            };
+            return Promise.reject(apiError);
+          }
+          
+          // Return the data portion of successful responses
+          response.data = apiResponse.data;
+        }
+        
+        return response;
+      },
       async (error: AxiosError) => {
         const originalRequest = error.config;
+        
         // If the error is due to an expired token and we haven't tried refreshing yet
         if (
           error.response?.status === 401 &&
@@ -138,13 +179,26 @@ export class OxyServices {
           }
         }
 
-        // Format error response
-        const apiError: ApiError = {
-          message: (error.response?.data as any)?.error || (error.response?.data as any)?.message || 'An unknown error occurred',
-          code: (error.response?.data as any)?.code || 'UNKNOWN_ERROR',
-          status: error.response?.status || 500,
-          details: error.response?.data
-        };
+        // Format error response for standardized API errors
+        let apiError: ApiError;
+        
+        if (error.response?.data && typeof error.response.data === 'object' && 'error' in error.response.data) {
+          const errorData = error.response.data as any;
+          apiError = {
+            message: errorData.error?.message || 'An unknown error occurred',
+            code: errorData.error?.code || 'UNKNOWN_ERROR',
+            status: error.response?.status || 500,
+            details: errorData.error?.details
+          };
+        } else {
+          // Fallback for non-standardized errors
+          apiError = {
+            message: (error.response?.data as any)?.message || error.message || 'An unknown error occurred',
+            code: (error.response?.data as any)?.code || 'UNKNOWN_ERROR',
+            status: error.response?.status || 500,
+            details: error.response?.data
+          };
+        }
 
         // If the error is an invalid session, clear tokens
         if (apiError.code === 'INVALID_SESSION' || apiError.message === 'Invalid session') {
@@ -202,7 +256,7 @@ export class OxyServices {
   }
   
   /**
-   * Clears all authentication tokens
+   * Clears authentication tokens
    */
   public clearTokens(): void {
     this.accessToken = null;
@@ -210,193 +264,245 @@ export class OxyServices {
   }
 
   /**
-   * Sign up a new user
-   * @param username - Desired username
-   * @param email - User's email address
-   * @param password - User's password
-   * @returns Object containing the message, token and user data
+   * Registers a new user account
+   * @param username - Username for the new account
+   * @param email - Email address for the new account
+   * @param password - Password for the new account
+   * @returns Promise with registration result
    */
   async signUp(username: string, email: string, password: string): Promise<{ message: string; token: string; user: User }> {
     try {
       const res = await this.client.post('/auth/signup', { username, email, password });
-      const { message, token, user } = res.data;
-      this.accessToken = token;
-      return { message, token, user };
+      
+      // Handle both old and new response formats for backward compatibility
+      if (res.data.user && res.data.tokens) {
+        // New API format
+        this.setTokens(res.data.tokens.accessToken, res.data.tokens.refreshToken);
+        return {
+          message: res.data.message || 'User registered successfully',
+          token: res.data.tokens.accessToken,
+          user: res.data.user
+        };
+      } else {
+        // Legacy format
+        this.setTokens(res.data.token, res.data.refreshToken || '');
+        return {
+          message: res.data.message || 'User registered successfully',
+          token: res.data.token,
+          user: res.data.user
+        };
+      }
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Log in and store tokens
-   * @param username - User's username or email
-   * @param password - User's password
-   * @returns Login response containing tokens and user data
+   * Authenticates a user and returns tokens
+   * @param username - Username or email for authentication
+   * @param password - Password for authentication
+   * @returns Promise with login response
    */
   async login(username: string, password: string): Promise<LoginResponse> {
     try {
       const res = await this.client.post('/auth/login', { username, password });
-      const { accessToken, refreshToken, user } = res.data;
-      this.accessToken = accessToken;
-      this.refreshToken = refreshToken;
-      return { accessToken, refreshToken, user };
+      
+      // Handle both old and new response formats for backward compatibility
+      if (res.data.user && res.data.tokens) {
+        // New API format
+        this.setTokens(res.data.tokens.accessToken, res.data.tokens.refreshToken);
+        return {
+          user: res.data.user,
+          accessToken: res.data.tokens.accessToken,
+          refreshToken: res.data.tokens.refreshToken,
+          token: res.data.tokens.accessToken, // For backward compatibility
+          message: res.data.message || 'Login successful'
+        };
+      } else {
+        // Legacy format
+        this.setTokens(res.data.token, res.data.refreshToken || '');
+        return {
+          user: res.data.user,
+          token: res.data.token,
+          accessToken: res.data.token,
+          refreshToken: res.data.refreshToken,
+          message: res.data.message || 'Login successful'
+        };
+      }
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Log out user
+   * Logs out the current user and invalidates tokens
+   * @returns Promise that resolves when logout is complete
    */
   async logout(): Promise<void> {
-    if (!this.refreshToken) return;
-    
     try {
-      await this.client.post('/auth/logout', { refreshToken: this.refreshToken });
+      if (this.refreshToken) {
+        await this.client.post('/auth/logout', { refreshToken: this.refreshToken });
+      }
     } catch (error) {
-      console.warn('Error during logout', error);
+      // Log error but don't throw - we want to clear tokens regardless
+      console.warn('Logout request failed, but clearing tokens:', error);
     } finally {
-      this.accessToken = null;
-      this.refreshToken = null;
+      this.clearTokens();
     }
   }
 
   /**
-   * Refresh access and refresh tokens
-   * @returns New tokens
+   * Refreshes the access token using the refresh token
+   * @returns Promise with new tokens
    */
   async refreshTokens(): Promise<{ accessToken: string; refreshToken: string }> {
     if (!this.refreshToken) {
       throw new Error('No refresh token available');
     }
-    
-    // If a refresh is already in progress, return that promise
+
+    // Prevent multiple simultaneous refresh requests
     if (this.refreshPromise) {
       return this.refreshPromise;
     }
-    
-    // Create a new refresh promise
+
     this.refreshPromise = (async () => {
       try {
         const res = await this.client.post('/auth/refresh', { refreshToken: this.refreshToken });
-        const { accessToken, refreshToken } = res.data;
-        this.accessToken = accessToken;
-        this.refreshToken = refreshToken;
-        return { accessToken, refreshToken };
+        
+        // Handle both old and new response formats
+        let newAccessToken: string;
+        let newRefreshToken: string;
+        
+        if (res.data.accessToken && res.data.refreshToken) {
+          // New API format
+          newAccessToken = res.data.accessToken;
+          newRefreshToken = res.data.refreshToken;
+        } else {
+          // Legacy format
+          newAccessToken = res.data.token || res.data.accessToken;
+          newRefreshToken = res.data.refreshToken || this.refreshToken;
+        }
+        
+        this.setTokens(newAccessToken, newRefreshToken);
+        
+        return {
+          accessToken: newAccessToken,
+          refreshToken: newRefreshToken
+        };
       } catch (error) {
-        this.accessToken = null;
-        this.refreshToken = null;
+        // Clear tokens on refresh failure
+        this.clearTokens();
         throw this.handleError(error);
       } finally {
         this.refreshPromise = null;
       }
     })();
-    
+
     return this.refreshPromise;
   }
 
   /**
-   * Validate current access token
-   * @returns Boolean indicating if the token is valid
+   * Validates the current authentication token
+   * @returns Promise that resolves to true if token is valid
    */
   async validate(): Promise<boolean> {
     try {
-      const res = await this.client.get('/auth/validate');
-      return res.data.valid;
+      await this.client.get('/auth/validate');
+      return true;
     } catch (error) {
       return false;
     }
   }
 
-  /* Session Management Methods */
-
   /**
-   * Get active sessions for the authenticated user
-   * @returns Array of active session objects
+   * Gets user sessions
+   * @returns Promise with user sessions
    */
   async getUserSessions(): Promise<any[]> {
     try {
       const res = await this.client.get('/sessions');
-      return res.data;
+      return res.data || [];
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Logout from a specific session
-   * @param sessionId - The session ID to logout from
-   * @returns Success status
+   * Logs out a specific session
+   * @param sessionId - ID of the session to logout
+   * @returns Promise with logout result
    */
   async logoutSession(sessionId: string): Promise<{ success: boolean; message: string }> {
     try {
       const res = await this.client.delete(`/sessions/${sessionId}`);
-      return res.data;
+      return {
+        success: true,
+        message: res.data?.message || 'Session logged out successfully'
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Logout from all other sessions (keep current session active)
-   * @returns Success status
+   * Logs out all other sessions except the current one
+   * @returns Promise with logout result
    */
   async logoutOtherSessions(): Promise<{ success: boolean; message: string }> {
     try {
       const res = await this.client.post('/sessions/logout-others');
-      return res.data;
+      return {
+        success: true,
+        message: res.data?.message || 'Other sessions logged out successfully'
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Logout from all sessions
-   * @returns Success status
+   * Logs out all sessions including the current one
+   * @returns Promise with logout result
    */
   async logoutAllSessions(): Promise<{ success: boolean; message: string }> {
     try {
       const res = await this.client.post('/sessions/logout-all');
-      return res.data;
+      this.clearTokens();
+      return {
+        success: true,
+        message: res.data?.message || 'All sessions logged out successfully'
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get device sessions for a specific session ID
-   * @param sessionId - The session ID to get device sessions for
+   * Gets device sessions for a specific session
+   * @param sessionId - Session ID
    * @param deviceId - Optional device ID filter
-   * @returns Array of device sessions
+   * @returns Promise with device sessions
    */
   async getDeviceSessions(sessionId: string, deviceId?: string): Promise<DeviceSession[]> {
     try {
-      const params = deviceId ? { deviceId } : {};
-      const res = await this.client.get(`/secure-session/device/sessions/${sessionId}`, { params });
+      const params: any = {};
+      if (deviceId) {
+        params.deviceId = deviceId;
+      }
       
-      // Map backend response to frontend interface
-      return (res.data.sessions || []).map((session: any) => ({
-        sessionId: session.sessionId,
-        deviceId: res.data.deviceId || '',
-        deviceName: session.deviceInfo?.deviceName || 'Unknown Device',
-        isActive: true, // All returned sessions are active
-        lastActive: session.lastActive,
-        expiresAt: session.expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        isCurrent: session.sessionId === sessionId,
-        user: session.user,
-        createdAt: session.createdAt
-      }));
+      const res = await this.client.get(`/secure-session/device/sessions/${sessionId}`, { params });
+      return res.data || [];
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Logout all device sessions for a specific device
-   * @param sessionId - The session ID
-   * @param deviceId - Optional device ID (uses current session's device if not provided)
-   * @param excludeCurrent - Whether to exclude the current session from logout
-   * @returns Logout response
+   * Logs out all device sessions
+   * @param sessionId - Session ID
+   * @param deviceId - Optional device ID
+   * @param excludeCurrent - Whether to exclude current session
+   * @returns Promise with logout result
    */
   async logoutAllDeviceSessions(sessionId: string, deviceId?: string, excludeCurrent?: boolean): Promise<DeviceSessionLogoutResponse> {
     try {
@@ -412,10 +518,10 @@ export class OxyServices {
   }
 
   /**
-   * Update device name for a session
-   * @param sessionId - The session ID
-   * @param deviceName - The new device name
-   * @returns Update response
+   * Updates device name
+   * @param sessionId - Session ID
+   * @param deviceName - New device name
+   * @returns Promise with update result
    */
   async updateDeviceName(sessionId: string, deviceName: string): Promise<UpdateDeviceNameResponse> {
     try {
@@ -426,44 +532,53 @@ export class OxyServices {
     }
   }
 
-  /* Profile Methods */
-
   /**
-   * Fetch profile by username
-   * @param username - The username to look up
-   * @returns User profile data
+   * Gets user profile by username
+   * @param username - Username to search for
+   * @returns Promise with user profile
    */
   async getProfileByUsername(username: string): Promise<User> {
     try {
-      const res = await this.client.get(`/profiles/username/${username}`);
-      return res.data;
+      // Use the search endpoint with POST request
+      const res = await this.client.post('/users/search', { query: username });
+      
+      const users = res.data?.data || [];
+      if (users.length === 0) {
+        throw new Error('User not found');
+      }
+      
+      // Find exact username match
+      const user = users.find((u: User) => u.username === username);
+      if (!user) {
+        throw new Error('User not found');
+      }
+      
+      return user;
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Search profiles
-   * @param query - Search query string
-   * @param limit - Maximum number of results to return
-   * @param offset - Number of results to skip for pagination
-   * @returns Array of matching user profiles
+   * Searches for user profiles
+   * @param query - Search query
+   * @param limit - Maximum number of results
+   * @param offset - Number of results to skip
+   * @returns Promise with search results
    */
   async searchProfiles(query: string, limit?: number, offset?: number): Promise<User[]> {
     try {
-      const params: Record<string, any> = { query };
-      if (limit !== undefined) params.limit = limit;
-      if (offset !== undefined) params.offset = offset;
-      const res = await this.client.get('/profiles/search', { params });
-      return res.data;
+      // Use the search endpoint with POST request
+      const res = await this.client.post('/users/search', { query });
+      return res.data?.data || [];
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get recommended profiles for the authenticated user
-   * @returns Array of recommended profiles
+   * Gets profile recommendations
+   * @returns Promise with recommended profiles
    */
   async getProfileRecommendations(): Promise<Array<{
     id: string;
@@ -474,19 +589,17 @@ export class OxyServices {
     [key: string]: any;
   }>> {
     try {
-      const res = await this.client.get('/profiles/recommendations');
-      return res.data;
+      const res = await this.client.get('/users/recommendations');
+      return res.data || [];
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
-  /* User Methods */
-
   /**
-   * Get general user by ID
-   * @param userId - The user ID to look up
-   * @returns User data
+   * Gets user by ID
+   * @param userId - User ID
+   * @returns Promise with user data
    */
   async getUserById(userId: string): Promise<User> {
     try {
@@ -498,8 +611,8 @@ export class OxyServices {
   }
 
   /**
-   * Get the currently authenticated user's profile
-   * @returns User data for the current user
+   * Gets current user profile
+   * @returns Promise with current user data
    */
   async getCurrentUser(): Promise<User> {
     try {
@@ -511,9 +624,9 @@ export class OxyServices {
   }
 
   /**
-   * Update the authenticated user's profile
-   * @param updates - Object containing fields to update
-   * @returns Updated user data
+   * Updates current user profile
+   * @param updates - Profile updates
+   * @returns Promise with updated user data
    */
   async updateProfile(updates: Record<string, any>): Promise<User> {
     try {
@@ -525,10 +638,10 @@ export class OxyServices {
   }
 
   /**
-   * Update user profile (requires auth)
-   * @param userId - User ID to update (must match authenticated user or have admin rights)
-   * @param updates - Object containing fields to update
-   * @returns Updated user data
+   * Updates user by ID (admin function)
+   * @param userId - User ID
+   * @param updates - User updates
+   * @returns Promise with updated user data
    */
   async updateUser(userId: string, updates: Record<string, any>): Promise<User> {
     try {
@@ -540,53 +653,67 @@ export class OxyServices {
   }
 
   /**
-   * Follow a user
+   * Follows a user
    * @param userId - User ID to follow
-   * @returns Status of the follow operation
+   * @returns Promise with follow result
    */
   async followUser(userId: string): Promise<{ success: boolean; message: string }> {
     try {
       const res = await this.client.post(`/users/${userId}/follow`);
-      return res.data;
+      return {
+        success: true,
+        message: res.data?.message || 'User followed successfully'
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Unfollow a user
+   * Unfollows a user
    * @param userId - User ID to unfollow
-   * @returns Status of the unfollow operation
+   * @returns Promise with unfollow result
    */
   async unfollowUser(userId: string): Promise<{ success: boolean; message: string }> {
     try {
       const res = await this.client.delete(`/users/${userId}/follow`);
-      return res.data;
+      return {
+        success: true,
+        message: res.data?.message || 'User unfollowed successfully'
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get follow status for a user
-   * @param userId - User ID to check follow status for
-   * @returns Whether the current user is following the specified user
+   * Gets follow status for a user
+   * @param userId - User ID to check
+   * @returns Promise with follow status
    */
   async getFollowStatus(userId: string): Promise<{ isFollowing: boolean }> {
     try {
-      const res = await this.client.get(`/users/${userId}/following-status`);
-      return res.data;
-    } catch (error) {
+      // Since there's no direct status endpoint, we'll use the follow endpoint
+      // which returns the current status in the response
+      const res = await this.client.post(`/users/${userId}/follow`);
+      return {
+        isFollowing: res.data?.action === 'follow'
+      };
+    } catch (error: any) {
+      // If it's a 400 error with "already following", then we are following
+      if (error.status === 400 && error.message?.includes('already following')) {
+        return { isFollowing: true };
+      }
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get all followers of a user
+   * Gets all followers of a user
    * @param userId - User ID to get followers for
    * @param limit - Maximum number of followers to return
    * @param offset - Number of followers to skip for pagination
-   * @returns Array of users who follow the specified user and pagination info
+   * @returns Promise with followers and pagination info
    */
   async getUserFollowers(
     userId: string,
@@ -594,22 +721,27 @@ export class OxyServices {
     offset?: number
   ): Promise<{ followers: User[]; total: number; hasMore: boolean }> {
     try {
-      const params: Record<string, any> = {};
-      if (limit !== undefined) params.limit = limit;
-      if (offset !== undefined) params.offset = offset;
+      const params: any = {};
+      if (limit) params.limit = limit;
+      if (offset) params.offset = offset;
+      
       const res = await this.client.get(`/users/${userId}/followers`, { params });
-      return res.data;
+      return {
+        followers: res.data?.followers || [],
+        total: res.data?.total || 0,
+        hasMore: res.data?.hasMore || false
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get all users that a user is following
+   * Gets all users that a user is following
    * @param userId - User ID to get following list for
    * @param limit - Maximum number of users to return
    * @param offset - Number of users to skip for pagination
-   * @returns Array of users the specified user follows and pagination info
+   * @returns Promise with following users and pagination info
    */
   async getUserFollowing(
     userId: string,
@@ -617,48 +749,51 @@ export class OxyServices {
     offset?: number
   ): Promise<{ following: User[]; total: number; hasMore: boolean }> {
     try {
-      const params: Record<string, any> = {};
-      if (limit !== undefined) params.limit = limit;
-      if (offset !== undefined) params.offset = offset;
+      const params: any = {};
+      if (limit) params.limit = limit;
+      if (offset) params.offset = offset;
+      
       const res = await this.client.get(`/users/${userId}/following`, { params });
-      return res.data;
+      return {
+        following: res.data?.following || [],
+        total: res.data?.total || 0,
+        hasMore: res.data?.hasMore || false
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
-  /* Notification Methods */
-
   /**
-   * Fetch all notifications for the authenticated user
-   * @returns Array of notifications
+   * Gets user notifications
+   * @returns Promise with notifications
    */
   async getNotifications(): Promise<Notification[]> {
     try {
       const res = await this.client.get('/notifications');
-      return res.data;
+      return res.data || [];
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get count of unread notifications
-   * @returns Number of unread notifications
+   * Gets unread notification count
+   * @returns Promise with unread count
    */
   async getUnreadCount(): Promise<number> {
     try {
       const res = await this.client.get('/notifications/unread-count');
-      return res.data;
+      return res.data?.unreadCount || 0;
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Create a new notification (admin use)
+   * Creates a new notification
    * @param data - Notification data
-   * @returns Created notification
+   * @returns Promise with created notification
    */
   async createNotification(data: Partial<Notification>): Promise<Notification> {
     try {
@@ -670,8 +805,9 @@ export class OxyServices {
   }
 
   /**
-   * Mark a single notification as read
-   * @param notificationId - ID of notification to mark as read
+   * Marks a notification as read
+   * @param notificationId - Notification ID
+   * @returns Promise that resolves when marked as read
    */
   async markNotificationAsRead(notificationId: string): Promise<void> {
     try {
@@ -682,7 +818,8 @@ export class OxyServices {
   }
 
   /**
-   * Mark all notifications as read
+   * Marks all notifications as read
+   * @returns Promise that resolves when all marked as read
    */
   async markAllNotificationsAsRead(): Promise<void> {
     try {
@@ -693,8 +830,9 @@ export class OxyServices {
   }
 
   /**
-   * Delete a notification
-   * @param notificationId - ID of notification to delete
+   * Deletes a notification
+   * @param notificationId - Notification ID
+   * @returns Promise that resolves when deleted
    */
   async deleteNotification(notificationId: string): Promise<void> {
     try {
@@ -704,12 +842,10 @@ export class OxyServices {
     }
   }
 
-  /* Payment Methods */
-
   /**
-   * Process a payment
-   * @param data - Payment data including user ID, plan, and payment method
-   * @returns Payment result with transaction ID
+   * Processes a payment
+   * @param data - Payment request data
+   * @returns Promise with payment response
    */
   async processPayment(data: PaymentRequest): Promise<PaymentResponse> {
     try {
@@ -721,45 +857,44 @@ export class OxyServices {
   }
 
   /**
-   * Validate a payment method
+   * Validates a payment method
    * @param paymentMethod - Payment method to validate
-   * @returns Object indicating if the payment method is valid
+   * @returns Promise with validation result
    */
   async validatePaymentMethod(paymentMethod: any): Promise<{ valid: boolean }> {
     try {
       const res = await this.client.post('/payments/validate', { paymentMethod });
-      return res.data;
+      return { valid: res.data?.valid || false };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get saved payment methods for a user
-   * @param userId - User ID to get payment methods for
-   * @returns Array of payment methods
+   * Gets payment methods for a user
+   * @param userId - User ID
+   * @returns Promise with payment methods
    */
   async getPaymentMethods(userId: string): Promise<PaymentMethod[]> {
     try {
       const res = await this.client.get(`/payments/methods/${userId}`);
-      return res.data;
+      return res.data || [];
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
-  /* Analytics Methods */
-
   /**
-   * Get analytics data
-   * @param userId - User ID to get analytics for
-   * @param period - Time period for analytics (e.g., "day", "week", "month")
-   * @returns Analytics data
+   * Gets analytics data for a user
+   * @param userId - User ID
+   * @param period - Analytics period
+   * @returns Promise with analytics data
    */
   async getAnalytics(userId: string, period?: string): Promise<AnalyticsData> {
     try {
-      const params: Record<string, any> = { userID: userId };
+      const params: any = { userID: userId };
       if (period) params.period = period;
+      
       const res = await this.client.get('/analytics', { params });
       return res.data;
     } catch (error) {
@@ -768,48 +903,50 @@ export class OxyServices {
   }
 
   /**
-   * Update analytics (internal use)
-   * @param userId - User ID to update analytics for
-   * @param type - Type of analytics to update
-   * @param data - Analytics data to update
-   * @returns Message indicating success
+   * Updates analytics data
+   * @param userId - User ID
+   * @param type - Analytics type
+   * @param data - Analytics data
+   * @returns Promise with update result
    */
   async updateAnalytics(userId: string, type: string, data: Record<string, any>): Promise<{ message: string }> {
     try {
       const res = await this.client.post('/analytics/update', { userID: userId, type, data });
-      return res.data;
+      return { message: res.data?.message || 'Analytics updated successfully' };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get content viewers analytics
-   * @param userId - User ID to get viewer data for
-   * @param period - Time period for analytics
-   * @returns Array of content viewer data
+   * Gets content viewers for a user
+   * @param userId - User ID
+   * @param period - Analytics period
+   * @returns Promise with content viewers
    */
   async getContentViewers(userId: string, period?: string): Promise<ContentViewer[]> {
     try {
-      const params: Record<string, any> = { userID: userId };
+      const params: any = { userID: userId };
       if (period) params.period = period;
+      
       const res = await this.client.get('/analytics/viewers', { params });
-      return res.data;
+      return res.data || [];
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get follower analytics details
-   * @param userId - User ID to get follower data for
-   * @param period - Time period for follower data
-   * @returns Follower details
+   * Gets follower details for a user
+   * @param userId - User ID
+   * @param period - Analytics period
+   * @returns Promise with follower details
    */
   async getFollowerDetails(userId: string, period?: string): Promise<FollowerDetails> {
     try {
-      const params: Record<string, any> = { userID: userId };
+      const params: any = { userID: userId };
       if (period) params.period = period;
+      
       const res = await this.client.get('/analytics/followers', { params });
       return res.data;
     } catch (error) {
@@ -817,12 +954,10 @@ export class OxyServices {
     }
   }
 
-  /* Wallet Methods */
-
   /**
-   * Get wallet info
-   * @param userId - User ID to get wallet for
-   * @returns Wallet data
+   * Gets user wallet
+   * @param userId - User ID
+   * @returns Promise with wallet data
    */
   async getWallet(userId: string): Promise<Wallet> {
     try {
@@ -834,11 +969,11 @@ export class OxyServices {
   }
 
   /**
-   * Get transaction history
-   * @param userId - User ID to get transactions for
-   * @param limit - Maximum number of transactions to return
-   * @param offset - Number of transactions to skip for pagination
-   * @returns Array of transactions and pagination info
+   * Gets transaction history for a user
+   * @param userId - User ID
+   * @param limit - Maximum number of transactions
+   * @param offset - Number of transactions to skip
+   * @returns Promise with transaction history and pagination info
    */
   async getTransactionHistory(
     userId: string, 
@@ -846,20 +981,25 @@ export class OxyServices {
     offset?: number
   ): Promise<{ transactions: Transaction[]; total: number; hasMore: boolean }> {
     try {
-      const params: Record<string, any> = {};
-      if (limit !== undefined) params.limit = limit;
-      if (offset !== undefined) params.offset = offset;
+      const params: any = {};
+      if (limit) params.limit = limit;
+      if (offset) params.offset = offset;
+      
       const res = await this.client.get(`/wallet/transactions/${userId}`, { params });
-      return res.data;
+      return {
+        transactions: res.data?.transactions || [],
+        total: res.data?.total || 0,
+        hasMore: res.data?.hasMore || false
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get a specific transaction
-   * @param transactionId - ID of transaction to retrieve
-   * @returns Transaction data
+   * Gets a specific transaction
+   * @param transactionId - Transaction ID
+   * @returns Promise with transaction data
    */
   async getTransaction(transactionId: string): Promise<Transaction> {
     try {
@@ -871,9 +1011,9 @@ export class OxyServices {
   }
 
   /**
-   * Transfer funds between users
-   * @param data - Transfer details including source, destination, and amount
-   * @returns Transaction response
+   * Transfers funds between users
+   * @param data - Transfer request data
+   * @returns Promise with transaction response
    */
   async transferFunds(data: TransferFundsRequest): Promise<TransactionResponse> {
     try {
@@ -885,9 +1025,9 @@ export class OxyServices {
   }
 
   /**
-   * Process a purchase
-   * @param data - Purchase details including user, item, and amount
-   * @returns Transaction response
+   * Processes a purchase
+   * @param data - Purchase request data
+   * @returns Promise with transaction response
    */
   async processPurchase(data: PurchaseRequest): Promise<TransactionResponse> {
     try {
@@ -899,9 +1039,9 @@ export class OxyServices {
   }
 
   /**
-   * Request a withdrawal
-   * @param data - Withdrawal details including user, amount, and address
-   * @returns Transaction response
+   * Requests a withdrawal
+   * @param data - Withdrawal request data
+   * @returns Promise with transaction response
    */
   async requestWithdrawal(data: WithdrawalRequest): Promise<TransactionResponse> {
     try {
@@ -912,54 +1052,52 @@ export class OxyServices {
     }
   }
 
-  /* Karma Methods */
-
   /**
-   * Get karma leaderboard
-   * @returns Array of karma leaderboard entries
+   * Gets karma leaderboard
+   * @returns Promise with leaderboard entries
    */
   async getKarmaLeaderboard(): Promise<KarmaLeaderboardEntry[]> {
     try {
       const res = await this.client.get('/karma/leaderboard');
-      return res.data;
+      return res.data || [];
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get karma rules
-   * @returns Array of karma rules
+   * Gets karma rules
+   * @returns Promise with karma rules
    */
   async getKarmaRules(): Promise<KarmaRule[]> {
     try {
       const res = await this.client.get('/karma/rules');
-      return res.data;
+      return res.data || [];
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get total karma for a user
-   * @param userId - User ID to get karma for
-   * @returns Object with total karma points
+   * Gets total karma for a user
+   * @param userId - User ID
+   * @returns Promise with total karma
    */
   async getUserKarmaTotal(userId: string): Promise<{ total: number }> {
     try {
       const res = await this.client.get(`/karma/${userId}/total`);
-      return res.data;
+      return { total: res.data?.total || 0 };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get karma history for a user
-   * @param userId - User ID to get karma history for
-   * @param limit - Maximum number of history entries to return
-   * @param offset - Number of entries to skip for pagination
-   * @returns Karma history entries and pagination info
+   * Gets karma history for a user
+   * @param userId - User ID
+   * @param limit - Maximum number of history entries
+   * @param offset - Number of entries to skip
+   * @returns Promise with karma history and pagination info
    */
   async getUserKarmaHistory(
     userId: string, 
@@ -967,48 +1105,61 @@ export class OxyServices {
     offset?: number
   ): Promise<{ history: KarmaHistory[]; total: number; hasMore: boolean }> {
     try {
-      const params: Record<string, any> = {};
-      if (limit !== undefined) params.limit = limit;
-      if (offset !== undefined) params.offset = offset;
+      const params: any = {};
+      if (limit) params.limit = limit;
+      if (offset) params.offset = offset;
+      
       const res = await this.client.get(`/karma/${userId}/history`, { params });
-      return res.data;
+      return {
+        history: res.data?.history || [],
+        total: res.data?.total || 0,
+        hasMore: res.data?.hasMore || false
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Award karma points to a user
-   * @param data - Karma award details
-   * @returns Karma award response
+   * Awards karma to a user
+   * @param data - Karma award request data
+   * @returns Promise with award result
    */
   async awardKarma(data: KarmaAwardRequest): Promise<{ success: boolean; message: string; history: KarmaHistory }> {
     try {
       const res = await this.client.post('/karma/award', data);
-      return res.data;
+      return {
+        success: true,
+        message: res.data?.message || 'Karma awarded successfully',
+        history: res.data?.history
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Deduct karma points from a user
-   * @param data - Karma deduction details
-   * @returns Karma deduction response
+   * Deducts karma from a user
+   * @param data - Karma deduction request data
+   * @returns Promise with deduction result
    */
   async deductKarma(data: KarmaAwardRequest): Promise<{ success: boolean; message: string; history: KarmaHistory }> {
     try {
       const res = await this.client.post('/karma/deduct', data);
-      return res.data;
+      return {
+        success: true,
+        message: res.data?.message || 'Karma deducted successfully',
+        history: res.data?.history
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Create or update karma rule (admin)
+   * Creates or updates a karma rule
    * @param data - Karma rule data
-   * @returns Created or updated karma rule
+   * @returns Promise with karma rule
    */
   async createOrUpdateKarmaRule(data: Partial<KarmaRule>): Promise<KarmaRule> {
     try {
@@ -1022,74 +1173,31 @@ export class OxyServices {
   /* File Management Methods */
 
   /**
-   * Upload a file using GridFS
-   * @param file - The file to upload (File or Blob in browser, Buffer in Node.js)
-   * @param filename - The name of the file
-   * @param metadata - Optional metadata to associate with the file
-   * @returns File metadata including ID and download URL
+   * Uploads a single file
+   * @param file - File to upload (File, Blob, or Buffer)
+   * @param filename - Name for the uploaded file
+   * @param metadata - Optional metadata for the file
+   * @returns Promise with file metadata
    */
   async uploadFile(
     file: File | Blob | any, // Use 'any' to handle Buffer type in cross-platform scenarios
     filename: string, 
     metadata?: Record<string, any>
   ): Promise<FileMetadata> {
-    const response = await this.uploadFiles([file], [filename], metadata);
-    return response.files[0];
-  }
-
-  /**
-   * Upload multiple files using GridFS
-   * @param files - Array of files to upload
-   * @param filenames - Array of filenames (must match files array length)
-   * @param metadata - Optional metadata to associate with all files
-   * @returns Array of file metadata
-   */
-  async uploadFiles(
-    files: (File | Blob | any)[], 
-    filenames: string[], 
-    metadata?: Record<string, any>
-  ): Promise<FileUploadResponse> {
     try {
-      if (files.length !== filenames.length) {
-        throw new Error('Files and filenames arrays must have the same length');
-      }
-
-      // Create form data to handle the file upload
-      let formData: any;
+      const FormData = getFormDataConstructor();
+      const formData = new FormData();
       
-      if (typeof window === 'undefined' && NodeFormData) {
-        // Node.js environment - prefer node-specific form-data
-        formData = new NodeFormData();
+      // Handle different file types
+      if (file instanceof File || file instanceof Blob) {
+        formData.append('file', file, filename);
+      } else if (NodeFormData && Buffer.isBuffer(file)) {
+        // Node.js environment with Buffer
+        formData.append('file', file, { filename });
       } else {
-        // Browser/React Native environment - use polyfilled or native FormData
-        const FormDataConstructor = getFormDataConstructor();
-        formData = new FormDataConstructor();
+        throw new Error('Unsupported file type');
       }
       
-      // Add all files to the form data
-      files.forEach((file, index) => {
-        const filename = filenames[index];
-        
-        // Handle different file types (Browser vs Node.js vs React Native)
-        const isNodeBuffer = typeof window === 'undefined' && 
-                            file && 
-                            typeof file.constructor === 'function' && 
-                            file.constructor.name === 'Buffer';
-        
-        if (isNodeBuffer) {
-          // Node.js environment with Buffer
-          if (!NodeFormData) {
-            throw new Error('form-data module is required for file uploads from Buffer but not found.');
-          }
-          // form-data handles Buffers directly.
-          formData.append('files', file, { filename }); // Pass filename in options for form-data
-        } else {
-          // Browser/React Native environment with File or Blob
-          formData.append('files', file as Blob, filename);
-        }
-      });
-      
-      // Add metadata as JSON string if provided
       if (metadata) {
         formData.append('metadata', JSON.stringify(metadata));
       }
@@ -1107,9 +1215,53 @@ export class OxyServices {
   }
 
   /**
-   * Get file metadata by ID
-   * @param fileId - ID of the file to retrieve metadata for
-   * @returns File metadata
+   * Uploads multiple files
+   * @param files - Array of files to upload
+   * @param filenames - Array of filenames
+   * @param metadata - Optional metadata for the files
+   * @returns Promise with upload response
+   */
+  async uploadFiles(
+    files: (File | Blob | any)[], 
+    filenames: string[], 
+    metadata?: Record<string, any>
+  ): Promise<FileUploadResponse> {
+    try {
+      const FormData = getFormDataConstructor();
+      const formData = new FormData();
+      
+      files.forEach((file, index) => {
+        const filename = filenames[index] || `file-${index}`;
+        
+        if (file instanceof File || file instanceof Blob) {
+          formData.append('files', file, filename);
+        } else if (NodeFormData && Buffer.isBuffer(file)) {
+          formData.append('files', file, { filename });
+        } else {
+          throw new Error(`Unsupported file type at index ${index}`);
+        }
+      });
+      
+      if (metadata) {
+        formData.append('metadata', JSON.stringify(metadata));
+      }
+      
+      const res = await this.client.post('/files/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+      });
+      
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Gets file metadata
+   * @param fileId - File ID
+   * @returns Promise with file metadata
    */
   async getFileMetadata(fileId: string): Promise<FileMetadata> {
     try {
@@ -1121,10 +1273,10 @@ export class OxyServices {
   }
 
   /**
-   * Update file metadata
-   * @param fileId - ID of the file to update
-   * @param updates - Metadata updates to apply
-   * @returns Updated file metadata
+   * Updates file metadata
+   * @param fileId - File ID
+   * @param updates - Metadata updates
+   * @returns Promise with updated file metadata
    */
   async updateFileMetadata(fileId: string, updates: FileUpdateRequest): Promise<FileMetadata> {
     try {
@@ -1136,59 +1288,48 @@ export class OxyServices {
   }
 
   /**
-   * Delete a file by ID
-   * @param fileId - ID of the file to delete
-   * @returns Status of the delete operation
+   * Deletes a file
+   * @param fileId - File ID
+   * @returns Promise with delete response
    */
   async deleteFile(fileId: string): Promise<FileDeleteResponse> {
     try {
-      console.log('Deleting file with ID:', fileId);
       const res = await this.client.delete(`/files/${fileId}`);
-      console.log('Delete response:', res.data);
-      return res.data;
-    } catch (error: any) {
-      console.error('Delete file error:', error);
-      console.error('Error response:', error.response?.data);
-      console.error('Error status:', error.response?.status);
-      
-      // Provide more specific error messages based on status code
-      if (error.response?.status === 404) {
-        throw new Error('File not found or already deleted');
-      } else if (error.response?.status === 403) {
-        throw new Error('You do not have permission to delete this file');
-      } else if (error.response?.status === 400) {
-        throw new Error('Invalid file ID format');
-      }
-      
+      return {
+        success: true,
+        message: res.data?.message || 'File deleted successfully',
+        fileId
+      };
+    } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get download URL for a file
-   * @param fileId - ID of the file to get download URL for
-   * @returns Full URL to download the file
+   * Gets file download URL
+   * @param fileId - File ID
+   * @returns File download URL
    */
   getFileDownloadUrl(fileId: string): string {
     return `${this.client.defaults.baseURL}/files/${fileId}`;
   }
 
   /**
-   * Stream a file (useful for playing audio/video without full download)
-   * @param fileId - ID of the file to stream
-   * @returns Full URL to stream the file
+   * Gets file stream URL
+   * @param fileId - File ID
+   * @returns File stream URL
    */
   getFileStreamUrl(fileId: string): string {
     return `${this.client.defaults.baseURL}/files/${fileId}`;
   }
 
   /**
-   * List files for a specific user
-   * @param userId - User ID to list files for
-   * @param limit - Maximum number of files to return
-   * @param offset - Number of files to skip for pagination
-   * @param filters - Optional filters for the file list (e.g., contentType)
-   * @returns Array of file metadata and pagination info
+   * Lists user files
+   * @param userId - User ID
+   * @param limit - Maximum number of files
+   * @param offset - Number of files to skip
+   * @param filters - Optional filters
+   * @returns Promise with file list and pagination info
    */
   async listUserFiles(
     userId: string,
@@ -1197,28 +1338,18 @@ export class OxyServices {
     filters?: Record<string, any>
   ): Promise<FileListResponse> {
     try {
-      const params: Record<string, any> = {};
-      if (limit !== undefined) params.limit = limit;
-      if (offset !== undefined) params.offset = offset;
-      if (filters) Object.assign(params, filters);
+      const params: any = {};
+      if (limit) params.limit = limit;
+      if (offset) params.offset = offset;
+      if (filters) {
+        Object.assign(params, filters);
+      }
       
       const res = await this.client.get(`/files/list/${userId}`, { params });
-      
-      // Handle backend response format: backend returns FileMetadata[] directly
-      // but interface expects { files: FileMetadata[], total: number, hasMore: boolean }
-      const rawFiles = Array.isArray(res.data) ? res.data : res.data.files || [];
-      
-      // Transform GridFS files to match FileMetadata interface (map _id to id)
-      const filesArray = rawFiles.map((file: any) => ({
-        ...file,
-        id: file._id?.toString() || file.id,
-        uploadDate: file.uploadDate?.toISOString ? file.uploadDate.toISOString() : file.uploadDate
-      }));
-      
       return {
-        files: filesArray,
-        total: filesArray.length,
-        hasMore: false // No pagination in current backend implementation
+        files: res.data?.files || [],
+        total: res.data?.total || 0,
+        hasMore: res.data?.hasMore || false
       };
     } catch (error) {
       throw this.handleError(error);
@@ -1226,305 +1357,283 @@ export class OxyServices {
   }
 
   /**
-   * Secure login that returns only session data (no tokens stored locally)
-   * @param username - User's username or email
-   * @param password - User's password
-   * @param deviceName - Optional device name for session tracking
-   * @param deviceFingerprint - Device fingerprint for enhanced security
-   * @returns Secure login response with session data
+   * Performs secure login with device fingerprinting
+   * @param username - Username or email
+   * @param password - Password
+   * @param deviceName - Optional device name
+   * @param deviceFingerprint - Optional device fingerprint
+   * @returns Promise with secure login response
    */
   async secureLogin(username: string, password: string, deviceName?: string, deviceFingerprint?: any): Promise<SecureLoginResponse> {
     try {
-      const payload: any = { 
-        username, 
-        password, 
-        deviceName 
-      };
-      
-      if (deviceFingerprint) {
-        payload.deviceFingerprint = deviceFingerprint;
-      }
+      const payload: any = { username, password };
+      if (deviceName) payload.deviceName = deviceName;
+      if (deviceFingerprint) payload.deviceFingerprint = deviceFingerprint;
       
       const res = await this.client.post('/secure-session/login', payload);
-      return res.data;
+      
+      // Handle both old and new response formats
+      if (res.data.sessionId && res.data.tokens) {
+        // New API format
+        this.setTokens(res.data.tokens.accessToken, res.data.tokens.refreshToken);
+        return {
+          sessionId: res.data.sessionId,
+          accessToken: res.data.tokens.accessToken,
+          refreshToken: res.data.tokens.refreshToken,
+          user: res.data.user,
+          message: res.data.message || 'Secure login successful'
+        };
+      } else {
+        // Legacy format
+        this.setTokens(res.data.accessToken, res.data.refreshToken);
+        return {
+          sessionId: res.data.sessionId,
+          accessToken: res.data.accessToken,
+          refreshToken: res.data.refreshToken,
+          user: res.data.user,
+          message: res.data.message || 'Secure login successful'
+        };
+      }
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get full user data by session ID
-   * @param sessionId - The session ID
-   * @returns Full user data
+   * Gets user by session ID
+   * @param sessionId - Session ID
+   * @returns Promise with user data
    */
   async getUserBySession(sessionId: string): Promise<User> {
     try {
       const res = await this.client.get(`/secure-session/user/${sessionId}`);
-      return res.data.user;
+      return res.data;
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get access token by session ID (for API calls)
-   * @param sessionId - The session ID
-   * @returns Access token and expiry info
+   * Gets token by session ID
+   * @param sessionId - Session ID
+   * @returns Promise with token data
    */
   async getTokenBySession(sessionId: string): Promise<{ accessToken: string; expiresAt: string }> {
     try {
       const res = await this.client.get(`/secure-session/token/${sessionId}`);
-      // Set the token for subsequent API calls
-      this.accessToken = res.data.accessToken;
-      return res.data;
+      return {
+        accessToken: res.data.accessToken,
+        expiresAt: res.data.expiresAt
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Get all active sessions for current user
-   * @param sessionId - Current session ID
-   * @returns Array of user sessions
+   * Gets sessions by session ID
+   * @param sessionId - Session ID
+   * @returns Promise with sessions
    */
   async getSessionsBySessionId(sessionId: string): Promise<any[]> {
     try {
       const res = await this.client.get(`/secure-session/sessions/${sessionId}`);
-      return res.data.sessions;
+      return res.data || [];
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Logout specific session
-   * @param sessionId - Current session ID
-   * @param targetSessionId - Optional target session to logout (defaults to current)
+   * Logs out a secure session
+   * @param sessionId - Session ID
+   * @param targetSessionId - Optional target session ID
+   * @returns Promise that resolves when logged out
    */
   async logoutSecureSession(sessionId: string, targetSessionId?: string): Promise<void> {
     try {
-      await this.client.post(`/secure-session/logout/${sessionId}`, { 
-        targetSessionId 
+      await this.client.post(`/secure-session/logout/${sessionId}`, {
+        targetSessionId
       });
-      
-      // If we're logging out the current session, clear the access token
-      if (!targetSessionId || targetSessionId === sessionId) {
-        this.accessToken = null;
-        this.refreshToken = null;
-      }
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Logout all sessions for current user
-   * @param sessionId - Current session ID
+   * Logs out all secure sessions
+   * @param sessionId - Session ID
+   * @returns Promise that resolves when all logged out
    */
   async logoutAllSecureSessions(sessionId: string): Promise<void> {
-    console.log('logoutAllSecureSessions called with sessionId:', sessionId);
-    console.log('API client defaults:', this.client.defaults);
-    
     try {
       const response = await this.client.post(`/secure-session/logout-all/${sessionId}`);
-      console.log('logoutAllSecureSessions response:', response.status, response.data);
       
-      // Clear tokens since all sessions are logged out
-      this.accessToken = null;
-      this.refreshToken = null;
-      console.log('Tokens cleared successfully');
-    } catch (error) {
-      console.error('logoutAllSecureSessions error:', error);
-      if (error && typeof error === 'object' && 'response' in error) {
-        const axiosError = error as any;
-        console.error('Error response data:', axiosError.response?.data);
-        console.error('Error response status:', axiosError.response?.status);
+      // Clear tokens if this was the current session
+      if (response.data?.currentSessionLoggedOut) {
+        this.clearTokens();
       }
+    } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Validate session
-   * @param sessionId - The session ID to validate
-   * @returns Session validation status with user data
+   * Validates a session
+   * @param sessionId - Session ID
+   * @returns Promise with validation result
    */
   async validateSession(sessionId: string): Promise<{ valid: boolean; expiresAt: string; lastActivity: string; user: User }> {
     try {
       const res = await this.client.get(`/secure-session/validate/${sessionId}`);
-      return res.data;
+      return {
+        valid: res.data.valid,
+        expiresAt: res.data.expiresAt,
+        lastActivity: res.data.lastActivity,
+        user: res.data.user
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Validate session using x-session-id header
-   * @param sessionId - The session ID to validate (sent as header)
-   * @param deviceFingerprint - Optional device fingerprint for enhanced security
-   * @returns Session validation status with user data
+   * Validates session from header
+   * @param sessionId - Session ID
+   * @param deviceFingerprint - Optional device fingerprint
+   * @returns Promise with validation result
    */
   async validateSessionFromHeader(sessionId: string, deviceFingerprint?: string): Promise<{ valid: boolean; expiresAt: string; lastActivity: string; user: User; sessionId?: string }> {
     try {
-      const headers: any = {
-        'x-session-id': sessionId
-      };
-      
+      const headers: any = {};
       if (deviceFingerprint) {
-        headers['x-device-fingerprint'] = deviceFingerprint;
+        headers['X-Device-Fingerprint'] = deviceFingerprint;
       }
-
+      
       const res = await this.client.get('/secure-session/validate-header', { headers });
-      return res.data;
+      return {
+        valid: res.data.valid,
+        expiresAt: res.data.expiresAt,
+        lastActivity: res.data.lastActivity,
+        user: res.data.user,
+        sessionId: res.data.sessionId
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Validate session using automatic header detection
-   * The validateSession endpoint will automatically read from x-session-id header
-   * @param sessionId - The session ID to validate (sent as header)
-   * @param deviceFingerprint - Optional device fingerprint for enhanced security
-   * @returns Session validation status with user data
+   * Auto-validates session
+   * @param sessionId - Session ID
+   * @param deviceFingerprint - Optional device fingerprint
+   * @returns Promise with validation result
    */
   async validateSessionAuto(sessionId: string, deviceFingerprint?: string): Promise<{ valid: boolean; expiresAt: string; lastActivity: string; user: User; source?: string }> {
     try {
-      const headers: any = {
-        'x-session-id': sessionId
-      };
-      
+      const headers: any = {};
       if (deviceFingerprint) {
-        headers['x-device-fingerprint'] = deviceFingerprint;
+        headers['X-Device-Fingerprint'] = deviceFingerprint;
       }
-
-      // Call the regular validateSession endpoint which now auto-reads from headers
-      // Use 'auto' as placeholder since the controller reads from header
+      
       const res = await this.client.get('/secure-session/validate/auto', { headers });
-      return res.data;
+      return {
+        valid: res.data.valid,
+        expiresAt: res.data.expiresAt,
+        lastActivity: res.data.lastActivity,
+        user: res.data.user,
+        source: res.data.source
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
   /**
-   * Utility method to help implement authentication middleware in Express.js applications
-   * This creates a function that can be used as Express middleware to validate tokens
-   * @param options - Configuration options for the middleware
+   * Creates authentication middleware for Express.js
+   * @param options - Middleware options
    * @returns Express middleware function
    */
   public createAuthenticateTokenMiddleware(options: {
     loadFullUser?: boolean; // Whether to load full user object or just user ID
     onError?: (error: ApiError) => any; // Custom error handler
   } = {}) {
-    const { loadFullUser = true, onError } = options;
-    
     return async (req: any, res: any, next: any) => {
       try {
-        const authHeader = req.headers['authorization'];
-        const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+        const authHeader = req.headers.authorization;
         
-        if (!token) {
-          const error = {
-            message: 'Access token required',
-            code: 'MISSING_TOKEN',
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+          const error: ApiError = {
+            message: 'No valid authorization header found',
+            code: 'MISSING_AUTH_HEADER',
             status: 401
           };
           
-          if (onError) {
-            return onError(error);
+          if (options.onError) {
+            return options.onError(error);
           }
           
-          return res.status(401).json({ 
-            message: 'Access token required',
-            code: 'MISSING_TOKEN'
+          return res.status(401).json({
+            success: false,
+            error: {
+              code: error.code,
+              message: error.message
+            }
           });
         }
         
-        // Create a temporary OxyServices instance with the token to validate it
-        const tempOxyServices = new OxyServices({
-          baseURL: this.client.defaults.baseURL || ''
-        });
-        tempOxyServices.setTokens(token, ''); // Set access token
+        const token = authHeader.substring(7);
+        const result = await this.authenticateToken(token);
         
-        // Validate token using the validate method
-        const isValid = await tempOxyServices.validate();
-        
-        if (!isValid) {
-          const error = {
-            message: 'Invalid or expired token',
+        if (!result.valid) {
+          const error: ApiError = {
+            message: result.error || 'Invalid token',
             code: 'INVALID_TOKEN',
-            status: 403
+            status: 401
           };
           
-          if (onError) {
-            return onError(error);
+          if (options.onError) {
+            return options.onError(error);
           }
           
-          return res.status(403).json({ 
-            message: 'Invalid or expired token',
-            code: 'INVALID_TOKEN'
+          return res.status(401).json({
+            success: false,
+            error: {
+              code: error.code,
+              message: error.message
+            }
           });
         }
         
-        // Get user ID from token
-        const userId = tempOxyServices.getCurrentUserId();
-        
-        if (!userId) {
-          const error = {
-            message: 'Invalid token payload',
-            code: 'INVALID_PAYLOAD',
-            status: 403
-          };
-          
-          if (onError) {
-            return onError(error);
-          }
-          
-          return res.status(403).json({ 
-            message: 'Invalid token payload',
-            code: 'INVALID_PAYLOAD'
-          });
-        }
-        
-        // Set user information on request object
-        req.userId = userId;
-        req.accessToken = token;
-        
-        // Optionally load full user data
-        if (loadFullUser) {
-          try {
-            const userProfile = await tempOxyServices.getUserById(userId);
-            req.user = userProfile;
-          } catch (userError) {
-            // If we can't load user, continue with just ID
-            req.user = { id: userId };
-          }
-        } else {
-          req.user = { id: userId };
+        // Add user info to request
+        req.userId = result.userId;
+        if (options.loadFullUser && result.user) {
+          req.user = result.user;
         }
         
         next();
       } catch (error) {
         const apiError = this.handleError(error);
         
-        if (onError) {
-          return onError(apiError);
+        if (options.onError) {
+          return options.onError(apiError);
         }
         
-        return res.status(apiError.status || 500).json({ 
-          message: apiError.message,
-          code: apiError.code
+        return res.status(apiError.status).json({
+          success: false,
+          error: {
+            code: apiError.code,
+            message: apiError.message
+          }
         });
       }
     };
   }
 
   /**
-   * Helper method for validating tokens without Express middleware
-   * Useful for standalone token validation in various contexts
-   * @param token - The access token to validate
-   * @returns Object with validation result and user information
+   * Authenticates a token and returns validation result
+   * @param token - JWT token to validate
+   * @returns Promise with authentication result
    */
   public async authenticateToken(token: string): Promise<{
     valid: boolean;
@@ -1533,149 +1642,139 @@ export class OxyServices {
     error?: string;
   }> {
     try {
-      if (!token) {
+      // First try to decode the token to get basic info
+      const decoded = jwtDecode<JwtPayload>(token);
+      const currentTime = Math.floor(Date.now() / 1000);
+      
+      // Check if token is expired
+      if (decoded.exp && decoded.exp < currentTime) {
         return {
           valid: false,
-          error: 'Token is required'
-        };
-      }
-      
-      // Create a temporary OxyServices instance with the token
-      const tempOxyServices = new OxyServices({
-        baseURL: this.client.defaults.baseURL || ''
-      });
-      tempOxyServices.setTokens(token, '');
-      
-      // Validate token
-      const isValid = await tempOxyServices.validate();
-      
-      if (!isValid) {
-        return {
-          valid: false,
-          error: 'Invalid or expired token'
+          error: 'Token has expired'
         };
       }
       
       // Get user ID from token
-      const userId = tempOxyServices.getCurrentUserId();
+      const userId = decoded.userId || (decoded as any).id;
       if (!userId) {
         return {
           valid: false,
-          error: 'Invalid token payload'
+          error: 'Token does not contain user ID'
         };
       }
       
-      // Try to get user profile
-      let user;
+      // Validate token with server
       try {
-        user = await tempOxyServices.getUserById(userId);
-      } catch (error) {
-        // Continue without full user data
-        user = { id: userId };
+        const res = await this.client.get('/auth/validate', {
+          headers: {
+            Authorization: `Bearer ${token}`
+          }
+        });
+        
+        return {
+          valid: true,
+          userId,
+          user: res.data?.user
+        };
+      } catch (validationError) {
+        return {
+          valid: false,
+          error: 'Token validation failed'
+        };
       }
-      
-      return {
-        valid: true,
-        userId,
-        user
-      };
-    } catch (error) {
+    } catch (decodeError) {
       return {
         valid: false,
-        error: error instanceof Error ? error.message : 'Token validation failed'
+        error: 'Invalid token format'
       };
     }
   }
 
   /**
-   * Centralized error handling
-   * @private
-   * @param error - Error object from API call
-   * @returns Formatted API error
+   * Handles errors and converts them to ApiError format
+   * @param error - Error to handle
+   * @returns ApiError object
    */
   private handleError(error: any): ApiError {
-    if (error && error.code && error.status) {
-      // Already formatted as ApiError
-      return error as ApiError;
+    if (error.response) {
+      // Axios error with response
+      const status = error.response.status;
+      const data = error.response.data;
+      
+      return {
+        message: data?.error?.message || data?.message || 'Request failed',
+        code: data?.error?.code || data?.code || 'REQUEST_FAILED',
+        status,
+        details: data?.error?.details || data
+      };
+    } else if (error.request) {
+      // Axios error without response (network error)
+      return {
+        message: 'Network error - no response received',
+        code: 'NETWORK_ERROR',
+        status: 0,
+        details: error.request
+      };
+    } else {
+      // Other error
+      return {
+        message: error.message || 'An unknown error occurred',
+        code: 'UNKNOWN_ERROR',
+        status: 500,
+        details: error
+      };
     }
-    
-    const apiError: ApiError = {
-      message: error?.message || (error?.response?.data as any)?.message || 'Unknown error occurred',
-      code: (error?.response?.data as any)?.code || 'UNKNOWN_ERROR',
-      status: error?.response?.status || 500,
-      details: error?.response?.data
-    };
-    
-    return apiError;
   }
 
   /**
-   * Check if a username is available
-   * @param username - The username to check
-   * @returns Promise with availability status
+   * Checks if a username is available
+   * @param username - Username to check
+   * @returns Promise with availability result
    */
   async checkUsernameAvailability(username: string): Promise<{ available: boolean; message: string }> {
     try {
       const res = await this.client.get(`/auth/check-username/${username}`);
-      return res.data;
-    } catch (error: any) {
-      // If the endpoint doesn't exist, fall back to basic validation
-      if (error.response?.status === 404) {
-        console.warn('Username validation endpoint not found, using fallback validation');
-        return { available: true, message: 'Username validation not available' };
-      }
-      
-      // If it's a validation error (400), return the error message
-      if (error.response?.status === 400) {
-        return error.response.data;
-      }
-      
-      // For other errors, log and return a fallback
-      console.error('Username validation error:', error);
-      return { available: true, message: 'Unable to validate username' };
-    }
-  }
-
-  /**
-   * Check if an email is available
-   * @param email - The email to check
-   * @returns Promise with availability status
-   */
-  async checkEmailAvailability(email: string): Promise<{ available: boolean; message: string }> {
-    try {
-      const res = await this.client.post('/auth/check-email', { email });
-      return res.data;
-    } catch (error: any) {
-      // If the endpoint doesn't exist, fall back to basic validation
-      if (error.response?.status === 404) {
-        console.warn('Email validation endpoint not found, using fallback validation');
-        return { available: true, message: 'Email validation not available' };
-      }
-      
-      // If it's a validation error (400), return the error message
-      if (error.response?.status === 400) {
-        return error.response.data;
-      }
-      
-      // For other errors, log and return a fallback
-      console.error('Email validation error:', error);
-      return { available: true, message: 'Unable to validate email' };
-    }
-  }
-
-  /**
-   * Get user profile by username
-   * @param username - The username to look up
-   * @returns Promise with user profile
-   */
-  async getUserProfileByUsername(username: string): Promise<User> {
-    try {
-      const res = await this.client.get(`/profiles/username/${username}`);
-      return res.data;
+      return {
+        available: res.data?.available || false,
+        message: res.data?.message || 'Username availability checked'
+      };
     } catch (error) {
       throw this.handleError(error);
     }
   }
+
+  /**
+   * Checks if an email is available
+   * @param email - Email to check
+   * @returns Promise with availability result
+   */
+  async checkEmailAvailability(email: string): Promise<{ available: boolean; message: string }> {
+    try {
+      const res = await this.client.post('/auth/check-email', { email });
+      return {
+        available: res.data?.available || false,
+        message: res.data?.message || 'Email availability checked'
+      };
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Gets user profile by username (legacy method for backward compatibility)
+   * @param username - Username to search for
+   * @returns Promise with user profile
+   */
+  async getUserProfileByUsername(username: string): Promise<User> {
+    // Use the updated method
+    return this.getProfileByUsername(username);
+  }
 }
 
-export default OxyServices;
+// Create default instance for backward compatibility
+const defaultOxyServices = new OxyServices({ 
+  baseURL: process.env.OXY_API_URL || 'http://localhost:3001' 
+});
+
+// Export default instance
+export default defaultOxyServices;

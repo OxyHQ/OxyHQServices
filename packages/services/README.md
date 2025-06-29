@@ -1,6 +1,9 @@
-# OxyHQServices
+# OxyHQ Services
 
-A TypeScript client library for the Oxy API providing authentication, user management, and UI components for React and React Native applications.
+[![npm version](https://badge.fury.io/js/%40oxyhq%2Fservices.svg)](https://badge.fury.io/js/%40oxyhq%2Fservices)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+Reusable OxyHQ module to handle authentication, user management, karma system, device-based session management and more. Updated for improved API compatibility and performance 🚀
 
 ## Table of Contents
 
@@ -21,28 +24,54 @@ A TypeScript client library for the Oxy API providing authentication, user manag
 - 🎨 **UI Components**: Pre-built React components for common functionality
 - 📱 **Cross-Platform**: Works in React Native and web applications
 - 🔧 **TypeScript**: Full type safety and IntelliSense support
+- 🎯 **Karma System**: Award and deduct karma points
+- 💰 **Wallet & Payments**: Manage digital wallet and transactions
+- 📁 **File Management**: Upload and manage files with metadata
+- 📊 **Analytics & Notifications**: Track user analytics and receive notifications
 
 ## Quick Start
 
+### Installation
+
 ```bash
 npm install @oxyhq/services
+# or
+yarn add @oxyhq/services
 ```
 
+### Basic Usage
+
 ```typescript
-import { OxyServices } from '@oxyhq/services';
+import OxyServices from '@oxyhq/services';
 
+// Initialize with your API configuration
 const oxy = new OxyServices({
-  baseURL: 'http://localhost:3000'
+  baseURL: 'https://api.oxy.so'
 });
 
-// Authenticate
-const response = await oxy.auth.login({
-  email: 'user@example.com',
-  password: 'password'
-});
+// User registration
+const signUpResult = await oxy.signUp('username', 'email@example.com', 'password');
+console.log('User registered:', signUpResult.user);
 
-// Get current user
-const user = await oxy.users.getCurrentUser();
+// User login
+const loginResult = await oxy.login('username', 'password');
+console.log('User logged in:', loginResult.user);
+
+// Get current user profile
+const profile = await oxy.getCurrentUser();
+console.log('Current user:', profile);
+
+// Follow a user
+await oxy.followUser('user-id');
+console.log('User followed successfully');
+
+// Upload a file
+const file = new File(['content'], 'document.txt', { type: 'text/plain' });
+const fileMetadata = await oxy.uploadFile(file, 'document.txt', {
+  description: 'My document',
+  tags: ['document', 'text']
+});
+console.log('File uploaded:', fileMetadata);
 ```
 
 ## Documentation

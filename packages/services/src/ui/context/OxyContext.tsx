@@ -31,6 +31,10 @@ export interface OxyContextState {
   logoutAllDeviceSessions: () => Promise<void>;
   updateDeviceName: (deviceName: string) => Promise<void>;
 
+  // Helper methods
+  ensureToken: () => Promise<void>; // Ensure token is set before API calls
+  refreshUserData: () => Promise<void>; // Refresh user data from server
+
   // Access to services
   oxyServices: OxyServices;
   bottomSheetRef?: React.RefObject<any>;
@@ -211,7 +215,9 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
                   setActiveSessionId(activeSession.sessionId);
 
                   // Get access token for API calls
-                  await oxyServices.getTokenBySession(activeSession.sessionId);
+                  const tokenResponse = await oxyServices.getTokenBySession(activeSession.sessionId);
+                  // Set the token on the service instance
+                  oxyServices.setTokens(tokenResponse.accessToken, '');
 
                   // Load full user data
                   const fullUser = await oxyServices.getUserBySession(activeSession.sessionId);
@@ -300,7 +306,9 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
       setIsLoading(true);
 
       // Get access token for this session
-      await oxyServices.getTokenBySession(sessionId);
+      const tokenResponse = await oxyServices.getTokenBySession(sessionId);
+      // Set the token on the service instance
+      oxyServices.setTokens(tokenResponse.accessToken, '');
 
       // Load full user data
       const fullUser = await oxyServices.getUserBySession(sessionId);
@@ -325,6 +333,67 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
       setIsLoading(false);
     }
   }, [oxyServices, onAuthStateChange, saveActiveSessionId]);
+
+  // Helper function to ensure token is set before API calls
+  const ensureToken = useCallback(async (): Promise<void> => {
+    console.log('ensureToken: Starting token check...');
+    console.log('ensureToken: Active session ID:', activeSessionId);
+
+    if (!activeSessionId) {
+      console.error('ensureToken: No active session ID found');
+      throw new Error('No active session');
+    }
+
+    try {
+      console.log('ensureToken: Getting token for session:', activeSessionId);
+      // Get the current token for the active session
+      const tokenResponse = await oxyServices.getTokenBySession(activeSessionId);
+      console.log('ensureToken: Token retrieved successfully:', !!tokenResponse.accessToken);
+
+      // Set the token on the service instance so it can be used for API calls
+      oxyServices.setTokens(tokenResponse.accessToken, ''); // No refresh token needed for session-based auth
+      console.log('ensureToken: Token set on service instance');
+
+    } catch (error) {
+      console.error('ensureToken: Failed to get token for session:', error);
+      throw new Error('Authentication failed. Please log in again.');
+    }
+  }, [activeSessionId, oxyServices]);
+
+  // Helper function to refresh user data from server
+  const refreshUserData = useCallback(async (): Promise<void> => {
+    if (!activeSessionId) {
+      console.error('refreshUserData: No active session ID found');
+      return;
+    }
+
+    try {
+      console.log('refreshUserData: Refreshing user data...');
+
+      // Ensure token is set
+      await ensureToken();
+
+      // Get fresh user data from server
+      const freshUser = await oxyServices.getCurrentUser();
+
+      // Update context state
+      setUser(freshUser);
+      setMinimalUser({
+        id: freshUser.id,
+        username: freshUser.username,
+        avatar: freshUser.avatar
+      });
+
+      console.log('refreshUserData: User data refreshed successfully');
+
+      if (onAuthStateChange) {
+        onAuthStateChange(freshUser);
+      }
+    } catch (error) {
+      console.error('refreshUserData: Failed to refresh user data:', error);
+      throw error;
+    }
+  }, [activeSessionId, oxyServices, ensureToken, onAuthStateChange]);
 
   // Secure login method
   const login = async (username: string, password: string, deviceName?: string): Promise<User> => {
@@ -394,7 +463,9 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
       await saveActiveSessionId(response.sessionId);
 
       // Get access token for API calls
-      await oxyServices.getTokenBySession(response.sessionId);
+      const tokenResponse = await oxyServices.getTokenBySession(response.sessionId);
+      // Set the token on the service instance
+      oxyServices.setTokens(tokenResponse.accessToken, '');
 
       // Load full user data
       const fullUser = await oxyServices.getUserBySession(response.sessionId);
@@ -673,6 +744,8 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     bottomSheetRef,
     showBottomSheet,
     hideBottomSheet,
+    ensureToken,
+    refreshUserData,
   };
 
   return (

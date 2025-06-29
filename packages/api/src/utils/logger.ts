@@ -87,7 +87,7 @@ export const stream = {
 export const performanceLogger = {
   start: (operation: string) => {
     const start = Date.now();
-    return {
+  return {
       end: () => {
         const duration = Date.now() - start;
         logger.info(`Performance: ${operation} took ${duration}ms`);

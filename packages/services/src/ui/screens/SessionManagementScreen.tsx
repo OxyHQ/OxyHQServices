@@ -82,10 +82,10 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                         try {
                             setActionLoading(sessionId);
                             await logout(sessionId);
-                            
+
                             // Refresh sessions to update the list
                             await refreshSessions();
-                            
+
                             toast.success('Session logged out successfully');
                         } catch (error) {
                             console.error('Logout session failed:', error);
@@ -101,7 +101,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
 
     const handleLogoutOtherSessions = async () => {
         const otherSessionsCount = userSessions.filter(s => s.sessionId !== activeSessionId).length;
-        
+
         if (otherSessionsCount === 0) {
             toast.info('No other sessions to logout.');
             return;
@@ -124,10 +124,10 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                                     await logout(session.sessionId);
                                 }
                             }
-                            
+
                             // Refresh sessions to update the list
                             await refreshSessions();
-                            
+
                             toast.success('Other sessions logged out successfully');
                         } catch (error) {
                             console.error('Logout other sessions failed:', error);
@@ -175,7 +175,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
         if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
         if (diffInMinutes < 10080) return `${Math.floor(diffInMinutes / 1440)}d ago`;
-        
+
         return date.toLocaleDateString();
     };
 
@@ -262,13 +262,13 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
 
                                 <View style={styles.sessionDetails}>
                                     <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                        Device ID: {session.deviceId.substring(0, 12)}...
+                                        Device ID: {session.deviceId?.substring(0, 12) ?? 'N/A'}...
                                     </Text>
                                     <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                         Last active: {new Date(session.lastActive).toLocaleDateString()}
                                     </Text>
                                     <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                        Expires: {new Date(session.expiresAt).toLocaleDateString()}
+                                        Expires: {session.expiresAt ? new Date(session.expiresAt).toLocaleDateString() : 'N/A'}
                                     </Text>
                                 </View>
 

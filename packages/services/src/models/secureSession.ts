@@ -1,7 +1,7 @@
 export interface SecureClientSession {
   sessionId: string;
-  deviceId: string;
-  expiresAt: string;
+  deviceId?: string;
+  expiresAt?: string;
   lastActive: string;
   // Add user info for efficient duplicate detection
   userId?: string;
@@ -24,7 +24,10 @@ export interface MinimalUserData {
 
 export interface SecureLoginResponse {
   sessionId: string;
-  deviceId: string;
-  expiresAt: string;
+  deviceId?: string;
+  expiresAt?: string;
+  accessToken: string;
+  refreshToken: string;
   user: MinimalUserData;
+  message?: string;
 }

@@ -1,7 +1,7 @@
 {
     "name": "@oxyhq/services",
-    "version": "5.4.4",
-    "description": "Reusable OxyHQ module to handle authentication, user management, karma system, device-based session management and more 🚀",
+    "version": "5.5.0",
+    "description": "Reusable OxyHQ module to handle authentication, user management, karma system, device-based session management and more. Updated for improved API compatibility and performance 🚀",
     "main": "lib/commonjs/node/index.js",
     "module": "lib/module/node/index.js",
     "types": "lib/typescript/node/index.d.ts",
@@ -46,7 +46,10 @@
         "web",
         "OxyHQ",
         "authentication",
-        "bottom-sheet"
+        "bottom-sheet",
+        "api-client",
+        "user-management",
+        "karma-system"
     ],
     "repository": "https://github.com/oxyhq/oxyhqservices",
     "author": "OxyHQ",
@@ -65,7 +68,9 @@
         "delete-dts.js": "find ./lib/commonjs -name '*.d.js*' -delete && find ./lib/module -name '*.d.js*' -delete",
         "release": "rm -rf lib && yarn build && release-it",
         "example": "yarn --cwd example",
-        "bootstrap": "yarn install && yarn example"
+        "bootstrap": "yarn install && yarn example",
+        "test": "jest",
+        "test:watch": "jest --watch"
     },
     "dependencies": {
         "@gorhom/bottom-sheet": "^5.1.6",

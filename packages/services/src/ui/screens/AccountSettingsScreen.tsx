@@ -24,9 +24,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     goBack,
     navigate,
 }) => {
-    const { user, oxyServices, isLoading: authLoading, isAuthenticated } = useOxy();
+    const { user, oxyServices, isLoading: authLoading, isAuthenticated, ensureToken, activeSessionId, refreshUserData } = useOxy();
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [isRefreshing, setIsRefreshing] = useState(false);
 
     // Animation refs
     const saveButtonScale = useRef(new Animated.Value(1)).current;
@@ -71,12 +72,83 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         }).start();
     }, [saveButtonScale]);
 
-    // Load user data
+    // Load user data when screen mounts
+    useEffect(() => {
+        const loadUserData = async () => {
+            if (!isAuthenticated || !oxyServices) {
+                console.log('AccountSettingsScreen: Not authenticated or no services available');
+                return;
+            }
+
+            try {
+                console.log('AccountSettingsScreen: Loading user data on mount...');
+                setIsRefreshing(true);
+
+                // Ensure token is set
+                await ensureToken();
+
+                // Get fresh user data
+                const freshUser = await oxyServices.getCurrentUser();
+
+                if (freshUser) {
+                    console.log('AccountSettingsScreen: Fresh user data loaded:', freshUser);
+
+                    // Handle name field - support both string and object formats
+                    let userDisplayName = '';
+                    if (typeof freshUser.name === 'string') {
+                        // If name is a string, use it directly
+                        userDisplayName = freshUser.name;
+                    } else if (freshUser.name && typeof freshUser.name === 'object') {
+                        // If name is an object, combine first and last
+                        const firstName = freshUser.name.first || '';
+                        const lastName = freshUser.name.last || '';
+                        userDisplayName = `${firstName} ${lastName}`.trim();
+                    }
+
+                    setDisplayName(userDisplayName);
+                    setUsername(freshUser.username || '');
+                    setEmail(freshUser.email || '');
+                    setBio(freshUser.bio || '');
+                    setLocation(freshUser.location || '');
+                    setWebsite(freshUser.website || '');
+                    setAvatarUrl(freshUser.avatar?.url || '');
+
+                    console.log('AccountSettingsScreen: Data loaded on mount:', {
+                        displayName: userDisplayName,
+                        username: freshUser.username,
+                        email: freshUser.email,
+                        bio: freshUser.bio,
+                        location: freshUser.location,
+                        website: freshUser.website,
+                        avatarUrl: freshUser.avatar?.url
+                    });
+                }
+            } catch (error) {
+                console.error('AccountSettingsScreen: Failed to load user data on mount:', error);
+            } finally {
+                setIsRefreshing(false);
+            }
+        };
+
+        loadUserData();
+    }, [isAuthenticated, oxyServices, ensureToken]);
+
+    // Load user data when user object changes (fallback)
     useEffect(() => {
         if (user) {
-            const userDisplayName = typeof user.name === 'string'
-                ? user.name
-                : user.name?.full || user.name?.first || '';
+            console.log('AccountSettingsScreen: Loading user data from context:', user);
+
+            // Handle name field - support both string and object formats
+            let userDisplayName = '';
+            if (typeof user.name === 'string') {
+                // If name is a string, use it directly
+                userDisplayName = user.name;
+            } else if (user.name && typeof user.name === 'object') {
+                // If name is an object, combine first and last
+                const firstName = user.name.first || '';
+                const lastName = user.name.last || '';
+                userDisplayName = `${firstName} ${lastName}`.trim();
+            }
 
             setDisplayName(userDisplayName);
             setUsername(user.username || '');
@@ -85,15 +157,42 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             setLocation(user.location || '');
             setWebsite(user.website || '');
             setAvatarUrl(user.avatar?.url || '');
+
+            console.log('AccountSettingsScreen: Data loaded from context:', {
+                displayName: userDisplayName,
+                username: user.username,
+                email: user.email,
+                bio: user.bio,
+                location: user.location,
+                website: user.website,
+                avatarUrl: user.avatar?.url
+            });
+        } else {
+            console.log('AccountSettingsScreen: No user data available in context');
         }
     }, [user]);
 
+    // Add loading state for when user data is not yet available
+    const isDataLoading = authLoading || !user || isRefreshing;
+
     const handleSave = async () => {
-        if (!user) return;
+        if (!user || !oxyServices) {
+            console.error('handleSave: Missing user or oxyServices', { user: !!user, oxyServices: !!oxyServices });
+            return;
+        }
 
         try {
             setIsSaving(true);
             animateSaveButton(0.95); // Scale down slightly for animation
+
+            console.log('handleSave: Starting profile update...');
+            console.log('handleSave: User authenticated:', !!user);
+            console.log('handleSave: Active session ID:', activeSessionId);
+
+            // Ensure the token is set before making API calls
+            console.log('handleSave: Ensuring token is set...');
+            await ensureToken();
+            console.log('handleSave: Token ensured successfully');
 
             const updates: Record<string, any> = {
                 username,
@@ -103,9 +202,16 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 website,
             };
 
-            // Handle name field
+            // Handle name field - convert display name to first/last format
             if (displayName) {
-                updates.name = displayName;
+                const nameParts = displayName.trim().split(' ');
+                const firstName = nameParts[0] || '';
+                const lastName = nameParts.slice(1).join(' ') || '';
+
+                updates.name = {
+                    first: firstName,
+                    last: lastName
+                };
             }
 
             // Handle avatar
@@ -113,10 +219,25 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 updates.avatar = { url: avatarUrl };
             }
 
+            console.log('handleSave: Making API call with updates:', updates);
             await oxyServices.updateProfile(updates);
+            console.log('handleSave: Profile update successful');
+
             toast.success('Profile updated successfully');
 
             animateSaveButton(1); // Scale back to normal
+
+            // Refresh user data to ensure UI shows latest data
+            setIsRefreshing(true);
+            try {
+                await refreshUserData();
+                console.log('handleSave: User data refreshed successfully');
+            } catch (error) {
+                console.error('handleSave: Failed to refresh user data:', error);
+                // Don't show error to user as the save was successful
+            } finally {
+                setIsRefreshing(false);
+            }
 
             if (onClose) {
                 onClose();
@@ -124,7 +245,23 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 goBack();
             }
         } catch (error: any) {
-            toast.error(error.message || 'Failed to update profile');
+            console.error('Profile update error:', error);
+            console.error('Error details:', {
+                message: error.message,
+                status: error.status,
+                code: error.code,
+                response: error.response
+            });
+
+            // Provide more specific error messages
+            let errorMessage = 'Failed to update profile';
+            if (error.code === 'INVALID_TOKEN' || error.status === 401) {
+                errorMessage = 'Authentication expired. Please log in again.';
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+
+            toast.error(errorMessage);
             animateSaveButton(1); // Scale back to normal on error
         } finally {
             setIsSaving(false);
@@ -180,35 +317,103 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         setEditingField(type);
     };
 
-    const saveField = (type: string) => {
-        animateSaveButton(0.95); // Scale down slightly for animation
+    const saveField = async (type: string) => {
+        try {
+            animateSaveButton(0.95); // Scale down slightly for animation
 
-        switch (type) {
-            case 'displayName':
-                setDisplayName(tempDisplayName);
-                break;
-            case 'username':
-                setUsername(tempUsername);
-                break;
-            case 'email':
-                setEmail(tempEmail);
-                break;
-            case 'bio':
-                setBio(tempBio);
-                break;
-            case 'location':
-                setLocation(tempLocation);
-                break;
-            case 'website':
-                setWebsite(tempWebsite);
-                break;
-        }
+            // Ensure the token is set before making API calls
+            await ensureToken();
 
-        // Brief delay for animation, then reset and close editing
-        setTimeout(() => {
+            // Prepare the update data based on the field type
+            let updateData: Record<string, any> = {};
+            let newValue = '';
+
+            switch (type) {
+                case 'displayName':
+                    newValue = tempDisplayName;
+                    // Convert display name to first/last format for API
+                    const nameParts = newValue.trim().split(' ');
+                    const firstName = nameParts[0] || '';
+                    const lastName = nameParts.slice(1).join(' ') || '';
+                    updateData.name = {
+                        first: firstName,
+                        last: lastName
+                    };
+                    setDisplayName(newValue);
+                    break;
+                case 'username':
+                    newValue = tempUsername;
+                    updateData.username = newValue;
+                    setUsername(newValue);
+                    break;
+                case 'email':
+                    newValue = tempEmail;
+                    updateData.email = newValue;
+                    setEmail(newValue);
+                    break;
+                case 'bio':
+                    newValue = tempBio;
+                    updateData.bio = newValue;
+                    setBio(newValue);
+                    break;
+                case 'location':
+                    newValue = tempLocation;
+                    updateData.location = newValue;
+                    setLocation(newValue);
+                    break;
+                case 'website':
+                    newValue = tempWebsite;
+                    updateData.website = newValue;
+                    setWebsite(newValue);
+                    break;
+            }
+
+            // Make the API call to save the data
+            console.log(`saveField: Saving ${type} with value:`, newValue);
+            console.log('saveField: API update data:', updateData);
+
+            await oxyServices.updateProfile(updateData);
+            console.log(`saveField: ${type} saved successfully`);
+
+            toast.success(`${getFieldLabel(type)} updated successfully`);
+
+            // Refresh user data to ensure UI shows latest data
+            setIsRefreshing(true);
+            try {
+                await refreshUserData();
+                console.log(`saveField: User data refreshed after ${type} update`);
+            } catch (error) {
+                console.error(`saveField: Failed to refresh user data after ${type} update:`, error);
+                // Don't show error to user as the save was successful
+            } finally {
+                setIsRefreshing(false);
+            }
+
+            // Brief delay for animation, then reset and close editing
+            setTimeout(() => {
+                animateSaveButton(1);
+                setEditingField(null);
+            }, 150);
+        } catch (error: any) {
+            console.error('Field save error:', error);
+            console.error('Error details:', {
+                message: error.message,
+                status: error.status,
+                code: error.code,
+                response: error.response
+            });
+
+            // Provide more specific error messages
+            let errorMessage = 'Failed to save field. Please try again.';
+            if (error.code === 'INVALID_TOKEN' || error.status === 401) {
+                errorMessage = 'Authentication expired. Please log in again.';
+            } else if (error.message) {
+                errorMessage = error.message;
+            }
+
+            toast.error(errorMessage);
             animateSaveButton(1);
-            setEditingField(null);
-        }, 150);
+        }
     };
 
     const cancelEditing = () => {
@@ -344,7 +549,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         );
     };
 
-    if (authLoading || !isAuthenticated) {
+    if (isDataLoading) {
         return (
             <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor, justifyContent: 'center' }]}>
                 <ActivityIndicator size="large" color={themeStyles.primaryColor} />
