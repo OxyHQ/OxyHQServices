@@ -43,7 +43,7 @@ export interface AuthFetchAPI {
  * Uses the existing OxyServices instance from useOxy context
  */
 export function useAuthFetch(): AuthFetchAPI {
-  const { oxyServices, isAuthenticated, user, login, logout, signUp, activeSessionId, setApiUrl } = useOxy();
+  const { oxyServices, isAuthenticated, user, login, logout, signUp, activeSessionId, setApiUrl, getAppBaseURL } = useOxy();
 
   // Validate that we have the required dependencies
   if (!oxyServices) {
@@ -56,7 +56,7 @@ export function useAuthFetch(): AuthFetchAPI {
       throw new Error('OxyServices not initialized. Make sure to wrap your app in OxyProvider.');
     }
 
-    const url = resolveURL(input, oxyServices.getBaseURL());
+    const url = resolveURL(input, getAppBaseURL());
     const options = await addAuthHeaders(init, oxyServices, activeSessionId || undefined, isAuthenticated);
 
     try {
@@ -88,7 +88,7 @@ export function useAuthFetch(): AuthFetchAPI {
       }
       throw new Error('Request failed');
     }
-  }, [oxyServices, activeSessionId, isAuthenticated]);
+  }, [oxyServices, activeSessionId, isAuthenticated, getAppBaseURL]);
 
   // JSON convenience methods
   const get = useCallback(async (endpoint: string, options?: AuthFetchOptions) => {

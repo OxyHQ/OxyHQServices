@@ -37,6 +37,7 @@ export interface OxyContextState {
 
   // API configuration
   setApiUrl: (url: string) => void;
+  getAppBaseURL: () => string;
 
   // Methods to directly control the bottom sheet
   showBottomSheet?: (screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => void;
@@ -129,6 +130,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [storage, setStorage] = useState<StorageInterface | null>(null);
+  const [appBaseURL, setAppBaseURL] = useState<string>(oxyServices.getBaseURL());
 
   // Storage keys (memoized to prevent infinite loops)
   const keys = useMemo(() => getSecureStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
@@ -646,12 +648,23 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
   // API URL configuration
   const setApiUrl = useCallback((url: string) => {
     try {
-      oxyServices.setBaseURL(url);
+      // Validate URL
+      if (!url) {
+        throw new Error('Base URL cannot be empty');
+      }
+      // Only update the app-specific base URL, not the OxyServices base URL
+      // This ensures internal module calls to Oxy API remain unaffected
+      setAppBaseURL(url);
     } catch (error) {
       console.error('Failed to update API URL:', error);
       setError(`Failed to update API URL: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
-  }, [oxyServices]);
+  }, []);
+
+  // Get current app base URL
+  const getAppBaseURL = useCallback(() => {
+    return appBaseURL;
+  }, [appBaseURL]);
 
   // Compute comprehensive authentication status
   // This is the single source of truth for authentication across the entire app
@@ -684,6 +697,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     updateDeviceName,
     oxyServices,
     setApiUrl,
+    getAppBaseURL,
     bottomSheetRef,
     showBottomSheet,
     hideBottomSheet,
