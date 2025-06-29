@@ -105,6 +105,46 @@ export {
   type AppDispatch,
 } from './ui';
 
+// ------------- NEW: Zustand Store Exports (Experimental) -------------
+// Zustand-based state management (new architecture)
+export { 
+  useOxyStore,
+  initializeOxyStore,
+  useAuth,
+  useAuthUser,
+  useIsAuthenticated,
+  useAuthLoading,
+  useAuthError,
+  useAuthSessions,
+  useUserFollowStatus,
+  useMultipleFollowStatuses
+} from './stores';
+
+export { 
+  OxyContextProvider as NewOxyContextProvider,
+  useOxyContext as useNewOxyContext,
+  useOxy as useNewOxy
+} from './ui/context/NewOxyContext';
+
+export {
+  useFollowUser,
+  useFollowMultipleUsers,
+  useFollow as useNewFollow,
+  useOxyFollow as useNewOxyFollow
+} from './ui/hooks/newUseFollow';
+
+export {
+  ApiUtils,
+  createApiUtils
+} from './utils/api';
+
+// Export new types
+export type { 
+  OxyStore,
+  AuthState as NewAuthState,
+  FollowState as NewFollowState
+} from './stores';
+
 // ------------- Type Exports -------------
 export { OxyContextState, OxyContextProviderProps };
 export * from './ui/navigation/types';

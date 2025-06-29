@@ -424,7 +424,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
         sessionId: response.sessionId,
         deviceId: response.deviceId,
         expiresAt: response.expiresAt,
-        lastActive: new Date().toISOString(),
+        lastActivity: new Date().toISOString(),
         userId: response.user.id,
         username: response.user.username
       };
@@ -609,7 +609,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
         sessionId: serverSession.sessionId,
         deviceId: serverSession.deviceId,
         expiresAt: new Date().toISOString(), // You might want to get this from server
-        lastActive: new Date().toISOString()
+        lastActivity: new Date().toISOString()
       }));
 
       setSessions(updatedSessions);

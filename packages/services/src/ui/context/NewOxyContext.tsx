@@ -136,5 +136,4 @@ export const useOxy = () => {
 };
 
 // Export types
-// Export types
-export type { OxyContextValue, OxyContextProviderProps };
+// Types are exported inline above
