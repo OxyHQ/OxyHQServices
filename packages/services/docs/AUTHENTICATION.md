@@ -80,6 +80,15 @@ app.get('/api/protected', authenticateToken, (req, res) => {
 
 ## 📚 Detailed Usage
 
+### Choose Your API Approach
+
+The OxyHQ Services provides two ways to interact with the API:
+
+1. **Hook-based API** (`useAuthFetch`) - For React components
+2. **Core API** (`OxyServices`) - For Redux reducers, thunks, utility functions, and non-component contexts
+
+**📖 For non-component usage (Redux, utility files, etc.), see the [Non-Hook API Guide](./NON_HOOK_API_GUIDE.md)**
+
 ### useAuthFetch Hook
 
 The `useAuthFetch` hook provides a drop-in replacement for the native `fetch` API with automatic authentication:
@@ -108,6 +117,35 @@ const response = await authFetch('/api/custom', {
   headers: { 'Custom-Header': 'value' }
 });
 ```
+
+### Core API for Non-Component Usage
+
+For Redux reducers, thunks, utility functions, and server-side code, use the core `OxyServices` class directly:
+
+```typescript
+import { OxyServices } from '@oxyhq/services/core';
+
+// Create instance
+const oxyServices = new OxyServices({
+  baseURL: 'https://your-api.com'
+});
+
+// Use in Redux thunks
+export const loginUser = createAsyncThunk(
+  'auth/loginUser',
+  async (credentials: { username: string; password: string }) => {
+    const response = await oxyServices.login(credentials.username, credentials.password);
+    return response;
+  }
+);
+
+// Use in utility functions
+export async function getCurrentUserProfile() {
+  return await oxyServices.getCurrentUser();
+}
+```
+
+**📖 For complete non-hook API documentation, see [Non-Hook API Guide](./NON_HOOK_API_GUIDE.md)**
 
 ### API Configuration
 

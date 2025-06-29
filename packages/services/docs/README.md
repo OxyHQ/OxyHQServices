@@ -4,13 +4,24 @@ Complete reference for the OxyHQServices TypeScript client library.
 
 ## 📚 Documentation
 
+### 🚀 Getting Started
 - **[Quick Start](./quick-start.md)** - Get started in 5 minutes
 - **[Installation](./installation.md)** - Setup and configuration
-- **[Core API](./core-api.md)** - Authentication and client methods
+
+### 🔑 API Documentation
+- **[Authentication Guide](./AUTHENTICATION.md)** - Hook-based API for React components
+- **[Non-Hook API Guide](./NON_HOOK_API_GUIDE.md)** - **Core API for Redux, thunks, and utility functions**
+- **[Hook vs Core API](./HOOK_VS_CORE_API.md)** - Side-by-side comparison with examples
+- **[Core API Reference](./core-api.md)** - Complete method reference
+
+### 🏗️ Architecture & Integration
+- **[Redux Integration](./redux-integration.md)** - Both managed and custom approaches
 - **[UI Components](./ui-components.md)** - React/React Native components
-- **[Express Middleware](./express-middleware.md)** - Backend integration
-- **[TypeScript Types](./typescript-types.md)** - Type definitions
 - **[Examples](./examples/)** - Code examples and demos
+
+### 📋 Additional Resources  
+- **[TypeScript Types](./typescript-types.md)** - Type definitions
+- **[Migration Guides](./migration-guide-redux.md)** - Upgrade guides
 
 ## 🚀 Quick Start
 

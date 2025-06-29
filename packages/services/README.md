@@ -24,26 +24,63 @@ A TypeScript client library for the Oxy API providing authentication, user manag
 
 ## Quick Start
 
+### For React Components (Hook-based API)
+
 ```bash
 npm install @oxyhq/services
 ```
 
 ```typescript
-import { OxyServices } from '@oxyhq/services';
+import { OxyProvider, useAuthFetch } from '@oxyhq/services/ui';
+import { OxyServices } from '@oxyhq/services/core';
 
-const oxy = new OxyServices({
-  baseURL: 'http://localhost:3000'
+// Setup
+const oxyServices = new OxyServices({
+  baseURL: 'https://your-api.com'
 });
 
-// Authenticate
-const response = await oxy.auth.login({
-  email: 'user@example.com',
-  password: 'password'
-});
+function App() {
+  return (
+    <OxyProvider oxyServices={oxyServices}>
+      <UserProfile />
+    </OxyProvider>
+  );
+}
 
-// Get current user
-const user = await oxy.users.getCurrentUser();
+function UserProfile() {
+  const authFetch = useAuthFetch();
+  
+  const loadProfile = () => authFetch.get('/api/users/me');
+  return <button onClick={loadProfile}>Load Profile</button>;
+}
 ```
+
+### For Redux/Non-Component Usage (Core API)
+
+```typescript
+import { OxyServices } from '@oxyhq/services/core';
+import { createAsyncThunk } from '@reduxjs/toolkit';
+
+// Create service instance
+const oxyServices = new OxyServices({
+  baseURL: 'https://your-api.com'
+});
+
+// Use in Redux thunks
+export const loginUser = createAsyncThunk(
+  'auth/loginUser',
+  async (credentials: { username: string; password: string }) => {
+    return await oxyServices.login(credentials.username, credentials.password);
+  }
+);
+
+// Use in utility functions
+export async function getCurrentUser() {
+  return await oxyServices.getCurrentUser();
+}
+```
+
+**📖 For complete non-hook API documentation, see [Non-Hook API Guide](./docs/NON_HOOK_API_GUIDE.md)**
 
 ## Documentation
 
@@ -51,7 +88,10 @@ For comprehensive documentation, API reference, and examples:
 
 - [📚 Full Documentation](./docs/README.md)
 - [🚀 Quick Start Guide](./docs/quick-start.md)
-- [🔐 Core API Reference](./docs/core-api.md)
+- [🔐 Authentication Guide](./docs/AUTHENTICATION.md) - Hook-based API for components
+- [⚡ Non-Hook API Guide](./docs/NON_HOOK_API_GUIDE.md) - **Core API for Redux, thunks, and utility functions**
+- [🔧 Redux Integration](./docs/redux-integration.md) - Both managed and custom approaches
+- [🔗 Core API Reference](./docs/core-api.md)
 - [💼 Integration Examples](./docs/examples/)
 
 ## UI Components
