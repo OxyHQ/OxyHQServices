@@ -56,6 +56,8 @@ export interface IUser extends Document {
     posts?: number;
     karma?: number;
   };
+  lastSeen: Date;
+  isOnline: boolean;
   _id: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -68,51 +70,64 @@ const UserSchema: Schema = new Schema(
       required: true,
       unique: true,
       trim: true,
-      select: true,
+      lowercase: true,
+      minlength: 3,
+      maxlength: 30,
+      match: /^[a-z0-9_]+$/,
+      index: true
     },
     email: {
       type: String,
       required: true,
       unique: true,
       trim: true,
-      select: true,
+      lowercase: true,
+      minlength: 5,
+      maxlength: 255,
+      match: /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
+      index: true
     },
     password: {
       type: String,
       required: true,
-      select: false,
-      set: (v: string) => v,
+      minlength: 8,
+      maxlength: 128,
+      select: false
     },
     refreshToken: {
       type: String,
       default: null,
-      select: false,
+      select: false
     },
-    bookmarks: [
-      {
-        type: Schema.Types.ObjectId,
-        ref: "Post",
-        default: [],
-        select: true,
-      },
-    ],
-    following: [
-      {
-        type: Schema.Types.ObjectId,
-        ref: "User",
-        default: [],
-      },
-    ],
-    followers: [
-      {
-        type: Schema.Types.ObjectId,
-        ref: "User",
-        default: [],
-      },
-    ],
+    bookmarks: [{
+      type: Schema.Types.ObjectId,
+      ref: "Post",
+      default: [],
+      index: true
+    }],
+    following: [{
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: [],
+      index: true
+    }],
+    followers: [{
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: [],
+      index: true
+    }],
     name: {
-      first: { type: String},
-      last: { type: String },
+      first: { 
+        type: String, 
+        trim: true, 
+        maxlength: 50 
+      },
+      last: { 
+        type: String, 
+        trim: true, 
+        maxlength: 50 
+      }
     },
     privacySettings: {
       isPrivateAccount: { type: Boolean, default: false },
@@ -136,75 +151,182 @@ const UserSchema: Schema = new Schema(
       analyticsSharing: { type: Boolean, default: true },
       sensitiveContent: { type: Boolean, default: false },
       autoFilter: { type: Boolean, default: true },
-      muteKeywords: { type: Boolean, default: false },
+      muteKeywords: { type: Boolean, default: false }
     },
     avatar: {
-      type: {
-        id: { type: String, default: "" },
-        url: { type: String, default: "" }
-      },
-      default: { id: "", url: "" }
+      id: { type: String, default: "" },
+      url: { type: String, default: "" }
     },
     associated: {
       lists: { type: Number, default: 0 },
       feedgens: { type: Number, default: 0 },
       starterPacks: { type: Number, default: 0 },
-      labeler: { type: Boolean, default: false },
+      labeler: { type: Boolean, default: false }
     },
-    labels: { type: [String], default: [] },
-    bio: { type: String },
-    description: { type: String },
+    labels: { 
+      type: [String], 
+      default: [],
+      index: true
+    },
+    bio: { 
+      type: String, 
+      maxlength: 500,
+      trim: true
+    },
+    description: { 
+      type: String, 
+      maxlength: 1000,
+      trim: true
+    },
     coverPhoto: { type: String },
-    location: { type: String },
-    website: { type: String },
-    pinnedPosts: [{ type: Schema.Types.ObjectId, ref: "Post", default: [] }],
+    location: { 
+      type: String, 
+      maxlength: 100,
+      trim: true
+    },
+    website: { 
+      type: String, 
+      maxlength: 255,
+      trim: true
+    },
+    pinnedPosts: [{ 
+      type: Schema.Types.ObjectId, 
+      ref: "Post", 
+      default: [] 
+    }],
+    lastSeen: {
+      type: Date,
+      default: Date.now,
+      index: true
+    },
+    isOnline: {
+      type: Boolean,
+      default: false,
+      index: true
+    }
   },
   {
     timestamps: true,
     strict: true,
-    validateBeforeSave: true,
+    validateBeforeSave: true
   }
 );
 
-// Remove transforms and rely on select options
+UserSchema.index({ username: 1, email: 1 });
+UserSchema.index({ 'privacySettings.isPrivateAccount': 1, createdAt: -1 });
+UserSchema.index({ isOnline: 1, lastSeen: -1 });
+UserSchema.index({ followers: 1, createdAt: -1 });
+UserSchema.index({ following: 1, createdAt: -1 });
+
+UserSchema.index({
+  username: 'text',
+  'name.first': 'text',
+  'name.last': 'text',
+  bio: 'text',
+  description: 'text',
+  location: 'text'
+}, {
+  weights: {
+    username: 10,
+    'name.first': 8,
+    'name.last': 8,
+    bio: 5,
+    description: 3,
+    location: 2
+  },
+  name: 'user_search_index'
+});
+
 UserSchema.set("toJSON", {
   transform: function (doc, ret) {
+    delete ret.password;
+    delete ret.refreshToken;
+    
+    ret.id = ret._id;
+    delete ret._id;
+    delete ret.__v;
+    
     return ret;
   },
-  versionKey: false,
+  versionKey: false
 });
 
-// Add a save middleware to ensure password is included
 UserSchema.pre("save", function (next) {
-  console.log("Saving user document:", {
-    hasUsername: !!this.username,
-    hasEmail: !!this.email,
-    hasPassword: !!this.password,
-    fields: Object.keys(this.toObject()),
-  });
-  next();
-});
-
-// Only create indexes for fields that don't have unique: true in schema
-UserSchema.index({ following: 1 });
-UserSchema.index({ followers: 1 });
-
-// Virtual field for post count
-UserSchema.virtual('postCount').get(async function() {
-  const Post = mongoose.model('Post');
-  const count = await Post.countDocuments({ userID: this._id });
-  return count;
-});
-
-// Pre-save middleware to update post count
-UserSchema.pre('save', async function(next) {
-  if (this.isModified('_count.posts')) {
-    const Post = mongoose.model('Post');
-    const count = await Post.countDocuments({ userID: this._id });
-    this.set('_count.posts', count);
+  if (this.isModified('username') && typeof this.username === 'string') {
+    this.username = this.username.toLowerCase();
   }
+  
+  if (this.isModified('email') && typeof this.email === 'string') {
+    this.email = this.email.toLowerCase();
+  }
+  
+  this.lastSeen = new Date();
+  
   next();
 });
 
-export const User = mongoose.model<IUser>('User', UserSchema);
+UserSchema.virtual('fullName').get(function() {
+  const name = this.name as { first?: string; last?: string } | undefined;
+  if (name?.first && name?.last) {
+    return `${name.first} ${name.last}`;
+  }
+  return name?.first || name?.last || this.username;
+});
+
+UserSchema.virtual('displayName').get(function() {
+  return this.fullName || this.username;
+});
+
+UserSchema.statics.findByUsername = function(username: string) {
+  return this.findOne({ username: username.toLowerCase() });
+};
+
+UserSchema.statics.findByEmail = function(email: string) {
+  return this.findOne({ email: email.toLowerCase() });
+};
+
+UserSchema.statics.searchUsers = function(query: string, limit: number = 20) {
+  return this.find(
+    { $text: { $search: query } },
+    { score: { $meta: "textScore" } }
+  )
+  .sort({ score: { $meta: "textScore" } })
+  .limit(limit)
+  .select('-password -refreshToken');
+};
+
+UserSchema.methods.updateOnlineStatus = function(isOnline: boolean) {
+  this.isOnline = isOnline;
+  this.lastSeen = new Date();
+  return this.save();
+};
+
+UserSchema.methods.addFollower = function(followerId: mongoose.Types.ObjectId) {
+  if (!this.followers.includes(followerId)) {
+    this.followers.push(followerId);
+    return this.save();
+  }
+  return Promise.resolve(this);
+};
+
+UserSchema.methods.removeFollower = function(followerId: mongoose.Types.ObjectId) {
+  this.followers = this.followers.filter((id: mongoose.Types.ObjectId) => !id.equals(followerId));
+  return this.save();
+};
+
+UserSchema.methods.followUser = function(userId: mongoose.Types.ObjectId) {
+  if (!this.following.includes(userId)) {
+    this.following.push(userId);
+    return this.save();
+  }
+  return Promise.resolve(this);
+};
+
+UserSchema.methods.unfollowUser = function(userId: mongoose.Types.ObjectId) {
+  this.following = this.following.filter((id: mongoose.Types.ObjectId) => !id.equals(userId));
+  return this.save();
+};
+
+const User = mongoose.model<IUser>("User", UserSchema);
+
 export default User;

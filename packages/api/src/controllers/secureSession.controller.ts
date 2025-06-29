@@ -1,7 +1,7 @@
-import { Request, Response } from 'express';
+import express, { Request, Response } from "express";
 import jwt from 'jsonwebtoken';
 import mongoose from 'mongoose';
-import { User } from '../models/User';
+import User from '../models/User';
 import { ISession } from '../models/Session';
 import Session from '../models/Session'; // Import the default export
 import bcrypt from 'bcrypt';

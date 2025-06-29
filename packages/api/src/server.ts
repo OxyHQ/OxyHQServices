@@ -1,80 +1,73 @@
 import express from "express";
 import http from "http";
-import mongoose from "mongoose";
 import { Server as SocketIOServer, Socket } from "socket.io";
+import jwt from 'jsonwebtoken';
+import dotenv from "dotenv";
+import path from 'path';
+
+// Import routes
 import profilesRouter from "./routes/profiles";
 import usersRouter from "./routes/users";
 import authRouter from "./routes/auth";
 import notificationsRouter from "./routes/notifications.routes";
 import sessionsRouter from "./routes/sessions";
 import secureSessionRouter from "./routes/secureSession";
-import dotenv from "dotenv";
 import fileRoutes from "./routes/files";
-import { User } from "./models/User";
 import searchRoutes from "./routes/search";
-import { rateLimiter, bruteForceProtection } from "./middleware/security";
 import privacyRoutes from "./routes/privacy";
 import analyticsRoutes from "./routes/analytics.routes";
 import paymentRoutes from './routes/payment.routes';
 import walletRoutes from './routes/wallet.routes';
 import karmaRoutes from './routes/karma.routes';
-import jwt from 'jsonwebtoken';
 
+// Import utilities and middleware
+import { logger, requestLogger } from "./utils/logger";
+import { cacheService } from "./utils/cache";
+import { connectToDatabase, checkDatabaseHealth } from "./utils/database";
+import { 
+  rateLimiter, 
+  bruteForceProtection, 
+  authRateLimiter,
+  fileUploadRateLimiter,
+  securityHeaders,
+  compressionMiddleware,
+  corsMiddleware,
+  errorHandler,
+  notFoundHandler
+} from "./middleware/security";
+import { authMiddleware, SimpleAuthRequest } from "./middleware/auth";
+
+// Load environment variables
 dotenv.config();
 
+// Create Express app
 const app = express();
 
-// Body parsing middleware - IMPORTANT: Add this before any routes
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// CORS middleware
-app.use((req, res, next) => {
-  const allowedOrigins = ["https://mention.earth", "https://homiio.com", "https://api.oxy.so", "https://authenticator.oxy.so", "https://noted.oxy.so/", "http://localhost:8081", "http://localhost:8082", "http://localhost:19006"];
-  const origin = req.headers.origin as string;
-
-  if (process.env.NODE_ENV !== 'production') {
-    // In development allow all origins
-    res.setHeader("Access-Control-Allow-Origin", origin || "*");
-  } else if (allowedOrigins.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  } else if (origin) {
-    // If origin is present but not in allowedOrigins, check if it's a subdomain we want to allow
-    const isDomainAllowed = allowedOrigins.some(allowed => 
-      (origin.endsWith('.oxy.so'))
-    );
-    if (isDomainAllowed) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-    }
-  }
-  
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Date, X-Api-Version");
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-
-  // Ensure OPTIONS requests always have CORS headers
-  if (req.method === "OPTIONS") {
-    // Prevent caching issues
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    return res.status(204).end();
-  }
-
-  next();
-});
-
-// Create server for local development and testing
+// Create HTTP server
 const server = http.createServer(app);
 
-// Setup Socket.IO
+// Setup Socket.IO with improved configuration
 const io = new SocketIOServer(server, {
   cors: {
-    origin: ["https://mention.earth", "https://homiio.com", "https://api.oxy.so", "http://localhost:8081", "http://localhost:8082", "http://localhost:19006", 
-    /\.homiio\.com$/, /\.mention\.earth$/, /\.oxy\.so$/],
+    origin: [
+      "https://mention.earth", 
+      "https://homiio.com", 
+      "https://api.oxy.so", 
+      "http://localhost:8081", 
+      "http://localhost:8082", 
+      "http://localhost:19006", 
+      /\.homiio\.com$/, 
+      /\.mention\.earth$/, 
+      /\.oxy\.so$/
+    ],
     methods: ["GET", "POST"],
     credentials: true
-  }
+  },
+  transports: ['websocket', 'polling'],
+  allowEIO3: true,
+  pingTimeout: 60000,
+  pingInterval: 25000,
+  maxHttpBufferSize: 1e6, // 1MB
 });
 
 // Store io instance in app for use in controllers
@@ -97,91 +90,127 @@ io.use((socket: AuthenticatedSocket, next) => {
   }
   
   try {
-    // Verify the token
     const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET || 'default_secret');
     socket.user = decoded as { id: string, [key: string]: any };
     next();
   } catch (error) {
-    console.error('Socket authentication error:', error);
+    logger.error('Socket authentication error:', error);
     next(new Error('Authentication error'));
   }
 });
 
 // Socket connection handling
 io.on('connection', (socket: AuthenticatedSocket) => {
-  console.log('User connected:', socket.id);
+  logger.info(`User connected: ${socket.id}`);
   
   if (socket.user?.id) {
-    // Join the user to their personal room for notifications
     socket.join(`user:${socket.user.id}`);
-    console.log(`User ${socket.user.id} joined their notification room`);
+    logger.info(`User ${socket.user.id} joined their notification room`);
   }
   
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    logger.info(`User disconnected: ${socket.id}`);
   });
 });
 
-// Special handling for file upload requests with proper auth
-app.use("/files", (req, res, next) => {
-  if (req.path === "/upload" && req.method === "POST") {
-    console.log("Incoming file upload request:", {
-      method: req.method,
-      contentType: req.headers["content-type"],
-      contentLength: req.headers["content-length"],
-      origin: req.headers.origin,
-      authorization: !!req.headers.authorization,
+// Apply security and performance middleware
+app.use(securityHeaders);
+app.use(compressionMiddleware);
+app.use(corsMiddleware);
+app.use(requestLogger);
+
+// Body parsing middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Serve static files (including favicon)
+app.use(express.static(path.join(__dirname, '../public')));
+
+// Chrome DevTools configuration (suppresses 404 warnings)
+app.get('/.well-known/appspecific/com.chrome.devtools.json', (req, res) => {
+  res.json({
+    "name": "OxyHQ API",
+    "description": "OxyHQ Backend API",
+    "version": "1.0.0",
+    "homepage_url": "https://oxy.so",
+    "api_url": "https://api.oxy.so",
+    "endpoints": {
+      "health": "https://api.oxy.so/health",
+      "docs": "https://api.oxy.so/",
+      "auth": "https://api.oxy.so/auth",
+      "users": "https://api.oxy.so/users"
+    }
+  });
+});
+
+// Health check endpoint
+app.get("/health", async (req, res) => {
+  try {
+    const dbHealth = await checkDatabaseHealth();
+    const cacheHealth = await cacheService.exists('health-check');
+    
+    const health = {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      database: dbHealth,
+      cache: cacheHealth,
+      environment: process.env.NODE_ENV || 'development'
+    };
+    
+    res.status(200).json(health);
+  } catch (error) {
+    logger.error('Health check failed:', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : 'Unknown error'
     });
   }
-  next();
 });
 
-// Register file routes with auth middleware
-app.use("/files", fileRoutes);
-
-// Apply rate limiting and security middleware to non-file upload routes
-app.use((req, res, next) => {
-  if (!req.path.startsWith("/files/upload")) {
-    rateLimiter(req, res, (err: any) => {
-      if (err) return next(err);
-      bruteForceProtection(req, res, next);
-    });
-  } else {
-    next();
-  }
-});
-
-// Body parsing middleware - already applied at the top level, so this is redundant
-// Removing the duplicate middleware registration
-
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI || "", {
-  autoIndex: true,
-  autoCreate: true,
-})
-.then(() => {
-  console.log("Connected to MongoDB successfully");
-})
-.catch((error) => {
-  console.error("MongoDB connection error:", error);
-  process.exit(1); // Exit on connection failure
-});
-
-// API Routes
+// API versioning and documentation
 app.get("/", async (req, res) => {
   try {
-    const usersCount = await User.countDocuments();
+    const dbHealth = await checkDatabaseHealth();
     res.json({
-      message: "Welcome to the API",
-      users: usersCount,
+      message: "Welcome to OxyHQ API",
+      version: "1.0.0",
+      status: "running",
+      database: dbHealth.status,
+      endpoints: {
+        auth: "/auth",
+        users: "/users", 
+        profiles: "/profiles",
+        sessions: "/sessions",
+        files: "/files",
+        search: "/search",
+        notifications: "/notifications",
+        payments: "/payments",
+        wallet: "/wallet",
+        analytics: "/analytics",
+        privacy: "/privacy"
+      },
+      documentation: "/docs"
     });
   } catch (error) {
-    console.error("Error in root endpoint:", error);
-    res.status(500).json({ message: "Error fetching stats", error: error instanceof Error ? error.message : String(error) });
+    logger.error("Error in root endpoint:", error);
+    res.status(500).json({ 
+      message: "Error fetching API info", 
+      error: error instanceof Error ? error.message : String(error) 
+    });
   }
 });
 
-app.use("/search", searchRoutes);
+// Apply rate limiting based on route type
+app.use('/auth', authRateLimiter);
+app.use('/files/upload', fileUploadRateLimiter);
+app.use(rateLimiter);
+app.use(bruteForceProtection);
+
+// API Routes with caching where appropriate
+app.use("/search", cacheService.cacheMiddleware(300), searchRoutes);
 app.use("/profiles", profilesRouter);
 app.use("/users", usersRouter);
 app.use("/auth", authRouter);
@@ -191,29 +220,103 @@ app.use("/privacy", privacyRoutes);
 app.use("/analytics", analyticsRoutes);
 app.use('/payments', paymentRoutes);
 app.use('/notifications', notificationsRouter);
-// app.use('/karma', karmaRoutes); // Temporarily disabled due to headers error
 app.use('/wallet', walletRoutes);
 
-// Global error handler
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({
-    message: 'Internal server error',
-    error: process.env.NODE_ENV === 'production' ? 'An unexpected error occurred' : err.message
-  });
+// File routes with special handling
+app.use("/files", (req, res, next) => {
+  if (req.path === "/upload" && req.method === "POST") {
+    logger.info("File upload request:", {
+      method: req.method,
+      contentType: req.headers["content-type"],
+      contentLength: req.headers["content-length"],
+      origin: req.headers.origin,
+      authorization: !!req.headers.authorization,
+    });
+  }
+  next();
 });
+app.use("/files", fileRoutes);
+
+// Error handling middleware
+app.use(errorHandler);
 
 // 404 handler for undefined routes
-app.use((req: express.Request, res: express.Response) => {
-  res.status(404).json({ message: 'Resource not found' });
-});
+app.use(notFoundHandler);
 
-// Only call listen if this module is run directly
+// Initialize database connection
+const initializeServer = async () => {
+  try {
+    // Connect to database
+    await connectToDatabase();
+    
+    // Initialize cache (optional for development)
+    try {
+      await cacheService.connect();
+      if (cacheService.isAvailable()) {
+        logger.info('Redis cache connected successfully');
+      }
+    } catch (error) {
+      // Only show warning if Redis was actually configured
+      if (process.env.REDIS_URL && process.env.REDIS_URL !== 'redis://localhost:6379') {
+        logger.warn('Redis cache not available, continuing without caching');
+        logger.warn('To enable caching, ensure REDIS_URL points to a valid Redis instance');
+      }
+    }
+    
+    // Set up periodic health checks
+    setInterval(async () => {
+      try {
+        await checkDatabaseHealth();
+      } catch (error) {
+        logger.error('Periodic health check failed:', error);
+      }
+    }, 30000); // Every 30 seconds
+    
+    logger.info('Server initialization completed successfully');
+  } catch (error) {
+    logger.error('Server initialization failed:', error);
+    process.exit(1);
+  }
+};
+
+// Start server
 const PORT = process.env.PORT || 3001;
 if (require.main === module) {
-  server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+  initializeServer().then(() => {
+    server.listen(PORT, () => {
+      logger.info(`🚀 Server running on port ${PORT}`);
+      logger.info(`📊 Health check available at http://localhost:${PORT}/health`);
+      logger.info(`🔗 API documentation at http://localhost:${PORT}/`);
+    });
   });
 }
+
+// Graceful shutdown
+const gracefulShutdown = async (signal: string) => {
+  logger.info(`Received ${signal}, starting graceful shutdown...`);
+  
+  server.close(async () => {
+    logger.info('HTTP server closed');
+    
+    try {
+      await cacheService.disconnect();
+      logger.info('Cache disconnected');
+      
+      process.exit(0);
+    } catch (error) {
+      logger.error('Error during shutdown:', error);
+      process.exit(1);
+    }
+  });
+  
+  // Force close after 30 seconds
+  setTimeout(() => {
+    logger.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 30000);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 export default server;

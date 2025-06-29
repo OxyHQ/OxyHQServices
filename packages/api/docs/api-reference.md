@@ -1,54 +1,62 @@
 # API Reference
 
-Complete reference for all Oxy API endpoints.
+Complete API documentation for the OxyHQ backend service.
 
 ## Base URL
 
-- **Development**: `http://localhost:3001`
-- **Production**: `https://your-api-domain.com`
+```
+http://localhost:3001
+```
 
 ## Authentication
 
-Protected endpoints require a JWT token in the Authorization header:
+Most endpoints require authentication using JWT tokens. Include the token in the Authorization header:
 
 ```
-Authorization: Bearer <jwt_token>
+Authorization: Bearer <access_token>
 ```
 
 ## Response Format
 
-All API responses follow this format:
+All API responses follow a consistent format:
 
-**Success Response:**
+### Success Response
 ```json
 {
   "success": true,
-  "data": { ... },
-  "message": "Optional success message"
+  "data": {
+    // Response data
+  },
+  "message": "Operation successful"
 }
 ```
 
-**Error Response:**
+### Error Response
 ```json
 {
   "success": false,
-  "error": "Error message",
-  "code": "ERROR_CODE"
+  "error": {
+    "code": "ERROR_CODE",
+    "message": "Error description",
+    "details": {}
+  }
 }
 ```
 
 ## Authentication Endpoints
 
-### POST /api/auth/register
+### POST /auth/signup
 
 Register a new user account.
 
 **Request Body:**
 ```json
 {
-  "username": "string",      // 3-30 characters, alphanumeric + underscore
-  "email": "string",         // Valid email address
-  "password": "string"       // Minimum 6 characters
+  "username": "johndoe",
+  "email": "john@example.com",
+  "password": "securePassword123",
+  "firstName": "John",
+  "lastName": "Doe"
 }
 ```
 
@@ -57,33 +65,32 @@ Register a new user account.
 {
   "success": true,
   "data": {
-    "accessToken": "jwt_string",
-    "refreshToken": "jwt_string",
     "user": {
-      "id": "user_id",
-      "username": "testuser",
-      "email": "test@example.com",
-      "createdAt": "2025-06-13T10:00:00.000Z"
+      "id": "507f1f77bcf86cd799439011",
+      "username": "johndoe",
+      "email": "john@example.com",
+      "firstName": "John",
+      "lastName": "Doe",
+      "createdAt": "2025-06-29T21:28:47.956Z"
+    },
+    "tokens": {
+      "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
     }
-  }
+  },
+  "message": "User registered successfully"
 }
 ```
 
-**Errors:**
-- `400` - Invalid input data
-- `409` - Username or email already exists
+### POST /auth/login
 
----
-
-### POST /api/auth/login
-
-Login with username/email and password.
+Authenticate user and get access tokens.
 
 **Request Body:**
 ```json
 {
-  "username": "string",      // Username or email
-  "password": "string"
+  "email": "john@example.com",
+  "password": "securePassword123"
 }
 ```
 
@@ -92,31 +99,30 @@ Login with username/email and password.
 {
   "success": true,
   "data": {
-    "accessToken": "jwt_string",
-    "refreshToken": "jwt_string",
     "user": {
-      "id": "user_id",
-      "username": "testuser",
-      "email": "test@example.com"
+      "id": "507f1f77bcf86cd799439011",
+      "username": "johndoe",
+      "email": "john@example.com",
+      "firstName": "John",
+      "lastName": "Doe"
+    },
+    "tokens": {
+      "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+      "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
     }
-  }
+  },
+  "message": "Login successful"
 }
 ```
 
-**Errors:**
-- `400` - Invalid input data
-- `401` - Invalid credentials
-
----
-
-### POST /api/auth/refresh
+### POST /auth/refresh
 
 Refresh access token using refresh token.
 
 **Request Body:**
 ```json
 {
-  "refreshToken": "jwt_string"
+  "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
 }
 ```
 
@@ -125,49 +131,16 @@ Refresh access token using refresh token.
 {
   "success": true,
   "data": {
-    "accessToken": "jwt_string"
-  }
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  },
+  "message": "Token refreshed successfully"
 }
 ```
 
-**Errors:**
-- `400` - Missing or invalid refresh token
-- `401` - Refresh token expired or invalid
+### POST /auth/logout
 
----
-
-### GET /api/auth/validate
-
-Validate current access token.
-
-**Headers:**
-```
-Authorization: Bearer <access_token>
-```
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "valid": true,
-    "user": {
-      "id": "user_id",
-      "username": "testuser",
-      "email": "test@example.com"
-    }
-  }
-}
-```
-
-**Errors:**
-- `401` - Invalid or expired token
-
----
-
-### POST /api/auth/logout
-
-Logout and invalidate refresh token.
+Logout user and invalidate tokens.
 
 **Headers:**
 ```
@@ -182,11 +155,50 @@ Authorization: Bearer <access_token>
 }
 ```
 
-## User Management Endpoints
+### POST /auth/forgot-password
 
-### GET /api/users/me
+Request password reset email.
 
-Get current user profile.
+**Request Body:**
+```json
+{
+  "email": "john@example.com"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Password reset email sent"
+}
+```
+
+### POST /auth/reset-password
+
+Reset password using reset token.
+
+**Request Body:**
+```json
+{
+  "token": "reset_token_here",
+  "newPassword": "newSecurePassword123"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Password reset successfully"
+}
+```
+
+## User Endpoints
+
+### GET /users/profile
+
+Get current user's profile.
 
 **Headers:**
 ```
@@ -199,28 +211,33 @@ Authorization: Bearer <access_token>
   "success": true,
   "data": {
     "user": {
-      "id": "user_id",
-      "username": "testuser",
-      "email": "test@example.com",
-      "preferences": {
-        "theme": "light",
-        "language": "en"
-      },
-      "createdAt": "2025-06-13T10:00:00.000Z",
-      "updatedAt": "2025-06-13T10:00:00.000Z"
+      "id": "507f1f77bcf86cd799439011",
+      "username": "johndoe",
+      "email": "john@example.com",
+      "firstName": "John",
+      "lastName": "Doe",
+      "bio": "Software developer",
+      "avatar": "https://example.com/avatar.jpg",
+      "location": "San Francisco, CA",
+      "website": "https://johndoe.com",
+      "isOnline": true,
+      "lastSeen": "2025-06-29T21:28:47.956Z",
+      "followers": 150,
+      "following": 75,
+      "createdAt": "2025-06-29T21:28:47.956Z",
+      "privacySettings": {
+        "isPrivateAccount": false,
+        "showEmail": true,
+        "showLocation": true
+      }
     }
   }
 }
 ```
 
-**Errors:**
-- `401` - Invalid or expired token
+### PUT /users/profile
 
----
-
-### PUT /api/users/me
-
-Update current user profile.
+Update user profile.
 
 **Headers:**
 ```
@@ -230,11 +247,11 @@ Authorization: Bearer <access_token>
 **Request Body:**
 ```json
 {
-  "email": "newemail@example.com",    // Optional
-  "preferences": {                    // Optional
-    "theme": "dark",
-    "language": "es"
-  }
+  "firstName": "John",
+  "lastName": "Doe",
+  "bio": "Updated bio",
+  "location": "New York, NY",
+  "website": "https://newwebsite.com"
 }
 ```
 
@@ -244,42 +261,25 @@ Authorization: Bearer <access_token>
   "success": true,
   "data": {
     "user": {
-      "id": "user_id",
-      "username": "testuser",
-      "email": "newemail@example.com",
-      "preferences": {
-        "theme": "dark",
-        "language": "es"
-      },
-      "updatedAt": "2025-06-13T11:00:00.000Z"
+      "id": "507f1f77bcf86cd799439011",
+      "firstName": "John",
+      "lastName": "Doe",
+      "bio": "Updated bio",
+      "location": "New York, NY",
+      "website": "https://newwebsite.com"
     }
-  }
+  },
+  "message": "Profile updated successfully"
 }
 ```
 
-**Errors:**
-- `400` - Invalid input data
-- `401` - Invalid or expired token
-- `409` - Email already in use
+### GET /users/:id
 
-## Session Management Endpoints
+Get user by ID.
 
-### POST /api/secure-session/login
-
-Create new device-based session.
-
-**Request Body:**
-```json
-{
-  "username": "string",
-  "password": "string",
-  "deviceFingerprint": "string",     // Unique device identifier
-  "deviceInfo": {                    // Optional device metadata
-    "userAgent": "string",
-    "platform": "string",
-    "deviceType": "mobile|desktop|tablet"
-  }
-}
+**Headers:**
+```
+Authorization: Bearer <access_token>
 ```
 
 **Response:**
@@ -287,47 +287,101 @@ Create new device-based session.
 {
   "success": true,
   "data": {
-    "sessionId": "session_id",
-    "accessToken": "jwt_string",
-    "refreshToken": "jwt_string",
-    "deviceId": "device_id",
     "user": {
-      "id": "user_id",
-      "username": "testuser",
-      "email": "test@example.com"
+      "id": "507f1f77bcf86cd799439011",
+      "username": "johndoe",
+      "firstName": "John",
+      "lastName": "Doe",
+      "bio": "Software developer",
+      "avatar": "https://example.com/avatar.jpg",
+      "location": "San Francisco, CA",
+      "website": "https://johndoe.com",
+      "isOnline": true,
+      "lastSeen": "2025-06-29T21:28:47.956Z",
+      "followers": 150,
+      "following": 75,
+      "createdAt": "2025-06-29T21:28:47.956Z",
+      "isFollowing": true
     }
   }
 }
 ```
 
----
+### GET /users/search
 
-### GET /api/secure-session/token/:sessionId
+Search users.
 
-Get access token for specific session.
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
 
-**Parameters:**
-- `sessionId`: Active session ID
+**Query Parameters:**
+- `q` (string): Search query
+- `limit` (number): Number of results (default: 20)
+- `offset` (number): Number of results to skip (default: 0)
 
 **Response:**
 ```json
 {
   "success": true,
   "data": {
-    "accessToken": "jwt_string",
-    "expiresAt": "2025-06-13T11:00:00.000Z"
+    "users": [
+      {
+        "id": "507f1f77bcf86cd799439011",
+        "username": "johndoe",
+        "firstName": "John",
+        "lastName": "Doe",
+        "avatar": "https://example.com/avatar.jpg",
+        "isFollowing": false
+      }
+    ],
+    "total": 1,
+    "limit": 20,
+    "offset": 0
   }
 }
 ```
 
-**Errors:**
-- `404` - Session not found or expired
+### POST /users/follow/:id
 
----
+Follow a user.
 
-### GET /api/secure-session/sessions
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
 
-Get all active sessions for current user.
+**Response:**
+```json
+{
+  "success": true,
+  "message": "User followed successfully"
+}
+```
+
+### DELETE /users/follow/:id
+
+Unfollow a user.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "User unfollowed successfully"
+}
+```
+
+## Session Endpoints
+
+### GET /sessions
+
+Get user's active sessions.
 
 **Headers:**
 ```
@@ -341,30 +395,25 @@ Authorization: Bearer <access_token>
   "data": {
     "sessions": [
       {
-        "sessionId": "session_id",
+        "id": "507f1f77bcf86cd799439011",
+        "deviceId": "device_123",
         "deviceInfo": {
-          "userAgent": "Mozilla/5.0...",
-          "platform": "Windows",
-          "deviceType": "desktop",
-          "lastActive": "2025-06-13T10:30:00.000Z"
+          "browser": "Chrome",
+          "os": "Windows",
+          "ip": "192.168.1.1"
         },
         "isActive": true,
-        "isCurrent": true,
-        "createdAt": "2025-06-13T08:00:00.000Z"
+        "lastActivity": "2025-06-29T21:28:47.956Z",
+        "createdAt": "2025-06-29T21:28:47.956Z"
       }
     ]
   }
 }
 ```
 
----
+### DELETE /sessions/:id
 
-### DELETE /api/secure-session/logout/:sessionId
-
-Logout from specific session.
-
-**Parameters:**
-- `sessionId`: Session ID to logout
+Terminate a specific session.
 
 **Headers:**
 ```
@@ -375,15 +424,49 @@ Authorization: Bearer <access_token>
 ```json
 {
   "success": true,
-  "message": "Session logged out successfully"
+  "message": "Session terminated successfully"
 }
 ```
 
----
+## File Endpoints
 
-### DELETE /api/secure-session/logout-all
+### POST /files/upload
 
-Logout from all sessions except current.
+Upload a file.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+Content-Type: multipart/form-data
+```
+
+**Form Data:**
+- `file`: File to upload
+- `type` (optional): File type category
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "file": {
+      "id": "507f1f77bcf86cd799439011",
+      "filename": "image.jpg",
+      "originalName": "photo.jpg",
+      "mimeType": "image/jpeg",
+      "size": 1024000,
+      "url": "https://cdn.example.com/files/image.jpg",
+      "uploadedBy": "507f1f77bcf86cd799439011",
+      "createdAt": "2025-06-29T21:28:47.956Z"
+    }
+  },
+  "message": "File uploaded successfully"
+}
+```
+
+### GET /files/:id
+
+Get file information.
 
 **Headers:**
 ```
@@ -395,9 +478,332 @@ Authorization: Bearer <access_token>
 {
   "success": true,
   "data": {
-    "loggedOutSessions": 3
+    "file": {
+      "id": "507f1f77bcf86cd799439011",
+      "filename": "image.jpg",
+      "originalName": "photo.jpg",
+      "mimeType": "image/jpeg",
+      "size": 1024000,
+      "url": "https://cdn.example.com/files/image.jpg",
+      "uploadedBy": "507f1f77bcf86cd799439011",
+      "createdAt": "2025-06-29T21:28:47.956Z"
+    }
+  }
+}
+```
+
+### DELETE /files/:id
+
+Delete a file.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "File deleted successfully"
+}
+```
+
+## Search Endpoints
+
+### GET /search/users
+
+Search users with advanced filters.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Query Parameters:**
+- `q` (string): Search query
+- `location` (string): Filter by location
+- `limit` (number): Number of results (default: 20)
+- `offset` (number): Number of results to skip (default: 0)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "users": [
+      {
+        "id": "507f1f77bcf86cd799439011",
+        "username": "johndoe",
+        "firstName": "John",
+        "lastName": "Doe",
+        "avatar": "https://example.com/avatar.jpg",
+        "location": "San Francisco, CA",
+        "isFollowing": false
+      }
+    ],
+    "total": 1,
+    "limit": 20,
+    "offset": 0
+  }
+}
+```
+
+### GET /search/global
+
+Global search across all content types.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Query Parameters:**
+- `q` (string): Search query
+- `type` (string): Content type filter (users, files, etc.)
+- `limit` (number): Number of results (default: 20)
+- `offset` (number): Number of results to skip (default: 0)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "results": {
+      "users": [
+        {
+          "id": "507f1f77bcf86cd799439011",
+          "username": "johndoe",
+          "firstName": "John",
+          "lastName": "Doe",
+          "avatar": "https://example.com/avatar.jpg"
+        }
+      ],
+      "files": [
+        {
+          "id": "507f1f77bcf86cd799439012",
+          "filename": "document.pdf",
+          "url": "https://cdn.example.com/files/document.pdf"
+        }
+      ]
+    },
+    "total": 2,
+    "limit": 20,
+    "offset": 0
+  }
+}
+```
+
+## Analytics Endpoints
+
+### GET /analytics/overview
+
+Get analytics overview.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "overview": {
+      "totalUsers": 1500,
+      "activeUsers": 850,
+      "totalFiles": 2500,
+      "totalSessions": 3200,
+      "growthRate": 15.5
+    }
+  }
+}
+```
+
+### GET /analytics/performance
+
+Get performance metrics.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "performance": {
+      "averageResponseTime": 45,
+      "requestsPerSecond": 1250,
+      "errorRate": 0.5,
+      "uptime": 99.9,
+      "memoryUsage": 512,
+      "cpuUsage": 25.5
+    }
+  }
+}
+```
+
+## Notification Endpoints
+
+### GET /notifications
+
+Get user notifications.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Query Parameters:**
+- `limit` (number): Number of results (default: 20)
+- `offset` (number): Number of results to skip (default: 0)
+- `unreadOnly` (boolean): Show only unread notifications (default: false)
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "notifications": [
+      {
+        "id": "507f1f77bcf86cd799439011",
+        "type": "follow",
+        "title": "New Follower",
+        "message": "johndoe started following you",
+        "isRead": false,
+        "actorId": "507f1f77bcf86cd799439012",
+        "entityId": "507f1f77bcf86cd799439011",
+        "createdAt": "2025-06-29T21:28:47.956Z"
+      }
+    ],
+    "total": 1,
+    "unreadCount": 5
+  }
+}
+```
+
+### PUT /notifications/:id/read
+
+Mark notification as read.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Notification marked as read"
+}
+```
+
+## Privacy Endpoints
+
+### GET /privacy/settings
+
+Get user privacy settings.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "privacySettings": {
+      "isPrivateAccount": false,
+      "showEmail": true,
+      "showLocation": true,
+      "showOnlineStatus": true,
+      "allowFollowRequests": true,
+      "showFollowers": true,
+      "showFollowing": true
+    }
+  }
+}
+```
+
+### PUT /privacy/settings
+
+Update privacy settings.
+
+**Headers:**
+```
+Authorization: Bearer <access_token>
+```
+
+**Request Body:**
+```json
+{
+  "isPrivateAccount": true,
+  "showEmail": false,
+  "showLocation": true,
+  "showOnlineStatus": false,
+  "allowFollowRequests": true,
+  "showFollowers": true,
+  "showFollowing": false
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "privacySettings": {
+      "isPrivateAccount": true,
+      "showEmail": false,
+      "showLocation": true,
+      "showOnlineStatus": false,
+      "allowFollowRequests": true,
+      "showFollowers": true,
+      "showFollowing": false
+    }
   },
-  "message": "All other sessions logged out successfully"
+  "message": "Privacy settings updated successfully"
+}
+```
+
+## Health & Monitoring
+
+### GET /health
+
+Get system health status.
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-06-29T21:28:47.956Z",
+  "uptime": 19.338726765,
+  "memory": {
+    "rss": 542404608,
+    "heapTotal": 447340544,
+    "heapUsed": 405675736,
+    "external": 26027986,
+    "arrayBuffers": 23049480
+  },
+  "database": {
+    "status": "healthy",
+    "isConnected": true,
+    "metrics": {
+      "queryCount": 0,
+      "slowQueries": [],
+      "connectionErrors": 0,
+      "lastQueryTime": "2025-06-29T21:28:34.870Z"
+    }
+  },
+  "cache": false,
+  "environment": "development"
 }
 ```
 
@@ -405,38 +811,45 @@ Authorization: Bearer <access_token>
 
 | Code | Description |
 |------|-------------|
+| `UNAUTHORIZED` | Authentication required |
+| `FORBIDDEN` | Insufficient permissions |
+| `NOT_FOUND` | Resource not found |
 | `VALIDATION_ERROR` | Invalid input data |
-| `AUTHENTICATION_FAILED` | Invalid credentials |
-| `TOKEN_EXPIRED` | JWT token has expired |
-| `TOKEN_INVALID` | JWT token is malformed or invalid |
-| `USER_NOT_FOUND` | User does not exist |
-| `USER_ALREADY_EXISTS` | Username or email already taken |
-| `SESSION_NOT_FOUND` | Session does not exist or expired |
 | `RATE_LIMIT_EXCEEDED` | Too many requests |
 | `INTERNAL_ERROR` | Server error |
+| `DUPLICATE_ENTRY` | Resource already exists |
+| `INVALID_TOKEN` | Invalid or expired token |
 
 ## Rate Limiting
 
-Default rate limits:
-- **Authentication endpoints**: 5 requests per minute per IP
-- **General endpoints**: 100 requests per 15 minutes per IP
-- **Session endpoints**: 20 requests per minute per user
+Different endpoints have different rate limits:
 
-Rate limit headers:
+- **General endpoints**: 1000 requests per 15 minutes
+- **Authentication endpoints**: 5 requests per 15 minutes
+- **File upload endpoints**: 50 requests per hour
+
+Rate limit headers are included in responses:
 ```
-X-RateLimit-Limit: 100
-X-RateLimit-Remaining: 99
-X-RateLimit-Reset: 1623456789
+X-RateLimit-Limit: 1000
+X-RateLimit-Remaining: 999
+X-RateLimit-Reset: 1640995200
 ```
 
-## Status Codes
+## Pagination
 
-- `200` - OK
-- `201` - Created
-- `400` - Bad Request
-- `401` - Unauthorized
-- `403` - Forbidden
-- `404` - Not Found
-- `409` - Conflict
-- `429` - Too Many Requests
-- `500` - Internal Server Error
+List endpoints support pagination using `limit` and `offset` parameters:
+
+```
+GET /users/search?limit=20&offset=40
+```
+
+Response includes pagination metadata:
+```json
+{
+  "data": [...],
+  "total": 100,
+  "limit": 20,
+  "offset": 40,
+  "hasMore": true
+}
+``` 

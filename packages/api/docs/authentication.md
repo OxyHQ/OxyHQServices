@@ -1,374 +1,545 @@
-# Authentication System
+# Authentication Guide
 
-Complete guide to the JWT-based authentication system in the Oxy API.
+Comprehensive guide to authentication and authorization in the OxyHQ API.
 
 ## Overview
 
-The Oxy API uses JSON Web Tokens (JWT) for stateless authentication with the following features:
+The OxyHQ API uses JWT (JSON Web Tokens) for authentication with a dual-token system:
+- **Access Token**: Short-lived token for API requests
+- **Refresh Token**: Long-lived token for obtaining new access tokens
 
-- **Access tokens** for API requests (short-lived, 15 minutes)
-- **Refresh tokens** for obtaining new access tokens (long-lived, 7 days)
-- **Device-based sessions** for isolating authentication per device
-- **Automatic token refresh** to maintain seamless user experience
+## Authentication Flow
 
-## Token Flow
+### 1. User Registration
 
-```
-1. User Login
-   ├── Validate credentials
-   ├── Generate access token (15 min)
-   ├── Generate refresh token (7 days)
-   └── Return both tokens
-
-2. API Requests
-   ├── Include access token in Authorization header
-   ├── Server validates token
-   └── Grant/deny access
-
-3. Token Refresh
-   ├── Access token expires
-   ├── Client sends refresh token
-   ├── Server validates refresh token
-   └── Return new access token
-
-4. Logout
-   ├── Invalidate refresh token
-   └── Clear client-side tokens
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Database
+    
+    Client->>API: POST /auth/signup
+    API->>Database: Create user
+    Database-->>API: User created
+    API-->>Client: Access + Refresh tokens
 ```
 
-## JWT Token Structure
+### 2. User Login
 
-### Access Token Payload
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Database
+    
+    Client->>API: POST /auth/login
+    API->>Database: Verify credentials
+    Database-->>API: User verified
+    API-->>Client: Access + Refresh tokens
+```
+
+### 3. Token Refresh
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Database
+    
+    Client->>API: POST /auth/refresh
+    API->>Database: Validate refresh token
+    Database-->>API: Token valid
+    API-->>Client: New access + refresh tokens
+```
+
+## Token Structure
+
+### Access Token
 
 ```json
 {
-  "id": "user_id",
-  "userId": "user_id",        // Compatibility field
-  "username": "testuser",
-  "email": "test@example.com",
-  "type": "access",
-  "iat": 1623456789,
-  "exp": 1623457689
-}
-```
-
-### Refresh Token Payload
-
-```json
-{
-  "id": "user_id",
-  "userId": "user_id",        // Compatibility field
-  "type": "refresh",
-  "iat": 1623456789,
-  "exp": 1624061589
-}
-```
-
-## Implementation Details
-
-### Token Generation
-
-```typescript
-// src/controllers/secureSession.controller.ts
-const generateTokens = (user: User) => {
-  const payload = {
-    id: user._id.toString(),
-    userId: user._id.toString(),  // Compatibility
-    username: user.username,
-    email: user.email
-  };
-
-  const accessToken = jwt.sign(
-    { ...payload, type: 'access' },
-    process.env.ACCESS_TOKEN_SECRET!,
-    { expiresIn: '15m' }
-  );
-
-  const refreshToken = jwt.sign(
-    { ...payload, type: 'refresh' },
-    process.env.REFRESH_TOKEN_SECRET!,
-    { expiresIn: '7d' }
-  );
-
-  return { accessToken, refreshToken };
-};
-```
-
-### Token Validation
-
-```typescript
-// Middleware for protecting routes
-export const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
-  const token = authHeader?.split(' ')[1];
-
-  if (!token) {
-    return res.status(401).json({ error: 'Access token required' });
-  }
-
-  try {
-    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as JwtPayload;
-    req.userId = decoded.id || decoded.userId;
-    req.user = decoded;
-    next();
-  } catch (error) {
-    return res.status(401).json({ error: 'Invalid or expired token' });
-  }
-};
-```
-
-## Session Management
-
-### Device-Based Sessions
-
-Each login creates a unique session associated with a device fingerprint:
-
-```typescript
-interface SessionData {
-  sessionId: string;
-  userId: string;
-  deviceFingerprint: string;
-  deviceInfo: {
-    userAgent: string;
-    platform: string;
-    lastActive: Date;
-  };
-  accessToken: string;
-  refreshToken: string;
-  createdAt: Date;
-  expiresAt: Date;
-}
-```
-
-### Session Storage
-
-Sessions are stored in MongoDB with automatic cleanup:
-
-```javascript
-// MongoDB collection: sessions
-{
-  _id: ObjectId,
-  sessionId: String,
-  userId: ObjectId,
-  deviceFingerprint: String,
-  deviceInfo: {
-    userAgent: String,
-    platform: String,
-    lastActive: Date
+  "header": {
+    "alg": "HS256",
+    "typ": "JWT"
   },
-  refreshToken: String,
-  createdAt: Date,
-  expiresAt: Date,  // TTL index for automatic cleanup
-  isActive: Boolean
+  "payload": {
+    "userId": "507f1f77bcf86cd799439011",
+    "sessionId": "507f1f77bcf86cd799439012",
+    "iat": 1640995200,
+    "exp": 1640998800,
+    "type": "access"
+  }
 }
 ```
 
-## Security Considerations
+### Refresh Token
 
-### Token Security
-
-1. **Short-lived access tokens** (15 minutes) limit exposure window
-2. **Secure refresh tokens** stored separately with longer expiry
-3. **Different secrets** for access and refresh tokens
-4. **Token type validation** prevents token misuse
-
-### Environment Variables
-
-```env
-# Strong, random secrets (minimum 32 characters)
-ACCESS_TOKEN_SECRET=64_character_random_string_here
-REFRESH_TOKEN_SECRET=different_64_character_random_string_here
-
-# MongoDB connection with authentication
-MONGODB_URI=mongodb://username:password@host:port/database
+```json
+{
+  "header": {
+    "alg": "HS256",
+    "typ": "JWT"
+  },
+  "payload": {
+    "userId": "507f1f77bcf86cd799439011",
+    "sessionId": "507f1f77bcf86cd799439012",
+    "iat": 1640995200,
+    "exp": 1643673600,
+    "type": "refresh"
+  }
+}
 ```
 
-### Best Practices
+## Token Configuration
 
-1. **Never log tokens** in server logs
-2. **Use HTTPS** in production
-3. **Validate token type** in middleware
-4. **Implement rate limiting** on auth endpoints
-5. **Monitor failed auth attempts**
+### Access Token
+- **Lifetime**: 1 hour (3600 seconds)
+- **Algorithm**: HS256
+- **Secret**: Environment variable `ACCESS_TOKEN_SECRET`
 
-## Client Integration
+### Refresh Token
+- **Lifetime**: 30 days (2592000 seconds)
+- **Algorithm**: HS256
+- **Secret**: Environment variable `REFRESH_TOKEN_SECRET`
 
-### Storing Tokens
+## Security Features
 
-**Frontend (Browser):**
-```javascript
-// Store in memory or sessionStorage (more secure)
-sessionStorage.setItem('access_token', accessToken);
-sessionStorage.setItem('refresh_token', refreshToken);
+### 1. Token Rotation
 
-// Avoid localStorage for sensitive tokens
+Refresh tokens are rotated on each use to prevent token reuse attacks:
+
+```typescript
+// When refreshing tokens
+const newRefreshToken = generateRefreshToken(userId, sessionId);
+await invalidateRefreshToken(oldRefreshToken);
 ```
 
-**React Native:**
+### 2. Session Management
+
+Each token is tied to a session that can be:
+- **Active**: Token is valid
+- **Expired**: Token has expired
+- **Revoked**: Token was manually invalidated
+
+### 3. Rate Limiting
+
+Authentication endpoints have stricter rate limits:
+- **Login**: 5 attempts per 15 minutes
+- **Signup**: 3 attempts per 15 minutes
+- **Password Reset**: 3 attempts per hour
+
+### 4. Brute Force Protection
+
+Progressive delays for failed authentication attempts:
+- 1st failure: No delay
+- 2nd failure: 1 second delay
+- 3rd failure: 2 second delay
+- 4th+ failure: 5 second delay
+
+## Implementation Examples
+
+### Client-Side Token Management
+
 ```javascript
-import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// Secure storage for mobile apps
-await AsyncStorage.setItem('access_token', accessToken);
-await AsyncStorage.setItem('refresh_token', refreshToken);
-```
-
-### Making Authenticated Requests
-
-```javascript
-const makeAuthenticatedRequest = async (url, options = {}) => {
-  const token = getStoredAccessToken();
-  
-  const response = await fetch(url, {
-    ...options,
-    headers: {
-      'Authorization': `Bearer ${token}`,
-      'Content-Type': 'application/json',
-      ...options.headers
-    }
-  });
-
-  if (response.status === 401) {
-    // Token expired, try refresh
-    const refreshed = await refreshAccessToken();
-    if (refreshed) {
-      // Retry with new token
-      return makeAuthenticatedRequest(url, options);
-    } else {
-      // Refresh failed, redirect to login
-      redirectToLogin();
-    }
+class AuthManager {
+  constructor() {
+    this.accessToken = localStorage.getItem('accessToken');
+    this.refreshToken = localStorage.getItem('refreshToken');
   }
 
-  return response;
-};
-```
-
-### Automatic Token Refresh
-
-```javascript
-const refreshAccessToken = async () => {
-  const refreshToken = getStoredRefreshToken();
-  
-  try {
-    const response = await fetch('/api/auth/refresh', {
+  async login(email, password) {
+    const response = await fetch('/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refreshToken })
+      body: JSON.stringify({ email, password })
     });
 
-    if (response.ok) {
-      const { accessToken } = await response.json();
-      storeAccessToken(accessToken);
-      return true;
+    const data = await response.json();
+    
+    if (data.success) {
+      this.setTokens(data.data.tokens);
+      return data.data.user;
     }
-  } catch (error) {
-    console.error('Token refresh failed:', error);
+    
+    throw new Error(data.error.message);
   }
 
-  return false;
+  async refreshTokens() {
+    const response = await fetch('/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken: this.refreshToken })
+    });
+
+    const data = await response.json();
+    
+    if (data.success) {
+      this.setTokens(data.data);
+      return data.data.accessToken;
+    }
+    
+    throw new Error(data.error.message);
+  }
+
+  setTokens(tokens) {
+    this.accessToken = tokens.accessToken;
+    this.refreshToken = tokens.refreshToken;
+    
+    localStorage.setItem('accessToken', tokens.accessToken);
+    localStorage.setItem('refreshToken', tokens.refreshToken);
+  }
+
+  async makeAuthenticatedRequest(url, options = {}) {
+    if (!this.accessToken) {
+      throw new Error('No access token available');
+    }
+
+    const response = await fetch(url, {
+      ...options,
+      headers: {
+        ...options.headers,
+        'Authorization': `Bearer ${this.accessToken}`
+      }
+    });
+
+    if (response.status === 401) {
+      // Token expired, try to refresh
+      try {
+        await this.refreshTokens();
+        
+        // Retry request with new token
+        return fetch(url, {
+          ...options,
+          headers: {
+            ...options.headers,
+            'Authorization': `Bearer ${this.accessToken}`
+          }
+        });
+      } catch (error) {
+        // Refresh failed, redirect to login
+        this.logout();
+        throw error;
+      }
+    }
+
+    return response;
+  }
+
+  logout() {
+    this.accessToken = null;
+    this.refreshToken = null;
+    localStorage.removeItem('accessToken');
+    localStorage.removeItem('refreshToken');
+  }
+}
+```
+
+### Server-Side Authentication Middleware
+
+```typescript
+import jwt from 'jsonwebtoken';
+import { Request, Response, NextFunction } from 'express';
+
+interface AuthenticatedRequest extends Request {
+  user?: {
+    id: string;
+    sessionId: string;
+  };
+}
+
+export const authenticateToken = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+) => {
+  const authHeader = req.headers.authorization;
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: 'UNAUTHORIZED',
+        message: 'Access token required'
+      }
+    });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as any;
+    
+    // Verify session is still active
+    const session = await Session.findById(decoded.sessionId);
+    if (!session || !session.isActive) {
+      return res.status(401).json({
+        success: false,
+        error: {
+          code: 'INVALID_TOKEN',
+          message: 'Session expired or invalid'
+        }
+      });
+    }
+
+    req.user = {
+      id: decoded.userId,
+      sessionId: decoded.sessionId
+    };
+    
+    next();
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      error: {
+        code: 'INVALID_TOKEN',
+        message: 'Invalid or expired token'
+      }
+    });
+  }
 };
 ```
 
-## Multi-User Support
+## Password Security
 
-### Session Isolation
+### Password Requirements
 
-Each user can have multiple active sessions across different devices:
+- **Minimum length**: 8 characters
+- **Maximum length**: 128 characters
+- **Must contain**: At least one uppercase letter, one lowercase letter, one number
+- **Recommended**: Include special characters
 
-```javascript
-// User can be logged in on:
-// - Web browser (session_1)
-// - Mobile app (session_2)  
-// - Another device (session_3)
+### Password Hashing
 
-// Each session has independent tokens and can be logged out individually
+Passwords are hashed using bcrypt with:
+- **Salt rounds**: 12
+- **Algorithm**: bcrypt
+
+```typescript
+import bcrypt from 'bcrypt';
+
+const hashPassword = async (password: string): Promise<string> => {
+  return bcrypt.hash(password, 12);
+};
+
+const verifyPassword = async (password: string, hash: string): Promise<boolean> => {
+  return bcrypt.compare(password, hash);
+};
 ```
 
-### Session Management API
+## Session Security
 
-```javascript
-// Get all user sessions
-GET /api/secure-session/sessions
+### Session Properties
 
-// Logout specific session
-DELETE /api/secure-session/logout/:sessionId
+Each session includes:
+- **Device ID**: Unique identifier for the device
+- **Device Info**: Browser, OS, IP address
+- **Last Activity**: Timestamp of last activity
+- **Expiration**: Automatic expiration after 30 days of inactivity
 
-// Logout all other sessions
-DELETE /api/secure-session/logout-all
+### Session Management
+
+```typescript
+// Create new session
+const session = new Session({
+  userId: user.id,
+  deviceId: generateDeviceId(),
+  deviceInfo: {
+    browser: req.headers['user-agent'],
+    os: detectOS(req.headers['user-agent']),
+    ip: req.ip
+  },
+  isActive: true,
+  expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000) // 30 days
+});
+
+// Update last activity
+session.lastActivity = new Date();
+await session.save();
+
+// Invalidate session
+session.isActive = false;
+await session.save();
 ```
 
 ## Error Handling
 
-### Common Auth Errors
+### Common Authentication Errors
 
-| Error | Status | Description | Action |
-|-------|--------|-------------|---------|
-| `TOKEN_MISSING` | 401 | No token provided | Redirect to login |
-| `TOKEN_INVALID` | 401 | Malformed token | Clear tokens, redirect to login |
-| `TOKEN_EXPIRED` | 401 | Access token expired | Try refresh token |
-| `REFRESH_EXPIRED` | 401 | Refresh token expired | Redirect to login |
-| `USER_NOT_FOUND` | 401 | User doesn't exist | Clear tokens, redirect to login |
+| Error Code | HTTP Status | Description |
+|------------|-------------|-------------|
+| `UNAUTHORIZED` | 401 | No token provided |
+| `INVALID_TOKEN` | 401 | Token is invalid or expired |
+| `INVALID_CREDENTIALS` | 401 | Wrong email/password |
+| `ACCOUNT_LOCKED` | 423 | Account temporarily locked |
+| `EMAIL_NOT_VERIFIED` | 403 | Email not verified |
+| `RATE_LIMIT_EXCEEDED` | 429 | Too many authentication attempts |
 
 ### Error Response Format
 
 ```json
 {
   "success": false,
-  "error": "Token expired",
-  "code": "TOKEN_EXPIRED"
+  "error": {
+    "code": "INVALID_CREDENTIALS",
+    "message": "Invalid email or password",
+    "details": {
+      "attemptsRemaining": 4,
+      "lockoutTime": null
+    }
+  }
 }
+```
+
+## Best Practices
+
+### 1. Token Storage
+
+**Client-side:**
+- Store tokens in memory when possible
+- Use secure storage (localStorage/sessionStorage) as fallback
+- Never store tokens in cookies (XSS vulnerability)
+
+**Server-side:**
+- Store refresh tokens in database
+- Implement token blacklisting for logout
+- Use secure session management
+
+### 2. Token Transmission
+
+- Always use HTTPS in production
+- Include tokens in Authorization header
+- Never include tokens in URL parameters
+- Implement token rotation
+
+### 3. Security Headers
+
+```typescript
+// Security headers middleware
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  }
+}));
+```
+
+### 4. Rate Limiting
+
+```typescript
+// Rate limiting for authentication endpoints
+const authRateLimit = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 requests per window
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Too many authentication attempts'
+    }
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 ```
 
 ## Testing Authentication
 
 ### Unit Tests
 
-```javascript
+```typescript
 describe('Authentication', () => {
-  test('should generate valid JWT tokens', () => {
-    const tokens = generateTokens(mockUser);
+  test('should create valid JWT tokens', async () => {
+    const user = await createTestUser();
+    const tokens = await generateTokens(user.id, 'session123');
     
-    expect(tokens.accessToken).toBeTruthy();
-    expect(tokens.refreshToken).toBeTruthy();
+    expect(tokens.accessToken).toBeDefined();
+    expect(tokens.refreshToken).toBeDefined();
     
-    const decoded = jwt.verify(tokens.accessToken, ACCESS_TOKEN_SECRET);
-    expect(decoded.id).toBe(mockUser._id);
+    const decoded = jwt.verify(tokens.accessToken, process.env.ACCESS_TOKEN_SECRET!);
+    expect(decoded.userId).toBe(user.id);
   });
 
-  test('should validate access tokens', () => {
-    const token = generateAccessToken(mockUser);
-    const decoded = validateAccessToken(token);
+  test('should validate password correctly', async () => {
+    const password = 'SecurePassword123';
+    const hash = await hashPassword(password);
     
-    expect(decoded.id).toBe(mockUser._id);
-    expect(decoded.type).toBe('access');
+    const isValid = await verifyPassword(password, hash);
+    expect(isValid).toBe(true);
   });
 });
 ```
 
 ### Integration Tests
 
-```javascript
-describe('Auth API', () => {
-  test('should login and return tokens', async () => {
+```typescript
+describe('Auth Endpoints', () => {
+  test('POST /auth/login should return tokens', async () => {
+    const user = await createTestUser();
+    
     const response = await request(app)
-      .post('/api/auth/login')
-      .send({ username: 'test', password: 'password' });
-
+      .post('/auth/login')
+      .send({
+        email: user.email,
+        password: 'testPassword123'
+      });
+    
     expect(response.status).toBe(200);
-    expect(response.body.data.accessToken).toBeTruthy();
-    expect(response.body.data.refreshToken).toBeTruthy();
-  });
-
-  test('should protect routes with middleware', async () => {
-    const response = await request(app)
-      .get('/api/users/me')
-      .set('Authorization', `Bearer ${validToken}`);
-
-    expect(response.status).toBe(200);
-    expect(response.body.data.user).toBeTruthy();
+    expect(response.body.success).toBe(true);
+    expect(response.body.data.tokens).toBeDefined();
   });
 });
 ```
 
-This authentication system provides a secure, scalable foundation for building authenticated applications with proper token management and session isolation.
+## Troubleshooting
+
+### Common Issues
+
+1. **Token Expired**
+   - Implement automatic token refresh
+   - Check token expiration before requests
+   - Handle 401 responses gracefully
+
+2. **Session Invalid**
+   - Verify session exists in database
+   - Check session isActive status
+   - Implement session cleanup
+
+3. **Rate Limiting**
+   - Implement exponential backoff
+   - Show user-friendly error messages
+   - Track remaining attempts
+
+4. **CORS Issues**
+   - Configure CORS properly
+   - Include credentials in requests
+   - Handle preflight requests
+
+### Debug Mode
+
+Enable debug logging for authentication:
+
+```typescript
+// Enable debug mode
+process.env.AUTH_DEBUG = 'true';
+
+// Debug middleware
+const debugAuth = (req: Request, res: Response, next: NextFunction) => {
+  if (process.env.AUTH_DEBUG === 'true') {
+    console.log('Auth Debug:', {
+      path: req.path,
+      method: req.method,
+      hasToken: !!req.headers.authorization,
+      userAgent: req.headers['user-agent']
+    });
+  }
+  next();
+};
+``` 

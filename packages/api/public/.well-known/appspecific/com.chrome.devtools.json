@@ -1,0 +1,13 @@
+{
+    "name": "OxyHQ API",
+    "description": "OxyHQ Backend API",
+    "version": "1.0.0",
+    "devtools_page": "devtools.html",
+    "permissions": [
+        "http://localhost:3001/*",
+        "https://api.oxyhq.com/*"
+    ],
+    "content_security_policy": {
+        "extension_pages": "script-src 'self'; object-src 'self'"
+    }
+}

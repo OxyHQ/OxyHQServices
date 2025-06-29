@@ -49,10 +49,10 @@ describe('AccountSettingsScreen', () => {
     const { getByText, getByTestId } = render(
       <AccountSettingsScreen {...defaultProps} />
     );
-    
+
     // Check if the screen title is rendered
     expect(getByText('Account Settings')).toBeTruthy();
-    
+
     // Check if profile form is rendered by default
     expect(getByTestId('username-input')).toBeTruthy();
     expect(getByTestId('email-input')).toBeTruthy();
@@ -63,20 +63,20 @@ describe('AccountSettingsScreen', () => {
     const { getByText, queryByTestId } = render(
       <AccountSettingsScreen {...defaultProps} />
     );
-    
+
     // Initially on profile tab
     expect(queryByTestId('username-input')).toBeTruthy();
-    
+
     // Switch to password tab
     fireEvent.press(getByText('Password'));
     expect(queryByTestId('current-password-input')).toBeTruthy();
     expect(queryByTestId('username-input')).toBeFalsy();
-    
+
     // Switch to notifications tab
     fireEvent.press(getByText('Notifications'));
     expect(queryByTestId('email-notifications-switch')).toBeTruthy();
     expect(queryByTestId('current-password-input')).toBeFalsy();
-    
+
     // Switch back to profile tab
     fireEvent.press(getByText('Profile'));
     expect(queryByTestId('username-input')).toBeTruthy();
@@ -87,13 +87,13 @@ describe('AccountSettingsScreen', () => {
     const { getByText, getByTestId } = render(
       <AccountSettingsScreen {...defaultProps} />
     );
-    
+
     // Clear username (which is required)
     fireEvent.changeText(getByTestId('username-input'), '');
-    
+
     // Try to save with empty username
     fireEvent.press(getByTestId('save-profile-button'));
-    
+
     // Should display error message
     await waitFor(() => {
       expect(getByText('Username is required')).toBeTruthy();
@@ -104,7 +104,7 @@ describe('AccountSettingsScreen', () => {
     const { queryByTestId } = render(
       <AccountSettingsScreen {...defaultProps} activeTab="password" />
     );
-    
+
     // Should be on password tab
     expect(queryByTestId('current-password-input')).toBeTruthy();
     expect(queryByTestId('username-input')).toBeFalsy();
