@@ -64,6 +64,7 @@ export * from './navigation/types';
 
 // Hooks
 export { useOxyFollow, useFollow } from './hooks';
+export { default as useAuthFetch } from './hooks/useAuthFetch';
 
 // Screens
 export { default as ProfileScreen } from './screens/ProfileScreen';

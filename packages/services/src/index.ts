@@ -18,6 +18,7 @@ import {
   OxyProvider, 
   OxyContextProvider, 
   useOxy,
+  useAuthFetch,
   
   // Components
   OxySignInButton,
@@ -39,9 +40,8 @@ import { OxyContextState, OxyContextProviderProps } from './ui/context/OxyContex
 import * as Models from './models/interfaces';
 
 // ------------- Core Exports -------------
-export default OxyCore; // Default export for backward compatibility
-export { OxyServices };
-export * from './core';
+export { OxyCore, OxyServices };
+export default OxyServices;  // Default export for backward compatibility
 
 // ------------- Utility Exports -------------
 export { DeviceManager } from './utils';
@@ -57,6 +57,7 @@ export {
   OxyProvider, 
   OxyContextProvider, 
   useOxy,
+  useAuthFetch,
   
   // Components
   OxySignInButton,
@@ -65,7 +66,6 @@ export {
   FollowButton,
   FontLoader,
   OxyIcon,
-  useOxyFollow,
   useFollow,
   ProfileScreen,
   OxyRouter,
