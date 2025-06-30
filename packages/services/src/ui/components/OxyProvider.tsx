@@ -7,6 +7,7 @@ import { OxyContextProvider, useOxy } from '../context/OxyContext';
 import OxyRouter from '../navigation/OxyRouter';
 import { FontLoader, setupFonts } from './FontLoader';
 import { Toaster } from '../../lib/sonner';
+import oxyServices from '../../services/oxySingleton';
 
 // Import bottom sheet components directly - no longer a peer dependency
 import { BottomSheetModal, BottomSheetBackdrop, BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView, BottomSheetScrollView } from './bottomSheet';
@@ -24,7 +25,6 @@ setupFonts();
  */
 const OxyProvider: React.FC<OxyProviderProps> = (props) => {
     const {
-        oxyServices,
         children,
         contextOnly = false,
         onAuthStateChange,
@@ -36,13 +36,50 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
     // Create internal bottom sheet ref
     const internalBottomSheetRef = useRef<BottomSheetModalRef>(null);
 
+    // Create showBottomSheet and hideBottomSheet functions
+    const showBottomSheet = useCallback((screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => {
+        console.log('[OxyProvider] showBottomSheet called with:', screenOrConfig);
+        console.log('[OxyProvider] internalBottomSheetRef.current:', !!internalBottomSheetRef.current);
+
+        if (internalBottomSheetRef.current) {
+            // Present the bottom sheet
+            console.log('[OxyProvider] Presenting bottom sheet...');
+            internalBottomSheetRef.current.present();
+
+            // If a screen is specified, navigate to it
+            if (screenOrConfig) {
+                const screenName = typeof screenOrConfig === 'string' ? screenOrConfig : screenOrConfig.screen;
+                const props = typeof screenOrConfig === 'object' ? screenOrConfig.props : undefined;
+
+                // Use the navigation method we set up in the bottom sheet
+                const refWithNavigation = internalBottomSheetRef.current as any;
+                if (refWithNavigation._navigateToScreen) {
+                    console.log('[OxyProvider] Navigating to screen:', screenName, 'with props:', props);
+                    refWithNavigation._navigateToScreen(screenName, props);
+                } else {
+                    console.warn('[OxyProvider] _navigateToScreen method not available');
+                }
+            }
+        } else {
+            console.error('[OxyProvider] internalBottomSheetRef.current is null');
+        }
+    }, []);
+
+    const hideBottomSheet = useCallback(() => {
+        if (internalBottomSheetRef.current) {
+            internalBottomSheetRef.current.dismiss();
+        }
+    }, []);
+
     // If contextOnly is true, we just provide the context without the bottom sheet UI
     if (contextOnly) {
         return (
             <OxyContextProvider
-                oxyServices={oxyServices}
                 storageKeyPrefix={storageKeyPrefix}
                 onAuthStateChange={onAuthStateChange}
+                bottomSheetRef={internalBottomSheetRef}
+                showBottomSheet={showBottomSheet}
+                hideBottomSheet={hideBottomSheet}
             >
                 {children}
             </OxyContextProvider>
@@ -52,17 +89,18 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
     // Otherwise, provide both the context and the bottom sheet UI
     return (
         <OxyContextProvider
-            oxyServices={oxyServices}
             storageKeyPrefix={storageKeyPrefix}
             onAuthStateChange={onAuthStateChange}
             bottomSheetRef={internalBottomSheetRef}
+            showBottomSheet={showBottomSheet}
+            hideBottomSheet={hideBottomSheet}
         >
             <FontLoader>
                 <GestureHandlerRootView style={styles.gestureHandlerRoot}>
                     <BottomSheetModalProvider>
                         <StatusBar translucent backgroundColor="transparent" />
                         <SafeAreaProvider>
-                            <OxyBottomSheet {...bottomSheetProps} bottomSheetRef={internalBottomSheetRef} oxyServices={oxyServices} />
+                            <OxyBottomSheet {...bottomSheetProps} bottomSheetRef={internalBottomSheetRef} />
                             {children}
                         </SafeAreaProvider>
                     </BottomSheetModalProvider>
@@ -85,7 +123,6 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
  * and reimplemented using BottomSheetModal for better Android compatibility
  */
 const OxyBottomSheet: React.FC<OxyProviderProps> = ({
-    oxyServices,
     initialScreen = 'SignIn',
     onClose,
     onAuthenticated,
@@ -137,17 +174,27 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     return;
                 }
 
-                // Fallback to event-based navigation
-                if (typeof document !== 'undefined') {
-                    // For web - use a custom event
-                    console.log('Using web event navigation');
-                    const event = new CustomEvent('oxy:navigate', { detail: { screen: screenName, props } });
-                    document.dispatchEvent(event);
-                } else {
-                    // For React Native - use the global variable approach
-                    console.log('Using React Native global navigation');
-                    (globalThis as any).oxyNavigateEvent = { screen: screenName, props };
-                }
+                // If navigationRef is not ready, try again after a short delay
+                console.log('Navigation ref not ready, retrying in 100ms...');
+                setTimeout(() => {
+                    if (navigationRef.current) {
+                        console.log('Navigation ref now ready, using direct navigation');
+                        navigationRef.current(screenName, props);
+                        return;
+                    }
+
+                    // Fallback to event-based navigation
+                    if (typeof document !== 'undefined') {
+                        // For web - use a custom event
+                        console.log('Using web event navigation');
+                        const event = new CustomEvent('oxy:navigate', { detail: { screen: screenName, props } });
+                        document.dispatchEvent(event);
+                    } else {
+                        // For React Native - use the global variable approach
+                        console.log('Using React Native global navigation');
+                        (globalThis as any).oxyNavigateEvent = { screen: screenName, props };
+                    }
+                }, 100);
             };
         }
     }, [bottomSheetRef, modalRef]);
@@ -157,12 +204,17 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
 
     // Animation values - we'll use these for content animations
     // Start with opacity 1 on Android to avoid visibility issues
-    const fadeAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 1 : 0)).current;
-    const slideAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 0 : 50)).current;
+    const fadeAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 1 : 1)).current;
+    const slideAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 0 : 0)).current;
 
     // Track keyboard status
     const [keyboardVisible, setKeyboardVisible] = useState(false);
     const insets = useSafeAreaInsets();
+
+    // Add debugging for OxyRouter rendering
+    useEffect(() => {
+        console.log('[OxyBottomSheet] Component mounted with initialScreen:', initialScreen);
+    }, [initialScreen]);
 
     // Handle keyboard events - memoized to prevent re-registration
     useEffect(() => {
@@ -382,8 +434,27 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
 
     // Handle sheet index changes - simplified to prevent unnecessary rerenders
     const handleSheetChanges = useCallback((index: number) => {
-        // Sheet change handling can be added here if needed
-    }, []);
+        console.log('[OxyBottomSheet] Sheet index changed to:', index);
+
+        // Trigger content animations when the sheet is presented (index 0)
+        if (index === 0) {
+            console.log('[OxyBottomSheet] Bottom sheet presented, triggering content animations');
+            // Start content animations to make content visible
+            Animated.parallel([
+                Animated.timing(fadeAnim, {
+                    toValue: 1,
+                    duration: 300,
+                    useNativeDriver: Platform.OS === 'ios',
+                }),
+                Animated.spring(slideAnim, {
+                    toValue: 0,
+                    friction: 8,
+                    tension: 40,
+                    useNativeDriver: Platform.OS === 'ios',
+                }),
+            ]).start();
+        }
+    }, [fadeAnim, slideAnim]);
 
     return (
         <BottomSheetModal
@@ -443,7 +514,6 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                         ]}
                     >
                         <OxyRouter
-                            oxyServices={oxyServices}
                             initialScreen={initialScreen}
                             onClose={handleClose}
                             onAuthenticated={handleAuthenticated}

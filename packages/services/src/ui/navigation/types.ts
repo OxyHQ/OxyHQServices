@@ -1,4 +1,3 @@
-import { OxyServices } from '../../core';
 import { User } from '../../models/interfaces';
 import { ComponentType, ReactNode } from 'react';
 import { BottomSheetModalRef } from '../components/bottomSheet';
@@ -7,7 +6,6 @@ import { BottomSheetModalRef } from '../components/bottomSheet';
  * Base props for all screens in the Oxy UI system
  */
 export interface BaseScreenProps {
-  oxyServices: OxyServices;
   navigate: (screen: string, props?: any) => void;
   goBack: () => void;
   onClose?: () => void;
@@ -28,7 +26,6 @@ export interface RouteConfig {
  * Props for OxyRouter component
  */
 export interface OxyRouterProps {
-  oxyServices: OxyServices;
   initialScreen: string;
   onClose?: () => void;
   onAuthenticated?: (user: User) => void;
@@ -42,11 +39,6 @@ export interface OxyRouterProps {
  * Props for the OxyProvider component
  */
 export interface OxyProviderProps {
-  /**
-   * Instance of OxyServices
-   */
-  oxyServices: OxyServices;
-  
   /**
    * Initial screen to display
    * @default "SignIn"

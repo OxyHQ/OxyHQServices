@@ -56,6 +56,11 @@ import { SecureLoginResponse, SecureClientSession } from '../models/secureSessio
  */
 export const OXY_CLOUD_URL = 'https://cloud.oxy.so';
 
+/**
+ * Default API URL for Oxy services - this is where the authentication and API endpoints are.
+ */
+export const OXY_API_URL = 'http://localhost:3001';
+
 // Export device management utilities
 export { DeviceManager, DeviceFingerprint, StoredDeviceInfo } from '../utils/deviceManager';
 
@@ -1769,11 +1774,25 @@ export class OxyServices {
     // Use the updated method
     return this.getProfileByUsername(username);
   }
+
+  /**
+   * Returns the current access token
+   */
+  public getAccessToken(): string | null {
+    return this.accessToken;
+  }
+
+  /**
+   * Returns the current refresh token
+   */
+  public getRefreshToken(): string | null {
+    return this.refreshToken;
+  }
 }
 
 // Create default instance for backward compatibility
 const defaultOxyServices = new OxyServices({ 
-  baseURL: process.env.OXY_API_URL || 'http://localhost:3001' 
+  baseURL: process.env.OXY_API_URL || OXY_API_URL
 });
 
 // Export default instance

@@ -17,9 +17,11 @@ export interface AuthState {
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
+  accessToken: string | null;
+  refreshToken: string | null;
 
   // Actions
-  setUser: (user: User | null) => void;
+  setUser: (user: User | null, accessToken?: string | null, refreshToken?: string | null) => void;
   setMinimalUser: (minimalUser: MinimalUserData | null) => void;
   setSessions: (sessions: SecureClientSession[]) => void;
   setActiveSessionId: (sessionId: string | null) => void;
@@ -44,6 +46,7 @@ export interface AuthState {
   logoutAllDeviceSessions: (apiUtils?: ApiUtils) => Promise<void>;
   updateDeviceName: (deviceName: string, apiUtils?: ApiUtils) => Promise<void>;
   ensureToken: (apiUtils?: ApiUtils) => Promise<void>;
+  syncTokens: (apiUtils?: ApiUtils) => void;
 }
 
 export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
@@ -55,9 +58,11 @@ export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
   isAuthenticated: false,
   isLoading: false,
   error: null,
+  accessToken: null,
+  refreshToken: null,
 
   // Synchronous actions
-  setUser: (user) => set((state) => {
+  setUser: (user, accessToken = null, refreshToken = null) => set((state) => {
     const isAuthenticated = !!user;
     const minimalUser = user ? {
       id: user.id,
@@ -68,12 +73,42 @@ export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
       } : undefined
     } : null;
     
-    return {
+    console.log('[AuthStore] setUser called with tokens:', {
+      hasUser: !!user,
+      hasAccessToken: !!accessToken,
+      hasRefreshToken: !!refreshToken,
+      accessTokenLength: accessToken?.length || 0,
+      refreshTokenLength: refreshToken?.length || 0,
+      currentStateTokens: {
+        hasAccessToken: !!state.accessToken,
+        hasRefreshToken: !!state.refreshToken,
+      },
+      willUpdateTokens: accessToken !== null || refreshToken !== null,
+      newAccessToken: accessToken !== null ? accessToken : state.accessToken,
+      newRefreshToken: refreshToken !== null ? refreshToken : state.refreshToken,
+    });
+    
+    // Important: Only update tokens if they are explicitly provided (not null)
+    // This prevents overwriting existing valid tokens with null values
+    const newState = {
       user,
       minimalUser,
       isAuthenticated,
-      error: null // Clear error on successful user set
+      error: null, // Clear error on successful user set
+      // Preserve existing tokens if new ones are null/undefined
+      accessToken: accessToken !== null && accessToken !== undefined ? accessToken : state.accessToken,
+      refreshToken: refreshToken !== null && refreshToken !== undefined ? refreshToken : state.refreshToken,
     };
+    
+    console.log('[AuthStore] setUser returning new state:', {
+      hasUser: !!newState.user,
+      hasAccessToken: !!newState.accessToken,
+      hasRefreshToken: !!newState.refreshToken,
+      accessTokenLength: newState.accessToken?.length || 0,
+      refreshTokenLength: newState.refreshToken?.length || 0,
+    });
+    
+    return newState;
   }),
 
   setMinimalUser: (minimalUser) => set({ minimalUser }),
@@ -95,20 +130,34 @@ export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
     activeSessionId: null,
     isAuthenticated: false,
     isLoading: false,
-    error: null
+    error: null,
+    accessToken: null,
+    refreshToken: null,
   }),
 
   // Async actions
   login: async (username, password, deviceName, apiUtils) => {
     if (!apiUtils) throw new Error('ApiUtils is required');
-    
     set({ isLoading: true, error: null });
-    
     try {
-      const user = await apiUtils.login(username, password, deviceName);
+      // Use secureLogin to get session information
+      const oxyServices = apiUtils.getOxyServices();
+      const loginResponse = await oxyServices.secureLogin(username, password, deviceName);
       
-      // Update state with user data
-      get().setUser(user);
+      console.log('[AuthStore] Secure login completed:', {
+        hasSessionId: !!loginResponse.sessionId,
+        sessionId: loginResponse.sessionId?.substring(0, 8) + '...',
+        hasAccessToken: !!loginResponse.accessToken,
+        hasRefreshToken: !!loginResponse.refreshToken,
+        hasUser: !!loginResponse.user,
+        username: loginResponse.user?.username,
+      });
+      
+      // Set the active session ID from the login response
+      set({ activeSessionId: loginResponse.sessionId });
+      
+      // Set user and tokens
+      get().setUser(loginResponse.user, loginResponse.accessToken, loginResponse.refreshToken);
       
       // Refresh sessions after login
       try {
@@ -118,7 +167,7 @@ export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
       }
       
       set({ isLoading: false });
-      return user;
+      return loginResponse.user;
     } catch (error: any) {
       const errorMessage = error?.message || 'Login failed';
       set({ error: errorMessage, isLoading: false });
@@ -128,12 +177,9 @@ export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
 
   logout: async (targetSessionId, apiUtils) => {
     if (!apiUtils) throw new Error('ApiUtils is required');
-    
     set({ isLoading: true, error: null });
-    
     try {
       await apiUtils.logout(targetSessionId);
-      
       if (!targetSessionId) {
         // Full logout - clear all state
         get().reset();
@@ -141,7 +187,6 @@ export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
         // Partial logout - just refresh sessions
         await get().refreshSessions(apiUtils);
       }
-      
       set({ isLoading: false });
     } catch (error: any) {
       const errorMessage = error?.message || 'Logout failed';
@@ -152,9 +197,7 @@ export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
 
   logoutAll: async (apiUtils) => {
     if (!apiUtils) throw new Error('ApiUtils is required');
-    
     set({ isLoading: true, error: null });
-    
     try {
       await apiUtils.logoutAll();
       get().reset();
@@ -167,12 +210,11 @@ export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
 
   signUp: async (username, email, password, apiUtils) => {
     if (!apiUtils) throw new Error('ApiUtils is required');
-    
     set({ isLoading: true, error: null });
-    
     try {
       const user = await apiUtils.signUp(username, email, password);
-      get().setUser(user);
+      const oxyServices = apiUtils.getOxyServices();
+      get().setUser(user, oxyServices?.getAccessToken?.() ?? null, oxyServices?.getRefreshToken?.() ?? null);
       set({ isLoading: false });
       return user;
     } catch (error: any) {
@@ -187,7 +229,9 @@ export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
     
     try {
       const user = await apiUtils.getCurrentUser();
-      get().setUser(user);
+      // Preserve existing tokens when refreshing user data
+      const currentState = get();
+      get().setUser(user, currentState.accessToken, currentState.refreshToken);
     } catch (error: any) {
       const errorMessage = error?.message || 'Failed to refresh user data';
       set({ error: errorMessage });
@@ -303,6 +347,37 @@ export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
       const errorMessage = error?.message || 'Token validation failed';
       set({ error: errorMessage });
       throw error;
+    }
+  },
+
+  syncTokens: (apiUtils) => {
+    if (!apiUtils) throw new Error('ApiUtils is required');
+    
+    try {
+      const oxyServices = apiUtils.getOxyServices();
+      const accessToken = oxyServices?.getAccessToken?.() ?? null;
+      const refreshToken = oxyServices?.getRefreshToken?.() ?? null;
+      
+      console.log('[AuthStore] Syncing tokens from OxyServices:', {
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken,
+        accessTokenLength: accessToken?.length || 0,
+        refreshTokenLength: refreshToken?.length || 0,
+      });
+      
+      const currentState = get();
+      if (accessToken || refreshToken) {
+        // Only update if we have new tokens
+        set({
+          accessToken: accessToken || currentState.accessToken,
+          refreshToken: refreshToken || currentState.refreshToken,
+        });
+        console.log('[AuthStore] Tokens synced successfully');
+      } else {
+        console.warn('[AuthStore] No tokens found in OxyServices to sync');
+      }
+    } catch (error: any) {
+      console.error('[AuthStore] Failed to sync tokens:', error);
     }
   }
 });

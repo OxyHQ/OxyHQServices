@@ -1,4 +1,4 @@
-import { Router, Request, Response } from 'express';
+import { Router, Request, Response, RequestHandler } from 'express';
 import User, { IUser } from '../models/User';
 import { authMiddleware } from '../middleware/auth';
 import { logger } from '../utils/logger';
@@ -15,7 +15,7 @@ interface SearchQuery extends ParsedQs {
 const router = Router();
 
 // Get profile by username
-router.get('/username/:username', async (req: Request, res: Response) => {
+const getUserByUsername: RequestHandler = async (req: Request, res: Response) => {
   try {
     const user = await User.findOne({ username: req.params.username })
       .select('-password -refreshToken');
@@ -29,10 +29,12 @@ router.get('/username/:username', async (req: Request, res: Response) => {
     logger.error('Error fetching profile by username:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
-});
+};
+
+router.get('/username/:username', getUserByUsername);
 
 // Search profiles
-router.get('/search', async (req: Request<{}, {}, {}, SearchQuery>, res: Response) => {
+const searchProfiles: RequestHandler = async (req: Request<{}, {}, {}, SearchQuery>, res: Response) => {
   try {
     const { query, limit = '10', offset = '0' } = req.query;
     
@@ -54,7 +56,7 @@ router.get('/search', async (req: Request<{}, {}, {}, SearchQuery>, res: Respons
     .skip(parseInt(offset));
 
     const enrichedProfiles = await Promise.all(
-      profiles.map(async (profile: IUser) => {
+      profiles.map(async (profile: any) => {
         // Followers: people who follow this user
         const followersCount = await Follow.countDocuments({
           followedId: profile._id,
@@ -83,7 +85,9 @@ router.get('/search', async (req: Request<{}, {}, {}, SearchQuery>, res: Respons
     logger.error('Error searching profiles:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
-});
+};
+
+router.get('/search', searchProfiles);
 
 // Get recommended profiles
 router.get('/recommendations', async (req: Request<{}, {}, {}, { limit?: string; offset?: string }> & { user?: { id: string } }, res: Response) => {
@@ -102,7 +106,7 @@ router.get('/recommendations', async (req: Request<{}, {}, {}, { limit?: string;
         followerUserId: currentUserId,
         followType: FollowType.USER
       }).select('followedId');
-      followingIds = following.map(f => f.followedId instanceof Types.ObjectId ? f.followedId : new Types.ObjectId(f.followedId));
+      followingIds = following.map((f: any) => f.followedId instanceof Types.ObjectId ? f.followedId : new Types.ObjectId(f.followedId));
       excludeIds = excludeIds.concat(followingIds);
     }
 

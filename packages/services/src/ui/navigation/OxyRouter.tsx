@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
-import { OxyServices } from '../../core';
+import React, { useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet, Text } from 'react-native';
+import oxyServices from '../../services/oxySingleton';
 
 // Import screens
 import SignInScreen from '../screens/SignInScreen';
@@ -107,7 +107,6 @@ const routes: Record<string, RouteConfig> = {
 };
 
 const OxyRouter: React.FC<OxyRouterProps> = ({
-    oxyServices,
     initialScreen,
     onClose,
     onAuthenticated,
@@ -127,24 +126,32 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         }
     }, [currentScreen, adjustSnapPoints]);
 
-    // Navigation methods
-    const navigate = (screen: string, props: Record<string, any> = {}) => {
+    // Navigation methods - memoized to prevent recreation on every render
+    const navigate = useCallback((screen: string, props: Record<string, any> = {}) => {
+        console.log('[OxyRouter] navigate called with screen:', screen, 'props:', props);
+        console.log('[OxyRouter] Available routes:', Object.keys(routes));
+        console.log('[OxyRouter] Route exists:', !!routes[screen]);
+
         if (routes[screen]) {
+            console.log('[OxyRouter] Setting current screen to:', screen);
             setCurrentScreen(screen);
             setScreenHistory(prev => [...prev, screen]);
             setScreenProps(props);
         } else {
             console.error(`Screen "${screen}" not found`);
         }
-    };
+    }, []); // Empty dependency array since this function only depends on stable state setters
 
     // Expose the navigate function to the parent component
     useEffect(() => {
+        console.log('[OxyRouter] Setting up navigationRef.current with navigate function');
         if (navigationRef) {
             navigationRef.current = navigate;
+            console.log('[OxyRouter] navigationRef.current set successfully');
         }
 
         return () => {
+            console.log('[OxyRouter] Cleaning up navigationRef.current');
             if (navigationRef) {
                 navigationRef.current = null;
             }
@@ -201,7 +208,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         };
     }, []);
 
-    const goBack = () => {
+    const goBack = useCallback(() => {
         if (screenHistory.length > 1) {
             const newHistory = [...screenHistory];
             newHistory.pop();
@@ -214,19 +221,24 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
                 onClose();
             }
         }
-    };
+    }, [screenHistory, onClose]);
 
-    // Render the current screen component
-    const renderScreen = () => {
+    // Render the current screen component - memoized to prevent unnecessary re-renders
+    const renderScreen = useCallback(() => {
         const CurrentScreen = routes[currentScreen]?.component;
 
         console.log('[OxyRouter] Rendering screen:', currentScreen);
         console.log('[OxyRouter] Available routes:', Object.keys(routes));
         console.log('[OxyRouter] Current screen component found:', !!CurrentScreen);
+        console.log('[OxyRouter] Current screen component name:', CurrentScreen?.name || 'Unknown');
 
         if (!CurrentScreen) {
             console.error(`Screen "${currentScreen}" not found`);
-            return <View style={styles.errorContainer} />;
+            return (
+                <View style={styles.errorContainer}>
+                    <Text style={{ color: 'white', fontSize: 16 }}>Screen "{currentScreen}" not found</Text>
+                </View>
+            );
         }
 
         console.log('[OxyRouter] Rendering screen component for:', currentScreen);
@@ -242,7 +254,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
                 {...screenProps}
             />
         );
-    };
+    }, [currentScreen, navigate, goBack, onClose, onAuthenticated, theme, containerWidth, screenProps]);
 
     return (
         <View style={styles.container}>

@@ -69,7 +69,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
         // Check API connection on mount
         const checkConnection = async () => {
             setConnectionStatus('checking');
-            const apiBaseUrl = oxyServices?.getBaseURL() || 'https://api.oxy.so';
+            const apiBaseUrl = oxyServices?.getBaseURL() || 'http://localhost:3001';
             try {
                 const response = await fetch(`${apiBaseUrl}/`, {
                     method: 'GET',
@@ -113,7 +113,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
         const checks = [];
 
         // Get the API base URL from the services instance
-        const apiBaseUrl = oxyServices?.getBaseURL() || 'https://api.oxy.so'; // Default for now, could be made configurable
+        const apiBaseUrl = oxyServices?.getBaseURL() || 'http://localhost:3001'; // Default for now, could be made configurable
 
         try {
             // Check 1: API Server Health
@@ -514,7 +514,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         }
                         onPress={async () => {
                             setConnectionStatus('checking');
-                            const apiBaseUrl = oxyServices?.getBaseURL() || 'https://api.oxy.so';
+                            const apiBaseUrl = oxyServices?.getBaseURL() || 'http://localhost:3001';
                             try {
                                 const response = await fetch(`${apiBaseUrl}/`, {
                                     method: 'GET',

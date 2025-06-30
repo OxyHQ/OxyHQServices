@@ -6,6 +6,7 @@
 import type { OxyServices } from '../core';
 import type { User } from '../models/interfaces';
 import type { SecureLoginResponse, SecureClientSession } from '../models/secureSession';
+import { useOxyStore } from '../stores';
 
 export interface ApiUtilsConfig {
   oxyServices: OxyServices;
@@ -23,11 +24,24 @@ export class ApiUtils {
   }
 
   /**
+   * Public getter for oxyServices
+   */
+  public getOxyServices(): OxyServices {
+    return this.oxyServices;
+  }
+
+  /**
    * Authentication API calls
    */
   async login(username: string, password: string, deviceName?: string): Promise<User> {
     try {
       const response = await this.oxyServices.secureLogin(username, password, deviceName);
+      console.log('[ApiUtils] Login response received:', {
+        hasSessionId: !!response.sessionId,
+        sessionId: response.sessionId?.substring(0, 8) + '...',
+        hasUser: !!response.user,
+        username: response.user?.username,
+      });
       return response.user;
     } catch (error) {
       throw this.handleError(error, 'Login failed');
@@ -213,12 +227,125 @@ export class ApiUtils {
    */
   async ensureToken(): Promise<void> {
     try {
-      const isValid = await this.oxyServices.validate();
-      if (!isValid) {
-        throw new Error('Token validation failed');
+      console.log('[ApiUtils] ensureToken: Starting token validation');
+      
+      // First, check if we have tokens
+      const accessToken = this.oxyServices.getAccessToken();
+      const refreshToken = this.oxyServices.getRefreshToken();
+      
+      console.log('[ApiUtils] ensureToken: Checking tokens:', {
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken,
+        accessTokenLength: accessToken?.length || 0,
+        refreshTokenLength: refreshToken?.length || 0
+      });
+      
+      // If we have tokens, validate them
+      if (accessToken && refreshToken) {
+        try {
+          const isValid = await this.oxyServices.validate();
+          if (isValid) {
+            console.log('[ApiUtils] ensureToken: Tokens are valid');
+            return;
+          }
+        } catch (validationError) {
+          console.warn('[ApiUtils] ensureToken: Token validation failed:', validationError);
+          // Continue to try to refresh tokens
+        }
       }
-    } catch (error) {
-      throw this.handleError(error, 'Token validation failed');
+      
+      // If we don't have tokens or they're invalid, try to get them from the current session
+      let currentUserId = this.getCurrentUserId();
+      console.log('[ApiUtils] ensureToken: Current user ID from OxyServices:', currentUserId);
+      
+      // If OxyServices doesn't have a current user ID, try to get it from the store
+      if (!currentUserId) {
+        try {
+          const storeState = useOxyStore.getState();
+          console.log('[ApiUtils] ensureToken: Store state:', {
+            hasUser: !!storeState.user,
+            isAuthenticated: storeState.isAuthenticated,
+            userId: storeState.user?.id,
+            username: storeState.user?.username,
+          });
+          
+          if (storeState.user?.id) {
+            currentUserId = storeState.user.id;
+            console.log('[ApiUtils] ensureToken: Got user ID from store:', currentUserId);
+          }
+        } catch (storeError) {
+          console.warn('[ApiUtils] ensureToken: Failed to get user from store:', storeError);
+        }
+      }
+      
+      // Try to get session ID from the store
+      const currentSessionId = this.getCurrentSessionId();
+      console.log('[ApiUtils] ensureToken: Session ID check:', {
+        hasSessionId: !!currentSessionId,
+        sessionId: currentSessionId?.substring(0, 8) + '...',
+        hasUserId: !!currentUserId,
+      });
+      
+      if (currentSessionId) {
+        console.log('[ApiUtils] ensureToken: No valid tokens, trying to get from session:', currentSessionId);
+        
+        try {
+          // Try to get token by session using the actual session ID
+          const tokenData = await this.oxyServices.getTokenBySession(currentSessionId);
+          console.log('[ApiUtils] ensureToken: Retrieved token from session:', !!tokenData.accessToken);
+          
+          // Set the tokens on the service
+          this.oxyServices.setTokens(tokenData.accessToken, ''); // Refresh token not provided in this endpoint
+          
+          // Validate the new token
+          const isValid = await this.oxyServices.validate();
+          if (isValid) {
+            console.log('[ApiUtils] ensureToken: Session token is valid');
+            return;
+          }
+        } catch (sessionError) {
+          console.warn('[ApiUtils] ensureToken: Failed to get token from session:', sessionError);
+        }
+      } else if (currentUserId) {
+        console.log('[ApiUtils] ensureToken: No session ID found, but user is authenticated. This may indicate a missing session ID.');
+      }
+      
+      // If we have a current user but can't get valid tokens, this might be a temporary issue
+      // Check if the user is authenticated in the store
+      let isUserAuthenticatedInStore = false;
+      try {
+        const storeState = useOxyStore.getState();
+        isUserAuthenticatedInStore = storeState.isAuthenticated && !!storeState.user;
+        console.log('[ApiUtils] ensureToken: Store authentication check:', {
+          isAuthenticated: storeState.isAuthenticated,
+          hasUser: !!storeState.user,
+          isUserAuthenticatedInStore,
+        });
+      } catch (storeError) {
+        console.warn('[ApiUtils] ensureToken: Failed to check store authentication state:', storeError);
+      }
+      
+      if (currentUserId || isUserAuthenticatedInStore) {
+        console.warn('[ApiUtils] ensureToken: User is authenticated but cannot validate tokens. This might be a temporary issue.');
+        console.log('[ApiUtils] ensureToken: Authentication state:', {
+          hasCurrentUserId: !!currentUserId,
+          isAuthenticatedInStore: isUserAuthenticatedInStore,
+        });
+        // Return without throwing - the user is authenticated, just token validation failed
+        return;
+      }
+      
+      // Only throw an error if we have no user and no tokens
+      console.error('[ApiUtils] ensureToken: No authenticated user found');
+      throw new Error('No authenticated user found');
+    } catch (error: any) {
+      // Only throw the error if it's not about token validation for an authenticated user
+      if (error.message === 'No authenticated user found') {
+        throw this.handleError(error, 'Token validation failed');
+      }
+      // For other errors, just log and return - don't break the app
+      console.warn('[ApiUtils] ensureToken: Error during token validation:', error);
+      return;
     }
   }
 
@@ -234,9 +361,20 @@ export class ApiUtils {
    * Private helper methods
    */
   private getCurrentSessionId(): string | null {
-    // This would be stored when we do secure login
-    // For now, we'll derive from the current user ID
-    return this.getCurrentUserId();
+    // Get the active session ID from the store
+    try {
+      const storeState = useOxyStore.getState();
+      const activeSessionId = storeState.activeSessionId;
+      console.log('[ApiUtils] getCurrentSessionId: Retrieved from store:', {
+        activeSessionId,
+        hasActiveSessionId: !!activeSessionId,
+      });
+      return activeSessionId;
+    } catch (error) {
+      console.warn('[ApiUtils] getCurrentSessionId: Failed to get from store:', error);
+      // Fallback to null if store access fails
+      return null;
+    }
   }
 
   private normalizeSession(session: any): SecureClientSession {

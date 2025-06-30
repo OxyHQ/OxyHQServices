@@ -20,6 +20,7 @@ import { toast } from '../../lib/sonner';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
+import oxyServices from '../../services/oxySingleton';
 
 interface SessionWithUser extends SecureClientSession {
     userProfile?: User;
@@ -41,7 +42,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     theme,
     navigate,
     goBack,
-    oxyServices,
+    onAuthenticated,
+    containerWidth,
 }) => {
     const {
         user,

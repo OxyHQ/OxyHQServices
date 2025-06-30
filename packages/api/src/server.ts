@@ -133,7 +133,7 @@ app.get('/.well-known/appspecific/com.chrome.devtools.json', (req, res) => {
     "description": "OxyHQ Backend API",
     "version": "1.0.0",
     "homepage_url": "https://oxy.so",
-    "api_url": "https://api.oxy.so",
+            "api_url": "http://localhost:3001",
     "endpoints": {
       "health": "https://api.oxy.so/health",
       "docs": "https://api.oxy.so/",

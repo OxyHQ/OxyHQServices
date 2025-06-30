@@ -9,7 +9,7 @@ import { OxyServices } from '../../core';
  */
 const AccountManagementDemo: React.FC = () => {
     const oxyServices = new OxyServices({
-        baseURL: 'https://api.oxy.so'
+        baseURL: 'http://localhost:3001'
     });
 
     return (
@@ -90,22 +90,22 @@ const AccountManagementDemo: React.FC = () => {
                     <Text style={styles.flowDescription}>
                         The screens are designed with intuitive navigation patterns:
                     </Text>
-                    
+
                     <View style={styles.flowItem}>
                         <Text style={styles.flowStep}>1. Entry Point</Text>
                         <Text style={styles.flowText}>Users typically start at AccountCenterScreen</Text>
                     </View>
-                    
+
                     <View style={styles.flowItem}>
                         <Text style={styles.flowStep}>2. Explore</Text>
                         <Text style={styles.flowText}>Navigate to specific screens based on needs</Text>
                     </View>
-                    
+
                     <View style={styles.flowItem}>
                         <Text style={styles.flowStep}>3. Manage</Text>
                         <Text style={styles.flowText}>Perform account actions in specialized screens</Text>
                     </View>
-                    
+
                     <View style={styles.flowItem}>
                         <Text style={styles.flowStep}>4. Return</Text>
                         <Text style={styles.flowText}>Navigate back or to related screens seamlessly</Text>
@@ -122,9 +122,7 @@ const AccountManagementDemo: React.FC = () => {
                 </View>
             </ScrollView>
 
-            {/* The actual OxyProvider would be used here in a real implementation */}
             <OxyProvider
-                oxyServices={oxyServices}
                 initialScreen="AccountCenter"
                 theme="light"
                 autoPresent={false}
@@ -142,12 +140,12 @@ const ScreenCard: React.FC<{
     <View style={styles.screenCard}>
         <Text style={styles.screenTitle}>{title}</Text>
         <Text style={styles.screenDescription}>{description}</Text>
-        
+
         <Text style={styles.featuresTitle}>Features:</Text>
         {features.map((feature, index) => (
             <Text key={index} style={styles.feature}>• {feature}</Text>
         ))}
-        
+
         <Text style={styles.navigationTitle}>Navigates to:</Text>
         {navigatesTo.map((nav, index) => (
             <Text key={index} style={styles.navigationItem}>→ {nav}</Text>

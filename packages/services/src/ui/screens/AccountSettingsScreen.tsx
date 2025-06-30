@@ -24,7 +24,17 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     goBack,
     navigate,
 }) => {
-    const { user, oxyServices, isLoading: authLoading, isAuthenticated, ensureToken, activeSessionId, refreshUserData } = useOxy();
+    const {
+        user,
+        oxyServices,
+        isLoading: authLoading,
+        isAuthenticated,
+        ensureToken,
+        activeSessionId,
+        refreshUserData,
+        updateProfile
+    } = useOxy();
+
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -32,7 +42,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     // Animation refs
     const saveButtonScale = useRef(new Animated.Value(1)).current;
 
-    // Form state
+    // Form state - derived from user data
     const [displayName, setDisplayName] = useState('');
     const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
@@ -72,6 +82,20 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         }).start();
     }, [saveButtonScale]);
 
+    // Helper function to extract display name from user data
+    const extractDisplayName = useCallback((userData: any) => {
+        if (!userData) return '';
+
+        if (typeof userData.name === 'string') {
+            return userData.name;
+        } else if (userData.name && typeof userData.name === 'object') {
+            const firstName = userData.name.first || '';
+            const lastName = userData.name.last || '';
+            return `${firstName} ${lastName}`.trim();
+        }
+        return '';
+    }, []);
+
     // Load user data when screen mounts
     useEffect(() => {
         const loadUserData = async () => {
@@ -93,17 +117,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 if (freshUser) {
                     console.log('AccountSettingsScreen: Fresh user data loaded:', freshUser);
 
-                    // Handle name field - support both string and object formats
-                    let userDisplayName = '';
-                    if (typeof freshUser.name === 'string') {
-                        // If name is a string, use it directly
-                        userDisplayName = freshUser.name;
-                    } else if (freshUser.name && typeof freshUser.name === 'object') {
-                        // If name is an object, combine first and last
-                        const firstName = freshUser.name.first || '';
-                        const lastName = freshUser.name.last || '';
-                        userDisplayName = `${firstName} ${lastName}`.trim();
-                    }
+                    const userDisplayName = extractDisplayName(freshUser);
 
                     setDisplayName(userDisplayName);
                     setUsername(freshUser.username || '');
@@ -125,30 +139,21 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 }
             } catch (error) {
                 console.error('AccountSettingsScreen: Failed to load user data on mount:', error);
+                toast.error('Failed to load user data');
             } finally {
                 setIsRefreshing(false);
             }
         };
 
         loadUserData();
-    }, [isAuthenticated, oxyServices, ensureToken]);
+    }, [isAuthenticated, oxyServices, ensureToken, extractDisplayName]);
 
-    // Load user data when user object changes (fallback)
+    // Load user data from context as fallback when user changes
     useEffect(() => {
-        if (user) {
+        if (user && !isRefreshing) {
             console.log('AccountSettingsScreen: Loading user data from context:', user);
 
-            // Handle name field - support both string and object formats
-            let userDisplayName = '';
-            if (typeof user.name === 'string') {
-                // If name is a string, use it directly
-                userDisplayName = user.name;
-            } else if (user.name && typeof user.name === 'object') {
-                // If name is an object, combine first and last
-                const firstName = user.name.first || '';
-                const lastName = user.name.last || '';
-                userDisplayName = `${firstName} ${lastName}`.trim();
-            }
+            const userDisplayName = extractDisplayName(user);
 
             setDisplayName(userDisplayName);
             setUsername(user.username || '');
@@ -167,10 +172,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 website: user.website,
                 avatarUrl: user.avatar?.url
             });
-        } else {
+        } else if (!user) {
             console.log('AccountSettingsScreen: No user data available in context');
         }
-    }, [user]);
+    }, [user, isRefreshing, extractDisplayName]);
 
     // Add loading state for when user data is not yet available
     const isDataLoading = authLoading || !user || isRefreshing;
@@ -220,7 +225,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             }
 
             console.log('handleSave: Making API call with updates:', updates);
-            await oxyServices.updateProfile(updates);
+
+            // Use the Zustand store action instead of direct API call
+            await updateProfile(updates);
             console.log('handleSave: Profile update successful');
 
             toast.success('Profile updated successfully');
@@ -368,11 +375,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                     break;
             }
 
-            // Make the API call to save the data
+            // Make the API call to save the data using Zustand store action
             console.log(`saveField: Saving ${type} with value:`, newValue);
             console.log('saveField: API update data:', updateData);
 
-            await oxyServices.updateProfile(updateData);
+            await updateProfile(updateData);
             console.log(`saveField: ${type} saved successfully`);
 
             toast.success(`${getFieldLabel(type)} updated successfully`);
