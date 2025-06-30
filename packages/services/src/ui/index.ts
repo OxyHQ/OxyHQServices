@@ -16,7 +16,10 @@ export type { IconProps } from './components/icon';
 
 export {
   OxyContextProvider,
-  useOxy,
+  useOxy
+} from './context/OxyContext';
+
+export type {
   OxyContextState,
   OxyContextProviderProps
 } from './context/OxyContext';
