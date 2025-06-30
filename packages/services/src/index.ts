@@ -35,7 +35,6 @@ import {
 } from './ui';
 
 // ------------- Type Imports -------------
-import { OxyContextState, OxyContextProviderProps } from './ui/context/OxyContext';
 import * as Models from './models/interfaces';
 
 // ------------- Core Exports -------------
@@ -93,9 +92,7 @@ export {
   resetFollowState,
   fetchFollowStatus,
   toggleFollowUser,
-  // Types
-  type AuthState,
-  type FollowState,
+  // Legacy Redux types (deprecated)
   initialAuthState,
   initialFollowState,
   
@@ -133,7 +130,6 @@ export type {
 } from './stores';
 
 // ------------- Type Exports -------------
-export { OxyContextState, OxyContextProviderProps };
 export * from './ui/navigation/types';
 export * from './models/secureSession';
 

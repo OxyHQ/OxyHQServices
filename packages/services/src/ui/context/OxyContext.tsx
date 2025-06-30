@@ -49,8 +49,16 @@ export interface OxyContextState {
   hideBottomSheet?: () => void;
 }
 
+// Internal context type - only what the Provider actually provides
+interface OxyContextInternal {
+  oxyServices: OxyServices;
+  bottomSheetRef?: React.RefObject<any>;
+  showBottomSheet?: (screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => void;
+  hideBottomSheet?: () => void;
+}
+
 // Create the context
-const OxyContext = createContext<OxyContextState | null>(null);
+const OxyContext = createContext<OxyContextInternal | null>(null);
 
 // Props for the OxyContextProvider - maintaining backward compatibility
 export interface OxyContextProviderProps {
@@ -196,6 +204,3 @@ export const useOxy = () => {
 
 // Export for legacy support - keeping the original interface
 export const OxyProvider = OxyContextProvider;
-
-// Export types
-export type { OxyContextState, OxyContextProviderProps };
