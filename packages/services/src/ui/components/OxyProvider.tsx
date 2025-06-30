@@ -4,8 +4,6 @@ import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-cont
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { OxyProviderProps } from '../navigation/types';
 import { OxyContextProvider, useOxy } from '../context/OxyContext';
-import { Provider } from 'react-redux';
-import { store } from '../store';
 import OxyRouter from '../navigation/OxyRouter';
 import { FontLoader, setupFonts } from './FontLoader';
 import { Toaster } from '../../lib/sonner';
@@ -32,34 +30,15 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
         onAuthStateChange,
         storageKeyPrefix,
         showInternalToaster = true,
-        store: externalStore,
-        skipReduxProvider = false,
         ...bottomSheetProps
     } = props;
 
     // Create internal bottom sheet ref
     const internalBottomSheetRef = useRef<BottomSheetModalRef>(null);
 
-    // Determine which store to use
-    const storeToUse = externalStore || store;
-
-    // Helper function to wrap content with Redux Provider if needed
-    const wrapWithReduxProvider = (content: React.ReactNode) => {
-        if (skipReduxProvider) {
-            // App manages Redux Provider externally
-            return content;
-        }
-
-        return (
-            <Provider store={storeToUse}>
-                {content}
-            </Provider>
-        );
-    };
-
     // If contextOnly is true, we just provide the context without the bottom sheet UI
     if (contextOnly) {
-        return wrapWithReduxProvider(
+        return (
             <OxyContextProvider
                 oxyServices={oxyServices}
                 storageKeyPrefix={storageKeyPrefix}
@@ -71,7 +50,7 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
     }
 
     // Otherwise, provide both the context and the bottom sheet UI
-    return wrapWithReduxProvider(
+    return (
         <OxyContextProvider
             oxyServices={oxyServices}
             storageKeyPrefix={storageKeyPrefix}

@@ -76,7 +76,6 @@
         "@gorhom/bottom-sheet": "^5.1.6",
         "@oxyhq/services": "^5.4.0",
         "@react-native-async-storage/async-storage": "^2.1.2",
-        "@reduxjs/toolkit": "^2.8.2",
         "axios": "^1.9.0",
         "expo-font": "^13.3.1",
         "expo-linear-gradient": "^14.1.4",
@@ -84,7 +83,6 @@
         "invariant": "^2.2.4",
         "jwt-decode": "^4.0.0",
         "react-native-safe-area-context": "^5.4.0",
-        "react-redux": "^9.2.0",
         "sonner": "^2.0.4",
         "sonner-native": "^0.20.0",
         "zustand": "^5.0.6"
@@ -103,7 +101,6 @@
         "@types/node": "^20.5.1",
         "@types/react": "~18.3.12",
         "@types/react-native": "~0.73.0",
-        "@types/react-redux": "^7.1.25",
         "copyfiles": "^2.4.1",
         "husky": "^4.3.8",
         "jest": "^30.0.0",

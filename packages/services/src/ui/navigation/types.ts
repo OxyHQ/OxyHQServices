@@ -129,26 +129,4 @@ export interface OxyProviderProps {
    * @default true
    */
   showInternalToaster?: boolean;
-
-  /**
-   * External Redux store to use instead of the internal store
-   * If provided, the store must include the Oxy reducers using setupOxyStore()
-   * @example
-   * ```ts
-   * const store = configureStore({
-   *   reducer: {
-   *     ...setupOxyStore(),
-   *     myAppReducer,
-   *   },
-   * });
-   * ```
-   */
-  store?: any;
-
-  /**
-   * Skip Redux Provider wrapper if store is managed externally
-   * Set to true if your app already has a Redux Provider higher in the component tree
-   * @default false
-   */
-  skipReduxProvider?: boolean;
 }

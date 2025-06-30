@@ -24,48 +24,13 @@ export type {
   OxyContextProviderProps
 } from './context/OxyContext';
 
-// Redux store exports - NEW ARCHITECTURE
-export { 
-  setupOxyStore, 
-  oxyReducers,
-  // Individual slices
-  authSlice,
-  authActions,
-  authSelectors,
-  authReducer,
-  followSlice,
-  followActions,
-  followSelectors,
-  followThunks,
-  followReducer,
-  // Action creators
-  loginStart,
-  loginSuccess,
-  loginFailure,
-  logout,
-  setFollowingStatus,
-  clearFollowError,
-  resetFollowState,
-  fetchFollowStatus,
-  toggleFollowUser,
-  // Types
-  AuthState,
-  FollowState,
-  initialAuthState,
-  initialFollowState
-} from './store';
-
-// Legacy store exports (deprecated)
-export { store } from './store';
-export type { RootState, AppDispatch } from './store';
-
 // Export styles
 export { fontFamilies, fontStyles } from './styles/fonts';
 
 // Export types for navigation (internal use)
 export * from './navigation/types';
 
-// Hooks
+// Hooks (now using Zustand)
 export { useOxyFollow, useFollow } from './hooks';
 
 // Screens

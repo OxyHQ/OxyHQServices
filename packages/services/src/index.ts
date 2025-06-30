@@ -29,9 +29,6 @@ import {
   useFollow,
   ProfileScreen,
   OxyRouter,
-  store,
-  type RootState,
-  type AppDispatch,
 } from './ui';
 
 // ------------- Type Imports -------------
@@ -68,38 +65,6 @@ export {
   useFollow,
   ProfileScreen,
   OxyRouter,
-  
-  // Redux Store - NEW ARCHITECTURE
-  setupOxyStore,
-  oxyReducers,
-  // Individual slices
-  authSlice,
-  authActions,
-  authSelectors,
-  authReducer,
-  followSlice,
-  followActions,
-  followSelectors,
-  followThunks,
-  followReducer,
-  // Action creators
-  loginStart,
-  loginSuccess,
-  loginFailure,
-  logout,
-  setFollowingStatus,
-  clearFollowError,
-  resetFollowState,
-  fetchFollowStatus,
-  toggleFollowUser,
-  // Legacy Redux types (deprecated)
-  initialAuthState,
-  initialFollowState,
-  
-  // Legacy exports (deprecated)
-  store,
-  type RootState,
-  type AppDispatch,
 } from './ui';
 
 // ------------- Zustand Store Exports -------------
