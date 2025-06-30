@@ -117,7 +117,7 @@ router.post("/logout-others", authMiddleware, async (req: AuthRequest, res: Resp
     // Find current session to keep it active
     const currentSession = await Session.findOne({
       userId,
-      token: currentToken,
+      accessToken: currentToken,
       isActive: true
     });
 

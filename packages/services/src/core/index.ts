@@ -152,8 +152,12 @@ export class OxyServices {
             return Promise.reject(apiError);
           }
           
-          // Return the data portion of successful responses
-          response.data = apiResponse.data;
+          // Only unwrap if the response has a 'data' property
+          // Some endpoints use other property names (like 'sessions', 'users', etc.)
+          if ('data' in apiResponse) {
+            response.data = apiResponse.data;
+          }
+          // Otherwise leave the response as-is for endpoints with custom property names
         }
         
         return response;
@@ -426,7 +430,19 @@ export class OxyServices {
   async getUserSessions(): Promise<any[]> {
     try {
       const res = await this.client.get('/sessions');
-      return res.data || [];
+      
+      // The response format is: { success: true, sessions: [...] }
+      // The interceptor now preserves this format since there's no 'data' property
+      if (res.data && res.data.sessions) {
+        return res.data.sessions;
+      }
+      
+      // Fallback for array response (shouldn't happen with current API)
+      if (Array.isArray(res.data)) {
+        return res.data;
+      }
+      
+      return [];
     } catch (error) {
       throw this.handleError(error);
     }
