@@ -18,6 +18,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { fontFamilies } from '../styles/fonts';
 
+type LinkObj = { url: string; title?: string | null; description?: string | null; image?: string | null };
+
 const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
@@ -44,11 +46,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
     // Form state - derived from user data
     const [displayName, setDisplayName] = useState('');
+    const [firstName, setFirstName] = useState('');
+    const [middleName, setMiddleName] = useState('');
+    const [lastName, setLastName] = useState('');
     const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
     const [bio, setBio] = useState('');
     const [location, setLocation] = useState('');
-    const [website, setWebsite] = useState('');
+    const [links, setLinks] = useState<LinkObj[]>([]);
     const [avatarUrl, setAvatarUrl] = useState('');
 
     // Editing states
@@ -56,11 +61,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
     // Temporary input states for inline editing
     const [tempDisplayName, setTempDisplayName] = useState('');
+    const [tempFirstName, setTempFirstName] = useState('');
+    const [tempMiddleName, setTempMiddleName] = useState('');
+    const [tempLastName, setTempLastName] = useState('');
     const [tempUsername, setTempUsername] = useState('');
     const [tempEmail, setTempEmail] = useState('');
     const [tempBio, setTempBio] = useState('');
     const [tempLocation, setTempLocation] = useState('');
-    const [tempWebsite, setTempWebsite] = useState('');
+    const [tempLink, setTempLink] = useState('');
 
     // Memoize theme-related calculations to prevent unnecessary recalculations
     const themeStyles = useMemo(() => {
@@ -89,9 +97,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         if (typeof userData.name === 'string') {
             return userData.name;
         } else if (userData.name && typeof userData.name === 'object') {
-            const firstName = userData.name.first || '';
-            const lastName = userData.name.last || '';
-            return `${firstName} ${lastName}`.trim();
+            const first = userData.name.first || '';
+            const middle = userData.name.middle || '';
+            const last = userData.name.last || '';
+            return [first, middle, last].filter(Boolean).join(' ').trim();
         }
         return '';
     }, []);
@@ -120,11 +129,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                     const userDisplayName = extractDisplayName(freshUser);
 
                     setDisplayName(userDisplayName);
+                    setFirstName(freshUser.name?.first || '');
+                    setMiddleName(freshUser.name?.middle || '');
+                    setLastName(freshUser.name?.last || '');
                     setUsername(freshUser.username || '');
                     setEmail(freshUser.email || '');
                     setBio(freshUser.bio || '');
                     setLocation(freshUser.location || '');
-                    setWebsite(freshUser.website || '');
+                    setLinks(freshUser.links || []);
                     setAvatarUrl(freshUser.avatar?.url || '');
 
                     console.log('AccountSettingsScreen: Data loaded on mount:', {
@@ -133,7 +145,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         email: freshUser.email,
                         bio: freshUser.bio,
                         location: freshUser.location,
-                        website: freshUser.website,
+                        links: freshUser.links,
                         avatarUrl: freshUser.avatar?.url
                     });
                 }
@@ -156,11 +168,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             const userDisplayName = extractDisplayName(user);
 
             setDisplayName(userDisplayName);
+            setFirstName(user.name?.first || '');
+            setMiddleName(user.name?.middle || '');
+            setLastName(user.name?.last || '');
             setUsername(user.username || '');
             setEmail(user.email || '');
             setBio(user.bio || '');
             setLocation(user.location || '');
-            setWebsite(user.website || '');
+            setLinks(user.links || []);
             setAvatarUrl(user.avatar?.url || '');
 
             console.log('AccountSettingsScreen: Data loaded from context:', {
@@ -169,7 +184,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 email: user.email,
                 bio: user.bio,
                 location: user.location,
-                website: user.website,
+                links: user.links,
                 avatarUrl: user.avatar?.url
             });
         } else if (!user) {
@@ -204,17 +219,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 email,
                 bio,
                 location,
-                website,
             };
+            updates.links = links; // can be empty array to clear
 
-            // Handle name field - convert display name to first/last format
-            if (displayName) {
-                const nameParts = displayName.trim().split(' ');
-                const firstName = nameParts[0] || '';
-                const lastName = nameParts.slice(1).join(' ') || '';
-
+            // Include name parts if any have changed
+            if (firstName || middleName || lastName) {
                 updates.name = {
                     first: firstName,
+                    middle: middleName,
                     last: lastName
                 };
             }
@@ -303,7 +315,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const startEditing = (type: string, currentValue: string) => {
         switch (type) {
             case 'displayName':
-                setTempDisplayName(currentValue);
+                setTempFirstName(firstName);
+                setTempMiddleName(middleName);
+                setTempLastName(lastName);
                 break;
             case 'username':
                 setTempUsername(currentValue);
@@ -317,8 +331,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             case 'location':
                 setTempLocation(currentValue);
                 break;
-            case 'website':
-                setTempWebsite(currentValue);
+            case 'link':
+                setTempLink('');
                 break;
         }
         setEditingField(type);
@@ -337,15 +351,18 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
             switch (type) {
                 case 'displayName':
-                    newValue = tempDisplayName;
-                    // Convert display name to first/last format for API
-                    const nameParts = newValue.trim().split(' ');
-                    const firstName = nameParts[0] || '';
-                    const lastName = nameParts.slice(1).join(' ') || '';
+                    const newFirst = tempFirstName;
+                    const newMiddle = tempMiddleName;
+                    const newLast = tempLastName;
+                    newValue = [newFirst, newMiddle, newLast].filter(Boolean).join(' ');
                     updateData.name = {
-                        first: firstName,
-                        last: lastName
+                        first: newFirst,
+                        middle: newMiddle,
+                        last: newLast
                     };
+                    setFirstName(newFirst);
+                    setMiddleName(newMiddle);
+                    setLastName(newLast);
                     setDisplayName(newValue);
                     break;
                 case 'username':
@@ -368,10 +385,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                     updateData.location = newValue;
                     setLocation(newValue);
                     break;
-                case 'website':
-                    newValue = tempWebsite;
-                    updateData.website = newValue;
-                    setWebsite(newValue);
+                case 'link':
+                    // Always include links in the update, even if the array is empty, so that the backend clears the links
+                    updateData.links = links;
+                    // clear temp
+                    setTempLink('');
                     break;
             }
 
@@ -434,7 +452,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             email: 'Email',
             bio: 'Bio',
             location: 'Location',
-            website: 'Website'
+            link: 'Links'
         };
         return labels[type as keyof typeof labels] || 'Field';
     };
@@ -446,9 +464,61 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             email: { name: 'mail', color: '#FF9500' },
             bio: { name: 'document-text', color: '#34C759' },
             location: { name: 'location', color: '#FF3B30' },
-            website: { name: 'link', color: '#32D74B' }
+            link: { name: 'link', color: '#32D74B' }
         };
         return icons[type as keyof typeof icons] || { name: 'person', color: '#007AFF' };
+    };
+
+    const handleAddLink = () => {
+        const url = tempLink.trim();
+        if (!url) return;
+        if (links.some(l => l.url === url)) {
+            toast.error('Link already added');
+            return;
+        }
+
+        const addLinkWithMeta = async () => {
+            try {
+                // Ensure token before calling preview endpoint (if it requires auth)
+                await ensureToken();
+
+                let meta: { title?: string | null; description?: string | null; image?: string | null } = {};
+
+                if (oxyServices?.getLinkPreview) {
+                    try {
+                        const preview = await oxyServices.getLinkPreview(url);
+                        meta = preview || {};
+                    } catch (previewErr) {
+                        console.warn('handleAddLink: Failed to fetch link preview, proceeding without meta', previewErr);
+                    }
+                }
+
+                setLinks(prev => [...prev, { url, ...meta }]);
+                toast.success('Link added');
+            } catch (error) {
+                console.error('handleAddLink: Failed to add link', error);
+                toast.error('Failed to add link');
+            } finally {
+                setTempLink('');
+            }
+        };
+
+        // We run the async logic but do not await here to keep UI responsive
+        addLinkWithMeta();
+    };
+
+    const handleRemoveLink = (index: number) => {
+        setLinks(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const moveLink = (index: number, direction: 'up' | 'down') => {
+        setLinks(prev => {
+            const newArr = [...prev];
+            const newIndex = direction === 'up' ? index - 1 : index + 1;
+            if (newIndex < 0 || newIndex >= newArr.length) return prev;
+            [newArr[index], newArr[newIndex]] = [newArr[newIndex], newArr[index]];
+            return newArr;
+        });
     };
 
     const renderEditingField = (type: string) => {
@@ -458,7 +528,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             email: { label: 'Email', value: email, placeholder: 'Enter your email address', icon: 'mail', color: '#FF9500', multiline: false, keyboardType: 'email-address' as const },
             bio: { label: 'Bio', value: bio, placeholder: 'Tell people about yourself...', icon: 'document-text', color: '#34C759', multiline: true, keyboardType: 'default' as const },
             location: { label: 'Location', value: location, placeholder: 'Enter your location', icon: 'location', color: '#FF3B30', multiline: false, keyboardType: 'default' as const },
-            website: { label: 'Website', value: website, placeholder: 'Enter your website URL', icon: 'link', color: '#32D74B', multiline: false, keyboardType: 'url' as const }
+            link: { label: 'Links', value: tempLink, placeholder: 'Enter URL', icon: 'link', color: '#32D74B', multiline: false, keyboardType: 'url' as const }
         };
 
         const config = fieldConfig[type as keyof typeof fieldConfig];
@@ -471,7 +541,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 case 'email': return tempEmail;
                 case 'bio': return tempBio;
                 case 'location': return tempLocation;
-                case 'website': return tempWebsite;
+                case 'link': return tempLink;
                 default: return '';
             }
         })();
@@ -483,9 +553,94 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 case 'email': setTempEmail(text); break;
                 case 'bio': setTempBio(text); break;
                 case 'location': setTempLocation(text); break;
-                case 'website': setTempWebsite(text); break;
+                case 'link': setTempLink(text); break;
             }
         };
+
+        if (type === 'displayName') {
+            return (
+                <View style={styles.editingFieldContainer}>
+                    <View style={styles.editingFieldContent}>
+                        <View style={styles.newValueSection}>
+                            <Text style={styles.editingFieldLabel}>First Name:</Text>
+                            <TextInput
+                                style={[styles.editingFieldInput, { backgroundColor: themeStyles.isDarkTheme ? '#333' : '#fff', color: themeStyles.isDarkTheme ? '#fff' : '#000', borderColor: themeStyles.primaryColor }]}
+                                value={tempFirstName}
+                                onChangeText={setTempFirstName}
+                                placeholder="Enter first name"
+                                placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                                autoFocus
+                                selectionColor={themeStyles.primaryColor}
+                            />
+
+                            <Text style={[styles.editingFieldLabel, { marginTop: 16 }]}>Middle Name:</Text>
+                            <TextInput
+                                style={[styles.editingFieldInput, { backgroundColor: themeStyles.isDarkTheme ? '#333' : '#fff', color: themeStyles.isDarkTheme ? '#fff' : '#000', borderColor: themeStyles.primaryColor }]}
+                                value={tempMiddleName}
+                                onChangeText={setTempMiddleName}
+                                placeholder="Enter middle name"
+                                placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                                selectionColor={themeStyles.primaryColor}
+                            />
+
+                            <Text style={[styles.editingFieldLabel, { marginTop: 16 }]}>Last Name:</Text>
+                            <TextInput
+                                style={[styles.editingFieldInput, { backgroundColor: themeStyles.isDarkTheme ? '#333' : '#fff', color: themeStyles.isDarkTheme ? '#fff' : '#000', borderColor: themeStyles.primaryColor }]}
+                                value={tempLastName}
+                                onChangeText={setTempLastName}
+                                placeholder="Enter last name"
+                                placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                                selectionColor={themeStyles.primaryColor}
+                            />
+                        </View>
+                    </View>
+                </View>
+            );
+        }
+
+        if (type === 'link') {
+            return (
+                <View style={styles.editingFieldContainer}>
+                    <View style={styles.editingFieldContent}>
+                        {/* Existing links list */}
+                        {links.map((l, idx) => (
+                            <View key={`link-${idx}`} style={{ marginBottom: 12 }}>
+                                <Text style={{ fontWeight: '600', color: themeStyles.isDarkTheme ? '#fff' : '#000' }}>{l.title || l.url}</Text>
+                                {l.description && (
+                                    <Text style={{ color: '#666', marginBottom: 4 }}>{l.description}</Text>
+                                )}
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    <TouchableOpacity onPress={() => moveLink(idx as number, 'up')} disabled={idx === 0} style={{ padding: 4 }}>
+                                        <Ionicons name="arrow-up" size={18} color="#888" />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => moveLink(idx as number, 'down')} disabled={idx === links.length - 1} style={{ padding: 4 }}>
+                                        <Ionicons name="arrow-down" size={18} color="#888" />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => handleRemoveLink(idx as number)} style={{ padding: 4 }}>
+                                        <Ionicons name="trash" size={18} color="#FF3B30" />
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        ))}
+
+                        {/* Add new link */}
+                        <Text style={[styles.editingFieldLabel, { marginTop: 16 }]}>Add New Link:</Text>
+                        <TextInput
+                            style={[styles.editingFieldInput, { backgroundColor: themeStyles.isDarkTheme ? '#333' : '#fff', color: themeStyles.isDarkTheme ? '#fff' : '#000', borderColor: themeStyles.primaryColor }]}
+                            value={tempLink}
+                            onChangeText={setTempLink}
+                            placeholder={config.placeholder}
+                            placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                            keyboardType="url"
+                            selectionColor={themeStyles.primaryColor}
+                        />
+                        <TouchableOpacity onPress={handleAddLink} disabled={tempLink.trim() === ''} style={{ marginTop: 12, alignSelf: 'flex-start', backgroundColor: tempLink.trim() === '' ? '#ccc' : themeStyles.primaryColor, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20 }}>
+                            <Text style={{ color: '#fff', fontWeight: '600' }}>Add</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            );
+        }
 
         return (
             <View style={styles.editingFieldContainer}>
@@ -741,10 +896,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                             )}
 
                             {renderField(
-                                'website',
-                                'Website',
-                                website,
-                                'Add your website',
+                                'link',
+                                'Links',
+                                links.map(l => l.url).join(', '),
+                                'Add a link',
                                 'link',
                                 '#32D74B',
                                 false,

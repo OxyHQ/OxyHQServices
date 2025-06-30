@@ -26,11 +26,23 @@ export const userSchemas = {
   updateProfile: z.object({
     name: z.object({
       first: z.string().max(50, 'First name must be less than 50 characters').optional(),
+      middle: z.string().max(50, 'Middle name must be less than 50 characters').optional(),
       last: z.string().max(50, 'Last name must be less than 50 characters').optional()
     }).optional(),
     bio: z.string().max(500, 'Bio must be less than 500 characters').optional(),
     location: z.string().max(100, 'Location must be less than 100 characters').optional(),
-    website: z.string().url('Invalid website URL').optional(),
+    links: z.array(z.object({
+      url: z.string().url('Invalid link URL'),
+      title: z.string().max(200).nullable().optional(),
+      description: z.string().max(500).nullable().optional(),
+      image: z.string().url().nullable().optional()
+    }))
+      .max(10, 'Too many links')
+      .refine(arr => {
+        const urls = arr.map(l => l.url);
+        return new Set(urls).size === urls.length;
+      }, { message: 'Duplicate links are not allowed' })
+      .optional(),
     avatar: z.object({
       id: z.string().optional(),
       url: z.string().url('Invalid avatar URL').optional()

@@ -5,6 +5,9 @@ import { authMiddleware } from '../middleware/auth';
 import { logger } from '../utils/logger';
 import { Types } from 'mongoose';
 import { UsersController } from '../controllers/users.controller';
+import { z } from 'zod';
+import { websiteExists } from '../utils/website';
+import { fetchLinkPreview } from '../utils/linkPreview';
 
 interface AuthRequest extends Request {
   user?: {
@@ -40,7 +43,7 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
 // Update current authenticated user
 router.put('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'coverPhoto', 'bio', 'description', 'location', 'website', 'labels'] as const;
+    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'coverPhoto', 'bio', 'description', 'location', 'links', 'labels'] as const;
     type AllowedUpdate = typeof allowedUpdates[number];
 
     const updates = Object.entries(req.body)
@@ -52,6 +55,42 @@ router.put('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
         }
         return { ...obj, [key]: value };
       }, {} as Partial<Pick<IUser, AllowedUpdate>>);
+
+    // Validate links array if present
+    if (Array.isArray(req.body.links)) {
+      req.body.links = req.body.links.filter((l: any)=> l && l.url && l.url.trim());
+      // Allow empty array to clear links; keep field as []
+      const linksSchema = z.array(
+        z.object({
+          url: z.string()
+            .url('Invalid link URL')
+            .refine(async (u) => await websiteExists(u), { message: 'Website does not exist or is unreachable' }),
+          title: z.string().max(200).nullable().optional(),
+          description: z.string().max(500).nullable().optional(),
+          image: z.string().url().nullable().optional()
+        })
+      )
+      .max(10, 'Too many links')
+      .refine(arr => {
+        const urls = arr.map(l => l.url);
+        return new Set(urls).size === urls.length;
+      }, { message: 'Duplicate links are not allowed' });
+
+      const parseResult = await linksSchema.safeParseAsync(req.body.links);
+      if (!parseResult.success) {
+        return res.status(400).json({ message: parseResult.error.issues[0].message });
+      }
+
+      // Enrich links with metadata if needed
+      if (Array.isArray(req.body.links)) {
+        const enriched = await Promise.all(req.body.links.map(async (link: any) => {
+          if (link.title && link.description) return link;
+          const preview = await fetchLinkPreview(link.url);
+          return { ...link, ...preview };
+        }));
+        req.body.links = enriched;
+      }
+    }
 
     const user = await User.findByIdAndUpdate(
       req.user?.id,
@@ -122,9 +161,44 @@ router.put('/:userId', authMiddleware, validateObjectId, async (req: AuthRequest
       return res.status(403).json({ message: 'Not authorized to update this profile' });
     }
 
-    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'coverPhoto', 'bio', 'description', 'location', 'website', 'labels'] as const;
+    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'coverPhoto', 'bio', 'description', 'location', 'links', 'labels'] as const;
     type AllowedUpdate = typeof allowedUpdates[number];
     
+    // Validate links array if provided
+    if (Array.isArray(req.body.links)) {
+      req.body.links = req.body.links.filter((l: any)=> l && l.url && l.url.trim());
+      // Allow empty array to clear links; keep field as []
+      const linksSchema = z.array(
+        z.object({
+          url: z.string()
+            .url('Invalid link URL')
+            .refine(async (u) => await websiteExists(u), { message: 'Website does not exist or is unreachable' }),
+          title: z.string().max(200).nullable().optional(),
+          description: z.string().max(500).nullable().optional(),
+          image: z.string().url().nullable().optional()
+        })
+      )
+      .max(10, 'Too many links')
+      .refine(arr => {
+        const urls = arr.map(l => l.url);
+        return new Set(urls).size === urls.length;
+      }, { message: 'Duplicate links are not allowed' });
+
+      const validationResult = await linksSchema.safeParseAsync(req.body.links);
+      if (!validationResult.success) {
+        return res.status(400).json({ message: validationResult.error.issues[0].message });
+      }
+
+      // Enrich links with metadata if needed
+      if (Array.isArray(req.body.links)) {
+        req.body.links = await Promise.all(req.body.links.map(async (link: any) => {
+          if (link.title && link.description) return link;
+          const preview = await fetchLinkPreview(link.url);
+          return { ...link, ...preview };
+        }));
+      }
+    }
+
     const updates = Object.entries(req.body)
       .filter(([key]) => allowedUpdates.includes(key as AllowedUpdate))
       .reduce((obj, [key, value]) => {

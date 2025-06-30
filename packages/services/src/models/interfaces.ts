@@ -13,6 +13,7 @@ export interface User {
   };
   name?: {
     first?: string;
+    middle?: string;
     last?: string;
     full?: string;
     [key: string]: any;

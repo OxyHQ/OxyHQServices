@@ -9,6 +9,7 @@ export interface IUser extends Document {
   followers?: mongoose.Types.ObjectId[];
   name?: {
     first?: string;
+    middle?: string;
     last?: string;
   };
   privacySettings: {
@@ -46,6 +47,12 @@ export interface IUser extends Document {
   coverPhoto?: string;
   location?: string;
   website?: string;
+  links?: {
+    url: string;
+    title?: string | null;
+    description?: string | null;
+    image?: string | null;
+  }[];
   pinnedPost?: {
     cid?: string;
     uri?: string;
@@ -123,6 +130,11 @@ const UserSchema: Schema = new Schema(
         trim: true, 
         maxlength: 50 
       },
+      middle: { 
+        type: String, 
+        trim: true, 
+        maxlength: 50 
+      },
       last: { 
         type: String, 
         trim: true, 
@@ -189,6 +201,15 @@ const UserSchema: Schema = new Schema(
       maxlength: 255,
       trim: true
     },
+    links: {
+      type: [{
+        url: { type: String, required: true },
+        title: { type: String },
+        description: { type: String },
+        image: { type: String }
+      }],
+      default: []
+    },
     pinnedPosts: [{ 
       type: Schema.Types.ObjectId, 
       ref: "Post", 
@@ -221,6 +242,7 @@ UserSchema.index({ following: 1, createdAt: -1 });
 UserSchema.index({
   username: 'text',
   'name.first': 'text',
+  'name.middle': 'text',
   'name.last': 'text',
   bio: 'text',
   description: 'text',
@@ -229,6 +251,7 @@ UserSchema.index({
   weights: {
     username: 10,
     'name.first': 8,
+    'name.middle': 8,
     'name.last': 8,
     bio: 5,
     description: 3,
@@ -238,9 +261,15 @@ UserSchema.index({
 });
 
 UserSchema.set("toJSON", {
+  virtuals: true,
   transform: function (doc, ret) {
     delete ret.password;
     delete ret.refreshToken;
+    
+    if (ret.name) {
+      const { first, middle, last } = ret.name;
+      ret.name.full = [first, middle, last].filter(Boolean).join(" ");
+    }
     
     ret.id = ret._id;
     delete ret._id;
@@ -249,6 +278,12 @@ UserSchema.set("toJSON", {
     return ret;
   },
   versionKey: false
+});
+
+UserSchema.virtual('name.full').get(function() {
+  const name = this.name as { first?: string; middle?: string; last?: string } | undefined;
+  if (!name) return undefined;
+  return [name.first, name.middle, name.last].filter(Boolean).join(' ');
 });
 
 UserSchema.pre("save", function (next) {
@@ -266,11 +301,12 @@ UserSchema.pre("save", function (next) {
 });
 
 UserSchema.virtual('fullName').get(function() {
-  const name = this.name as { first?: string; last?: string } | undefined;
-  if (name?.first && name?.last) {
-    return `${name.first} ${name.last}`;
+  const name = this.name as { first?: string; middle?: string; last?: string } | undefined;
+  if (name) {
+    const full = [name.first, name.middle, name.last].filter(Boolean).join(' ');
+    if (full) return full;
   }
-  return name?.first || name?.last || this.username;
+  return this.username;
 });
 
 UserSchema.virtual('displayName').get(function() {

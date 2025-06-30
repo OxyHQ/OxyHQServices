@@ -224,7 +224,7 @@ router.post("/signup", async (req: Request, res: Response) => {
       description: "",
       coverPhoto: "",
       location: "",
-      website: "",
+      links: [],
       pinnedPost: { cid: "", uri: "" },
       _count: {
         followers: 0,
@@ -640,6 +640,7 @@ router.post("/register", async (req: Request, res: Response) => {
         labeler: false,
       },
       labels: [],
+      links: [],
       _count: {
         followers: 0,
         following: 0,
@@ -707,7 +708,7 @@ router.get("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
         description: req.user.description,
         coverPhoto: req.user.coverPhoto,
         location: req.user.location,
-        website: req.user.website,
+        links: req.user.links,
         stats: req.user._count
       }
     });

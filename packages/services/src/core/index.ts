@@ -1815,6 +1815,18 @@ export class OxyServices {
   public getRefreshToken(): string | null {
     return this.refreshToken;
   }
+
+  /**
+   * Fetches preview metadata (title, description, image) for a given URL via the API.
+   */
+  async getLinkPreview(url: string): Promise<{ title: string | null; description: string | null; image?: string | null }> {
+    try {
+      const res = await this.client.get('/links/preview', { params: { url } });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
 }
 
 // Create default instance for backward compatibility

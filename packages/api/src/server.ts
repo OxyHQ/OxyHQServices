@@ -19,6 +19,7 @@ import analyticsRoutes from "./routes/analytics.routes";
 import paymentRoutes from './routes/payment.routes';
 import walletRoutes from './routes/wallet.routes';
 import karmaRoutes from './routes/karma.routes';
+import linkPreviewRoutes from './routes/linkPreview';
 
 // Import utilities and middleware
 import { logger, requestLogger } from "./utils/logger";
@@ -221,6 +222,7 @@ app.use("/analytics", analyticsRoutes);
 app.use('/payments', paymentRoutes);
 app.use('/notifications', notificationsRouter);
 app.use('/wallet', walletRoutes);
+app.use('/links', linkPreviewRoutes);
 
 // File routes with special handling
 app.use("/files", (req, res, next) => {
