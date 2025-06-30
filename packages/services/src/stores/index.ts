@@ -95,33 +95,39 @@ export const useOxyStore = create<OxyStore>()(
       name: 'oxy-auth', // storage key
       storage,
       partialize: (state) => {
-        // Only persist tokens for clean architecture
+        // Persist tokens and user preferences (theme, language) for clean architecture
         const partialized = {
           accessToken: state.accessToken,
           refreshToken: state.refreshToken,
+          theme: state.theme,
+          language: state.language,
         } as Partial<OxyStore>;
         
-        console.log('[OxyStore] Partializing state for persistence (tokens only):', {
+        console.log('[OxyStore] Partializing state for persistence (tokens + preferences):', {
           hasAccessToken: !!partialized.accessToken,
           hasRefreshToken: !!partialized.refreshToken,
           accessTokenLength: partialized.accessToken?.length || 0,
           refreshTokenLength: partialized.refreshToken?.length || 0,
+          theme: partialized.theme,
+          language: partialized.language,
         });
         
         return partialized;
       },
       onRehydrateStorage: () => (state) => {
-        console.log('[OxyStore] Rehydrating from storage (tokens only):', {
+        console.log('[OxyStore] Rehydrating from storage (tokens + preferences):', {
           hasAccessToken: !!state?.accessToken,
           hasRefreshToken: !!state?.refreshToken,
           accessTokenLength: state?.accessToken?.length || 0,
           refreshTokenLength: state?.refreshToken?.length || 0,
+          theme: state?.theme,
+          language: state?.language,
         });
         
         // If we have tokens, they will be restored to state
         // Non-persisted state will be synced from backend in initializeOxyStore
         if (state?.accessToken && state?.refreshToken) {
-          console.log('[OxyStore] Tokens restored from storage, non-persisted state will be synced from backend');
+          console.log('[OxyStore] Tokens and preferences restored from storage, non-persisted state will be synced from backend');
         } else {
           console.log('[OxyStore] No tokens found in storage');
         }
@@ -275,11 +281,13 @@ export const initializeOxyStore = (oxyServices: OxyServices) => {
   });
 
   const state = useOxyStore.getState();
-  console.log('[OxyStore] Initializing with token-only persistence model:', {
+  console.log('[OxyStore] Initializing with token + preferences persistence model:', {
     hasAccessToken: !!state.accessToken,
     hasRefreshToken: !!state.refreshToken,
     accessTokenLength: state.accessToken?.length || 0,
     refreshTokenLength: state.refreshToken?.length || 0,
+    theme: state.theme,
+    language: state.language,
     // Non-persisted state (should be empty on startup)
     hasUser: !!state.user,
     isAuthenticated: state.isAuthenticated,
