@@ -12,13 +12,37 @@ import {
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
-import Avatar from '../components/Avatar';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { fontFamilies } from '../styles/fonts';
+import LocationPickerPanel, { AddressObj as PickerAddressObj } from '../components/LocationPickerPanel';
+import ProfilePictureSection from './accountSettings/ProfilePictureSection';
+import BasicInformationSection from './accountSettings/BasicInformationSection';
+import AboutYouSection from './accountSettings/AboutYouSection';
+import QuickActionsSection from './accountSettings/QuickActionsSection';
+import SecuritySection from './accountSettings/SecuritySection';
+import NotificationSection from './accountSettings/NotificationSection';
+import AppearanceSection from './accountSettings/AppearanceSection';
+import PrivacySection from './accountSettings/PrivacySection';
+import AccountSection from './accountSettings/AccountSection';
+import { useThemeStoreStandalone } from '../../stores/themeStore';
 
 type LinkObj = { url: string; title?: string | null; description?: string | null; image?: string | null };
+
+// New address object type allowing label & rich address details
+export type AddressObj = {
+    label?: string; // e.g., "home", "work", "other"
+    formatted?: string; // Single-line formatted string shown in UI
+    street?: string;
+    number?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
+    lat?: number;
+    lng?: number;
+};
 
 const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -34,7 +58,17 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         ensureToken,
         activeSessionId,
         refreshUserData,
-        updateProfile
+        updateProfile,
+        // User Settings from new store
+        settings,
+        settingsLoading,
+        settingsSaving,
+        settingsError,
+        settingsOffline,
+        loadSettings,
+        saveSettings,
+        syncSettings,
+        setSettings,
     } = useOxy();
 
     const [isLoading, setIsLoading] = useState(false);
@@ -52,6 +86,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
     const [bio, setBio] = useState('');
+    const [description, setDescription] = useState('');
     const [location, setLocation] = useState('');
     const [links, setLinks] = useState<LinkObj[]>([]);
     const [avatarUrl, setAvatarUrl] = useState('');
@@ -69,6 +104,44 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const [tempBio, setTempBio] = useState('');
     const [tempLocation, setTempLocation] = useState('');
     const [tempLink, setTempLink] = useState('');
+    const [tempDescription, setTempDescription] = useState('');
+
+    // New addresses state
+    const [addresses, setAddresses] = useState<AddressObj[]>([]);
+    const [showAddressPicker, setShowAddressPicker] = useState(false);
+    const editingAddressIndexRef = useRef<number | null>(null);
+
+    // Temp state for adding a new address (formatted string for now)
+    const [tempAddressFormatted, setTempAddressFormatted] = useState('');
+
+    // Security section state
+    const [hasTwoFactorEnabled, setHasTwoFactorEnabled] = useState(false);
+    const [lastPasswordChange, setLastPasswordChange] = useState<string | undefined>();
+    const [activeSessions, setActiveSessions] = useState(1);
+
+    // Notification section state
+    const [pushNotifications, setPushNotifications] = useState(true);
+    const [emailNotifications, setEmailNotifications] = useState(true);
+    const [marketingEmails, setMarketingEmails] = useState(false);
+    const [soundEnabled, setSoundEnabled] = useState(true);
+
+    // Theme store
+    const themeStore = useThemeStoreStandalone();
+    const currentTheme = themeStore.theme;
+    const fontSize = themeStore.fontSize;
+    const language = themeStore.language;
+
+
+
+    // Privacy section state
+    const [profileVisibility, setProfileVisibility] = useState<'public' | 'private' | 'friends'>('public');
+    const [showOnlineStatus, setShowOnlineStatus] = useState(true);
+    const [allowMessagesFrom, setAllowMessagesFrom] = useState<'everyone' | 'friends' | 'none'>('friends');
+    const [showActivityStatus, setShowActivityStatus] = useState(true);
+
+    // Account section state
+    const [accountCreated, setAccountCreated] = useState('January 2024');
+    const [lastLogin, setLastLogin] = useState('Today at 2:30 PM');
 
     // Memoize theme-related calculations to prevent unnecessary recalculations
     const themeStyles = useMemo(() => {
@@ -105,7 +178,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         return '';
     }, []);
 
-    // Load user data when screen mounts
+    // Load settings when screen mounts
     useEffect(() => {
         const loadUserData = async () => {
             if (!isAuthenticated || !oxyServices) {
@@ -114,90 +187,69 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             }
 
             try {
-                console.log('AccountSettingsScreen: Loading user data on mount...');
+                console.log('AccountSettingsScreen: Loading settings on mount...');
                 setIsRefreshing(true);
 
                 // Ensure token is set
                 await ensureToken();
 
-                // Get fresh user data
-                const freshUser = await oxyServices.getCurrentUser();
+                // Load settings from backend first, fallback to local
+                await loadSettings();
 
-                if (freshUser) {
-                    console.log('AccountSettingsScreen: Fresh user data loaded:', freshUser);
-
-                    const userDisplayName = extractDisplayName(freshUser);
-
-                    setDisplayName(userDisplayName);
-                    setFirstName(freshUser.name?.first || '');
-                    setMiddleName(freshUser.name?.middle || '');
-                    setLastName(freshUser.name?.last || '');
-                    setUsername(freshUser.username || '');
-                    setEmail(freshUser.email || '');
-                    setBio(freshUser.bio || '');
-                    setLocation(freshUser.location || '');
-                    setLinks(freshUser.links || []);
-                    setAvatarUrl(freshUser.avatar?.url || '');
-
-                    console.log('AccountSettingsScreen: Data loaded on mount:', {
-                        displayName: userDisplayName,
-                        username: freshUser.username,
-                        email: freshUser.email,
-                        bio: freshUser.bio,
-                        location: freshUser.location,
-                        links: freshUser.links,
-                        avatarUrl: freshUser.avatar?.url
-                    });
-                }
+                console.log('AccountSettingsScreen: Settings loaded successfully');
             } catch (error) {
-                console.error('AccountSettingsScreen: Failed to load user data on mount:', error);
-                toast.error('Failed to load user data');
+                console.error('AccountSettingsScreen: Failed to load settings:', error);
+                toast.error('Failed to load settings');
             } finally {
                 setIsRefreshing(false);
             }
         };
 
         loadUserData();
-    }, [isAuthenticated, oxyServices, ensureToken, extractDisplayName]);
+    }, [isAuthenticated, oxyServices, ensureToken, loadSettings]);
 
-    // Load user data from context as fallback when user changes
+    // Update local state when settings change
     useEffect(() => {
-        if (user && !isRefreshing) {
-            console.log('AccountSettingsScreen: Loading user data from context:', user);
+        if (settings && !isRefreshing) {
+            console.log('AccountSettingsScreen: Settings updated:', settings);
 
-            const userDisplayName = extractDisplayName(user);
+            const userDisplayName = extractDisplayName(settings);
 
             setDisplayName(userDisplayName);
-            setFirstName(user.name?.first || '');
-            setMiddleName(user.name?.middle || '');
-            setLastName(user.name?.last || '');
-            setUsername(user.username || '');
-            setEmail(user.email || '');
-            setBio(user.bio || '');
-            setLocation(user.location || '');
-            setLinks(user.links || []);
-            setAvatarUrl(user.avatar?.url || '');
+            setFirstName(settings.name?.first || '');
+            setMiddleName(settings.name?.middle || '');
+            setLastName(settings.name?.last || '');
+            setUsername(settings.username || '');
+            setEmail(settings.email || '');
+            setBio(settings.bio || '');
+            setDescription(settings.description || '');
+            setLocation(settings.location || '');
+            setAddresses(settings.addresses || []);
+            setLinks(settings.links || []);
+            setAvatarUrl(settings.avatar?.url || '');
 
-            console.log('AccountSettingsScreen: Data loaded from context:', {
+            console.log('AccountSettingsScreen: Data loaded from settings:', {
                 displayName: userDisplayName,
-                username: user.username,
-                email: user.email,
-                bio: user.bio,
-                location: user.location,
-                links: user.links,
-                avatarUrl: user.avatar?.url
+                username: settings.username,
+                email: settings.email,
+                bio: settings.bio,
+                description: settings.description,
+                location: settings.location,
+                addresses: settings.addresses,
+                links: settings.links,
+                avatarUrl: settings.avatar?.url
             });
-        } else if (!user) {
-            console.log('AccountSettingsScreen: No user data available in context');
+        } else if (!settings) {
+            console.log('AccountSettingsScreen: No settings available');
         }
-    }, [user, isRefreshing, extractDisplayName]);
+    }, [settings, isRefreshing, extractDisplayName]);
 
-    // Add loading state for when user data is not yet available
-    const isDataLoading = authLoading || !user || isRefreshing;
+    // Add loading state for when settings are not yet available
+    const isDataLoading = settingsLoading || !settings || isRefreshing;
 
     const handleSave = async () => {
-        if (!user || !oxyServices) {
-            console.error('handleSave: Missing user or oxyServices', { user: !!user, oxyServices: !!oxyServices });
+        if (!settings || !oxyServices) {
+            console.error('handleSave: Missing settings or oxyServices', { settings: !!settings, oxyServices: !!oxyServices });
             return;
         }
 
@@ -205,22 +257,20 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             setIsSaving(true);
             animateSaveButton(0.95); // Scale down slightly for animation
 
-            console.log('handleSave: Starting profile update...');
-            console.log('handleSave: User authenticated:', !!user);
-            console.log('handleSave: Active session ID:', activeSessionId);
+            console.log('handleSave: Starting settings update...');
 
             // Ensure the token is set before making API calls
-            console.log('handleSave: Ensuring token is set...');
             await ensureToken();
-            console.log('handleSave: Token ensured successfully');
 
             const updates: Record<string, any> = {
                 username,
                 email,
                 bio,
+                description,
                 location,
+                addresses,
+                links,
             };
-            updates.links = links; // can be empty array to clear
 
             // Include name parts if any have changed
             if (firstName || middleName || lastName) {
@@ -232,31 +282,19 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             }
 
             // Handle avatar
-            if (avatarUrl !== user.avatar?.url) {
+            if (avatarUrl !== settings.avatar?.url) {
                 updates.avatar = { url: avatarUrl };
             }
 
             console.log('handleSave: Making API call with updates:', updates);
 
-            // Use the Zustand store action instead of direct API call
-            await updateProfile(updates);
-            console.log('handleSave: Profile update successful');
+            // Save settings to backend first
+            await saveSettings(updates);
+            console.log('handleSave: Settings update successful');
 
-            toast.success('Profile updated successfully');
+            toast.success('Settings updated successfully');
 
             animateSaveButton(1); // Scale back to normal
-
-            // Refresh user data to ensure UI shows latest data
-            setIsRefreshing(true);
-            try {
-                await refreshUserData();
-                console.log('handleSave: User data refreshed successfully');
-            } catch (error) {
-                console.error('handleSave: Failed to refresh user data:', error);
-                // Don't show error to user as the save was successful
-            } finally {
-                setIsRefreshing(false);
-            }
 
             if (onClose) {
                 onClose();
@@ -264,16 +302,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 goBack();
             }
         } catch (error: any) {
-            console.error('Profile update error:', error);
-            console.error('Error details:', {
-                message: error.message,
-                status: error.status,
-                code: error.code,
-                response: error.response
-            });
+            console.error('Settings update error:', error);
 
             // Provide more specific error messages
-            let errorMessage = 'Failed to update profile';
+            let errorMessage = 'Failed to update settings';
             if (error.code === 'INVALID_TOKEN' || error.status === 401) {
                 errorMessage = 'Authentication expired. Please log in again.';
             } else if (error.message) {
@@ -334,6 +366,15 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             case 'link':
                 setTempLink('');
                 break;
+            case 'address':
+                setTempAddressFormatted('');
+                break;
+            case 'description':
+                setTempDescription(currentValue);
+                break;
+            case 'theme':
+                // No temp value needed for theme selection
+                break;
         }
         setEditingField(type);
     };
@@ -371,19 +412,45 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                     setUsername(newValue);
                     break;
                 case 'email':
-                    newValue = tempEmail;
+                    newValue = tempEmail.trim();
+                    // Basic front-end email format check
+                    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                    if (newValue && !emailRegex.test(newValue)) {
+                        toast.error('Please enter a valid email address');
+                        animateSaveButton(1);
+                        return;
+                    }
                     updateData.email = newValue;
                     setEmail(newValue);
                     break;
                 case 'bio':
                     newValue = tempBio;
+                    if (newValue.length > 500) {
+                        toast.error('Bio cannot exceed 500 characters');
+                        animateSaveButton(1);
+                        return;
+                    }
                     updateData.bio = newValue;
                     setBio(newValue);
+                    break;
+                case 'description':
+                    newValue = tempDescription;
+                    if (newValue.length > 1000) {
+                        toast.error('About section cannot exceed 1000 characters');
+                        animateSaveButton(1);
+                        return;
+                    }
+                    updateData.description = newValue;
+                    setDescription(newValue);
                     break;
                 case 'location':
                     newValue = tempLocation;
                     updateData.location = newValue;
                     setLocation(newValue);
+                    break;
+                case 'address':
+                    // For now, just update addresses array (no inline editing of single item)
+                    updateData.addresses = addresses;
                     break;
                 case 'link':
                     // Always include links in the update, even if the array is empty, so that the backend clears the links
@@ -391,13 +458,17 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                     // clear temp
                     setTempLink('');
                     break;
+                case 'theme':
+                    newValue = currentTheme;
+                    updateData.theme = newValue;
+                    break;
             }
 
-            // Make the API call to save the data using Zustand store action
+            // Save to backend first
             console.log(`saveField: Saving ${type} with value:`, newValue);
             console.log('saveField: API update data:', updateData);
 
-            await updateProfile(updateData);
+            await saveSettings(updateData);
             console.log(`saveField: ${type} saved successfully`);
 
             toast.success(`${getFieldLabel(type)} updated successfully`);
@@ -450,9 +521,12 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             displayName: 'Display Name',
             username: 'Username',
             email: 'Email',
-            bio: 'Bio',
+            bio: 'Short Bio',
+            description: 'About Me',
             location: 'Location',
-            link: 'Links'
+            address: 'Locations',
+            link: 'Links',
+            theme: 'Theme'
         };
         return labels[type as keyof typeof labels] || 'Field';
     };
@@ -462,9 +536,12 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             displayName: { name: 'person', color: '#007AFF' },
             username: { name: 'at', color: '#5856D6' },
             email: { name: 'mail', color: '#FF9500' },
-            bio: { name: 'document-text', color: '#34C759' },
+            bio: { name: 'chatbubble-ellipses', color: '#FF9500' },
+            description: { name: 'document-text', color: '#34C759' },
             location: { name: 'location', color: '#FF3B30' },
-            link: { name: 'link', color: '#32D74B' }
+            address: { name: 'location', color: '#FF3B30' },
+            link: { name: 'link', color: '#32D74B' },
+            theme: { name: 'moon', color: '#5856D6' }
         };
         return icons[type as keyof typeof icons] || { name: 'person', color: '#007AFF' };
     };
@@ -521,18 +598,201 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         });
     };
 
+    const handleAddAddress = () => {
+        showPickerForIndex(null);
+    };
+
+    const showPickerForIndex = (index: number | null) => {
+        editingAddressIndexRef.current = index;
+        setShowAddressPicker(true);
+    };
+
+    const handleAddressPicked = (addr: PickerAddressObj) => {
+        const editingIndex = editingAddressIndexRef.current;
+        if (typeof editingIndex === 'number' && editingIndex >= 0) {
+            // replace existing
+            setAddresses(prev => prev.map((a, i) => i === editingIndex ? addr : a));
+        } else {
+            // add new
+            if (addresses.some(a => a.formatted === addr.formatted)) {
+                toast.error('Address already added');
+            } else {
+                setAddresses(prev => [...prev, addr]);
+                toast.success('Location added');
+            }
+        }
+        editingAddressIndexRef.current = null;
+        setShowAddressPicker(false);
+    };
+
+    const handleCancelPick = () => setShowAddressPicker(false);
+
+    const handleRemoveAddress = (index: number) => {
+        setAddresses(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const moveAddress = (index: number, direction: 'up' | 'down') => {
+        setAddresses(prev => {
+            const newArr = [...prev];
+            const newIndex = direction === 'up' ? index - 1 : index + 1;
+            if (newIndex < 0 || newIndex >= newArr.length) return prev;
+            [newArr[index], newArr[newIndex]] = [newArr[newIndex], newArr[index]];
+            return newArr;
+        });
+    };
+
+    const editAddressLocation = (index: number) => {
+        showPickerForIndex(index);
+    };
+
+    // Security section handlers
+    const handleUpdatePassword = () => {
+        toast.info('Password update coming soon!');
+    };
+
+    const handleToggleTwoFactor = () => {
+        setHasTwoFactorEnabled(prev => !prev);
+        toast.success(hasTwoFactorEnabled ? 'Two-factor authentication disabled' : 'Two-factor authentication enabled');
+    };
+
+    const handleManageSessions = () => {
+        toast.info('Session management coming soon!');
+    };
+
+    const handleSecurityLog = () => {
+        toast.info('Security log coming soon!');
+    };
+
+    // Notification section handlers
+    const handleTogglePushNotifications = async (value: boolean) => {
+        try {
+            await saveSettings({ pushNotifications: value });
+            toast.success(value ? 'Push notifications enabled' : 'Push notifications disabled');
+        } catch (error) {
+            toast.error('Failed to update notification settings');
+        }
+    };
+
+    const handleToggleEmailNotifications = async (value: boolean) => {
+        try {
+            await saveSettings({ emailNotifications: value });
+            toast.success(value ? 'Email notifications enabled' : 'Email notifications disabled');
+        } catch (error) {
+            toast.error('Failed to update notification settings');
+        }
+    };
+
+    const handleToggleMarketingEmails = async (value: boolean) => {
+        try {
+            await saveSettings({ marketingEmails: value });
+            toast.success(value ? 'Marketing emails enabled' : 'Marketing emails disabled');
+        } catch (error) {
+            toast.error('Failed to update notification settings');
+        }
+    };
+
+    const handleToggleSound = async (value: boolean) => {
+        try {
+            await saveSettings({ soundEnabled: value });
+            toast.success(value ? 'Notification sounds enabled' : 'Notification sounds disabled');
+        } catch (error) {
+            toast.error('Failed to update notification settings');
+        }
+    };
+
+    const handleNotificationPreferences = () => {
+        toast.info('Notification preferences coming soon!');
+    };
+
+    // Appearance section handlers
+    const handleThemeChange = () => {
+        startEditing('theme', currentTheme);
+    };
+
+    const handleThemeSelect = async (selectedTheme: 'light' | 'dark' | 'auto') => {
+        try {
+            await saveSettings({ theme: selectedTheme });
+            toast.success('Theme updated successfully');
+        } catch (error) {
+            toast.error('Failed to update theme');
+        }
+    };
+
+    const handleFontSizeChange = () => {
+        toast.info('Font size selection coming soon!');
+    };
+
+    const handleLanguageChange = () => {
+        toast.info('Language selection coming soon!');
+    };
+
+    const handleAccessibilitySettings = () => {
+        toast.info('Accessibility settings coming soon!');
+    };
+
+    // Privacy section handlers
+    const handleProfileVisibilityChange = () => {
+        toast.info('Profile visibility settings coming soon!');
+    };
+
+    const handleToggleOnlineStatus = (value: boolean) => {
+        setShowOnlineStatus(value);
+        toast.success(value ? 'Online status visible' : 'Online status hidden');
+    };
+
+    const handleMessagePrivacyChange = () => {
+        toast.info('Message privacy settings coming soon!');
+    };
+
+    const handleToggleActivityStatus = (value: boolean) => {
+        setShowActivityStatus(value);
+        toast.success(value ? 'Activity status visible' : 'Activity status hidden');
+    };
+
+    const handleBlockedUsers = () => {
+        toast.info('Blocked users management coming soon!');
+    };
+
+    const handleDataExport = () => {
+        toast.info('Data export coming soon!');
+    };
+
+    // Account section handlers
+    const handleDeactivateAccount = () => {
+        toast.info('Account deactivation coming soon!');
+    };
+
+    const handleDeleteAccount = () => {
+        toast.info('Account deletion coming soon!');
+    };
+
+    const handleLogout = () => {
+        toast.info('Logout functionality coming soon!');
+    };
+
+    const handleHelpSupport = () => {
+        toast.info('Help & support coming soon!');
+    };
+
+    const handleTermsPrivacy = () => {
+        toast.info('Terms & privacy coming soon!');
+    };
+
     const renderEditingField = (type: string) => {
         const fieldConfig = {
             displayName: { label: 'Display Name', value: displayName, placeholder: 'Enter your display name', icon: 'person', color: '#007AFF', multiline: false, keyboardType: 'default' as const },
             username: { label: 'Username', value: username, placeholder: 'Choose a username', icon: 'at', color: '#5856D6', multiline: false, keyboardType: 'default' as const },
             email: { label: 'Email', value: email, placeholder: 'Enter your email address', icon: 'mail', color: '#FF9500', multiline: false, keyboardType: 'email-address' as const },
-            bio: { label: 'Bio', value: bio, placeholder: 'Tell people about yourself...', icon: 'document-text', color: '#34C759', multiline: true, keyboardType: 'default' as const },
+            bio: { label: 'Short Bio', value: bio, placeholder: 'Write a brief introduction (max 500 characters)...', icon: 'chatbubble-ellipses', color: '#FF9500', multiline: true, keyboardType: 'default' as const },
+            description: { label: 'About Me', value: description, placeholder: 'Share your story, interests, and more (max 1000 characters)...', icon: 'document-text', color: '#34C759', multiline: true, keyboardType: 'default' as const },
             location: { label: 'Location', value: location, placeholder: 'Enter your location', icon: 'location', color: '#FF3B30', multiline: false, keyboardType: 'default' as const },
-            link: { label: 'Links', value: tempLink, placeholder: 'Enter URL', icon: 'link', color: '#32D74B', multiline: false, keyboardType: 'url' as const }
+            address: { label: 'Locations', value: tempAddressFormatted, placeholder: 'Search or enter address', icon: 'location', color: '#FF3B30', multiline: false, keyboardType: 'default' as const },
+            link: { label: 'Links', value: tempLink, placeholder: 'Enter URL', icon: 'link', color: '#32D74B', multiline: false, keyboardType: 'url' as const },
+            theme: { label: 'Theme', value: currentTheme, placeholder: 'Choose your theme', icon: 'moon', color: '#5856D6', multiline: false, keyboardType: 'default' as const }
         };
 
         const config = fieldConfig[type as keyof typeof fieldConfig];
-        if (!config) return null;
+        if (!config && type !== 'theme') return null;
 
         const tempValue = (() => {
             switch (type) {
@@ -540,7 +800,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 case 'username': return tempUsername;
                 case 'email': return tempEmail;
                 case 'bio': return tempBio;
+                case 'description': return tempDescription;
                 case 'location': return tempLocation;
+                case 'address': return tempAddressFormatted;
                 case 'link': return tempLink;
                 default: return '';
             }
@@ -552,10 +814,59 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 case 'username': setTempUsername(text); break;
                 case 'email': setTempEmail(text); break;
                 case 'bio': setTempBio(text); break;
+                case 'description': setTempDescription(text); break;
                 case 'location': setTempLocation(text); break;
+                case 'address': setTempAddressFormatted(text); break;
                 case 'link': setTempLink(text); break;
             }
         };
+
+        if (type === 'theme') {
+            const themeOptions = [
+                { value: 'light', label: 'Light', icon: 'sunny', color: '#FF9500' },
+                { value: 'dark', label: 'Dark', icon: 'moon', color: '#5856D6' },
+                { value: 'auto', label: 'Auto', icon: 'settings', color: '#007AFF' },
+            ];
+
+            return (
+                <View style={styles.newValueSection}>
+                    <Text style={styles.editingFieldLabel}>Choose Theme:</Text>
+                    {themeOptions.map((option, index) => (
+                        <TouchableOpacity
+                            key={option.value}
+                            style={[
+                                styles.settingItem,
+                                index === 0 && styles.firstSettingItem,
+                                index === themeOptions.length - 1 && styles.lastSettingItem,
+                            ]}
+                            onPress={() => handleThemeSelect(option.value as 'light' | 'dark' | 'auto')}
+                        >
+                            <View style={styles.settingInfo}>
+                                <OxyIcon
+                                    name={option.icon}
+                                    size={20}
+                                    color={option.color}
+                                    style={styles.settingIcon}
+                                />
+                                <View>
+                                    <Text style={styles.settingLabel}>{option.label}</Text>
+                                    <Text style={styles.settingDescription}>
+                                        {option.value === 'light' ? 'Light appearance for bright environments' :
+                                            option.value === 'dark' ? 'Dark appearance for low-light environments' :
+                                                'Automatically adjust based on system settings'}
+                                    </Text>
+                                </View>
+                            </View>
+                            <View style={styles.settingValue}>
+                                {currentTheme === option.value && (
+                                    <OxyIcon name="checkmark-circle" size={20} color="#007AFF" />
+                                )}
+                            </View>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            );
+        }
 
         if (type === 'displayName') {
             return (
@@ -642,6 +953,50 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             );
         }
 
+        if (type === 'address') {
+            if (showAddressPicker) {
+                return (
+                    <LocationPickerPanel
+                        onCancel={handleCancelPick}
+                        onSave={handleAddressPicked}
+                        initialAddress={typeof editingAddressIndexRef.current === 'number' && editingAddressIndexRef.current! >= 0 ? addresses[editingAddressIndexRef.current] : undefined}
+                    />
+                );
+            }
+
+            return (
+                <View style={styles.editingFieldContainer}>
+                    <View style={styles.editingFieldContent}>
+                        {/* Existing addresses list */}
+                        {addresses.map((addr, idx) => (
+                            <View key={`addr-${idx}`} style={{ marginBottom: 12 }}>
+                                <Text style={{ fontWeight: '600', color: themeStyles.isDarkTheme ? '#fff' : '#000' }}>{addr.label ? `${addr.label}: ` : ''}{addr.formatted || addr.city || addr.street}</Text>
+                                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                                    <TouchableOpacity onPress={() => moveAddress(idx as number, 'up')} disabled={idx === 0} style={{ padding: 4 }}>
+                                        <Ionicons name="arrow-up" size={18} color="#888" />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => moveAddress(idx as number, 'down')} disabled={idx === addresses.length - 1} style={{ padding: 4 }}>
+                                        <Ionicons name="arrow-down" size={18} color="#888" />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => editAddressLocation(idx)} style={{ padding: 4 }}>
+                                        <Ionicons name="pencil" size={18} color="#007AFF" />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => handleRemoveAddress(idx as number)} style={{ padding: 4 }}>
+                                        <Ionicons name="trash" size={18} color="#FF3B30" />
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
+                        ))}
+
+                        {/* Add new address */}
+                        <TouchableOpacity onPress={handleAddAddress} style={{ marginTop: 16, alignSelf: 'flex-start', backgroundColor: themeStyles.primaryColor, paddingVertical: 8, paddingHorizontal: 16, borderRadius: 20 }}>
+                            <Text style={{ color: '#fff', fontWeight: '600' }}>Add Location</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            );
+        }
+
         return (
             <View style={styles.editingFieldContainer}>
                 <View style={styles.editingFieldContent}>
@@ -667,7 +1022,24 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                             keyboardType={config.keyboardType}
                             autoFocus
                             selectionColor={themeStyles.primaryColor}
+                            maxLength={type === 'bio' ? 500 : type === 'description' ? 1000 : undefined}
                         />
+                        {(type === 'bio' || type === 'description') && (
+                            <Text style={[
+                                styles.characterCount,
+                                {
+                                    color: (() => {
+                                        const maxLength = type === 'bio' ? 500 : 1000;
+                                        const currentLength = tempValue.length;
+                                        if (currentLength >= maxLength) return '#FF3B30';
+                                        if (currentLength >= maxLength * 0.9) return '#FF9500';
+                                        return themeStyles.isDarkTheme ? '#aaa' : '#666';
+                                    })()
+                                }
+                            ]}>
+                                {tempValue.length} / {type === 'bio' ? 500 : 1000} characters
+                            </Text>
+                        )}
                     </View>
                 </View>
             </View>
@@ -793,154 +1165,85 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 ) : (
                     // Show all settings when not editing
                     <>
-                        {/* Profile Picture Section */}
-                        <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>Profile Picture</Text>
+                        <ProfilePictureSection
+                            avatarUrl={avatarUrl}
+                            displayName={displayName}
+                            username={username}
+                            theme={theme}
+                            onUpdateAvatar={handleAvatarUpdate}
+                        />
 
-                            <TouchableOpacity
-                                style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}
-                                onPress={handleAvatarUpdate}
-                            >
-                                <View style={styles.userIcon}>
-                                    <Avatar
-                                        uri={avatarUrl}
-                                        name={displayName || username}
-                                        size={50}
-                                        theme={theme}
-                                    />
-                                </View>
-                                <View style={styles.settingInfo}>
-                                    <View>
-                                        <Text style={styles.settingLabel}>Profile Photo</Text>
-                                        <Text style={styles.settingDescription}>
-                                            {avatarUrl ? 'Tap to change your profile picture' : 'Tap to add a profile picture'}
-                                        </Text>
-                                    </View>
-                                </View>
-                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                            </TouchableOpacity>
-                        </View>
+                        <BasicInformationSection
+                            renderField={renderField}
+                            displayName={displayName}
+                            username={username}
+                            email={email}
+                        />
 
-                        {/* Basic Information */}
-                        <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>Basic Information</Text>
+                        <AboutYouSection
+                            renderField={renderField}
+                            bio={bio}
+                            description={description}
+                            addresses={addresses}
+                            links={links}
+                        />
 
-                            {renderField(
-                                'displayName',
-                                'Display Name',
-                                displayName,
-                                'Add your display name',
-                                'person',
-                                '#007AFF',
-                                false,
-                                'default',
-                                true,
-                                false
-                            )}
+                        <QuickActionsSection />
 
-                            {renderField(
-                                'username',
-                                'Username',
-                                username,
-                                'Choose a username',
-                                'at',
-                                '#5856D6',
-                                false,
-                                'default',
-                                false,
-                                false
-                            )}
+                        <SecuritySection
+                            hasTwoFactorEnabled={hasTwoFactorEnabled}
+                            lastPasswordChange={lastPasswordChange}
+                            activeSessions={activeSessions}
+                            onUpdatePassword={handleUpdatePassword}
+                            onToggleTwoFactor={handleToggleTwoFactor}
+                            onManageSessions={handleManageSessions}
+                            onSecurityLog={handleSecurityLog}
+                        />
 
-                            {renderField(
-                                'email',
-                                'Email',
-                                email,
-                                'Add your email address',
-                                'mail',
-                                '#FF9500',
-                                false,
-                                'email-address',
-                                false,
-                                true
-                            )}
-                        </View>
+                        <NotificationSection
+                            pushNotifications={pushNotifications}
+                            emailNotifications={emailNotifications}
+                            marketingEmails={marketingEmails}
+                            soundEnabled={soundEnabled}
+                            onTogglePushNotifications={handleTogglePushNotifications}
+                            onToggleEmailNotifications={handleToggleEmailNotifications}
+                            onToggleMarketingEmails={handleToggleMarketingEmails}
+                            onToggleSound={handleToggleSound}
+                            onNotificationPreferences={handleNotificationPreferences}
+                        />
 
-                        {/* About You */}
-                        <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>About You</Text>
+                        <AppearanceSection
+                            theme={currentTheme}
+                            fontSize={fontSize}
+                            language={language}
+                            onThemeChange={handleThemeChange}
+                            onFontSizeChange={handleFontSizeChange}
+                            onLanguageChange={handleLanguageChange}
+                            onAccessibilitySettings={handleAccessibilitySettings}
+                        />
 
-                            {renderField(
-                                'bio',
-                                'Bio',
-                                bio,
-                                'Tell people about yourself',
-                                'document-text',
-                                '#34C759',
-                                true,
-                                'default',
-                                true,
-                                false
-                            )}
+                        <PrivacySection
+                            profileVisibility={profileVisibility}
+                            showOnlineStatus={showOnlineStatus}
+                            allowMessagesFrom={allowMessagesFrom}
+                            showActivityStatus={showActivityStatus}
+                            onProfileVisibilityChange={handleProfileVisibilityChange}
+                            onToggleOnlineStatus={handleToggleOnlineStatus}
+                            onMessagePrivacyChange={handleMessagePrivacyChange}
+                            onToggleActivityStatus={handleToggleActivityStatus}
+                            onBlockedUsers={handleBlockedUsers}
+                            onDataExport={handleDataExport}
+                        />
 
-                            {renderField(
-                                'location',
-                                'Location',
-                                location,
-                                'Add your location',
-                                'location',
-                                '#FF3B30',
-                                false,
-                                'default',
-                                false,
-                                false
-                            )}
-
-                            {renderField(
-                                'link',
-                                'Links',
-                                links.map(l => l.url).join(', '),
-                                'Add a link',
-                                'link',
-                                '#32D74B',
-                                false,
-                                'url',
-                                false,
-                                true
-                            )}
-                        </View>
-
-                        {/* Quick Actions */}
-                        <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>Quick Actions</Text>
-
-                            <TouchableOpacity
-                                style={[styles.settingItem, styles.firstSettingItem]}
-                                onPress={() => toast.info('Privacy settings coming soon!')}
-                            >
-                                <View style={styles.settingInfo}>
-                                    <OxyIcon name="shield-checkmark" size={20} color="#8E8E93" style={styles.settingIcon} />
-                                    <View>
-                                        <Text style={styles.settingLabel}>Privacy Settings</Text>
-                                        <Text style={styles.settingDescription}>Control who can see your profile</Text>
-                                    </View>
-                                </View>
-                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={[styles.settingItem, styles.lastSettingItem]}
-                                onPress={() => toast.info('Account verification coming soon!')}
-                            >
-                                <View style={styles.settingInfo}>
-                                    <OxyIcon name="checkmark-circle" size={20} color="#30D158" style={styles.settingIcon} />
-                                    <View>
-                                        <Text style={styles.settingLabel}>Verify Account</Text>
-                                        <Text style={styles.settingDescription}>Get a verified badge</Text>
-                                    </View>
-                                </View>
-                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                            </TouchableOpacity>
-                        </View>
+                        <AccountSection
+                            accountCreated={accountCreated}
+                            lastLogin={lastLogin}
+                            onDeactivateAccount={handleDeactivateAccount}
+                            onDeleteAccount={handleDeleteAccount}
+                            onLogout={handleLogout}
+                            onHelpSupport={handleHelpSupport}
+                            onTermsPrivacy={handleTermsPrivacy}
+                        />
                     </>
                 )}
             </ScrollView>
@@ -1075,6 +1378,10 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#666',
     },
+    settingValue: {
+        flexDirection: 'row',
+        alignItems: 'center',
+    },
     userIcon: {
         marginRight: 12,
     },
@@ -1141,6 +1448,7 @@ const styles = StyleSheet.create({
     },
     newValueSection: {
         flex: 1,
+        padding: 16,
     },
     editingFieldLabel: {
         fontSize: 16,
@@ -1169,6 +1477,12 @@ const styles = StyleSheet.create({
         minHeight: 120,
         textAlignVertical: 'top',
         fontWeight: '400',
+    },
+    characterCount: {
+        fontSize: 12,
+        marginTop: 8,
+        textAlign: 'right',
+        fontFamily: fontFamilies.phudu,
     },
 });
 

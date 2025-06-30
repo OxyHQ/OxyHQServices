@@ -1,0 +1,9 @@
+export { default as ProfilePictureSection } from './ProfilePictureSection';
+export { default as BasicInformationSection } from './BasicInformationSection';
+export { default as AboutYouSection } from './AboutYouSection';
+export { default as QuickActionsSection } from './QuickActionsSection';
+export { default as SecuritySection } from './SecuritySection';
+export { default as NotificationSection } from './NotificationSection';
+export { default as AppearanceSection } from './AppearanceSection';
+export { default as PrivacySection } from './PrivacySection';
+export { default as AccountSection } from './AccountSection'; 

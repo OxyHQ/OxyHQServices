@@ -45,7 +45,29 @@ export interface IUser extends Document {
   bio?: string;
   description?: string;
   coverPhoto?: string;
+  /**
+   * @deprecated Use addresses instead. This simple location string is kept for backward-compatibility only.
+   */
   location?: string;
+  /**
+   * An array of rich address objects so users can save multiple locations (home, work, etc.).
+   */
+  addresses?: {
+    label?: string;              // e.g. "home", "work", "other"
+    street?: string;
+    number?: string;
+    city?: string;
+    state?: string;
+    postalCode?: string;
+    country?: string;
+    formatted?: string;          // pre-formatted single line version from geocoder if available
+    lat: number;
+    lng: number;
+    coordinates: {
+      lat: number;
+      lng: number;
+    };
+  }[];
   website?: string;
   links?: {
     url: string;
@@ -191,10 +213,31 @@ const UserSchema: Schema = new Schema(
       trim: true
     },
     coverPhoto: { type: String },
+    // Deprecated single location string kept for backward-compatibility
     location: { 
       type: String, 
       maxlength: 100,
       trim: true
+    },
+    // New rich addresses array to support multiple locations with labels and geo details
+    addresses: {
+      type: [{
+        label: { type: String, trim: true, maxlength: 50, default: '' },
+        street: { type: String, trim: true, maxlength: 100 },
+        number: { type: String, trim: true, maxlength: 20 },
+        city: { type: String, trim: true, maxlength: 100 },
+        state: { type: String, trim: true, maxlength: 100 },
+        postalCode: { type: String, trim: true, maxlength: 20 },
+        country: { type: String, trim: true, maxlength: 100 },
+        formatted: { type: String, trim: true, maxlength: 255 },
+        lat: { type: Number },
+        lng: { type: Number },
+        coordinates: {
+          lat: { type: Number },
+          lng: { type: Number }
+        }
+      }],
+      default: []
     },
     website: { 
       type: String, 

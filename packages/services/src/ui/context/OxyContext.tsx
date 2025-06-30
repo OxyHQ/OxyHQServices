@@ -7,7 +7,7 @@ import React, { createContext, useContext, useEffect, ReactNode, useRef, useMemo
 import { OxyServices } from '../../core';
 import { User } from '../../models/interfaces';
 import { SecureClientSession, MinimalUserData } from '../../models/secureSession';
-import { initializeOxyStore, useAuth, useFollow, useOxyStore } from '../../stores';
+import { initializeOxyStore, useAuth, useFollow, useUserSettings, useOxyStore } from '../../stores';
 import oxyServices from '../../services/oxySingleton';
 
 
@@ -66,6 +66,25 @@ export interface OxyContextState {
   clearFollowError: (userId: string) => void;
   clearAllFollowErrors: () => void;
 
+  // User Settings
+  settings: any;
+  settingsLoading: boolean;
+  settingsSaving: boolean;
+  settingsError: string | null;
+  settingsLastSync: number | null;
+  settingsOffline: boolean;
+
+  // User Settings actions
+  loadSettings: () => Promise<void>;
+  saveSettings: (updates: any) => Promise<void>;
+  syncSettings: () => Promise<void>;
+  refreshSettings: () => Promise<void>;
+  setSettings: (settings: any) => void;
+  setSettingsLoading: (loading: boolean) => void;
+  setSettingsSaving: (saving: boolean) => void;
+  setSettingsError: (error: string | null) => void;
+  setSettingsOffline: (offline: boolean) => void;
+  resetSettings: () => void;
 
 }
 
@@ -170,6 +189,7 @@ export const useOxyContext = (): OxyContextState => {
 
   const auth = useAuth();
   const follow = useFollow();
+  const userSettings = useUserSettings();
 
   // Create stable function references
   const login = useCallback(auth.login, [auth.login]);
@@ -246,6 +266,24 @@ export const useOxyContext = (): OxyContextState => {
     clearFollowError,
     clearAllFollowErrors,
 
+    // User Settings
+    settings: userSettings.settings,
+    settingsLoading: userSettings.isLoading,
+    settingsSaving: userSettings.isSaving,
+    settingsError: userSettings.error,
+    settingsLastSync: userSettings.lastSync,
+    settingsOffline: userSettings.isOffline,
+    loadSettings: userSettings.loadSettings,
+    saveSettings: userSettings.saveSettings,
+    syncSettings: userSettings.syncSettings,
+    refreshSettings: userSettings.refreshSettings,
+    setSettings: userSettings.setSettings,
+    setSettingsLoading: userSettings.setLoading,
+    setSettingsSaving: userSettings.setSaving,
+    setSettingsError: userSettings.setError,
+    setSettingsOffline: userSettings.setOffline,
+    resetSettings: userSettings.reset,
+
     // OxyServices instance
     oxyServices
   }), [
@@ -305,6 +343,12 @@ export const useOxy = () => {
   const followingUsers = useOxyStore((state) => state.followingUsers);
   const loadingUsers = useOxyStore((state) => state.loadingUsers);
   const errors = useOxyStore((state) => state.errors);
+  const settings = useOxyStore((state) => state.settings);
+  const settingsLoading = useOxyStore((state) => state.isLoading);
+  const settingsSaving = useOxyStore((state) => state.isSaving);
+  const settingsError = useOxyStore((state) => state.error);
+  const settingsLastSync = useOxyStore((state) => state.lastSync);
+  const settingsOffline = useOxyStore((state) => state.isOffline);
 
   // Create stable function references that don't change
   const login = useCallback((username: string, password: string, deviceName?: string) => {
@@ -412,6 +456,56 @@ export const useOxy = () => {
     return state.clearAllFollowErrors();
   }, []);
 
+  const loadSettings = useCallback(() => {
+    const state = useOxyStore.getState();
+    return state.loadSettings(state.getApiUtils());
+  }, []);
+
+  const saveSettings = useCallback((updates: any) => {
+    const state = useOxyStore.getState();
+    return state.saveSettings(updates, state.getApiUtils());
+  }, []);
+
+  const syncSettings = useCallback(() => {
+    const state = useOxyStore.getState();
+    return state.syncSettings(state.getApiUtils());
+  }, []);
+
+  const refreshSettings = useCallback(() => {
+    const state = useOxyStore.getState();
+    return state.refreshSettings(state.getApiUtils());
+  }, []);
+
+  const setSettings = useCallback((settings: any) => {
+    const state = useOxyStore.getState();
+    return state.setSettings(settings);
+  }, []);
+
+  const setSettingsLoading = useCallback((loading: boolean) => {
+    const state = useOxyStore.getState();
+    return state.setLoading(loading);
+  }, []);
+
+  const setSettingsSaving = useCallback((saving: boolean) => {
+    const state = useOxyStore.getState();
+    return state.setSaving(saving);
+  }, []);
+
+  const setSettingsError = useCallback((error: string | null) => {
+    const state = useOxyStore.getState();
+    return state.setError(error);
+  }, []);
+
+  const setSettingsOffline = useCallback((offline: boolean) => {
+    const state = useOxyStore.getState();
+    return state.setOffline(offline);
+  }, []);
+
+  const resetSettings = useCallback(() => {
+    const state = useOxyStore.getState();
+    return state.reset();
+  }, []);
+
 
 
   return useMemo(() => ({
@@ -459,6 +553,24 @@ export const useOxy = () => {
     clearFollowError,
     clearAllFollowErrors,
 
+    // User Settings
+    settings,
+    settingsLoading,
+    settingsSaving,
+    settingsError,
+    settingsLastSync,
+    settingsOffline,
+    loadSettings,
+    saveSettings,
+    syncSettings,
+    refreshSettings,
+    setSettings,
+    setSettingsLoading,
+    setSettingsSaving,
+    setSettingsError,
+    setSettingsOffline,
+    resetSettings,
+
     // Access to services
     oxyServices,
 
@@ -475,6 +587,12 @@ export const useOxy = () => {
     followingUsers,
     loadingUsers,
     errors,
+    settings,
+    settingsLoading,
+    settingsSaving,
+    settingsError,
+    settingsLastSync,
+    settingsOffline,
     login,
     logout,
     logoutAll,
@@ -496,6 +614,16 @@ export const useOxy = () => {
     setFollowingStatus,
     clearFollowError,
     clearAllFollowErrors,
+    loadSettings,
+    saveSettings,
+    syncSettings,
+    refreshSettings,
+    setSettings,
+    setSettingsLoading,
+    setSettingsSaving,
+    setSettingsError,
+    setSettingsOffline,
+    resetSettings,
     oxyServices,
   ]);
 };

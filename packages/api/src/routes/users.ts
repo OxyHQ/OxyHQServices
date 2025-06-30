@@ -26,6 +26,15 @@ const validateObjectId = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
+// Reusable partial schema for common profile fields validation
+const profileUpdateSchema = z
+  .object({
+    email: z.string().email('Invalid email address').optional(),
+    bio: z.string().max(500, 'Bio must be at most 500 characters').optional(),
+    description: z.string().max(1000, 'About section must be at most 1000 characters').optional(),
+  })
+  .passthrough(); // allow other props that are validated later
+
 // Get current authenticated user
 router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
@@ -43,7 +52,13 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
 // Update current authenticated user
 router.put('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
   try {
-    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'coverPhoto', 'bio', 'description', 'location', 'links', 'labels'] as const;
+    // Basic email & bio validation
+    const baseValidation = profileUpdateSchema.safeParse(req.body);
+    if (!baseValidation.success) {
+      return res.status(400).json({ message: baseValidation.error.issues[0].message });
+    }
+
+    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'coverPhoto', 'bio', 'description', 'location', 'addresses', 'links', 'labels'] as const;
     type AllowedUpdate = typeof allowedUpdates[number];
 
     const updates = Object.entries(req.body)
@@ -156,12 +171,18 @@ router.get('/:userId', validateObjectId, async (req: Request, res: Response) => 
 // Update user profile
 router.put('/:userId', authMiddleware, validateObjectId, async (req: AuthRequest, res: Response) => {
   try {
+    // Basic email & bio validation
+    const baseValidation = profileUpdateSchema.safeParse(req.body);
+    if (!baseValidation.success) {
+      return res.status(400).json({ message: baseValidation.error.issues[0].message });
+    }
+
     // Only allow users to update their own profile
     if (req.params.userId !== req.user?.id) {
       return res.status(403).json({ message: 'Not authorized to update this profile' });
     }
 
-    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'coverPhoto', 'bio', 'description', 'location', 'links', 'labels'] as const;
+    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'coverPhoto', 'bio', 'description', 'location', 'addresses', 'links', 'labels'] as const;
     type AllowedUpdate = typeof allowedUpdates[number];
     
     // Validate links array if provided

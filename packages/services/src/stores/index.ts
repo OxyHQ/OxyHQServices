@@ -10,11 +10,13 @@ import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAuthSlice, type AuthState } from './authStore';
 import { createFollowSlice, type FollowState } from './followStore';
+import { createThemeSlice, type ThemeState } from './themeStore';
+import { createUserSettingsSlice, type UserSettingsState } from './userSettingsStore';
 import type { OxyServices } from '../core';
 import { createApiUtils, type ApiUtils } from '../utils/api';
 
 // Combined store state
-export interface OxyStore extends AuthState, FollowState {
+export interface OxyStore extends AuthState, FollowState, ThemeState, UserSettingsState {
   // Store metadata
   _apiUtils: ApiUtils | null;
   _oxyServices: OxyServices | null;
@@ -81,7 +83,13 @@ export const useOxyStore = create<OxyStore>()(
       ...createAuthSlice(set, get, api),
       
       // Follow slice
-      ...createFollowSlice(set, get, api)
+      ...createFollowSlice(set, get, api),
+      
+      // Theme slice
+      ...createThemeSlice(set, get, api),
+      
+      // User Settings slice
+      ...createUserSettingsSlice(set, get, api)
     })),
     {
       name: 'oxy-auth', // storage key
@@ -212,6 +220,33 @@ export const useFollow = () => useOxyStore((state) => ({
     state.unfollowUser(userId, state.getApiUtils()),
   fetchMultipleStatuses: (userIds: string[]) => 
     state.fetchMultipleStatuses(userIds, state.getApiUtils())
+}));
+
+export const useUserSettings = () => useOxyStore((state) => ({
+  settings: state.settings,
+  isLoading: state.isLoading,
+  isSaving: state.isSaving,
+  error: state.error,
+  lastSync: state.lastSync,
+  isOffline: state.isOffline,
+  
+  // Actions
+  setSettings: state.setSettings,
+  setLoading: state.setLoading,
+  setSaving: state.setSaving,
+  setError: state.setError,
+  setOffline: state.setOffline,
+  reset: state.reset,
+  
+  // Async actions (auto-inject apiUtils)
+  loadSettings: () => 
+    state.loadSettings(state.getApiUtils()),
+  saveSettings: (updates: any) => 
+    state.saveSettings(updates, state.getApiUtils()),
+  syncSettings: () => 
+    state.syncSettings(state.getApiUtils()),
+  refreshSettings: () => 
+    state.refreshSettings(state.getApiUtils()),
 }));
 
 // Optimized hooks for specific data (prevent unnecessary re-renders)
