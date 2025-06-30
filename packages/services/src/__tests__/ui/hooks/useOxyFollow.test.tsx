@@ -1,8 +1,5 @@
 import { renderHook } from '@testing-library/react-native';
-import { Provider } from 'react-redux';
-import { configureStore } from '@reduxjs/toolkit';
 import { useOxyFollow } from '../../../ui/hooks/useOxyFollow';
-import { setupOxyStore } from '../../../ui/store/setupOxyStore';
 import { OxyContextProvider } from '../../../ui/context/OxyContext';
 import React from 'react';
 
@@ -13,21 +10,11 @@ const mockOxyServices = {
   unfollowUser: jest.fn(),
 };
 
-const createTestStore = () => {
-  return configureStore({
-    reducer: {
-      ...setupOxyStore(),
-    },
-  });
-};
-
-const createWrapper = (store: ReturnType<typeof createTestStore>) => {
+const createWrapper = () => {
   return ({ children }: { children: React.ReactNode }) => (
-    <Provider store={store}>
-      <OxyContextProvider oxyServices={mockOxyServices}>
-        {children}
-      </OxyContextProvider>
-    </Provider>
+    <OxyContextProvider oxyServices={mockOxyServices}>
+      {children}
+    </OxyContextProvider>
   );
 };
 
@@ -36,9 +23,8 @@ describe('useOxyFollow', () => {
     jest.clearAllMocks();
   });
 
-  test('should work with external store containing Oxy reducers', () => {
-    const store = createTestStore();
-    const wrapper = createWrapper(store);
+  test('should work with Zustand store', () => {
+    const wrapper = createWrapper();
 
     const { result } = renderHook(() => useOxyFollow('user1'), { wrapper });
 
