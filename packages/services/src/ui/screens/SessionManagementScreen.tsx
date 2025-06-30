@@ -16,6 +16,7 @@ import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 
+
 interface Session {
     id: string;
     deviceName?: string;
@@ -38,6 +39,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     const [refreshing, setRefreshing] = useState(false);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
 
+
     const isDarkTheme = theme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
     const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
@@ -46,6 +48,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     const primaryColor = '#0066CC';
     const dangerColor = '#D32F2F';
     const successColor = '#2E7D32';
+    const warningColor = '#FF9800';
 
     const loadSessions = async (isRefresh = false) => {
         try {
@@ -54,6 +57,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             } else {
                 setLoading(true);
             }
+
 
             await refreshSessions();
         } catch (error) {
@@ -166,6 +170,8 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         );
     };
 
+
+
     const formatDate = (dateString: string) => {
         const date = new Date(dateString);
         const now = new Date();
@@ -215,6 +221,8 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 <Text style={[styles.subtitle, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                     Manage your active sessions across all devices
                 </Text>
+
+
             </View>
 
             <ScrollView
@@ -318,6 +326,8 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                                     </Text>
                                 )}
                             </TouchableOpacity>
+
+
                         </View>
                     </>
                 ) : (
@@ -325,6 +335,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                         <Text style={[styles.emptyStateText, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                             No active sessions found
                         </Text>
+
                     </View>
                 )}
             </ScrollView>
@@ -361,6 +372,7 @@ const styles = StyleSheet.create({
     subtitle: {
         fontSize: 16,
         lineHeight: 20,
+        marginBottom: 12,
     },
     scrollView: {
         flex: 1,

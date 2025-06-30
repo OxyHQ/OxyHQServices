@@ -10,6 +10,7 @@ import { SecureClientSession, MinimalUserData } from '../../models/secureSession
 import { initializeOxyStore, useAuth, useFollow, useOxyStore } from '../../stores';
 import oxyServices from '../../services/oxySingleton';
 
+
 // Define the context shape - maintaining backward compatibility
 export interface OxyContextState {
   // Authentication state
@@ -64,6 +65,8 @@ export interface OxyContextState {
   setFollowingStatus: (userId: string, status: boolean) => void;
   clearFollowError: (userId: string) => void;
   clearAllFollowErrors: () => void;
+
+
 }
 
 // Internal context type - only what the Provider actually provides
@@ -101,6 +104,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
   // Use the singleton oxyServices
   const isInitialized = useRef(false);
   const onAuthStateChangeRef = useRef(onAuthStateChange);
+  const sessionValidationRef = useRef(false);
 
   // Update the ref when the callback changes
   useEffect(() => {
@@ -141,6 +145,8 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
       }
     };
   }, []); // Empty dependency array - only run once
+
+
 
   return (
     <OxyContext.Provider value={{
@@ -189,6 +195,8 @@ export const useOxyContext = (): OxyContextState => {
   const clearFollowError = useCallback(follow.clearFollowError, [follow.clearFollowError]);
   const clearAllFollowErrors = useCallback(follow.clearAllFollowErrors, [follow.clearAllFollowErrors]);
 
+
+
   return useMemo(() => ({
     // Context values
     ...context,
@@ -207,9 +215,13 @@ export const useOxyContext = (): OxyContextState => {
     logout,
     logoutAll,
     signUp,
+
+    // Session management
     switchSession,
     removeSession,
     refreshSessions,
+
+    // Profile management
     refreshUserData,
     updateProfile,
 
@@ -217,14 +229,14 @@ export const useOxyContext = (): OxyContextState => {
     getDeviceSessions,
     logoutAllDeviceSessions,
     updateDeviceName,
+
+    // Token management
     ensureToken,
 
     // Follow functionality
     followingUsers: follow.followingUsers,
     loadingUsers: follow.loadingUsers,
     followErrors: follow.errors,
-
-    // Follow actions
     toggleFollow,
     followUser,
     unfollowUser,
@@ -234,8 +246,8 @@ export const useOxyContext = (): OxyContextState => {
     clearFollowError,
     clearAllFollowErrors,
 
-    // Access to services
-    oxyServices,
+    // OxyServices instance
+    oxyServices
   }), [
     context,
     auth.user,
@@ -268,8 +280,7 @@ export const useOxyContext = (): OxyContextState => {
     fetchMultipleStatuses,
     setFollowingStatus,
     clearFollowError,
-    clearAllFollowErrors,
-    oxyServices,
+    clearAllFollowErrors
   ]);
 };
 
@@ -401,6 +412,8 @@ export const useOxy = () => {
     return state.clearAllFollowErrors();
   }, []);
 
+
+
   return useMemo(() => ({
     // Context values
     ...context,
@@ -448,6 +461,8 @@ export const useOxy = () => {
 
     // Access to services
     oxyServices,
+
+
   }), [
     context,
     user,

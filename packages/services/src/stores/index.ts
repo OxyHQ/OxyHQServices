@@ -281,24 +281,20 @@ export const initializeOxyStore = (oxyServices: OxyServices) => {
     useOxyStore.getState().setUser(state.user, oxyAccessToken, oxyRefreshToken);
   } else if (state.user && state.isAuthenticated) {
     // User is authenticated but no tokens - this might be a storage issue
-    // Try to refresh user data to get new tokens
     console.log('[OxyStore] User is authenticated but no tokens found. This might be a storage issue.');
     console.log('[OxyStore] User data available:', {
       userId: state.user.id,
       username: state.user.username,
+      activeSessionId: state.activeSessionId
     });
     
-    // Try to restore the user ID to OxyServices by setting a temporary token
-    // This will allow getCurrentUserId() to work even without valid tokens
-    if (state.user.id) {
-      console.log('[OxyStore] Attempting to restore user context to OxyServices');
-      console.log('[OxyStore] User context available for token recovery');
+    // Only try token recovery if we have a valid session ID (not the user ID)
+    if (state.activeSessionId && state.activeSessionId !== state.user.id) {
+      console.log('[OxyStore] Attempting token recovery with valid session ID:', state.activeSessionId.substring(0, 8) + '...');
       
-      // Try to recover tokens using the user ID as session ID
       setTimeout(async () => {
         try {
-          console.log('[OxyStore] Attempting token recovery for user:', state.user?.id);
-          const tokenData = await oxyServices.getTokenBySession(state.user?.id || '');
+          const tokenData = await oxyServices.getTokenBySession(state.activeSessionId || '');
           console.log('[OxyStore] Token recovery successful:', !!tokenData.accessToken);
           
           if (tokenData.accessToken) {
@@ -307,15 +303,24 @@ export const initializeOxyStore = (oxyServices: OxyServices) => {
             useOxyStore.getState().setUser(state.user, tokenData.accessToken, '');
             console.log('[OxyStore] Tokens restored successfully');
           }
-        } catch (recoveryError) {
+        } catch (recoveryError: any) {
           console.warn('[OxyStore] Token recovery failed:', recoveryError);
-          // If token recovery fails, we'll let the ensureToken method handle it later
+          // If token recovery fails, clear the invalid session ID
+          if (recoveryError?.message?.includes('Invalid or expired session')) {
+            console.log('[OxyStore] Clearing invalid session ID');
+            useOxyStore.getState().setActiveSessionId(null);
+          }
         }
-      }, 1000); // Wait 1 second to ensure everything is initialized
+      }, 1000);
+    } else if (state.activeSessionId === state.user.id) {
+      console.warn('[OxyStore] BUG DETECTED: activeSessionId equals user ID - this is incorrect!');
+      console.log('[OxyStore] Clearing invalid activeSessionId to prevent further issues');
+      setTimeout(() => {
+        useOxyStore.getState().setActiveSessionId(null);
+      }, 0);
+    } else {
+      console.log('[OxyStore] No valid session ID available for token recovery');
     }
-    
-    // Don't try to refresh immediately - let the app handle this gracefully
-    // The ensureToken method will handle this case
   } else {
     console.log('[OxyStore] No tokens to restore');
   }
