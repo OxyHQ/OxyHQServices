@@ -1,6 +1,5 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { jwtDecode } from 'jwt-decode';
-import { getFormDataConstructor } from '../utils/polyfills';
 
 let NodeFormData: any = null;
 
@@ -1206,8 +1205,14 @@ export class OxyServices {
     metadata?: Record<string, any>
   ): Promise<FileMetadata> {
     try {
-      const FormData = getFormDataConstructor();
-      const formData = new FormData();
+      // Determine the correct FormData constructor based on environment
+      const FormDataConstructor: any = NodeFormData || (typeof FormData !== 'undefined' ? FormData : null);
+
+      if (!FormDataConstructor) {
+        throw new Error('FormData constructor is not available in the current environment');
+      }
+
+      const formData = new FormDataConstructor();
       
       // Handle different file types
       if (file instanceof File || file instanceof Blob) {
@@ -1248,8 +1253,14 @@ export class OxyServices {
     metadata?: Record<string, any>
   ): Promise<FileUploadResponse> {
     try {
-      const FormData = getFormDataConstructor();
-      const formData = new FormData();
+      // Determine the correct FormData constructor based on environment
+      const FormDataConstructor: any = NodeFormData || (typeof FormData !== 'undefined' ? FormData : null);
+
+      if (!FormDataConstructor) {
+        throw new Error('FormData constructor is not available in the current environment');
+      }
+
+      const formData = new FormDataConstructor();
       
       files.forEach((file, index) => {
         const filename = filenames[index] || `file-${index}`;
