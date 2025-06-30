@@ -47,9 +47,6 @@ export interface AuthState {
   updateDeviceName: (deviceName: string, apiUtils?: ApiUtils) => Promise<void>;
   ensureToken: (apiUtils?: ApiUtils) => Promise<void>;
   syncTokens: (apiUtils?: ApiUtils) => void;
-  
-  // New method for syncing non-persisted state from backend
-  syncNonPersistedState: (apiUtils?: ApiUtils) => Promise<void>;
 }
 
 export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
@@ -381,44 +378,6 @@ export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
       }
     } catch (error: any) {
       console.error('[AuthStore] Failed to sync tokens:', error);
-    }
-  },
-
-  // Sync non-persisted state from backend after token validation
-  syncNonPersistedState: async (apiUtils) => {
-    if (!apiUtils) throw new Error('ApiUtils is required');
-    
-    const currentState = get();
-    
-    // Only sync if we have valid tokens
-    if (!currentState.accessToken || !currentState.refreshToken) {
-      console.log('[AuthStore] No tokens available for syncing non-persisted state');
-      return;
-    }
-    
-    console.log('[AuthStore] Syncing non-persisted state from backend');
-    
-    try {
-      // First ensure tokens are valid/refresh if needed
-      await get().ensureToken(apiUtils);
-      
-      // Sync user data
-      await get().refreshUserData(apiUtils);
-      
-      // Sync sessions
-      await get().refreshSessions(apiUtils);
-      
-      console.log('[AuthStore] Non-persisted state synced successfully');
-    } catch (error: any) {
-      console.warn('[AuthStore] Failed to sync non-persisted state:', error);
-      
-      // If token validation fails, clear tokens and reset auth state
-      if (error?.message?.includes('Token') || error?.message?.includes('Unauthorized')) {
-        console.log('[AuthStore] Token validation failed, clearing auth state');
-        get().reset();
-      }
-      
-      throw error;
     }
   }
 });
