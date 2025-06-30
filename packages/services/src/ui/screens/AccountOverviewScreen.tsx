@@ -112,7 +112,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     // Feature settings (with mock values)
     const features = {
         safeSearch: false,
-        language: 'English',
+        language: 'en-US',
     };
 
     // Memoize event handlers to prevent recreation on every render

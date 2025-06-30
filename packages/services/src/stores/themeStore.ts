@@ -27,7 +27,7 @@ export const createThemeSlice: StateCreator<ThemeState> = (set, get) => ({
   // Initial state
   theme: 'auto',
   fontSize: 'medium',
-  language: 'English',
+  language: 'en-US',
   
   // Actions
   setTheme: (theme: 'light' | 'dark' | 'auto') => {
@@ -46,7 +46,7 @@ export const createThemeSlice: StateCreator<ThemeState> = (set, get) => ({
     set({
       theme: 'auto',
       fontSize: 'medium',
-      language: 'English',
+      language: 'en-US',
     });
   },
   
