@@ -1,6 +1,6 @@
-MIT License
+The Oxy Collective Non-Commercial License (Version 1.0)
 
-Copyright (c) 2024 OxyHQ
+Copyright (c) 2024 The Oxy Collective, Inc. (https://oxy.so)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -9,13 +9,34 @@ to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
 copies of the Software, and to permit persons to whom the Software is
 furnished to do so, subject to the following conditions:
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+1. Non-Commercial Use Only.  The rights granted under this license are limited
+   to non-commercial purposes. Commercial use, including without limitation
+   use, reproduction, distribution, or modification of the Software for direct
+   or indirect commercial advantage or monetary compensation, is prohibited
+   without the prior written permission of The Oxy Collective, Inc.
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+2. Attribution Requirement.  Any copy or substantial portion of the Software,
+   including derivative works, must prominently display the following
+   attribution:
+       "© 2024 The Oxy Collective, Inc.  https://oxy.so"
+   in the documentation, source code headers, and/or other materials provided
+   with the distribution.
+
+3. Compliance With License.  The above copyright notice, this license, and the
+   attribution requirement must be included in all copies or substantial
+   portions of the Software.
+
+4. Disclaimer of Warranty.  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY
+   OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+   WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+   NONINFRINGEMENT.
+
+5. Limitation of Liability. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+   BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
+   OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH
+   THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+6. Termination.  Any breach of the terms of this license automatically
+   terminates your rights under it.  Upon termination, you must cease all
+   activities authorized by this license and destroy all copies of the
+   Software and any derivative works.
