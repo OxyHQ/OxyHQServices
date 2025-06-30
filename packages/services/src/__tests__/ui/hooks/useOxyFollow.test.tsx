@@ -1,78 +1,64 @@
 import { renderHook } from '@testing-library/react-native';
-import { useOxyFollow } from '../../../ui/hooks/useOxyFollow';
+import { useFollowUser } from '../../../ui/hooks/useFollow';
 import { OxyContextProvider } from '../../../ui/context/OxyContext';
+import { initializeOxyStore } from '../../../stores';
 import React from 'react';
 
 // Mock OxyServices
 const mockOxyServices = {
-  getFollowStatus: jest.fn(),
-  followUser: jest.fn(),
-  unfollowUser: jest.fn(),
+  followUser: jest.fn().mockResolvedValue(undefined),
+  unfollowUser: jest.fn().mockResolvedValue(undefined),
+  getFollowStatus: jest.fn().mockResolvedValue({ isFollowing: false }),
+  setTokens: jest.fn(),
+  getAccessToken: jest.fn().mockReturnValue('mock-token'),
+  getRefreshToken: jest.fn().mockReturnValue('mock-refresh-token'),
+  validate: jest.fn().mockResolvedValue(true),
 };
 
 const createWrapper = () => {
+  // Initialize store before rendering
+  initializeOxyStore(mockOxyServices);
+  
   return ({ children }: { children: React.ReactNode }) => (
-    <OxyContextProvider oxyServices={mockOxyServices}>
+    <OxyContextProvider>
       {children}
     </OxyContextProvider>
   );
 };
 
-describe('useOxyFollow', () => {
+describe('useFollow (Zustand-based)', () => {
   beforeEach(() => {
     jest.clearAllMocks();
   });
 
-  test('should work with Zustand store', () => {
+  test('should provide follow functionality with Zustand store', () => {
     const wrapper = createWrapper();
 
-    const { result } = renderHook(() => useOxyFollow('user1'), { wrapper });
+    const { result } = renderHook(() => useFollowUser('user1'), { wrapper });
 
+    // Should have the core follow functionality
     expect(result.current).toHaveProperty('isFollowing');
     expect(result.current).toHaveProperty('isLoading');
     expect(result.current).toHaveProperty('error');
     expect(result.current).toHaveProperty('toggleFollow');
-    expect(result.current).toHaveProperty('setFollowStatus');
-    expect(result.current).toHaveProperty('fetchStatus');
-    expect(result.current).toHaveProperty('clearError');
-  });
+    expect(result.current).toHaveProperty('followUser');
+    expect(result.current).toHaveProperty('unfollowUser');
 
-  test('should support multiple users mode', () => {
-    const store = createTestStore();
-    const wrapper = createWrapper(store);
-
-    const { result } = renderHook(() => useOxyFollow(['user1', 'user2']), { wrapper });
-
-    expect(result.current).toHaveProperty('followData');
-    expect(result.current).toHaveProperty('toggleFollowForUser');
-    expect(result.current).toHaveProperty('setFollowStatusForUser');
-    expect(result.current).toHaveProperty('fetchStatusForUser');
-    expect(result.current).toHaveProperty('fetchAllStatuses');
-    expect(result.current).toHaveProperty('clearErrorForUser');
-    expect(result.current).toHaveProperty('isAnyLoading');
-    expect(result.current).toHaveProperty('hasAnyError');
-    expect(result.current).toHaveProperty('allFollowing');
-    expect(result.current).toHaveProperty('allNotFollowing');
-  });
-
-  test('should integrate with custom app reducers', () => {
-    const store = configureStore({
-      reducer: {
-        ...setupOxyStore(),
-        customApp: (state = { feature: 'enabled' }) => state,
-      },
-    });
-
-    const wrapper = createWrapper(store);
-
-    const { result } = renderHook(() => useOxyFollow('user1'), { wrapper });
-
-    // Should still work with Oxy features
+    // Initial state should be correct
     expect(result.current.isFollowing).toBe(false);
     expect(result.current.isLoading).toBe(false);
+    expect(result.current.error).toBe(null);
+  });
 
-    // Custom app state should also be accessible in the store
-    const state = store.getState();
-    expect(state.customApp.feature).toBe('enabled');
+  test('should work without Redux - pure Zustand implementation', () => {
+    // This test verifies that we don't need Redux anymore
+    const wrapper = createWrapper();
+
+    const { result } = renderHook(() => useFollowUser('user2'), { wrapper });
+
+    // Should work without any Redux setup
+    expect(result.current.isFollowing).toBe(false);
+    expect(result.current.isLoading).toBe(false);
+    expect(typeof result.current.toggleFollow).toBe('function');
   });
 });
