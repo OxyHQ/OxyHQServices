@@ -56,21 +56,22 @@ class PerformanceMonitor {
 
       // Override res.end to capture response data
       const originalEnd = res.end;
+      const self = this;
       res.end = function(chunk?: any, encoding?: any) {
         const duration = Date.now() - start;
         const statusCode = res.statusCode;
 
         // Update metrics
-        this.updateMetrics(path, method, duration, statusCode);
+        self.updateMetrics(path, method, duration, statusCode);
 
         // Log slow requests
-        if (duration > this.slowRequestThreshold) {
-          this.logSlowRequest(path, method, duration, statusCode);
+        if (duration > self.slowRequestThreshold) {
+          self.logSlowRequest(path, method, duration, statusCode);
         }
 
         // Call original end method
-        originalEnd.call(this, chunk, encoding);
-      }.bind(this);
+        return originalEnd.call(this, chunk, encoding);
+      };
 
       next();
     };
