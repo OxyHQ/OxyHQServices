@@ -300,9 +300,12 @@ export const initializeOxyStore = (oxyServices: OxyServices) => {
   // Handle token restoration and sync
   if (state.accessToken && state.refreshToken) {
     console.log('[OxyStore] Tokens found in storage, restoring to OxyServices and syncing state from backend');
-    
+
     // Restore tokens to OxyServices
     oxyServices.setTokens(state.accessToken, state.refreshToken);
+
+    // Optimistically mark as authenticated so the UI doesn't show the login screen
+    useOxyStore.setState({ isAuthenticated: true });
     
     // Automatically sync non-persisted state from backend
     setTimeout(async () => {
@@ -323,6 +326,9 @@ export const initializeOxyStore = (oxyServices: OxyServices) => {
     if (oxyAccessToken && oxyRefreshToken) {
       console.log('[OxyStore] OxyServices has tokens but storage doesn\'t, syncing to store');
       useOxyStore.getState().setUser(null, oxyAccessToken, oxyRefreshToken);
+
+      // Mark as authenticated when tokens come from OxyServices
+      useOxyStore.setState({ isAuthenticated: true });
       
       // Also sync non-persisted state
       setTimeout(async () => {

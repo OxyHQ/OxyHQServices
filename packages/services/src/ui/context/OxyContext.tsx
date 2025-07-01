@@ -130,11 +130,21 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     onAuthStateChangeRef.current = onAuthStateChange;
   }, [onAuthStateChange]);
 
-  // Initialize the store once
+  // Initialize the store only after hydration is complete
   useEffect(() => {
-    if (!isInitialized.current) {
+    if (isInitialized.current) return;
+
+    if (useOxyStore.persist.hasHydrated()) {
       initializeOxyStore(oxyServices);
       isInitialized.current = true;
+    } else {
+      const unsub = useOxyStore.persist.onFinishHydration(() => {
+        initializeOxyStore(oxyServices);
+        isInitialized.current = true;
+      });
+      return () => {
+        unsub?.();
+      };
     }
   }, []);
 
