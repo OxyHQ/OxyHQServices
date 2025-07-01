@@ -43,6 +43,43 @@ export type AddressObj = {
     lng?: number;
 };
 
+const SettingsItem = React.memo(({
+    icon,
+    label,
+    value,
+    onPress,
+    themeStyles
+}: {
+    icon: string;
+    label: string;
+    value?: string;
+    onPress?: () => void;
+    themeStyles: any;
+}) => (
+    <TouchableOpacity
+        style={[
+            styles.settingItem,
+            { borderColor: themeStyles.borderColor }
+        ]}
+        onPress={onPress}
+    >
+        <View style={styles.settingContent}>
+            <OxyIcon name={icon} size={24} color={themeStyles.iconColor} />
+            <View style={styles.settingTextContainer}>
+                <Text style={[styles.settingLabel, { color: themeStyles.textColor }]}>
+                    {label}
+                </Text>
+                {value && (
+                    <Text style={[styles.settingValue, { color: themeStyles.textSecondary }]}>
+                        {value}
+                    </Text>
+                )}
+            </View>
+            <OxyIcon name="chevron-right" size={20} color={themeStyles.iconColor} />
+        </View>
+    </TouchableOpacity>
+));
+
 const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
@@ -1462,6 +1499,15 @@ const styles = StyleSheet.create({
         marginTop: 8,
         textAlign: 'right',
         fontFamily: fontFamilies.phudu,
+    },
+    settingContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 16,
+    },
+    settingTextContainer: {
+        flex: 1,
+        marginLeft: 12,
     },
 });
 

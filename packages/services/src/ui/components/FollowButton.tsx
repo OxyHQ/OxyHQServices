@@ -1,7 +1,6 @@
 import React, { useEffect, useCallback } from 'react';
 import {
   TouchableOpacity,
-  Text,
   StyleSheet,
   ViewStyle,
   TextStyle,
@@ -20,7 +19,7 @@ import Animated, {
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
-import { useFollow, useUserFollowStatus } from '../../stores';
+import { useOxyStore } from '../../stores';
 
 export interface FollowButtonProps {
   /**
@@ -132,41 +131,44 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   preventParentActions = true,
   onPress,
 }) => {
-  const { oxyServices, isAuthenticated } = useOxy();
-  const {
-    followingUsers,
-    setFollowingStatus,
-    fetchFollowStatus,
-    toggleFollow,
-    clearFollowError,
-  } = useFollow();
+  const { isAuthenticated } = useOxy();
 
-  // Use the specific user follow status hook
-  const { isFollowing, isLoading, error } = useUserFollowStatus(userId);
+  // Selectors from Zustand store (stable references)
+  const setFollowingStatus = useOxyStore((state) => state.setFollowingStatus);
+  const fetchFollowStatus = useCallback((id: string) => {
+    const state = useOxyStore.getState();
+    return state.fetchFollowStatus(id, state.getApiUtils());
+  }, []);
+  const clearFollowError = useOxyStore((state) => state.clearFollowError);
+  const toggleFollowAction = useOxyStore((state) => state.toggleFollow);
+  const followingUsersMap = useOxyStore((state) => state.followingUsers);
+  const hasApiUtils = useOxyStore((state) => !!state._apiUtils);
+
+  // Memoize selectors to prevent unnecessary re-renders
+  const followingSelector = useCallback(
+    (state: any) => state.followingUsers[userId] ?? false,
+    [userId]
+  );
+  const loadingSelector = useCallback(
+    (state: any) => state.loadingUsers[userId] ?? false,
+    [userId]
+  );
+  const errorSelector = useCallback(
+    (state: any) => state.errors[userId] ?? null,
+    [userId]
+  );
+
+  // Use memoized selectors
+  const isFollowing = useOxyStore(followingSelector);
+  const isLoading = useOxyStore(loadingSelector);
+  const error = useOxyStore(errorSelector);
 
   // Whether the follow status has been loaded from the store
-  const isStatusKnown = followingUsers.hasOwnProperty(userId);
+  const isStatusKnown = Object.prototype.hasOwnProperty.call(followingUsersMap, userId);
 
   // Animation values
   const animationProgress = useSharedValue(isFollowing ? 1 : 0);
   const scale = useSharedValue(1);
-
-  // Initialize store state with initial value if not already set
-  useEffect(() => {
-    if (userId && !isStatusKnown) {
-      // Set the initial state regardless of whether initiallyFollowing is defined
-      const initialState = initiallyFollowing ?? false;
-      setFollowingStatus(userId, initialState);
-    }
-  }, [userId, initiallyFollowing, isStatusKnown, setFollowingStatus]);
-
-  // Fetch latest follow status from backend on mount if authenticated
-  // This runs separately and will overwrite the initial state with actual data
-  useEffect(() => {
-    if (userId && isAuthenticated) {
-      fetchFollowStatus(userId);
-    }
-  }, [userId, isAuthenticated, fetchFollowStatus]);
 
   // Update the animation value when isFollowing changes
   useEffect(() => {
@@ -183,6 +185,21 @@ const FollowButton: React.FC<FollowButtonProps> = ({
       clearFollowError(userId);
     }
   }, [error, userId, clearFollowError]);
+
+  // Initialise local state once
+  useEffect(() => {
+    if (userId && !isStatusKnown) {
+      const initialState = initiallyFollowing ?? false;
+      setFollowingStatus(userId, initialState);
+    }
+  }, [userId, initiallyFollowing, isStatusKnown, setFollowingStatus]);
+
+  // Fetch backend status once per user/auth change
+  useEffect(() => {
+    if (userId && isAuthenticated && hasApiUtils) {
+      fetchFollowStatus(userId);
+    }
+  }, [userId, isAuthenticated, hasApiUtils, fetchFollowStatus]);
 
   // The button press handler with preventDefault support - memoized to prevent recreation
   const handlePress = useCallback(async (event?: any) => {
@@ -224,16 +241,19 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     });
 
     try {
-      // Use the toggle follow method from the store
-      const result = await toggleFollow(userId);
+      // Use the store directly to avoid capturing stale wrappers
+      const storeState = useOxyStore.getState();
+      await toggleFollowAction(userId, storeState.getApiUtils());
 
       // Call the callback if provided
       if (onFollowChange) {
-        onFollowChange(result.isFollowing);
+        const updatedStatus = storeState.followingUsers[userId] ?? false;
+        onFollowChange(updatedStatus);
       }
 
       // Show success toast
-      toast.success(result.isFollowing ? 'Following user!' : 'Unfollowed user');
+      const newFollowingStatus = storeState.followingUsers[userId] ?? false;
+      toast.success(newFollowingStatus ? 'Following user!' : 'Unfollowed user');
     } catch (error: any) {
       console.error('Follow action failed:', error);
 
@@ -253,9 +273,9 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     isFollowing,
     isAuthenticated,
     scale,
-    toggleFollow,
     userId,
-    onFollowChange
+    onFollowChange,
+    toggleFollowAction
   ]);
 
   // Animated styles for the button

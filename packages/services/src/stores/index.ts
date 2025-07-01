@@ -383,11 +383,12 @@ export const useAuthTokens = () => useOxyStore((state) => ({
 
 // === FOLLOW HOOKS ===
 
-export const useUserFollowStatus = (userId: string) => useOxyStore((state) => ({
-  isFollowing: state.followingUsers[userId] ?? false,
-  isLoading: state.loadingUsers[userId] ?? false,
-  error: state.errors[userId] ?? null,
-}));
+export const useUserFollowStatus = (userId: string) =>
+  useOxyStore((state) => ({
+    isFollowing: state.followingUsers[userId] ?? false,
+    isLoading: state.loadingUsers[userId] ?? false,
+    error: state.errors[userId] ?? null,
+  }));
 
 export const useMultipleFollowStatuses = (userIds: string[]) => useOxyStore((state) => {
   const statuses: Record<string, { isFollowing: boolean; isLoading: boolean; error: string | null }> = {};

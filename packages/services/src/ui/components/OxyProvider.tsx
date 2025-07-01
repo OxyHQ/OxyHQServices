@@ -216,36 +216,35 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         console.log('[OxyBottomSheet] Component mounted with initialScreen:', initialScreen);
     }, [initialScreen]);
 
-    // Handle keyboard events - memoized to prevent re-registration
+    // Memoize keyboard event handlers to prevent re-creation
+    const handleKeyboardShow = useCallback((event: KeyboardEvent) => {
+        setKeyboardVisible(true);
+        // Ensure the bottom sheet remains visible when keyboard opens
+        if (modalRef.current) {
+            // Use requestAnimationFrame to avoid conflicts
+            requestAnimationFrame(() => {
+                modalRef.current?.snapToIndex(1);
+            });
+        }
+    }, []);
+
+    const handleKeyboardHide = useCallback(() => {
+        setKeyboardVisible(false);
+    }, []);
+
+    // Handle keyboard events with memoized handlers
     useEffect(() => {
-        const keyboardWillShowListener = Keyboard.addListener(
-            Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-            (event: KeyboardEvent) => {
-                setKeyboardVisible(true);
-                // Ensure the bottom sheet remains visible when keyboard opens
-                // by adjusting to the highest snap point
-                if (modalRef.current) {
-                    // Use requestAnimationFrame to avoid conflicts
-                    requestAnimationFrame(() => {
-                        modalRef.current?.snapToIndex(1);
-                    });
-                }
-            }
-        );
+        const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+        const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
-        const keyboardWillHideListener = Keyboard.addListener(
-            Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-            () => {
-                setKeyboardVisible(false);
-            }
-        );
+        const showListener = Keyboard.addListener(showEvent, handleKeyboardShow);
+        const hideListener = Keyboard.addListener(hideEvent, handleKeyboardHide);
 
-        // Cleanup listeners
         return () => {
-            keyboardWillShowListener.remove();
-            keyboardWillHideListener.remove();
+            showListener.remove();
+            hideListener.remove();
         };
-    }, []); // Remove keyboardVisible dependency to prevent re-registration
+    }, [handleKeyboardShow, handleKeyboardHide]);
 
     // Present the modal when component mounts, but only if autoPresent is true
     useEffect(() => {
