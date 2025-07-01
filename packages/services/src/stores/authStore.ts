@@ -401,6 +401,8 @@ export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
     try {
       // First ensure tokens are valid/refresh if needed
       await get().ensureToken(apiUtils);
+      // Sync tokens from OxyServices back to the store, in case ensureToken refreshed them
+      get().syncTokens(apiUtils);
       
       // Sync user data
       await get().refreshUserData(apiUtils);
@@ -411,14 +413,34 @@ export const createAuthSlice: StateCreator<AuthState> = (set, get) => ({
       console.log('[AuthStore] Non-persisted state synced successfully');
     } catch (error: any) {
       console.warn('[AuthStore] Failed to sync non-persisted state:', error);
-      
-      // If token validation fails, clear tokens and reset auth state
-      if (error?.message?.includes('Token') || error?.message?.includes('Unauthorized')) {
-        console.log('[AuthStore] Token validation failed, clearing auth state');
+
+      // Check for specific error messages or statuses that indicate critical auth failure
+      const isCriticalAuthError = (
+        error?.message?.includes('Token') ||
+        error?.message?.includes('Unauthorized') ||
+        error?.message?.includes('No authenticated user found') || // Common message from ensureToken for critical failures
+        error?.status === 401 || // HTTP Unauthorized
+        error?.status === 403    // HTTP Forbidden
+      );
+
+      if (isCriticalAuthError) {
+        console.log('[AuthStore] Critical authentication error during sync, resetting auth state. Error:', error.message);
         get().reset();
+      } else {
+        // For other errors (e.g., network issues, server errors not directly indicating invalid session),
+        // individual actions like refreshUserData should have already set an error message.
+        // Log that the auth state is preserved.
+        console.log('[AuthStore] Non-critical error during sync, auth state preserved. Error details:', error.message);
+        // Ensure an error message is set in the store if not already.
+        // refreshUserData already calls set({ error: ... }) if it's the source.
+        // This handles cases where ensureToken might throw an error that isn't deemed "critical" by the new check,
+        // or if refreshSessions were to throw.
+        if (!get().error) {
+          set({ error: error?.message || 'Failed to sync account data.' });
+        }
       }
       
-      throw error;
+      throw error; // Re-throw the error so callers (like initializeOxyStore) are aware.
     }
   }
 });
