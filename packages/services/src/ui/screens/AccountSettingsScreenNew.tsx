@@ -786,7 +786,7 @@ const AccountSettingsScreenNew: React.FC<BaseScreenProps> = ({
                         <AppearanceSection
                             theme={settings?.theme || 'auto'}
                             fontSize={settings?.fontSize || 'medium'}
-                            language={settings?.language || 'English'}
+                            language={settings?.language || 'en-US'}
                             onThemeChange={handleThemeChange}
                             onFontSizeChange={handleFontSizeChange}
                             onLanguageChange={handleLanguageChange}
