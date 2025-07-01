@@ -96,50 +96,31 @@ export const useOxyStore = create<OxyStore>()(
       storage,
       partialize: (state) => {
         const partialized = {
-          // Only persist the relevant auth state
-          user: state.user,
-          minimalUser: state.minimalUser,
-          sessions: state.sessions,
+          // Persist only minimal authentication data
           activeSessionId: state.activeSessionId,
-          isAuthenticated: state.isAuthenticated,
           accessToken: state.accessToken,
           refreshToken: state.refreshToken,
         } as Partial<OxyStore>;
-        
+
         console.log('[OxyStore] Partializing state for persistence:', {
-          hasUser: !!partialized.user,
           hasAccessToken: !!partialized.accessToken,
           hasRefreshToken: !!partialized.refreshToken,
           accessTokenLength: partialized.accessToken?.length || 0,
           refreshTokenLength: partialized.refreshToken?.length || 0,
+          hasActiveSessionId: !!partialized.activeSessionId,
         });
-        
+
         return partialized;
       },
       onRehydrateStorage: () => (state) => {
         console.log('[OxyStore] Rehydrating from storage:', {
-          hasUser: !!state?.user,
           hasAccessToken: !!state?.accessToken,
           hasRefreshToken: !!state?.refreshToken,
           accessTokenLength: state?.accessToken?.length || 0,
           refreshTokenLength: state?.refreshToken?.length || 0,
-          isAuthenticated: state?.isAuthenticated,
-          userId: state?.user?.id,
-          username: state?.user?.username,
+          hasActiveSessionId: !!state?.activeSessionId,
         });
-        
-        // If we have user data but isAuthenticated is false, fix it
-        if (state?.user && !state?.isAuthenticated) {
-          console.log('[OxyStore] Fixing authentication state - user exists but isAuthenticated is false');
-          // Fix the authentication state by calling setUser with the existing user data
-          setTimeout(() => {
-            const currentState = useOxyStore.getState();
-            if (currentState.user && !currentState.isAuthenticated) {
-              console.log('[OxyStore] Applying authentication state fix');
-              currentState.setUser(currentState.user, currentState.accessToken, currentState.refreshToken);
-            }
-          }, 0);
-        }
+        // No additional hydration logic required when user data is not persisted
       },
     }
   )
@@ -361,6 +342,20 @@ export const initializeOxyStore = (oxyServices: OxyServices) => {
   }
   
   useOxyStore.getState().initialize(oxyServices);
+
+  const currentState = useOxyStore.getState();
+  if ((currentState.accessToken || currentState.refreshToken) && !currentState.user) {
+    console.log('[OxyStore] No user data after rehydration. Fetching from backend');
+    setTimeout(async () => {
+      try {
+        await currentState.refreshUserData(currentState.getApiUtils());
+        await currentState.refreshSessions(currentState.getApiUtils());
+        console.log('[OxyStore] User data synchronized successfully');
+      } catch (syncError) {
+        console.warn('[OxyStore] Failed to synchronize user data:', syncError);
+      }
+    }, 0);
+  }
 };
 
 // Export store and types
