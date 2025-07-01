@@ -133,13 +133,19 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   onPress,
 }) => {
   const { oxyServices, isAuthenticated } = useOxy();
-  const followStore = useFollow();
+  const {
+    followingUsers,
+    setFollowingStatus,
+    fetchFollowStatus,
+    toggleFollow,
+    clearFollowError,
+  } = useFollow();
 
   // Use the specific user follow status hook
   const { isFollowing, isLoading, error } = useUserFollowStatus(userId);
 
   // Whether the follow status has been loaded from the store
-  const isStatusKnown = followStore.followingUsers.hasOwnProperty(userId);
+  const isStatusKnown = followingUsers.hasOwnProperty(userId);
 
   // Animation values
   const animationProgress = useSharedValue(isFollowing ? 1 : 0);
@@ -150,17 +156,17 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     if (userId && !isStatusKnown) {
       // Set the initial state regardless of whether initiallyFollowing is defined
       const initialState = initiallyFollowing ?? false;
-      followStore.setFollowingStatus(userId, initialState);
+      setFollowingStatus(userId, initialState);
     }
-  }, [userId, initiallyFollowing, isStatusKnown, followStore]);
+  }, [userId, initiallyFollowing, isStatusKnown, setFollowingStatus]);
 
   // Fetch latest follow status from backend on mount if authenticated
   // This runs separately and will overwrite the initial state with actual data
   useEffect(() => {
     if (userId && isAuthenticated) {
-      followStore.fetchFollowStatus(userId);
+      fetchFollowStatus(userId);
     }
-  }, [userId, isAuthenticated, followStore]);
+  }, [userId, isAuthenticated, fetchFollowStatus]);
 
   // Update the animation value when isFollowing changes
   useEffect(() => {
@@ -174,9 +180,9 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   useEffect(() => {
     if (error) {
       toast.error(error);
-      followStore.clearFollowError(userId);
+      clearFollowError(userId);
     }
-  }, [error, userId, followStore]); // Removed userId and dispatch to prevent unnecessary runs
+  }, [error, userId, clearFollowError]);
 
   // The button press handler with preventDefault support - memoized to prevent recreation
   const handlePress = useCallback(async (event?: any) => {
@@ -219,18 +225,15 @@ const FollowButton: React.FC<FollowButtonProps> = ({
 
     try {
       // Use the toggle follow method from the store
-      await followStore.toggleFollow(userId);
+      const result = await toggleFollow(userId);
 
       // Call the callback if provided
       if (onFollowChange) {
-        // Get the updated status from the store
-        const updatedStatus = followStore.followingUsers[userId] ?? false;
-        onFollowChange(updatedStatus);
+        onFollowChange(result.isFollowing);
       }
 
       // Show success toast
-      const newFollowingStatus = followStore.followingUsers[userId] ?? false;
-      toast.success(newFollowingStatus ? 'Following user!' : 'Unfollowed user');
+      toast.success(result.isFollowing ? 'Following user!' : 'Unfollowed user');
     } catch (error: any) {
       console.error('Follow action failed:', error);
 
@@ -250,7 +253,7 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     isFollowing,
     isAuthenticated,
     scale,
-    followStore,
+    toggleFollow,
     userId,
     onFollowChange
   ]);
