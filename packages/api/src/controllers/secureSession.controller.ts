@@ -163,11 +163,13 @@ export class SecureSessionController {
         console.log(`Created new session for user ${user.username} on device ${deviceInfo.deviceId}`);
       }
 
-      // Return only session data and minimal user info
+      // Return session data, tokens and minimal user info
       const response: SessionAuthResponse = {
         sessionId: (session._id as mongoose.Types.ObjectId).toString(),
         deviceId: deviceInfo.deviceId,
         expiresAt: session.expiresAt.toISOString(),
+        accessToken: session.accessToken,
+        refreshToken: session.refreshToken,
         user: {
           id: user._id.toString(),
           username: user.username,
