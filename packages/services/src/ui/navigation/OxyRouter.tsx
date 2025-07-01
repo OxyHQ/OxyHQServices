@@ -10,6 +10,7 @@ import AccountSwitcherScreen from '../screens/AccountSwitcherScreen';
 import SessionManagementScreen from '../screens/SessionManagementScreen';
 import AccountOverviewScreen from '../screens/AccountOverviewScreen';
 import AccountSettingsScreen from '../screens/AccountSettingsScreen';
+import AppSettingsScreen from '../screens/AppSettingsScreen';
 import PremiumSubscriptionScreen from '../screens/PremiumSubscriptionScreen';
 import BillingManagementScreen from '../screens/BillingManagementScreen';
 import AppInfoScreen from '../screens/AppInfoScreen';
@@ -54,6 +55,10 @@ const routes: Record<string, RouteConfig> = {
     },
     AccountSettings: {
         component: AccountSettingsScreen,
+        snapPoints: ['60%', '100%'],
+    },
+    AppSettings: {
+        component: AppSettingsScreen,
         snapPoints: ['60%', '100%'],
     },
     PremiumSubscription: {
@@ -158,91 +163,53 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         };
     }, [navigate, navigationRef]);
 
-    // Expose the navigate method to the parent component (OxyProvider)
+    // Expose the navigate method globally so other contexts can trigger navigation without the ref
     useEffect(() => {
-        // Set up event listener for navigation events
         const handleNavigationEvent = (event: any) => {
-            if (event && event.detail) {
-                // Support both string and object detail
-                if (typeof event.detail === 'string') {
-                    const screenName = event.detail;
-                    console.log(`Navigation event received for screen: ${screenName}`);
-                    navigate(screenName);
-                } else if (typeof event.detail === 'object' && event.detail.screen) {
-                    const { screen, props } = event.detail;
-                    console.log(`Navigation event received for screen: ${screen} with props`, props);
-                    navigate(screen, props || {});
-                }
+            const detail = event?.detail;
+            if (!detail) return;
+
+            if (typeof detail === 'string') {
+                navigate(detail);
+            } else if (typeof detail === 'object' && detail.screen) {
+                navigate(detail.screen, detail.props || {});
             }
         };
-
-        // For React Native - check for global navigation events
-        let intervalId: any = null;
 
         if (typeof document !== 'undefined') {
-            // Web - use custom event listener
             document.addEventListener('oxy:navigate', handleNavigationEvent);
-        } else {
-            // React Native - poll for global navigation events
-            intervalId = setInterval(() => {
-                const globalNav = (globalThis as any).oxyNavigateEvent;
-                if (globalNav) {
-                    console.log(`RN Navigation event received:`, globalNav);
-                    if (globalNav.screen) {
-                        navigate(globalNav.screen, globalNav.props || {});
-                    }
-                    // Clear the event after processing
-                    (globalThis as any).oxyNavigateEvent = null;
-                }
-            }, 100); // Check every 100ms
+            return () => document.removeEventListener('oxy:navigate', handleNavigationEvent);
         }
+    }, [navigate]);
 
-        // Cleanup
-        return () => {
-            if (typeof document !== 'undefined') {
-                document.removeEventListener('oxy:navigate', handleNavigationEvent);
-            }
-            if (intervalId) {
-                clearInterval(intervalId);
-            }
-        };
-    }, []);
-
+    // Go back helper
     const goBack = useCallback(() => {
         if (screenHistory.length > 1) {
-            const newHistory = [...screenHistory];
-            newHistory.pop();
-            const previousScreen = newHistory[newHistory.length - 1];
-            setCurrentScreen(previousScreen);
-            setScreenHistory(newHistory);
+            setScreenHistory(prev => {
+                const newHistory = [...prev];
+                newHistory.pop();
+                const previousScreen = newHistory[newHistory.length - 1];
+                setCurrentScreen(previousScreen);
+                return newHistory;
+            });
         } else {
-            // If no history, close the UI
-            if (onClose) {
-                onClose();
-            }
+            onClose?.();
         }
     }, [screenHistory, onClose]);
 
-    // Render the current screen component - memoized to prevent unnecessary re-renders
-    const renderScreen = useCallback(() => {
-        const CurrentScreen = routes[currentScreen]?.component;
+    // Render currently active screen
+    const CurrentScreen = routes[currentScreen]?.component;
 
-        console.log('[OxyRouter] Rendering screen:', currentScreen);
-        console.log('[OxyRouter] Available routes:', Object.keys(routes));
-        console.log('[OxyRouter] Current screen component found:', !!CurrentScreen);
-        console.log('[OxyRouter] Current screen component name:', CurrentScreen?.name || 'Unknown');
-
-        if (!CurrentScreen) {
-            console.error(`Screen "${currentScreen}" not found`);
-            return (
-                <View style={styles.errorContainer}>
-                    <Text style={{ color: 'white', fontSize: 16 }}>Screen "{currentScreen}" not found</Text>
-                </View>
-            );
-        }
-
-        console.log('[OxyRouter] Rendering screen component for:', currentScreen);
+    if (!CurrentScreen) {
         return (
+            <View style={styles.errorContainer}>
+                <Text style={{ color: 'white', fontSize: 16 }}>Screen "{currentScreen}" not found</Text>
+            </View>
+        );
+    }
+
+    return (
+        <View style={styles.container}>
             <CurrentScreen
                 oxyServices={oxyServices}
                 navigate={navigate}
@@ -253,12 +220,6 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
                 containerWidth={containerWidth}
                 {...screenProps}
             />
-        );
-    }, [currentScreen, navigate, goBack, onClose, onAuthenticated, theme, containerWidth, screenProps]);
-
-    return (
-        <View style={styles.container}>
-            {renderScreen()}
         </View>
     );
 };
@@ -266,15 +227,15 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        minHeight: 200, // Ensure minimum height
-        backgroundColor: 'transparent', // Make sure it's visible
+        minHeight: 200,
+        backgroundColor: 'transparent',
     },
     errorContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
         minHeight: 100,
-        backgroundColor: 'red', // Make errors visible
+        backgroundColor: 'red',
     },
 });
 

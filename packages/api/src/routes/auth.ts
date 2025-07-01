@@ -634,21 +634,9 @@ router.post("/register", async (req: Request, res: Response) => {
         autoFilter: true,
         muteKeywords: false,
       },
-      associated: {
-        lists: 0,
-        feedgens: 0,
-        starterPacks: 0,
-        labeler: false,
-      },
       labels: [],
       links: [],
       addresses: [],
-      _count: {
-        followers: 0,
-        following: 0,
-        posts: 0,
-        karma: 0,
-      }
     });
 
     await user.save();

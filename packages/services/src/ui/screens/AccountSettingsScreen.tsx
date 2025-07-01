@@ -23,8 +23,6 @@ import BasicInformationSection from './accountSettings/BasicInformationSection';
 import AboutYouSection from './accountSettings/AboutYouSection';
 import QuickActionsSection from './accountSettings/QuickActionsSection';
 import SecuritySection from './accountSettings/SecuritySection';
-import NotificationSection from './accountSettings/NotificationSection';
-import AppearanceSection from './accountSettings/AppearanceSection';
 import PrivacySection from './accountSettings/PrivacySection';
 import AccountSection from './accountSettings/AccountSection';
 import { useThemeStoreStandalone } from '../../stores/themeStore';
@@ -1197,28 +1195,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                             onToggleTwoFactor={handleToggleTwoFactor}
                             onManageSessions={handleManageSessions}
                             onSecurityLog={handleSecurityLog}
-                        />
-
-                        <NotificationSection
-                            pushNotifications={pushNotifications}
-                            emailNotifications={emailNotifications}
-                            marketingEmails={marketingEmails}
-                            soundEnabled={soundEnabled}
-                            onTogglePushNotifications={handleTogglePushNotifications}
-                            onToggleEmailNotifications={handleToggleEmailNotifications}
-                            onToggleMarketingEmails={handleToggleMarketingEmails}
-                            onToggleSound={handleToggleSound}
-                            onNotificationPreferences={handleNotificationPreferences}
-                        />
-
-                        <AppearanceSection
-                            theme={currentTheme}
-                            fontSize={fontSize}
-                            language={language}
-                            onThemeChange={handleThemeChange}
-                            onFontSizeChange={handleFontSizeChange}
-                            onLanguageChange={handleLanguageChange}
-                            onAccessibilitySettings={handleAccessibilitySettings}
                         />
 
                         <PrivacySection

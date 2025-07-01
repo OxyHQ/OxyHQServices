@@ -134,7 +134,7 @@ const FollowButton: React.FC<FollowButtonProps> = ({
 }) => {
   const { oxyServices, isAuthenticated } = useOxy();
   const followStore = useFollow();
-  
+
   // Use the specific user follow status hook
   const { isFollowing, isLoading, error } = useUserFollowStatus(userId);
 
