@@ -1,13 +1,13 @@
 /**
- * User Settings store using Zustand
- * Centralized state management for user settings (separate from authentication)
- * Implements backend-first data management with local fallback
+ * User Settings Store
+ * Manages user-specific settings fetched fresh from backend
+ * NO PERSISTENCE - user settings are user-specific and should not persist across users
  */
 
 import { StateCreator, create } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { persist } from 'zustand/middleware';
 import type { ApiUtils } from '../utils/api';
+
+// === USER SETTINGS INTERFACE ===
 
 export interface UserSettings {
   // Profile settings
@@ -43,10 +43,11 @@ export interface UserSettings {
     image?: string;
   }>;
 
-  // Appearance settings
-  theme: 'light' | 'dark' | 'auto';
-  fontSize: 'small' | 'medium' | 'large';
-  language: string;
+  // Privacy settings
+  profileVisibility: 'public' | 'private' | 'friends';
+  showOnlineStatus: boolean;
+  allowMessagesFrom: 'everyone' | 'friends' | 'none';
+  showActivityStatus: boolean;
 
   // Notification settings
   pushNotifications: boolean;
@@ -54,45 +55,46 @@ export interface UserSettings {
   marketingEmails: boolean;
   soundEnabled: boolean;
 
-  // Privacy settings
-  profileVisibility: 'public' | 'private' | 'friends';
-  showOnlineStatus: boolean;
-  allowMessagesFrom: 'everyone' | 'friends' | 'none';
-  showActivityStatus: boolean;
-
   // Security settings
   hasTwoFactorEnabled: boolean;
   lastPasswordChange?: string;
   activeSessions: number;
 
-  // Account info
+  // Account info (read-only)
   accountCreated: string;
   lastLogin: string;
 }
 
+// === STORE STATE INTERFACE ===
+
 export interface UserSettingsState {
-  // Settings data
+  // Data
   settings: UserSettings | null;
+  
+  // UI state
   isLoading: boolean;
   isSaving: boolean;
   error: string | null;
   lastSync: number | null;
   isOffline: boolean;
 
-  // Actions
+  // State management
   setSettings: (settings: Partial<UserSettings>) => void;
   setLoading: (loading: boolean) => void;
   setSaving: (saving: boolean) => void;
   setError: (error: string | null) => void;
   setOffline: (offline: boolean) => void;
   reset: () => void;
+  clearUserSettings: () => void;
 
-  // Async actions
+  // Backend operations
   loadSettings: (apiUtils?: ApiUtils) => Promise<void>;
   saveSettings: (updates: Partial<UserSettings>, apiUtils?: ApiUtils) => Promise<void>;
   syncSettings: (apiUtils?: ApiUtils) => Promise<void>;
   refreshSettings: (apiUtils?: ApiUtils) => Promise<void>;
 }
+
+// === DEFAULT SETTINGS ===
 
 const defaultSettings: UserSettings = {
   username: '',
@@ -104,22 +106,21 @@ const defaultSettings: UserSettings = {
   name: { first: '', middle: '', last: '' },
   addresses: [],
   links: [],
-  theme: 'auto',
-  fontSize: 'medium',
-  language: 'English',
-  pushNotifications: true,
-  emailNotifications: true,
-  marketingEmails: false,
-  soundEnabled: true,
   profileVisibility: 'public',
   showOnlineStatus: true,
   allowMessagesFrom: 'friends',
   showActivityStatus: true,
+  pushNotifications: true,
+  emailNotifications: true,
+  marketingEmails: false,
+  soundEnabled: true,
   hasTwoFactorEnabled: false,
   activeSessions: 1,
   accountCreated: '',
   lastLogin: '',
 };
+
+// === STORE SLICE ===
 
 export const createUserSettingsSlice: StateCreator<UserSettingsState> = (set, get) => ({
   // Initial state
@@ -130,7 +131,8 @@ export const createUserSettingsSlice: StateCreator<UserSettingsState> = (set, ge
   lastSync: null,
   isOffline: false,
 
-  // Actions
+  // === STATE MANAGEMENT ===
+
   setSettings: (settings) => {
     const currentSettings = get().settings;
     set({
@@ -153,111 +155,35 @@ export const createUserSettingsSlice: StateCreator<UserSettingsState> = (set, ge
     isOffline: false,
   }),
 
-  // Load settings from backend first, fallback to local storage
+  clearUserSettings: () => {
+    console.log('[UserSettingsStore] Clearing user settings');
+    
+    // Reset state
+    get().reset();
+    
+    // Clear any legacy storage (cleanup for existing installations)
+    try {
+      if (typeof window !== 'undefined' && window.localStorage) {
+        window.localStorage.removeItem('user-settings-storage');
+        console.log('[UserSettingsStore] Cleared legacy user settings storage');
+      }
+    } catch (error) {
+      console.warn('[UserSettingsStore] Failed to clear legacy storage:', error);
+    }
+  },
+
+  // === BACKEND OPERATIONS ===
+
   loadSettings: async (apiUtils) => {
-    const state = get();
-    
-    try {
-      set({ isLoading: true, error: null });
-
-      if (apiUtils) {
-        // Try to load from backend first
-        try {
-          const user = await apiUtils.getCurrentUser();
-          if (user) {
-            const settings = mapUserToSettings(user);
-            set({ 
-              settings, 
-              isLoading: false, 
-              lastSync: Date.now(),
-              isOffline: false 
-            });
-            return;
-          }
-        } catch (error) {
-          console.warn('Failed to load settings from backend, using local fallback:', error);
-          set({ isOffline: true });
-        }
-      }
-
-      // Fallback to local storage if backend fails or no API utils
-      if (state.settings) {
-        set({ isLoading: false, isOffline: true });
-        return;
-      }
-
-      // No local settings either, use defaults
-      set({ 
-        settings: defaultSettings, 
-        isLoading: false, 
-        isOffline: true 
-      });
-
-    } catch (error: any) {
-      const errorMessage = error?.message || 'Failed to load settings';
-      set({ 
-        error: errorMessage, 
-        isLoading: false, 
-        isOffline: true 
-      });
-    }
-  },
-
-  // Save settings to backend first, then update local state
-  saveSettings: async (updates, apiUtils) => {
-    const state = get();
-    
-    try {
-      set({ isSaving: true, error: null });
-
-      if (apiUtils) {
-        // Save to backend first
-        try {
-          const updatedUser = await apiUtils.updateProfile(updates);
-          const newSettings = mapUserToSettings(updatedUser);
-          
-          set({ 
-            settings: newSettings, 
-            isSaving: false, 
-            lastSync: Date.now(),
-            isOffline: false 
-          });
-          return;
-        } catch (error) {
-          console.warn('Failed to save settings to backend, saving locally only:', error);
-          set({ isOffline: true });
-        }
-      }
-
-      // Fallback to local-only save if backend fails
-      const currentSettings = state.settings || defaultSettings;
-      const newSettings = { ...currentSettings, ...updates };
-      
-      set({ 
-        settings: newSettings, 
-        isSaving: false, 
-        isOffline: true 
-      });
-
-    } catch (error: any) {
-      const errorMessage = error?.message || 'Failed to save settings';
-      set({ 
-        error: errorMessage, 
-        isSaving: false 
-      });
-      throw error;
-    }
-  },
-
-  // Sync settings with backend (refresh from server)
-  syncSettings: async (apiUtils) => {
     if (!apiUtils) {
-      console.warn('No API utils available for sync');
+      console.warn('[UserSettingsStore] No API utils available - using default settings');
+      set({ settings: defaultSettings, isOffline: true });
       return;
     }
 
     try {
       set({ isLoading: true, error: null });
+      console.log('[UserSettingsStore] Loading settings from backend');
 
       const user = await apiUtils.getCurrentUser();
       if (user) {
@@ -268,10 +194,82 @@ export const createUserSettingsSlice: StateCreator<UserSettingsState> = (set, ge
           lastSync: Date.now(),
           isOffline: false 
         });
+        console.log('[UserSettingsStore] Settings loaded from backend');
+      } else {
+        set({ 
+          settings: defaultSettings, 
+          isLoading: false, 
+          isOffline: true 
+        });
+      }
+
+    } catch (error: any) {
+      const errorMessage = error?.message || 'Failed to load settings';
+      console.error('[UserSettingsStore] Failed to load settings:', error);
+      set({ 
+        error: errorMessage, 
+        isLoading: false, 
+        isOffline: true,
+        settings: defaultSettings
+      });
+    }
+  },
+
+  saveSettings: async (updates, apiUtils) => {
+    if (!apiUtils) throw new Error('ApiUtils required for saving settings');
+
+    try {
+      set({ isSaving: true, error: null });
+      console.log('[UserSettingsStore] Saving settings to backend');
+
+      const updatedUser = await apiUtils.updateProfile(updates);
+      const newSettings = mapUserToSettings(updatedUser);
+      
+      set({ 
+        settings: newSettings, 
+        isSaving: false, 
+        lastSync: Date.now(),
+        isOffline: false 
+      });
+      
+      console.log('[UserSettingsStore] Settings saved to backend');
+
+    } catch (error: any) {
+      const errorMessage = error?.message || 'Failed to save settings';
+      console.error('[UserSettingsStore] Failed to save settings:', error);
+      set({ 
+        error: errorMessage, 
+        isSaving: false 
+      });
+      throw error;
+    }
+  },
+
+  syncSettings: async (apiUtils) => {
+    if (!apiUtils) {
+      console.warn('[UserSettingsStore] No API utils available for sync');
+      return;
+    }
+
+    try {
+      set({ isLoading: true, error: null });
+      console.log('[UserSettingsStore] Syncing settings from backend');
+
+      const user = await apiUtils.getCurrentUser();
+      if (user) {
+        const settings = mapUserToSettings(user);
+        set({ 
+          settings, 
+          isLoading: false, 
+          lastSync: Date.now(),
+          isOffline: false 
+        });
+        console.log('[UserSettingsStore] Settings synced from backend');
       }
 
     } catch (error: any) {
       const errorMessage = error?.message || 'Failed to sync settings';
+      console.error('[UserSettingsStore] Failed to sync settings:', error);
       set({ 
         error: errorMessage, 
         isLoading: false,
@@ -280,13 +278,13 @@ export const createUserSettingsSlice: StateCreator<UserSettingsState> = (set, ge
     }
   },
 
-  // Refresh settings (alias for sync)
   refreshSettings: async (apiUtils) => {
     return get().syncSettings(apiUtils);
   },
 });
 
-// Helper function to map User object to UserSettings
+// === HELPER FUNCTIONS ===
+
 function mapUserToSettings(user: any): UserSettings {
   return {
     username: user.username || '',
@@ -298,18 +296,15 @@ function mapUserToSettings(user: any): UserSettings {
     name: user.name || { first: '', middle: '', last: '' },
     addresses: user.addresses || [],
     links: user.links || [],
-    theme: user.theme || 'auto',
-    fontSize: user.fontSize || 'medium',
-    language: user.language || 'English',
-    pushNotifications: user.pushNotifications !== false,
-    emailNotifications: user.emailNotifications !== false,
-    marketingEmails: user.marketingEmails || false,
-    soundEnabled: user.soundEnabled !== false,
-    profileVisibility: user.profileVisibility || 'public',
-    showOnlineStatus: user.showOnlineStatus !== false,
-    allowMessagesFrom: user.allowMessagesFrom || 'friends',
-    showActivityStatus: user.showActivityStatus !== false,
-    hasTwoFactorEnabled: user.hasTwoFactorEnabled || false,
+    profileVisibility: user.privacySettings?.profileVisibility ? 'public' : 'private',
+    showOnlineStatus: user.privacySettings?.hideOnlineStatus ? false : true,
+    allowMessagesFrom: user.privacySettings?.allowDirectMessages ? 'everyone' : 'friends',
+    showActivityStatus: user.privacySettings?.showActivity !== false,
+    pushNotifications: user.notificationSettings?.push !== false,
+    emailNotifications: user.notificationSettings?.email !== false,
+    marketingEmails: user.notificationSettings?.marketing || false,
+    soundEnabled: user.notificationSettings?.sound !== false,
+    hasTwoFactorEnabled: user.privacySettings?.twoFactorEnabled || false,
     lastPasswordChange: user.lastPasswordChange,
     activeSessions: user.activeSessions || 1,
     accountCreated: user.createdAt ? new Date(user.createdAt).toLocaleDateString() : '',
@@ -317,31 +312,9 @@ function mapUserToSettings(user: any): UserSettings {
   };
 }
 
-// Standalone user settings store
+// === STANDALONE STORE ===
+// NO PERSISTENCE - user settings are user-specific and should not persist
+
 export const useUserSettingsStore = create<UserSettingsState>()(
-  persist(
-    createUserSettingsSlice,
-    {
-      name: 'user-settings-storage',
-      storage: {
-        getItem: async (name) => {
-          const value = await AsyncStorage.getItem(name);
-          return value ? JSON.parse(value) : null;
-        },
-        setItem: async (name, value) => {
-          await AsyncStorage.setItem(name, JSON.stringify(value));
-        },
-        removeItem: async (name) => {
-          await AsyncStorage.removeItem(name);
-        },
-      },
-      partialize: (state) => {
-        const partialized: Partial<UserSettingsState> = {};
-        if (state.settings) partialized.settings = state.settings;
-        if (state.lastSync) partialized.lastSync = state.lastSync;
-        partialized.isOffline = state.isOffline;
-        return partialized;
-      },
-    }
-  )
+  createUserSettingsSlice
 ); 

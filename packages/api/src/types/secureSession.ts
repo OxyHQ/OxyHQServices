@@ -16,6 +16,8 @@ export interface SessionAuthResponse {
   sessionId: string;
   deviceId: string;
   expiresAt: string;
+  accessToken: string;
+  refreshToken: string;
   user: {
     id: string;
     username: string;
@@ -25,4 +27,5 @@ export interface SessionAuthResponse {
     };
     // Only non-sensitive data for initial display
   };
+  message?: string;
 }

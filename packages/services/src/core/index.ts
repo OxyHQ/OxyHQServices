@@ -84,18 +84,45 @@ interface ApiResponse<T = any> {
 }
 
 /**
- * OxyServices - Client library for interacting with the Oxy API
+ * OxyServices - Session-based Authentication Client
  * 
- * Updated to work with the improved API structure with standardized responses
- * and better error handling.
+ * Provides secure, database-backed authentication with proper session management.
+ * Supports multiple sessions per user with proper token lifecycle management.
  * 
- * Note: For authentication status in UI components, use `isAuthenticated` from useOxy() context
- * instead of checking token status directly on this service.
+ * Key features:
+ * - Session-based authentication (not just tokens)
+ * - Multiple session support
+ * - Database-backed session storage
+ * - Proper token lifecycle management
+ * - Automatic session validation and cleanup
  */
 export class OxyServices {
   private client: AxiosInstance;
-  private accessToken: string | null = null;
-  private refreshToken: string | null = null;
+  
+  // Session-based authentication (replaces simple token storage)
+  private currentSession: {
+    sessionId: string;
+    accessToken: string;
+    refreshToken: string;
+    userId: string;
+    deviceId?: string;
+    expiresAt: Date;
+    lastActivity: Date;
+  } | null = null;
+  
+  // Track multiple sessions for the current user
+  private userSessions: Map<string, {
+    sessionId: string;
+    accessToken: string;
+    refreshToken: string;
+    userId: string;
+    deviceId?: string;
+    deviceName?: string;
+    expiresAt: Date;
+    lastActivity: Date;
+    isActive: boolean;
+  }> = new Map();
+  
   private refreshPromise: Promise<{ accessToken: string; refreshToken: string }> | null = null;
 
   /**
@@ -110,13 +137,16 @@ export class OxyServices {
     
     // Interceptor for adding auth header and handling token refresh
     this.client.interceptors.request.use(async (req: InternalAxiosRequestConfig) => {
-      if (!this.accessToken) {
+      if (!this.currentSession) {
         return req;
       }
       
+      // Update session activity on each request
+      this.updateSessionActivity();
+      
       // Check if token is expired and refresh if needed
       try {
-        const decoded = jwtDecode<JwtPayload>(this.accessToken);
+        const decoded = jwtDecode<JwtPayload>(this.currentSession.accessToken);
         const currentTime = Math.floor(Date.now() / 1000);
         
         // If token expires in less than 60 seconds, refresh it
@@ -129,7 +159,7 @@ export class OxyServices {
       }
       
       req.headers = req.headers || {};
-      req.headers.Authorization = `Bearer ${this.accessToken}`;
+      req.headers.Authorization = `Bearer ${this.currentSession.accessToken}`;
       return req;
     });
     
@@ -167,7 +197,7 @@ export class OxyServices {
         // If the error is due to an expired token and we haven't tried refreshing yet
         if (
           error.response?.status === 401 &&
-          this.refreshToken &&
+          this.currentSession &&
           originalRequest &&
           !originalRequest.headers?.['X-Retry-After-Refresh']
         ) {
@@ -176,13 +206,13 @@ export class OxyServices {
             // Retry the original request with new token
             const newRequest = { ...originalRequest };
             if (newRequest.headers) {
-              newRequest.headers.Authorization = `Bearer ${this.accessToken}`;
+              newRequest.headers.Authorization = `Bearer ${this.currentSession.accessToken}`;
               newRequest.headers['X-Retry-After-Refresh'] = 'true';
             }
             return this.client(newRequest);
           } catch (refreshError) {
             // If refresh fails, force user to login again
-            this.clearTokens();
+            this.clearSession();
             return Promise.reject(refreshError);
           }
         }
@@ -208,9 +238,9 @@ export class OxyServices {
           };
         }
 
-        // If the error is an invalid session, clear tokens
+        // If the error is an invalid session, clear session
         if (apiError.code === 'INVALID_SESSION' || apiError.message === 'Invalid session') {
-          this.clearTokens();
+          this.clearSession();
         }
 
         return Promise.reject(apiError);
@@ -231,10 +261,10 @@ export class OxyServices {
    * @returns The user ID or null if not authenticated
    */
   public getCurrentUserId(): string | null {
-    if (!this.accessToken) return null;
+    if (!this.currentSession) return null;
     
     try {
-      const decoded = jwtDecode<JwtPayload>(this.accessToken);
+      const decoded = jwtDecode<JwtPayload>(this.currentSession.accessToken);
       
       // Check for both userId (preferred) and id (fallback) for compatibility
       return decoded.userId || (decoded as any).id || null;
@@ -250,25 +280,535 @@ export class OxyServices {
    * @internal - Use `isAuthenticated` from useOxy() context in UI components instead
    */
   private hasAccessToken(): boolean {
-    return this.accessToken !== null;
+    return this.currentSession !== null;
   }
 
   /**
    * Sets authentication tokens directly (useful for initializing from storage)
    * @param accessToken - JWT access token
    * @param refreshToken - Refresh token for getting new access tokens
+   * @deprecated Use setSession instead for proper session management
    */
   public setTokens(accessToken: string, refreshToken: string): void {
-    this.accessToken = accessToken;
-    this.refreshToken = refreshToken;
+    console.warn('[OxyServices] setTokens is deprecated, use setSession instead');
+    
+    console.log('[OxyServices] setTokens called with:', {
+      hasAccessToken: !!accessToken,
+      hasRefreshToken: !!refreshToken,
+      accessTokenType: typeof accessToken,
+      refreshTokenType: typeof refreshToken,
+      accessTokenLength: accessToken?.length || 0,
+      refreshTokenLength: refreshToken?.length || 0,
+      accessTokenPreview: accessToken ? accessToken.substring(0, 50) + '...' : 'null/undefined',
+    });
+    
+    // Validate tokens first
+    if (!accessToken || typeof accessToken !== 'string' || accessToken.trim() === '') {
+      console.error('[OxyServices] Invalid accessToken in setTokens:', {
+        accessToken,
+        type: typeof accessToken,
+        length: accessToken?.length
+      });
+      
+      // For backward compatibility, set up a basic invalid session
+      this.currentSession = {
+        sessionId: 'invalid-session',
+        accessToken: '',
+        refreshToken: refreshToken || '',
+        userId: '',
+        expiresAt: new Date(Date.now() + 3600000), // 1 hour default
+        lastActivity: new Date()
+      };
+      return;
+    }
+    
+    if (!refreshToken || typeof refreshToken !== 'string' || refreshToken.trim() === '') {
+      console.warn('[OxyServices] Invalid refreshToken in setTokens - proceeding with access token only');
+      refreshToken = '';
+    }
+    
+    // Try to extract session info from token
+    try {
+      const decoded = jwtDecode<JwtPayload>(accessToken);
+      const sessionId = decoded.sessionId || 'legacy-session';
+      const userId = decoded.userId || decoded.id || '';
+      
+      console.log('[OxyServices] JWT decoded in setTokens:', {
+        hasExp: !!decoded.exp,
+        hasUserId: !!userId,
+        sessionId: sessionId.substring(0, 8) + '...',
+        exp: decoded.exp,
+        extractedUserId: userId,
+      });
+      
+      this.currentSession = {
+        sessionId,
+        accessToken,
+        refreshToken,
+        userId,
+        expiresAt: decoded.exp ? new Date(decoded.exp * 1000) : new Date(Date.now() + 3600000),
+        lastActivity: new Date()
+      };
+      
+      console.log('[OxyServices] setTokens session created successfully');
+      
+    } catch (error) {
+      console.warn('[OxyServices] Failed to decode token in setTokens:', {
+        error: error instanceof Error ? error.message : String(error),
+        accessTokenStructure: accessToken ? accessToken.split('.').length : 0,
+        accessTokenPreview: accessToken.substring(0, 50) + '...'
+      });
+      
+      // Fallback to basic session setup with more info
+      this.currentSession = {
+        sessionId: 'legacy-session',
+        accessToken,
+        refreshToken,
+        userId: '',
+        expiresAt: new Date(Date.now() + 3600000), // 1 hour default
+        lastActivity: new Date()
+      };
+      
+      console.log('[OxyServices] setTokens fallback session created');
+    }
+  }
+
+  /**
+   * Sets the current session with proper session data
+   * @param sessionId - Unique session identifier
+   * @param accessToken - JWT access token for this session
+   * @param refreshToken - Refresh token for this session
+   * @param userId - User ID (optional, will be extracted from token if not provided)
+   * @param deviceId - Device ID for this session (optional)
+   */
+  public setSession(
+    sessionId: string, 
+    accessToken: string, 
+    refreshToken: string, 
+    userId?: string,
+    deviceId?: string
+  ): void {
+    console.log('[OxyServices] Setting session:', {
+      sessionId: sessionId?.substring(0, 8) + '...',
+      hasAccessToken: !!accessToken,
+      hasRefreshToken: !!refreshToken,
+      accessTokenType: typeof accessToken,
+      refreshTokenType: typeof refreshToken,
+      accessTokenLength: accessToken?.length || 0,
+      refreshTokenLength: refreshToken?.length || 0,
+      accessTokenPreview: accessToken ? accessToken.substring(0, 50) + '...' : 'null/undefined',
+    });
+    
+    // Validate inputs
+    if (!sessionId) {
+      console.error('[OxyServices] Invalid sessionId provided');
+      throw new Error('Session ID is required for session setup');
+    }
+    
+    if (!accessToken || typeof accessToken !== 'string' || accessToken.trim() === '') {
+      console.error('[OxyServices] Invalid accessToken provided:', {
+        accessToken,
+        type: typeof accessToken,
+        length: accessToken?.length
+      });
+      throw new Error('Valid access token is required for session setup');
+    }
+    
+    if (!refreshToken || typeof refreshToken !== 'string' || refreshToken.trim() === '') {
+      console.error('[OxyServices] Invalid refreshToken provided:', {
+        refreshToken,
+        type: typeof refreshToken,
+        length: refreshToken?.length
+      });
+      throw new Error('Valid refresh token is required for session setup');
+    }
+    
+    try {
+      const decoded = jwtDecode<JwtPayload>(accessToken);
+      const extractedUserId = userId || decoded.userId || decoded.id || '';
+      
+      console.log('[OxyServices] JWT decoded successfully:', {
+        hasExp: !!decoded.exp,
+        hasUserId: !!extractedUserId,
+        exp: decoded.exp,
+        extractedUserId,
+        expiresAt: decoded.exp ? new Date(decoded.exp * 1000).toISOString() : 'invalid'
+      });
+      
+      if (!decoded.exp) {
+        console.warn('[OxyServices] JWT missing expiration, using default');
+      }
+      
+      this.currentSession = {
+        sessionId,
+        accessToken,
+        refreshToken,
+        userId: extractedUserId,
+        deviceId,
+        expiresAt: decoded.exp ? new Date(decoded.exp * 1000) : new Date(Date.now() + 3600000), // 1 hour default
+        lastActivity: new Date()
+      };
+      
+      // Also add to user sessions map for tracking
+      this.userSessions.set(sessionId, {
+        sessionId,
+        accessToken,
+        refreshToken,
+        userId: extractedUserId,
+        deviceId,
+        deviceName: '', // Will be set when available
+        expiresAt: decoded.exp ? new Date(decoded.exp * 1000) : new Date(Date.now() + 3600000),
+        lastActivity: new Date(),
+        isActive: true
+      });
+      
+      console.log('[OxyServices] Session set successfully:', {
+        sessionId: sessionId.substring(0, 8) + '...',
+        userId: extractedUserId,
+        deviceId: deviceId?.substring(0, 8) + '...',
+        expiresAt: this.currentSession.expiresAt.toISOString()
+      });
+      
+    } catch (error) {
+      console.error('[OxyServices] Failed to decode JWT token:', {
+        error: error instanceof Error ? error.message : String(error),
+        accessToken: accessToken ? accessToken.substring(0, 50) + '...' : 'null/undefined',
+        accessTokenLength: accessToken?.length,
+        tokenStructure: accessToken ? accessToken.split('.').length : 0,
+      });
+      
+      // More specific error message
+      if (error instanceof Error && error.message.includes('Invalid token specified')) {
+        throw new Error(`Invalid JWT token format: ${error.message}`);
+      } else if (error instanceof Error && error.message.includes('Token used before issued')) {
+        throw new Error(`JWT token used before issued: ${error.message}`);
+      } else {
+        throw new Error(`Failed to decode JWT token: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
   }
   
   /**
-   * Clears authentication tokens
+   * Clears the current session
    */
-  public clearTokens(): void {
-    this.accessToken = null;
-    this.refreshToken = null;
+  public clearSession(): void {
+    if (this.currentSession) {
+      const sessionId = this.currentSession.sessionId;
+      this.userSessions.delete(sessionId);
+      console.log('[OxyServices] Session cleared:', sessionId.substring(0, 8) + '...');
+    }
+    this.currentSession = null;
+  }
+
+  /**
+   * Clears all sessions for the current user
+   */
+  public clearAllSessions(): void {
+    this.userSessions.clear();
+    this.currentSession = null;
+    console.log('[OxyServices] All sessions cleared');
+  }
+
+  /**
+   * Gets the current session info
+   */
+  public getCurrentSession(): {
+    sessionId: string;
+    userId: string;
+    deviceId?: string;
+    expiresAt: Date;
+    lastActivity: Date;
+  } | null {
+    if (!this.currentSession) return null;
+    
+    return {
+      sessionId: this.currentSession.sessionId,
+      userId: this.currentSession.userId,
+      deviceId: this.currentSession.deviceId,
+      expiresAt: this.currentSession.expiresAt,
+      lastActivity: this.currentSession.lastActivity
+    };
+  }
+
+  /**
+   * Gets all active sessions for the current user (local tracking)
+   */
+  public getLocalSessions(): Array<{
+    sessionId: string;
+    userId: string;
+    deviceId?: string;
+    deviceName?: string;
+    expiresAt: Date;
+    lastActivity: Date;
+    isActive: boolean;
+    isCurrent: boolean;
+  }> {
+    return Array.from(this.userSessions.values()).map(session => ({
+      ...session,
+      isCurrent: this.currentSession?.sessionId === session.sessionId
+    }));
+  }
+
+  /**
+   * Switches to a different session
+   * @param sessionId - The session ID to switch to
+   */
+  public switchToSession(sessionId: string): boolean {
+    const session = this.userSessions.get(sessionId);
+    if (!session) {
+      console.warn('[OxyServices] Session not found:', sessionId);
+      return false;
+    }
+
+    // Check if session is expired
+    if (session.expiresAt < new Date()) {
+      console.warn('[OxyServices] Session expired:', sessionId);
+      this.userSessions.delete(sessionId);
+      return false;
+    }
+
+    this.currentSession = {
+      sessionId: session.sessionId,
+      accessToken: session.accessToken,
+      refreshToken: session.refreshToken,
+      userId: session.userId,
+      deviceId: session.deviceId,
+      expiresAt: session.expiresAt,
+      lastActivity: new Date()
+    };
+
+    // Update last activity
+    session.lastActivity = new Date();
+    this.userSessions.set(sessionId, session);
+
+    console.log('[OxyServices] Switched to session:', sessionId.substring(0, 8) + '...');
+    return true;
+  }
+
+  /**
+   * Removes a specific session
+   * @param sessionId - The session ID to remove
+   */
+  public removeSession(sessionId: string): void {
+    this.userSessions.delete(sessionId);
+    
+    if (this.currentSession?.sessionId === sessionId) {
+      // If removing current session, switch to another one or clear
+      const remainingSessions = Array.from(this.userSessions.values());
+      if (remainingSessions.length > 0) {
+        const nextSession = remainingSessions[0];
+        this.switchToSession(nextSession.sessionId);
+      } else {
+        this.currentSession = null;
+      }
+    }
+    
+    console.log('[OxyServices] Session removed:', sessionId.substring(0, 8) + '...');
+  }
+
+  /**
+   * Updates session activity timestamp
+   */
+  private updateSessionActivity(): void {
+    if (this.currentSession) {
+      this.currentSession.lastActivity = new Date();
+      
+      const sessionInMap = this.userSessions.get(this.currentSession.sessionId);
+      if (sessionInMap) {
+        sessionInMap.lastActivity = new Date();
+        this.userSessions.set(this.currentSession.sessionId, sessionInMap);
+      }
+    }
+  }
+
+  /**
+   * Loads sessions from persistence (used by stores during rehydration)
+   * @param sessions - Array of session data to load
+   */
+  public loadSessions(sessions: Array<{
+    sessionId: string;
+    accessToken: string;
+    refreshToken: string;
+    userId: string;
+    deviceId?: string;
+    deviceName?: string;
+    expiresAt: string;
+    lastActivity: string;
+    isActive: boolean;
+  }>): void {
+    this.userSessions.clear();
+    
+    for (const session of sessions) {
+      try {
+        // Validate that the token is not expired
+        const expiresAt = new Date(session.expiresAt);
+        if (expiresAt > new Date()) {
+          this.userSessions.set(session.sessionId, {
+            ...session,
+            expiresAt,
+            lastActivity: new Date(session.lastActivity)
+          });
+        } else {
+          console.warn('[OxyServices] Skipping expired session:', session.sessionId.substring(0, 8) + '...');
+        }
+      } catch (error) {
+        console.warn('[OxyServices] Failed to load session:', session.sessionId, error);
+      }
+    }
+    
+    console.log('[OxyServices] Loaded', this.userSessions.size, 'sessions');
+  }
+
+  /**
+   * Gets session by ID
+   * @param sessionId - Session ID to find
+   * @returns Session data or null if not found
+   */
+  public getSessionById(sessionId: string): {
+    sessionId: string;
+    userId: string;
+    deviceId?: string;
+    deviceName?: string;
+    expiresAt: Date;
+    lastActivity: Date;
+    isActive: boolean;
+    isCurrent: boolean;
+  } | null {
+    const session = this.userSessions.get(sessionId);
+    if (!session) return null;
+    
+    return {
+      ...session,
+      isCurrent: this.currentSession?.sessionId === sessionId
+    };
+  }
+
+  /**
+   * Validates all local sessions against the server
+   * @returns Promise with validation results
+   */
+  public async validateAllSessions(): Promise<{
+    validSessions: string[];
+    invalidSessions: string[];
+    errors: Array<{ sessionId: string; error: string }>;
+  }> {
+    const validSessions: string[] = [];
+    const invalidSessions: string[] = [];
+    const errors: Array<{ sessionId: string; error: string }> = [];
+    
+    for (const [sessionId, session] of this.userSessions.entries()) {
+      try {
+        // Check if session is expired locally first
+        if (session.expiresAt < new Date()) {
+          invalidSessions.push(sessionId);
+          this.userSessions.delete(sessionId);
+          continue;
+        }
+        
+        // Validate against server
+        const validation = await this.validateSession(sessionId);
+        if (validation.valid) {
+          validSessions.push(sessionId);
+          
+          // Update session with server data
+          session.lastActivity = new Date(validation.lastActivity);
+          session.expiresAt = new Date(validation.expiresAt);
+          this.userSessions.set(sessionId, session);
+        } else {
+          invalidSessions.push(sessionId);
+          this.userSessions.delete(sessionId);
+        }
+      } catch (error) {
+        invalidSessions.push(sessionId);
+        this.userSessions.delete(sessionId);
+        errors.push({
+          sessionId,
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    }
+    
+    // If current session was invalidated, clear it
+    if (this.currentSession && invalidSessions.includes(this.currentSession.sessionId)) {
+      // Try to switch to another valid session
+      if (validSessions.length > 0) {
+        this.switchToSession(validSessions[0]);
+      } else {
+        this.currentSession = null;
+      }
+    }
+    
+    console.log('[OxyServices] Session validation complete:', {
+      valid: validSessions.length,
+      invalid: invalidSessions.length,
+      errors: errors.length
+    });
+    
+    return { validSessions, invalidSessions, errors };
+  }
+
+  /**
+   * Cleans up expired sessions from local storage
+   */
+  public cleanupExpiredSessions(): number {
+    let cleanedCount = 0;
+    const now = new Date();
+    
+    for (const [sessionId, session] of this.userSessions.entries()) {
+      if (session.expiresAt < now) {
+        this.userSessions.delete(sessionId);
+        cleanedCount++;
+        
+        // If this was the current session, clear it
+        if (this.currentSession?.sessionId === sessionId) {
+          this.currentSession = null;
+        }
+      }
+    }
+    
+    if (cleanedCount > 0) {
+      console.log('[OxyServices] Cleaned up', cleanedCount, 'expired sessions');
+    }
+    
+    return cleanedCount;
+  }
+
+  /**
+   * Gets sessions in a format suitable for persistence
+   * @returns Array of session data for persistence
+   */
+  public getSessionsForPersistence(): Array<{
+    sessionId: string;
+    accessToken: string;
+    refreshToken: string;
+    userId: string;
+    deviceId?: string;
+    deviceName?: string;
+    expiresAt: string;
+    lastActivity: string;
+    isActive: boolean;
+  }> {
+    return Array.from(this.userSessions.values()).map(session => ({
+      ...session,
+      expiresAt: session.expiresAt.toISOString(),
+      lastActivity: session.lastActivity.toISOString()
+    }));
+  }
+
+  /**
+   * Gets the current session ID
+   * @returns Current session ID or null
+   */
+  public getCurrentSessionId(): string | null {
+    return this.currentSession?.sessionId || null;
+  }
+
+  /**
+   * Checks if user has any active sessions
+   * @returns True if user has active sessions
+   */
+  public hasActiveSessions(): boolean {
+    return this.userSessions.size > 0;
   }
 
   /**
@@ -284,7 +824,7 @@ export class OxyServices {
       
       // Handle both old and new response formats for backward compatibility
       if (res.data.user && res.data.tokens) {
-        // New API format
+        // New API format - use setTokens for backward compatibility
         this.setTokens(res.data.tokens.accessToken, res.data.tokens.refreshToken);
         return {
           message: res.data.message || 'User registered successfully',
@@ -292,7 +832,7 @@ export class OxyServices {
           user: res.data.user
         };
       } else {
-        // Legacy format
+        // Legacy format - use setTokens for backward compatibility
         this.setTokens(res.data.token, res.data.refreshToken || '');
         return {
           message: res.data.message || 'User registered successfully',
@@ -317,7 +857,7 @@ export class OxyServices {
       
       // Handle both old and new response formats for backward compatibility
       if (res.data.user && res.data.tokens) {
-        // New API format
+        // New API format - use setTokens for backward compatibility
         this.setTokens(res.data.tokens.accessToken, res.data.tokens.refreshToken);
         return {
           user: res.data.user,
@@ -327,7 +867,7 @@ export class OxyServices {
           message: res.data.message || 'Login successful'
         };
       } else {
-        // Legacy format
+        // Legacy format - use setTokens for backward compatibility
         this.setTokens(res.data.token, res.data.refreshToken || '');
         return {
           user: res.data.user,
@@ -348,14 +888,14 @@ export class OxyServices {
    */
   async logout(): Promise<void> {
     try {
-      if (this.refreshToken) {
-        await this.client.post('/auth/logout', { refreshToken: this.refreshToken });
+      if (this.currentSession && this.currentSession.refreshToken) {
+        await this.client.post('/auth/logout', { refreshToken: this.currentSession.refreshToken });
       }
     } catch (error) {
-      // Log error but don't throw - we want to clear tokens regardless
-      console.warn('Logout request failed, but clearing tokens:', error);
+      // Log error but don't throw - we want to clear session regardless
+      console.warn('Logout request failed, but clearing session:', error);
     } finally {
-      this.clearTokens();
+      this.clearSession();
     }
   }
 
@@ -364,7 +904,7 @@ export class OxyServices {
    * @returns Promise with new tokens
    */
   async refreshTokens(): Promise<{ accessToken: string; refreshToken: string }> {
-    if (!this.refreshToken) {
+    if (!this.currentSession || !this.currentSession.refreshToken) {
       throw new Error('No refresh token available');
     }
 
@@ -375,7 +915,11 @@ export class OxyServices {
 
     this.refreshPromise = (async () => {
       try {
-        const res = await this.client.post('/auth/refresh', { refreshToken: this.refreshToken });
+        if (!this.currentSession) {
+          throw new Error('Session lost during refresh');
+        }
+        
+        const res = await this.client.post('/auth/refresh', { refreshToken: this.currentSession.refreshToken });
         
         // Handle both old and new response formats
         let newAccessToken: string;
@@ -388,18 +932,18 @@ export class OxyServices {
         } else {
           // Legacy format
           newAccessToken = res.data.token || res.data.accessToken;
-          newRefreshToken = res.data.refreshToken || this.refreshToken;
+          newRefreshToken = res.data.refreshToken || this.currentSession.refreshToken;
         }
         
-        this.setTokens(newAccessToken, newRefreshToken);
+        this.setSession(this.currentSession.sessionId, newAccessToken, newRefreshToken);
         
         return {
           accessToken: newAccessToken,
           refreshToken: newRefreshToken
         };
       } catch (error) {
-        // Clear tokens on refresh failure
-        this.clearTokens();
+        // Clear session on refresh failure
+        this.clearSession();
         throw this.handleError(error);
       } finally {
         this.refreshPromise = null;
@@ -487,7 +1031,7 @@ export class OxyServices {
   async logoutAllSessions(): Promise<{ success: boolean; message: string }> {
     try {
       const res = await this.client.post('/sessions/logout-all');
-      this.clearTokens();
+      this.clearSession();
       return {
         success: true,
         message: res.data?.message || 'All sessions logged out successfully'
@@ -1407,7 +1951,7 @@ export class OxyServices {
       // Handle both old and new response formats
       if (res.data.sessionId && res.data.tokens) {
         // New API format
-        this.setTokens(res.data.tokens.accessToken, res.data.tokens.refreshToken);
+        this.setSession(res.data.sessionId, res.data.tokens.accessToken, res.data.tokens.refreshToken);
         return {
           sessionId: res.data.sessionId,
           accessToken: res.data.tokens.accessToken,
@@ -1417,7 +1961,7 @@ export class OxyServices {
         };
       } else {
         // Legacy format
-        this.setTokens(res.data.accessToken, res.data.refreshToken);
+        this.setSession(res.data.sessionId, res.data.accessToken, res.data.refreshToken);
         return {
           sessionId: res.data.sessionId,
           accessToken: res.data.accessToken,
@@ -1501,9 +2045,9 @@ export class OxyServices {
     try {
       const response = await this.client.post(`/secure-session/logout-all/${sessionId}`);
       
-      // Clear tokens if this was the current session
+      // Clear session if this was the current session
       if (response.data?.currentSessionLoggedOut) {
-        this.clearTokens();
+        this.clearSession();
       }
     } catch (error) {
       throw this.handleError(error);
@@ -1806,14 +2350,14 @@ export class OxyServices {
    * Returns the current access token
    */
   public getAccessToken(): string | null {
-    return this.accessToken;
+    return this.currentSession?.accessToken || null;
   }
 
   /**
    * Returns the current refresh token
    */
   public getRefreshToken(): string | null {
-    return this.refreshToken;
+    return this.currentSession?.refreshToken || null;
   }
 
   /**

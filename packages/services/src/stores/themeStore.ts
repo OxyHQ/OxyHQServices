@@ -1,14 +1,15 @@
 /**
- * Theme store using Zustand
- * Centralized state management for theme preferences
+ * Theme Store
+ * Manages app-level theme preferences (safe to persist across users)
+ * These are app-level settings, not user-specific settings
  */
 
-import { StateCreator } from 'zustand';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { persist } from 'zustand/middleware';
+import { create, StateCreator } from 'zustand';
+
+// === THEME STATE INTERFACE ===
 
 export interface ThemeState {
-  // Theme data
+  // Theme preferences (app-level, safe to persist)
   theme: 'light' | 'dark' | 'auto';
   fontSize: 'small' | 'medium' | 'large';
   language: string;
@@ -23,26 +24,33 @@ export interface ThemeState {
   getEffectiveTheme: () => 'light' | 'dark';
 }
 
+// === STORE SLICE ===
+
 export const createThemeSlice: StateCreator<ThemeState> = (set, get) => ({
   // Initial state
   theme: 'auto',
   fontSize: 'medium',
   language: 'English',
   
-  // Actions
-  setTheme: (theme: 'light' | 'dark' | 'auto') => {
+  // === ACTIONS ===
+  
+  setTheme: (theme) => {
+    console.log('[ThemeStore] Setting theme:', theme);
     set({ theme });
   },
   
-  setFontSize: (fontSize: 'small' | 'medium' | 'large') => {
+  setFontSize: (fontSize) => {
+    console.log('[ThemeStore] Setting font size:', fontSize);
     set({ fontSize });
   },
   
-  setLanguage: (language: string) => {
+  setLanguage: (language) => {
+    console.log('[ThemeStore] Setting language:', language);
     set({ language });
   },
   
   reset: () => {
+    console.log('[ThemeStore] Resetting to defaults');
     set({
       theme: 'auto',
       fontSize: 'medium',
@@ -50,44 +58,24 @@ export const createThemeSlice: StateCreator<ThemeState> = (set, get) => ({
     });
   },
   
-  // Computed values
+  // === COMPUTED VALUES ===
+  
   getEffectiveTheme: () => {
     const { theme } = get();
     if (theme === 'auto') {
-      // For now, default to light. In a real app, you'd detect system theme
-      return 'light';
+      // Detect system theme preference
+      if (typeof window !== 'undefined' && window.matchMedia) {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+      }
+      return 'light'; // Default fallback
     }
     return theme;
   },
 });
 
-// Hook to use theme store
-export const useThemeStore = () => {
-  // This will be used when we integrate it into the main store
-  // For now, we'll create a standalone store
-  return null;
-};
-
-// Standalone theme store for now
-import { create } from 'zustand';
+// === STANDALONE STORE ===
+// NO PERSISTENCE - app-level theme settings (not user-specific)
 
 export const useThemeStoreStandalone = create<ThemeState>()(
-  persist(
-    createThemeSlice,
-    {
-      name: 'theme-storage',
-      storage: {
-        getItem: async (name) => {
-          const value = await AsyncStorage.getItem(name);
-          return value ? JSON.parse(value) : null;
-        },
-        setItem: async (name, value) => {
-          await AsyncStorage.setItem(name, JSON.stringify(value));
-        },
-        removeItem: async (name) => {
-          await AsyncStorage.removeItem(name);
-        },
-      },
-    }
-  )
+  createThemeSlice
 ); 

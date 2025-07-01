@@ -129,6 +129,12 @@ export class SecureSessionController {
         session = existingSession;
         
         console.log(`Reusing existing session for user ${user.username} on device ${deviceInfo.deviceId}`);
+        console.log('Existing session tokens:', {
+          hasAccessToken: !!session.accessToken,
+          hasRefreshToken: !!session.refreshToken,
+          accessTokenLength: session.accessToken?.length || 0,
+          refreshTokenLength: session.refreshToken?.length || 0
+        });
       } else {
         // Generate session ID for new session
         const sessionId = crypto.randomUUID();
@@ -163,17 +169,29 @@ export class SecureSessionController {
         console.log(`Created new session for user ${user.username} on device ${deviceInfo.deviceId}`);
       }
 
-      // Return only session data and minimal user info
-      const response: SessionAuthResponse = {
+      // Return session data, tokens, and minimal user info
+      const response = {
         sessionId: (session._id as mongoose.Types.ObjectId).toString(),
         deviceId: deviceInfo.deviceId,
         expiresAt: session.expiresAt.toISOString(),
+        accessToken: session.accessToken,
+        refreshToken: session.refreshToken,
         user: {
           id: user._id.toString(),
           username: user.username,
           avatar: user.avatar
-        }
+        },
+        message: 'Secure login successful'
       };
+
+      console.log('Secure login response:', {
+        sessionId: response.sessionId.substring(0, 8) + '...',
+        hasAccessToken: !!response.accessToken,
+        hasRefreshToken: !!response.refreshToken,
+        accessTokenLength: response.accessToken?.length || 0,
+        refreshTokenLength: response.refreshToken?.length || 0,
+        username: response.user.username
+      });
 
       res.json(response);
     } catch (error) {

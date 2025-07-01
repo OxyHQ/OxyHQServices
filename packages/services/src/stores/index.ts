@@ -1,11 +1,23 @@
 /**
- * Main Zustand store combining all slices
- * This is the single source of truth for all application state
+ * Main Store - Session-based Authentication with Database Backing
+ * 
+ * Updated to support session-based authentication with proper multiple session management.
+ * 
+ * Persistence Strategy:
+ * - PERSIST: Session tokens, active session ID, app-level settings (theme, fontSize, language)
+ * - DON'T PERSIST: User profile data, sessions list, user settings (always fetched fresh from backend)
+ * - SYNC: All user data fetched fresh from backend using session tokens
+ * 
+ * Key Features:
+ * - Multiple session management per user
+ * - Database-backed session storage
+ * - Proper token lifecycle management
+ * - Session validation and cleanup
+ * - Seamless integration with OxyServices core
  */
 
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
-import { shallow } from 'zustand/shallow';
 import { persist, createJSONStorage } from 'zustand/middleware';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { createAuthSlice, type AuthState } from './authStore';
@@ -15,7 +27,8 @@ import { createUserSettingsSlice, type UserSettingsState } from './userSettingsS
 import type { OxyServices } from '../core';
 import { createApiUtils, type ApiUtils } from '../utils/api';
 
-// Combined store state
+// === COMBINED STORE INTERFACE ===
+
 export interface OxyStore extends AuthState, FollowState, ThemeState, UserSettingsState {
   // Store metadata
   _apiUtils: ApiUtils | null;
@@ -23,24 +36,21 @@ export interface OxyStore extends AuthState, FollowState, ThemeState, UserSettin
   
   // Store initialization
   initialize: (oxyServices: OxyServices) => void;
-  
-  // Helper to get API utils (throws if not initialized)
   getApiUtils: () => ApiUtils;
 }
 
-// Platform-safe storage adapter
-function isReactNative() {
-  return (
-    typeof navigator !== 'undefined' &&
-    navigator.product === 'ReactNative'
-  );
+// === PLATFORM DETECTION ===
+
+function isReactNative(): boolean {
+  return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
 }
 
-function isBrowser() {
+function isBrowser(): boolean {
   return typeof window !== 'undefined' && typeof window.localStorage !== 'undefined';
 }
 
-// Create a no-op storage for Node.js environments
+// === STORAGE CONFIGURATION ===
+
 const noOpStorage = {
   getItem: () => Promise.resolve(null),
   setItem: () => Promise.resolve(),
@@ -51,9 +61,10 @@ const storage = isReactNative()
   ? createJSONStorage(() => AsyncStorage)
   : isBrowser()
     ? createJSONStorage(() => window.localStorage)
-    : createJSONStorage(() => noOpStorage); // Use no-op storage instead of undefined
+    : createJSONStorage(() => noOpStorage);
 
-// Create the main store with persist
+// === MAIN STORE ===
+
 export const useOxyStore = create<OxyStore>()(
   persist(
     subscribeWithSelector((set, get, api) => ({
@@ -61,92 +72,174 @@ export const useOxyStore = create<OxyStore>()(
       _apiUtils: null,
       _oxyServices: null,
       
-      // Initialize store with OxyServices instance
+      // Store initialization
       initialize: (oxyServices: OxyServices) => {
         const apiUtils = createApiUtils(oxyServices);
-        set({ 
-          _apiUtils: apiUtils, 
-          _oxyServices: oxyServices 
-        });
+        set({ _apiUtils: apiUtils, _oxyServices: oxyServices });
       },
       
-      // Helper to get API utils
       getApiUtils: () => {
         const state = get();
         if (!state._apiUtils) {
-          throw new Error('Store not initialized. Call initialize() with OxyServices instance first.');
+          throw new Error('Store not initialized. Call initialize() with OxyServices first.');
         }
         return state._apiUtils;
       },
       
-      // Auth slice
+      // Store slices
       ...createAuthSlice(set, get, api),
-      
-      // Follow slice
       ...createFollowSlice(set, get, api),
-      
-      // Theme slice
       ...createThemeSlice(set, get, api),
-      
-      // User Settings slice
-      ...createUserSettingsSlice(set, get, api)
+      ...createUserSettingsSlice(set, get, api),
     })),
     {
-      name: 'oxy-auth', // storage key
+      name: 'oxy-store',
       storage,
-      partialize: (state) => {
-        const partialized = {
-          // Only persist the relevant auth state
-          user: state.user,
-          minimalUser: state.minimalUser,
-          sessions: state.sessions,
-          activeSessionId: state.activeSessionId,
-          isAuthenticated: state.isAuthenticated,
-          accessToken: state.accessToken,
-          refreshToken: state.refreshToken,
-        } as Partial<OxyStore>;
+      
+      // === PERSISTENCE STRATEGY ===
+      partialize: (state) => ({
+        // Session Management - PERSIST tokens and active session (only if valid)
+        sessions: state.sessions || [],
+        activeSessionId: state.activeSessionId,
+        accessToken: (state.accessToken && typeof state.accessToken === 'string' && state.accessToken.trim() !== '') ? state.accessToken : null,
+        refreshToken: (state.refreshToken && typeof state.refreshToken === 'string' && state.refreshToken.trim() !== '') ? state.refreshToken : null,
         
-        console.log('[OxyStore] Partializing state for persistence:', {
-          hasUser: !!partialized.user,
-          hasAccessToken: !!partialized.accessToken,
-          hasRefreshToken: !!partialized.refreshToken,
-          accessTokenLength: partialized.accessToken?.length || 0,
-          refreshTokenLength: partialized.refreshToken?.length || 0,
-        });
+        // App-level Settings - PERSIST user preferences
+        theme: state.theme || 'light',
+        fontSize: state.fontSize || 'medium',
+        language: state.language || 'en',
+      }),
+      
+      onRehydrateStorage: () => (state, error) => {
+        console.log('[MainStore] Rehydration started');
         
-        return partialized;
-      },
-      onRehydrateStorage: () => (state) => {
-        console.log('[OxyStore] Rehydrating from storage:', {
-          hasUser: !!state?.user,
-          hasAccessToken: !!state?.accessToken,
-          hasRefreshToken: !!state?.refreshToken,
-          accessTokenLength: state?.accessToken?.length || 0,
-          refreshTokenLength: state?.refreshToken?.length || 0,
-          isAuthenticated: state?.isAuthenticated,
-          userId: state?.user?.id,
-          username: state?.user?.username,
-        });
-        
-        // If we have user data but isAuthenticated is false, fix it
-        if (state?.user && !state?.isAuthenticated) {
-          console.log('[OxyStore] Fixing authentication state - user exists but isAuthenticated is false');
-          // Fix the authentication state by calling setUser with the existing user data
-          setTimeout(() => {
-            const currentState = useOxyStore.getState();
-            if (currentState.user && !currentState.isAuthenticated) {
-              console.log('[OxyStore] Applying authentication state fix');
-              currentState.setUser(currentState.user, currentState.accessToken, currentState.refreshToken);
-            }
-          }, 0);
+        if (error) {
+          console.error('[MainStore] Rehydration error:', error);
+          return;
         }
+        
+        if (!state) {
+          console.warn('[MainStore] No state to rehydrate');
+          return;
+        }
+        
+        console.log('[MainStore] Store rehydrated successfully. Session state:', {
+          hasActiveSession: !!state.activeSessionId,
+          sessionCount: state.sessions?.length || 0,
+          hasAccessToken: !!state.accessToken,
+          hasRefreshToken: !!state.refreshToken,
+          accessTokenPreview: state.accessToken ? state.accessToken.substring(0, 20) + '...' : null,
+          refreshTokenPreview: state.refreshToken ? state.refreshToken.substring(0, 20) + '...' : null,
+          theme: state.theme,
+          language: state.language
+        });
+        
+        // Enhanced session restoration with proper initialization order
+        setTimeout(async () => {
+          try {
+            // Wait for OxyServices to be available (it gets set during initializeOxyStore)
+            let attempts = 0;
+            const maxAttempts = 10;
+            
+            while (!state._oxyServices && attempts < maxAttempts) {
+              console.log('[MainStore] Waiting for OxyServices initialization... attempt', attempts + 1);
+              await new Promise(resolve => setTimeout(resolve, 100));
+              attempts++;
+            }
+            
+            const oxyServices = state._oxyServices;
+            
+            if (!oxyServices) {
+              console.warn('[MainStore] OxyServices still not available after waiting, skipping rehydration');
+              return;
+            }
+            
+            console.log('[MainStore] OxyServices available, proceeding with session restoration');
+            
+            // Load sessions into OxyServices
+            if (state.sessions && state.sessions.length > 0) {
+              console.log('[MainStore] Loading', state.sessions.length, 'sessions into OxyServices');
+              oxyServices.loadSessions(state.sessions);
+            }
+            
+            // Restore active session if available
+            if (state.activeSessionId && state.accessToken && state.refreshToken && 
+                typeof state.accessToken === 'string' && typeof state.refreshToken === 'string' &&
+                state.accessToken.trim() !== '' && state.refreshToken.trim() !== '') {
+              console.log('[MainStore] Restoring active session:', state.activeSessionId.substring(0, 8) + '...');
+              
+              // Try to set the session in OxyServices
+              try {
+                oxyServices.setSession(
+                  state.activeSessionId,
+                  state.accessToken,
+                  state.refreshToken
+                );
+                
+                console.log('[MainStore] Session set successfully, validating...');
+                
+                // Validate the session
+                const isValid = await oxyServices.validate();
+                if (isValid) {
+                  console.log('[MainStore] Session validation successful, syncing from backend');
+                  // Only sync if ApiUtils is available
+                  if (state._apiUtils) {
+                    await state.syncFromBackend?.(state._apiUtils);
+                  } else {
+                    console.log('[MainStore] ApiUtils not available yet, will sync later');
+                  }
+                } else {
+                  console.warn('[MainStore] Session validation failed, clearing invalid session');
+                  state.clearUserData?.();
+                }
+              } catch (error) {
+                console.error('[MainStore] Failed to set session during rehydration:', error);
+                state.clearUserData?.();
+                return;
+              }
+            } else if (state.accessToken && state.refreshToken && 
+                       typeof state.accessToken === 'string' && typeof state.refreshToken === 'string' &&
+                       state.accessToken.trim() !== '' && state.refreshToken.trim() !== '') {
+              // Fallback: restore tokens even without session ID
+              console.log('[MainStore] Restoring tokens without session ID (legacy mode)');
+              try {
+                oxyServices.setTokens(state.accessToken, state.refreshToken);
+                
+                const isValid = await oxyServices.validate();
+                if (isValid) {
+                  if (state._apiUtils) {
+                    await state.syncFromBackend?.(state._apiUtils);
+                  } else {
+                    console.log('[MainStore] ApiUtils not available yet for legacy token sync');
+                  }
+                } else {
+                  console.warn('[MainStore] Token validation failed');
+                  state.clearUserData?.();
+                }
+              } catch (error) {
+                console.error('[MainStore] Failed to set tokens during rehydration:', error);
+                state.clearUserData?.();
+                return;
+              }
+            } else {
+              console.log('[MainStore] No tokens to restore');
+            }
+            
+          } catch (error) {
+            console.error('[MainStore] Session restoration failed:', error);
+            // Clear potentially corrupted state
+            state.clearUserData?.();
+          }
+        }, 100); // Start checking sooner
       },
     }
   )
 );
 
-// Convenience hooks for accessing specific parts of the store
+// === CONVENIENCE HOOKS ===
+
 export const useAuth = () => useOxyStore((state) => ({
+  // State
   user: state.user,
   minimalUser: state.minimalUser,
   sessions: state.sessions,
@@ -155,7 +248,7 @@ export const useAuth = () => useOxyStore((state) => ({
   isLoading: state.isLoading,
   error: state.error,
   
-  // Actions
+  // State management
   setUser: state.setUser,
   setMinimalUser: state.setMinimalUser,
   setSessions: state.setSessions,
@@ -163,9 +256,13 @@ export const useAuth = () => useOxyStore((state) => ({
   setLoading: state.setLoading,
   setError: state.setError,
   clearError: state.clearError,
-  reset: state.reset,
   
-  // Async actions (auto-inject apiUtils)
+  // Data management
+  reset: state.reset,
+  clearUserData: state.clearUserData,
+  syncFromBackend: () => state.syncFromBackend(state.getApiUtils()),
+  
+  // Authentication
   login: (username: string, password: string, deviceName?: string) => 
     state.login(username, password, deviceName, state.getApiUtils()),
   logout: (targetSessionId?: string) => 
@@ -174,16 +271,24 @@ export const useAuth = () => useOxyStore((state) => ({
     state.logoutAll(state.getApiUtils()),
   signUp: (username: string, email: string, password: string) => 
     state.signUp(username, email, password, state.getApiUtils()),
+  
+  // Data refresh
   refreshUserData: () => 
     state.refreshUserData(state.getApiUtils()),
   refreshSessions: () => 
     state.refreshSessions(state.getApiUtils()),
+  
+  // Session management
   switchSession: (sessionId: string) => 
     state.switchSession(sessionId, state.getApiUtils()),
   removeSession: (sessionId: string) => 
     state.removeSession(sessionId, state.getApiUtils()),
+  
+  // Profile management
   updateProfile: (updates: Record<string, any>) => 
     state.updateProfile(updates, state.getApiUtils()),
+  
+  // Device management
   getDeviceSessions: () => 
     state.getDeviceSessions(state.getApiUtils()),
   logoutAllDeviceSessions: () => 
@@ -192,11 +297,10 @@ export const useAuth = () => useOxyStore((state) => ({
     state.updateDeviceName(deviceName, state.getApiUtils()),
   ensureToken: () => 
     state.ensureToken(state.getApiUtils()),
-  syncTokens: () => 
-    state.syncTokens(state.getApiUtils())
 }));
 
 export const useFollow = () => useOxyStore((state) => ({
+  // State
   followingUsers: state.followingUsers,
   loadingUsers: state.loadingUsers,
   errors: state.errors,
@@ -209,7 +313,7 @@ export const useFollow = () => useOxyStore((state) => ({
   clearAllFollowErrors: state.clearAllFollowErrors,
   setMultipleStatuses: state.setMultipleStatuses,
   
-  // Async actions (auto-inject apiUtils)
+  // Async actions
   toggleFollow: (userId: string) => 
     state.toggleFollow(userId, state.getApiUtils()),
   fetchFollowStatus: (userId: string) => 
@@ -219,10 +323,25 @@ export const useFollow = () => useOxyStore((state) => ({
   unfollowUser: (userId: string) => 
     state.unfollowUser(userId, state.getApiUtils()),
   fetchMultipleStatuses: (userIds: string[]) => 
-    state.fetchMultipleStatuses(userIds, state.getApiUtils())
+    state.fetchMultipleStatuses(userIds, state.getApiUtils()),
+}));
+
+export const useTheme = () => useOxyStore((state) => ({
+  // State
+  theme: state.theme,
+  fontSize: state.fontSize,
+  language: state.language,
+  
+  // Actions
+  setTheme: state.setTheme,
+  setFontSize: state.setFontSize,
+  setLanguage: state.setLanguage,
+  reset: state.reset,
+  getEffectiveTheme: state.getEffectiveTheme,
 }));
 
 export const useUserSettings = () => useOxyStore((state) => ({
+  // State
   settings: state.settings,
   isLoading: state.isLoading,
   isSaving: state.isSaving,
@@ -237,8 +356,9 @@ export const useUserSettings = () => useOxyStore((state) => ({
   setError: state.setError,
   setOffline: state.setOffline,
   reset: state.reset,
+  clearUserSettings: state.clearUserSettings,
   
-  // Async actions (auto-inject apiUtils)
+  // Async actions
   loadSettings: () => 
     state.loadSettings(state.getApiUtils()),
   saveSettings: (updates: any) => 
@@ -249,21 +369,26 @@ export const useUserSettings = () => useOxyStore((state) => ({
     state.refreshSettings(state.getApiUtils()),
 }));
 
-// Optimized hooks for specific data (prevent unnecessary re-renders)
+// === OPTIMIZED HOOKS ===
+
 export const useAuthUser = () => useOxyStore((state) => state.user);
 export const useIsAuthenticated = () => useOxyStore((state) => state.isAuthenticated);
 export const useAuthLoading = () => useOxyStore((state) => state.isLoading);
 export const useAuthError = () => useOxyStore((state) => state.error);
 export const useAuthSessions = () => useOxyStore((state) => state.sessions);
+export const useAuthTokens = () => useOxyStore((state) => ({
+  accessToken: state.accessToken,
+  refreshToken: state.refreshToken,
+}));
 
-// Follow hooks for specific users
+// === FOLLOW HOOKS ===
+
 export const useUserFollowStatus = (userId: string) => useOxyStore((state) => ({
   isFollowing: state.followingUsers[userId] ?? false,
   isLoading: state.loadingUsers[userId] ?? false,
-  error: state.errors[userId] ?? null
+  error: state.errors[userId] ?? null,
 }));
 
-// Batch follow hooks
 export const useMultipleFollowStatuses = (userIds: string[]) => useOxyStore((state) => {
   const statuses: Record<string, { isFollowing: boolean; isLoading: boolean; error: string | null }> = {};
   
@@ -271,97 +396,82 @@ export const useMultipleFollowStatuses = (userIds: string[]) => useOxyStore((sta
     statuses[userId] = {
       isFollowing: state.followingUsers[userId] ?? false,
       isLoading: state.loadingUsers[userId] ?? false,
-      error: state.errors[userId] ?? null
+      error: state.errors[userId] ?? null,
     };
   });
   
   return statuses;
 });
 
-// Store initialization utility
-export const initializeOxyStore = (oxyServices: OxyServices) => {
-  // Log storage configuration
-  console.log('[OxyStore] Storage configuration:', {
-    isReactNative: isReactNative(),
-    isBrowser: isBrowser(),
-    storageType: storage ? 'configured' : 'undefined'
-  });
+// === STORE INITIALIZATION ===
 
+export const initializeOxyStore = (oxyServices: OxyServices) => {
+  console.log('[OxyStore] Initializing store with OxyServices');
+  
   const state = useOxyStore.getState();
-  console.log('[OxyStore] Initializing with tokens:', {
+  console.log('[OxyStore] Current persisted state:', {
     hasAccessToken: !!state.accessToken,
     hasRefreshToken: !!state.refreshToken,
     accessTokenLength: state.accessToken?.length || 0,
     refreshTokenLength: state.refreshToken?.length || 0,
-    hasUser: !!state.user,
-    isAuthenticated: state.isAuthenticated,
+    accessTokenPreview: state.accessToken?.substring(0, 20) + '...',
+    theme: state.theme,
+    fontSize: state.fontSize,
+    language: state.language,
   });
   
-  // Check OxyServices current tokens
-  const oxyAccessToken = oxyServices.getAccessToken();
-  const oxyRefreshToken = oxyServices.getRefreshToken();
-  console.log('[OxyStore] OxyServices current tokens:', {
-    hasAccessToken: !!oxyAccessToken,
-    hasRefreshToken: !!oxyRefreshToken,
-    accessTokenLength: oxyAccessToken?.length || 0,
-    refreshTokenLength: oxyRefreshToken?.length || 0,
-  });
+  // Initialize store
+  useOxyStore.getState().initialize(oxyServices);
   
-  // Restore tokens into OxyServices if available
-  if (state.accessToken && state.refreshToken) {
-    console.log('[OxyStore] Restoring tokens to OxyServices');
-    oxyServices.setTokens(state.accessToken, state.refreshToken);
-  } else if (oxyAccessToken && oxyRefreshToken) {
-    console.log('[OxyStore] OxyServices has tokens, updating store');
-    useOxyStore.getState().setUser(state.user, oxyAccessToken, oxyRefreshToken);
-  } else if (state.user && state.isAuthenticated) {
-    // User is authenticated but no tokens - this might be a storage issue
-    console.log('[OxyStore] User is authenticated but no tokens found. This might be a storage issue.');
-    console.log('[OxyStore] User data available:', {
-      userId: state.user.id,
-      username: state.user.username,
-      activeSessionId: state.activeSessionId
+  // Restore tokens to OxyServices if available (both must be valid)
+  if (state.accessToken && state.refreshToken && 
+      typeof state.accessToken === 'string' && typeof state.refreshToken === 'string' &&
+      state.accessToken.trim() !== '' && state.refreshToken.trim() !== '') {
+    console.log('[OxyStore] Restoring tokens to OxyServices:', {
+      restoringAccessToken: !!state.accessToken,
+      restoringRefreshToken: !!state.refreshToken,
+      accessTokenLength: state.accessToken.length,
+      refreshTokenLength: state.refreshToken.length,
     });
     
-    // Only try token recovery if we have a valid session ID (not the user ID)
-    if (state.activeSessionId && state.activeSessionId !== state.user.id) {
-      console.log('[OxyStore] Attempting token recovery with valid session ID:', state.activeSessionId.substring(0, 8) + '...');
-      
+    // Set tokens on OxyServices
+    try {
+      oxyServices.setTokens(state.accessToken, state.refreshToken);
+    } catch (error) {
+      console.error('[OxyStore] Failed to restore tokens to OxyServices:', error);
+      useOxyStore.getState().clearUserData();
+      return;
+    }
+    
+          // Trigger sync from backend to validate tokens and get user data
       setTimeout(async () => {
         try {
-          const tokenData = await oxyServices.getTokenBySession(state.activeSessionId || '');
-          console.log('[OxyStore] Token recovery successful:', !!tokenData.accessToken);
+          const currentState = useOxyStore.getState();
           
-          if (tokenData.accessToken) {
-            // Set tokens in OxyServices and update store
-            oxyServices.setTokens(tokenData.accessToken, '');
-            useOxyStore.getState().setUser(state.user, tokenData.accessToken, '');
-            console.log('[OxyStore] Tokens restored successfully');
+          // Ensure store is initialized with ApiUtils before syncing
+          if (!currentState._apiUtils) {
+            console.warn('[OxyStore] ApiUtils not available yet, skipping sync during initialization');
+            return;
           }
-        } catch (recoveryError: any) {
-          console.warn('[OxyStore] Token recovery failed:', recoveryError);
-          // If token recovery fails, clear the invalid session ID
-          if (recoveryError?.message?.includes('Invalid or expired session')) {
-            console.log('[OxyStore] Clearing invalid session ID');
-            useOxyStore.getState().setActiveSessionId(null);
+          
+          if (currentState.accessToken && currentState.refreshToken &&
+              typeof currentState.accessToken === 'string' && typeof currentState.refreshToken === 'string' &&
+              currentState.accessToken.trim() !== '' && currentState.refreshToken.trim() !== '') {
+            console.log('[OxyStore] Syncing user data from backend using persisted tokens');
+            await currentState.syncFromBackend(currentState._apiUtils);
+            console.log('[OxyStore] Backend sync completed successfully');
           }
+        } catch (error) {
+          console.warn('[OxyStore] Backend sync failed, clearing invalid tokens:', error);
+          useOxyStore.getState().clearUserData();
         }
-      }, 1000);
-    } else if (state.activeSessionId === state.user.id) {
-      console.warn('[OxyStore] BUG DETECTED: activeSessionId equals user ID - this is incorrect!');
-      console.log('[OxyStore] Clearing invalid activeSessionId to prevent further issues');
-      setTimeout(() => {
-        useOxyStore.getState().setActiveSessionId(null);
-      }, 0);
-    } else {
-      console.log('[OxyStore] No valid session ID available for token recovery');
-    }
+      }, 200); // Longer timeout to ensure initialization
   } else {
-    console.log('[OxyStore] No tokens to restore');
+    console.log('[OxyStore] No persisted tokens found - user needs to login');
   }
-  
-  useOxyStore.getState().initialize(oxyServices);
 };
 
-// Export store and types
-export type { AuthState, FollowState };
+// === EXPORTS ===
+
+export type { AuthState, FollowState, ThemeState, UserSettingsState };
+export { authSelectors } from './authStore';

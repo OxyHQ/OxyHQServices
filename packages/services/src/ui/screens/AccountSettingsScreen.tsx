@@ -9,6 +9,7 @@ import {
     Alert,
     TextInput,
     Animated,
+    Platform,
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
@@ -130,8 +131,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const currentTheme = themeStore.theme;
     const fontSize = themeStore.fontSize;
     const language = themeStore.language;
-
-
 
     // Privacy section state
     const [profileVisibility, setProfileVisibility] = useState<'public' | 'private' | 'friends'>('public');
@@ -1156,7 +1155,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 )}
             </View>
 
-            <ScrollView style={editingField ? styles.contentEditing : styles.content}>
+            <View style={editingField ? styles.contentEditing : styles.content}>
                 {editingField ? (
                     // Show only the editing interface when editing
                     <View style={styles.editingOnlyContainer}>
@@ -1246,7 +1245,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         />
                     </>
                 )}
-            </ScrollView>
+            </View>
         </View>
     );
 };
@@ -1262,6 +1261,10 @@ const styles = StyleSheet.create({
         backgroundColor: '#fff',
         borderBottomWidth: 1,
         borderBottomColor: '#e0e0e0',
+        ...Platform.select({
+            // Make the header stick to the top when rendered on the web
+            web: { position: 'sticky', top: 0, zIndex: 1000 } as any,
+        }),
     },
     normalHeader: {
         flexDirection: 'row',
