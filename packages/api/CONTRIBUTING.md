@@ -17,7 +17,7 @@ Thank you for your interest in contributing to Oxy API! We welcome contributions
 
 This project and everyone participating in it is governed by our [Code of Conduct](CODE_OF_CONDUCT.md). By participating, you are expected to uphold this code.
 
-## Getting Started
+## Getting Started 
 
 1. **Fork the repository** on GitHub
 2. **Clone your fork** locally:
