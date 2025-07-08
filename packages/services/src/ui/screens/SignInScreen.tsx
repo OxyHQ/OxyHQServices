@@ -421,6 +421,12 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                 keyboardShouldPersistTaps="handled"
             >
                 {renderCurrentStep()}
+                <View style={styles.footerTextContainer}>
+                    <Text style={[styles.footerText, { color: colors.text }]}>Forgot your password? </Text>
+                    <TouchableOpacity onPress={() => navigate('RecoverAccount')}>
+                        <Text style={[styles.modernLinkText, { color: colors.primary }]}>Recover your account</Text>
+                    </TouchableOpacity>
+                </View>
             </ScrollView>
         </KeyboardAvoidingView>
     );

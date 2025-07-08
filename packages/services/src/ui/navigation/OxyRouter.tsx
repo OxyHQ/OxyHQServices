@@ -22,6 +22,7 @@ import KarmaRewardsScreen from '../screens/karma/KarmaRewardsScreen';
 import KarmaFAQScreen from '../screens/karma/KarmaFAQScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import FileManagementScreen from '../screens/FileManagementScreen';
+import RecoverAccountScreen from '../screens/RecoverAccountScreen';
 
 // Import types
 import { OxyRouterProps, RouteConfig } from './types';
@@ -35,6 +36,10 @@ const routes: Record<string, RouteConfig> = {
     SignUp: {
         component: SignUpScreen,
         snapPoints: ['10%', '90%'],
+    },
+    RecoverAccount: {
+        component: RecoverAccountScreen,
+        snapPoints: ['10%', '80%'],
     },
     AccountCenter: {
         component: AccountCenterScreen,
