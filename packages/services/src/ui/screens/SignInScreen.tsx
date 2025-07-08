@@ -27,6 +27,8 @@ import { toast } from '../../lib/sonner';
 import Svg, { Path, Circle } from 'react-native-svg';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
 import TextField from '../components/internal/TextField';
+import SignInUsernameStep from './internal/SignInUsernameStep';
+import SignInPasswordStep from './internal/SignInPasswordStep';
 
 const SignInScreen: React.FC<BaseScreenProps> = ({
     navigate,
@@ -101,22 +103,22 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     // Memoized input change handlers to prevent re-renders
     const handleUsernameChange = useCallback((text: string) => {
         setUsername(text);
-        // Only clear error if we're changing from an invalid state
-        if (validationStatus === 'invalid') {
-            setErrorMessage('');
-            setValidationStatus('idle');
-        }
-    }, [validationStatus]);
+        // Clear error as soon as user edits username
+        if (errorMessage) setErrorMessage('');
+        setValidationStatus('idle');
+    }, [errorMessage]);
 
     const handlePasswordChange = useCallback((text: string) => {
         setPassword(text);
-        setErrorMessage(''); // Clear error when user types
-    }, []);
+        // Clear error as soon as user edits password
+        if (errorMessage) setErrorMessage('');
+    }, [errorMessage]);
 
     // Username validation using core services with caching
     const validateUsername = useCallback(async (usernameToValidate: string) => {
         if (!usernameToValidate || usernameToValidate.length < 3) {
             setValidationStatus('invalid');
+            setErrorMessage('Please enter a valid username.');
             return false;
         }
 
@@ -158,14 +160,14 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                 return true;
             } else {
                 setValidationStatus('invalid');
-                setErrorMessage('Username not found. Please check your username or sign up.');
+                setErrorMessage('Username not found.');
                 return false;
             }
         } catch (error: any) {
             // If user not found (404), username doesn't exist
             if (error.status === 404 || error.code === 'USER_NOT_FOUND') {
                 setValidationStatus('invalid');
-                setErrorMessage('Username not found. Please check your username or sign up.');
+                setErrorMessage('Username not found.');
                 return false;
             }
 
@@ -179,26 +181,20 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
         }
     }, [oxyServices]);
 
-    // Debounced username validation - increased debounce time and added better conditions
+    // Debounced username validation - only run on explicit continue, not on every keystroke
     useEffect(() => {
         if (!username || username.length < 3) {
             setValidationStatus('idle');
             setUserProfile(null);
-            setErrorMessage(''); // Clear error when input is too short
+            setErrorMessage('');
             return;
         }
-
         // Only validate if we haven't already validated this exact username
         if (validationStatus === 'valid' && userProfile?.name === username) {
             return;
         }
-
-        const timeoutId = setTimeout(() => {
-            validateUsername(username);
-        }, 800); // Increased debounce to 800ms
-
-        return () => clearTimeout(timeoutId);
-    }, [username, validateUsername, validationStatus, userProfile?.name]);
+        // Remove debounce, only validate on continue
+    }, [username, validationStatus, userProfile?.name]);
 
     // Cleanup cache on unmount and limit cache size
     useEffect(() => {
@@ -303,26 +299,29 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     }, [currentStep, progressAnim, animateTransition]);
 
     // Custom next handlers for validation
-    const handleUsernameContinue = useCallback(() => {
+    const handleUsernameContinue = useCallback(async () => {
         if (!username) {
-            toast.error('Please enter your username.');
-            return;
-        }
-        if (validationStatus !== 'valid' || !userProfile) {
-            toast.error('Please enter a valid username.');
+            setErrorMessage('Please enter your username.');
             return;
         }
         setErrorMessage('');
+        setIsValidating(true);
+        const valid = await validateUsername(username);
+        setIsValidating(false);
+        if (!valid) {
+            // Error message is set in validateUsername
+            return;
+        }
         nextStep();
-    }, [username, validationStatus, userProfile, setErrorMessage, nextStep]);
+    }, [username, validateUsername, nextStep]);
 
     const handleSignIn = useCallback(async () => {
         if (!password) {
-            toast.error('Please enter your password.');
+            setErrorMessage('Please enter your password.');
             return;
         }
         if (!username || !userProfile) {
-            toast.error('Please enter a valid username first.');
+            setErrorMessage('Please enter a valid username first.');
             return;
         }
         try {
@@ -332,169 +331,33 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                 onAuthenticated(user);
             }
         } catch (error: any) {
-            toast.error(error.message || 'Login failed');
+            setErrorMessage(error.message || 'Login failed');
         }
-    }, [username, password, login, onAuthenticated, setErrorMessage, userProfile]);
+    }, [username, password, login, onAuthenticated, userProfile]);
 
     // Memoized step components
     const renderUsernameStep = useMemo(() => (
-        <Animated.View style={[
-            styles.stepContainer,
-            {
-                opacity: fadeAnim,
-                transform: [
-                    { translateX: slideAnim },
-                    { scale: scaleAnim }
-                ]
-            }
-        ]}>
-            <HighFive width={100} height={100} />
-
-            <View style={styles.modernHeader}>
-                <Text style={[styles.modernTitle, { color: colors.text }]}>
-                    {isAddAccountMode ? 'Add Another Account' : 'Sign In'}
-                </Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
-                    {isAddAccountMode
-                        ? 'Sign in with another account'
-                        : 'Sign in to continue your journey'
-                    }
-                </Text>
-            </View>
-
-            {isAddAccountMode && (
-                <View style={[styles.modernInfoCard, { backgroundColor: colors.inputBackground }]}>
-                    <Ionicons name="information-circle" size={20} color={colors.primary} />
-                    <Text style={[styles.modernInfoText, { color: colors.text }]}>
-                        Currently signed in as <Text style={{ fontWeight: 'bold' }}>{user?.username}</Text>
-                    </Text>
-                </View>
-            )}
-
-            {errorMessage ? (
-                <Animated.View style={[styles.modernErrorCard, { backgroundColor: '#FF6B6B20' }]}>
-                    <Ionicons name="alert-circle" size={20} color="#FF6B6B" />
-                    <Text style={[styles.errorText, { color: '#FF6B6B' }]}>{errorMessage}</Text>
-                </Animated.View>
-            ) : null}
-
-            <Animated.View style={[
-                styles.modernInputContainer,
-                { transform: [{ scale: inputScaleAnim }] }
-            ]}>
-                <TextField
-                    label="Username"
-                    icon="person-outline"
-                    value={username}
-                    onChangeText={handleUsernameChange}
-                    onFocus={handleInputFocus}
-                    onBlur={handleInputBlur}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    testID="username-input"
-                    colors={colors}
-                    variant="filled"
-                    error={validationStatus === 'invalid' && username.length >= 3 ? 'Username not found' : undefined}
-                    loading={validationStatus === 'validating'}
-                    success={validationStatus === 'valid'}
-                />
-            </Animated.View>
-
-            {/* Enhanced Validation feedback */}
-            {validationStatus === 'valid' && userProfile && (
-                <View style={[styles.validationSuccessCard, {
-                    backgroundColor: colors.success + '10',
-                    borderWidth: 1,
-                    borderColor: colors.success + '30',
-                    padding: 16,
-                }]}>
-                    <View style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 16,
-                        backgroundColor: colors.success + '20',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        marginRight: 12,
-                    }}>
-                        <Ionicons name="checkmark-circle" size={16} color={colors.success} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                        <Text style={[styles.validationText, {
-                            color: colors.success,
-                            fontWeight: '600',
-                            marginBottom: 2,
-                        }]}>
-                            Welcome back, {userProfile?.displayName || userProfile?.name || username}!
-                        </Text>
-                        <Text style={[styles.validationText, {
-                            color: colors.secondaryText,
-                            fontSize: 11,
-                            opacity: 0.8,
-                        }]}>
-                            Ready to continue where you left off
-                        </Text>
-                    </View>
-                </View>
-            )}
-
-            {validationStatus === 'invalid' && username.length >= 3 && (
-                <View style={[styles.validationErrorCard, {
-                    backgroundColor: colors.error + '10',
-                    borderWidth: 1,
-                    borderColor: colors.error + '30',
-                    padding: 16,
-                }]}>
-                    <View style={{
-                        width: 32,
-                        height: 32,
-                        borderRadius: 16,
-                        backgroundColor: colors.error + '20',
-                        justifyContent: 'center',
-                        alignItems: 'center',
-                        marginRight: 12,
-                    }}>
-                        <Ionicons name="alert-circle" size={16} color={colors.error} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                        <Text style={[styles.validationText, {
-                            color: colors.error,
-                            fontWeight: '600',
-                            marginBottom: 2,
-                        }]}>
-                            Username not found
-                        </Text>
-                        <Text style={[styles.validationText, {
-                            color: colors.secondaryText,
-                            fontSize: 11,
-                            opacity: 0.8,
-                        }]}>
-                            Check spelling or sign up
-                        </Text>
-                    </View>
-                </View>
-            )}
-
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: 'Sign Up',
-                        onPress: () => navigate('SignUp'),
-                        icon: 'person-add',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: 'Continue',
-                        onPress: handleUsernameContinue,
-                        icon: 'arrow-forward',
-                        variant: 'primary',
-                        loading: isValidating,
-                        testID: 'username-next-button',
-                    },
-                ]}
-                colors={colors}
-            />
-        </Animated.View>
+        <SignInUsernameStep
+            styles={styles}
+            fadeAnim={fadeAnim}
+            slideAnim={slideAnim}
+            scaleAnim={scaleAnim}
+            colors={colors}
+            isAddAccountMode={isAddAccountMode}
+            user={user}
+            errorMessage={errorMessage}
+            inputScaleAnim={inputScaleAnim}
+            isInputFocused={isInputFocused}
+            username={username}
+            validationStatus={validationStatus}
+            userProfile={userProfile}
+            isValidating={isValidating}
+            handleInputFocus={handleInputFocus}
+            handleInputBlur={handleInputBlur}
+            handleUsernameChange={handleUsernameChange}
+            handleUsernameContinue={handleUsernameContinue}
+            navigate={navigate}
+        />
     ), [
         fadeAnim, slideAnim, scaleAnim, colors, isAddAccountMode, user?.username,
         errorMessage, inputScaleAnim, isInputFocused, username, validationStatus,
@@ -503,101 +366,28 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     ]);
 
     const renderPasswordStep = useMemo(() => (
-        <Animated.View style={[
-            styles.stepContainer,
-            {
-                opacity: fadeAnim,
-                transform: [
-                    { translateX: slideAnim },
-                    { scale: scaleAnim }
-                ]
-            }
-        ]}>
-            <View style={styles.modernUserProfileContainer}>
-                <Animated.View style={[
-                    styles.avatarContainer,
-                    { transform: [{ scale: logoAnim }] }
-                ]}>
-                    <Avatar
-                        uri={userProfile?.avatar}
-                        name={userProfile?.displayName || userProfile?.name || username}
-                        size={100}
-                        theme={theme}
-                        style={styles.modernUserAvatar}
-                    />
-                    <View style={[styles.statusIndicator, { backgroundColor: colors.primary }]} />
-                </Animated.View>
-
-                <Text style={[styles.modernUserDisplayName, { color: colors.text }]}>
-                    {userProfile?.displayName || userProfile?.name || username}
-                </Text>
-                <Text style={[styles.modernUsernameSubtext, { color: colors.secondaryText }]}>
-                    @{username}
-                </Text>
-
-                <View style={[styles.welcomeBackBadge, { backgroundColor: colors.primary + '15' }]}>
-                    <Ionicons name="checkmark-circle" size={16} color={colors.primary} />
-                    <Text style={[styles.welcomeBackText, { color: colors.primary }]}>
-                        Welcome back!
-                    </Text>
-                </View>
-            </View>
-
-            {errorMessage ? (
-                <Animated.View style={[styles.modernErrorCard, { backgroundColor: '#FF6B6B20' }]}>
-                    <Ionicons name="alert-circle" size={20} color="#FF6B6B" />
-                    <Text style={[styles.errorText, { color: '#FF6B6B' }]}>{errorMessage}</Text>
-                </Animated.View>
-            ) : null}
-
-            <Animated.View style={[
-                styles.modernInputContainer,
-                { transform: [{ scale: inputScaleAnim }] }
-            ]}>
-                <TextField
-                    label="Password"
-                    icon="lock-closed-outline"
-                    value={password}
-                    onChangeText={handlePasswordChange}
-                    onFocus={handleInputFocus}
-                    onBlur={handleInputBlur}
-                    secureTextEntry={!showPassword}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    testID="password-input"
-                    colors={colors}
-                    variant="filled"
-                    error={errorMessage}
-                />
-            </Animated.View>
-
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: 'Back',
-                        onPress: prevStep,
-                        icon: 'arrow-back',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: 'Sign In',
-                        onPress: handleSignIn,
-                        icon: 'log-in',
-                        variant: 'primary',
-                        loading: isLoading,
-                        testID: 'login-button',
-                    },
-                ]}
-                colors={colors}
-            />
-
-            <View style={styles.securityNotice}>
-                <Ionicons name="shield-checkmark" size={14} color={colors.secondaryText} />
-                <Text style={[styles.securityText, { color: colors.secondaryText }]}>
-                    Your data is encrypted and secure
-                </Text>
-            </View>
-        </Animated.View>
+        <SignInPasswordStep
+            styles={styles}
+            fadeAnim={fadeAnim}
+            slideAnim={slideAnim}
+            scaleAnim={scaleAnim}
+            colors={colors}
+            userProfile={userProfile}
+            username={username}
+            theme={theme}
+            logoAnim={logoAnim}
+            errorMessage={errorMessage}
+            inputScaleAnim={inputScaleAnim}
+            isInputFocused={isInputFocused}
+            password={password}
+            showPassword={showPassword}
+            handleInputFocus={handleInputFocus}
+            handleInputBlur={handleInputBlur}
+            handlePasswordChange={handlePasswordChange}
+            handleSignIn={handleSignIn}
+            isLoading={isLoading}
+            prevStep={prevStep}
+        />
     ), [
         fadeAnim, slideAnim, scaleAnim, colors, userProfile, username, theme, logoAnim,
         errorMessage, inputScaleAnim, isInputFocused, password, showPassword,

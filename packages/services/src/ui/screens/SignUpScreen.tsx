@@ -23,6 +23,10 @@ import { toast } from '../../lib/sonner';
 import HighFive from '../../assets/illustrations/HighFive';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
 import TextField from '../components/internal/TextField';
+import SignUpIdentityStep from './internal/SignUpIdentityStep';
+import SignUpSecurityStep from './internal/SignUpSecurityStep';
+import SignUpSummaryStep from './internal/SignUpSummaryStep';
+import SignUpWelcomeStep from './internal/SignUpWelcomeStep';
 
 // Types for better type safety
 interface FormData {
@@ -75,9 +79,9 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
     modernTitle: {
         fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontSize: 42,
+        fontSize: 62,
         lineHeight: 48,
-        marginBottom: 12,
+        marginBottom: 18,
         textAlign: 'left',
         letterSpacing: -1,
     },
@@ -704,271 +708,84 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
         }
     }, [formData, isIdentityStepValid, isSecurityStepValid, signUp, onAuthenticated, resetForm]);
 
-    // Step components
-    const renderWelcomeStep = useCallback(() => (
-        <Animated.View style={[
-            styles.stepContainer,
-            { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }
-        ]}>
-            <HighFive width={100} height={100} />
+    // Memoized step components
+    const updateFieldString = (field: string, value: string) => updateField(field as keyof FormData, value);
+    const validatePasswordsMatchNoArgs = () => validatePasswordsMatch(formData.password, formData.confirmPassword);
+    const togglePasswordVisibilityNoArgs = () => togglePasswordVisibility('password');
 
-            <View style={styles.modernHeader}>
-                <Text style={[styles.modernTitle, { color: colors.text }]}>
-                    Welcome to Oxy
-                </Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
-                    We're excited to have you join us. Let's get your account set up in just a few easy steps.
-                </Text>
-            </View>
+    const renderWelcomeStep = useMemo(() => (
+        <SignUpWelcomeStep
+            styles={styles}
+            fadeAnim={fadeAnim}
+            slideAnim={slideAnim}
+            colors={colors}
+            nextStep={nextStep}
+            navigate={navigate}
+        />
+    ), [styles, fadeAnim, slideAnim, colors, nextStep, navigate]);
 
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: 'Get Started',
-                        onPress: nextStep,
-                        icon: 'arrow-forward',
-                        variant: 'primary',
-                        testID: 'welcome-next-button',
-                    },
-                ]}
-                colors={colors}
-            />
+    const renderIdentityStep = useMemo(() => (
+        <SignUpIdentityStep
+            styles={styles}
+            fadeAnim={fadeAnim}
+            slideAnim={slideAnim}
+            colors={colors}
+            formData={formData}
+            validationState={validationState}
+            updateField={updateFieldString}
+            setErrorMessage={setErrorMessage}
+            prevStep={prevStep}
+            handleIdentityNext={handleIdentityNext}
+            ValidationMessage={ValidationMessage}
+            validateEmail={validateEmail}
+            navigate={navigate}
+        />
+    ), [styles, fadeAnim, slideAnim, colors, formData, validationState, updateFieldString, setErrorMessage, prevStep, handleIdentityNext, ValidationMessage, validateEmail, navigate]);
 
-            <View style={styles.footerTextContainer}>
-                <Text style={[styles.footerText, { color: colors.text }]}>
-                    Already have an account?{' '}
-                </Text>
-                <TouchableOpacity onPress={() => navigate('SignIn')}>
-                    <Text style={[styles.linkText, { color: colors.primary }]}>Sign In</Text>
-                </TouchableOpacity>
-            </View>
-        </Animated.View>
-    ), [fadeAnim, slideAnim, colors, nextStep, navigate, styles]);
+    const renderSecurityStep = useMemo(() => (
+        <SignUpSecurityStep
+            styles={styles}
+            fadeAnim={fadeAnim}
+            slideAnim={slideAnim}
+            colors={colors}
+            formData={formData}
+            passwordVisibility={passwordVisibility.password}
+            updateField={updateFieldString}
+            validatePassword={validatePassword}
+            validatePasswordsMatch={validatePasswordsMatchNoArgs}
+            prevStep={prevStep}
+            handleSecurityNext={handleSecurityNext}
+            setErrorMessage={setErrorMessage}
+            togglePasswordVisibility={togglePasswordVisibilityNoArgs}
+            PASSWORD_MIN_LENGTH={PASSWORD_MIN_LENGTH}
+        />
+    ), [styles, fadeAnim, slideAnim, colors, formData, passwordVisibility.password, updateFieldString, validatePassword, validatePasswordsMatchNoArgs, prevStep, handleSecurityNext, setErrorMessage, togglePasswordVisibilityNoArgs, PASSWORD_MIN_LENGTH]);
 
-    const renderIdentityStep = useCallback(() => (
-        <Animated.View style={[
-            styles.stepContainer,
-            { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }
-        ]}>
-            <View style={styles.modernHeader}>
-                <Text style={[styles.stepTitle, { color: colors.text }]}>Who are you?</Text>
-            </View>
+    const renderSummaryStep = useMemo(() => (
+        <SignUpSummaryStep
+            styles={styles}
+            fadeAnim={fadeAnim}
+            slideAnim={slideAnim}
+            colors={colors}
+            formData={formData}
+            isLoading={isLoading}
+            handleSignUp={handleSignUp}
+            prevStep={prevStep}
+        />
+    ), [styles, fadeAnim, slideAnim, colors, formData, isLoading, handleSignUp, prevStep]);
 
-            <TextField
-                icon="person-outline"
-                label="Username"
-                value={formData.username}
-                onChangeText={(text) => {
-                    updateField('username', text);
-                    setErrorMessage('');
-                }}
-                autoCapitalize="none"
-                autoCorrect={false}
-                testID="username-input"
-                colors={colors}
-                variant="filled"
-                error={validationState.status === 'invalid' ? validationState.message : undefined}
-                loading={validationState.status === 'validating'}
-                success={validationState.status === 'valid'}
-            />
-
-            <ValidationMessage validationState={validationState} colors={colors} styles={styles} />
-
-            <TextField
-                icon="mail-outline"
-                label="Email"
-                value={formData.email}
-                onChangeText={(text) => {
-                    updateField('email', text);
-                }}
-                keyboardType="email-address"
-                autoCapitalize="none"
-                autoCorrect={false}
-                testID="email-input"
-                colors={colors}
-                variant="filled"
-                error={formData.email && !validateEmail(formData.email) ? 'Please enter a valid email address' : undefined}
-            />
-
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: 'Back',
-                        onPress: prevStep,
-                        icon: 'arrow-back',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: 'Next',
-                        onPress: handleIdentityNext,
-                        icon: 'arrow-forward',
-                        variant: 'primary',
-                    },
-                ]}
-                colors={colors}
-            />
-        </Animated.View>
-    ), [fadeAnim, slideAnim, colors, formData, validationState, updateField, setErrorMessage, prevStep, handleIdentityNext, styles]);
-
-    const renderSecurityStep = useCallback(() => (
-        <Animated.View style={[
-            styles.stepContainer,
-            { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }
-        ]}>
-            <View style={styles.modernHeader}>
-                <Text style={[styles.stepTitle, { color: colors.text }]}>Secure your account</Text>
-            </View>
-
-            <TextField
-                icon="lock-closed-outline"
-                label="Password"
-                value={formData.password}
-                onChangeText={(text) => {
-                    updateField('password', text);
-                }}
-                secureTextEntry={!passwordVisibility.password}
-                autoCapitalize="none"
-                autoCorrect={false}
-                testID="password-input"
-                colors={colors}
-                variant="filled"
-                error={formData.password && !validatePassword(formData.password) ? `Password must be at least ${PASSWORD_MIN_LENGTH} characters` : undefined}
-            />
-
-            <Text style={[styles.passwordHint, { color: colors.secondaryText }]}>Password must be at least {PASSWORD_MIN_LENGTH} characters long</Text>
-
-            <TextField
-                icon="lock-closed-outline"
-                label="Confirm Password"
-                value={formData.confirmPassword}
-                onChangeText={(text) => {
-                    updateField('confirmPassword', text);
-                }}
-                secureTextEntry={!passwordVisibility.confirmPassword}
-                autoCapitalize="none"
-                autoCorrect={false}
-                testID="confirm-password-input"
-                colors={colors}
-                variant="filled"
-                error={formData.confirmPassword && !validatePasswordsMatch(formData.password, formData.confirmPassword) ? 'Passwords do not match' : undefined}
-            />
-
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: 'Back',
-                        onPress: prevStep,
-                        icon: 'arrow-back',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: 'Next',
-                        onPress: handleSecurityNext,
-                        icon: 'arrow-forward',
-                        variant: 'primary',
-                    },
-                ]}
-                colors={colors}
-            />
-        </Animated.View>
-    ), [fadeAnim, slideAnim, colors, formData, passwordVisibility, updateField, setErrorMessage, togglePasswordVisibility, prevStep, handleSecurityNext, styles]);
-
-    const renderSummaryStep = useCallback(() => (
-        <Animated.View style={[
-            styles.stepContainer,
-            { opacity: fadeAnim, transform: [{ translateX: slideAnim }] }
-        ]}>
-            <View style={styles.modernHeader}>
-                <Text style={[styles.stepTitle, { color: colors.text }]}>Ready to join</Text>
-            </View>
-
-            <View style={styles.summaryContainer}>
-                <View style={styles.summaryRow}>
-                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>Username:</Text>
-                    <Text style={[styles.summaryValue, { color: colors.text }]}>{formData.username}</Text>
-                </View>
-
-                <View style={styles.summaryRow}>
-                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>Email:</Text>
-                    <Text style={[styles.summaryValue, { color: colors.text }]}>{formData.email}</Text>
-                </View>
-            </View>
-
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: 'Back',
-                        onPress: prevStep,
-                        icon: 'arrow-back',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: 'Create Account',
-                        onPress: handleSignUp,
-                        icon: 'checkmark',
-                        variant: 'primary',
-                        disabled: isLoading,
-                        loading: isLoading,
-                        testID: 'signup-button',
-                    },
-                ]}
-                colors={colors}
-            />
-        </Animated.View>
-    ), [fadeAnim, slideAnim, colors, formData, isLoading, handleSignUp, prevStep, styles]);
-
-    // If user is already authenticated, show user info
-    if (user && isAuthenticated) {
-        return (
-            <KeyboardAvoidingView
-                style={[styles.container, { backgroundColor: colors.background }]}
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            >
-                <StatusBar
-                    barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
-                    backgroundColor={colors.background}
-                />
-
-                <ScrollView
-                    contentContainerStyle={styles.scrollContent}
-                    showsVerticalScrollIndicator={false}
-                >
-                    <Text style={[styles.welcomeTitle, { color: colors.text }]}>
-                        Welcome, {user.username}!
-                    </Text>
-
-                    <View style={[styles.userInfoContainer, { backgroundColor: colors.inputBackground }]}>
-                        <Text style={[styles.userInfoText, { color: colors.text }]}>
-                            You are already signed in.
-                        </Text>
-                        {user.email && (
-                            <Text style={[styles.userInfoText, { color: colors.secondaryText }]}>
-                                Email: {user.email}
-                            </Text>
-                        )}
-                    </View>
-
-                    <View style={styles.actionButtonsContainer}>
-                        <TouchableOpacity
-                            style={[styles.button, { backgroundColor: colors.primary }]}
-                            onPress={() => navigate('AccountCenter')}
-                        >
-                            <Text style={styles.buttonText}>Go to Account Center</Text>
-                        </TouchableOpacity>
-                    </View>
-                </ScrollView>
-            </KeyboardAvoidingView>
-        );
-    }
-
-    // Render current step
     const renderCurrentStep = useCallback(() => {
         switch (currentStep) {
-            case 0: return renderWelcomeStep();
-            case 1: return renderIdentityStep();
-            case 2: return renderSecurityStep();
-            case 3: return renderSummaryStep();
-            default: return renderWelcomeStep();
+            case 0:
+                return renderWelcomeStep;
+            case 1:
+                return renderIdentityStep;
+            case 2:
+                return renderSecurityStep;
+            case 3:
+                return renderSummaryStep;
+            default:
+                return renderWelcomeStep;
         }
     }, [currentStep, renderWelcomeStep, renderIdentityStep, renderSecurityStep, renderSummaryStep]);
 
@@ -981,13 +798,11 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
                 barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
                 backgroundColor={colors.background}
             />
-
             <ScrollView
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
             >
-                <ProgressIndicator currentStep={currentStep} totalSteps={4} colors={colors} styles={styles} />
                 {renderCurrentStep()}
             </ScrollView>
         </KeyboardAvoidingView>
