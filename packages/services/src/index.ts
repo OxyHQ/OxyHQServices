@@ -18,6 +18,7 @@ import {
   
   // Components
   OxySignInButton,
+  OxyPayButton,
   OxyLogo,
   Avatar,
   FollowButton,
@@ -55,6 +56,7 @@ export {
   
   // Components
   OxySignInButton,
+  OxyPayButton,
   OxyLogo,
   Avatar,
   FollowButton,

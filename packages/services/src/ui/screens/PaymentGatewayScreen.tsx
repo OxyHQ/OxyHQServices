@@ -24,6 +24,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { FAIRWalletIcon } from '../components/icon';
 import { toast } from 'sonner';
 import QRCode from 'react-native-qrcode-svg';
+import * as RNIap from 'react-native-iap';
 
 // Restrict payment methods to Card, Oxy Pay, and FairCoin (QR)
 const PAYMENT_METHODS = [
@@ -31,6 +32,17 @@ const PAYMENT_METHODS = [
     { key: 'oxy', label: 'Oxy Pay', icon: 'wallet-outline', description: 'Use your Oxy Pay in-app balance.' },
     { key: 'faircoin', label: 'FAIRWallet', icon: 'qr-code-outline', description: 'Pay with FairCoin by scanning a QR code.' },
 ];
+
+// Add Google Play Billing to payment methods if Android
+const ANDROID_IAP_METHOD = {
+    key: 'googleplay',
+    label: 'Google Play Billing',
+    icon: 'logo-google-playstore',
+    description: 'Pay securely with your Google Play account.'
+};
+if (Platform.OS === 'android' && !PAYMENT_METHODS.find(m => m.key === 'googleplay')) {
+    PAYMENT_METHODS.push(ANDROID_IAP_METHOD);
+}
 
 // Add PaymentItem type
 export type PaymentItem = {
@@ -102,17 +114,37 @@ const getItemTypeIcon = (type: string, color: string) => {
     }
 };
 
-const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
-    navigate,
-    goBack,
-    theme,
-    onPaymentResult,
-    amount,
-    currency = 'FAIR',
-    onClose,
-    paymentItems = [], // NEW
-    description = '', // NEW
-}) => {
+const IAP_PRODUCT_IDS = ['test_product_1', 'test_product_2']; // TODO: Replace with real product IDs
+
+// Helper to get unique item types (move to top-level, before component)
+const getUniqueItemTypes = (items: PaymentItem[]) => {
+    const types = items.map(item => item.type);
+    return Array.from(new Set(types));
+};
+
+const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
+    const {
+        navigate,
+        goBack,
+        theme,
+        onPaymentResult,
+        amount,
+        currency = 'FAIR',
+        onClose,
+        paymentItems = [], // NEW
+        description = '', // NEW
+    } = props;
+
+    // DEV ENFORCEMENT: Only allow one type of payment item
+    if (process.env.NODE_ENV !== 'production' && paymentItems.length > 0) {
+        const uniqueTypes = getUniqueItemTypes(paymentItems);
+        if (uniqueTypes.length > 1) {
+            throw new Error(
+                `PaymentGatewayScreen: paymentItems contains mixed types (${uniqueTypes.join(', ')}). Only one type is allowed per payment.`
+            );
+        }
+    }
+
     // Step states
     const [currentStep, setCurrentStep] = useState(0);
     const [paymentMethod, setPaymentMethod] = useState('card');
@@ -120,6 +152,12 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
     const [upiId, setUpiId] = useState('');
     const [isPaying, setIsPaying] = useState(false);
     const [success, setSuccess] = useState(false);
+
+    // IAP state
+    const [iapProducts, setIapProducts] = useState<RNIap.Product[]>([]);
+    const [iapError, setIapError] = useState<string | null>(null);
+    const [iapLoading, setIapLoading] = useState(false);
+    const [iapPurchase, setIapPurchase] = useState<RNIap.Purchase | null>(null);
 
     // Animations
     const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -145,6 +183,26 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
         }
         return Number(amount) || 0;
     }, [paymentItems, amount]);
+
+    // Determine if the payment is for a recurring item (subscription)
+    const isRecurring = paymentItems.length > 0 && paymentItems[0].type === 'subscription';
+
+    // Filter payment methods: remove 'faircoin' if recurring
+    const availablePaymentMethods = useMemo(() => {
+        if (isRecurring) {
+            return PAYMENT_METHODS.filter(m => m.key !== 'faircoin');
+        }
+        return PAYMENT_METHODS;
+    }, [isRecurring]);
+
+    // Add after useState declarations
+    // Remove itemTypeError state, useEffect, and user-facing error in renderSummaryStep
+
+    // Helper to get unique item types
+    // Remove itemTypeError state, useEffect, and user-facing error in renderSummaryStep
+
+    // Validate item types on paymentItems change
+    // Remove itemTypeError state, useEffect, and user-facing error in renderSummaryStep
 
     // Animation transitions
     const animateTransition = useCallback((nextStep: number) => {
@@ -273,6 +331,43 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
     const handleOpenFairWallet = () => {
         const url = `fairwallet://pay?address=${faircoinAddress}`;
         Linking.openURL(url);
+    };
+
+    // IAP setup (Android only)
+    useEffect(() => {
+        if (paymentMethod !== 'googleplay' || Platform.OS !== 'android') return;
+        let purchaseUpdateSub: any, purchaseErrorSub: any;
+        setIapLoading(true);
+        RNIap.initConnection()
+            .then(() => RNIap.getProducts({ skus: IAP_PRODUCT_IDS }))
+            .then(setIapProducts)
+            .catch(e => setIapError(e.message))
+            .finally(() => setIapLoading(false));
+        purchaseUpdateSub = RNIap.purchaseUpdatedListener((purchase) => {
+            setIapPurchase(purchase);
+            setSuccess(true);
+            nextStep();
+        });
+        purchaseErrorSub = RNIap.purchaseErrorListener((err) => {
+            setIapError(err.message);
+        });
+        return () => {
+            purchaseUpdateSub && purchaseUpdateSub.remove();
+            purchaseErrorSub && purchaseErrorSub.remove();
+            RNIap.endConnection();
+        };
+    }, [paymentMethod]);
+
+    const handleIapBuy = async (sku: string) => {
+        setIapError(null);
+        setIapLoading(true);
+        try {
+            await RNIap.requestPurchase({ sku });
+        } catch (e: any) {
+            setIapError(e.message);
+        } finally {
+            setIapLoading(false);
+        }
     };
 
     // Helper for dynamic styles
@@ -410,28 +505,24 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
                 )) : (
                     <Text style={{ color: colors.text }}>{description}</Text>
                 )}
-                <View style={{ borderTopWidth: 1, borderColor: colors.border, marginTop: 10, paddingTop: 12, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                    <Text style={{ fontWeight: '700', color: colors.text, fontSize: 17 }}>Total</Text>
-                    <Text style={{ fontWeight: '700', color: colors.primary, fontSize: 22 }}>{currencySymbol} {computedTotal}</Text>
-                </View>
+                <GroupedPillButtons
+                    buttons={[
+                        {
+                            text: 'Close',
+                            onPress: handleClose,
+                            icon: 'close',
+                            variant: 'transparent',
+                        },
+                        {
+                            text: 'Continue',
+                            onPress: nextStep,
+                            icon: 'arrow-forward',
+                            variant: 'primary',
+                        },
+                    ]}
+                    colors={colors}
+                />
             </Card>
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: 'Close',
-                        onPress: handleClose,
-                        icon: 'close',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: 'Continue',
-                        onPress: nextStep,
-                        icon: 'arrow-forward',
-                        variant: 'primary',
-                    },
-                ]}
-                colors={colors}
-            />
         </Animated.View>
     );
 
@@ -447,7 +538,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
         >
             <Card>
                 <View style={styles.circleListContainer}>
-                    {PAYMENT_METHODS.map(method => {
+                    {availablePaymentMethods.map(method => {
                         const isSelected = paymentMethod === method.key;
                         return (
                             <TouchableOpacity
@@ -708,11 +799,55 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
         </Animated.View>
     );
 
+    // Step: Google Play Billing (Android only)
+    const renderGooglePlayStep = () => (
+        <Animated.View style={[styles.stepContainer, {
+            opacity: fadeAnim,
+            transform: [
+                { translateY: slideAnim },
+                { scale: scaleAnim },
+            ]
+        }]}
+        >
+            <Card>
+                <Text style={{ color: colors.text, fontWeight: '600', fontSize: 16, marginBottom: 12 }}>Select a product to purchase:</Text>
+                {iapLoading && <Text style={{ color: colors.secondaryText }}>Loading products...</Text>}
+                {iapError && <Text style={{ color: 'red' }}>{iapError}</Text>}
+                {iapProducts.map(product => (
+                    <TouchableOpacity
+                        key={product.productId}
+                        style={[styles.paymentMethodButton, { marginBottom: 8 }]}
+                        onPress={() => handleIapBuy(product.productId)}
+                        disabled={iapLoading}
+                    >
+                        <Text style={{ color: colors.text, fontSize: 16 }}>{product.title} - {product.localizedPrice}</Text>
+                    </TouchableOpacity>
+                ))}
+                {iapPurchase && (
+                    <Text style={{ color: colors.success, marginTop: 10 }}>Purchase successful!</Text>
+                )}
+            </Card>
+            <GroupedPillButtons
+                buttons={[
+                    {
+                        text: 'Back',
+                        onPress: prevStep,
+                        icon: 'arrow-back',
+                        variant: 'transparent',
+                    },
+                ]}
+                colors={colors}
+            />
+        </Animated.View>
+    );
+
     const renderCurrentStep = () => {
         switch (currentStep) {
             case 0: return renderSummaryStep();
             case 1: return renderMethodStep();
-            case 2: return renderDetailsStep();
+            case 2:
+                if (paymentMethod === 'googleplay') return renderGooglePlayStep();
+                return renderDetailsStep();
             case 3: return renderReviewStep();
             case 4: return renderSuccessStep();
             default: return renderSummaryStep();

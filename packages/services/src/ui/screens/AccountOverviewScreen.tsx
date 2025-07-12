@@ -292,7 +292,6 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                     {user?.isPremium && (
                         <TouchableOpacity
                             style={[styles.settingItem, styles.lastSettingItem]}
-                            onPress={() => navigate?.('BillingManagement')}
                         >
                             <View style={styles.settingInfo}>
                                 <OxyIcon name="card" size={20} color="#34C759" style={styles.settingIcon} />

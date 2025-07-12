@@ -43,6 +43,7 @@
   "dependencies": {
     "@amir-hossein-karimi/bottom-sheet": "^9.1.2",
     "@gorhom/bottom-sheet": "^5.1.6",
+    "react-native-iap": "^12.16.4",
     "react-native-url-polyfill": "^2.0.0"
   }
 }

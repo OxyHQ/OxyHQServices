@@ -15,18 +15,24 @@ import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
+import { SecureClientSession } from '../../models/secureSession';
 
-interface Session {
-    id: string;
-    deviceName?: string;
-    deviceType: string;
-    platform: string;
-    browser?: string;
-    ipAddress?: string;
-    userAgent?: string;
-    lastActivity: string;
-    createdAt: string;
-    isCurrent: boolean;
+// Add cross-platform confirmAction helper
+function confirmAction(message: string, onConfirm: () => void) {
+    if (Platform.OS === 'web') {
+        if (window.confirm(message)) {
+            onConfirm();
+        }
+    } else {
+        Alert.alert(
+            'Confirm',
+            message,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                { text: 'OK', onPress: onConfirm },
+            ]
+        );
+    }
 }
 
 const SessionManagementScreen: React.FC<BaseScreenProps> = ({
@@ -70,99 +76,62 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     };
 
     const handleLogoutSession = async (sessionId: string) => {
-        Alert.alert(
-            'Logout Session',
-            'Are you sure you want to logout this session?',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Logout',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            setActionLoading(sessionId);
-                            await logout(sessionId);
-                            
-                            // Refresh sessions to update the list
-                            await refreshSessions();
-                            
-                            toast.success('Session logged out successfully');
-                        } catch (error) {
-                            console.error('Logout session failed:', error);
-                            toast.error('Failed to logout session. Please try again.');
-                        } finally {
-                            setActionLoading(null);
-                        }
-                    },
-                },
-            ]
-        );
+        confirmAction('Are you sure you want to logout this session?', async () => {
+            try {
+                setActionLoading(sessionId);
+                await logout(sessionId);
+                await refreshSessions();
+                toast.success('Session logged out successfully');
+            } catch (error) {
+                console.error('Logout session failed:', error);
+                toast.error('Failed to logout session. Please try again.');
+            } finally {
+                setActionLoading(null);
+            }
+        });
     };
 
     const handleLogoutOtherSessions = async () => {
         const otherSessionsCount = userSessions.filter(s => s.sessionId !== activeSessionId).length;
-        
         if (otherSessionsCount === 0) {
             toast.info('No other sessions to logout.');
             return;
         }
-
-        Alert.alert(
-            'Logout Other Sessions',
+        confirmAction(
             `This will logout ${otherSessionsCount} other session${otherSessionsCount > 1 ? 's' : ''}. Continue?`,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Logout Others',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            setActionLoading('others');
-                            // Logout each non-active session
-                            for (const session of userSessions) {
-                                if (session.sessionId !== activeSessionId) {
-                                    await logout(session.sessionId);
-                                }
-                            }
-                            
-                            // Refresh sessions to update the list
-                            await refreshSessions();
-                            
-                            toast.success('Other sessions logged out successfully');
-                        } catch (error) {
-                            console.error('Logout other sessions failed:', error);
-                            toast.error('Failed to logout other sessions. Please try again.');
-                        } finally {
-                            setActionLoading(null);
+            async () => {
+                try {
+                    setActionLoading('others');
+                    for (const session of userSessions) {
+                        if (session.sessionId !== activeSessionId) {
+                            await logout(session.sessionId);
                         }
-                    },
-                },
-            ]
+                    }
+                    await refreshSessions();
+                    toast.success('Other sessions logged out successfully');
+                } catch (error) {
+                    console.error('Logout other sessions failed:', error);
+                    toast.error('Failed to logout other sessions. Please try again.');
+                } finally {
+                    setActionLoading(null);
+                }
+            }
         );
     };
 
     const handleLogoutAllSessions = async () => {
-        Alert.alert(
-            'Logout All Sessions',
+        confirmAction(
             'This will logout all sessions including this one and you will need to sign in again. Continue?',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Logout All',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            setActionLoading('all');
-                            await oxyServices.logoutAllSessions();
-                            // No need to update local state as user will be logged out
-                        } catch (error) {
-                            console.error('Logout all sessions failed:', error);
-                            toast.error('Failed to logout all sessions. Please try again.');
-                            setActionLoading(null);
-                        }
-                    },
-                },
-            ]
+            async () => {
+                try {
+                    setActionLoading('all');
+                    await oxyServices.logoutAllSessions();
+                } catch (error) {
+                    console.error('Logout all sessions failed:', error);
+                    toast.error('Failed to logout all sessions. Please try again.');
+                    setActionLoading(null);
+                }
+            }
         );
     };
 
@@ -175,7 +144,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
         if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
         if (diffInMinutes < 10080) return `${Math.floor(diffInMinutes / 1440)}d ago`;
-        
+
         return date.toLocaleDateString();
     };
 
@@ -212,11 +181,8 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor }]}>
             <View style={styles.header}>
                 <Text style={[styles.title, { color: textColor }]}>Active Sessions</Text>
-                <Text style={[styles.subtitle, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                    Manage your active sessions across all devices
-                </Text>
+                <Text style={[styles.subtitle, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>Manage your active sessions across all devices</Text>
             </View>
-
             <ScrollView
                 style={styles.scrollView}
                 contentContainerStyle={styles.scrollContainer}
@@ -230,7 +196,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             >
                 {userSessions.length > 0 ? (
                     <>
-                        {userSessions.map((session) => (
+                        {userSessions.map((session: SecureClientSession) => (
                             <View
                                 key={session.sessionId}
                                 style={[
@@ -244,34 +210,20 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                             >
                                 <View style={styles.sessionHeader}>
                                     <View style={styles.sessionTitleRow}>
-                                        <Text style={styles.deviceIcon}>
-                                            📱
-                                        </Text>
+                                        <Text style={styles.deviceIcon}>💻</Text>
                                         <View style={styles.sessionTitleText}>
-                                            <Text style={[styles.deviceName, { color: textColor }]}>
-                                                Session {session.sessionId.substring(0, 8)}...
-                                            </Text>
+                                            <Text style={[styles.deviceName, { color: textColor }]}>Session {session.sessionId.substring(0, 8)}...</Text>
                                             {session.sessionId === activeSessionId && (
-                                                <Text style={[styles.currentBadge, { color: successColor }]}>
-                                                    Current Session
-                                                </Text>
+                                                <Text style={[styles.currentBadge, { color: successColor }]}>Current Session</Text>
                                             )}
                                         </View>
                                     </View>
                                 </View>
-
                                 <View style={styles.sessionDetails}>
-                                    <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                        Device ID: {session.deviceId.substring(0, 12)}...
-                                    </Text>
-                                    <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                        Last active: {new Date(session.lastActive).toLocaleDateString()}
-                                    </Text>
-                                    <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                        Expires: {new Date(session.expiresAt).toLocaleDateString()}
-                                    </Text>
+                                    <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>Device ID: {session.deviceId ? session.deviceId.substring(0, 12) + '...' : 'Unknown'}</Text>
+                                    <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>Last active: {session.lastActive ? new Date(session.lastActive).toLocaleDateString() : 'Unknown'}</Text>
+                                    <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>Expires: {session.expiresAt ? new Date(session.expiresAt).toLocaleDateString() : 'Unknown'}</Text>
                                 </View>
-
                                 {session.sessionId !== activeSessionId && (
                                     <TouchableOpacity
                                         style={[styles.logoutButton, { backgroundColor: isDarkTheme ? '#400000' : '#FFEBEE' }]}
@@ -281,15 +233,12 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                                         {actionLoading === session.sessionId ? (
                                             <ActivityIndicator size="small" color={dangerColor} />
                                         ) : (
-                                            <Text style={[styles.logoutButtonText, { color: dangerColor }]}>
-                                                Logout
-                                            </Text>
+                                            <Text style={[styles.logoutButtonText, { color: dangerColor }]}>Logout</Text>
                                         )}
                                     </TouchableOpacity>
                                 )}
                             </View>
                         ))}
-
                         <View style={styles.bulkActions}>
                             <TouchableOpacity
                                 style={[styles.bulkActionButton, { backgroundColor: isDarkTheme ? '#1A1A1A' : '#F0F0F0', borderColor }]}
@@ -299,12 +248,9 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                                 {actionLoading === 'others' ? (
                                     <ActivityIndicator size="small" color={primaryColor} />
                                 ) : (
-                                    <Text style={[styles.bulkActionButtonText, { color: textColor }]}>
-                                        Logout Other Sessions
-                                    </Text>
+                                    <Text style={[styles.bulkActionButtonText, { color: textColor }]}>Logout Other Sessions</Text>
                                 )}
                             </TouchableOpacity>
-
                             <TouchableOpacity
                                 style={[styles.bulkActionButton, styles.dangerButton, { backgroundColor: isDarkTheme ? '#400000' : '#FFEBEE' }]}
                                 onPress={handleLogoutAllSessions}
@@ -313,22 +259,17 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                                 {actionLoading === 'all' ? (
                                     <ActivityIndicator size="small" color={dangerColor} />
                                 ) : (
-                                    <Text style={[styles.bulkActionButtonText, { color: dangerColor }]}>
-                                        Logout All Sessions
-                                    </Text>
+                                    <Text style={[styles.bulkActionButtonText, { color: dangerColor }]}>Logout All Sessions</Text>
                                 )}
                             </TouchableOpacity>
                         </View>
                     </>
                 ) : (
                     <View style={styles.emptyState}>
-                        <Text style={[styles.emptyStateText, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                            No active sessions found
-                        </Text>
+                        <Text style={[styles.emptyStateText, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>No active sessions found</Text>
                     </View>
                 )}
             </ScrollView>
-
             <View style={[styles.footer, { borderTopColor: borderColor }]}>
                 <TouchableOpacity style={styles.closeButton} onPress={onClose}>
                     <Text style={[styles.closeButtonText, { color: primaryColor }]}>Close</Text>

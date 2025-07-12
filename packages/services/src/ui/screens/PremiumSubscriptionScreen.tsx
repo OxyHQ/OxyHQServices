@@ -307,35 +307,35 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const detectCurrentApp = () => {
         // In a real implementation, this would detect the actual app package name
         // For now, we'll use a mock detection based on available methods
-        
+
         // Real app detection methods you could use:
         // 1. Check bundle identifier in React Native: 
         //    import DeviceInfo from 'react-native-device-info';
         //    const bundleId = DeviceInfo.getBundleId();
         //    Example: com.oxy.mention -> 'mention'
-        
+
         // 2. Environment variables or build configuration
         //    const appPackage = __DEV__ ? process.env.APP_PACKAGE : 'mention';
-        
+
         // 3. Check specific app capabilities or modules
         //    if (typeof MentionModule !== 'undefined') return 'mention';
         //    if (typeof OxyWorkspaceModule !== 'undefined') return 'oxy-workspace';
-        
+
         // 4. Use build-time configuration with Metro or similar
         //    const appPackage = require('../config/app.json').packageName;
-        
+
         // For demo purposes, we'll simulate different apps
         // You would replace this with actual app detection logic
-        
+
         // IMPORTANT: This ensures subscription restrictions work properly:
         // - Mention+ plan can only be subscribed to when app package == 'mention'
         // - Other app-specific plans follow the same pattern
         // - Ecosystem plans work across all apps
-        
+
         const detectedApp = 'mention'; // This would be dynamic in real implementation
-        
+
         setCurrentAppPackage(detectedApp);
-        
+
         // Log for debugging
         console.log('Detected app package:', detectedApp);
         console.log('Available plans for this app will be filtered accordingly');
@@ -344,13 +344,13 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const loadSubscriptionData = async () => {
         try {
             setLoading(true);
-            
+
             // Filter plans available for current app
-            const availablePlans = mockPlans.filter(plan => 
+            const availablePlans = mockPlans.filter(plan =>
                 plan.applicableApps.includes(currentAppPackage)
             );
             setPlans(availablePlans);
-            
+
             // Mock current subscription
             let currentSubscription: UserSubscription | null = null;
             if (user?.isPremium) {
@@ -364,25 +364,25 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 };
                 setSubscription(currentSubscription);
             }
-            
+
             // Filter features available for current app and update based on current subscription
-            const availableFeatures = mockIndividualFeatures.filter(feature => 
+            const availableFeatures = mockIndividualFeatures.filter(feature =>
                 feature.applicableApps.includes(currentAppPackage)
             );
-            
+
             const updatedFeatures = availableFeatures.map(feature => {
-                const isIncludedInCurrentPlan = !!(currentSubscription && 
+                const isIncludedInCurrentPlan = !!(currentSubscription &&
                     feature.includedInPlans.includes(currentSubscription.planId));
-                
+
                 return {
                     ...feature,
                     isIncludedInCurrentPlan,
                     isSubscribed: isIncludedInCurrentPlan ? true : false // Mock some individual subscriptions
                 };
             });
-            
+
             setIndividualFeatures(updatedFeatures);
-            
+
         } catch (error) {
             console.error('Failed to load subscription data:', error);
             toast.error('Failed to load subscription information');
@@ -404,23 +404,23 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 toast.error(`This plan is not available for the current app (${currentAppPackage})`);
                 return;
             }
-            
+
             // Special restriction for Mention+ plan - only available in mention app
             if (planId === 'mention-plus' && currentAppPackage !== 'mention') {
                 console.log(`❌ Subscription blocked: Mention+ plan requires app to be "mention", current app is "${currentAppPackage}"`);
                 toast.error('Mention+ is only available in the Mention app');
                 return;
             }
-            
+
             console.log(`✅ Subscription allowed: Plan "${selectedPlan.name}" is available for app "${currentAppPackage}"`);
-            
+
             setProcessingPayment(true);
-            
+
             // Mock payment processing
             await new Promise(resolve => setTimeout(resolve, 2000));
-            
+
             toast.success('Subscription activated successfully!');
-            
+
             // Mock subscription update
             setSubscription({
                 id: 'sub_' + Date.now(),
@@ -430,10 +430,10 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 currentPeriodEnd: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
                 cancelAtPeriodEnd: false
             });
-            
+
             // Reload data to update feature states
             loadSubscriptionData();
-            
+
         } catch (error) {
             console.error('Payment failed:', error);
             toast.error('Payment failed. Please try again.');
@@ -483,7 +483,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const formatPrice = (price: number, currency: string, interval: string) => {
         const yearlyPrice = interval === 'year' ? price : price * 12 * 0.8; // 20% discount for yearly
         const displayPrice = billingInterval === 'year' ? yearlyPrice : price;
-        
+
         return {
             price: displayPrice,
             formatted: `$${displayPrice.toFixed(2)}`,
@@ -504,35 +504,35 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 toast.error(`This feature is not available for the current app (${currentAppPackage})`);
                 return;
             }
-            
+
             // Special restrictions for app-specific features
             if (selectedFeature.appScope === 'specific') {
                 // For features that are only available in specific apps, enforce strict matching
-                const hasExactMatch = selectedFeature.applicableApps.length === 1 && 
-                                     selectedFeature.applicableApps[0] === currentAppPackage;
+                const hasExactMatch = selectedFeature.applicableApps.length === 1 &&
+                    selectedFeature.applicableApps[0] === currentAppPackage;
                 if (!hasExactMatch && selectedFeature.applicableApps.length === 1) {
                     const requiredApp = selectedFeature.applicableApps[0];
                     toast.error(`${selectedFeature.name} is only available in the ${requiredApp} app`);
                     return;
                 }
             }
-            
+
             setProcessingPayment(true);
-            
+
             // Mock feature subscription
             await new Promise(resolve => setTimeout(resolve, 1500));
-            
-            setIndividualFeatures(prev => 
-                prev.map(feature => 
-                    feature.id === featureId 
+
+            setIndividualFeatures(prev =>
+                prev.map(feature =>
+                    feature.id === featureId
                         ? { ...feature, isSubscribed: true }
                         : feature
                 )
             );
-            
+
             const feature = individualFeatures.find(f => f.id === featureId);
             toast.success(`Subscribed to ${feature?.name} successfully!`);
-            
+
         } catch (error) {
             console.error('Feature subscription failed:', error);
             toast.error('Feature subscription failed. Please try again.');
@@ -553,9 +553,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                     style: 'destructive',
                     onPress: async () => {
                         try {
-                            setIndividualFeatures(prev => 
-                                prev.map(f => 
-                                    f.id === featureId 
+                            setIndividualFeatures(prev =>
+                                prev.map(f =>
+                                    f.id === featureId
                                         ? { ...f, isSubscribed: false }
                                         : f
                                 )
@@ -605,19 +605,19 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
     const renderCurrentSubscription = () => {
         if (!subscription) return null;
-        
+
         const currentPlan = getCurrentPlan();
         if (!currentPlan) return null;
 
-        const statusColor = 
+        const statusColor =
             subscription.status === 'active' ? successColor :
-            subscription.status === 'trialing' ? warningColor :
-            dangerColor;
+                subscription.status === 'trialing' ? warningColor :
+                    dangerColor;
 
         return (
             <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: textColor }]}>Current Subscription</Text>
-                
+
                 <View style={[styles.currentSubscriptionCard, { backgroundColor: secondaryBackgroundColor, borderColor }]}>
                     <View style={styles.subscriptionHeader}>
                         <View>
@@ -632,11 +632,11 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                             </Text>
                         </View>
                     </View>
-                    
+
                     <Text style={[styles.subscriptionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                         Renews on {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
                     </Text>
-                    
+
                     {subscription.cancelAtPeriodEnd && (
                         <View style={styles.cancelNotice}>
                             <Ionicons name="warning" size={16} color={warningColor} />
@@ -645,7 +645,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                             </Text>
                         </View>
                     )}
-                    
+
                     <View style={styles.subscriptionActions}>
                         {subscription.cancelAtPeriodEnd ? (
                             <TouchableOpacity
@@ -662,10 +662,10 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                                 <Text style={styles.actionButtonText}>Cancel Subscription</Text>
                             </TouchableOpacity>
                         )}
-                        
+
                         <TouchableOpacity
                             style={[styles.actionButton, styles.secondaryButton, { borderColor }]}
-                            onPress={() => navigate && navigate('BillingManagement')}
+
                         >
                             <Text style={[styles.actionButtonText, { color: textColor }]}>Manage Billing</Text>
                         </TouchableOpacity>
@@ -692,7 +692,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         Monthly
                     </Text>
                 </TouchableOpacity>
-                
+
                 <TouchableOpacity
                     style={[
                         styles.billingOption,
@@ -708,7 +708,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                     </Text>
                 </TouchableOpacity>
             </View>
-            
+
             {billingInterval === 'year' && (
                 <Text style={[styles.savingsText, { color: successColor }]}>
                     💰 Save 20% with yearly billing
@@ -764,17 +764,17 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         <Text style={styles.popularText}>MOST POPULAR</Text>
                     </View>
                 )}
-                
+
                 {isAppSpecific && (
-                    <View style={[styles.appSpecificBadge, { 
-                        backgroundColor: isAvailableForCurrentApp ? successColor : warningColor 
+                    <View style={[styles.appSpecificBadge, {
+                        backgroundColor: isAvailableForCurrentApp ? successColor : warningColor
                     }]}>
                         <Text style={styles.appSpecificText}>
                             {isAvailableForCurrentApp ? 'App Exclusive' : 'Not Available'}
                         </Text>
                     </View>
                 )}
-                
+
                 <View style={styles.planHeader}>
                     <Text style={[styles.planName, { color: textColor }]}>{plan.name}</Text>
                     <Text style={[styles.planDescription, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
@@ -789,7 +789,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         </Text>
                     )}
                 </View>
-                
+
                 <View style={styles.planPricing}>
                     <Text style={[styles.planPrice, { color: textColor }]}>
                         {pricing.formatted}
@@ -798,7 +798,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         per {pricing.interval}
                     </Text>
                 </View>
-                
+
                 <View style={styles.planFeatures}>
                     {plan.features.map((feature, index) => (
                         <View key={index} style={styles.featureItem}>
@@ -807,7 +807,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         </View>
                     ))}
                 </View>
-                
+
                 {isCurrentPlan ? (
                     <View style={[styles.currentPlanButton, { backgroundColor: successColor }]}>
                         <Text style={styles.currentPlanText}>Current Plan</Text>
@@ -860,7 +860,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         Full Plans
                     </Text>
                 </TouchableOpacity>
-                
+
                 <TouchableOpacity
                     style={[
                         styles.tab,
@@ -927,10 +927,10 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             >
                 <View style={styles.featureHeader}>
                     <View style={styles.featureIconContainer}>
-                        <Ionicons 
-                            name={getCategoryIcon(feature.category) as any} 
-                            size={24} 
-                            color={getCategoryColor(feature.category)} 
+                        <Ionicons
+                            name={getCategoryIcon(feature.category) as any}
+                            size={24}
+                            color={getCategoryColor(feature.category)}
                         />
                     </View>
                     <View style={styles.featureInfo}>
@@ -950,7 +950,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         </Text>
                     </View>
                 </View>
-                
+
                 {!isIncludedInCurrentPlan && (
                     <View style={styles.featurePricing}>
                         <Text style={[styles.featurePrice, { color: textColor }]}>
@@ -961,7 +961,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         </Text>
                     </View>
                 )}
-                
+
                 {isIncludedInCurrentPlan ? (
                     <View style={[styles.includedInPlanButton, { backgroundColor: primaryColor }]}>
                         <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
@@ -1005,18 +1005,18 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
     const renderIndividualFeatures = () => {
         const categories = ['analytics', 'customization', 'content', 'networking', 'productivity'];
-        
+
         return (
             <View style={styles.section}>
                 <Text style={[styles.sectionTitle, { color: textColor }]}>Individual Features</Text>
                 <Text style={[styles.sectionSubtitle, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                     Subscribe to specific features you need. Some features are included in subscription plans.
                 </Text>
-                
+
                 {categories.map(category => {
                     const categoryFeatures = individualFeatures.filter(f => f.category === category);
                     if (categoryFeatures.length === 0) return null;
-                    
+
                     return (
                         <View key={category} style={styles.categorySection}>
                             <Text style={[styles.categoryTitle, { color: textColor }]}>
@@ -1035,9 +1035,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
     const renderAppSwitcher = () => {
         if (!showAppSwitcher) return null;
-        
+
         const testApps = ['mention', 'oxy-social', 'oxy-workspace', 'oxy-creator'];
-        
+
         return (
             <View style={[styles.appSwitcher, { backgroundColor: isDarkTheme ? '#333333' : '#F0F0F0', borderColor }]}>
                 <Text style={[styles.appSwitcherTitle, { color: textColor }]}>
@@ -1050,7 +1050,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                                 key={app}
                                 style={[
                                     styles.appSwitcherButton,
-                                    { 
+                                    {
                                         backgroundColor: currentAppPackage === app ? primaryColor : 'transparent',
                                         borderColor: primaryColor,
                                     }
@@ -1087,10 +1087,10 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor }]}>
             {renderHeader()}
             {renderAppSwitcher()}
-            
+
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 {subscription && renderCurrentSubscription()}
-                
+
                 {!subscription && (
                     <View style={styles.section}>
                         <Text style={[styles.sectionTitle, { color: textColor }]}>Choose Your Plan</Text>
@@ -1099,27 +1099,27 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         </Text>
                     </View>
                 )}
-                
+
                 {!subscription && renderTabNavigation()}
-                
+
                 {!subscription && activeTab === 'plans' && renderBillingToggle()}
-                
+
                 {activeTab === 'plans' ? (
                     <View style={styles.section}>
                         {!subscription && (
                             <Text style={[styles.sectionTitle, { color: textColor }]}>Available Plans</Text>
                         )}
-                        
+
                         {plans.map(renderPlanCard)}
                     </View>
                 ) : (
                     renderIndividualFeatures()
                 )}
-                
+
                 {/* Features Comparison */}
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: textColor }]}>Why Go Premium?</Text>
-                    
+
                     <View style={[styles.benefitsCard, { backgroundColor: secondaryBackgroundColor, borderColor }]}>
                         <View style={styles.benefitItem}>
                             <Ionicons name="flash" size={24} color={primaryColor} />
@@ -1130,7 +1130,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                                 </Text>
                             </View>
                         </View>
-                        
+
                         <View style={styles.benefitItem}>
                             <Ionicons name="shield-checkmark" size={24} color={successColor} />
                             <View style={styles.benefitContent}>
@@ -1140,7 +1140,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                                 </Text>
                             </View>
                         </View>
-                        
+
                         <View style={styles.benefitItem}>
                             <Ionicons name="headset" size={24} color={warningColor} />
                             <View style={styles.benefitContent}>
@@ -1152,7 +1152,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         </View>
                     </View>
                 </View>
-                
+
                 <View style={styles.bottomSpacing} />
             </ScrollView>
         </View>

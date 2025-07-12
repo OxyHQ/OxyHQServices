@@ -107,7 +107,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             { id: 'settings', icon: 'settings', iconColor: '#5856D6', title: 'Settings', onPress: () => navigate('AccountSettings') },
                             { id: 'sessions', icon: 'shield-checkmark', iconColor: '#30D158', title: 'Sessions', onPress: () => navigate('SessionManagement') },
                             { id: 'premium', icon: 'star', iconColor: '#FFD700', title: 'Premium', onPress: () => navigate('PremiumSubscription') },
-                            ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: '#34C759', title: 'Billing', onPress: () => navigate('BillingManagement') }] : []),
+                            ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: '#34C759', title: 'Billing', onPress: () => navigate('') }] : []),
                             ...(sessions && sessions.length > 1 ? [{ id: 'switch', icon: 'swap-horizontal', iconColor: '#FF9500', title: 'Switch', onPress: () => navigate('AccountSwitcher') }] : []),
                         ]}
                         theme={theme}
@@ -164,7 +164,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: '#34C759',
                                 title: 'Billing Management',
                                 subtitle: 'Payment methods and invoices',
-                                onPress: () => navigate('BillingManagement'),
+                                onPress: () => navigate(''),
                             }] : []),
                         ]}
                         theme={theme}
