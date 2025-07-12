@@ -9,6 +9,7 @@ import {
     Alert,
     TextInput,
     Animated,
+    Platform,
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
@@ -17,6 +18,7 @@ import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { fontFamilies } from '../styles/fonts';
+import { confirmAction } from '../utils/confirmAction';
 
 const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -132,28 +134,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     };
 
     const handleAvatarUpdate = () => {
-        Alert.alert(
-            'Update Avatar',
-            'Choose how you want to update your profile picture',
-            [
-                {
-                    text: 'Cancel',
-                    style: 'cancel',
-                },
-                {
-                    text: 'Use Mock URL',
-                    onPress: () => {
-                        const mockUrl = `https://ui-avatars.com/api/?name=${displayName || username}&background=random`;
-                        setAvatarUrl(mockUrl);
-                    },
-                },
-                {
-                    text: 'Remove Avatar',
-                    onPress: () => setAvatarUrl(''),
-                    style: 'destructive',
-                },
-            ]
-        );
+        // Always use confirmAction for both web and native
+        confirmAction('Remove your profile picture?', () => {
+            setAvatarUrl('');
+            toast.success('Avatar removed');
+        });
     };
 
     const startEditing = (type: string, currentValue: string) => {

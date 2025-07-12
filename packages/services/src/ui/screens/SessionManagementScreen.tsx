@@ -16,24 +16,7 @@ import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 import { SecureClientSession } from '../../models/secureSession';
-
-// Add cross-platform confirmAction helper
-function confirmAction(message: string, onConfirm: () => void) {
-    if (Platform.OS === 'web') {
-        if (window.confirm(message)) {
-            onConfirm();
-        }
-    } else {
-        Alert.alert(
-            'Confirm',
-            message,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                { text: 'OK', onPress: onConfirm },
-            ]
-        );
-    }
-}
+import { confirmAction } from '../utils/confirmAction';
 
 const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -64,11 +47,15 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             await refreshSessions();
         } catch (error) {
             console.error('Failed to load sessions:', error);
-            Alert.alert(
-                'Error',
-                'Failed to load sessions. Please try again.',
-                [{ text: 'OK' }]
-            );
+            if (Platform.OS === 'web') {
+                toast.error('Failed to load sessions. Please try again.');
+            } else {
+                Alert.alert(
+                    'Error',
+                    'Failed to load sessions. Please try again.',
+                    [{ text: 'OK' }]
+                );
+            }
         } finally {
             setLoading(false);
             setRefreshing(false);

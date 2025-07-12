@@ -13,6 +13,7 @@ import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { packageInfo } from '../../constants/version';
 import { toast } from '../../lib/sonner';
+import { confirmAction } from '../utils/confirmAction';
 import { Ionicons } from '@expo/vector-icons';
 import { fontFamilies } from '../styles/fonts';
 import {
@@ -51,21 +52,9 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     };
 
     const confirmLogout = () => {
-        Alert.alert(
-            'Sign Out',
+        confirmAction(
             'Are you sure you want to sign out?',
-            [
-                {
-                    text: 'Cancel',
-                    style: 'cancel',
-                },
-                {
-                    text: 'Sign Out',
-                    onPress: handleLogout,
-                    style: 'destructive',
-                },
-            ],
-            { cancelable: true }
+            handleLogout
         );
     };
 

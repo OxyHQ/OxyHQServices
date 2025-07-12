@@ -3,9 +3,8 @@ export interface SecureClientSession {
   deviceId: string;
   expiresAt: string;
   lastActive: string;
-  // Add user info for efficient duplicate detection
+  // Only userId for identification, do not store username
   userId?: string;
-  username?: string;
 }
 
 export interface SecureStorageKeys {

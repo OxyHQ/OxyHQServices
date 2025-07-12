@@ -3,6 +3,8 @@ import { OxyServices } from '../../core';
 import { User } from '../../models/interfaces';
 import { SecureLoginResponse, SecureClientSession, MinimalUserData } from '../../models/secureSession';
 import { DeviceManager } from '../../utils/deviceManager';
+import { useSessionSocket } from '../hooks/useSessionSocket';
+import { toast } from '../../lib/sonner';
 
 // Define the context shape
 export interface OxyContextState {
@@ -167,17 +169,16 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
           let shouldUpdateStorage = false;
 
           for (const session of parsedSessions) {
-            if (!session.userId || !session.username) {
+            if (!session.userId) {
               // Session is missing user info, try to fetch it
               try {
                 const sessionUser = await oxyServices.getUserBySession(session.sessionId);
                 migratedSessions.push({
                   ...session,
-                  userId: sessionUser.id,
-                  username: sessionUser.username
+                  userId: sessionUser.id
                 });
                 shouldUpdateStorage = true;
-                console.log(`Migrated session ${session.sessionId} for user ${sessionUser.username}`);
+                console.log(`Migrated session ${session.sessionId} for user ${sessionUser.id}`);
               } catch (error) {
                 // Session might be invalid, skip it
                 console.log(`Removing invalid session ${session.sessionId}:`, error);
@@ -356,13 +357,12 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
         deviceId: response.deviceId,
         expiresAt: response.expiresAt,
         lastActive: new Date().toISOString(),
-        userId: response.user.id,
-        username: response.user.username
+        userId: response.user.id
       };
 
       // Check if this user already has a session (prevent duplicate accounts)
       const existingUserSessionIndex = sessions.findIndex(s =>
-        s.userId === response.user.id || s.username === response.user.username
+        s.userId === response.user.id
       );
 
       let updatedSessions: SecureClientSession[];
@@ -373,7 +373,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
         updatedSessions = [...sessions];
         updatedSessions[existingUserSessionIndex] = clientSession;
 
-        console.log(`Reusing/updating existing session for user ${response.user.username}. Previous session: ${existingSession.sessionId}, New session: ${response.sessionId}`);
+        console.log(`Reusing/updating existing session for user ${response.user.id}. Previous session: ${existingSession.sessionId}, New session: ${response.sessionId}`);
 
         // If the replaced session was the active one, update active session
         if (activeSessionId === existingSession.sessionId) {
@@ -383,7 +383,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
       } else {
         // Add new session for new user
         updatedSessions = [...sessions, clientSession];
-        console.log(`Added new session for user ${response.user.username} on device ${response.deviceId}`);
+        console.log(`Added new session for user ${response.user.id} on device ${response.deviceId}`);
       }
 
       setSessions(updatedSessions);
@@ -649,6 +649,20 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     // This covers both the loaded state and the loading-but-authenticated state
     return !!user || (!!activeSessionId && !!oxyServices?.getCurrentUserId());
   }, [user, activeSessionId, oxyServices]);
+
+  // Integrate socket for real-time session updates
+  console.log('OxyContextProvider: userId', user?.id, 'baseURL', oxyServices.getBaseURL());
+  useSessionSocket({
+    userId: user?.id,
+    activeSessionId,
+    refreshSessions,
+    logout: () => logout(),
+    baseURL: oxyServices.getBaseURL(),
+    onRemoteSignOut: () => {
+      toast.info('You have been signed out remotely.');
+      logout();
+    },
+  });
 
   // Context value
   const contextValue: OxyContextState = {

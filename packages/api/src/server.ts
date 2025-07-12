@@ -109,18 +109,30 @@ io.use((socket: AuthenticatedSocket, next) => {
 
 // Socket connection handling
 io.on('connection', (socket: AuthenticatedSocket) => {
-  console.log('User connected:', socket.id);
+  console.log('Socket connected:', socket.id);
   
   if (socket.user?.id) {
-    // Join the user to their personal room for notifications
-    socket.join(`user:${socket.user.id}`);
-    console.log(`User ${socket.user.id} joined their notification room`);
+    const room = `user:${socket.user.id}`;
+    socket.join(room);
+    console.log(`User ${socket.user.id} joined their notification room (${room})`);
   }
   
   socket.on('disconnect', () => {
     console.log('User disconnected:', socket.id);
   });
+
+  // For debugging: log all events
+  socket.onAny((event, ...args) => {
+    console.log(`[Socket ${socket.id}] Event:`, event, args);
+  });
 });
+
+// Helper for emitting session_update (add this for debug, or add to your controller)
+export function emitSessionUpdate(userId: string, payload: any) {
+  const room = `user:${userId}`;
+  console.log(`Emitting session_update to room: ${room} with payload:`, payload);
+  io.to(room).emit('session_update', payload);
+}
 
 // Special handling for file upload requests with proper auth
 app.use("/files", (req, res, next) => {

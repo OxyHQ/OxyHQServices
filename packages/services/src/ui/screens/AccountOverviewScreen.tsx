@@ -18,6 +18,7 @@ import Avatar from '../components/Avatar';
 import OxyIcon from '../components/icon/OxyIcon';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
+import { confirmAction } from '../utils/confirmAction';
 import { Ionicons } from '@expo/vector-icons';
 
 /**
@@ -89,7 +90,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             return {
                                 id: session.sessionId,
                                 sessionId: session.sessionId,
-                                username: session.username || 'Unknown User',
+                                username: 'Unknown User',
                                 email: 'No email available',
                                 avatar: null,
                                 userProfile: null
@@ -129,21 +130,9 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     }, [logout, onClose]);
 
     const confirmLogout = useCallback(() => {
-        Alert.alert(
-            'Sign Out',
+        confirmAction(
             'Are you sure you want to sign out?',
-            [
-                {
-                    text: 'Cancel',
-                    style: 'cancel',
-                },
-                {
-                    text: 'Sign Out',
-                    onPress: handleLogout,
-                    style: 'destructive',
-                },
-            ],
-            { cancelable: true }
+            handleLogout
         );
     }, [handleLogout]);
 
@@ -152,21 +141,9 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     }, []);
 
     const handleSignOutAll = useCallback(() => {
-        Alert.alert(
-            'Sign Out of All Accounts',
+        confirmAction(
             'Are you sure you want to sign out of all accounts?',
-            [
-                {
-                    text: 'Cancel',
-                    style: 'cancel',
-                },
-                {
-                    text: 'Sign Out All',
-                    onPress: handleLogout,
-                    style: 'destructive',
-                },
-            ],
-            { cancelable: true }
+            handleLogout
         );
     }, [handleLogout]);
 

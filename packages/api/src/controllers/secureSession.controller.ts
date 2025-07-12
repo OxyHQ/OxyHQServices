@@ -15,6 +15,7 @@ import {
   logoutAllDeviceSessions,
   DeviceFingerprint 
 } from '../utils/deviceUtils';
+import { emitSessionUpdate } from '../server';
 
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET!;
 const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET!;
@@ -361,17 +362,13 @@ export class SecureSessionController {
 
       // Logout target session (default to current session)
       const targetId = targetSessionId || sessionId;
-      
       await Session.updateOne(
-        { 
-          _id: targetId,
-          userId: currentSession.userId 
-        },
-        { 
-          isActive: false,
-          loggedOutAt: new Date()
-        }
+        { _id: targetId, userId: currentSession.userId },
+        { isActive: false, loggedOutAt: new Date() }
       );
+
+      // Emit session_update event to user room
+      emitSessionUpdate(currentSession.userId.toString(), { type: 'logout', sessionId: targetId });
 
       res.json({ message: 'Session logged out successfully' });
     } catch (error) {
@@ -401,15 +398,12 @@ export class SecureSessionController {
 
       // Logout all sessions for this user
       await Session.updateMany(
-        { 
-          userId: currentSession.userId,
-          isActive: true
-        },
-        { 
-          isActive: false,
-          loggedOutAt: new Date()
-        }
+        { userId: currentSession.userId, isActive: true },
+        { isActive: false, loggedOutAt: new Date() }
       );
+
+      // Emit session_update event to user room
+      emitSessionUpdate(currentSession.userId.toString(), { type: 'logout_all' });
 
       res.json({ message: 'All sessions logged out successfully' });
     } catch (error) {

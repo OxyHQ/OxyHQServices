@@ -17,6 +17,7 @@ import { SecureClientSession } from '../../models/secureSession';
 import { fontFamilies } from '../styles/fonts';
 import { User } from '../../models/interfaces';
 import { toast } from '../../lib/sonner';
+import { confirmAction } from '../utils/confirmAction';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
@@ -142,40 +143,21 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         }
     };
 
-    const handleRemoveSession = async (sessionId: string) => {
-        const sessionToRemove = sessionsWithUsers.find(s => s.sessionId === sessionId);
-        if (!sessionToRemove) return;
-
-        const displayName = typeof sessionToRemove.userProfile?.name === 'object'
-            ? sessionToRemove.userProfile.name.full || sessionToRemove.userProfile.name.first || sessionToRemove.userProfile.username
-            : sessionToRemove.userProfile?.name || sessionToRemove.userProfile?.username || 'this account';
-
-        Alert.alert(
-            'Remove Account',
+    const handleRemoveSession = async (sessionId: string, displayName: string) => {
+        confirmAction(
             `Are you sure you want to remove ${displayName} from this device? You'll need to sign in again to access this account.`,
-            [
-                {
-                    text: 'Cancel',
-                    style: 'cancel',
-                },
-                {
-                    text: 'Remove',
-                    style: 'destructive',
-                    onPress: async () => {
-                        setRemovingUserId(sessionId);
-                        try {
-                            await removeSession(sessionId);
-                            toast.success('Account removed successfully!');
-                        } catch (error) {
-                            console.error('Remove session failed:', error);
-                            toast.error('There was a problem removing the account. Please try again.');
-                        } finally {
-                            setRemovingUserId(null);
-                        }
-                    },
-                },
-            ],
-            { cancelable: true }
+            async () => {
+                setRemovingUserId(sessionId);
+                try {
+                    await removeSession(sessionId);
+                    toast.success('Account removed successfully!');
+                } catch (error) {
+                    console.error('Remove session failed:', error);
+                    toast.error('There was a problem removing the account. Please try again.');
+                } finally {
+                    setRemovingUserId(null);
+                }
+            }
         );
     };
 
@@ -238,34 +220,22 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     };
 
     const handleRemoteSessionLogout = async (sessionId: string, deviceName: string) => {
-        Alert.alert(
-            'Remove Device Session',
+        confirmAction(
             `Are you sure you want to sign out from "${deviceName}"? This will end the session on that device.`,
-            [
-                {
-                    text: 'Cancel',
-                    style: 'cancel',
-                },
-                {
-                    text: 'Sign Out',
-                    style: 'destructive',
-                    onPress: async () => {
-                        setRemoteLogoutSessionId(sessionId);
-                        try {
-                            await oxyServices?.logoutSecureSession(user?.sessionId || '', sessionId);
-                            // Refresh device sessions list
-                            await loadAllDeviceSessions();
-                            toast.success(`Signed out from ${deviceName} successfully!`);
-                        } catch (error) {
-                            console.error('Remote logout failed:', error);
-                            toast.error('There was a problem signing out from the device. Please try again.');
-                        } finally {
-                            setRemoteLogoutSessionId(null);
-                        }
-                    },
-                },
-            ],
-            { cancelable: true }
+            async () => {
+                setRemoteLogoutSessionId(sessionId);
+                try {
+                    await oxyServices?.logoutSecureSession(user?.sessionId || '', sessionId);
+                    // Refresh device sessions list
+                    await loadAllDeviceSessions();
+                    toast.success(`Signed out from ${deviceName} successfully!`);
+                } catch (error) {
+                    console.error('Remote logout failed:', error);
+                    toast.error('There was a problem signing out from the device. Please try again.');
+                } finally {
+                    setRemoteLogoutSessionId(null);
+                }
+            }
         );
     };
 
@@ -277,34 +247,22 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             return;
         }
 
-        Alert.alert(
-            'Sign Out All Other Devices',
+        confirmAction(
             `Are you sure you want to sign out from all ${otherDevicesCount} other device(s)? This will end sessions on all other devices except this one.`,
-            [
-                {
-                    text: 'Cancel',
-                    style: 'cancel',
-                },
-                {
-                    text: 'Sign Out All',
-                    style: 'destructive',
-                    onPress: async () => {
-                        setLoggingOutAllDevices(true);
-                        try {
-                            await oxyServices?.logoutAllDeviceSessions(user?.sessionId || '', undefined, true);
-                            // Refresh device sessions list
-                            await loadAllDeviceSessions();
-                            toast.success('Signed out from all other devices successfully!');
-                        } catch (error) {
-                            console.error('Logout all devices failed:', error);
-                            toast.error('There was a problem signing out from other devices. Please try again.');
-                        } finally {
-                            setLoggingOutAllDevices(false);
-                        }
-                    },
-                },
-            ],
-            { cancelable: true }
+            async () => {
+                setLoggingOutAllDevices(true);
+                try {
+                    await oxyServices?.logoutAllDeviceSessions(user?.sessionId || '', undefined, true);
+                    // Refresh device sessions list
+                    await loadAllDeviceSessions();
+                    toast.success('Signed out from all other devices successfully!');
+                } catch (error) {
+                    console.error('Logout all devices failed:', error);
+                    toast.error('There was a problem signing out from other devices. Please try again.');
+                } finally {
+                    setLoggingOutAllDevices(false);
+                }
+            }
         );
     };
 
@@ -432,7 +390,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                     </TouchableOpacity>
                                                     <TouchableOpacity
                                                         style={styles.removeButton}
-                                                        onPress={() => handleRemoveSession(sessionWithUser.sessionId)}
+                                                        onPress={() => handleRemoveSession(sessionWithUser.sessionId, displayName)}
                                                         disabled={isSwitching || isRemoving}
                                                     >
                                                         {isRemoving ? (

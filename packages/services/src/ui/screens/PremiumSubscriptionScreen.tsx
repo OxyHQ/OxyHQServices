@@ -15,6 +15,7 @@ import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
+import { confirmAction } from '../utils/confirmAction';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
 
@@ -443,28 +444,20 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     };
 
     const handleCancelSubscription = () => {
-        Alert.alert(
-            'Cancel Subscription',
+        confirmAction(
             'Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your current billing period.',
-            [
-                { text: 'Keep Subscription', style: 'cancel' },
-                {
-                    text: 'Cancel Subscription',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            // Mock cancellation
-                            setSubscription(prev => prev ? {
-                                ...prev,
-                                cancelAtPeriodEnd: true
-                            } : null);
-                            toast.success('Subscription will be canceled at the end of the billing period');
-                        } catch (error) {
-                            toast.error('Failed to cancel subscription');
-                        }
-                    }
+            async () => {
+                try {
+                    // Mock cancellation
+                    setSubscription(prev => prev ? {
+                        ...prev,
+                        cancelAtPeriodEnd: true
+                    } : null);
+                    toast.success('Subscription will be canceled at the end of the billing period');
+                } catch (error) {
+                    toast.error('Failed to cancel subscription');
                 }
-            ]
+            }
         );
     };
 
@@ -543,30 +536,22 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
     const handleFeatureUnsubscribe = async (featureId: string) => {
         const feature = individualFeatures.find(f => f.id === featureId);
-        Alert.alert(
-            'Unsubscribe Feature',
+        confirmAction(
             `Are you sure you want to unsubscribe from ${feature?.name}?`,
-            [
-                { text: 'Keep Feature', style: 'cancel' },
-                {
-                    text: 'Unsubscribe',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            setIndividualFeatures(prev =>
-                                prev.map(f =>
-                                    f.id === featureId
-                                        ? { ...f, isSubscribed: false }
-                                        : f
-                                )
-                            );
-                            toast.success(`Unsubscribed from ${feature?.name}`);
-                        } catch (error) {
-                            toast.error('Failed to unsubscribe from feature');
-                        }
-                    }
+            async () => {
+                try {
+                    setIndividualFeatures(prev =>
+                        prev.map(f =>
+                            f.id === featureId
+                                ? { ...f, isSubscribed: false }
+                                : f
+                        )
+                    );
+                    toast.success(`Unsubscribed from ${feature?.name}`);
+                } catch (error) {
+                    toast.error('Failed to unsubscribe from feature');
                 }
-            ]
+            }
         );
     };
 

@@ -16,6 +16,7 @@ import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { packageInfo } from '../../constants/version';
 import { toast } from '../../lib/sonner';
+import { confirmAction } from '../utils/confirmAction';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import OxyServicesLogo from '../../assets/icons/OxyServices';
@@ -202,13 +203,9 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
 
             // Show results in an alert and copy to clipboard
             const report = checks.join('\n');
-            Alert.alert(
-                'System Check Results',
-                `Check completed. Results copied to clipboard.\n\nSummary: ${errorCount} errors, ${warningCount} warnings`,
-                [
-                    { text: 'View Full Report', onPress: () => copyToClipboard(report, 'System check report') },
-                    { text: 'OK', style: 'default' }
-                ]
+            confirmAction(
+                `Check completed. Results copied to clipboard.\n\nSummary: ${errorCount} errors, ${warningCount} warnings.\n\nCopy full report to clipboard?`,
+                () => copyToClipboard(report, 'System check report')
             );
 
         } catch (error) {
