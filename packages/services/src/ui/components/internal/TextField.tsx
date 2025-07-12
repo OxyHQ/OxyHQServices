@@ -34,6 +34,7 @@ export interface TextFieldProps extends Omit<TextInputProps, 'style'> {
     onBlur?: () => void;
     onChangeText?: (text: string) => void;
     testID?: string;
+    validMessage?: string;
 }
 
 const TextField = forwardRef<TextInput, TextFieldProps>(({
@@ -57,6 +58,7 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
     testID,
     secureTextEntry,
     value = '',
+    validMessage,
     ...textInputProps
 }, ref) => {
     const [isFocused, setIsFocused] = useState(false);
@@ -554,6 +556,13 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                     ]}>
                         {error}
                     </Text>
+                </View>
+            )}
+            {/* Valid Message */}
+            {!error && validMessage && (
+                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 6 }}>
+                    <Ionicons name="checkmark-circle" size={16} color={colors?.success || '#2E7D32'} />
+                    <Text style={{ fontSize: 13, fontWeight: '500', color: colors?.success || '#2E7D32' }}>{validMessage}</Text>
                 </View>
             )}
         </View>

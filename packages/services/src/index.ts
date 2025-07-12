@@ -29,9 +29,7 @@ import {
   useFollow,
   ProfileScreen,
   OxyRouter,
-  store,
-  type RootState,
-  type AppDispatch,
+  // Remove store, RootState, AppDispatch exports
 } from './ui';
 
 // ------------- Type Imports -------------
@@ -68,9 +66,7 @@ export {
   useFollow,
   ProfileScreen,
   OxyRouter,
-  store,
-  type RootState,
-  type AppDispatch,
+  // Remove store, RootState, AppDispatch exports
 };
 
 // ------------- Type Exports -------------

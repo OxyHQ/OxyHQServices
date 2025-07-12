@@ -84,11 +84,18 @@ const styles = StyleSheet.create({
         backgroundColor: '#F5F5F5',
         textAlign: 'center',
         marginHorizontal: 2,
-        shadowColor: '#000',
-        shadowOpacity: 0.04,
-        shadowOffset: { width: 0, height: 1 },
-        shadowRadius: 4,
-        elevation: 1,
+        ...Platform.select({
+            web: {
+                boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+            },
+            default: {
+                shadowColor: '#000',
+                shadowOpacity: 0.04,
+                shadowOffset: { width: 0, height: 1 },
+                shadowRadius: 4,
+                elevation: 1,
+            }
+        }),
     },
 });
 

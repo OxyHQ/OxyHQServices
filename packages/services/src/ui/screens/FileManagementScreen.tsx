@@ -1580,6 +1580,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     shadowOpacity: themeStyles.isDarkTheme ? 0.3 : 0.1,
                     shadowRadius: 8,
                     elevation: 4,
+                    ...Platform.select({
+                        web: {
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                        },
+                        default: {},
+                    }),
                 }
             ]}>
                 <TouchableOpacity

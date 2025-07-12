@@ -21,10 +21,6 @@ export {
   OxyContextProviderProps
 } from './context/OxyContext';
 
-// Redux store exports
-export { store } from './store';
-export type { RootState, AppDispatch } from './store';
-
 // Export styles
 export { fontFamilies, fontStyles } from './styles/fonts';
 

@@ -127,7 +127,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
 
     // Update snap points when the screen changes
     useEffect(() => {
-        if (routes[currentScreen]) {
+        if (routes[currentScreen] && typeof adjustSnapPoints === 'function') {
             adjustSnapPoints(routes[currentScreen].snapPoints);
         }
     }, [currentScreen, adjustSnapPoints]);

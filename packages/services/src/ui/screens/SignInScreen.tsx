@@ -20,7 +20,6 @@ import { useOxy } from '../context/OxyContext';
 import { fontFamilies, useThemeColors, createCommonStyles } from '../styles';
 import OxyLogo from '../components/OxyLogo';
 import Avatar from '../components/Avatar';
-import { BottomSheetScrollView } from '../components/bottomSheet';
 import { Ionicons } from '@expo/vector-icons';
 import HighFive from '../../assets/illustrations/HighFive';
 import { toast } from '../../lib/sonner';
@@ -529,6 +528,17 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         borderRadius: 12,
         marginTop: 8,
         gap: 8,
+    },
+    belowInputMessage: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 4,
+        marginBottom: 0,
+        gap: 6,
+    },
+    belowInputText: {
+        fontSize: 13,
+        fontWeight: '500',
     },
     validationErrorCard: {
         flexDirection: 'row',

@@ -239,15 +239,19 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         paddingHorizontal: 32,
         borderRadius: 16,
         marginVertical: 8,
-        shadowOffset: {
-            width: 0,
-            height: 4,
-        },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 6,
         gap: 8,
         width: '100%',
+        ...Platform.select({
+            web: {
+                boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
+            },
+            default: {
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.3,
+                shadowRadius: 8,
+                elevation: 6,
+            }
+        }),
     },
     buttonText: {
         color: '#FFFFFF',
@@ -271,13 +275,17 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         gap: 6,
         minWidth: 70,
         borderWidth: 1,
-        shadowOffset: {
-            width: 0,
-            height: 2,
-        },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2,
+        ...Platform.select({
+            web: {
+                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+            },
+            default: {
+                shadowOffset: { width: 0, height: 2 },
+                shadowOpacity: 0.1,
+                shadowRadius: 4,
+                elevation: 2,
+            }
+        }),
     },
     backButton: {
         backgroundColor: 'transparent',
@@ -310,11 +318,18 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         marginHorizontal: 6,
         borderWidth: 2,
         borderColor: '#fff',
-        shadowColor: colors.primary,
-        shadowOpacity: 0.08,
-        shadowOffset: { width: 0, height: 1 },
-        shadowRadius: 2,
-        elevation: 1,
+        ...Platform.select({
+            web: {
+                boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
+            },
+            default: {
+                shadowColor: colors.primary,
+                shadowOpacity: 0.08,
+                shadowOffset: { width: 0, height: 1 },
+                shadowRadius: 2,
+                elevation: 1,
+            }
+        }),
     },
     summaryContainer: {
         padding: 0,

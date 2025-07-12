@@ -1,7 +1,6 @@
 import { OxyServices } from '../../core';
 import { User } from '../../models/interfaces';
 import { ComponentType, ReactNode } from 'react';
-import { BottomSheetModalRef } from '../components/bottomSheet';
 
 /**
  * Base props for all screens in the Oxy UI system
@@ -33,7 +32,7 @@ export interface OxyRouterProps {
   onClose?: () => void;
   onAuthenticated?: (user: User) => void;
   theme: 'light' | 'dark';
-  adjustSnapPoints: (snapPoints: string[]) => void;
+  adjustSnapPoints?: (snapPoints: string[]) => void;
   navigationRef?: React.MutableRefObject<((screen: string, props?: Record<string, any>) => void) | null>;
   containerWidth?: number;
 }

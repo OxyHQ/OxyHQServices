@@ -39,5 +39,9 @@
     "user-management"
   ],
   "author": "OxyHQ",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "@amir-hossein-karimi/bottom-sheet": "^9.1.2",
+    "@gorhom/bottom-sheet": "^5.1.6"
+  }
 }

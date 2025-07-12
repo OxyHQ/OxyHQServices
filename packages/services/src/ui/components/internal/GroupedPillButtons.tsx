@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, TouchableOpacity, Text, ActivityIndicator, StyleSheet } from 'react-native';
+import { View, TouchableOpacity, Text, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 interface ButtonConfig {
@@ -32,13 +32,17 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
             gap: 6,
             minWidth: 70,
             borderWidth: 1,
-            shadowOffset: {
-                width: 0,
-                height: 2,
-            },
-            shadowOpacity: 0.1,
-            shadowRadius: 4,
-            elevation: 2,
+            ...Platform.select({
+                web: {
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                },
+                default: {
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.1,
+                    shadowRadius: 4,
+                    elevation: 2,
+                }
+            }),
         };
 
         // Determine border radius based on position

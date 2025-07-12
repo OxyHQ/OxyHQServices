@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, Animated, TouchableOpacity } from 'react-native';
+import React, { useRef, useCallback, useEffect } from 'react';
+import { View, Text, Animated, TouchableOpacity, TextInput, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
@@ -47,15 +47,34 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
     handleInputFocus,
     handleInputBlur,
     handlePasswordChange,
-    handleSignIn,
+    handleSignIn: parentHandleSignIn,
     isLoading,
     prevStep,
 }) => {
     const navigation = useNavigation();
+    const inputRef = useRef<TextInput>(null);
 
-    const navigate = (screen: string) => {
+    const navigate = useCallback((screen: string) => {
         navigation.navigate(screen);
-    };
+    }, [navigation]);
+
+    // Focus password input on error or when step becomes active
+    useEffect(() => {
+        if (errorMessage) {
+            setTimeout(() => {
+                inputRef.current?.focus();
+            }, 0);
+        }
+    }, [errorMessage]);
+
+    const handleSignIn = useCallback(() => {
+        if (!password || errorMessage) {
+            setTimeout(() => {
+                inputRef.current?.focus();
+            }, 0);
+        }
+        parentHandleSignIn();
+    }, [password, errorMessage, parentHandleSignIn]);
 
     return (
         <Animated.View style={[
@@ -100,6 +119,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                 { transform: [{ scale: inputScaleAnim }] }
             ]}>
                 <TextField
+                    ref={inputRef}
                     label="Password"
                     icon="lock-closed-outline"
                     value={password}
@@ -113,6 +133,8 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     colors={colors}
                     variant="filled"
                     error={errorMessage || undefined}
+                    onSubmitEditing={handleSignIn}
+                    autoFocus
                 />
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
                     <Text style={[styles.footerText, { color: colors.text }]}>Forgot your password? </Text>
@@ -146,6 +168,10 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     Your data is encrypted and secure
                 </Text>
             </View>
+            <StatusBar
+                barStyle={theme === 'dark' ? 'light-content' : 'dark-content' as ('light-content' | 'dark-content')}
+                backgroundColor={colors.background}
+            />
         </Animated.View>
     );
 };

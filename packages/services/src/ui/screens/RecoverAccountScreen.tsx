@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { View, Text, Animated, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, StatusBar } from 'react-native';
+import React, { useState, useRef, useCallback } from 'react';
+import { View, Text, Animated, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, StatusBar, TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TextField from '../components/internal/TextField';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
@@ -25,6 +25,15 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, t
     const slideAnim = useRef(new Animated.Value(0)).current;
     const colors = useThemeColors(theme);
     const styles = createStyles(colors);
+    const identifierRef = useRef<TextInput>(null);
+    const handleRequestWithFocus = () => {
+        if (!identifier) {
+            setTimeout(() => {
+                identifierRef.current?.focus();
+            }, 0);
+        }
+        handleRequest();
+    };
 
     const handleRequest = async () => {
         setErrorMessage('');
@@ -86,6 +95,7 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, t
                     {step === 'request' && (
                         <>
                             <TextField
+                                ref={identifierRef}
                                 label="Email or Username"
                                 icon="mail-outline"
                                 value={identifier}
@@ -96,6 +106,10 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, t
                                 variant="filled"
                                 error={errorMessage || undefined}
                                 editable={!isLoading}
+                                autoFocus
+                                testID="recover-identifier-input"
+                                validMessage={successMessage || undefined}
+                                onSubmitEditing={handleRequestWithFocus}
                             />
                             <GroupedPillButtons
                                 buttons={[
@@ -120,7 +134,6 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, t
                     )}
                     {step === 'code' && (
                         <>
-                            <Text style={[styles.successText, { color: colors.success, marginBottom: 12 }]}>{successMessage}</Text>
                             <PinInput
                                 value={code}
                                 onChange={setCode}
@@ -129,6 +142,12 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, t
                                 autoFocus
                                 colors={colors}
                             />
+                            {successMessage && (
+                                <View style={styles.belowInputMessage}>
+                                    <Ionicons name="checkmark-circle" size={16} color={colors.success} />
+                                    <Text style={[styles.belowInputText, { color: colors.success }]}>{successMessage}</Text>
+                                </View>
+                            )}
                             {errorMessage ? (
                                 <Text style={[styles.successText, { color: colors.error, marginBottom: 12 }]}>{errorMessage}</Text>
                             ) : null}
@@ -219,6 +238,17 @@ const createStyles = (colors: any) => StyleSheet.create({
         marginBottom: 24,
         gap: 12,
         width: '100%',
+    },
+    belowInputMessage: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 4,
+        marginBottom: 0,
+        gap: 6,
+    },
+    belowInputText: {
+        fontSize: 13,
+        fontWeight: '500',
     },
     successText: {
         fontSize: 14,
