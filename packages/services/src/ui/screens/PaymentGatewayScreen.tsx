@@ -10,6 +10,10 @@ import {
     Animated,
     StatusBar,
     ScrollView as RNScrollView,
+    Dimensions,
+    Linking,
+    Clipboard,
+    useWindowDimensions,
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { fontFamilies, useThemeColors, createCommonStyles } from '../styles';
@@ -17,12 +21,15 @@ import OxyLogo from '../components/OxyLogo';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
 import TextField from '../components/internal/TextField';
 import { Ionicons } from '@expo/vector-icons';
+import { FAIRWalletIcon } from '../components/icon';
+import { toast } from 'sonner';
+import QRCode from 'react-native-qrcode-svg';
 
 // Restrict payment methods to Card, Oxy Pay, and FairCoin (QR)
 const PAYMENT_METHODS = [
     { key: 'card', label: 'Credit/Debit Card', icon: 'card-outline', description: 'Pay securely with your credit or debit card.' },
     { key: 'oxy', label: 'Oxy Pay', icon: 'wallet-outline', description: 'Use your Oxy Pay in-app balance.' },
-    { key: 'faircoin', label: 'FairCoin (Scan QR)', icon: 'qr-code-outline', description: 'Pay with FairCoin by scanning a QR code.' },
+    { key: 'faircoin', label: 'FAIRWallet', icon: 'qr-code-outline', description: 'Pay with FairCoin by scanning a QR code.' },
 ];
 
 // Add PaymentItem type
@@ -251,6 +258,23 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
         );
     }
 
+    // Example FairCoin address (replace with real one)
+    const faircoinAddress = 'f1abc1234FAIRCOINADDRESS';
+    const { width: windowWidth } = useWindowDimensions();
+    const isMobile = windowWidth < 600;
+    const qrSize = !isMobile
+        ? Math.min(windowWidth * 0.3, 220)
+        : Math.min(windowWidth * 0.8, 300);
+
+    const handleCopyAddress = () => {
+        Clipboard.setString(faircoinAddress);
+        toast('Address copied to clipboard!');
+    };
+    const handleOpenFairWallet = () => {
+        const url = `fairwallet://pay?address=${faircoinAddress}`;
+        Linking.openURL(url);
+    };
+
     // Helper for dynamic styles
     const getStepIndicatorStyle = (active: boolean) => [
         styles.stepIndicator,
@@ -312,19 +336,11 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
         </View>
     );
 
-    // Amount pill
-    const AmountPill = () => (
-        <View style={styles.amountPill}>
-            <Text style={styles.amountPillText}>{currencySymbol} {amount}</Text>
-        </View>
-    );
-
     // Product/Item summary card for step 1
     const renderItemSummary = () => {
         if (paymentItems && paymentItems.length > 0) {
             return (
                 <Card style={{ marginBottom: 10 }}>
-                    <Text style={styles.stepTitle}>Order Summary</Text>
                     {paymentItems.map((item, idx) => (
                         <View key={idx} style={{ marginBottom: 8 }}>
                             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -351,7 +367,6 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
         } else if (description) {
             return (
                 <Card style={{ marginBottom: 10 }}>
-                    <Text style={styles.stepTitle}>Payment For</Text>
                     <Text style={{ color: colors.text }}>{description}</Text>
                     <View style={{ borderTopWidth: 1, borderColor: colors.border, marginTop: 8, paddingTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                         <Text style={{ fontWeight: '700', color: colors.text }}>Total</Text>
@@ -373,8 +388,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
             ]
         }]}
         >
-            <Card style={{ marginBottom: 10, padding: 24, borderRadius: 18, shadowOpacity: 0.12, elevation: 4 }}>
-                <Text style={[styles.stepTitle, { marginBottom: 8 }]}>Order Summary</Text>
+            <Card>
                 <Text style={{ color: colors.secondaryText, fontSize: 15, marginBottom: 16 }}>You're about to pay for the following:</Text>
                 {paymentItems && paymentItems.length > 0 ? paymentItems.map((item, idx) => (
                     <View key={idx} style={{ marginBottom: 12, flexDirection: 'row', alignItems: 'flex-start' }}>
@@ -431,7 +445,6 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
             ]
         }]}
         >
-            <AmountPill />
             <Card>
                 <View style={styles.circleListContainer}>
                     {PAYMENT_METHODS.map(method => {
@@ -444,11 +457,15 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
                                 style={[styles.circleMethod, isSelected && styles.circleMethodSelected]}
                             >
                                 <View style={styles.circleIconWrapper}>
-                                    <Ionicons
-                                        name={method.icon as any}
-                                        size={36}
-                                        color={isSelected ? colors.primary : colors.text}
-                                    />
+                                    {method.key === 'faircoin' ? (
+                                        <FAIRWalletIcon size={28} />
+                                    ) : (
+                                        <Ionicons
+                                            name={method.icon as any}
+                                            size={28}
+                                            color={isSelected ? colors.primary : colors.text}
+                                        />
+                                    )}
                                     {isSelected && (
                                         <View style={styles.circleCheckOverlay}>
                                             <Ionicons name="checkmark-circle" size={28} color={colors.primary} />
@@ -456,7 +473,6 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
                                     )}
                                 </View>
                                 <Text style={[styles.circleLabel, isSelected && styles.circleLabelSelected]}>{method.label}</Text>
-                                <Text style={styles.circleDescription}>{method.description}</Text>
                             </TouchableOpacity>
                         );
                     })}
@@ -492,7 +508,9 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
             ]
         }]}
         >
-            <Card>
+            <Card
+                style={paymentMethod === 'faircoin' ? { backgroundColor: '#f6fff0', paddingVertical: 24, paddingHorizontal: 0 } : undefined}
+            >
                 {paymentMethod === 'card' && (
                     <>
                         <View style={styles.cardRowInfo}>
@@ -537,12 +555,35 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
                     </View>
                 )}
                 {paymentMethod === 'faircoin' && (
-                    <View style={styles.faircoinContainer}>
-                        <Ionicons name="qr-code-outline" size={48} color={colors.primary} style={styles.faircoinIcon} />
-                        <Text style={styles.faircoinTitle}>Scan this QR code with your FairCoin wallet app</Text>
-                        <View style={styles.faircoinQRBox}>
-                            <Text style={styles.faircoinQRText}>[QR CODE]</Text>
-                        </View>
+                    <View style={{ alignItems: 'center', width: '100%' }}>
+                        <FAIRWalletIcon size={64} style={[styles.faircoinIcon, { shadowColor: '#1b1f0a', shadowOpacity: 0.18, shadowRadius: 12, elevation: 6, marginBottom: 12 }]} />
+                        <Text style={{ fontFamily: fontFamilies.phuduBold, fontWeight: 'bold', fontSize: 28, color: '#1b1f0a', marginBottom: 2, textAlign: 'center', letterSpacing: 0.5 }}>FAIRWallet</Text>
+                        <Text style={{ color: '#1b1f0a', fontWeight: '700', fontSize: 17, marginBottom: 18, textAlign: 'center', letterSpacing: 0.2 }}>Pay with FairCoin</Text>
+                        {!isMobile ? (
+                            <>
+                                <Text style={{ color: '#1b1f0a', fontWeight: '600', fontSize: 15, marginBottom: 8 }}>Scan to Pay</Text>
+                                <View style={[styles.faircoinQRBox, { width: qrSize, height: qrSize, borderColor: '#9ffb50', borderWidth: 3, position: 'relative', backgroundColor: '#fff', boxShadow: '0 2px 12px #9ffb5040', justifyContent: 'center', alignItems: 'center' }]}>
+                                    <QRCode value={faircoinAddress} size={qrSize - 32} />
+                                    <View style={{ position: 'absolute', bottom: 8, right: 8 }}>
+                                        <FAIRWalletIcon size={28} />
+                                    </View>
+                                </View>
+                            </>
+                        ) : (
+                            <>
+                                <Text style={styles.faircoinTitle}>Use the options below to pay with FAIRWallet</Text>
+                                <Text style={styles.faircoinAddress}>{faircoinAddress}</Text>
+                                <TouchableOpacity style={[styles.faircoinButton, { backgroundColor: '#9ffb50', borderRadius: 18, marginTop: 12, width: '90%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]} onPress={handleOpenFairWallet}>
+                                    <FAIRWalletIcon size={20} style={{ marginRight: 8 }} />
+                                    <Text style={[styles.faircoinButtonText, { color: '#1b1f0a', fontWeight: 'bold', fontSize: 16 }]}>Open in FAIRWallet</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={[styles.faircoinButton, { backgroundColor: '#9ffb50', borderRadius: 18, marginTop: 10, width: '90%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]} onPress={handleCopyAddress}>
+                                    <FAIRWalletIcon size={20} style={{ marginRight: 8 }} />
+                                    <Text style={[styles.faircoinButtonText, { color: '#1b1f0a', fontWeight: 'bold', fontSize: 16 }]}>Copy Address</Text>
+                                </TouchableOpacity>
+                            </>
+                        )}
+                        <View style={{ height: 18 }} />
                         <Text style={styles.faircoinWaiting}>Waiting for payment...</Text>
                         <Text style={styles.faircoinPlaceholder}>(This is a placeholder. Integrate with a QR code generator for production.)</Text>
                     </View>
@@ -581,7 +622,6 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = ({
         }]}
         >
             <Card>
-                <Text style={styles.stepTitle}>Review Payment</Text>
                 <View style={styles.reviewSecureRow}>
                     <Ionicons name="shield-checkmark" size={20} color={colors.success || '#4BB543'} style={styles.reviewSecureIcon} />
                     <Text style={styles.reviewSecureText}>Secure payment</Text>
@@ -772,26 +812,6 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         width: '100%',
         alignSelf: 'center',
     },
-    amountPill: {
-        alignSelf: 'center',
-        backgroundColor: colors.primary + '22',
-        borderRadius: 40,
-        paddingHorizontal: 18,
-        paddingVertical: 8,
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 8,
-    },
-    amountPillText: {
-        fontFamily: fontFamilies.phuduBold,
-        fontSize: 34,
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        color: colors.primary,
-        letterSpacing: -1,
-        marginRight: 6,
-        textAlign: 'center',
-        width: '100%',
-    },
     paymentMethodButton: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -836,17 +856,6 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         fontSize: 18,
         color: 'red',
         marginBottom: 24,
-    },
-    stepTitle: {
-        fontFamily: fontFamilies.phuduBold,
-        fontSize: 24,
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        color: colors.text,
-        marginBottom: 22,
-        marginTop: 6,
-        letterSpacing: -0.5,
-        textAlign: 'center',
-        width: '100%',
     },
     methodListContainer: {
         width: '100%',
@@ -1074,21 +1083,18 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
     },
     circleListContainer: {
         flexDirection: 'row',
-        flexWrap: 'wrap',
+        flexWrap: 'nowrap',
         justifyContent: 'center',
         alignItems: 'flex-start',
-        gap: 22,
         paddingHorizontal: 4,
         width: '100%',
         marginBottom: 0,
     },
     circleMethod: {
         alignItems: 'center',
-        marginHorizontal: 8,
-        width: 112,
-        flexGrow: 1,
-        flexBasis: 112,
-        maxWidth: 140,
+        marginHorizontal: 0,
+        flex: 1,
+        minWidth: 62,
         paddingVertical: 2,
         paddingHorizontal: 2,
     },
@@ -1096,15 +1102,15 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         // No extra margin, but highlight below
     },
     circleIconWrapper: {
-        width: 76,
-        height: 76,
-        borderRadius: 38,
+        width: 48, // restored padding
+        height: 48, // restored padding
+        borderRadius: 24, // half of width/height
         backgroundColor: '#fff',
         borderWidth: 2,
         borderColor: colors.border,
         alignItems: 'center',
         justifyContent: 'center',
-        marginBottom: 12,
+        marginBottom: 8, // spacing below icon
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.07,
@@ -1145,6 +1151,29 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    faircoinButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        alignSelf: 'center',
+        backgroundColor: colors.primary + '11',
+        borderRadius: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        marginTop: 6,
+        marginBottom: 2,
+    },
+    faircoinButtonText: {
+        color: colors.primary,
+        fontWeight: '600',
+        fontSize: 15,
+    },
+    faircoinAddress: {
+        color: colors.secondaryText,
+        fontSize: 13,
+        textAlign: 'center',
+        marginTop: 6,
+        marginBottom: 2,
     },
 });
 
