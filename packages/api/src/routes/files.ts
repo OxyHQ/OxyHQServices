@@ -2,6 +2,7 @@ import { Router, Request, Response, RequestHandler } from "express";
 import mongoose from 'mongoose';
 import { authMiddleware } from '../middleware/auth';
 import { upload, writeFile, readFile, deleteFile, findFiles, fileExists } from '../utils/mongoose-gridfs';
+import express from 'express';
 
 interface GridFSFile {
   _id: mongoose.Types.ObjectId;
@@ -33,58 +34,42 @@ router.get("/data/:ids", getFileDataHandler);
 router.use(authMiddleware);
 
 // Protected routes below
-router.post("/upload", ((req: AuthenticatedRequest, res: Response) => {
-  // Cast req and res to any to bypass type conflicts between express and multer
-  upload(req as any, res as any, async (err) => {
-    if (err) {
-      console.error("Multer error:", err);
-      return res.status(400).json({ message: "File upload error", error: err.message });
+// Remove the old /files/upload route and all FormData/multer logic.
+router.post('/upload-raw', express.raw({ type: '*/*', limit: '50mb' }), async (req: Request, res: Response) => {
+  try {
+    const fileName = decodeURIComponent(req.header('X-File-Name') || 'upload.bin');
+    const userId = req.header('X-User-Id');
+    const mimeType = req.header('Content-Type') || 'application/octet-stream';
+    const user = (req as any).user;
+
+    if (!userId) return res.status(400).json({ message: 'Missing userId' });
+    if (!user?._id || user._id.toString() !== userId) {
+      return res.status(403).json({ message: "Unauthorized" });
     }
 
-    try {
-      if (!req.user?._id) {
-        return res.status(401).json({ message: "Authentication required" });
+    // Save to GridFS or your storage
+    const fileData = await writeFile(req.body, {
+      filename: fileName,
+      contentType: mimeType,
+      metadata: {
+        userID: userId,
+        originalname: fileName,
+        size: req.body.length,
+        uploadDate: new Date()
       }
+    }) as GridFSFile;
 
-      if (!req.files || !Array.isArray(req.files) || req.files.length === 0) {
-        return res.status(400).json({ message: "No files were uploaded" });
-      }
-
-      const uploadedFiles = await Promise.all(req.files.map(async (file) => {
-        if (!file.originalname || !file.mimetype || !file.size) {
-          throw new Error(`Invalid file information: ${JSON.stringify(file)}`);
-        }
-        
-        const fileData = await writeFile(file.buffer, {
-          filename: file.originalname,
-          contentType: file.mimetype,
-          metadata: {
-            userID: req.user!._id,
-            originalname: file.originalname,
-            size: file.size,
-            uploadDate: new Date()
-          }
-        }) as GridFSFile;
-
-        return {
-          _id: fileData._id,
-          filename: fileData.metadata?.originalname || fileData.filename,
-          originalname: file.originalname,
-          size: file.size,
-          mimetype: file.mimetype
-        };
-      }));
-
-      res.json({ files: uploadedFiles });
-    } catch (error: any) {
-      console.error('Upload error:', error);
-      res.status(500).json({ 
-        message: "Error uploading files",
-        error: error?.message || 'Unknown error occurred'
-      });
-    }
-  });
-}) as RequestHandler);
+    res.json({
+      _id: fileData._id,
+      filename: fileData.metadata?.originalname || fileData.filename,
+      size: req.body.length,
+      mimetype: mimeType
+    });
+  } catch (err: any) {
+    console.error('Raw upload error:', err);
+    res.status(500).json({ message: 'Upload failed', error: err.message });
+  }
+});
 
 router.get("/list/:userID", (async (req: AuthenticatedRequest, res: Response) => {
   try {

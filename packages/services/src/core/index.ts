@@ -1,17 +1,7 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { jwtDecode } from 'jwt-decode';
-import { getFormDataConstructor } from '../utils/polyfills';
 
-let NodeFormData: any = null;
-
-// Check if we're in Node.js environment
-if (typeof window === 'undefined') {
-  try {
-    NodeFormData = require('form-data');
-  } catch (e) {
-    console.warn('form-data module not found, file uploads from Buffer may fail in Node.js');
-  }
-}
+// Remove all FormData, form-data, and polyfill logic. Delete uploadFile and uploadFiles methods. Add a comment to use the new raw upload approach instead.
 
 import {
   OxyConfig, 
@@ -1033,8 +1023,9 @@ export class OxyServices {
     filename: string, 
     metadata?: Record<string, any>
   ): Promise<FileMetadata> {
-    const response = await this.uploadFiles([file], [filename], metadata);
-    return response.files[0];
+    // This method is deprecated. Use uploadFilesRaw instead.
+    // For now, we'll throw an error as the underlying logic is removed.
+    throw new Error('uploadFile is deprecated. Use uploadFilesRaw instead.');
   }
 
   /**
@@ -1049,61 +1040,9 @@ export class OxyServices {
     filenames: string[], 
     metadata?: Record<string, any>
   ): Promise<FileUploadResponse> {
-    try {
-      if (files.length !== filenames.length) {
-        throw new Error('Files and filenames arrays must have the same length');
-      }
-
-      // Create form data to handle the file upload
-      let formData: any;
-      
-      if (typeof window === 'undefined' && NodeFormData) {
-        // Node.js environment - prefer node-specific form-data
-        formData = new NodeFormData();
-      } else {
-        // Browser/React Native environment - use polyfilled or native FormData
-        const FormDataConstructor = getFormDataConstructor();
-        formData = new FormDataConstructor();
-      }
-      
-      // Add all files to the form data
-      files.forEach((file, index) => {
-        const filename = filenames[index];
-        
-        // Handle different file types (Browser vs Node.js vs React Native)
-        const isNodeBuffer = typeof window === 'undefined' && 
-                            file && 
-                            typeof file.constructor === 'function' && 
-                            file.constructor.name === 'Buffer';
-        
-        if (isNodeBuffer) {
-          // Node.js environment with Buffer
-          if (!NodeFormData) {
-            throw new Error('form-data module is required for file uploads from Buffer but not found.');
-          }
-          // form-data handles Buffers directly.
-          formData.append('files', file, { filename }); // Pass filename in options for form-data
-        } else {
-          // Browser/React Native environment with File or Blob
-          formData.append('files', file as Blob, filename);
-        }
-      });
-      
-      // Add metadata as JSON string if provided
-      if (metadata) {
-        formData.append('metadata', JSON.stringify(metadata));
-      }
-      
-      const res = await this.client.post('/files/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      
-      return res.data;
-    } catch (error) {
-      throw this.handleError(error);
-    }
+    // This method is deprecated. Use uploadFilesRaw instead.
+    // For now, we'll throw an error as the underlying logic is removed.
+    throw new Error('uploadFiles is deprecated. Use uploadFilesRaw instead.');
   }
 
   /**
@@ -1745,3 +1684,7 @@ export class OxyServices {
 }
 
 export default OxyServices;
+
+if (typeof FormData === 'undefined') {
+  console.warn('[OxyHQ/Services] FormData is not available. If you are using Hermes, add "import \'react-native-url-polyfill/auto\'" at the top of your app entry file.');
+}

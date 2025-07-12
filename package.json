@@ -42,6 +42,7 @@
   "license": "MIT",
   "dependencies": {
     "@amir-hossein-karimi/bottom-sheet": "^9.1.2",
-    "@gorhom/bottom-sheet": "^5.1.6"
+    "@gorhom/bottom-sheet": "^5.1.6",
+    "react-native-url-polyfill": "^2.0.0"
   }
 }

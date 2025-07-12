@@ -781,7 +781,7 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
             slideAnim={slideAnim}
             colors={colors}
             formData={formData}
-            passwordVisibility={passwordVisibility.password}
+            passwordVisibility={passwordVisibility}
             updateField={updateFieldString}
             validatePassword={validatePassword}
             validatePasswordsMatch={validatePasswordsMatchNoArgs}
@@ -791,7 +791,7 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
             togglePasswordVisibility={togglePasswordVisibilityNoArgs}
             PASSWORD_MIN_LENGTH={PASSWORD_MIN_LENGTH}
         />
-    ), [styles, fadeAnim, slideAnim, colors, formData, passwordVisibility.password, updateFieldString, validatePassword, validatePasswordsMatchNoArgs, prevStep, handleSecurityNext, setErrorMessage, togglePasswordVisibilityNoArgs, PASSWORD_MIN_LENGTH]);
+    ), [styles, fadeAnim, slideAnim, colors, formData, passwordVisibility, updateFieldString, validatePassword, validatePasswordsMatchNoArgs, prevStep, handleSecurityNext, setErrorMessage, togglePasswordVisibilityNoArgs, PASSWORD_MIN_LENGTH]);
 
     const renderSummaryStep = useMemo(() => (
         <SignUpSummaryStep

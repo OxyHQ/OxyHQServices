@@ -23,6 +23,7 @@ import KarmaFAQScreen from '../screens/karma/KarmaFAQScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import FileManagementScreen from '../screens/FileManagementScreen';
 import RecoverAccountScreen from '../screens/RecoverAccountScreen';
+import PaymentGatewayScreen from '../screens/PaymentGatewayScreen';
 
 // Import types
 import { OxyRouterProps, RouteConfig } from './types';
@@ -108,6 +109,10 @@ const routes: Record<string, RouteConfig> = {
     FileManagement: {
         component: FileManagementScreen,
         snapPoints: ['70%', '100%'],
+    },
+    PaymentGateway: {
+        component: PaymentGatewayScreen,
+        snapPoints: ['60%', '90%'],
     },
 };
 

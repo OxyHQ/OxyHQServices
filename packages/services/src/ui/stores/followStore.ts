@@ -13,16 +13,16 @@ interface FollowState {
   toggleFollowUser: (userId: string, oxyServices: OxyServices, isCurrentlyFollowing: boolean) => Promise<void>;
 }
 
-export const useFollowStore = create<FollowState>((set, get) => ({
+export const useFollowStore = create<FollowState>((set: any, get: any) => ({
   followingUsers: {},
   loadingUsers: {},
   fetchingUsers: {},
   errors: {},
-  setFollowingStatus: (userId, isFollowing) => set((state) => ({
+  setFollowingStatus: (userId: string, isFollowing: boolean) => set((state: FollowState) => ({
     followingUsers: { ...state.followingUsers, [userId]: isFollowing },
     errors: { ...state.errors, [userId]: null },
   })),
-  clearFollowError: (userId) => set((state) => ({
+  clearFollowError: (userId: string) => set((state: FollowState) => ({
     errors: { ...state.errors, [userId]: null },
   })),
   resetFollowState: () => set({
@@ -31,27 +31,27 @@ export const useFollowStore = create<FollowState>((set, get) => ({
     fetchingUsers: {},
     errors: {},
   }),
-  fetchFollowStatus: async (userId, oxyServices) => {
-    set((state) => ({
+  fetchFollowStatus: async (userId: string, oxyServices: OxyServices) => {
+    set((state: FollowState) => ({
       fetchingUsers: { ...state.fetchingUsers, [userId]: true },
       errors: { ...state.errors, [userId]: null },
     }));
     try {
       const response = await oxyServices.getFollowStatus(userId);
-      set((state) => ({
+      set((state: FollowState) => ({
         followingUsers: { ...state.followingUsers, [userId]: response.isFollowing },
         fetchingUsers: { ...state.fetchingUsers, [userId]: false },
         errors: { ...state.errors, [userId]: null },
       }));
     } catch (error: any) {
-      set((state) => ({
+      set((state: FollowState) => ({
         fetchingUsers: { ...state.fetchingUsers, [userId]: false },
         errors: { ...state.errors, [userId]: error?.message || 'Failed to fetch follow status' },
       }));
     }
   },
-  toggleFollowUser: async (userId, oxyServices, isCurrentlyFollowing) => {
-    set((state) => ({
+  toggleFollowUser: async (userId: string, oxyServices: OxyServices, isCurrentlyFollowing: boolean) => {
+    set((state: FollowState) => ({
       loadingUsers: { ...state.loadingUsers, [userId]: true },
       errors: { ...state.errors, [userId]: null },
     }));
@@ -65,13 +65,13 @@ export const useFollowStore = create<FollowState>((set, get) => ({
         response = await oxyServices.followUser(userId);
         newFollowState = true;
       }
-      set((state) => ({
+      set((state: FollowState) => ({
         followingUsers: { ...state.followingUsers, [userId]: newFollowState },
         loadingUsers: { ...state.loadingUsers, [userId]: false },
         errors: { ...state.errors, [userId]: null },
       }));
     } catch (error: any) {
-      set((state) => ({
+      set((state: FollowState) => ({
         loadingUsers: { ...state.loadingUsers, [userId]: false },
         errors: { ...state.errors, [userId]: error?.message || 'Failed to update follow status' },
       }));

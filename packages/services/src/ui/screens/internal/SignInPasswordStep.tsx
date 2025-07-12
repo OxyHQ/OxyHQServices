@@ -55,7 +55,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
     const inputRef = useRef<TextInput>(null);
 
     const navigate = useCallback((screen: string) => {
-        navigation.navigate(screen);
+        navigation.navigate(screen as never);
     }, [navigation]);
 
     // Focus password input on error or when step becomes active
@@ -96,7 +96,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                         uri={userProfile?.avatar}
                         name={userProfile?.displayName || userProfile?.name || username}
                         size={100}
-                        theme={theme}
+                        theme={theme as 'light' | 'dark'}
                         style={styles.modernUserAvatar}
                     />
                     <View style={[styles.statusIndicator, { backgroundColor: colors.primary }]} />
@@ -169,7 +169,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                 </Text>
             </View>
             <StatusBar
-                barStyle={theme === 'dark' ? 'light-content' : 'dark-content' as ('light-content' | 'dark-content')}
+                barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
                 backgroundColor={colors.background}
             />
         </Animated.View>

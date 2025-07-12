@@ -12,13 +12,13 @@ interface AuthState {
   logout: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) => void) => ({
   user: null,
   isAuthenticated: false,
   isLoading: false,
   error: null,
   loginStart: () => set({ isLoading: true, error: null }),
-  loginSuccess: (user) => set({ isLoading: false, isAuthenticated: true, user }),
-  loginFailure: (error) => set({ isLoading: false, error }),
+  loginSuccess: (user: User) => set({ isLoading: false, isAuthenticated: true, user }),
+  loginFailure: (error: string) => set({ isLoading: false, error }),
   logout: () => set({ user: null, isAuthenticated: false }),
 })); 

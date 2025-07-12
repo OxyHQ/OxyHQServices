@@ -9,7 +9,7 @@ interface SignUpSecurityStepProps {
     slideAnim: Animated.Value;
     colors: any;
     formData: any;
-    passwordVisibility: boolean;
+    passwordVisibility: { password: boolean; confirmPassword: boolean };
     updateField: (field: string, value: string) => void;
     validatePassword: (password: string) => boolean;
     validatePasswordsMatch: (password: string, confirmPassword: string) => boolean;

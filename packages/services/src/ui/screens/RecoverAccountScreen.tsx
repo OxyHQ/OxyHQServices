@@ -23,7 +23,7 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, t
     const [code, setCode] = useState('');
     const fadeAnim = useRef(new Animated.Value(1)).current;
     const slideAnim = useRef(new Animated.Value(0)).current;
-    const colors = useThemeColors(theme);
+    const colors = useThemeColors(theme as 'light' | 'dark');
     const styles = createStyles(colors);
     const identifierRef = useRef<TextInput>(null);
     const handleRequestWithFocus = () => {

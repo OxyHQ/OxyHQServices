@@ -24,6 +24,28 @@ interface FileManagementScreenProps extends BaseScreenProps {
     userId?: string;
 }
 
+// Add this helper function near the top (after imports):
+async function uploadFileRaw(file: File | Blob, userId: string) {
+    const fileName = (file as any).name || 'upload.bin';
+    const mimeType = (file as any).type || 'application/octet-stream';
+
+    const res = await fetch('/api/files/upload-raw', {
+        method: 'POST',
+        headers: {
+            'Content-Type': mimeType,
+            'X-File-Name': encodeURIComponent(fileName),
+            'X-User-Id': userId,
+        },
+        body: file,
+        credentials: 'include', // if you use cookies/session
+    });
+
+    if (!res.ok) {
+        throw new Error(await res.text());
+    }
+    return await res.json();
+}
+
 const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     onClose,
     theme,
@@ -225,75 +247,39 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     const processFileUploads = async (selectedFiles: File[]) => {
         if (selectedFiles.length === 0) return;
-
+        if (!targetUserId) return; // Guard clause to ensure userId is defined
         try {
-            // Show initial progress
             setUploadProgress({ current: 0, total: selectedFiles.length });
-
-            // Validate file sizes (example: 50MB limit per file)
             const maxSize = 50 * 1024 * 1024; // 50MB
             const oversizedFiles = selectedFiles.filter(file => file.size > maxSize);
-
             if (oversizedFiles.length > 0) {
                 const fileList = oversizedFiles.map(f => f.name).join('\n');
                 window.alert(`File Size Limit\n\nThe following files are too large (max 50MB):\n${fileList}`);
                 return;
             }
-
-            // Option 1: Bulk upload (faster, all-or-nothing) for 5 or fewer files
-            if (selectedFiles.length <= 5) {
-                const filenames = selectedFiles.map(f => f.name);
-                const response = await oxyServices.uploadFiles(
-                    selectedFiles,
-                    filenames,
-                    {
-                        userId: targetUserId,
-                        uploadDate: new Date().toISOString(),
-                    }
-                );
-
-                toast.success(`${response.files.length} file(s) uploaded successfully`);
-                // Small delay to ensure backend processing is complete
-                setTimeout(async () => {
-                    await loadFiles();
-                }, 500);
-            } else {
-                // Option 2: Individual uploads for better progress and error handling
-                let successCount = 0;
-                let failureCount = 0;
-                const errors: string[] = [];
-
-                for (let i = 0; i < selectedFiles.length; i++) {
-                    const file = selectedFiles[i];
-                    setUploadProgress({ current: i + 1, total: selectedFiles.length });
-
-                    try {
-                        await oxyServices.uploadFile(file, file.name, {
-                            userId: targetUserId,
-                            uploadDate: new Date().toISOString(),
-                        });
-                        successCount++;
-                    } catch (error: any) {
-                        failureCount++;
-                        errors.push(`${file.name}: ${error.message || 'Upload failed'}`);
-                    }
+            let successCount = 0;
+            let failureCount = 0;
+            const errors: string[] = [];
+            for (let i = 0; i < selectedFiles.length; i++) {
+                setUploadProgress({ current: i + 1, total: selectedFiles.length });
+                try {
+                    await uploadFileRaw(selectedFiles[i], targetUserId);
+                    successCount++;
+                } catch (error: any) {
+                    failureCount++;
+                    errors.push(`${selectedFiles[i].name}: ${error.message || 'Upload failed'}`);
                 }
-
-                // Show results summary
-                if (successCount > 0) {
-                    toast.success(`${successCount} file(s) uploaded successfully`);
-                }
-
-                if (failureCount > 0) {
-                    const errorMessage = `${failureCount} file(s) failed to upload${errors.length > 0 ? ':\n' + errors.slice(0, 3).join('\n') + (errors.length > 3 ? '\n...' : '') : ''}`;
-                    toast.error(errorMessage);
-                }
-
-                // Small delay to ensure backend processing is complete
-                setTimeout(async () => {
-                    await loadFiles();
-                }, 500);
             }
+            if (successCount > 0) {
+                toast.success(`${successCount} file(s) uploaded successfully`);
+            }
+            if (failureCount > 0) {
+                const errorMessage = `${failureCount} file(s) failed to upload${errors.length > 0 ? ':\n' + errors.slice(0, 3).join('\n') + (errors.length > 3 ? '\n...' : '') : ''}`;
+                toast.error(errorMessage);
+            }
+            setTimeout(async () => {
+                await loadFiles();
+            }, 500);
         } catch (error: any) {
             console.error('Upload error:', error);
             toast.error(error.message || 'Failed to upload files');

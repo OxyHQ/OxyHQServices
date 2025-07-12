@@ -104,8 +104,6 @@ This automatically provides sign-up, login, logout, refresh, and session managem
 
 If you encounter `ReferenceError: Property 'FormData' doesn't exist` when using Expo with Hermes engine:
 
-The library automatically includes polyfills for React Native environments that lack native FormData support. The `form-data` package is included as a dependency and will be used as a fallback when native FormData is not available.
-
 **For file uploads in React Native/Expo:**
 - The library handles this automatically - no additional setup required
 - File uploads will work with both native FormData (when available) and the polyfilled version
@@ -118,6 +116,22 @@ For React Native projects, you may need to install peer dependencies:
 ```bash
 npm install axios jwt-decode invariant
 ```
+
+## Important for React Native Hermes Users
+
+If you use this package in a React Native app with the Hermes engine, you must add the following import as the very first line of your app's entry file (e.g., App.js or index.js):
+
+```js
+import 'react-native-url-polyfill/auto';
+```
+
+This ensures that FormData and other web APIs are polyfilled before any dependencies are loaded. If you do not do this, you may see errors like:
+
+```
+ReferenceError: Property 'FormData' doesn't exist, js engine: hermes
+```
+
+---
 
 ## Development
 
