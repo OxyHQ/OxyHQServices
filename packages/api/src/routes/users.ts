@@ -30,7 +30,8 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
     if (!user) {
       return res.status(404).json({ message: 'User not found' });
     }
-    res.json(user);
+    const userObj = user.toObject({ virtuals: true });
+    res.json(userObj);
   } catch (error) {
     logger.error('Error fetching current user:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -93,8 +94,9 @@ router.get('/:userId', validateObjectId, async (req: Request, res: Response) => 
     const postsCount = 0;
     const karmaCount = 0;
 
+    const userObj = user.toObject({ virtuals: true });
     res.json({
-      ...user.toObject(),
+      ...userObj,
       stats: {
         followers: followersCount,
         following: followingCount,

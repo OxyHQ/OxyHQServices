@@ -399,7 +399,7 @@ router.post("/login", async (req: Request, res: Response) => {
         id: user._id,
         username: user.username,
         email: user.email,
-        name: user.name || {},
+        name: user.name && typeof user.toObject === 'function' ? user.toObject({ virtuals: true }).name : user.name || {},
         avatar: user.avatar,
         privacySettings: user.privacySettings
       }
@@ -668,7 +668,7 @@ router.post("/register", async (req: Request, res: Response) => {
         id: user._id,
         username: user.username,
         email: user.email,
-        name: user.name,
+        name: user.name && typeof user.toObject === 'function' ? user.toObject({ virtuals: true }).name : user.name || {},
         privacySettings: user.privacySettings
       }
     });
@@ -701,7 +701,7 @@ router.get("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
         id: req.user.id || req.user._id,
         username: req.user.username,
         email: req.user.email,
-        name: req.user.name || {},
+        name: req.user.name && typeof req.user.toObject === 'function' ? req.user.toObject({ virtuals: true }).name : req.user.name || {},
         avatar: req.user.avatar,
         privacySettings: req.user.privacySettings,
         description: req.user.description,

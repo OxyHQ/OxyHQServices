@@ -35,6 +35,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
     // Form state
     const [displayName, setDisplayName] = useState('');
+    const [lastName, setLastName] = useState('');
     const [username, setUsername] = useState('');
     const [email, setEmail] = useState('');
     const [bio, setBio] = useState('');
@@ -47,6 +48,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
     // Temporary input states for inline editing
     const [tempDisplayName, setTempDisplayName] = useState('');
+    const [tempLastName, setTempLastName] = useState('');
     const [tempUsername, setTempUsername] = useState('');
     const [tempEmail, setTempEmail] = useState('');
     const [tempBio, setTempBio] = useState('');
@@ -78,9 +80,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         if (user) {
             const userDisplayName = typeof user.name === 'string'
                 ? user.name
-                : user.name?.full || user.name?.first || '';
-
+                : user.name?.first || user.name?.full || '';
+            const userLastName = typeof user.name === 'object' ? user.name?.last || '' : '';
             setDisplayName(userDisplayName);
+            setLastName(userLastName);
             setUsername(user.username || '');
             setEmail(user.email || '');
             setBio(user.bio || '');
@@ -106,8 +109,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             };
 
             // Handle name field
-            if (displayName) {
-                updates.name = displayName;
+            if (displayName || lastName) {
+                updates.name = { first: displayName, last: lastName };
             }
 
             // Handle avatar
@@ -144,7 +147,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const startEditing = (type: string, currentValue: string) => {
         switch (type) {
             case 'displayName':
-                setTempDisplayName(currentValue);
+                setTempDisplayName(displayName);
+                setTempLastName(lastName);
                 break;
             case 'username':
                 setTempUsername(currentValue);
@@ -171,6 +175,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         switch (type) {
             case 'displayName':
                 setDisplayName(tempDisplayName);
+                setLastName(tempLastName);
                 break;
             case 'username':
                 setUsername(tempUsername);
@@ -225,6 +230,39 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     };
 
     const renderEditingField = (type: string) => {
+        if (type === 'displayName') {
+            return (
+                <View style={styles.editingFieldContainer}>
+                    <View style={styles.editingFieldContent}>
+                        <View style={[styles.newValueSection, { flexDirection: 'row', gap: 12 }]}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.editingFieldLabel}>First Name</Text>
+                                <TextInput
+                                    style={styles.editingFieldInput}
+                                    value={tempDisplayName}
+                                    onChangeText={setTempDisplayName}
+                                    placeholder="Enter your first name"
+                                    placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                                    autoFocus
+                                    selectionColor={themeStyles.primaryColor}
+                                />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.editingFieldLabel}>Last Name</Text>
+                                <TextInput
+                                    style={styles.editingFieldInput}
+                                    value={tempLastName}
+                                    onChangeText={setTempLastName}
+                                    placeholder="Enter your last name"
+                                    placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                                    selectionColor={themeStyles.primaryColor}
+                                />
+                            </View>
+                        </View>
+                    </View>
+                </View>
+            );
+        }
         const fieldConfig = {
             displayName: { label: 'Display Name', value: displayName, placeholder: 'Enter your display name', icon: 'person', color: '#007AFF', multiline: false, keyboardType: 'default' as const },
             username: { label: 'Username', value: username, placeholder: 'Choose a username', icon: 'at', color: '#5856D6', multiline: false, keyboardType: 'default' as const },

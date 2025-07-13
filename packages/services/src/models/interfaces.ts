@@ -14,7 +14,7 @@ export interface User {
   name?: {
     first?: string;
     last?: string;
-    full?: string;
+    full?: string; // virtual, not stored in DB, returned by API
     [key: string]: any;
   };
   bio?: string;
