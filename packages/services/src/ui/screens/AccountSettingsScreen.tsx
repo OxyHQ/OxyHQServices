@@ -19,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { fontFamilies } from '../styles/fonts';
 import { confirmAction } from '../utils/confirmAction';
+import { useAuthStore } from '../stores/authStore';
 
 const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -27,6 +28,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     navigate,
 }) => {
     const { user, oxyServices, isLoading: authLoading, isAuthenticated } = useOxy();
+    const updateUser = useAuthStore((state) => state.updateUser);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -118,7 +120,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 updates.avatar = { url: avatarUrl };
             }
 
-            await oxyServices.updateProfile(updates);
+            await updateUser(updates, oxyServices);
             toast.success('Profile updated successfully');
 
             animateSaveButton(1); // Scale back to normal
@@ -484,7 +486,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                             {renderField(
                                 'displayName',
                                 'Display Name',
-                                displayName,
+                                [displayName, lastName].filter(Boolean).join(' '), // Show full name
                                 'Add your display name',
                                 'person',
                                 '#007AFF',

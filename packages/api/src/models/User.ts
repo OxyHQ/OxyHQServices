@@ -59,6 +59,12 @@ export interface IUser extends Document {
   _id: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
+  links?: Array<{
+    title?: string;
+    description?: string;
+    image?: string;
+    link: string;
+  }>;
 }
 
 const UserSchema: Schema = new Schema(
@@ -88,14 +94,6 @@ const UserSchema: Schema = new Schema(
       default: null,
       select: false,
     },
-    bookmarks: [
-      {
-        type: Schema.Types.ObjectId,
-        ref: "Post",
-        default: [],
-        select: true,
-      },
-    ],
     following: [
       {
         type: Schema.Types.ObjectId,
@@ -158,6 +156,14 @@ const UserSchema: Schema = new Schema(
     location: { type: String },
     website: { type: String },
     pinnedPosts: [{ type: Schema.Types.ObjectId, ref: "Post", default: [] }],
+    links: [
+      {
+        title: { type: String },
+        description: { type: String },
+        image: { type: String },
+        link: { type: String, required: true },
+      }
+    ],
   },
   {
     timestamps: true,
@@ -168,10 +174,15 @@ const UserSchema: Schema = new Schema(
 
 // Remove transforms and rely on select options
 UserSchema.set("toJSON", {
+  virtuals: true,
   transform: function (doc, ret) {
     return ret;
   },
   versionKey: false,
+});
+
+UserSchema.set("toObject", {
+  virtuals: true,
 });
 
 // Add a save middleware to ensure password is included
@@ -189,21 +200,15 @@ UserSchema.pre("save", function (next) {
 UserSchema.index({ following: 1 });
 UserSchema.index({ followers: 1 });
 
-// Virtual field for post count
-UserSchema.virtual('postCount').get(async function() {
-  const Post = mongoose.model('Post');
-  const count = await Post.countDocuments({ userID: this._id });
-  return count;
-});
-
-// Pre-save middleware to update post count
-UserSchema.pre('save', async function(next) {
-  if (this.isModified('_count.posts')) {
-    const Post = mongoose.model('Post');
-    const count = await Post.countDocuments({ userID: this._id });
-    this.set('_count.posts', count);
+// Virtual for full name
+UserSchema.virtual('name.full').get(function() {
+  const name = this.name as { first?: string; last?: string } | undefined;
+  if (name && (name.first || name.last)) {
+    const first = typeof name.first === 'string' ? name.first : '';
+    const last = typeof name.last === 'string' ? name.last : '';
+    return [first, last].filter(Boolean).join(' ').trim();
   }
-  next();
+  return '';
 });
 
 export const User = mongoose.model<IUser>('User', UserSchema);

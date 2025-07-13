@@ -23,6 +23,12 @@ export interface User {
   website?: string;
   createdAt?: string;
   updatedAt?: string;
+  links?: Array<{
+    title?: string;
+    description?: string;
+    image?: string;
+    link: string;
+  }>;
   [key: string]: any;
 }
 
