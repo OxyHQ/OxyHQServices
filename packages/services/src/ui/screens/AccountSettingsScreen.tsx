@@ -42,7 +42,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const [email, setEmail] = useState('');
     const [bio, setBio] = useState('');
     const [location, setLocation] = useState('');
-    const [website, setWebsite] = useState('');
+    const [links, setLinks] = useState<string[]>([]);
     const [avatarUrl, setAvatarUrl] = useState('');
 
     // Editing states
@@ -55,7 +55,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const [tempEmail, setTempEmail] = useState('');
     const [tempBio, setTempBio] = useState('');
     const [tempLocation, setTempLocation] = useState('');
-    const [tempWebsite, setTempWebsite] = useState('');
+    const [tempLinks, setTempLinks] = useState<string[]>([]);
 
     // Memoize theme-related calculations to prevent unnecessary recalculations
     const themeStyles = useMemo(() => {
@@ -90,7 +90,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             setEmail(user.email || '');
             setBio(user.bio || '');
             setLocation(user.location || '');
-            setWebsite(user.website || '');
+            setLinks(
+                Array.isArray(user.links)
+                    ? user.links.map(l => typeof l === 'string' ? l : l.link).filter(Boolean)
+                    : user.website ? [user.website] : []
+            );
             setAvatarUrl(user.avatar?.url || '');
         }
     }, [user]);
@@ -107,7 +111,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 email,
                 bio,
                 location,
-                website,
+                links,
             };
 
             // Handle name field
@@ -164,8 +168,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             case 'location':
                 setTempLocation(currentValue);
                 break;
-            case 'website':
-                setTempWebsite(currentValue);
+            case 'links':
+                setTempLinks([...links]);
                 break;
         }
         setEditingField(type);
@@ -191,8 +195,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             case 'location':
                 setLocation(tempLocation);
                 break;
-            case 'website':
-                setWebsite(tempWebsite);
+            case 'links':
+                setLinks(tempLinks);
                 break;
         }
 
@@ -214,7 +218,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             email: 'Email',
             bio: 'Bio',
             location: 'Location',
-            website: 'Website'
+            links: 'Links'
         };
         return labels[type as keyof typeof labels] || 'Field';
     };
@@ -226,7 +230,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             email: { name: 'mail', color: '#FF9500' },
             bio: { name: 'document-text', color: '#34C759' },
             location: { name: 'location', color: '#FF3B30' },
-            website: { name: 'link', color: '#32D74B' }
+            links: { name: 'link', color: '#32D74B' }
         };
         return icons[type as keyof typeof icons] || { name: 'person', color: '#007AFF' };
     };
@@ -271,7 +275,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             email: { label: 'Email', value: email, placeholder: 'Enter your email address', icon: 'mail', color: '#FF9500', multiline: false, keyboardType: 'email-address' as const },
             bio: { label: 'Bio', value: bio, placeholder: 'Tell people about yourself...', icon: 'document-text', color: '#34C759', multiline: true, keyboardType: 'default' as const },
             location: { label: 'Location', value: location, placeholder: 'Enter your location', icon: 'location', color: '#FF3B30', multiline: false, keyboardType: 'default' as const },
-            website: { label: 'Website', value: website, placeholder: 'Enter your website URL', icon: 'link', color: '#32D74B', multiline: false, keyboardType: 'url' as const }
+            links: { label: 'Links', value: links.join(', '), placeholder: 'Enter your links (comma separated)', icon: 'link', color: '#32D74B', multiline: false, keyboardType: 'url' as const }
         };
 
         const config = fieldConfig[type as keyof typeof fieldConfig];
@@ -284,7 +288,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 case 'email': return tempEmail;
                 case 'bio': return tempBio;
                 case 'location': return tempLocation;
-                case 'website': return tempWebsite;
+                case 'links': return tempLinks.join(', ');
                 default: return '';
             }
         })();
@@ -296,7 +300,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 case 'email': setTempEmail(text); break;
                 case 'bio': setTempBio(text); break;
                 case 'location': setTempLocation(text); break;
-                case 'website': setTempWebsite(text); break;
+                case 'links': setTempLinks(text.split(',').map(s => s.trim()).filter(Boolean)); break;
             }
         };
 
@@ -554,10 +558,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                             )}
 
                             {renderField(
-                                'website',
-                                'Website',
-                                website,
-                                'Add your website',
+                                'links',
+                                'Links',
+                                links.join(', '),
+                                'Add your links',
                                 'link',
                                 '#32D74B',
                                 false,
