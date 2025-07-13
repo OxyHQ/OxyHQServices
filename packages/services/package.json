@@ -83,7 +83,8 @@
         "socket.io-client": "^4.8.1",
         "sonner": "^2.0.4",
         "sonner-native": "^0.20.0",
-        "zustand": "^5.0.6"
+        "zustand": "^5.0.6",
+        "react-native-qrcode-svg": "^6.3.0"
     },
     "devDependencies": {
         "@biomejs/biome": "^1.9.4",
@@ -123,7 +124,6 @@
         "react": ">=18.3.0",
         "react-native": ">=0.76.0",
         "react-native-gesture-handler": ">=2.16.1",
-        "react-native-qrcode-svg": ">=6.3.0",
         "react-native-reanimated": ">=3.16.0",
         "react-native-safe-area-context": "^5.4.0",
         "react-native-svg": ">=13.0.0"
