@@ -35,12 +35,20 @@ export class DeviceManager {
   /**
    * Get appropriate storage for the platform
    */
-  private static async getStorage() {
+  private static async getStorage(): Promise<{
+    getItem: (key: string) => Promise<string | null>;
+    setItem: (key: string, value: string) => Promise<void>;
+    removeItem: (key: string) => Promise<void>;
+  }> {
     if (this.isReactNative()) {
-      // Try to import AsyncStorage for React Native
       try {
-        const AsyncStorage = await import('@react-native-async-storage/async-storage');
-        return AsyncStorage.default;
+        const asyncStorageModule = await import('@react-native-async-storage/async-storage');
+        const storage = (asyncStorageModule.default as unknown) as import('@react-native-async-storage/async-storage').AsyncStorageStatic;
+        return {
+          getItem: storage.getItem.bind(storage),
+          setItem: storage.setItem.bind(storage),
+          removeItem: storage.removeItem.bind(storage),
+        };
       } catch (error) {
         console.error('AsyncStorage not available in React Native:', error);
         throw new Error('AsyncStorage is required in React Native environment');

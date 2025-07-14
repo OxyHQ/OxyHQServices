@@ -96,7 +96,7 @@ const getStorage = async (): Promise<StorageInterface> => {
     if (!AsyncStorage) {
       try {
         const asyncStorageModule = await import('@react-native-async-storage/async-storage');
-        AsyncStorage = asyncStorageModule.default;
+        AsyncStorage = (asyncStorageModule.default as unknown) as StorageInterface;
       } catch (error) {
         console.error('Failed to import AsyncStorage:', error);
         throw new Error('AsyncStorage is required in React Native environment');
@@ -135,6 +135,8 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
   const [sessions, setSessions] = React.useState<SecureClientSession[]>([]);
   const [activeSessionId, setActiveSessionId] = React.useState<string | null>(null);
   const [storage, setStorage] = React.useState<StorageInterface | null>(null);
+  // Add a new state to track token restoration
+  const [tokenReady, setTokenReady] = React.useState(false);
 
   // Storage keys (memoized to prevent infinite loops)
   const keys = useMemo(() => getSecureStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
@@ -256,6 +258,26 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
       initAuth();
     }
   }, [storage, oxyServices, keys, onAuthStateChange]);
+
+  // Effect to restore token on app load or session switch
+  useEffect(() => {
+    const restoreToken = async () => {
+      if (activeSessionId && oxyServices) {
+        try {
+          await oxyServices.getTokenBySession(activeSessionId);
+          setTokenReady(true);
+        } catch (err) {
+          // If token restoration fails, force logout
+          await logout();
+          setTokenReady(false);
+        }
+      } else {
+        setTokenReady(true); // No session, so token is not needed
+      }
+    };
+    restoreToken();
+    // Only run when activeSessionId or oxyServices changes
+  }, [activeSessionId, oxyServices]);
 
   // Remove invalid session
   const removeInvalidSession = useCallback(async (sessionId: string): Promise<void> => {
@@ -685,6 +707,11 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     showBottomSheet,
     hideBottomSheet,
   };
+
+  // Wrap children rendering to block until token is ready
+  if (!tokenReady) {
+    return <div>Loading authentication...</div>;
+  }
 
   return (
     <OxyContext.Provider value={contextValue}>

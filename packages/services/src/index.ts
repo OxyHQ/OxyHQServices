@@ -1,77 +1,12 @@
 /**
- * OxyHQServices Main Export File
+ * OxyHQServices Main Export File - Universal (Frontend + Backend)
+ * 
+ * This exports everything but uses environment detection to avoid crashes.
+ * - Frontend: Full UI + Core functionality
+ * - Backend: Core functionality only (UI components are no-ops)
  */
 
-// ------------- Core Imports -------------
-import OxyCore from './core';
-import { OxyServices } from './core';
-
-// ------------- Utility Imports -------------
-import { DeviceManager } from './utils/deviceManager';
-
-// ------------- UI Imports -------------
-import { 
-  // Context and Hooks
-  OxyProvider, 
-  OxyContextProvider, 
-  useOxy,
-  
-  // Components
-  OxySignInButton,
-  OxyPayButton,
-  OxyLogo,
-  Avatar,
-  FollowButton,
-  FontLoader,
-  OxyIcon,
-  useFollow,
-  ProfileScreen,
-  OxyRouter,
-  // Remove store, RootState, AppDispatch exports
-} from './ui';
-
-// ------------- Type Imports -------------
-import { OxyContextState, OxyContextProviderProps } from './ui/context/OxyContext';
-import * as Models from './models/interfaces';
-
-// ------------- Core Exports -------------
-export default OxyCore; // Default export for backward compatibility
-export { OxyServices };
+// Universal entry: always statically export everything
 export * from './core';
-
-// ------------- Utility Exports -------------
-export { DeviceManager } from './utils';
-export type { DeviceFingerprint, StoredDeviceInfo } from './utils';
-
-// ------------- Model Exports -------------
-export { Models };  // Export all models as a namespace
-export * from './models/interfaces';  // Export all models directly
-
-// ------------- UI Exports -------------
-export { 
-  // Context and Hooks
-  OxyProvider, 
-  OxyContextProvider, 
-  useOxy,
-  
-  // Components
-  OxySignInButton,
-  OxyPayButton,
-  OxyLogo,
-  Avatar,
-  FollowButton,
-  FontLoader,
-  OxyIcon,
-  useFollow,
-  ProfileScreen,
-  OxyRouter,
-  // Remove store, RootState, AppDispatch exports
-};
-
-// ------------- Type Exports -------------
-export { OxyContextState, OxyContextProviderProps };
-export * from './ui/navigation/types';
-export * from './models/secureSession';
-
-// Sonner toast integration
-export { toast } from './lib/sonner';
+export * from './ui';
+export { toast } from './lib/sonner-safe';

@@ -209,7 +209,8 @@ app.use('/wallet', walletRoutes);
 // Global error handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
   console.error('Unhandled error:', err);
-  res.status(500).json({
+  const statusCode = err?.status || 500;
+  res.status(statusCode).json({
     message: 'Internal server error',
     error: process.env.NODE_ENV === 'production' ? 'An unexpected error occurred' : err.message
   });

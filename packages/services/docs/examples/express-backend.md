@@ -44,19 +44,18 @@ app.use(morgan('combined'));
 app.use(express.json());
 
 // Create authentication middleware
-const authenticateToken = oxy.middleware.authenticate({
-  loadUser: true,           // Load full user data
-  required: true,           // Fail if no token provided
-  onError: (error, req, res, next) => {
+const authenticateToken = oxy.createAuthenticateTokenMiddleware({
+  loadFullUser: true,           // Load full user data
+  onError: (error) => {
     console.error('Auth error:', error);
-    res.status(401).json({ error: 'Authentication failed' });
+    return res.status(401).json({ error: 'Authentication failed' });
   }
 });
 
 // Optional authentication (for routes that work with or without auth)
-const optionalAuth = oxy.middleware.authenticate({
-  loadUser: true,
-  required: false           // Don't fail if no token
+const optionalAuth = oxy.createAuthenticateTokenMiddleware({
+  loadFullUser: true,
+  onError: () => {}, // No error thrown if token is missing/invalid
 });
 
 // Routes

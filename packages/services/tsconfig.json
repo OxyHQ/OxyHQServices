@@ -1,8 +1,8 @@
 {
     "compilerOptions": {
         "target": "es2018",
-        "module": "esnext",
-        "moduleResolution": "node",
+        "module": "NodeNext",
+        "moduleResolution": "nodenext",
         "lib": [
             "es2018",
             "dom"

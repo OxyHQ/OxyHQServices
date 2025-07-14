@@ -47,7 +47,8 @@ import { SecureLoginResponse, SecureClientSession } from '../models/secureSessio
 export const OXY_CLOUD_URL = 'https://cloud.oxy.so';
 
 // Export device management utilities
-export { DeviceManager, DeviceFingerprint, StoredDeviceInfo } from '../utils/deviceManager';
+export { DeviceManager } from '../utils/deviceManager';
+export type { DeviceFingerprint, StoredDeviceInfo } from '../utils/deviceManager';
 
 interface JwtPayload {
   exp: number;
@@ -1406,8 +1407,27 @@ export class OxyServices {
           });
         }
         
-        // Get user ID from token
-        const userId = tempOxyServices.getCurrentUserId();
+        // Get user ID from token using JWT decode instead of relying on getCurrentUserId
+        let userId: string | null = null;
+        try {
+          const decoded = jwtDecode<JwtPayload>(token);
+          userId = decoded.userId || decoded.id;
+        } catch (decodeError) {
+          const error = {
+            message: 'Invalid token payload',
+            code: 'INVALID_PAYLOAD',
+            status: 403
+          };
+          
+          if (onError) {
+            return onError(error);
+          }
+          
+          return res.status(403).json({ 
+            message: 'Invalid token payload',
+            code: 'INVALID_PAYLOAD'
+          });
+        }
         
         if (!userId) {
           const error = {
@@ -1495,8 +1515,18 @@ export class OxyServices {
         };
       }
       
-      // Get user ID from token
-      const userId = tempOxyServices.getCurrentUserId();
+      // Get user ID from token using JWT decode
+      let userId: string | null = null;
+      try {
+        const decoded = jwtDecode<JwtPayload>(token);
+        userId = decoded.userId || decoded.id;
+      } catch (decodeError) {
+        return {
+          valid: false,
+          error: 'Invalid token payload'
+        };
+      }
+      
       if (!userId) {
         return {
           valid: false,
@@ -1683,7 +1713,12 @@ export class OxyServices {
   }
 }
 
+// Default export for backward compatibility
 export default OxyServices;
+
+// Re-export all models and types for convenience
+export * from '../models/interfaces';
+export * from '../models/secureSession';
 
 if (typeof FormData === 'undefined') {
   console.warn('[OxyHQ/Services] FormData is not available. If you are using Hermes, add "import \'react-native-url-polyfill/auto\'" at the top of your app entry file.');

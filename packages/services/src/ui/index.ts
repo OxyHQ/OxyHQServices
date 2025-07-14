@@ -1,38 +1,84 @@
 /**
- * UI Component exports
+ * UI Component exports - Frontend Only (with backend-safe fallbacks)
+ * 
+ * This module exports all React/React Native UI components and hooks.
+ * In backend, all exports are no-ops or empty objects.
  */
+import isFrontend from './isFrontend';
 
-// Export the main provider component and context
-export { default as OxyProvider } from './components/OxyProvider';
-export { default as OxySignInButton } from './components/OxySignInButton';
-export { default as OxyLogo } from './components/OxyLogo';
-export { default as Avatar } from './components/Avatar';
-export { default as FollowButton } from './components/FollowButton';
-export { default as OxyPayButton } from './components/OxyPayButton';
-export { FontLoader, setupFonts } from './components/FontLoader';
+// Real UI exports
+let OxyProvider, OxySignInButton, OxyLogo, Avatar, FollowButton, OxyPayButton, FontLoader, setupFonts, OxyIcon, useOxy, useOxyAuth, useOxyUser, useOxyKarma, useOxyPayments, useOxyDevices, useOxyNotifications, useOxySocket, useOxyQR, useOxyIAP, OxyContextProvider, OxyContextState, OxyContextProviderProps, useFollow, ProfileScreen, OxyRouter, useAuthStore, fontFamilies, fontStyles, toast;
 
-// Export icon components
-export { OxyIcon } from './components/icon';
-export type { IconProps } from './components/icon';
+if (isFrontend) {
+  OxyProvider = require('./components/OxyProvider').default;
+  OxySignInButton = require('./components/OxySignInButton').default;
+  OxyLogo = require('./components/OxyLogo').default;
+  Avatar = require('./components/Avatar').default;
+  FollowButton = require('./components/FollowButton').default;
+  OxyPayButton = require('./components/OxyPayButton').default;
+  FontLoader = require('./components/FontLoader').FontLoader;
+  setupFonts = require('./components/FontLoader').setupFonts;
+  OxyIcon = require('./components/icon').OxyIcon;
+  useOxy = require('./context/OxyContext').useOxy;
+  OxyContextProvider = require('./context/OxyContext').OxyContextProvider;
+  OxyContextState = require('./context/OxyContext').OxyContextState;
+  OxyContextProviderProps = require('./context/OxyContext').OxyContextProviderProps;
+  useFollow = require('./hooks').useFollow;
+  ProfileScreen = require('./screens/ProfileScreen').default;
+  OxyRouter = require('./navigation/OxyRouter').default;
+  useAuthStore = require('./stores/authStore').useAuthStore;
+  fontFamilies = require('./styles/fonts').fontFamilies;
+  fontStyles = require('./styles/fonts').fontStyles;
+  toast = require('../lib/sonner').toast;
+} else {
+  // Backend: no-op fallbacks
+  const noopComponent = () => null;
+  const noopHook = () => ({});
+  OxyProvider = noopComponent;
+  OxySignInButton = noopComponent;
+  OxyLogo = noopComponent;
+  Avatar = noopComponent;
+  FollowButton = noopComponent;
+  OxyPayButton = noopComponent;
+  FontLoader = noopComponent;
+  setupFonts = () => {};
+  OxyIcon = noopComponent;
+  useOxy = noopHook;
+  OxyContextProvider = noopComponent;
+  OxyContextState = {};
+  OxyContextProviderProps = {};
+  useFollow = noopHook;
+  ProfileScreen = noopComponent;
+  OxyRouter = noopComponent;
+  useAuthStore = noopHook;
+  fontFamilies = {};
+  fontStyles = {};
+  toast = () => {};
+}
 
 export {
-  OxyContextProvider,
+  OxyProvider,
+  OxySignInButton,
+  OxyLogo,
+  Avatar,
+  FollowButton,
+  OxyPayButton,
+  FontLoader,
+  setupFonts,
+  OxyIcon,
   useOxy,
+  OxyContextProvider,
   OxyContextState,
-  OxyContextProviderProps
-} from './context/OxyContext';
+  OxyContextProviderProps,
+  useFollow,
+  ProfileScreen,
+  OxyRouter,
+  useAuthStore,
+  fontFamilies,
+  fontStyles,
+  toast
+};
 
-// Export styles
-export { fontFamilies, fontStyles } from './styles/fonts';
-
-// Export types for navigation (internal use)
-export * from './navigation/types';
-
-// Hooks
-export { useFollow } from './hooks';
-
-// Screens
-export { default as ProfileScreen } from './screens/ProfileScreen';
-
-// Navigation
-export { default as OxyRouter } from './navigation/OxyRouter';
+// Re-export core services for convenience in UI context
+export { OxyServices } from '../core';
+export type { User, LoginResponse, ApiError } from '../models/interfaces';

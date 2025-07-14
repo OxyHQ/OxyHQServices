@@ -19,6 +19,8 @@
     "api:start": "npm run start -w @oxyhq/api"
   },
   "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@types/express-serve-static-core": "^5.0.7",
     "@types/node": "^20.0.0",
     "typescript": "^5.0.0"
   },
