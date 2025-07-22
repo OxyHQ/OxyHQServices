@@ -285,6 +285,18 @@ UserSchema.index({ "locations.address.city": 1 });
 UserSchema.index({ "locations.address.country": 1 });
 UserSchema.index({ "locations.type": 1 });
 
+// Compound indexes for efficient location queries
+UserSchema.index({ "locations.address.city": 1, "locations.address.country": 1 });
+UserSchema.index({ "locations.type": 1, "locations.address.city": 1 });
+UserSchema.index({ "locations.metadata.countryCode": 1, "locations.address.city": 1 });
+
+// Text index for location name search
+UserSchema.index({ "locations.name": "text", "locations.address.formattedAddress": "text" });
+
+// Index for location timestamps
+UserSchema.index({ "locations.createdAt": -1 });
+UserSchema.index({ "locations.updatedAt": -1 });
+
 // Virtual for full name
 UserSchema.virtual('name.full').get(function() {
   const name = this.name as { first?: string; last?: string } | undefined;

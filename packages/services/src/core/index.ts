@@ -1782,6 +1782,124 @@ export class OxyServices {
       throw this.handleError(error);
     }
   }
+
+  /**
+   * Find locations near a point using geospatial queries
+   * @param lat - Latitude
+   * @param lon - Longitude
+   * @param maxDistance - Maximum distance in meters (default: 10000)
+   * @param limit - Maximum number of results (default: 10)
+   * @param skip - Number of results to skip (default: 0)
+   * @returns Promise with nearby locations
+   */
+  async findLocationsNear(
+    lat: number, 
+    lon: number, 
+    maxDistance: number = 10000,
+    limit: number = 10,
+    skip: number = 0
+  ): Promise<any> {
+    try {
+      const params = new URLSearchParams({
+        lat: lat.toString(),
+        lon: lon.toString(),
+        maxDistance: maxDistance.toString(),
+        limit: limit.toString(),
+        skip: skip.toString()
+      });
+      const res = await this.client.get(`/location-search/near?${params.toString()}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Search locations in database by text
+   * @param query - Search query
+   * @param limit - Maximum number of results (default: 10)
+   * @param skip - Number of results to skip (default: 0)
+   * @param type - Filter by location type
+   * @param country - Filter by country
+   * @param city - Filter by city
+   * @returns Promise with search results
+   */
+  async searchLocationsInDB(
+    query: string,
+    limit: number = 10,
+    skip: number = 0,
+    type?: string,
+    country?: string,
+    city?: string
+  ): Promise<any> {
+    try {
+      const params = new URLSearchParams({
+        query,
+        limit: limit.toString(),
+        skip: skip.toString()
+      });
+      if (type) params.append('type', type);
+      if (country) params.append('country', country);
+      if (city) params.append('city', city);
+      
+      const res = await this.client.get(`/location-search/db-search?${params.toString()}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get location statistics
+   * @returns Promise with location statistics
+   */
+  async getLocationStats(): Promise<any> {
+    try {
+      const res = await this.client.get('/location-search/stats');
+      return res.data.stats;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get cache statistics
+   * @returns Promise with cache statistics
+   */
+  async getLocationCacheStats(): Promise<any> {
+    try {
+      const res = await this.client.get('/location-search/cache/stats');
+      return res.data.stats;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Clear location cache
+   * @returns Promise with success status
+   */
+  async clearLocationCache(): Promise<any> {
+    try {
+      const res = await this.client.delete('/location-search/cache');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get performance statistics
+   * @returns Promise with performance statistics
+   */
+  async getLocationPerformanceStats(): Promise<any> {
+    try {
+      const res = await this.client.get('/location-search/performance');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
 }
 
 // Default export for backward compatibility

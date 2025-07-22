@@ -10,4 +10,16 @@ router.get('/search', authMiddleware, locationSearchController.searchLocations);
 // Get location details by coordinates
 router.get('/details', authMiddleware, locationSearchController.getLocationDetails);
 
+// Cache management routes
+router.get('/cache/stats', authMiddleware, locationSearchController.getCacheStats);
+router.delete('/cache', authMiddleware, locationSearchController.clearCache);
+
+// Database query routes
+router.get('/near', authMiddleware, locationSearchController.findLocationsNear);
+router.get('/db-search', authMiddleware, locationSearchController.searchLocationsInDB);
+router.get('/stats', authMiddleware, locationSearchController.getLocationStats);
+
+// Performance monitoring routes
+router.get('/performance', authMiddleware, locationSearchController.getPerformanceStats);
+
 export default router; 

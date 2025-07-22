@@ -1,65 +1,16 @@
-import axios from 'axios';
 import { Request, Response } from 'express';
 import { logger } from '../utils/logger';
-
-interface NominatimResult {
-  place_id: number;
-  licence: string;
-  osm_type: string;
-  osm_id: number;
-  boundingbox: string[];
-  lat: string;
-  lon: string;
-  display_name: string;
-  class: string;
-  type: string;
-  importance: number;
-  icon?: string;
-  address?: {
-    house_number?: string;
-    road?: string;
-    neighbourhood?: string;
-    suburb?: string;
-    city?: string;
-    state?: string;
-    postcode?: string;
-    country?: string;
-    country_code?: string;
-  };
-}
-
-interface EnhancedLocationResult {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
-  type: string;
-  address: {
-    street?: string;
-    streetNumber?: string;
-    streetDetails?: string;
-    postalCode?: string;
-    city?: string;
-    state?: string;
-    country?: string;
-    formattedAddress?: string;
-  };
-  metadata: {
-    placeId: string;
-    osmId: string;
-    osmType: string;
-    countryCode?: string;
-    timezone?: string;
-  };
-}
+import locationService from '../services/locationService';
+import locationQueryService from '../services/locationQueryService';
+import performanceMonitor from '../utils/performanceMonitor';
 
 export class LocationSearchController {
   /**
-   * Search for locations using Nominatim API
+   * Search for locations using optimized service with caching
    */
   async searchLocations(req: Request, res: Response) {
     try {
-      const { query, limit = 5, countrycodes, addressdetails = 1 } = req.query;
+      const { query, limit = 5, countrycodes, useCache = 'true' } = req.query;
 
       if (!query || typeof query !== 'string') {
         return res.status(400).json({ 
@@ -73,83 +24,37 @@ export class LocationSearchController {
         });
       }
 
-      logger.info(`Searching locations for query: ${query}`);
+      const limitNum = parseInt(limit as string) || 5;
+      const useCacheBool = useCache === 'true';
 
-      // Build Nominatim API URL
-      const params = new URLSearchParams({
-        q: query,
-        format: 'json',
-        limit: limit.toString(),
-        addressdetails: addressdetails.toString(),
-        'accept-language': 'en'
+      logger.info(`Searching locations for query: ${query} (limit: ${limitNum}, cache: ${useCacheBool})`);
+
+      const results = await locationService.searchLocations(query, {
+        limit: limitNum,
+        countrycodes: countrycodes as string,
+        useCache: useCacheBool
       });
-
-      if (countrycodes) {
-        params.append('countrycodes', countrycodes as string);
-      }
-
-      const response = await axios.get(
-        `https://nominatim.openstreetmap.org/search?${params.toString()}`,
-        {
-          headers: {
-            'User-Agent': 'OxyHQ-LocationSearch/1.0'
-          },
-          timeout: 10000
-        }
-      );
-
-      const results: NominatimResult[] = response.data;
-
-      // Transform results to our enhanced format
-      const enhancedResults: EnhancedLocationResult[] = results.map(result => {
-        const address = result.address || {};
-        
-        return {
-          place_id: result.place_id,
-          display_name: result.display_name,
-          lat: result.lat,
-          lon: result.lon,
-          type: result.type,
-          address: {
-            street: address.road,
-            streetNumber: address.house_number,
-            streetDetails: address.neighbourhood || address.suburb,
-            postalCode: address.postcode,
-            city: address.city,
-            state: address.state,
-            country: address.country,
-            formattedAddress: result.display_name
-          },
-          metadata: {
-            placeId: result.place_id.toString(),
-            osmId: result.osm_id.toString(),
-            osmType: result.osm_type,
-            countryCode: address.country_code?.toUpperCase()
-          }
-        };
-      });
-
-      logger.info(`Found ${enhancedResults.length} locations for query: ${query}`);
 
       res.json({
         success: true,
-        results: enhancedResults,
+        results,
         query,
-        total: enhancedResults.length
+        total: results.length,
+        cached: useCacheBool
       });
 
     } catch (error) {
       logger.error('Error searching locations:', error);
       
-      if (axios.isAxiosError(error)) {
-        if (error.code === 'ECONNABORTED') {
-          return res.status(408).json({ 
-            message: 'Request timeout - please try again' 
+      if (error instanceof Error) {
+        if (error.message.includes('Rate limit')) {
+          return res.status(429).json({ 
+            message: error.message 
           });
         }
-        if (error.response?.status === 429) {
-          return res.status(429).json({ 
-            message: 'Too many requests - please wait before trying again' 
+        if (error.message.includes('timeout')) {
+          return res.status(408).json({ 
+            message: error.message 
           });
         }
       }
@@ -165,7 +70,7 @@ export class LocationSearchController {
    */
   async getLocationDetails(req: Request, res: Response) {
     try {
-      const { lat, lon } = req.query;
+      const { lat, lon, useCache = 'true' } = req.query;
 
       if (!lat || !lon) {
         return res.status(400).json({ 
@@ -194,70 +99,189 @@ export class LocationSearchController {
         });
       }
 
-      logger.info(`Getting location details for coordinates: ${lat}, ${lon}`);
+      const useCacheBool = useCache === 'true';
 
-      const response = await axios.get(
-        `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&addressdetails=1&accept-language=en`,
-        {
-          headers: {
-            'User-Agent': 'OxyHQ-LocationSearch/1.0'
-          },
-          timeout: 10000
-        }
-      );
+      logger.info(`Getting location details for coordinates: ${lat}, ${lon} (cache: ${useCacheBool})`);
 
-      const result: NominatimResult = response.data;
-      const address = result.address || {};
-
-      const enhancedResult: EnhancedLocationResult = {
-        place_id: result.place_id,
-        display_name: result.display_name,
-        lat: result.lat,
-        lon: result.lon,
-        type: result.type,
-        address: {
-          street: address.road,
-          streetNumber: address.house_number,
-          streetDetails: address.neighbourhood || address.suburb,
-          postalCode: address.postcode,
-          city: address.city,
-          state: address.state,
-          country: address.country,
-          formattedAddress: result.display_name
-        },
-        metadata: {
-          placeId: result.place_id.toString(),
-          osmId: result.osm_id.toString(),
-          osmType: result.osm_type,
-          countryCode: address.country_code?.toUpperCase()
-        }
-      };
-
-      logger.info(`Retrieved location details for: ${result.display_name}`);
+      const result = await locationService.getLocationDetails(latitude, longitude, {
+        useCache: useCacheBool
+      });
 
       res.json({
         success: true,
-        result: enhancedResult
+        result,
+        cached: useCacheBool
       });
 
     } catch (error) {
       logger.error('Error getting location details:', error);
       
-      if (axios.isAxiosError(error)) {
-        if (error.code === 'ECONNABORTED') {
-          return res.status(408).json({ 
-            message: 'Request timeout - please try again' 
-          });
-        }
-        if (error.response?.status === 429) {
+      if (error instanceof Error) {
+        if (error.message.includes('Rate limit')) {
           return res.status(429).json({ 
-            message: 'Too many requests - please wait before trying again' 
+            message: error.message 
           });
         }
       }
 
       res.status(500).json({ 
         message: 'Error getting location details' 
+      });
+    }
+  }
+
+  /**
+   * Get cache statistics
+   */
+  async getCacheStats(req: Request, res: Response) {
+    try {
+      const stats = locationService.getCacheStats();
+      res.json({
+        success: true,
+        stats
+      });
+    } catch (error) {
+      logger.error('Error getting cache stats:', error);
+      res.status(500).json({ 
+        message: 'Error getting cache statistics' 
+      });
+    }
+  }
+
+  /**
+   * Clear cache
+   */
+  async clearCache(req: Request, res: Response) {
+    try {
+      locationService.clearCache();
+      res.json({
+        success: true,
+        message: 'Cache cleared successfully'
+      });
+    } catch (error) {
+      logger.error('Error clearing cache:', error);
+      res.status(500).json({ 
+        message: 'Error clearing cache' 
+      });
+    }
+  }
+
+  /**
+   * Find locations near a point using geospatial queries
+   */
+  async findLocationsNear(req: Request, res: Response) {
+    try {
+      const { lat, lon, maxDistance = 10000, limit = 10, skip = 0 } = req.query;
+
+      if (!lat || !lon) {
+        return res.status(400).json({ 
+          message: 'Latitude and longitude parameters are required' 
+        });
+      }
+
+      const latitude = parseFloat(lat as string);
+      const longitude = parseFloat(lon as string);
+      const maxDistanceNum = parseFloat(maxDistance as string);
+      const limitNum = parseInt(limit as string);
+      const skipNum = parseInt(skip as string);
+
+      const result = await locationQueryService.findLocationsNear(
+        latitude,
+        longitude,
+        maxDistanceNum,
+        { limit: limitNum, skip: skipNum }
+      );
+
+      res.json({
+        success: true,
+        ...result
+      });
+
+    } catch (error) {
+      logger.error('Error finding locations near point:', error);
+      res.status(500).json({ 
+        message: 'Error finding nearby locations' 
+      });
+    }
+  }
+
+  /**
+   * Search locations in database by text
+   */
+  async searchLocationsInDB(req: Request, res: Response) {
+    try {
+      const { query, limit = 10, skip = 0, type, country, city } = req.query;
+
+      if (!query || typeof query !== 'string') {
+        return res.status(400).json({ 
+          message: 'Query parameter is required' 
+        });
+      }
+
+      const limitNum = parseInt(limit as string);
+      const skipNum = parseInt(skip as string);
+
+      const result = await locationQueryService.searchLocationsByText(
+        query,
+        {
+          limit: limitNum,
+          skip: skipNum,
+          type: type as string,
+          country: country as string,
+          city: city as string
+        }
+      );
+
+      res.json({
+        success: true,
+        ...result
+      });
+
+    } catch (error) {
+      logger.error('Error searching locations in database:', error);
+      res.status(500).json({ 
+        message: 'Error searching locations' 
+      });
+    }
+  }
+
+  /**
+   * Get location statistics
+   */
+  async getLocationStats(req: Request, res: Response) {
+    try {
+      const stats = await locationQueryService.getLocationStats();
+      res.json({
+        success: true,
+        stats
+      });
+    } catch (error) {
+      logger.error('Error getting location stats:', error);
+      res.status(500).json({ 
+        message: 'Error getting location statistics' 
+      });
+    }
+  }
+
+  /**
+   * Get performance statistics
+   */
+  async getPerformanceStats(req: Request, res: Response) {
+    try {
+      const stats = performanceMonitor.getStats();
+      const summary = performanceMonitor.getSummary();
+      const slowOperations = performanceMonitor.getSlowOperations();
+      
+      res.json({
+        success: true,
+        stats,
+        summary,
+        slowOperations
+      });
+    } catch (error) {
+      logger.error('Error getting performance stats:', error);
+      res.status(500).json({ 
+        message: 'Error getting performance statistics' 
       });
     }
   }
