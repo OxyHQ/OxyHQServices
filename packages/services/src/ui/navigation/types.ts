@@ -42,9 +42,14 @@ export interface OxyRouterProps {
  */
 export interface OxyProviderProps {
   /**
-   * Instance of OxyServices
+   * Instance of OxyServices (optional if baseURL is provided)
    */
-  oxyServices: OxyServices;
+  oxyServices?: OxyServices;
+  
+  /**
+   * API base URL for automatic service creation (optional if oxyServices is provided)
+   */
+  baseURL?: string;
   
   /**
    * Initial screen to display

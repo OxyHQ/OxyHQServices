@@ -1,59 +1,101 @@
-import { Request, Response } from 'express';
-import Notification from '../models/Notification';
-import { Server } from 'socket.io';
+import { Response, Request } from 'express';
+import { z } from 'zod';
 
-// Interface for authenticated requests
-interface AuthRequest extends Request {
-  user?: {
-    id: string;
-    [key: string]: any;
+import { AuthRequest } from '../middleware/auth';
+import Notification from '../models/Notification';
+import { logger } from '../utils/logger';
+
+// =============================================================================
+// VALIDATION SCHEMAS
+// =============================================================================
+
+const CREATE_NOTIFICATION_SCHEMA = z.object({
+  recipientId: z.string().min(1, 'Recipient ID is required'),
+  actorId: z.string().min(1, 'Actor ID is required'),
+  type: z.string().min(1, 'Type is required'),
+  entityId: z.string().min(1, 'Entity ID is required'),
+  entityType: z.string().min(1, 'Entity type is required'),
+  title: z.string().optional(),
+  message: z.string().optional(),
+  data: z.record(z.any()).optional(),
+});
+
+// =============================================================================
+// CONSTANTS
+// =============================================================================
+
+const DEFAULT_PAGE_SIZE = 20;
+const MAX_PAGE_SIZE = 100;
+const DEFAULT_PAGE = 1;
+
+// =============================================================================
+// UTILITY FUNCTIONS
+// =============================================================================
+
+/**
+ * Creates a standardized error response
+ */
+function createErrorResponse(message: string, errorCode?: string) {
+  return {
+    success: false,
+    message,
+    error: errorCode || 'UNKNOWN_ERROR',
   };
 }
 
-// Helper function to emit notification through socket.io
-export const emitNotification = async (req: Request, notification: any) => {
-  try {
-    const io = req.app.get('io') as Server;
-    if (!io) {
-      console.error('Socket.io instance not found in request');
-      return;
-    }
-    
-    const populated = await notification.populate('actorId', 'username name avatar');
-    
-    // Emit to the specific user's room
-    io.to(`user:${notification.recipientId}`).emit('notification', populated);
-  } catch (error) {
-    console.error('Error emitting notification:', error);
-  }
-};
+/**
+ * Creates a standardized success response
+ */
+function createSuccessResponse<T>(data: T) {
+  return {
+    success: true,
+    ...data,
+  };
+}
 
-// Get all notifications for the authenticated user
-export const getNotifications = async (req: AuthRequest, res: Response) => {
+/**
+ * Validates pagination parameters
+ */
+function validatePaginationParams(page: number, limit: number): boolean {
+  return page >= 1 && limit >= 1 && limit <= MAX_PAGE_SIZE;
+}
+
+/**
+ * Emits a real-time notification
+ */
+async function emitNotification(req: Request, notification: any): Promise<void> {
+  try {
+    // TODO: Implement real-time notification emission
+    // This could use WebSockets, Server-Sent Events, or a message queue
+    logger.info(`Notification emitted: ${notification.type} to ${notification.recipientId}`);
+  } catch (error) {
+    logger.error('Error emitting notification:', error);
+  }
+}
+
+// =============================================================================
+// CONTROLLER FUNCTIONS
+// =============================================================================
+
+/**
+ * Retrieves notifications for a user
+ * @param req - Express request with authentication
+ * @param res - Express response
+ */
+export const getNotifications = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user?.id;
     if (!userId) {
-      return res.status(401).json({ 
-        message: "Unauthorized: User ID not found",
-        error: "AUTH_ERROR" 
-      });
+      res.status(401).json(createErrorResponse('Unauthorized: User ID not found', 'AUTH_ERROR'));
+      return;
     }
 
-    const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 20;
+    const page = parseInt(req.query.page as string) || DEFAULT_PAGE;
+    const limit = parseInt(req.query.limit as string) || DEFAULT_PAGE_SIZE;
 
-    if (page < 1) {
-      return res.status(400).json({ 
-        message: "Invalid page number", 
-        error: "INVALID_PAGE" 
-      });
-    }
-
-    if (limit < 1 || limit > 100) {
-      return res.status(400).json({ 
-        message: "Invalid limit. Must be between 1 and 100", 
-        error: "INVALID_LIMIT" 
-      });
+    if (!validatePaginationParams(page, limit)) {
+      res.status(400).json(createErrorResponse('Invalid pagination parameters', 'INVALID_PAGINATION'));
+      return;
     }
 
     // Fetch notifications and unread count in parallel
@@ -66,204 +108,196 @@ export const getNotifications = async (req: AuthRequest, res: Response) => {
         .lean(),
       Notification.countDocuments({
         recipientId: userId,
-        read: false
-      })
+        read: false,
+      }),
     ]);
 
-    res.json({
+    res.json(createSuccessResponse({
       notifications,
       unreadCount,
       hasMore: notifications.length === limit,
       page,
-      limit
-    });
+      limit,
+    }));
   } catch (error) {
-    console.error("Error fetching notifications:", error);
-    res.status(500).json({ 
-      message: "Error fetching notifications", 
-      error: error instanceof Error ? error.message : "UNKNOWN_ERROR"
-    });
+    logger.error('Error fetching notifications:', error);
+    res.status(500).json(createErrorResponse('Error fetching notifications'));
   }
 };
 
-// Create a new notification
-export const createNotification = async (req: AuthRequest, res: Response) => {
+/**
+ * Creates a new notification
+ * @param req - Express request
+ * @param res - Express response
+ */
+export const createNotification = async (req: Request, res: Response): Promise<void> => {
   try {
-    // Validate required fields
-    const { recipientId, actorId, type, entityId, entityType } = req.body;
-    
-    if (!recipientId || !actorId || !type || !entityId || !entityType) {
-      return res.status(400).json({ 
-        message: "Missing required fields",
-        error: "VALIDATION_ERROR"
-      });
-    }
+    const validatedData = CREATE_NOTIFICATION_SCHEMA.parse(req.body);
+    const { recipientId, actorId, type, entityId, entityType, title, message, data } = validatedData;
 
     // Check for duplicate notifications
     const existingNotification = await Notification.findOne({
       recipientId,
       actorId,
       type,
-      entityId
+      entityId,
     });
 
     if (existingNotification) {
-      return res.status(409).json({
-        message: "Duplicate notification",
-        notification: existingNotification,
-        error: "DUPLICATE_ERROR"
-      });
+      res.status(409).json(createErrorResponse('Duplicate notification', 'DUPLICATE_ERROR'));
+      return;
     }
 
-    const notification = new Notification(req.body);
+    const notification = new Notification({
+      recipientId,
+      actorId,
+      type,
+      entityId,
+      entityType,
+      title,
+      message,
+      data,
+    });
+
     await notification.save();
-    
+
     // Emit real-time notification
     await emitNotification(req, notification);
-    
-    res.status(201).json(notification);
+
+    res.status(201).json(createSuccessResponse({ notification }));
   } catch (error) {
-    console.error("Error creating notification:", error);
-    res.status(500).json({ 
-      message: "Error creating notification", 
-      error: error instanceof Error ? error.message : "UNKNOWN_ERROR"
-    });
+    if (error instanceof z.ZodError) {
+      res.status(400).json({
+        success: false,
+        message: 'Invalid notification data',
+        errors: error.errors,
+      });
+      return;
+    }
+
+    logger.error('Error creating notification:', error);
+    res.status(500).json(createErrorResponse('Error creating notification'));
   }
 };
 
-// Mark a notification as read
-export const markAsRead = async (req: AuthRequest, res: Response) => {
+/**
+ * Marks a notification as read
+ * @param req - Express request with authentication
+ * @param res - Express response
+ */
+export const markAsRead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user?.id;
+    const { notificationId } = req.params;
+
     if (!userId) {
-      return res.status(401).json({ 
-        message: "Unauthorized", 
-        error: "AUTH_ERROR" 
-      });
+      res.status(401).json(createErrorResponse('Unauthorized: User ID not found', 'AUTH_ERROR'));
+      return;
     }
 
     const notification = await Notification.findOneAndUpdate(
-      { _id: req.params.id, recipientId: userId },
-      { read: true },
+      { _id: notificationId, recipientId: userId },
+      { read: true, readAt: new Date() },
       { new: true }
-    ).populate('actorId', 'username name avatar');
-
-    if (!notification) {
-      return res.status(404).json({ 
-        message: "Notification not found", 
-        error: "NOT_FOUND" 
-      });
-    }
-
-    // Emit updated notification
-    const io = req.app.get('io') as Server;
-    if (io) {
-      io.to(`user:${userId}`).emit('notificationUpdated', notification);
-    }
-
-    res.json({ message: "Notification marked as read", notification });
-  } catch (error) {
-    console.error("Error marking notification as read:", error);
-    res.status(500).json({ 
-      message: "Error updating notification", 
-      error: error instanceof Error ? error.message : "UNKNOWN_ERROR"
-    });
-  }
-};
-
-// Mark all notifications as read
-export const markAllAsRead = async (req: AuthRequest, res: Response) => {
-  try {
-    const userId = req.user?.id;
-    if (!userId) {
-      return res.status(401).json({ 
-        message: "Unauthorized", 
-        error: "AUTH_ERROR" 
-      });
-    }
-
-    await Notification.updateMany(
-      { recipientId: userId, read: false },
-      { read: true }
     );
 
-    // Emit all notifications read event
-    const io = req.app.get('io') as Server;
-    if (io) {
-      io.to(`user:${userId}`).emit('allNotificationsRead');
+    if (!notification) {
+      res.status(404).json(createErrorResponse('Notification not found', 'NOT_FOUND'));
+      return;
     }
 
-    res.json({ message: "All notifications marked as read" });
+    res.json(createSuccessResponse({ notification }));
   } catch (error) {
-    console.error("Error marking all notifications as read:", error);
-    res.status(500).json({ 
-      message: "Error updating notifications", 
-      error: error instanceof Error ? error.message : "UNKNOWN_ERROR"
-    });
+    logger.error('Error marking notification as read:', error);
+    res.status(500).json(createErrorResponse('Error marking notification as read'));
   }
 };
 
-// Delete a notification
-export const deleteNotification = async (req: AuthRequest, res: Response) => {
+/**
+ * Marks all notifications as read for a user
+ * @param req - Express request with authentication
+ * @param res - Express response
+ */
+export const markAllAsRead = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user?.id;
+
     if (!userId) {
-      return res.status(401).json({ 
-        message: "Unauthorized", 
-        error: "AUTH_ERROR" 
-      });
+      res.status(401).json(createErrorResponse('Unauthorized: User ID not found', 'AUTH_ERROR'));
+      return;
+    }
+
+    const result = await Notification.updateMany(
+      { recipientId: userId, read: false },
+      { read: true, readAt: new Date() }
+    );
+
+    res.json(createSuccessResponse({
+      message: `Marked ${result.modifiedCount} notifications as read`,
+      modifiedCount: result.modifiedCount,
+    }));
+  } catch (error) {
+    logger.error('Error marking all notifications as read:', error);
+    res.status(500).json(createErrorResponse('Error marking all notifications as read'));
+  }
+};
+
+/**
+ * Deletes a notification
+ * @param req - Express request with authentication
+ * @param res - Express response
+ */
+export const deleteNotification = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+    const { notificationId } = req.params;
+
+    if (!userId) {
+      res.status(401).json(createErrorResponse('Unauthorized: User ID not found', 'AUTH_ERROR'));
+      return;
     }
 
     const notification = await Notification.findOneAndDelete({
-      _id: req.params.id,
-      recipientId: userId
+      _id: notificationId,
+      recipientId: userId,
     });
 
     if (!notification) {
-      return res.status(404).json({ 
-        message: "Notification not found", 
-        error: "NOT_FOUND" 
-      });
+      res.status(404).json(createErrorResponse('Notification not found', 'NOT_FOUND'));
+      return;
     }
 
-    // Emit notification deleted event
-    const io = req.app.get('io') as Server;
-    if (io) {
-      io.to(`user:${userId}`).emit('notificationDeleted', notification._id);
-    }
-
-    res.json({ message: "Notification deleted", notificationId: notification._id });
+    res.json(createSuccessResponse({
+      message: 'Notification deleted successfully',
+    }));
   } catch (error) {
-    console.error("Error deleting notification:", error);
-    res.status(500).json({ 
-      message: "Error deleting notification", 
-      error: error instanceof Error ? error.message : "UNKNOWN_ERROR"
-    });
+    logger.error('Error deleting notification:', error);
+    res.status(500).json(createErrorResponse('Error deleting notification'));
   }
 };
 
-// Get unread notification count
-export const getUnreadCount = async (req: AuthRequest, res: Response) => {
+/**
+ * Gets unread notification count for a user
+ * @param req - Express request with authentication
+ * @param res - Express response
+ */
+export const getUnreadCount = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const userId = req.user?.id;
+
     if (!userId) {
-      return res.status(401).json({ 
-        message: "Unauthorized", 
-        error: "AUTH_ERROR" 
-      });
+      res.status(401).json(createErrorResponse('Unauthorized: User ID not found', 'AUTH_ERROR'));
+      return;
     }
 
     const unreadCount = await Notification.countDocuments({
       recipientId: userId,
-      read: false
+      read: false,
     });
 
-    res.json({ unreadCount });
+    res.json(createSuccessResponse({ unreadCount }));
   } catch (error) {
-    console.error("Error fetching unread count:", error);
-    res.status(500).json({ 
-      message: "Error fetching unread notification count", 
-      error: error instanceof Error ? error.message : "UNKNOWN_ERROR"
-    });
+    logger.error('Error fetching unread count:', error);
+    res.status(500).json(createErrorResponse('Error fetching unread count'));
   }
 };

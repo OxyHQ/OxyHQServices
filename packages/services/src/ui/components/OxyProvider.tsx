@@ -30,6 +30,7 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
         onAuthStateChange,
         storageKeyPrefix,
         showInternalToaster = true,
+        baseURL, // Add support for baseURL
         ...bottomSheetProps
     } = props;
 
@@ -41,6 +42,7 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
         return (
             <OxyContextProvider
                 oxyServices={oxyServices}
+                baseURL={baseURL}
                 storageKeyPrefix={storageKeyPrefix}
                 onAuthStateChange={onAuthStateChange}
             >
@@ -53,6 +55,7 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
     return (
         <OxyContextProvider
             oxyServices={oxyServices}
+            baseURL={baseURL}
             storageKeyPrefix={storageKeyPrefix}
             onAuthStateChange={onAuthStateChange}
             bottomSheetRef={internalBottomSheetRef}

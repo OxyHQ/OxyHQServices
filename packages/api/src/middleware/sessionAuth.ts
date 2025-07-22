@@ -1,9 +1,10 @@
 // oxy-api/src/middleware/sessionAuth.ts
-import { Request, Response, NextFunction } from 'express';
+import { Response, NextFunction } from 'express';
+import { AuthRequest } from './auth';
 import { getSession } from '../utils/sessionStore';
 
-export function sessionAuth(req: Request, res: Response, next: NextFunction) {
-  const sessionId = req.header('x-session-id');
+export function sessionAuth(req: AuthRequest, res: Response, next: NextFunction) {
+  const sessionId = req.headers['x-session-id'] as string;
   if (!sessionId) {
     return res.status(401).json({ error: 'Session ID required' });
   }
@@ -12,6 +13,6 @@ export function sessionAuth(req: Request, res: Response, next: NextFunction) {
     return res.status(401).json({ error: 'Invalid or expired session' });
   }
   // Attach user info to req.user (for demo, just userId)
-  req.user = { userId: session.userId };
+  req.user = { userId: session.userId } as any;
   next();
 }

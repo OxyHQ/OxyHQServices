@@ -2,6 +2,92 @@
 
 Complete reference for the OxyHQServices core authentication client.
 
+## Streamlined Authentication
+
+The OxyServices now supports streamlined authentication that eliminates the need for manual token handling:
+
+### Quick Setup
+
+```typescript
+import { OxyProvider, useOxy } from '@oxyhq/services';
+
+function App() {
+  return (
+    <OxyProvider baseURL="https://api.example.com">
+      <YourApp />
+    </OxyProvider>
+  );
+}
+
+function Component() {
+  const { oxyServices } = useOxy();
+  
+  const fetchData = async () => {
+    // No manual authentication needed - everything is automatic!
+    const user = await oxyServices.getCurrentUser();
+  };
+}
+```
+
+### With Built-in Bottom Sheet
+
+The OxyProvider now includes a built-in gorhom bottom sheet - no manual setup required!
+
+```typescript
+import { OxyProvider, useOxy, OxySignInButton } from '@oxyhq/services';
+
+function App() {
+  return (
+    <OxyProvider 
+      baseURL="https://api.example.com"
+      initialScreen="SignIn"
+      theme="light"
+    >
+      <YourApp />
+    </OxyProvider>
+  );
+}
+
+function Component() {
+  const { showBottomSheet } = useOxy();
+  
+  const openSignIn = () => {
+    showBottomSheet('SignIn'); // Works automatically!
+  };
+  
+  return (
+    <div>
+      <button onClick={openSignIn}>Sign In</button>
+      <OxySignInButton /> {/* Also works automatically! */}
+    </div>
+  );
+}
+```
+
+### Before vs After
+
+**Before (Complex):**
+```typescript
+const oxyServices = new OxyServices({ baseURL: 'https://api.example.com' });
+const token = await oxyServices.getTokenBySession(activeSessionId);
+oxyServices.setTokens(token.accessToken, '');
+
+const { isAuthenticated, user, activeSessionId } = useOxy();
+if (isAuthenticated && activeSessionId) {
+  const data = await oxyServices.getCurrentUser();
+}
+```
+
+**After (Streamlined):**
+```typescript
+<OxyProvider baseURL="https://api.example.com">
+  <App />
+</OxyProvider>
+
+const { oxyServices } = useOxy();
+const user = await oxyServices.getCurrentUser(); // Automatic authentication!
+```
+
 ## OxyServices Class
 
 The main client class for interacting with the Oxy API.
@@ -135,13 +221,13 @@ if (oxy.auth.hasStoredTokens()) {
 
 #### Authentication Status (UI Components)
 
-For UI components, use the context's `isAuthenticated` instead of checking service methods:
+For UI components, use the context's `isAuthenticated` and `oxyServices`:
 
 ```typescript
-import { useOxy } from '@oxyhq/services/ui';
+import { useOxy } from '@oxyhq/services';
 
 function MyComponent() {
-  const { isAuthenticated, user } = useOxy();
+  const { isAuthenticated, user, oxyServices } = useOxy();
   
   if (isAuthenticated) {
     return <div>Welcome {user?.username}!</div>;

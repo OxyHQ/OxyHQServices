@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useEffect, useCallback, ReactNode, useMemo } from 'react';
+import React, { createContext, useContext, useEffect, useCallback, ReactNode, useMemo, useRef, useState } from 'react';
 import { OxyServices } from '../../core';
-import { User } from '../../models/interfaces';
+import { User, ApiError } from '../../models/interfaces';
 import { SecureLoginResponse, SecureClientSession, MinimalUserData } from '../../models/secureSession';
 import { DeviceManager } from '../../utils/deviceManager';
 import { useSessionSocket } from '../hooks/useSessionSocket';
@@ -49,9 +49,11 @@ const OxyContext = createContext<OxyContextState | null>(null);
 // Props for the OxyContextProvider
 export interface OxyContextProviderProps {
   children: ReactNode;
-  oxyServices: OxyServices;
+  oxyServices?: OxyServices; // Now optional - will be created automatically if not provided
+  baseURL?: string; // New: API base URL for automatic service creation
   storageKeyPrefix?: string;
   onAuthStateChange?: (user: User | null) => void;
+  onError?: (error: ApiError) => void; // New: Error callback
   bottomSheetRef?: React.RefObject<any>;
 }
 
@@ -114,13 +116,30 @@ const getSecureStorageKeys = (prefix = 'oxy_secure') => ({
   activeSessionId: `${prefix}_active_session_id`, // ID of currently active session
 });
 
-export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
+export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   children,
-  oxyServices,
+  oxyServices: providedOxyServices,
+  baseURL,
   storageKeyPrefix = 'oxy_secure',
   onAuthStateChange,
+  onError,
   bottomSheetRef,
 }) => {
+  // Create oxyServices automatically if not provided
+  const oxyServicesRef = useRef<OxyServices | null>(null);
+
+  if (!oxyServicesRef.current) {
+    if (providedOxyServices) {
+      oxyServicesRef.current = providedOxyServices;
+    } else if (baseURL) {
+      oxyServicesRef.current = new OxyServices({ baseURL });
+    } else {
+      throw new Error('Either oxyServices or baseURL must be provided to OxyContextProvider');
+    }
+  }
+
+  const oxyServices = oxyServicesRef.current;
+
   // Zustand state
   const user = useAuthStore((state) => state.user);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -638,6 +657,7 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
         bottomSheetRef.current.present();
       } else {
         console.warn('No expand or present method available on bottomSheetRef');
+        console.log('Available methods on bottomSheetRef.current:', Object.keys(bottomSheetRef.current));
       }
 
       // Then navigate to the specified screen if provided
@@ -657,6 +677,8 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
       }
     } else {
       console.warn('bottomSheetRef is not available');
+      console.warn('To fix this, ensure you pass a bottomSheetRef to OxyProvider:');
+      console.warn('<OxyProvider baseURL="..." bottomSheetRef={yourBottomSheetRef}>');
     }
   }, [bottomSheetRef]);
 
@@ -719,6 +741,9 @@ export const OxyContextProvider: React.FC<OxyContextProviderProps> = ({
     </OxyContext.Provider>
   );
 };
+
+// Alias for backward compatibility
+export const OxyContextProvider = OxyProvider;
 
 // Hook to use the context
 export const useOxy = (): OxyContextState => {

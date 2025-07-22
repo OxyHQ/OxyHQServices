@@ -16,17 +16,80 @@ A TypeScript client library for the Oxy API providing authentication, user manag
 
 ## Features
 
-- 🔐 **Authentication**: JWT-based auth with automatic token refresh
+- 🔐 **Streamlined Authentication**: Zero-config authentication with automatic token management
+- 🔄 **Auto Token Refresh**: Seamless token lifecycle management behind the scenes
 - 👥 **User Management**: Profile operations and social features
 - 🎨 **UI Components**: Pre-built React components for common functionality
 - 📱 **Cross-Platform**: Works in React Native and web applications
 - 🔧 **TypeScript**: Full type safety and IntelliSense support
+- 🚀 **Performance**: Optimized with automatic caching and state management
 
 ## Quick Start
 
 ```bash
 npm install @oxyhq/services
 ```
+
+### Streamlined Authentication (Recommended)
+
+```typescript
+import { OxyProvider, useOxy } from '@oxyhq/services';
+
+function App() {
+  return (
+    <OxyProvider baseURL="https://api.example.com">
+      <YourApp />
+    </OxyProvider>
+  );
+}
+
+function UserProfile() {
+  const { oxyServices } = useOxy();
+  
+  const fetchData = async () => {
+    // No manual authentication needed - everything is automatic!
+    const user = await oxyServices.getCurrentUser();
+    const notifications = await oxyServices.getNotifications();
+  };
+}
+```
+
+### With Built-in Bottom Sheet
+
+The OxyProvider now includes a built-in gorhom bottom sheet - no manual setup required!
+
+```typescript
+import { OxyProvider, useOxy, OxySignInButton } from '@oxyhq/services';
+
+function App() {
+  return (
+    <OxyProvider 
+      baseURL="https://api.example.com"
+      initialScreen="SignIn"
+      theme="light"
+    >
+      <YourApp />
+    </OxyProvider>
+  );
+}
+
+function Component() {
+  const { showBottomSheet } = useOxy();
+  
+  const openSignIn = () => {
+    showBottomSheet('SignIn'); // Works automatically!
+  };
+  
+  return (
+    <div>
+      <button onClick={openSignIn}>Sign In</button>
+      <OxySignInButton /> {/* Also works automatically! */}
+    </div>
+  );
+}
+```
+
+### Traditional Usage
 
 ```typescript
 import { OxyServices } from '@oxyhq/services';
@@ -52,6 +115,7 @@ For comprehensive documentation, API reference, and examples:
 - [📚 Full Documentation](./docs/README.md)
 - [🚀 Quick Start Guide](./docs/quick-start.md)
 - [🔐 Core API Reference](./docs/core-api.md)
+- [⚡ Streamlined Authentication](./docs/core-api.md#streamlined-authentication) - **NEW!**
 - [💼 Integration Examples](./docs/examples/)
 
 ## UI Components

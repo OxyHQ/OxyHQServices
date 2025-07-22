@@ -10,692 +10,788 @@ import {
     TextInputProps,
     Animated,
     LayoutChangeEvent,
+    AccessibilityInfo,
+    StyleProp,
+    ViewStyle,
+    NativeSyntheticEvent,
+    TargetedEvent,
+    TextInputFocusEventData,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
-import { Animated as RNAnimated } from 'react-native';
 
 export interface TextFieldProps extends Omit<TextInputProps, 'style'> {
+    // Basic props
     label?: string;
-    icon?: string;
-    iconColor?: string;
+    variant?: 'filled' | 'outlined' | 'standard';
+    color?: 'primary' | 'secondary' | 'error' | 'success' | 'warning';
+
+    // Leading and trailing elements
+    leading?: React.ReactNode | ((props: { color: string; size: number }) => React.ReactNode | null) | null;
+    trailing?: React.ReactNode | ((props: { color: string; size: number }) => React.ReactNode | null) | null;
+
+    // States
     error?: string;
     success?: boolean;
     loading?: boolean;
-    rightComponent?: React.ReactNode;
-    leftComponent?: React.ReactNode;
-    colors?: any;
-    containerStyle?: any;
-    inputStyle?: any;
-    labelStyle?: any;
-    errorStyle?: any;
-    variant?: 'outlined' | 'filled';
-    onFocus?: () => void;
-    onBlur?: () => void;
-    onChangeText?: (text: string) => void;
-    testID?: string;
-    validMessage?: string;
+    disabled?: boolean;
+
+    // Helper text
+    helperText?: string;
+
+    // Enhanced features
+    maxLength?: number;
+    showCharacterCount?: boolean;
+    inputMask?: 'phone' | 'creditCard' | 'currency' | 'custom';
+    customMask?: (value: string) => string;
+    formatValue?: (value: string) => string;
+    validateOnChange?: boolean;
+    debounceMs?: number;
+    passwordStrength?: boolean;
+    clearable?: boolean;
+
+    // Mouse events (for web)
+    onMouseEnter?: (event: NativeSyntheticEvent<TargetedEvent>) => void;
+    onMouseLeave?: (event: NativeSyntheticEvent<TargetedEvent>) => void;
+
+    // Styling
+    style?: StyleProp<ViewStyle>;
+    inputContainerStyle?: StyleProp<ViewStyle>;
+    inputStyle?: TextInputProps['style'];
+    leadingContainerStyle?: StyleProp<ViewStyle>;
+    trailingContainerStyle?: StyleProp<ViewStyle>;
+
+    // Callbacks
+    onValidationChange?: (isValid: boolean, value: string) => void;
+    onClear?: () => void;
 }
 
+// Color palette for different states
+const colorPalette = {
+    primary: {
+        main: '#d169e5',
+        light: '#e8b5f0',
+        dark: '#a64db3',
+    },
+    secondary: {
+        main: '#666666',
+        light: '#999999',
+        dark: '#333333',
+    },
+    error: {
+        main: '#D32F2F',
+        light: '#ffcdd2',
+        dark: '#b71c1c',
+    },
+    success: {
+        main: '#2E7D32',
+        light: '#c8e6c9',
+        dark: '#1b5e20',
+    },
+    warning: {
+        main: '#FF9800',
+        light: '#ffe0b2',
+        dark: '#e65100',
+    },
+};
+
+// Surface scale for consistent theming
+const surfaceScale = (level: number) => {
+    const base = 255;
+    const value = Math.round(base - (level * 255));
+    return `#${value.toString(16).padStart(2, '0').repeat(3)}`;
+};
+
+// Password strength calculation
+const calculatePasswordStrength = (password: string): { score: number; feedback: string; color: string; label: string } => {
+    if (!password) return { score: 0, feedback: '', color: '#E0E0E0', label: '' };
+
+    let score = 0;
+    const feedback: string[] = [];
+
+    if (password.length >= 8) score += 25;
+    else feedback.push('At least 8 characters');
+
+    if (/[A-Z]/.test(password)) score += 25;
+    else feedback.push('One uppercase letter');
+
+    if (/[a-z]/.test(password)) score += 25;
+    else feedback.push('One lowercase letter');
+
+    if (/[\d\W]/.test(password)) score += 25;
+    else feedback.push('One number or special character');
+
+    const colors = {
+        0: '#E0E0E0',
+        25: '#D32F2F',
+        50: '#FF9800',
+        75: '#2196F3',
+        100: '#4CAF50'
+    };
+
+    const labels = {
+        0: '',
+        25: 'Weak',
+        50: 'Fair',
+        75: 'Good',
+        100: 'Strong'
+    };
+
+    return {
+        score,
+        feedback: score === 100 ? 'Strong password!' : `Missing: ${feedback.join(', ')}`,
+        color: colors[score as keyof typeof colors] || colors[0],
+        label: labels[score as keyof typeof labels] || ''
+    };
+};
+
+// Input formatting utilities
+const formatters = {
+    phone: (value: string) => {
+        const cleaned = value.replace(/\D/g, '');
+        const match = cleaned.match(/^(\d{3})(\d{3})(\d{4})$/);
+        if (match) return `(${match[1]}) ${match[2]}-${match[3]}`;
+        return value;
+    },
+    creditCard: (value: string) => {
+        const cleaned = value.replace(/\D/g, '');
+        const match = cleaned.match(/^(\d{4})(\d{4})(\d{4})(\d{4})$/);
+        if (match) return `${match[1]} ${match[2]} ${match[3]} ${match[4]}`;
+        return value.replace(/(.{4})/g, '$1 ').trim();
+    },
+    currency: (value: string) => {
+        const cleaned = value.replace(/[^\d.]/g, '');
+        const num = parseFloat(cleaned);
+        return isNaN(num) ? value : `$${num.toFixed(2)}`;
+    }
+};
+
+// Debounce hook
+const useDebounce = (value: string, delay: number) => {
+    const [debouncedValue, setDebouncedValue] = useState(value);
+
+    useEffect(() => {
+        const handler = setTimeout(() => {
+            setDebouncedValue(value);
+        }, delay);
+
+        return () => {
+            clearTimeout(handler);
+        };
+    }, [value, delay]);
+
+    return debouncedValue;
+};
+
 const TextField = forwardRef<TextInput, TextFieldProps>(({
+    // Basic props
     label,
-    icon,
-    iconColor,
+    variant = 'filled',
+    color = 'primary',
+
+    // Leading and trailing
+    leading,
+    trailing,
+
+    // States
     error,
     success = false,
     loading = false,
-    rightComponent,
-    leftComponent,
-    colors,
-    containerStyle,
+    disabled = false,
+
+    // Helper text
+    helperText,
+
+    // Enhanced features
+    maxLength,
+    showCharacterCount,
+    inputMask,
+    customMask,
+    formatValue,
+    validateOnChange,
+    debounceMs = 300,
+    passwordStrength = false,
+    clearable = false,
+
+    // Mouse events
+    onMouseEnter,
+    onMouseLeave,
+
+    // Styling
+    style,
+    inputContainerStyle,
     inputStyle,
-    labelStyle,
-    errorStyle,
-    variant = 'outlined',
+    leadingContainerStyle,
+    trailingContainerStyle,
+
+    // Callbacks
+    onValidationChange,
+    onClear,
+
+    // TextInput props
+    placeholder,
     onFocus,
     onBlur,
     onChangeText,
-    testID,
-    secureTextEntry,
     value = '',
-    validMessage,
-    ...textInputProps
+    secureTextEntry,
+    ...rest
 }, ref) => {
-    const [isFocused, setIsFocused] = useState(false);
+    // State management
+    const [focused, setFocused] = useState(false);
+    const [hovered, setHovered] = useState(false);
     const [showPassword, setShowPassword] = useState(false);
-    const [isLabelFloating, setIsLabelFloating] = useState(value ? true : false);
-    const [labelWidth, setLabelWidth] = useState(0);
-    const [labelLeft, setLabelLeft] = useState(0);
-    const [inputWidth, setInputWidth] = useState(0);
-    const [inputHeight, setInputHeight] = useState(64);
-    const borderRadius = 16;
-    const borderWidth = 2;
+    const [internalValue, setInternalValue] = useState(value);
+    const [isValidating, setIsValidating] = useState(false);
 
-    // Animation values
-    const labelAnim = useRef(new Animated.Value(value ? 1 : 0)).current;
-    const borderAnim = useRef(new Animated.Value(0)).current;
+    // Refs
+    const focusAnimation = useRef(new Animated.Value(0)).current;
+    const activeAnimation = useRef(new Animated.Value(Boolean(value) ? 1 : 0)).current;
+    const inputRef = useRef<TextInput>(null);
 
-    const handleFocus = useCallback(() => {
-        setIsFocused(true);
-        onFocus?.();
+    // Get color palette
+    const palette = colorPalette[color] || colorPalette.primary;
 
-        // Animate label to top
-        Animated.timing(labelAnim, {
-            toValue: 1,
-            duration: 200,
-            useNativeDriver: false,
-        }).start();
+    // Determine if we should show error colors
+    const effectiveColor = error ? 'error' : success ? 'success' : color;
+    const effectivePalette = colorPalette[effectiveColor] || colorPalette.primary;
 
-        // Animate border
-        Animated.timing(borderAnim, {
-            toValue: 1,
-            duration: 200,
-            useNativeDriver: false,
-        }).start();
-    }, [onFocus, labelAnim, borderAnim]);
+    // Render leading/trailing elements
+    const leadingNode = typeof leading === 'function'
+        ? leading({ color: surfaceScale(0.62), size: 24 })
+        : leading;
 
-    const handleBlur = useCallback(() => {
-        setIsFocused(false);
-        onBlur?.();
+    const trailingNode = typeof trailing === 'function'
+        ? trailing({ color: surfaceScale(0.62), size: 24 })
+        : trailing;
 
-        // Animate border back
-        Animated.timing(borderAnim, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: false,
-        }).start();
+    // Debounced value for validation
+    const debouncedValue = useDebounce(internalValue, debounceMs);
 
-        // Keep label at top if there's a value
-        if (!value) {
-            Animated.timing(labelAnim, {
-                toValue: 0,
-                duration: 200,
-                useNativeDriver: false,
-            }).start();
+    // Password strength calculation
+    const passwordStrengthData = useMemo(() => {
+        if (passwordStrength && secureTextEntry && internalValue) {
+            return calculatePasswordStrength(internalValue);
         }
-    }, [onBlur, borderAnim, labelAnim, value]);
+        return null;
+    }, [passwordStrength, secureTextEntry, internalValue]);
 
+    // Format input value
+    const formatInputValue = useCallback((text: string): string => {
+        if (formatValue) return formatValue(text);
+        if (inputMask && inputMask !== 'custom' && formatters[inputMask as keyof typeof formatters]) {
+            return formatters[inputMask as keyof typeof formatters](text);
+        }
+        if (customMask) return customMask(text);
+        return text;
+    }, [formatValue, inputMask, customMask]);
+
+    // Handle focus
+    const handleFocus = useCallback((event: NativeSyntheticEvent<TextInputFocusEventData>) => {
+        if (disabled) return;
+        setFocused(true);
+        onFocus?.(event);
+    }, [disabled, onFocus]);
+
+    // Handle blur
+    const handleBlur = useCallback((event: NativeSyntheticEvent<TextInputFocusEventData>) => {
+        setFocused(false);
+        onBlur?.(event);
+    }, [onBlur]);
+
+    // Handle mouse events
+    const handleMouseEnter = useCallback((event: NativeSyntheticEvent<TargetedEvent>) => {
+        onMouseEnter?.(event);
+        setHovered(true);
+    }, [onMouseEnter]);
+
+    const handleMouseLeave = useCallback((event: NativeSyntheticEvent<TargetedEvent>) => {
+        onMouseLeave?.(event);
+        setHovered(false);
+    }, [onMouseLeave]);
+
+    // Handle text change
     const handleChangeText = useCallback((text: string) => {
-        onChangeText?.(text);
+        const formattedText = formatInputValue(text);
+        setInternalValue(formattedText);
+        onChangeText?.(formattedText);
+    }, [formatInputValue, onChangeText]);
 
-        // Animate label if value changes from empty to filled or vice versa
-        const shouldShowLabel = text.length > 0;
+    // Handle clear
+    const handleClear = useCallback(() => {
+        setInternalValue('');
+        onChangeText?.('');
+        onClear?.();
+        inputRef.current?.focus();
+    }, [onChangeText, onClear]);
 
-        if (shouldShowLabel !== isLabelFloating) {
-            setIsLabelFloating(shouldShowLabel);
-            Animated.timing(labelAnim, {
-                toValue: shouldShowLabel ? 1 : 0,
-                duration: 200,
-                useNativeDriver: false,
-            }).start();
-        }
-    }, [onChangeText, labelAnim, isLabelFloating]);
-
-    // Initialize label position based on current value
-    useEffect(() => {
-        if (value && !isLabelFloating) {
-            setIsLabelFloating(true);
-            labelAnim.setValue(1);
-        }
-    }, [value, isLabelFloating, labelAnim]);
-
+    // Toggle password visibility
     const togglePasswordVisibility = useCallback(() => {
-        setShowPassword(!showPassword);
-    }, [showPassword]);
+        setShowPassword(prev => !prev);
+    }, []);
 
-    const getBorderColor = () => {
-        if (error) return colors?.error || '#D32F2F';
-        if (success) return colors?.success || '#2E7D32';
-        if (isFocused) return colors?.primary || '#d169e5';
-        return colors?.border || '#E0E0E0';
-    };
+    // Animate focus state
+    useEffect(() => {
+        Animated.timing(focusAnimation, {
+            toValue: focused ? 1 : 0,
+            duration: 200,
+            useNativeDriver: false,
+        }).start();
+    }, [focused, focusAnimation]);
 
-    const getIconColor = () => {
-        if (isFocused) return colors?.primary || '#d169e5';
-        return iconColor || colors?.secondaryText || '#666666';
-    };
+    // Animate active state (when has value)
+    useEffect(() => {
+        const hasValue = Boolean(internalValue);
+        Animated.timing(activeAnimation, {
+            toValue: hasValue ? 1 : 0,
+            duration: 200,
+            useNativeDriver: false,
+        }).start();
+    }, [internalValue, activeAnimation]);
 
-    const getLabelColor = () => {
-        if (error) return colors?.error || '#D32F2F';
-        if (isFocused) return colors?.primary || '#d169e5';
-        return colors?.secondaryText || '#666666';
-    };
+    // Validation effect
+    useEffect(() => {
+        if (!validateOnChange || !onValidationChange) return;
 
-    const getBackgroundColor = () => {
-        if (variant === 'filled') {
-            return colors?.inputBackground || '#F5F5F5';
-        }
-        return 'transparent';
-    };
+        const timer = setTimeout(() => {
+            setIsValidating(true);
+            const isValid = !error && debouncedValue.length > 0;
+            onValidationChange(isValid, debouncedValue);
+            setIsValidating(false);
+        }, 100);
 
-    const styles = createStyles(colors, variant);
+        return () => clearTimeout(timer);
+    }, [debouncedValue, validateOnChange, onValidationChange, error]);
 
-    const BASE_PADDING = 20;
-    const ICON_WIDTH = 22;
-    const ICON_MARGIN = 12;
-    const TEXT_LEFT = (icon || leftComponent) ? BASE_PADDING + ICON_WIDTH + ICON_MARGIN : BASE_PADDING;
-    const FLOAT_LEFT_OFFSET = 10;
+    // Update internal value when prop changes
+    useEffect(() => {
+        setInternalValue(value);
+    }, [value]);
 
-    const isLabelFloated = Boolean(value || isFocused);
+    // Styles
+    const styles = useMemo(() => {
+        const isActive = focused || Boolean(internalValue);
 
-    // For web, make TextInput the primary element with absolute positioned decorations
-    if (Platform.OS === 'web') {
+        return StyleSheet.create({
+            container: {
+                width: '100%',
+                marginBottom: 24,
+            },
+            inputContainer: {
+                flexDirection: 'row',
+                alignItems: 'center',
+                minHeight: variant === 'standard' ? 48 : 56,
+                backgroundColor: variant === 'filled'
+                    ? focused
+                        ? surfaceScale(0.14)
+                        : hovered
+                            ? surfaceScale(0.08)
+                            : surfaceScale(0.04)
+                    : 'transparent',
+                borderRadius: variant === 'standard' ? 0 : (variant === 'filled' ? 4 : 8),
+                borderWidth: variant === 'outlined' ? (focused ? 2 : 1) : 0,
+                borderColor: focused
+                    ? effectivePalette.main
+                    : hovered
+                        ? surfaceScale(0.87)
+                        : surfaceScale(0.42),
+                position: 'relative',
+                ...Platform.select({
+                    web: {
+                        outline: 'none',
+                        outlineStyle: 'none',
+                        outlineWidth: 0,
+                        outlineOffset: 0,
+                    },
+                    default: {},
+                }),
+            },
+            input: {
+                flex: 1,
+                minHeight: variant === 'standard' ? 48 : 56,
+                paddingStart: leadingNode ? 12 : variant === 'standard' ? 0 : 16,
+                paddingEnd: (trailingNode || clearable || secureTextEntry) ? 12 : variant === 'standard' ? 0 : 16,
+                paddingTop: variant === 'filled' && label ? 18 : 0,
+                color: surfaceScale(0.87),
+                fontSize: 16,
+                borderWidth: 0,
+                backgroundColor: 'transparent',
+                ...Platform.select({
+                    web: {
+                        border: 'none',
+                        outline: 'none',
+                        outlineStyle: 'none',
+                        outlineWidth: 0,
+                        outlineOffset: 0,
+                        boxShadow: 'none',
+                        '-webkit-appearance': 'none',
+                        '-moz-appearance': 'none',
+                        appearance: 'none',
+                    },
+                    default: {},
+                }),
+            },
+            leading: {
+                justifyContent: 'center',
+                alignItems: 'center',
+                width: 24,
+                height: 24,
+                marginStart: variant === 'standard' ? 0 : 12,
+                marginVertical: variant === 'standard' ? 12 : 16,
+            },
+            trailing: {
+                flexDirection: 'row',
+                justifyContent: 'center',
+                alignItems: 'center',
+                marginEnd: variant === 'standard' ? 0 : 12,
+                marginVertical: variant === 'standard' ? 12 : 16,
+            },
+            underline: {
+                position: 'absolute',
+                start: 0,
+                end: 0,
+                bottom: 0,
+                height: 1,
+                backgroundColor: hovered ? surfaceScale(0.87) : surfaceScale(0.42),
+            },
+            underlineFocused: {
+                position: 'absolute',
+                start: 0,
+                end: 0,
+                bottom: 0,
+                height: 2,
+                backgroundColor: effectivePalette.main,
+            },
+            labelContainer: {
+                justifyContent: 'center',
+                position: 'absolute',
+                top: 0,
+                start: variant === 'standard' ? (leadingNode ? 36 : 0) : leadingNode ? 48 : 16,
+                height: variant === 'standard' ? 48 : 56,
+            },
+            label: {
+                fontSize: 16,
+                fontWeight: '500',
+                color: surfaceScale(0.87),
+            },
+            helperText: {
+                fontSize: 12,
+                marginTop: 4,
+                marginHorizontal: 16,
+                color: error ? effectivePalette.main : surfaceScale(0.6),
+            },
+            errorContainer: {
+                flexDirection: 'row',
+                alignItems: 'center',
+                padding: 12,
+                borderRadius: 12,
+                marginTop: 8,
+                gap: 8,
+                backgroundColor: effectivePalette.main + '10',
+                borderWidth: 1,
+                borderColor: effectivePalette.main + '30',
+            },
+            errorText: {
+                fontSize: 12,
+                fontWeight: '500',
+                flex: 1,
+                color: effectivePalette.main,
+            },
+            passwordStrengthContainer: {
+                marginTop: 8,
+                marginHorizontal: 16,
+            },
+            passwordStrengthBar: {
+                height: 4,
+                backgroundColor: '#E0E0E0',
+                borderRadius: 2,
+                overflow: 'hidden',
+            },
+            passwordStrengthFill: {
+                height: '100%',
+                borderRadius: 2,
+            },
+            passwordStrengthText: {
+                fontSize: 11,
+                marginTop: 4,
+                fontWeight: '500',
+            },
+            characterCount: {
+                fontSize: 11,
+                marginTop: 4,
+                marginHorizontal: 16,
+                textAlign: 'right',
+                color: surfaceScale(0.6),
+            },
+            clearButton: {
+                padding: 4,
+                marginLeft: 8,
+            },
+            passwordToggle: {
+                padding: 4,
+                marginLeft: 8,
+            },
+            validationIndicator: {
+                marginLeft: 8,
+            },
+        });
+    }, [variant, focused, hovered, effectivePalette, leadingNode, trailingNode, clearable, secureTextEntry, label, error, internalValue]);
+
+    // Character count display
+    const characterCount = internalValue.length;
+    const showCount = showCharacterCount && maxLength;
+
+    // Render password strength indicator
+    const renderPasswordStrength = () => {
+        if (!passwordStrengthData) return null;
+
         return (
-            <View style={[styles.container, containerStyle]}>
-                <View style={styles.webInputContainer}>
-                    {/* TextInput as the primary element */}
-                    <TextInput
-                        ref={ref}
+            <View style={styles.passwordStrengthContainer}>
+                <View style={styles.passwordStrengthBar}>
+                    <View
                         style={[
-                            styles.webInput,
+                            styles.passwordStrengthFill,
                             {
-                                color: colors?.text || '#000000',
-                                borderColor: 'transparent',
-                                backgroundColor: getBackgroundColor(),
-                                paddingLeft: TEXT_LEFT,
-                                paddingRight: 60, // Space for right components
-                                paddingTop: label ? 24 : 20, // Make room for floated label
-                                paddingBottom: 8,
-                                borderWidth: 0,
-                                ...Platform.select({
-                                    web: { border: 'none', outline: 'none', boxShadow: 'none' },
-                                    default: {},
-                                }),
-                            },
-                            inputStyle
+                                width: `${passwordStrengthData.score}%`,
+                                backgroundColor: passwordStrengthData.color
+                            }
                         ]}
-                        onFocus={handleFocus}
-                        onBlur={handleBlur}
-                        onChangeText={handleChangeText}
-                        secureTextEntry={secureTextEntry && !showPassword}
-                        placeholderTextColor="transparent"
-                        testID={testID}
-                        autoComplete={secureTextEntry ? 'current-password' : 'off'}
-                        spellCheck={false}
-                        value={value}
-                        {...textInputProps}
                     />
+                </View>
+                <Text style={[styles.passwordStrengthText, { color: passwordStrengthData.color }]}>
+                    {passwordStrengthData.label}
+                </Text>
+            </View>
+        );
+    };
 
-                    {/* SVG border with a gap for the floating label */}
-                    <Svg
-                        width={inputWidth}
-                        height={inputHeight}
-                        style={{ position: 'absolute', top: 0, left: 0, zIndex: 0 }}
-                        pointerEvents="none"
-                    >
-                        {/* Calculate the path for the border with rounded corners and a gap for the label */}
-                        <Path
-                            d={(() => {
-                                const y = borderWidth / 2;
-                                const x1 = borderRadius + borderWidth / 2;
-                                const x2 = inputWidth - borderRadius - borderWidth / 2;
-                                const labelGapStart = isLabelFloated ? labelLeft - 4 : x1;
-                                const labelGapEnd = isLabelFloated ? labelLeft + labelWidth + 4 : x2;
-                                // Start at left arc
-                                return `M${x1},${y}` +
-                                    ` A${borderRadius},${borderRadius} 0 0 1 ${borderWidth / 2},${y + borderRadius}` +
-                                    ` L${borderWidth / 2},${inputHeight - borderRadius - borderWidth / 2}` +
-                                    ` A${borderRadius},${borderRadius} 0 0 1 ${x1},${inputHeight - borderWidth / 2}` +
-                                    ` L${x2},${inputHeight - borderWidth / 2}` +
-                                    ` A${borderRadius},${borderRadius} 0 0 1 ${inputWidth - borderWidth / 2},${inputHeight - borderRadius - borderWidth / 2}` +
-                                    ` L${inputWidth - borderWidth / 2},${y + borderRadius}` +
-                                    ` A${borderRadius},${borderRadius} 0 0 1 ${x2},${y}` +
-                                    ` L${labelGapStart},${y}` +
-                                    ` M${labelGapEnd},${y}` +
-                                    ` L${x2},${y}`;
-                            })()}
-                            stroke={getBorderColor()}
-                            strokeWidth={borderWidth}
-                            fill="none"
-                        />
-                    </Svg>
+    // Render character count
+    const renderCharacterCount = () => {
+        if (!showCount) return null;
 
-                    {/* Floating label */}
-                    {label && (
-                        <Animated.Text
-                            onLayout={e => {
-                                setLabelWidth(e.nativeEvent.layout.width);
-                                setLabelLeft(e.nativeEvent.layout.x);
-                            }}
+        return (
+            <Text style={styles.characterCount}>
+                {characterCount}/{maxLength}
+            </Text>
+        );
+    };
+
+    // Render error message
+    const renderError = () => {
+        if (!error) return null;
+
+        return (
+            <View style={styles.errorContainer}>
+                <Ionicons
+                    name="close-circle"
+                    size={16}
+                    color={effectivePalette.main}
+                />
+                <Text style={styles.errorText}>{error}</Text>
+            </View>
+        );
+    };
+
+    // Render trailing elements
+    const renderTrailingElements = () => {
+        const elements = [];
+
+        // Loading indicator
+        if (isValidating) {
+            elements.push(
+                <ActivityIndicator
+                    key="validating"
+                    size="small"
+                    color={effectivePalette.main}
+                    style={styles.validationIndicator}
+                />
+            );
+        }
+
+        // Loading indicator
+        if (loading && !isValidating) {
+            elements.push(
+                <ActivityIndicator
+                    key="loading"
+                    size="small"
+                    color={effectivePalette.main}
+                    style={styles.validationIndicator}
+                />
+            );
+        }
+
+        // Success indicator
+        if (success && !loading && !isValidating) {
+            elements.push(
+                <Ionicons
+                    key="success"
+                    name="checkmark-circle"
+                    size={22}
+                    color={colorPalette.success.main}
+                    style={styles.validationIndicator}
+                />
+            );
+        }
+
+        // Clear button
+        if (clearable && internalValue && !secureTextEntry) {
+            elements.push(
+                <TouchableOpacity
+                    key="clear"
+                    style={styles.clearButton}
+                    onPress={handleClear}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    accessibilityLabel="Clear input"
+                    accessibilityRole="button"
+                >
+                    <Ionicons
+                        name="close-circle"
+                        size={20}
+                        color={surfaceScale(0.62)}
+                    />
+                </TouchableOpacity>
+            );
+        }
+
+        // Password toggle
+        if (secureTextEntry) {
+            elements.push(
+                <TouchableOpacity
+                    key="password"
+                    style={styles.passwordToggle}
+                    onPress={togglePasswordVisibility}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                    accessibilityLabel={showPassword ? "Hide password" : "Show password"}
+                    accessibilityRole="button"
+                >
+                    <Ionicons
+                        name={showPassword ? "eye-off" : "eye"}
+                        size={22}
+                        color={surfaceScale(0.62)}
+                    />
+                </TouchableOpacity>
+            );
+        }
+
+        return elements;
+    };
+
+    return (
+        <View
+            style={[styles.container, style]}
+            {...(Platform.OS === 'web' && { className: 'oxy-textfield-container' })}
+        >
+            <View
+                style={[
+                    styles.inputContainer,
+                    inputContainerStyle,
+                ]}
+                {...(Platform.OS === 'web' && {
+                    onMouseEnter: handleMouseEnter,
+                    onMouseLeave: handleMouseLeave,
+                })}
+            >
+                {/* Leading element */}
+                {leadingNode && (
+                    <View style={[styles.leading, leadingContainerStyle]}>
+                        {leadingNode}
+                    </View>
+                )}
+
+                {/* Text Input */}
+                <TextInput
+                    ref={r => {
+                        if (typeof ref === 'function') {
+                            ref(r);
+                        } else if (ref && 'current' in ref) {
+                            (ref as React.MutableRefObject<TextInput | null>).current = r;
+                        }
+                        inputRef.current = r;
+                    }}
+                    style={[styles.input, inputStyle]}
+                    placeholder={label ? (focused ? placeholder : undefined) : placeholder}
+                    placeholderTextColor={surfaceScale(0.4)}
+                    selectionColor={effectivePalette.main}
+                    onFocus={handleFocus}
+                    onBlur={handleBlur}
+                    onChangeText={handleChangeText}
+                    secureTextEntry={secureTextEntry && !showPassword}
+                    value={internalValue}
+                    editable={!disabled}
+                    maxLength={maxLength}
+                    {...(Platform.OS === 'web' && { className: 'oxy-textfield-input' })}
+                    {...rest}
+                />
+
+                {/* Trailing elements */}
+                <View style={[styles.trailing, trailingContainerStyle]}>
+                    {trailingNode}
+                    {renderTrailingElements()}
+                </View>
+
+                {/* Underline for filled/standard variants */}
+                {(variant === 'filled' || variant === 'standard') && (
+                    <>
+                        <View style={styles.underline} pointerEvents="none" />
+                        <Animated.View
                             style={[
-                                styles.webFloatingLabel,
+                                styles.underlineFocused,
+                                { transform: [{ scaleX: focusAnimation }] }
+                            ]}
+                            pointerEvents="none"
+                        />
+                    </>
+                )}
+
+                {/* Label */}
+                {label && (
+                    <View style={styles.labelContainer} pointerEvents="none">
+                        <Animated.Text
+                            style={[
+                                styles.label,
                                 {
-                                    color: getLabelColor(),
-                                    left: labelAnim.interpolate({ inputRange: [0, 1], outputRange: [TEXT_LEFT, FLOAT_LEFT_OFFSET] }),
-                                    top: labelAnim.interpolate({ inputRange: [0, 1], outputRange: [20, -14] }),
-                                    fontSize: labelAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] }),
-                                    backgroundColor: 'transparent',
-                                    paddingHorizontal: 4,
-                                    zIndex: 2,
+                                    color: focusAnimation.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: [surfaceScale(0.87), effectivePalette.main],
+                                    }),
+                                    fontSize: activeAnimation.interpolate({
+                                        inputRange: [0, 1],
+                                        outputRange: [16, 12],
+                                    }),
+                                    transform: [
+                                        {
+                                            translateY: activeAnimation.interpolate({
+                                                inputRange: [0, 1],
+                                                outputRange: [0, variant === 'filled' ? -12 : variant === 'outlined' ? -28 : -24],
+                                            }),
+                                        },
+                                    ],
                                 },
-                                labelStyle
                             ]}
                         >
                             {label}
                         </Animated.Text>
-                    )}
-
-                    {/* Left Icon - positioned absolutely */}
-                    {icon && !leftComponent && (
-                        <View style={styles.webLeftIcon}>
-                            <Ionicons
-                                name={icon as any}
-                                size={22}
-                                color={getIconColor()}
-                            />
-                        </View>
-                    )}
-
-                    {/* Left Component - positioned absolutely */}
-                    {leftComponent && (
-                        <View style={styles.webLeftComponent}>
-                            {leftComponent}
-                        </View>
-                    )}
-
-                    {/* Right Components - positioned absolutely */}
-                    <View style={styles.webRightComponents}>
-                        {loading && (
-                            <ActivityIndicator
-                                size="small"
-                                color={colors?.primary || '#d169e5'}
-                                style={styles.validationIndicator}
-                            />
-                        )}
-
-                        {success && !loading && (
-                            <Ionicons
-                                name="checkmark-circle"
-                                size={22}
-                                color={colors?.success || '#2E7D32'}
-                                style={styles.validationIndicator}
-                            />
-                        )}
-
-                        {error && !loading && !success && (
-                            <Ionicons
-                                name="close-circle"
-                                size={22}
-                                color={colors?.error || '#D32F2F'}
-                                style={styles.validationIndicator}
-                            />
-                        )}
-
-                        {/* Password Toggle */}
-                        {secureTextEntry && (
-                            <TouchableOpacity
-                                style={styles.passwordToggle}
-                                onPress={togglePasswordVisibility}
-                                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                                {...(Platform.OS === 'web' && {
-                                    role: 'button',
-                                    tabIndex: 0,
-                                    onKeyPress: (e: any) => {
-                                        if (e.key === 'Enter' || e.key === ' ') {
-                                            e.preventDefault();
-                                            togglePasswordVisibility();
-                                        }
-                                    },
-                                } as any)}
-                            >
-                                <Ionicons
-                                    name={showPassword ? "eye-off" : "eye"}
-                                    size={22}
-                                    color={colors?.secondaryText || '#666666'}
-                                />
-                            </TouchableOpacity>
-                        )}
-
-                        {/* Custom Right Component */}
-                        {rightComponent}
-                    </View>
-                </View>
-
-                {/* Error Message */}
-                {error && (
-                    <View style={[styles.errorContainer, errorStyle]}>
-                        <Ionicons
-                            name="alert-circle"
-                            size={16}
-                            color={colors?.error || '#D32F2F'}
-                        />
-                        <Text style={[
-                            styles.errorText,
-                            { color: colors?.error || '#D32F2F' }
-                        ]}>
-                            {error}
-                        </Text>
                     </View>
                 )}
             </View>
-        );
-    }
 
-    // For mobile platforms, use Material Design structure
-    return (
-        <View style={[styles.container, containerStyle]}>
-            <View
-                style={[
-                    styles.inputWrapper,
-                    {
-                        borderColor: 'transparent',
-                        backgroundColor: getBackgroundColor(),
-                        borderWidth: 0,
-                        borderBottomWidth: variant === 'filled' ? 2 : (variant === 'outlined' ? 2 : 0),
-                    },
-                ]}
-                onLayout={(e: LayoutChangeEvent) => {
-                    setInputWidth(e.nativeEvent.layout.width);
-                    setInputHeight(e.nativeEvent.layout.height);
-                }}
-            >
-                {/* Left Icon */}
-                {icon && !leftComponent && (
-                    <Ionicons
-                        name={icon as any}
-                        size={22}
-                        color={getIconColor()}
-                        style={styles.inputIcon}
-                    />
-                )}
-
-                {/* Left Component */}
-                {leftComponent}
-
-                {/* Input Content */}
-                <View style={styles.inputContent}>
-                    {label && (
-                        <>
-                            {/* SVG border with a gap for the floating label */}
-                            <Svg
-                                width={inputWidth}
-                                height={inputHeight}
-                                style={{ position: 'absolute', top: 0, left: 0, zIndex: 0 }}
-                                pointerEvents="none"
-                            >
-                                {/* Calculate the path for the border with rounded corners and a gap for the label */}
-                                <Path
-                                    d={(() => {
-                                        const y = borderWidth / 2;
-                                        const x1 = borderRadius + borderWidth / 2;
-                                        const x2 = inputWidth - borderRadius - borderWidth / 2;
-                                        const labelGapStart = isLabelFloated ? labelLeft - 4 : x1;
-                                        const labelGapEnd = isLabelFloated ? labelLeft + labelWidth + 4 : x2;
-                                        // Start at left arc
-                                        return `M${x1},${y}` +
-                                            ` A${borderRadius},${borderRadius} 0 0 1 ${borderWidth / 2},${y + borderRadius}` +
-                                            ` L${borderWidth / 2},${inputHeight - borderRadius - borderWidth / 2}` +
-                                            ` A${borderRadius},${borderRadius} 0 0 1 ${x1},${inputHeight - borderWidth / 2}` +
-                                            ` L${x2},${inputHeight - borderWidth / 2}` +
-                                            ` A${borderRadius},${borderRadius} 0 0 1 ${inputWidth - borderWidth / 2},${inputHeight - borderRadius - borderWidth / 2}` +
-                                            ` L${inputWidth - borderWidth / 2},${y + borderRadius}` +
-                                            ` A${borderRadius},${borderRadius} 0 0 1 ${x2},${y}` +
-                                            ` L${labelGapStart},${y}` +
-                                            ` M${labelGapEnd},${y}` +
-                                            ` L${x2},${y}`;
-                                    })()}
-                                    stroke={getBorderColor()}
-                                    strokeWidth={borderWidth}
-                                    fill="none"
-                                />
-                            </Svg>
-                            {/* Floating label */}
-                            <Animated.Text
-                                onLayout={e => {
-                                    setLabelWidth(e.nativeEvent.layout.width);
-                                    setLabelLeft(e.nativeEvent.layout.x);
-                                }}
-                                style={[
-                                    styles.floatingLabel,
-                                    {
-                                        color: getLabelColor(),
-                                        left: labelAnim.interpolate({ inputRange: [0, 1], outputRange: [TEXT_LEFT, FLOAT_LEFT_OFFSET] }),
-                                        top: labelAnim.interpolate({ inputRange: [0, 1], outputRange: [20, -14] }),
-                                        fontSize: labelAnim.interpolate({ inputRange: [0, 1], outputRange: [16, 12] }),
-                                        zIndex: 2,
-                                        paddingHorizontal: 4,
-                                        backgroundColor: 'transparent',
-                                    },
-                                    labelStyle
-                                ]}
-                            >
-                                {label}
-                            </Animated.Text>
-                        </>
-                    )}
-                    <TextInput
-                        ref={ref}
-                        style={[
-                            styles.input,
-                            {
-                                color: colors?.text || '#000000',
-                                backgroundColor: getBackgroundColor(),
-                                paddingLeft: TEXT_LEFT,
-                                paddingRight: 60, // Space for right components
-                                paddingTop: label ? 24 : 20, // Make room for floated label
-                                paddingBottom: 8,
-                                borderWidth: 0,
-                                borderColor: 'transparent',
-                                ...Platform.select({
-                                    web: { border: 'none', outline: 'none', boxShadow: 'none' },
-                                    default: {},
-                                }),
-                            },
-                            inputStyle
-                        ]}
-                        onFocus={handleFocus}
-                        onBlur={handleBlur}
-                        onChangeText={handleChangeText}
-                        secureTextEntry={secureTextEntry && !showPassword}
-                        placeholderTextColor="transparent"
-                        testID={testID}
-                        value={value}
-                        {...textInputProps}
-                    />
-                </View>
-
-                {/* Right Components */}
-                <View style={styles.rightComponents}>
-                    {loading && (
-                        <ActivityIndicator
-                            size="small"
-                            color={colors?.primary || '#d169e5'}
-                            style={styles.validationIndicator}
-                        />
-                    )}
-
-                    {success && !loading && (
-                        <Ionicons
-                            name="checkmark-circle"
-                            size={22}
-                            color={colors?.success || '#2E7D32'}
-                            style={styles.validationIndicator}
-                        />
-                    )}
-
-                    {error && !loading && !success && (
-                        <Ionicons
-                            name="close-circle"
-                            size={22}
-                            color={colors?.error || '#D32F2F'}
-                            style={styles.validationIndicator}
-                        />
-                    )}
-
-                    {/* Password Toggle */}
-                    {secureTextEntry && (
-                        <TouchableOpacity
-                            style={styles.passwordToggle}
-                            onPress={togglePasswordVisibility}
-                            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                        >
-                            <Ionicons
-                                name={showPassword ? "eye-off" : "eye"}
-                                size={22}
-                                color={colors?.secondaryText || '#666666'}
-                            />
-                        </TouchableOpacity>
-                    )}
-
-                    {/* Custom Right Component */}
-                    {rightComponent}
-                </View>
-            </View>
-
-            {/* Error Message */}
-            {error && (
-                <View style={[styles.errorContainer, errorStyle]}>
-                    <Ionicons
-                        name="alert-circle"
-                        size={16}
-                        color={colors?.error || '#D32F2F'}
-                    />
-                    <Text style={[
-                        styles.errorText,
-                        { color: colors?.error || '#D32F2F' }
-                    ]}>
-                        {error}
-                    </Text>
-                </View>
+            {/* Helper text */}
+            {helperText && (
+                <Text style={styles.helperText}>
+                    {helperText}
+                </Text>
             )}
-            {/* Valid Message */}
-            {!error && validMessage && (
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 4, gap: 6 }}>
-                    <Ionicons name="checkmark-circle" size={16} color={colors?.success || '#2E7D32'} />
-                    <Text style={{ fontSize: 13, fontWeight: '500', color: colors?.success || '#2E7D32' }}>{validMessage}</Text>
-                </View>
-            )}
+
+            {/* Error message */}
+            {renderError()}
+
+            {/* Password strength indicator */}
+            {renderPasswordStrength()}
+
+            {/* Character count */}
+            {renderCharacterCount()}
         </View>
     );
-});
-
-const createStyles = (colors: any, variant: 'outlined' | 'filled') => StyleSheet.create({
-    container: {
-        width: '100%',
-        marginBottom: 24,
-    },
-    inputWrapper: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        height: 64,
-        borderTopLeftRadius: 16,
-        borderTopRightRadius: 16,
-        borderBottomLeftRadius: 0,
-        borderBottomRightRadius: 0,
-        paddingHorizontal: 20,
-        backgroundColor: variant === 'filled' ? (colors?.inputBackground || '#F5F5F5') : 'transparent',
-        position: 'relative',
-        borderWidth: 0,
-        borderColor: 'transparent',
-    },
-    inputIcon: {
-        marginRight: 12,
-        width: 22,
-        height: 22,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    inputContent: {
-        flex: 1,
-        justifyContent: 'center',
-        position: 'relative',
-        height: 64,
-    },
-    floatingLabel: {
-        position: 'absolute',
-        fontWeight: '500',
-        lineHeight: 24,
-        backgroundColor: 'transparent',
-        paddingHorizontal: 4,
-    },
-    input: {
-        flex: 1,
-        fontSize: 16,
-        height: 24,
-        paddingVertical: 0,
-        marginTop: 8, // Space for floating label
-        borderWidth: 0,
-        borderColor: 'transparent',
-    },
-    // Web-specific styles
-    webInputContainer: {
-        position: 'relative',
-        height: 64,
-    },
-    webInput: {
-        width: '100%',
-        height: 64,
-        fontSize: 16,
-        paddingHorizontal: 20,
-        borderTopLeftRadius: 16,
-        borderTopRightRadius: 16,
-        borderBottomLeftRadius: 0,
-        borderBottomRightRadius: 0,
-        borderWidth: 0,
-        borderColor: 'transparent',
-        borderStyle: 'solid',
-    },
-    webFloatingLabel: {
-        position: 'absolute',
-        fontWeight: '500',
-        lineHeight: 24,
-        backgroundColor: 'transparent',
-        paddingHorizontal: 4,
-    },
-    webLeftIcon: {
-        position: 'absolute',
-        left: 20,
-        top: 21, // (64 - 22) / 2
-        zIndex: 1,
-        width: 22,
-        height: 22,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    webLeftComponent: {
-        position: 'absolute',
-        left: 20,
-        top: 0,
-        height: 64,
-        justifyContent: 'center',
-        zIndex: 1,
-    },
-    webRightComponents: {
-        position: 'absolute',
-        right: 20,
-        top: 0,
-        height: 64,
-        flexDirection: 'row',
-        alignItems: 'center',
-        zIndex: 1,
-    },
-    rightComponents: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    validationIndicator: {
-        marginLeft: 8,
-    },
-    passwordToggle: {
-        padding: 4,
-        marginLeft: 8,
-    },
-    errorContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 12,
-        borderRadius: 12,
-        marginTop: 8,
-        gap: 8,
-        backgroundColor: (colors?.error || '#D32F2F') + '10',
-        borderWidth: 1,
-        borderColor: (colors?.error || '#D32F2F') + '30',
-    },
-    errorText: {
-        fontSize: 12,
-        fontWeight: '500',
-        flex: 1,
-    },
 });
 
 TextField.displayName = 'TextField';
