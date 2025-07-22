@@ -1228,10 +1228,13 @@ export class OxyServices {
    * @returns Array of user sessions
    */
   async getSessionsBySessionId(sessionId: string): Promise<any[]> {
+    console.log('getSessionsBySessionId called with sessionId:', sessionId);
     try {
       const res = await this.client.get(`/secure-session/sessions/${sessionId}`);
+      console.log('getSessionsBySessionId response:', res.data);
       return res.data.sessions;
     } catch (error) {
+      console.error('getSessionsBySessionId error:', error);
       throw this.handleError(error);
     }
   }

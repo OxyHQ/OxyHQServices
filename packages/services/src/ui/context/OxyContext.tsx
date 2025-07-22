@@ -573,21 +573,31 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   // Refresh sessions method
   const refreshSessions = async (): Promise<void> => {
-    if (!activeSessionId) return;
+    console.log('refreshSessions called with activeSessionId:', activeSessionId);
+
+    if (!activeSessionId) {
+      console.log('refreshSessions: No activeSessionId, returning');
+      return;
+    }
 
     try {
+      console.log('refreshSessions: Calling getSessionsBySessionId...');
       const serverSessions = await oxyServices.getSessionsBySessionId(activeSessionId);
+      console.log('refreshSessions: Server sessions received:', serverSessions);
 
       // Update local sessions with server data
       const updatedSessions: SecureClientSession[] = serverSessions.map(serverSession => ({
         sessionId: serverSession.sessionId,
         deviceId: serverSession.deviceId,
-        expiresAt: new Date().toISOString(), // You might want to get this from server
-        lastActive: new Date().toISOString()
+        expiresAt: serverSession.expiresAt || new Date().toISOString(),
+        lastActive: serverSession.lastActive || new Date().toISOString(),
+        userId: serverSession.userId || user?.id
       }));
 
+      console.log('refreshSessions: Updated sessions:', updatedSessions);
       setSessions(updatedSessions);
       await saveSessionsToStorage(updatedSessions);
+      console.log('refreshSessions: Sessions saved to storage');
     } catch (error) {
       console.error('Refresh sessions error:', error);
     }
@@ -713,7 +723,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     error,
     login,
     logout,
-    logoutAll: async () => { await logout(); },
+    logoutAll,
     signUp: async (username, email, password) => {
       await signUp(username, email, password);
       return user as User; // Return the latest user from Zustand

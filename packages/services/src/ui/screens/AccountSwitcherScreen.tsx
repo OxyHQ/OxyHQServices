@@ -21,6 +21,7 @@ import { confirmAction } from '../utils/confirmAction';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
+import { Header } from '../components';
 
 interface SessionWithUser extends SecureClientSession {
     userProfile?: User;
@@ -51,6 +52,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         switchSession,
         removeSession,
         logoutAll,
+        refreshSessions,
         isLoading,
         isAuthenticated
     } = useOxy();
@@ -84,8 +86,19 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         shadow: isDarkTheme ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.1)',
     };
 
+    // Refresh sessions when screen loads
+    useEffect(() => {
+        if (isAuthenticated && activeSessionId) {
+            refreshSessions();
+        }
+    }, [isAuthenticated, activeSessionId, refreshSessions]);
+
     // Load user profiles for sessions
     useEffect(() => {
+        console.log('AccountSwitcherScreen - sessions changed:', sessions);
+        console.log('AccountSwitcherScreen - sessions length:', sessions.length);
+        console.log('AccountSwitcherScreen - activeSessionId:', activeSessionId);
+
         const loadUserProfiles = async () => {
             if (!sessions.length || !oxyServices) return;
 
@@ -162,44 +175,22 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     };
 
     const handleLogoutAll = async () => {
-        // IMPORTANT DEBUG INFO - Check this in console
-        console.log('🔴 DEBUG handleLogoutAll called');
-        console.log('🔴 Current user:', user);
-        console.log('🔴 activeSessionId:', activeSessionId);
-        console.log('🔴 sessions count:', sessions?.length || 0);
-        console.log('🔴 sessions array:', sessions);
-        console.log('🔴 isLoading:', isLoading);
-        console.log('🔴 logoutAll function type:', typeof logoutAll);
-
-        // Check if we have the required data
-        if (!activeSessionId) {
-            console.error('🔴 ERROR: No activeSessionId found!');
-            toast.error('No active session found. You may already be logged out.');
-            return;
-        }
-
-        if (typeof logoutAll !== 'function') {
-            console.error('🔴 ERROR: logoutAll is not a function!', typeof logoutAll);
-            toast.error('Logout function not available. Please try refreshing the app.');
-            return;
-        }
-
-        // TEMPORARY: Skip confirmation dialog to test direct logout
-        console.log('🔴 TESTING: Bypassing confirmation dialog for direct test');
-        try {
-            console.log('🔴 TESTING: About to call logoutAll() directly');
-            await logoutAll();
-            console.log('🔴 TESTING: logoutAll() completed successfully');
-            toast.success('All accounts signed out successfully!');
-            if (onClose) {
-                console.log('🔴 TESTING: Calling onClose');
-                onClose();
+        confirmAction(
+            'Are you sure you want to sign out of all accounts? This will remove all saved accounts from this device.',
+            async () => {
+                try {
+                    await logoutAll();
+                    toast.success('All accounts signed out successfully!');
+                    if (onClose) {
+                        onClose();
+                    }
+                } catch (error) {
+                    console.error('Logout all failed:', error);
+                    const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
+                    toast.error(`There was a problem signing out: ${errorMessage}`);
+                }
             }
-        } catch (error) {
-            console.error('🔴 TESTING: Logout all failed:', error);
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-            toast.error(`There was a problem signing out: ${errorMessage}`);
-        }
+        );
     };
 
     // Device session management functions
@@ -269,17 +260,15 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     return (
         <View style={[styles.container, { backgroundColor: '#f2f2f2' }]}>
             {/* Header */}
-            <View style={styles.header}>
-                <TouchableOpacity style={styles.backButton} onPress={goBack}>
-                    <OxyIcon name="chevron-back" size={24} color="#007AFF" />
-                </TouchableOpacity>
-                <Text style={styles.headerTitle}>Account Switcher</Text>
-                {onClose && (
-                    <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                        <Text style={styles.closeButtonText}>×</Text>
-                    </TouchableOpacity>
-                )}
-            </View>
+            <Header
+                title="Account Switcher"
+                theme={theme}
+                onBack={goBack}
+                onClose={onClose}
+                showBackButton={true}
+                showCloseButton={true}
+                elevation="subtle"
+            />
 
             <ScrollView style={styles.content}>
                 {isLoading ? (
@@ -565,33 +554,7 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#f2f2f2',
     },
-    header: {
-        paddingHorizontal: 20,
-        paddingTop: 60,
-        paddingBottom: 16,
-        backgroundColor: '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e0e0e0',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    headerTitle: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: '#000',
-    },
-    backButton: {
-        padding: 8,
-    },
-    closeButton: {
-        padding: 8,
-    },
-    closeButtonText: {
-        fontSize: 24,
-        color: '#000',
-        fontWeight: '300',
-    },
+
     content: {
         flex: 1,
         padding: 16,

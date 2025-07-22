@@ -330,7 +330,8 @@ export class SecureSessionController {
         sessionId: (session._id as any).toString(),
         deviceId: session.deviceId,
         deviceName: session.deviceInfo?.deviceName || 'Unknown Device',
-        isActive: (session._id as any).toString() === sessionId
+        isActive: (session._id as any).toString() === sessionId,
+        userId: session.userId.toString()
       }));
 
       res.json({ sessions: clientSessions });

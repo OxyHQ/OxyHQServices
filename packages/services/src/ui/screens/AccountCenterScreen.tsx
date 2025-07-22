@@ -81,7 +81,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 <ProfileCard
                     user={user}
                     theme={theme}
-                    onEditPress={() => navigate('AccountSettings', { activeTab: 'profile' })}
+                    onEditPress={() => navigate('EditProfile', { activeTab: 'profile' })}
                     onClosePress={onClose}
                     showCloseButton={!!onClose}
                 />
@@ -93,7 +93,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                     <QuickActions
                         actions={[
                             { id: 'overview', icon: 'person-circle', iconColor: '#007AFF', title: 'Overview', onPress: () => navigate('AccountOverview') },
-                            { id: 'settings', icon: 'settings', iconColor: '#5856D6', title: 'Settings', onPress: () => navigate('AccountSettings') },
+                            { id: 'settings', icon: 'settings', iconColor: '#5856D6', title: 'Edit Profile', onPress: () => navigate('EditProfile') },
                             { id: 'sessions', icon: 'shield-checkmark', iconColor: '#30D158', title: 'Sessions', onPress: () => navigate('SessionManagement') },
                             { id: 'premium', icon: 'star', iconColor: '#FFD700', title: 'Premium', onPress: () => navigate('PremiumSubscription') },
                             ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: '#34C759', title: 'Billing', onPress: () => navigate('') }] : []),
@@ -119,9 +119,9 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 id: 'settings',
                                 icon: 'settings',
                                 iconColor: '#5856D6',
-                                title: 'Account Settings',
-                                subtitle: 'Manage your preferences',
-                                onPress: () => navigate('AccountSettings'),
+                                title: 'Edit Profile',
+                                subtitle: 'Manage your profile and preferences',
+                                onPress: () => navigate('EditProfile'),
                             },
                             {
                                 id: 'sessions',

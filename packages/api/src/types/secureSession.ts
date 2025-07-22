@@ -10,6 +10,7 @@ export interface ClientSession {
   deviceId: string;
   deviceName?: string;
   isActive: boolean;
+  userId: string;
 }
 
 export interface SessionAuthResponse {

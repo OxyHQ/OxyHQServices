@@ -30,7 +30,7 @@ const AccountManagementDemo: React.FC = () => {
                             'Multi-account switching',
                             'Session management access'
                         ]}
-                        navigatesTo={['AccountOverview', 'AccountSwitcher', 'AccountSettings', 'SessionManagement']}
+                        navigatesTo={['AccountOverview', 'AccountSwitcher', 'EditProfile', 'SessionManagement']}
                     />
 
                     <ScreenCard
@@ -42,11 +42,11 @@ const AccountManagementDemo: React.FC = () => {
                             'Subscription management',
                             'Privacy and security overview'
                         ]}
-                        navigatesTo={['AccountSettings', 'SessionManagement']}
+                        navigatesTo={['EditProfile', 'SessionManagement']}
                     />
 
                     <ScreenCard
-                        title="AccountSettingsScreen"
+                        title="EditProfileScreen"
                         description="Complete account configuration and preferences"
                         features={[
                             'Profile editing (username, email, name)',
@@ -90,22 +90,22 @@ const AccountManagementDemo: React.FC = () => {
                     <Text style={styles.flowDescription}>
                         The screens are designed with intuitive navigation patterns:
                     </Text>
-                    
+
                     <View style={styles.flowItem}>
                         <Text style={styles.flowStep}>1. Entry Point</Text>
                         <Text style={styles.flowText}>Users typically start at AccountCenterScreen</Text>
                     </View>
-                    
+
                     <View style={styles.flowItem}>
                         <Text style={styles.flowStep}>2. Explore</Text>
                         <Text style={styles.flowText}>Navigate to specific screens based on needs</Text>
                     </View>
-                    
+
                     <View style={styles.flowItem}>
                         <Text style={styles.flowStep}>3. Manage</Text>
                         <Text style={styles.flowText}>Perform account actions in specialized screens</Text>
                     </View>
-                    
+
                     <View style={styles.flowItem}>
                         <Text style={styles.flowStep}>4. Return</Text>
                         <Text style={styles.flowText}>Navigate back or to related screens seamlessly</Text>
@@ -142,12 +142,12 @@ const ScreenCard: React.FC<{
     <View style={styles.screenCard}>
         <Text style={styles.screenTitle}>{title}</Text>
         <Text style={styles.screenDescription}>{description}</Text>
-        
+
         <Text style={styles.featuresTitle}>Features:</Text>
         {features.map((feature, index) => (
             <Text key={index} style={styles.feature}>• {feature}</Text>
         ))}
-        
+
         <Text style={styles.navigationTitle}>Navigates to:</Text>
         {navigatesTo.map((nav, index) => (
             <Text key={index} style={styles.navigationItem}>→ {nav}</Text>

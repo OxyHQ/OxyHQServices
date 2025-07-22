@@ -15,14 +15,17 @@ import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
+import OxyIcon from '../components/icon/OxyIcon';
 import { SecureClientSession } from '../../models/secureSession';
 import { confirmAction } from '../utils/confirmAction';
+import { Header } from '../components';
 
 const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
+    goBack,
 }) => {
-    const { sessions: userSessions, activeSessionId, refreshSessions, logout, oxyServices } = useOxy();
+    const { sessions: userSessions, activeSessionId, refreshSessions, logout, logoutAll, oxyServices } = useOxy();
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
@@ -112,7 +115,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             async () => {
                 try {
                     setActionLoading('all');
-                    await oxyServices.logoutAllSessions();
+                    await logoutAll();
                 } catch (error) {
                     console.error('Logout all sessions failed:', error);
                     toast.error('Failed to logout all sessions. Please try again.');
@@ -166,10 +169,13 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <View style={[styles.container, { backgroundColor }]}>
-            <View style={styles.header}>
-                <Text style={[styles.title, { color: textColor }]}>Active Sessions</Text>
-                <Text style={[styles.subtitle, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>Manage your active sessions across all devices</Text>
-            </View>
+            <Header
+                title="Active Sessions"
+                subtitle="Manage your active sessions across all devices"
+                theme={theme}
+                onBack={goBack || onClose}
+                elevation="subtle"
+            />
             <ScrollView
                 style={styles.scrollView}
                 contentContainerStyle={styles.scrollContainer}
@@ -274,22 +280,8 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-    header: {
-        padding: 20,
-        paddingBottom: 16,
-    },
-    title: {
-        fontFamily: Platform.OS === 'web'
-            ? 'Phudu'
-            : 'phuduSemiBold',
-        fontWeight: Platform.OS === 'web' ? '600' : undefined,
-        fontSize: 24,
-        marginBottom: 8,
-    },
-    subtitle: {
-        fontSize: 16,
-        lineHeight: 20,
-    },
+
+
     scrollView: {
         flex: 1,
     },

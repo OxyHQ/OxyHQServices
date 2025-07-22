@@ -20,6 +20,7 @@ import { toast } from '../../lib/sonner';
 import { fontFamilies } from '../styles/fonts';
 import { confirmAction } from '../utils/confirmAction';
 import { useAuthStore } from '../stores/authStore';
+import { Header } from '../components';
 
 const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -240,29 +241,34 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             return (
                 <View style={styles.editingFieldContainer}>
                     <View style={styles.editingFieldContent}>
-                        <View style={[styles.newValueSection, { flexDirection: 'row', gap: 12 }]}>
-                            <View style={{ flex: 1 }}>
-                                <Text style={styles.editingFieldLabel}>First Name</Text>
-                                <TextInput
-                                    style={styles.editingFieldInput}
-                                    value={tempDisplayName}
-                                    onChangeText={setTempDisplayName}
-                                    placeholder="Enter your first name"
-                                    placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
-                                    autoFocus
-                                    selectionColor={themeStyles.primaryColor}
-                                />
+                        <View style={styles.newValueSection}>
+                            <View style={styles.editingFieldHeader}>
+                                <Text style={styles.editingFieldLabel}>Edit Display Name</Text>
                             </View>
-                            <View style={{ flex: 1 }}>
-                                <Text style={styles.editingFieldLabel}>Last Name</Text>
-                                <TextInput
-                                    style={styles.editingFieldInput}
-                                    value={tempLastName}
-                                    onChangeText={setTempLastName}
-                                    placeholder="Enter your last name"
-                                    placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
-                                    selectionColor={themeStyles.primaryColor}
-                                />
+                            <View style={{ flexDirection: 'row', gap: 12 }}>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.editingFieldLabel}>First Name</Text>
+                                    <TextInput
+                                        style={styles.editingFieldInput}
+                                        value={tempDisplayName}
+                                        onChangeText={setTempDisplayName}
+                                        placeholder="Enter your first name"
+                                        placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                                        autoFocus
+                                        selectionColor={themeStyles.primaryColor}
+                                    />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.editingFieldLabel}>Last Name</Text>
+                                    <TextInput
+                                        style={styles.editingFieldInput}
+                                        value={tempLastName}
+                                        onChangeText={setTempLastName}
+                                        placeholder="Enter your last name"
+                                        placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                                        selectionColor={themeStyles.primaryColor}
+                                    />
+                                </View>
                             </View>
                         </View>
                     </View>
@@ -308,9 +314,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             <View style={styles.editingFieldContainer}>
                 <View style={styles.editingFieldContent}>
                     <View style={styles.newValueSection}>
-                        <Text style={styles.editingFieldLabel}>
-                            {`Enter ${config.label.toLowerCase()}:`}
-                        </Text>
+                        <View style={styles.editingFieldHeader}>
+                            <Text style={styles.editingFieldLabel}>
+                                {`Enter ${config.label.toLowerCase()}:`}
+                            </Text>
+                        </View>
                         <TextInput
                             style={[
                                 config.multiline ? styles.editingFieldTextArea : styles.editingFieldInput,
@@ -384,67 +392,47 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     return (
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             {/* Header */}
-            <View style={styles.header}>
-                {editingField ? (
-                    <View style={styles.editingHeader}>
-                        <View style={styles.editingHeaderTop}>
-                            <TouchableOpacity style={styles.cancelButton} onPress={cancelEditing}>
-                                <Ionicons name="close" size={24} color="#666" />
-                            </TouchableOpacity>
-                            <Animated.View style={{ transform: [{ scale: saveButtonScale }] }}>
-                                <TouchableOpacity
-                                    style={[
-                                        styles.saveHeaderButton,
-                                        {
-                                            opacity: isSaving ? 0.7 : 1,
-                                            backgroundColor: editingField ? getFieldIcon(editingField).color : '#007AFF'
-                                        }
-                                    ]}
-                                    onPress={() => saveField(editingField)}
-                                    disabled={isSaving}
-                                >
-                                    {isSaving ? (
-                                        <ActivityIndicator size="small" color="#fff" />
-                                    ) : (
-                                        <Text style={styles.saveButtonText}>Save</Text>
-                                    )}
-                                </TouchableOpacity>
-                            </Animated.View>
-                        </View>
-                        <View style={styles.editingHeaderBottom}>
-                            <View style={styles.headerTitleWithIcon}>
-                                <OxyIcon
-                                    name={getFieldIcon(editingField).name}
-                                    size={50}
-                                    color={getFieldIcon(editingField).color}
-                                    style={styles.headerIcon}
-                                />
-                                <Text style={styles.headerTitleLarge}>{getFieldLabel(editingField)}</Text>
-                            </View>
-                        </View>
-                    </View>
-                ) : (
-                    <View style={styles.normalHeader}>
-                        <TouchableOpacity style={styles.cancelButton} onPress={onClose || goBack}>
-                            <Ionicons name="close" size={24} color="#666" />
+            {editingField ? (
+                <View style={[styles.editingHeader, { backgroundColor: '#FFFFFF', borderBottomColor: themeStyles.isDarkTheme ? '#38383A' : '#E9ECEF' }]}>
+                    <View style={styles.editingHeaderContent}>
+                        <TouchableOpacity style={styles.editingBackButton} onPress={cancelEditing}>
+                            <OxyIcon name="chevron-back" size={20} color={themeStyles.primaryColor} />
                         </TouchableOpacity>
-                        <Text style={styles.headerTitle}>Account Settings</Text>
-                        <Animated.View style={{ transform: [{ scale: saveButtonScale }] }}>
-                            <TouchableOpacity
-                                style={[styles.saveIconButton, { opacity: isSaving ? 0.7 : 1 }]}
-                                onPress={handleSave}
-                                disabled={isSaving}
-                            >
-                                {isSaving ? (
-                                    <ActivityIndicator size="small" color={themeStyles.primaryColor} />
-                                ) : (
-                                    <Ionicons name="checkmark" size={24} color={themeStyles.primaryColor} />
-                                )}
-                            </TouchableOpacity>
-                        </Animated.View>
+                        <View style={styles.editingTitleContainer}>
+                        </View>
+                        <TouchableOpacity
+                            style={[styles.editingSaveButton, { opacity: isSaving ? 0.5 : 1 }]}
+                            onPress={() => saveField(editingField)}
+                            disabled={isSaving}
+                        >
+                            {isSaving ? (
+                                <ActivityIndicator size="small" color={themeStyles.primaryColor} />
+                            ) : (
+                                <Text style={[styles.editingSaveButtonText, { color: themeStyles.primaryColor }]}>Save</Text>
+                            )}
+                        </TouchableOpacity>
                     </View>
-                )}
-            </View>
+                    <View style={styles.editingHeaderBottom}>
+                        <OxyIcon name={getFieldIcon(editingField).name} size={56} color={getFieldIcon(editingField).color} style={styles.editingBottomIcon} />
+                        <Text style={[styles.editingBottomTitle, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>
+                            {getFieldLabel(editingField)}
+                        </Text>
+                    </View>
+                </View>
+            ) : (
+                <Header
+                    title="Edit Profile"
+                    theme={theme}
+                    onBack={goBack || onClose}
+                    rightAction={{
+                        icon: 'checkmark',
+                        onPress: handleSave,
+                        loading: isSaving,
+                        disabled: isSaving,
+                    }}
+                    elevation="subtle"
+                />
+            )}
 
             <ScrollView style={editingField ? styles.contentEditing : styles.content}>
                 {editingField ? (
@@ -615,75 +603,6 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#f2f2f2',
     },
-    header: {
-        paddingHorizontal: 20,
-        paddingVertical: 10,
-        backgroundColor: '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e0e0e0',
-    },
-    normalHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    editingHeader: {
-        flexDirection: 'column',
-    },
-    editingHeaderTop: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 16,
-    },
-    editingHeaderBottom: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'flex-start',
-    },
-    headerTitle: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: '#000',
-        fontFamily: fontFamilies.phuduBold,
-    },
-    headerTitleWithIcon: {
-        flexDirection: 'column',
-        alignItems: 'flex-start',
-        flex: 1,
-        justifyContent: 'flex-start',
-        maxWidth: '90%',
-    },
-    headerTitleLarge: {
-        fontSize: 48,
-        fontWeight: '800',
-        color: '#000',
-        fontFamily: fontFamilies.phuduExtraBold,
-        textAlign: 'left',
-    },
-    headerIcon: {
-        marginBottom: 2,
-    },
-    cancelButton: {
-        padding: 5,
-    },
-    saveHeaderButton: {
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 20,
-        minWidth: 60,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    saveIconButton: {
-        padding: 5,
-    },
-    saveButtonText: {
-        color: '#fff',
-        fontSize: 16,
-        fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
-    },
     content: {
         flex: 1,
         padding: 16,
@@ -784,7 +703,9 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     editingFieldHeader: {
-        marginBottom: 16,
+        marginBottom: 8,
+        flexDirection: 'row',
+        alignItems: 'center',
     },
     editingFieldTitleContainer: {
         flexDirection: 'row',
@@ -831,6 +752,82 @@ const styles = StyleSheet.create({
         minHeight: 120,
         textAlignVertical: 'top',
         fontWeight: '400',
+    },
+    // Custom editing header styles
+    editingHeader: {
+        paddingTop: Platform.OS === 'ios' ? 50 : 16,
+        paddingBottom: 0,
+        borderBottomWidth: 1,
+        backgroundColor: '#fff',
+    },
+    editingHeaderContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        minHeight: 44,
+    },
+    editingBackButton: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#F8F9FA',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+    },
+    editingTitleContainer: {
+        flex: 1,
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        justifyContent: 'flex-end',
+        paddingBottom: 8,
+    },
+    editingTitleIcon: {
+        marginBottom: 4,
+        alignSelf: 'flex-start',
+    },
+    editingTitle: {
+        fontSize: 18,
+        fontWeight: '700',
+        fontFamily: fontFamilies.phuduBold,
+        letterSpacing: -0.3,
+        lineHeight: 22,
+        textAlign: 'left',
+        alignSelf: 'flex-start',
+    },
+    editingSaveButton: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 18,
+        backgroundColor: '#F8F9FA',
+        minWidth: 60,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    editingSaveButtonText: {
+        fontSize: 16,
+        fontWeight: '600',
+        fontFamily: fontFamilies.phuduSemiBold,
+    },
+    editingHeaderBottom: {
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        paddingHorizontal: 16,
+        paddingBottom: 8,
+        paddingTop: 8,
+    },
+    editingBottomIcon: {
+        marginBottom: 8,
+        alignSelf: 'flex-start',
+    },
+    editingBottomTitle: {
+        fontSize: 32,
+        fontWeight: '700',
+        fontFamily: fontFamilies.phuduBold,
+        letterSpacing: -0.5,
+        lineHeight: 36,
+        textAlign: 'left',
+        alignSelf: 'flex-start',
     },
 });
 

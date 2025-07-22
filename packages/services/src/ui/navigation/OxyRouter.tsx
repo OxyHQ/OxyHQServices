@@ -57,7 +57,7 @@ const routes: Record<string, RouteConfig> = {
         component: AccountOverviewScreen,
         snapPoints: ['60%', '85%'],
     },
-    AccountSettings: {
+    EditProfile: {
         component: AccountSettingsScreen,
         snapPoints: ['60%', '100%'],
     },

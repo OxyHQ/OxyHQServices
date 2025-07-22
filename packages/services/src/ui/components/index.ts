@@ -5,6 +5,7 @@ export { default as SectionTitle } from './SectionTitle';
 export { default as GroupedItem } from './GroupedItem';
 export { default as GroupedSection } from './GroupedSection';
 export { default as QuickActions } from './QuickActions';
+export { default as Header } from './Header';
 
 // Re-export existing components
 export { default as Avatar } from './Avatar';

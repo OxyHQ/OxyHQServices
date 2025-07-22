@@ -20,6 +20,7 @@ import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';
 import { Ionicons } from '@expo/vector-icons';
+import { Header } from '../components';
 
 /**
  * AccountOverviewScreen - Optimized for performance
@@ -166,14 +167,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     return (
         <View style={[styles.container, { backgroundColor: '#f2f2f2' }]}>
             {/* Header */}
-            <View style={styles.header}>
-                <Text style={styles.headerTitle}>Account</Text>
-                {onClose && (
-                    <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                        <Text style={styles.closeButtonText}>×</Text>
-                    </TouchableOpacity>
-                )}
-            </View>
+            <Header
+                title="Account"
+                theme={theme}
+                onBack={onClose}
+                variant="minimal"
+                elevation="subtle"
+            />
 
             <ScrollView style={styles.content}>
                 {/* User Profile Section */}
@@ -212,7 +212,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                     <TouchableOpacity
                         style={[styles.settingItem, styles.firstSettingItem]}
-                        onPress={() => navigate?.('AccountSettings', { activeTab: 'profile' })}
+                        onPress={() => navigate?.('EditProfile', { activeTab: 'profile' })}
                     >
                         <View style={styles.settingInfo}>
                             <OxyIcon name="person-circle" size={20} color="#007AFF" style={styles.settingIcon} />
@@ -226,7 +226,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                     <TouchableOpacity
                         style={styles.settingItem}
-                        onPress={() => navigate?.('AccountSettings', { activeTab: 'password' })}
+                        onPress={() => navigate?.('EditProfile', { activeTab: 'password' })}
                     >
                         <View style={styles.settingInfo}>
                             <OxyIcon name="shield-checkmark" size={20} color="#30D158" style={styles.settingIcon} />
@@ -240,7 +240,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                     <TouchableOpacity
                         style={styles.settingItem}
-                        onPress={() => navigate?.('AccountSettings', { activeTab: 'notifications' })}
+                        onPress={() => navigate?.('EditProfile', { activeTab: 'notifications' })}
                     >
                         <View style={styles.settingInfo}>
                             <OxyIcon name="notifications" size={20} color="#FF9500" style={styles.settingIcon} />
@@ -543,30 +543,7 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#f2f2f2',
     },
-    header: {
-        paddingHorizontal: 20,
-        paddingTop: 60,
-        paddingBottom: 16,
-        backgroundColor: '#fff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e0e0e0',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    headerTitle: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        color: '#000',
-    },
-    closeButton: {
-        padding: 8,
-    },
-    closeButtonText: {
-        fontSize: 24,
-        color: '#000',
-        fontWeight: '300',
-    },
+
     content: {
         flex: 1,
         padding: 16,
