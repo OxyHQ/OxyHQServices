@@ -6,7 +6,11 @@ import Notification from "../models/Notification";
 import { AuthenticationError } from '../utils/authErrors';
 import dotenv from 'dotenv';
 import { logger } from '../utils/logger';
-import { authMiddleware, AuthRequest } from '../middleware/auth';
+import { 
+  authenticateRequest, 
+  optionalAuthentication,
+  OxyRequest 
+} from '../middleware/zero-config-auth';
 
 // Ensure environment variables are loaded
 dotenv.config();
@@ -683,9 +687,9 @@ router.post("/register", async (req: Request, res: Response) => {
 });
 
 // User profile endpoint - returns the current authenticated user's profile
-router.get("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
+router.get("/me", authenticateRequest(), async (req: OxyRequest, res: Response) => {
   try {
-    // User is already authenticated by authMiddleware
+    // User is automatically authenticated by zero-config middleware
     if (!req.user) {
       return res.status(401).json({
         success: false,

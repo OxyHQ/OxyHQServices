@@ -1,6 +1,10 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { jwtDecode } from 'jwt-decode';
 
+// Zero-Config Authentication Exports
+export { AuthenticationManager, initializeAuth, getAuthManager } from './auth-manager';
+export { AuthProvider, useAuth, useOxyClient, useAuthStatus, useCurrentUser, withAuth } from './use-auth';
+
 // Remove all FormData, form-data, and polyfill logic. Delete uploadFile and uploadFiles methods. Add a comment to use the new raw upload approach instead.
 
 import {
@@ -40,6 +44,7 @@ import {
 
 // Import secure session types
 import { SecureLoginResponse, SecureClientSession } from '../models/secureSession';
+import { AuthenticationManager, initializeAuth } from './auth-manager';
 
 /**
  * Default cloud URL for Oxy services, cloud is where the user files are. (e.g. images, videos, etc.). Not the API.
@@ -59,7 +64,23 @@ interface JwtPayload {
 /**
  * OxyServices - Client library for interacting with the Oxy API
  * 
- * Note: For authentication status in UI components, use `isAuthenticated` from useOxy() context
+ * ZERO-CONFIG MODE:
+ * Use the new AuthProvider and useAuth hooks for automatic authentication management:
+ * 
+ * import { AuthProvider, useAuth } from '@oxyhq/services';
+ * 
+ * <AuthProvider baseURL="https://api.oxy.so">
+ *   <App />
+ * </AuthProvider>
+ * 
+ * Then in components:
+ * const { login, user, isAuthenticated } = useAuth();
+ * 
+ * LEGACY MODE:
+ * The OxyServices class below is maintained for backward compatibility
+ * but we recommend migrating to the new zero-config approach.
+ * 
+ * Note: For authentication status in UI components, use `isAuthenticated` from useAuth() context
  * instead of checking token status directly on this service.
  */
 export class OxyServices {
@@ -67,17 +88,31 @@ export class OxyServices {
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
   private refreshPromise: Promise<{ accessToken: string; refreshToken: string }> | null = null;
+  private authManager: AuthenticationManager | null = null;
 
   /**
    * Creates a new instance of the OxyServices client
    * @param config - Configuration for the client
    */
   constructor(config: OxyConfig) {
-    this.client = axios.create({ 
-      baseURL: config.baseURL,
-      timeout: 10000 // 10 second timeout
-    });
-    
+    // Try to use the new auth manager if available, otherwise fall back to legacy mode
+    try {
+      this.authManager = initializeAuth(config.baseURL);
+      this.client = this.authManager.getClient();
+    } catch {
+      // Fall back to legacy implementation
+      this.client = axios.create({ 
+        baseURL: config.baseURL,
+        timeout: 10000 // 10 second timeout
+      });
+      this.setupLegacyInterceptors();
+    }
+  }
+
+  /**
+   * Setup legacy interceptors (only used if auth manager is not available)
+   */
+  private setupLegacyInterceptors(): void {
     // Interceptor for adding auth header and handling token refresh
     this.client.interceptors.request.use(async (req: InternalAxiosRequestConfig) => {
       if (!this.accessToken) {
