@@ -96,6 +96,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                         size={100}
                         theme={theme as 'light' | 'dark'}
                         style={styles.modernUserAvatar}
+                        backgroundColor={colors.primary + '20'}
                     />
                     <View style={[styles.statusIndicator, { backgroundColor: colors.primary }]} />
                 </Animated.View>
@@ -105,12 +106,6 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                 <Text style={[styles.modernUsernameSubtext, { color: colors.secondaryText }]}>
                     @{username}
                 </Text>
-                <View style={[styles.welcomeBackBadge, { backgroundColor: colors.primary + '15' }]}>
-                    <Ionicons name="checkmark-circle" size={16} color={colors.primary} />
-                    <Text style={[styles.welcomeBackText, { color: colors.primary }]}>
-                        Welcome back!
-                    </Text>
-                </View>
             </View>
             <View style={styles.modernInputContainer}>
                 <TextField

@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import TextField from '../components/internal/TextField';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
 import HighFive from '../../assets/illustrations/HighFive';
-import { useThemeColors } from '../styles';
+import { useThemeColors, createAuthStyles } from '../styles';
 import PinInput from '../components/internal/PinInput';
 
 interface RecoverAccountScreenProps {
@@ -24,7 +24,7 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, t
     const fadeAnim = useRef(new Animated.Value(1)).current;
     const slideAnim = useRef(new Animated.Value(0)).current;
     const colors = useThemeColors(theme as 'light' | 'dark');
-    const styles = createStyles(colors);
+    const styles = createAuthStyles(colors, theme);
     const identifierRef = useRef<TextInput>(null);
     const handleRequestWithFocus = () => {
         if (!identifier) {
@@ -192,67 +192,6 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, t
     );
 };
 
-const createStyles = (colors: any) => StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    scrollContent: {
-        flexGrow: 1,
-        paddingHorizontal: 24,
-        paddingTop: 4,
-        paddingBottom: 20,
-    },
-    stepContainer: {
-        flex: 1,
-        justifyContent: 'flex-start',
-        alignItems: 'flex-start',
-    },
-    modernHeader: {
-        alignItems: 'flex-start',
-        width: '100%',
-        marginBottom: 24,
-    },
-    modernTitle: {
-        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontSize: 62,
-        lineHeight: 48,
-        marginBottom: 18,
-        textAlign: 'left',
-        letterSpacing: -1,
-    },
-    modernSubtitle: {
-        fontSize: 18,
-        lineHeight: 24,
-        textAlign: 'left',
-        opacity: 0.8,
-        marginBottom: 24,
-    },
-    successCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 16,
-        borderRadius: 16,
-        marginBottom: 24,
-        gap: 12,
-        width: '100%',
-    },
-    belowInputMessage: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 4,
-        marginBottom: 0,
-        gap: 6,
-    },
-    belowInputText: {
-        fontSize: 13,
-        fontWeight: '500',
-    },
-    successText: {
-        fontSize: 14,
-        fontWeight: '500',
-        flex: 1,
-    },
-});
+
 
 export default RecoverAccountScreen; 

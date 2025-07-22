@@ -247,7 +247,7 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
 const styles = StyleSheet.create({
     container: {
         flexDirection: 'row',
-        justifyContent: 'center',
+        justifyContent: 'flex-end',
         marginTop: 16,
         marginBottom: 8,
         width: '100%',

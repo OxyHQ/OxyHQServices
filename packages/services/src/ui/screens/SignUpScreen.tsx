@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
-import { useThemeColors, createCommonStyles } from '../styles';
+import { useThemeColors, createCommonStyles, createAuthStyles } from '../styles';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path, Circle } from 'react-native-svg';
 import { toast } from '../../lib/sonner';
@@ -635,7 +635,7 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
     const slideAnim = useRef(new Animated.Value(0)).current;
 
     // Memoized styles
-    const styles = useMemo(() => createStyles(colors, theme), [colors, theme]);
+    const styles = useMemo(() => createAuthStyles(colors, theme), [colors, theme]);
 
     // Debounced username validation
     useEffect(() => {

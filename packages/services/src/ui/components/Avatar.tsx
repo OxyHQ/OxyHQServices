@@ -112,13 +112,15 @@ const Avatar: React.FC<AvatarProps> = ({
         );
     }
 
-    // If an image URL is provided, use Image component
+    // If an image URL is provided, use Image component with optional background
     if (uri) {
         return (
-            <Image
-                source={{ uri: uri }}
-                style={[styles.container, containerStyle, imageStyle]}
-            />
+            <View style={[styles.container, containerStyle, { backgroundColor: bgColor }, style]}>
+                <Image
+                    source={{ uri: uri }}
+                    style={[styles.image, containerStyle, imageStyle]}
+                />
+            </View>
         );
     }
 
@@ -145,6 +147,10 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         justifyContent: 'center',
         alignItems: 'center',
+    },
+    image: {
+        width: '100%',
+        height: '100%',
     },
     text: {
         // Font family is applied directly in the component to use the constants
