@@ -256,8 +256,12 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
     const effectiveColor = error ? 'error' : success ? 'success' : color;
     const effectivePalette = colorPalette[effectiveColor] || colorPalette.primary;
 
-    // Get icon color based on focus state
-    const iconColor = focused ? effectivePalette.main : surfaceScale(0.62);
+    // Get icon color based on focus state and error state
+    const iconColor = error
+        ? effectivePalette.main  // Always show error color when there's an error
+        : focused
+            ? effectivePalette.main
+            : surfaceScale(0.62);
 
     // Helper function to clone React elements with updated color
     const cloneWithColor = (element: React.ReactNode, color: string): React.ReactNode => {
@@ -404,11 +408,13 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                     : 'transparent',
                 borderRadius: variant === 'standard' ? 0 : (variant === 'filled' ? 4 : 8),
                 borderWidth: variant === 'outlined' ? (focused ? 2 : 1) : 0,
-                borderColor: focused
-                    ? effectivePalette.main
-                    : hovered
-                        ? surfaceScale(0.87)
-                        : surfaceScale(0.42),
+                borderColor: error
+                    ? effectivePalette.main  // Always show error color when there's an error
+                    : focused
+                        ? effectivePalette.main
+                        : hovered
+                            ? surfaceScale(0.87)
+                            : surfaceScale(0.42),
                 position: 'relative',
                 ...Platform.select({
                     web: {
@@ -466,7 +472,11 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                 end: 0,
                 bottom: 0,
                 height: 1,
-                backgroundColor: hovered ? surfaceScale(0.87) : surfaceScale(0.42),
+                backgroundColor: error
+                    ? effectivePalette.main  // Always show error color when there's an error
+                    : hovered
+                        ? surfaceScale(0.87)
+                        : surfaceScale(0.42),
             },
             underlineFocused: {
                 position: 'absolute',
@@ -492,25 +502,9 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                 fontSize: 12,
                 marginTop: 4,
                 marginHorizontal: 16,
-                color: error ? effectivePalette.main : surfaceScale(0.6),
+                color: surfaceScale(0.6),
             },
-            errorContainer: {
-                flexDirection: 'row',
-                alignItems: 'center',
-                padding: 12,
-                borderRadius: 12,
-                marginTop: 8,
-                gap: 8,
-                backgroundColor: effectivePalette.main + '10',
-                borderWidth: 1,
-                borderColor: effectivePalette.main + '30',
-            },
-            errorText: {
-                fontSize: 12,
-                fontWeight: '500',
-                flex: 1,
-                color: effectivePalette.main,
-            },
+
             passwordStrengthContainer: {
                 marginTop: 8,
                 marginHorizontal: 16,
@@ -590,21 +584,8 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
         );
     };
 
-    // Render error message
-    const renderError = () => {
-        if (!error) return null;
-
-        return (
-            <View style={styles.errorContainer}>
-                <Ionicons
-                    name="close-circle"
-                    size={16}
-                    color={effectivePalette.main}
-                />
-                <Text style={styles.errorText}>{error}</Text>
-            </View>
-        );
-    };
+    // Get helper text content (error takes precedence over helper text)
+    const helperTextContent = error || helperText;
 
     // Render trailing elements
     const renderTrailingElements = () => {
@@ -768,7 +749,10 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                                 {
                                     color: focusAnimation.interpolate({
                                         inputRange: [0, 1],
-                                        outputRange: [surfaceScale(0.87), effectivePalette.main],
+                                        outputRange: [
+                                            error ? effectivePalette.main : surfaceScale(0.87),
+                                            effectivePalette.main
+                                        ],
                                     }),
                                     fontSize: activeAnimation.interpolate({
                                         inputRange: [0, 1],
@@ -791,15 +775,15 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                 )}
             </View>
 
-            {/* Helper text */}
-            {helperText && (
-                <Text style={styles.helperText}>
-                    {helperText}
+            {/* Helper text or error message */}
+            {helperTextContent && (
+                <Text style={[
+                    styles.helperText,
+                    error && { color: effectivePalette.main }
+                ]}>
+                    {helperTextContent}
                 </Text>
             )}
-
-            {/* Error message */}
-            {renderError()}
 
             {/* Password strength indicator */}
             {renderPasswordStrength()}
