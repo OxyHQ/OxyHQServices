@@ -46,6 +46,14 @@ export interface IUser extends Document {
   };
   bio?: string;
   description?: string;
+  location?: string;
+  links?: string[];
+  linksMetadata?: Array<{
+    url: string;
+    title: string;
+    description: string;
+    image?: string;
+  }>;
   _id: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -133,6 +141,14 @@ const UserSchema: Schema = new Schema(
     },
     bio: { type: String },
     description: { type: String },
+    location: { type: String },
+    links: [{ type: String }],
+    linksMetadata: [{
+      url: { type: String, required: true },
+      title: { type: String, required: true },
+      description: { type: String, required: true },
+      image: { type: String }
+    }],
   },
   {
     timestamps: true,

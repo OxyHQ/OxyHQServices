@@ -57,6 +57,16 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const [tempBio, setTempBio] = useState('');
     const [tempLocation, setTempLocation] = useState('');
     const [tempLinks, setTempLinks] = useState<string[]>([]);
+    const [tempLinksWithMetadata, setTempLinksWithMetadata] = useState<Array<{
+        url: string;
+        title?: string;
+        description?: string;
+        image?: string;
+        id: string;
+    }>>([]);
+    const [isAddingLink, setIsAddingLink] = useState(false);
+    const [newLinkUrl, setNewLinkUrl] = useState('');
+    const [isFetchingMetadata, setIsFetchingMetadata] = useState(false);
 
     // Memoize theme-related calculations to prevent unnecessary recalculations
     const themeStyles = useMemo(() => {
@@ -91,11 +101,38 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             setEmail(user.email || '');
             setBio(user.bio || '');
             setLocation(user.location || '');
-            setLinks(
-                Array.isArray(user.links)
-                    ? user.links.map(l => typeof l === 'string' ? l : l.link).filter(Boolean)
-                    : user.website ? [user.website] : []
-            );
+            // Handle links with metadata
+            if (user.linksMetadata && Array.isArray(user.linksMetadata)) {
+                // User has links with metadata
+                setLinks(user.linksMetadata.map(l => l.url));
+                setTempLinksWithMetadata(user.linksMetadata);
+            } else if (Array.isArray(user.links)) {
+                // User has simple links array
+                const simpleLinks = user.links.map(l => typeof l === 'string' ? l : l.link).filter(Boolean);
+                setLinks(simpleLinks);
+                // Convert to metadata format
+                const linksWithMetadata = simpleLinks.map((url, index) => ({
+                    url,
+                    title: url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+                    description: `Link to ${url}`,
+                    image: undefined,
+                    id: `existing-${index}`
+                }));
+                setTempLinksWithMetadata(linksWithMetadata);
+            } else if (user.website) {
+                // User has single website
+                setLinks([user.website]);
+                setTempLinksWithMetadata([{
+                    url: user.website,
+                    title: user.website.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+                    description: `Link to ${user.website}`,
+                    image: undefined,
+                    id: 'existing-0'
+                }]);
+            } else {
+                setLinks([]);
+                setTempLinksWithMetadata([]);
+            }
             setAvatarUrl(user.avatar?.url || '');
         }
     }, [user]);
@@ -113,6 +150,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 bio,
                 location,
                 links,
+                linksMetadata: tempLinksWithMetadata.length > 0 ? tempLinksWithMetadata : undefined,
             };
 
             // Handle name field
@@ -170,7 +208,15 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 setTempLocation(currentValue);
                 break;
             case 'links':
-                setTempLinks([...links]);
+                // Convert existing links to metadata format
+                const linksWithMetadata = links.map((url, index) => ({
+                    url,
+                    title: url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+                    description: `Link to ${url}`,
+                    image: undefined,
+                    id: `existing-${index}`
+                }));
+                setTempLinksWithMetadata(linksWithMetadata);
                 break;
         }
         setEditingField(type);
@@ -197,7 +243,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 setLocation(tempLocation);
                 break;
             case 'links':
-                setLinks(tempLinks);
+                // Save both URLs and metadata
+                setLinks(tempLinksWithMetadata.map(link => link.url));
+                // Store full metadata for database
+                setTempLinksWithMetadata(tempLinksWithMetadata);
                 break;
         }
 
@@ -236,6 +285,56 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         return icons[type as keyof typeof icons] || { name: 'person', color: '#007AFF' };
     };
 
+    const fetchLinkMetadata = async (url: string) => {
+        try {
+            setIsFetchingMetadata(true);
+
+            // Use the backend API to fetch metadata
+            const metadata = await oxyServices.fetchLinkMetadata(url);
+
+            return {
+                ...metadata,
+                id: Date.now().toString()
+            };
+        } catch (error) {
+            console.error('Error fetching metadata:', error);
+            // Fallback to basic metadata
+            return {
+                url: url.startsWith('http') ? url : 'https://' + url,
+                title: url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+                description: 'Link',
+                image: undefined,
+                id: Date.now().toString()
+            };
+        } finally {
+            setIsFetchingMetadata(false);
+        }
+    };
+
+    const addLink = async () => {
+        if (!newLinkUrl.trim()) return;
+
+        const url = newLinkUrl.trim();
+        const metadata = await fetchLinkMetadata(url);
+
+        setTempLinksWithMetadata(prev => [...prev, metadata]);
+        setNewLinkUrl('');
+        setIsAddingLink(false);
+    };
+
+    const removeLink = (id: string) => {
+        setTempLinksWithMetadata(prev => prev.filter(link => link.id !== id));
+    };
+
+    const moveLink = (fromIndex: number, toIndex: number) => {
+        setTempLinksWithMetadata(prev => {
+            const newLinks = [...prev];
+            const [movedLink] = newLinks.splice(fromIndex, 1);
+            newLinks.splice(toIndex, 0, movedLink);
+            return newLinks;
+        });
+    };
+
     const renderEditingField = (type: string) => {
         if (type === 'displayName') {
             return (
@@ -270,6 +369,139 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                     />
                                 </View>
                             </View>
+                        </View>
+                    </View>
+                </View>
+            );
+        }
+
+        if (type === 'links') {
+            return (
+                <View style={styles.editingFieldContainer}>
+                    <View style={styles.editingFieldContent}>
+                        <View style={styles.newValueSection}>
+                            <View style={styles.editingFieldHeader}>
+                                <Text style={styles.editingFieldLabel}>Manage Your Links</Text>
+                            </View>
+
+                            {/* Add new link section */}
+                            {isAddingLink ? (
+                                <View style={styles.addLinkSection}>
+                                    <Text style={styles.addLinkLabel}>
+                                        Add New Link
+                                        {isFetchingMetadata && (
+                                            <Text style={styles.fetchingText}> • Fetching metadata...</Text>
+                                        )}
+                                    </Text>
+                                    <View style={styles.addLinkInputContainer}>
+                                        <TextInput
+                                            style={styles.addLinkInput}
+                                            value={newLinkUrl}
+                                            onChangeText={setNewLinkUrl}
+                                            placeholder="Enter URL (e.g., https://example.com)"
+                                            placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                                            keyboardType="url"
+                                            autoFocus
+                                            selectionColor={themeStyles.primaryColor}
+                                        />
+                                        <View style={styles.addLinkButtons}>
+                                            <TouchableOpacity
+                                                style={[styles.addLinkButton, styles.cancelButton]}
+                                                onPress={() => {
+                                                    setIsAddingLink(false);
+                                                    setNewLinkUrl('');
+                                                }}
+                                            >
+                                                <Text style={styles.cancelButtonText}>Cancel</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={[styles.addLinkButton, styles.addButton, { opacity: isFetchingMetadata ? 0.5 : 1 }]}
+                                                onPress={addLink}
+                                                disabled={isFetchingMetadata}
+                                            >
+                                                {isFetchingMetadata ? (
+                                                    <ActivityIndicator size="small" color="#fff" />
+                                                ) : (
+                                                    <Text style={styles.addButtonText}>Add</Text>
+                                                )}
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                </View>
+                            ) : (
+                                <TouchableOpacity
+                                    style={styles.addLinkTrigger}
+                                    onPress={() => setIsAddingLink(true)}
+                                >
+                                    <OxyIcon name="add" size={20} color={themeStyles.primaryColor} />
+                                    <Text style={styles.addLinkTriggerText}>Add a new link</Text>
+                                </TouchableOpacity>
+                            )}
+
+                            {/* Existing links list */}
+                            {tempLinksWithMetadata.length > 0 && (
+                                <View style={styles.linksList}>
+                                    <Text style={styles.linksListTitle}>Your Links ({tempLinksWithMetadata.length})</Text>
+                                    {tempLinksWithMetadata.map((link, index) => (
+                                        <View key={link.id} style={styles.linkItem}>
+                                            <View style={styles.linkItemContent}>
+                                                {link.image && (
+                                                    <View style={styles.linkItemImage}>
+                                                        <Text style={styles.linkItemImageText}>
+                                                            {link.title?.charAt(0) || 'L'}
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                                <View style={styles.linkItemDragHandle}>
+                                                    <View style={styles.reorderButtons}>
+                                                        <TouchableOpacity
+                                                            style={[styles.reorderButton, index === 0 && styles.reorderButtonDisabled]}
+                                                            onPress={() => index > 0 && moveLink(index, index - 1)}
+                                                            disabled={index === 0}
+                                                        >
+                                                            <OxyIcon name="chevron-up" size={12} color={index === 0 ? "#ccc" : "#666"} />
+                                                        </TouchableOpacity>
+                                                        <TouchableOpacity
+                                                            style={[styles.reorderButton, index === tempLinksWithMetadata.length - 1 && styles.reorderButtonDisabled]}
+                                                            onPress={() => index < tempLinksWithMetadata.length - 1 && moveLink(index, index + 1)}
+                                                            disabled={index === tempLinksWithMetadata.length - 1}
+                                                        >
+                                                            <OxyIcon name="chevron-down" size={12} color={index === tempLinksWithMetadata.length - 1 ? "#ccc" : "#666"} />
+                                                        </TouchableOpacity>
+                                                    </View>
+                                                </View>
+                                                <View style={styles.linkItemInfo}>
+                                                    <Text style={styles.linkItemTitle} numberOfLines={1}>
+                                                        {link.title || link.url}
+                                                    </Text>
+                                                    {link.description && link.description !== link.title && (
+                                                        <Text style={styles.linkItemDescription} numberOfLines={1}>
+                                                            {link.description}
+                                                        </Text>
+                                                    )}
+                                                    <Text style={styles.linkItemUrl} numberOfLines={1}>
+                                                        {link.url}
+                                                    </Text>
+                                                </View>
+                                                <View style={styles.linkItemActions}>
+                                                    <TouchableOpacity
+                                                        style={styles.linkItemButton}
+                                                        onPress={() => removeLink(link.id)}
+                                                    >
+                                                        <OxyIcon name="trash" size={14} color="#FF3B30" />
+                                                    </TouchableOpacity>
+                                                </View>
+                                            </View>
+                                            {index < tempLinksWithMetadata.length - 1 && (
+                                                <View style={styles.linkItemDivider} />
+                                            )}
+                                        </View>
+                                    ))}
+                                    <View style={styles.reorderHint}>
+                                        <Text style={styles.reorderHintText}>Use ↑↓ buttons to reorder your links</Text>
+                                    </View>
+                                </View>
+                            )}
                         </View>
                     </View>
                 </View>
@@ -374,6 +606,56 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         <Text style={styles.settingDescription}>
                             {value || placeholder}
                         </Text>
+                    </View>
+                </View>
+                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+            </TouchableOpacity>
+        );
+    };
+
+    const renderLinksField = (isFirst = false, isLast = false) => {
+        const itemStyles = [
+            styles.settingItem,
+            isFirst && styles.firstSettingItem,
+            isLast && styles.lastSettingItem
+        ];
+
+        const hasLinks = tempLinksWithMetadata.length > 0;
+
+        return (
+            <TouchableOpacity
+                style={itemStyles}
+                onPress={() => startEditing('links', '')}
+            >
+                <View style={styles.settingInfo}>
+                    <OxyIcon name="link" size={20} color="#32D74B" style={styles.settingIcon} />
+                    <View style={styles.linksFieldContent}>
+                        <Text style={styles.settingLabel}>Links</Text>
+                        {hasLinks ? (
+                            <View style={styles.linksPreview}>
+                                {tempLinksWithMetadata.slice(0, 2).map((link, index) => (
+                                    <View key={link.id} style={styles.linkPreviewItem}>
+                                        {link.image && (
+                                            <View style={styles.linkPreviewImage}>
+                                                <Text style={styles.linkPreviewImageText}>
+                                                    {link.title?.charAt(0) || 'L'}
+                                                </Text>
+                                            </View>
+                                        )}
+                                        <Text style={styles.linkPreviewTitle} numberOfLines={1}>
+                                            {link.title || link.url}
+                                        </Text>
+                                    </View>
+                                ))}
+                                {tempLinksWithMetadata.length > 2 && (
+                                    <Text style={styles.linkPreviewMore}>
+                                        +{tempLinksWithMetadata.length - 2} more
+                                    </Text>
+                                )}
+                            </View>
+                        ) : (
+                            <Text style={styles.settingDescription}>Add your links</Text>
+                        )}
                     </View>
                 </View>
                 <OxyIcon name="chevron-forward" size={16} color="#ccc" />
@@ -545,18 +827,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                 false
                             )}
 
-                            {renderField(
-                                'links',
-                                'Links',
-                                links.join(', '),
-                                'Add your links',
-                                'link',
-                                '#32D74B',
-                                false,
-                                'url',
-                                false,
-                                true
-                            )}
+                            {renderLinksField(false, true)}
                         </View>
 
                         {/* Quick Actions */}
@@ -828,6 +1099,225 @@ const styles = StyleSheet.create({
         lineHeight: 36,
         textAlign: 'left',
         alignSelf: 'flex-start',
+    },
+    // Links management styles
+    addLinkSection: {
+        marginBottom: 16,
+        padding: 12,
+        backgroundColor: '#F8F9FA',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#E9ECEF',
+    },
+    addLinkLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#333',
+        marginBottom: 8,
+    },
+    addLinkInputContainer: {
+        gap: 8,
+    },
+    addLinkInput: {
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#E9ECEF',
+        borderRadius: 6,
+        padding: 10,
+        fontSize: 14,
+        minHeight: 36,
+    },
+    addLinkButtons: {
+        flexDirection: 'row',
+        gap: 6,
+    },
+    addLinkButton: {
+        flex: 1,
+        paddingVertical: 8,
+        paddingHorizontal: 12,
+        borderRadius: 6,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    cancelButton: {
+        backgroundColor: '#F8F9FA',
+        borderWidth: 1,
+        borderColor: '#E9ECEF',
+    },
+    cancelButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#6C757D',
+    },
+    addButton: {
+        backgroundColor: '#007AFF',
+    },
+    addButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#fff',
+    },
+    addLinkTrigger: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        backgroundColor: '#F8F9FA',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#E9ECEF',
+        borderStyle: 'dashed',
+        marginBottom: 16,
+    },
+    addLinkTriggerText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#007AFF',
+        marginLeft: 6,
+    },
+    linksList: {
+        gap: 8,
+    },
+    linksListTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        color: '#333',
+        marginBottom: 6,
+    },
+    linkItem: {
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#E9ECEF',
+        overflow: 'hidden',
+    },
+    linkItemContent: {
+        flexDirection: 'row',
+        padding: 12,
+        alignItems: 'center',
+    },
+    linkItemDragHandle: {
+        width: 24,
+        height: 24,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 8,
+    },
+    linkItemInfo: {
+        flex: 1,
+        marginRight: 8,
+    },
+    linkItemTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#333',
+        marginBottom: 2,
+    },
+    linkItemDescription: {
+        fontSize: 12,
+        color: '#666',
+        marginBottom: 2,
+    },
+    linkItemUrl: {
+        fontSize: 12,
+        color: '#6C757D',
+    },
+    linkItemActions: {
+        flexDirection: 'row',
+        gap: 6,
+    },
+    linkItemButton: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: '#F8F9FA',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    linkItemDivider: {
+        height: 1,
+        backgroundColor: '#E9ECEF',
+        marginHorizontal: 12,
+    },
+    reorderHint: {
+        padding: 8,
+        alignItems: 'center',
+    },
+    reorderHintText: {
+        fontSize: 12,
+        color: '#999',
+        fontStyle: 'italic',
+    },
+    reorderButtons: {
+        flexDirection: 'column',
+        gap: 2,
+    },
+    reorderButton: {
+        width: 20,
+        height: 16,
+        borderRadius: 3,
+        backgroundColor: '#F8F9FA',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: '#E9ECEF',
+    },
+    reorderButtonDisabled: {
+        opacity: 0.3,
+    },
+    linkItemImage: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#007AFF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 8,
+    },
+    linkItemImageText: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#fff',
+    },
+    fetchingText: {
+        fontSize: 12,
+        color: '#007AFF',
+        fontStyle: 'italic',
+    },
+    linksFieldContent: {
+        flex: 1,
+        marginLeft: 12,
+    },
+    linksPreview: {
+        marginTop: 4,
+    },
+    linkPreviewItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 4,
+    },
+    linkPreviewImage: {
+        width: 20,
+        height: 20,
+        borderRadius: 10,
+        backgroundColor: '#007AFF',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 6,
+    },
+    linkPreviewImageText: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: '#fff',
+    },
+    linkPreviewTitle: {
+        fontSize: 13,
+        color: '#666',
+        flex: 1,
+    },
+    linkPreviewMore: {
+        fontSize: 12,
+        color: '#999',
+        fontStyle: 'italic',
     },
 });
 

@@ -1714,6 +1714,25 @@ export class OxyServices {
       throw this.handleError(error);
     }
   }
+
+  /**
+   * Fetch metadata for a URL (title, description, image)
+   * @param url - The URL to fetch metadata for
+   * @returns Promise with metadata object
+   */
+  async fetchLinkMetadata(url: string): Promise<{
+    url: string;
+    title: string;
+    description: string;
+    image?: string;
+  }> {
+    try {
+      const response = await this.client.post('/link-metadata/fetch-metadata', { url });
+      return response.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
 }
 
 // Default export for backward compatibility

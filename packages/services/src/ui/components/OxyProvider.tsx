@@ -88,7 +88,7 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
  * and reimplemented using BottomSheetModal for better Android compatibility
  */
 const OxyBottomSheet: React.FC<OxyProviderProps> = ({
-    oxyServices,
+    oxyServices: providedOxyServices,
     initialScreen = 'SignIn',
     onClose,
     onAuthenticated,
@@ -98,6 +98,9 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     autoPresent = false,
     showInternalToaster = true,
 }) => {
+    // Get oxyServices from context if not provided as prop
+    const contextOxy = useOxy();
+    const oxyServices = providedOxyServices || contextOxy?.oxyServices;
     // Use the internal ref (which is passed as a prop from OxyProvider)
     const modalRef = useRef<BottomSheetModalRef>(null);
     const navigationRef = useRef<((screen: string, props?: Record<string, any>) => void) | null>(null);
@@ -307,15 +310,21 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                                 { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
                         ]}
                     >
-                        <OxyRouter
-                            oxyServices={oxyServices}
-                            initialScreen={initialScreen}
-                            onClose={handleClose}
-                            onAuthenticated={handleAuthenticated}
-                            theme={theme}
-                            navigationRef={navigationRef}
-                            containerWidth={800} // static, since dynamic sizing is used
-                        />
+                        {oxyServices ? (
+                            <OxyRouter
+                                oxyServices={oxyServices}
+                                initialScreen={initialScreen}
+                                onClose={handleClose}
+                                onAuthenticated={handleAuthenticated}
+                                theme={theme}
+                                navigationRef={navigationRef}
+                                containerWidth={800} // static, since dynamic sizing is used
+                            />
+                        ) : (
+                            <View style={styles.errorContainer}>
+                                <Text>OxyServices not available</Text>
+                            </View>
+                        )}
                     </Animated.View>
                 </View>
             </BottomSheetScrollView>

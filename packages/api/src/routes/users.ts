@@ -41,7 +41,7 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res) => {
 // Update current authenticated user
 router.put('/me', authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description'] as const;
+    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description', 'links', 'linksMetadata', 'location'] as const;
     type AllowedUpdate = typeof allowedUpdates[number];
 
     const updates = Object.entries(req.body)

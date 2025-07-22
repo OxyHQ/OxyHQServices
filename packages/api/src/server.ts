@@ -18,6 +18,7 @@ import analyticsRoutes from "./routes/analytics.routes";
 import paymentRoutes from './routes/payment.routes';
 import walletRoutes from './routes/wallet.routes';
 import karmaRoutes from './routes/karma.routes';
+import linkMetadataRoutes from './routes/linkMetadata';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
 
@@ -209,6 +210,7 @@ app.use('/payments', paymentRoutes);
 app.use('/notifications', notificationsRouter);
 // app.use('/karma', karmaRoutes); // Temporarily disabled due to headers error
 app.use('/wallet', walletRoutes);
+app.use('/link-metadata', linkMetadataRoutes);
 
 // Global error handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
