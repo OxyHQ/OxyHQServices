@@ -256,14 +256,28 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
     const effectiveColor = error ? 'error' : success ? 'success' : color;
     const effectivePalette = colorPalette[effectiveColor] || colorPalette.primary;
 
+    // Get icon color based on focus state
+    const iconColor = focused ? effectivePalette.main : surfaceScale(0.62);
+
+    // Helper function to clone React elements with updated color
+    const cloneWithColor = (element: React.ReactNode, color: string): React.ReactNode => {
+        if (React.isValidElement(element) && element.type) {
+            return React.cloneElement(element, {
+                ...element.props,
+                color: color,
+            });
+        }
+        return element;
+    };
+
     // Render leading/trailing elements
     const leadingNode = typeof leading === 'function'
-        ? leading({ color: surfaceScale(0.62), size: 24 })
-        : leading;
+        ? leading({ color: iconColor, size: 24 })
+        : cloneWithColor(leading, iconColor);
 
     const trailingNode = typeof trailing === 'function'
-        ? trailing({ color: surfaceScale(0.62), size: 24 })
-        : trailing;
+        ? trailing({ color: iconColor, size: 24 })
+        : cloneWithColor(trailing, iconColor);
 
     // Debounced value for validation
     const debouncedValue = useDebounce(internalValue, debounceMs);
@@ -339,15 +353,15 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
         }).start();
     }, [focused, focusAnimation]);
 
-    // Animate active state (when has value)
+    // Animate active state (when focused or has value)
     useEffect(() => {
-        const hasValue = Boolean(internalValue);
+        const shouldBeActive = focused || Boolean(internalValue);
         Animated.timing(activeAnimation, {
-            toValue: hasValue ? 1 : 0,
+            toValue: shouldBeActive ? 1 : 0,
             duration: 200,
             useNativeDriver: false,
         }).start();
-    }, [internalValue, activeAnimation]);
+    }, [focused, internalValue, activeAnimation]);
 
     // Validation effect
     useEffect(() => {
@@ -383,7 +397,7 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                 minHeight: variant === 'standard' ? 48 : 56,
                 backgroundColor: variant === 'filled'
                     ? focused
-                        ? surfaceScale(0.14)
+                        ? surfaceScale(0.08)
                         : hovered
                             ? surfaceScale(0.08)
                             : surfaceScale(0.04)
@@ -647,7 +661,7 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                     <Ionicons
                         name="close-circle"
                         size={20}
-                        color={surfaceScale(0.62)}
+                        color={iconColor}
                     />
                 </TouchableOpacity>
             );
@@ -667,7 +681,7 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                     <Ionicons
                         name={showPassword ? "eye-off" : "eye"}
                         size={22}
-                        color={surfaceScale(0.62)}
+                        color={iconColor}
                     />
                 </TouchableOpacity>
             );
@@ -700,12 +714,14 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
 
                 {/* Text Input */}
                 <TextInput
-                    ref={r => {
+                    ref={(r) => {
                         if (typeof ref === 'function') {
                             ref(r);
-                        } else if (ref && 'current' in ref) {
-                            (ref as React.MutableRefObject<TextInput | null>).current = r;
+                        } else if (ref && typeof ref === 'object') {
+                            // @ts-ignore - React ref assignment
+                            ref.current = r;
                         }
+                        // @ts-ignore - Internal ref assignment
                         inputRef.current = r;
                     }}
                     style={[styles.input, inputStyle]}

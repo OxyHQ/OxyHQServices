@@ -613,24 +613,24 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                             onChangeText={text => setCardDetails({ ...cardDetails, number: text })}
                             placeholder="Card Number"
                             keyboardType="numeric"
-                            containerStyle={styles.cardFieldContainer}
-                            leftComponent={<Ionicons name="card-outline" size={18} color={colors.primary} />}
+                            style={styles.cardFieldContainer}
+                            leading={<Ionicons name="card-outline" size={18} color={colors.primary} />}
                         />
                         <View style={styles.cardFieldRow}>
                             <TextField
                                 value={cardDetails.expiry}
                                 onChangeText={text => setCardDetails({ ...cardDetails, expiry: text })}
                                 placeholder="MM/YY"
-                                containerStyle={styles.cardFieldHalfLeft}
-                                leftComponent={<Ionicons name="calendar-outline" size={16} color={colors.primary} />}
+                                style={styles.cardFieldHalfLeft}
+                                leading={<Ionicons name="calendar-outline" size={16} color={colors.primary} />}
                             />
                             <TextField
                                 value={cardDetails.cvv}
                                 onChangeText={text => setCardDetails({ ...cardDetails, cvv: text })}
                                 placeholder="CVV"
                                 keyboardType="numeric"
-                                containerStyle={styles.cardFieldHalfRight}
-                                leftComponent={<Ionicons name="lock-closed-outline" size={16} color={colors.primary} />}
+                                style={styles.cardFieldHalfRight}
+                                leading={<Ionicons name="lock-closed-outline" size={16} color={colors.primary} />}
                             />
                         </View>
                     </>

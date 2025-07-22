@@ -55,7 +55,7 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
             </View>
             <TextField
                 ref={inputRef}
-                icon="person-outline"
+                leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
                 label="Username"
                 value={formData.username}
                 onChangeText={(text) => {
@@ -65,18 +65,16 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
                 autoCapitalize="none"
                 autoCorrect={false}
                 testID="username-input"
-                colors={colors}
                 variant="filled"
                 error={validationState.status === 'invalid' ? validationState.message : undefined}
                 loading={validationState.status === 'validating'}
                 success={validationState.status === 'valid'}
-                validMessage={validationState.status === 'valid' ? 'Looks good!' : undefined}
                 onSubmitEditing={handleIdentityNext}
                 autoFocus
             />
             <ValidationMessage validationState={validationState} colors={colors} styles={styles} />
             <TextField
-                icon="mail-outline"
+                leading={<Ionicons name="mail-outline" size={24} color={colors.secondaryText} />}
                 label="Email"
                 value={formData.email}
                 onChangeText={(text) => {
@@ -86,7 +84,6 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
                 autoCapitalize="none"
                 autoCorrect={false}
                 testID="email-input"
-                colors={colors}
                 variant="filled"
                 error={formData.email && !validateEmail(formData.email) ? 'Please enter a valid email address' : undefined}
             />

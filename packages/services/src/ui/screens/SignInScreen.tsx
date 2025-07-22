@@ -54,7 +54,6 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     const fadeAnim = useRef(new Animated.Value(1)).current;
     const slideAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(1)).current;
-    const inputScaleAnim = useRef(new Animated.Value(1)).current;
     const logoAnim = useRef(new Animated.Value(0)).current;
     const progressAnim = useRef(new Animated.Value(0.5)).current;
 
@@ -82,22 +81,14 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
         }).start();
     }, [logoAnim]);
 
-    // Input focus animations
+    // Input focus handlers (no animation)
     const handleInputFocus = useCallback(() => {
         setIsInputFocused(true);
-        Animated.spring(inputScaleAnim, {
-            toValue: 1.02,
-            useNativeDriver: true,
-        }).start();
-    }, [inputScaleAnim]);
+    }, []);
 
     const handleInputBlur = useCallback(() => {
         setIsInputFocused(false);
-        Animated.spring(inputScaleAnim, {
-            toValue: 1,
-            useNativeDriver: true,
-        }).start();
-    }, [inputScaleAnim]);
+    }, []);
 
     // Memoized input change handlers to prevent re-renders
     const handleUsernameChange = useCallback((text: string) => {
@@ -345,7 +336,6 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             isAddAccountMode={isAddAccountMode}
             user={user}
             errorMessage={errorMessage}
-            inputScaleAnim={inputScaleAnim}
             isInputFocused={isInputFocused}
             username={username}
             validationStatus={validationStatus}
@@ -359,7 +349,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
         />
     ), [
         fadeAnim, slideAnim, scaleAnim, colors, isAddAccountMode, user?.username,
-        errorMessage, inputScaleAnim, isInputFocused, username, validationStatus,
+        errorMessage, isInputFocused, username, validationStatus,
         userProfile, isValidating, handleInputFocus, handleInputBlur, handleUsernameChange,
         handleUsernameContinue, navigate, styles
     ]);
@@ -376,7 +366,6 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             theme={theme}
             logoAnim={logoAnim}
             errorMessage={errorMessage}
-            inputScaleAnim={inputScaleAnim}
             isInputFocused={isInputFocused}
             password={password}
             showPassword={showPassword}
@@ -389,7 +378,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
         />
     ), [
         fadeAnim, slideAnim, scaleAnim, colors, userProfile, username, theme, logoAnim,
-        errorMessage, inputScaleAnim, isInputFocused, password, showPassword,
+        errorMessage, isInputFocused, password, showPassword,
         handleInputFocus, handleInputBlur, handlePasswordChange, handleSignIn, isLoading, prevStep, styles
     ]);
 

@@ -17,7 +17,6 @@ interface SignInPasswordStepProps {
     theme: string;
     logoAnim: Animated.Value;
     errorMessage: string;
-    inputScaleAnim: Animated.Value;
     isInputFocused: boolean;
     password: string;
     showPassword: boolean;
@@ -40,7 +39,6 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
     theme,
     logoAnim,
     errorMessage,
-    inputScaleAnim,
     isInputFocused,
     password,
     showPassword,
@@ -114,14 +112,11 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     </Text>
                 </View>
             </View>
-            <Animated.View style={[
-                styles.modernInputContainer,
-                { transform: [{ scale: inputScaleAnim }] }
-            ]}>
+            <View style={styles.modernInputContainer}>
                 <TextField
                     ref={inputRef}
                     label="Password"
-                    icon="lock-closed-outline"
+                    leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
                     value={password}
                     onChangeText={handlePasswordChange}
                     onFocus={handleInputFocus}
@@ -130,7 +125,6 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     autoCapitalize="none"
                     autoCorrect={false}
                     testID="password-input"
-                    colors={colors}
                     variant="filled"
                     error={errorMessage || undefined}
                     onSubmitEditing={handleSignIn}
@@ -142,7 +136,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                         <Text style={[styles.modernLinkText, { color: colors.primary }]}>Recover your account</Text>
                     </TouchableOpacity>
                 </View>
-            </Animated.View>
+            </View>
             <GroupedPillButtons
                 buttons={[
                     {

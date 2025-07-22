@@ -14,7 +14,6 @@ interface SignInUsernameStepProps {
     isAddAccountMode: boolean;
     user: any;
     errorMessage: string;
-    inputScaleAnim: Animated.Value;
     isInputFocused: boolean;
     username: string;
     validationStatus: 'idle' | 'validating' | 'valid' | 'invalid';
@@ -36,7 +35,6 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
     isAddAccountMode,
     user,
     errorMessage,
-    inputScaleAnim,
     isInputFocused,
     username,
     validationStatus,
@@ -88,14 +86,11 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                     </Text>
                 </View>
             )}
-            <Animated.View style={[
-                styles.modernInputContainer,
-                { transform: [{ scale: inputScaleAnim }] }
-            ]}>
+            <View style={styles.modernInputContainer}>
                 <TextField
                     ref={inputRef}
                     label="Username"
-                    icon="person-outline"
+                    leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
                     value={username}
                     onChangeText={handleUsernameChange}
                     onFocus={handleInputFocus}
@@ -103,16 +98,14 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                     autoCapitalize="none"
                     autoCorrect={false}
                     testID="username-input"
-                    colors={colors}
                     variant="filled"
                     error={validationStatus === 'invalid' ? errorMessage : undefined}
                     loading={validationStatus === 'validating'}
                     success={validationStatus === 'valid'}
-                    validMessage={validationStatus === 'valid' && userProfile ? `Welcome back, ${userProfile.displayName || userProfile.name || username}!` : undefined}
                     onSubmitEditing={handleUsernameContinue}
                     autoFocus
                 />
-            </Animated.View>
+            </View>
             <GroupedPillButtons
                 buttons={[
                     {

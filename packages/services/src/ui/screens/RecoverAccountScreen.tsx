@@ -97,18 +97,16 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, t
                             <TextField
                                 ref={identifierRef}
                                 label="Email or Username"
-                                icon="mail-outline"
+                                leading={<Ionicons name="mail-outline" size={24} color={colors.secondaryText} />}
                                 value={identifier}
                                 onChangeText={setIdentifier}
                                 autoCapitalize="none"
                                 autoCorrect={false}
-                                colors={colors}
                                 variant="filled"
                                 error={errorMessage || undefined}
                                 editable={!isLoading}
                                 autoFocus
                                 testID="recover-identifier-input"
-                                validMessage={successMessage || undefined}
                                 onSubmitEditing={handleRequestWithFocus}
                             />
                             <GroupedPillButtons

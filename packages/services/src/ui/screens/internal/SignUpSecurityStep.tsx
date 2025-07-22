@@ -1,5 +1,6 @@
 import React, { useRef, useCallback, useEffect } from 'react';
 import { View, Text, Animated, TextInput } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
 
@@ -78,7 +79,7 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
             </View>
             <TextField
                 ref={passwordRef}
-                icon="lock-closed-outline"
+                leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
                 label="Password"
                 value={formData.password}
                 onChangeText={text => updateField('password', text)}
@@ -86,7 +87,6 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
                 autoCapitalize="none"
                 autoCorrect={false}
                 testID="password-input"
-                colors={colors}
                 variant="filled"
                 error={formData.password && typeof formData.password === 'string' && !validatePassword(formData.password) ? `Password must be at least ${PASSWORD_MIN_LENGTH} characters` : undefined}
                 onSubmitEditing={() => confirmPasswordRef.current?.focus()}
@@ -95,7 +95,7 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
             <Text style={[styles.passwordHint, { color: colors.secondaryText }]}>Password must be at least {PASSWORD_MIN_LENGTH} characters long</Text>
             <TextField
                 ref={confirmPasswordRef}
-                icon="lock-closed-outline"
+                leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
                 label="Confirm Password"
                 value={formData.confirmPassword}
                 onChangeText={text => updateField('confirmPassword', text)}
@@ -103,7 +103,6 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
                 autoCapitalize="none"
                 autoCorrect={false}
                 testID="confirm-password-input"
-                colors={colors}
                 variant="filled"
                 error={formData.confirmPassword && typeof formData.confirmPassword === 'string' && !validatePasswordsMatch(formData.password, formData.confirmPassword) ? 'Passwords do not match' : undefined}
                 onSubmitEditing={handleSecurityNext}
