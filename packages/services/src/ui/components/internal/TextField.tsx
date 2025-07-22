@@ -406,7 +406,11 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                             ? surfaceScale(0.08)
                             : surfaceScale(0.04)
                     : 'transparent',
-                borderRadius: variant === 'standard' ? 0 : (variant === 'filled' ? 4 : 8),
+                borderRadius: variant === 'standard' ? 0 : (variant === 'filled' ? 16 : 8),
+                borderTopLeftRadius: variant === 'filled' ? 16 : undefined,
+                borderTopRightRadius: variant === 'filled' ? 16 : undefined,
+                borderBottomLeftRadius: variant === 'filled' ? 0 : undefined,
+                borderBottomRightRadius: variant === 'filled' ? 0 : undefined,
                 borderWidth: variant === 'outlined' ? (focused ? 2 : 1) : 0,
                 borderColor: error
                     ? effectivePalette.main  // Always show error color when there's an error
