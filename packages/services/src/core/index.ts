@@ -494,9 +494,17 @@ export class OxyServices {
    */
   async getCurrentUser(): Promise<User> {
     try {
+      console.log('OxyServices: Fetching current user...');
       const res = await this.client.get('/users/me');
+      console.log('OxyServices: Current user response:', {
+        hasUser: !!res.data,
+        userLinksMetadata: res.data?.linksMetadata,
+        userLinks: res.data?.links,
+        userWebsite: res.data?.website
+      });
       return res.data;
     } catch (error) {
+      console.error('OxyServices: Error fetching current user:', error);
       throw this.handleError(error);
     }
   }
@@ -508,9 +516,12 @@ export class OxyServices {
    */
   async updateProfile(updates: Record<string, any>): Promise<User> {
     try {
+      console.log('OxyServices: Updating profile with:', updates);
       const res = await this.client.put('/users/me', updates);
+      console.log('OxyServices: Profile update response:', res.data);
       return res.data;
     } catch (error) {
+      console.error('OxyServices: Error updating profile:', error);
       throw this.handleError(error);
     }
   }

@@ -10,6 +10,7 @@ import {
     TextInput,
     Animated,
     Platform,
+    Image,
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
@@ -101,16 +102,19 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             setEmail(user.email || '');
             setBio(user.bio || '');
             setLocation(user.location || '');
-            // Handle links with metadata
+
+            // Handle links - simple and direct like other fields
             if (user.linksMetadata && Array.isArray(user.linksMetadata)) {
-                // User has links with metadata
-                setLinks(user.linksMetadata.map(l => l.url));
-                setTempLinksWithMetadata(user.linksMetadata);
+                const urls = user.linksMetadata.map(l => l.url);
+                setLinks(urls);
+                const metadataWithIds = user.linksMetadata.map((link, index) => ({
+                    ...link,
+                    id: link.id || `existing-${index}`
+                }));
+                setTempLinksWithMetadata(metadataWithIds);
             } else if (Array.isArray(user.links)) {
-                // User has simple links array
                 const simpleLinks = user.links.map(l => typeof l === 'string' ? l : l.link).filter(Boolean);
                 setLinks(simpleLinks);
-                // Convert to metadata format
                 const linksWithMetadata = simpleLinks.map((url, index) => ({
                     url,
                     title: url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
@@ -120,7 +124,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 }));
                 setTempLinksWithMetadata(linksWithMetadata);
             } else if (user.website) {
-                // User has single website
                 setLinks([user.website]);
                 setTempLinksWithMetadata([{
                     url: user.website,
@@ -152,6 +155,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 links,
                 linksMetadata: tempLinksWithMetadata.length > 0 ? tempLinksWithMetadata : undefined,
             };
+
+            console.log('Saving updates:', updates);
+            console.log('Links metadata being saved:', tempLinksWithMetadata);
 
             // Handle name field
             if (displayName || lastName) {
@@ -208,15 +214,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 setTempLocation(currentValue);
                 break;
             case 'links':
-                // Convert existing links to metadata format
-                const linksWithMetadata = links.map((url, index) => ({
-                    url,
-                    title: url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
-                    description: `Link to ${url}`,
-                    image: undefined,
-                    id: `existing-${index}`
-                }));
-                setTempLinksWithMetadata(linksWithMetadata);
+                // Don't reset the metadata - keep the existing rich metadata
+                // The tempLinksWithMetadata should already contain the rich data from the database
                 break;
         }
         setEditingField(type);
@@ -288,9 +287,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const fetchLinkMetadata = async (url: string) => {
         try {
             setIsFetchingMetadata(true);
+            console.log('Fetching metadata for URL:', url);
 
             // Use the backend API to fetch metadata
             const metadata = await oxyServices.fetchLinkMetadata(url);
+            console.log('Received metadata:', metadata);
 
             return {
                 ...metadata,
@@ -315,7 +316,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         if (!newLinkUrl.trim()) return;
 
         const url = newLinkUrl.trim();
+        console.log('Adding link:', url);
+
         const metadata = await fetchLinkMetadata(url);
+        console.log('Final metadata for adding:', metadata);
 
         setTempLinksWithMetadata(prev => [...prev, metadata]);
         setNewLinkUrl('');
@@ -445,10 +449,12 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                     {tempLinksWithMetadata.map((link, index) => (
                                         <View key={link.id} style={styles.linkItem}>
                                             <View style={styles.linkItemContent}>
-                                                {link.image && (
+                                                {link.image ? (
+                                                    <Image source={{ uri: link.image }} style={styles.linkItemImage} />
+                                                ) : (
                                                     <View style={styles.linkItemImage}>
                                                         <Text style={styles.linkItemImageText}>
-                                                            {link.title?.charAt(0) || 'L'}
+                                                            {link.title?.charAt(0).toUpperCase() || link.url.charAt(0).toUpperCase()}
                                                         </Text>
                                                     </View>
                                                 )}
@@ -634,11 +640,13 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         {hasLinks ? (
                             <View style={styles.linksPreview}>
                                 {tempLinksWithMetadata.slice(0, 2).map((link, index) => (
-                                    <View key={link.id} style={styles.linkPreviewItem}>
-                                        {link.image && (
+                                    <View key={link.id || index} style={styles.linkPreviewItem}>
+                                        {link.image ? (
+                                            <Image source={{ uri: link.image }} style={styles.linkPreviewImage} />
+                                        ) : (
                                             <View style={styles.linkPreviewImage}>
                                                 <Text style={styles.linkPreviewImageText}>
-                                                    {link.title?.charAt(0) || 'L'}
+                                                    {link.title?.charAt(0).toUpperCase() || link.url.charAt(0).toUpperCase()}
                                                 </Text>
                                             </View>
                                         )}
