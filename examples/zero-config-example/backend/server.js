@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import { createOxyAuth, createOptionalOxyAuth } from '@oxyhq/services/node';
+import crypto from 'crypto';
 
 const app = express();
 const PORT = process.env.PORT || 4000;
@@ -104,7 +105,7 @@ app.get('/api/dashboard-stats', (req, res) => {
     stats: {
       loginCount: Math.floor(Math.random() * 100),
       lastLogin: new Date(Date.now() - Math.random() * 86400000).toISOString(),
-      accountAge: Math.floor(Math.random() * 365)
+      accountAge: crypto.randomInt(0, 365)
     },
     user: req.user.username,
     generated: new Date().toISOString()
