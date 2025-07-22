@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
+import { fontFamilies } from '../../styles/fonts';
 
 export interface TextFieldProps extends Omit<TextInputProps, 'style'> {
     // Basic props
@@ -499,11 +500,12 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
             },
             label: {
                 fontSize: 16,
-                fontWeight: '500',
+                fontFamily: fontFamilies.phuduSemiBold,
                 color: surfaceScale(0.87),
             },
             helperText: {
                 fontSize: 12,
+                fontFamily: fontFamilies.phuduMedium,
                 marginTop: 4,
                 marginHorizontal: 16,
                 color: surfaceScale(0.6),
@@ -525,8 +527,8 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
             },
             passwordStrengthText: {
                 fontSize: 11,
+                fontWeight: '600',
                 marginTop: 4,
-                fontWeight: '500',
             },
             characterCount: {
                 fontSize: 11,
