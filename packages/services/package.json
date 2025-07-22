@@ -23,6 +23,11 @@
             "require": "./lib/commonjs/ui/index.js",
             "types": "./lib/typescript/ui/index.d.ts"
         },
+        "./node": {
+            "import": "./lib/module/node/index.js",
+            "require": "./lib/commonjs/node/index.js",
+            "types": "./lib/typescript/node/index.d.ts"
+        },
         "./full": {
             "import": "./lib/module/index.js",
             "require": "./lib/commonjs/index.js",

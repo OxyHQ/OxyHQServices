@@ -1,304 +1,336 @@
 # Quick Start Guide
 
-Get started with OxyHQServices in under 5 minutes.
+Get started with OxyHQ Services in under 2 minutes with our **zero-config** setup.
 
-## Installation
+## 🚀 Zero-Config Setup (Recommended)
 
+### Frontend (React/Next.js)
+
+**1. Install the package**
 ```bash
 npm install @oxyhq/services
 ```
 
-## Basic Authentication
-
-### 1. Initialize Client
-
-```typescript
-import { OxyServices } from '@oxyhq/services';
-
-const oxy = new OxyServices({
-  baseURL: 'http://localhost:3001' // Your Oxy API URL
-});
-```
-
-### 2. Authenticate User
-
-```typescript
-try {
-  // Login with credentials
-  const response = await oxy.auth.login({
-    username: 'testuser',
-    password: 'password123'
-  });
-  
-  console.log('Login successful!');
-  console.log('User:', response.user);
-  console.log('Access Token:', response.accessToken);
-} catch (error) {
-  console.error('Login failed:', error.message);
-}
-```
-
-### 3. Make Authenticated Requests
-
-```typescript
-// Get current user (requires authentication)
-const user = await oxy.users.getCurrentUser();
-console.log('Current user:', user);
-
-// Note: For UI components, use the useOxy() hook for authentication status
-// This is just for standalone service usage in Node.js/backend
-```
-
-## React/React Native Integration
-
-### 1. Setup Provider
-
-```typescript
-import React from 'react';
-import { OxyProvider } from '@oxyhq/services/ui';
+**2. Wrap your app (1 line)**
+```jsx
+import { OxyZeroConfigProvider } from '@oxyhq/services/ui';
 
 function App() {
   return (
-    <OxyProvider config={{ baseURL: 'http://localhost:3001' }}>
-      <MyApp />
-    </OxyProvider>
+    <OxyZeroConfigProvider>
+      <YourApp />
+    </OxyZeroConfigProvider>
   );
 }
 ```
 
-### 2. Use Authentication Hook
+**3. Use authentication anywhere (1 line)**
+```jsx
+import { useOxyZeroConfig } from '@oxyhq/services/ui';
 
-```typescript
+function LoginComponent() {
+  const { user, login, logout, isAuthenticated } = useOxyZeroConfig();
+
+  if (isAuthenticated) {
+    return <div>Welcome, {user?.username}! <button onClick={logout}>Logout</button></div>;
+  }
+
+  return <button onClick={() => login('username', 'password')}>Login</button>;
+}
+```
+
+### Backend (Express.js)
+
+**1. Add authentication middleware (1 line)**
+```js
+import express from 'express';
+import { createOxyAuth } from '@oxyhq/services/node';
+
+const app = express();
+app.use(express.json());
+
+// Zero-config auth for all /api routes
+app.use('/api', createOxyAuth());
+
+// Now all routes under /api automatically have req.user available
+app.get('/api/profile', (req, res) => {
+  res.json({ user: req.user }); // req.user is automatically populated!
+});
+
+app.listen(3000, () => console.log('Server running'));
+```
+
+**That's it! 🎉** Your app now has full authentication with automatic token management.
+
+---
+
+## 📖 Complete Working Example
+
+Here's a complete React + Express example that works out of the box:
+
+### Frontend (React)
+
+**App.js**
+```jsx
 import React from 'react';
-import { useOxy } from '@oxyhq/services/ui';
+import { OxyZeroConfigProvider } from '@oxyhq/services/ui';
+import Dashboard from './Dashboard';
 
-function MyApp() {
-  const { user, login, logout, isLoading } = useOxy();
+export default function App() {
+  return (
+    <OxyZeroConfigProvider apiUrl="http://localhost:3001">
+      <Dashboard />
+    </OxyZeroConfigProvider>
+  );
+}
+```
 
-  const handleLogin = async () => {
-    try {
-      await login('testuser', 'password123');
-    } catch (error) {
-      console.error('Login failed:', error);
+**Dashboard.js**
+```jsx
+import React, { useState, useEffect } from 'react';
+import { useOxyZeroConfig } from '@oxyhq/services/ui';
+
+export default function Dashboard() {
+  const { user, login, logout, register, isAuthenticated, isLoading } = useOxyZeroConfig();
+  const [serverData, setServerData] = useState(null);
+
+  // Fetch data from your backend
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetch('/api/profile', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('oxy_zero_accessToken')}`
+        }
+      })
+      .then(res => res.json())
+      .then(setServerData)
+      .catch(console.error);
     }
-  };
+  }, [isAuthenticated]);
 
-  if (isLoading) {
-    return <div>Loading...</div>;
+  if (isLoading) return <div>Loading...</div>;
+
+  if (!isAuthenticated) {
+    return (
+      <div>
+        <h1>Welcome to My App</h1>
+        <button onClick={() => login('demo', 'password')}>
+          Login as Demo
+        </button>
+        <button onClick={() => register('newuser', 'user@example.com', 'newpass')}>
+          Register New Account
+        </button>
+      </div>
+    );
   }
 
   return (
     <div>
-      {user ? (
+      <h1>Dashboard</h1>
+      <p>Welcome back, {user.username}!</p>
+      <p>Email: {user.email}</p>
+      
+      {serverData && (
         <div>
-          <h1>Welcome, {user.username}!</h1>
-          <button onClick={logout}>Logout</button>
-        </div>
-      ) : (
-        <div>
-          <h1>Please log in</h1>
-          <button onClick={handleLogin}>Login</button>
+          <h2>Server Response:</h2>
+          <pre>{JSON.stringify(serverData, null, 2)}</pre>
         </div>
       )}
-    </div>
-  );
-}
-
-export default App;
-```
-
-### 3. Use UI Components
-
-```typescript
-import React from 'react';
-import { Avatar, FollowButton } from '@oxyhq/services/ui';
-
-function UserProfile({ userId }) {
-  return (
-    <div>
-      <Avatar userId={userId} size={64} />
-      <FollowButton targetUserId={userId} />
+      
+      <button onClick={logout}>Logout</button>
     </div>
   );
 }
 ```
 
-## Express.js Backend Integration
+### Backend (Express.js)
 
-### 1. Setup Middleware
-
-```typescript
+**server.js**
+```js
 import express from 'express';
-import { OxyServices } from '@oxyhq/services';
+import cors from 'cors';
+import { createOxyAuth } from '@oxyhq/services/node';
 
 const app = express();
-const oxy = new OxyServices({
-  baseURL: 'http://localhost:3001'
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// Public routes
+app.get('/', (req, res) => {
+  res.json({ message: 'Welcome to the API' });
 });
 
-// Create authentication middleware
-const authenticateToken = oxy.middleware.authenticate({
-  loadUser: true // Load full user data
+app.get('/health', (req, res) => {
+  res.json({ status: 'OK', timestamp: new Date().toISOString() });
 });
 
-// Use on protected routes
-app.get('/api/protected', authenticateToken, (req, res) => {
-  // req.user contains authenticated user data
-  // req.userId contains user ID
-  // req.accessToken contains the validated token
-  
+// Protected routes with zero-config authentication
+app.use('/api', createOxyAuth({
+  baseURL: process.env.OXY_API_URL || 'http://localhost:3001'
+}));
+
+// All routes under /api now have req.user automatically
+app.get('/api/profile', (req, res) => {
   res.json({
-    message: 'Access granted',
+    message: `Hello ${req.user.username}!`,
+    user: req.user,
+    serverTime: new Date().toISOString()
+  });
+});
+
+app.get('/api/protected-data', (req, res) => {
+  res.json({
+    data: 'This is protected data only authenticated users can see',
+    userId: req.userId,
     user: req.user
   });
 });
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📱 API available at http://localhost:${PORT}`);
+});
 ```
 
-### 2. Manual Token Validation
+### Run the Example
 
-```typescript
-// Validate token manually
-async function validateUserToken(token) {
-  try {
-    const result = await oxy.auth.validateToken(token);
-    if (result.valid) {
-      return result.user;
-    }
-    return null;
-  } catch (error) {
-    console.error('Token validation failed:', error);
-    return null;
+1. **Start your Oxy API server** (or use a hosted instance):
+   ```bash
+   # If you have the Oxy API locally
+   npm run api:dev
+   ```
+
+2. **Start your backend**:
+   ```bash
+   node server.js
+   ```
+
+3. **Start your React app**:
+   ```bash
+   npm start
+   ```
+
+4. **Visit http://localhost:3000** and click "Login as Demo"
+
+---
+
+## 🔧 Configuration Options
+
+### Frontend Configuration
+
+```jsx
+<OxyZeroConfigProvider
+  apiUrl="https://your-oxy-api.com"          // Your Oxy API URL
+  onAuthChange={(user) => console.log(user)} // Auth state changes
+  storagePrefix="myapp"                      // Storage key prefix
+>
+  <App />
+</OxyZeroConfigProvider>
+```
+
+### Backend Configuration
+
+```js
+app.use('/api', createOxyAuth({
+  baseURL: 'https://your-oxy-api.com',  // Your Oxy API URL
+  loadUser: true,                       // Load full user data (default)
+  publicPaths: ['/api/health'],         // Routes that don't need auth
+  onError: (error, req, res) => {       // Custom error handling
+    console.error('Auth error:', error);
+    res.status(error.status).json({ error: error.message });
   }
+}));
+```
+
+### Environment Variables
+
+```bash
+# Frontend (.env)
+REACT_APP_OXY_API_URL=http://localhost:3001
+
+# Backend (.env)
+OXY_API_URL=http://localhost:3001
+PORT=3000
+```
+
+---
+
+## 🎯 Next Steps
+
+### API Access
+Use the `useOxyApi` hook for direct API calls:
+
+```jsx
+import { useOxyApi } from '@oxyhq/services/ui';
+
+function UserProfile() {
+  const api = useOxyApi();
+
+  const updateProfile = async (data) => {
+    // Token automatically included
+    const user = await api.updateProfile(data);
+    console.log('Updated:', user);
+  };
+
+  return <button onClick={() => updateProfile({ name: 'New Name' })}>Update</button>;
 }
-
-// Use in route handlers
-app.get('/api/user-data', async (req, res) => {
-  const token = req.headers.authorization?.replace('Bearer ', '');
-  const user = await validateUserToken(token);
-  
-  if (!user) {
-    return res.status(401).json({ error: 'Unauthorized' });
-  }
-  
-  res.json({ user });
-});
 ```
 
-## Session Management
+### Optional Authentication
+For routes that work with or without auth:
 
-### 1. Device-Based Sessions
+```js
+import { createOptionalOxyAuth } from '@oxyhq/services/node';
 
-```typescript
-// Create session with device fingerprint
-const session = await oxy.sessions.createSession({
-  username: 'testuser',
-  password: 'password123',
-  deviceFingerprint: 'unique-device-id',
-  deviceInfo: {
-    userAgent: navigator.userAgent,
-    platform: 'web'
-  }
-});
+app.use('/api/content', createOptionalOxyAuth());
 
-console.log('Session created:', session.sessionId);
-```
-
-### 2. Manage Multiple Sessions
-
-```typescript
-// Get all user sessions
-const sessions = await oxy.sessions.getUserSessions();
-console.log('Active sessions:', sessions);
-
-// Logout from specific session
-await oxy.sessions.logoutSession('session-id-here');
-
-// Logout from all other sessions
-await oxy.sessions.logoutAllOtherSessions();
-```
-
-## Error Handling
-
-```typescript
-import { OxyAuthError, OxyNetworkError } from '@oxyhq/services';
-
-try {
-  await oxy.auth.login({ username: 'test', password: 'wrong' });
-} catch (error) {
-  if (error instanceof OxyAuthError) {
-    console.error('Authentication error:', error.message);
-  } else if (error instanceof OxyNetworkError) {
-    console.error('Network error:', error.message);
+app.get('/api/content', (req, res) => {
+  if (req.user) {
+    res.json({ content: 'personalized', user: req.user });
   } else {
-    console.error('Unknown error:', error);
+    res.json({ content: 'public' });
   }
-}
-```
-
-## Configuration Options
-
-```typescript
-const oxy = new OxyServices({
-  baseURL: 'http://localhost:3001',     // Required: API server URL
-  timeout: 5000,                       // Request timeout (ms)
-  autoRefresh: true,                   // Auto-refresh expired tokens
-  storage: 'localStorage',             // Token storage: 'localStorage' | 'sessionStorage' | 'memory'
-  retryAttempts: 3,                    // Retry failed requests
-  debug: true                          // Enable debug logging
 });
 ```
 
-## Common Patterns
+### Error Handling
 
-### Auto-Login on App Start
+```jsx
+const { login, error } = useOxyZeroConfig();
 
-```typescript
-// For UI components, the OxyProvider automatically handles session restoration
-function App() {
-  const { user, isAuthenticated, isLoading } = useOxy();
-  
-  if (isLoading) {
-    return <div>Loading...</div>;
+const handleLogin = async () => {
+  try {
+    await login('username', 'password');
+  } catch (err) {
+    console.error('Login failed:', err);
   }
-  
-  if (isAuthenticated) {
-    console.log('User automatically logged in:', user);
-    return <AuthenticatedApp user={user} />;
-  }
-  
-  return <LoginScreen />;
-}
-
-// The context automatically restores sessions on app start
+};
 ```
 
-### Token Refresh Handling
+---
 
-```typescript
-// The client automatically handles token refresh,
-// but you can listen for refresh events
-oxy.events.on('tokenRefreshed', (newTokens) => {
-  console.log('Tokens refreshed:', newTokens);
-});
+## 📚 Advanced Guides
 
-oxy.events.on('refreshFailed', (error) => {
-  console.log('Token refresh failed, please login again');
-  // Redirect to login screen
-});
-```
+- **[Zero-Config Complete Guide](./zero-config.md)** - Full zero-config documentation
+- **[Traditional Setup Guide](./quick-start-traditional.md)** - Classic OxyProvider setup
+- **[Core API Reference](./core-api.md)** - Complete API documentation  
+- **[Integration Examples](./examples/)** - More advanced examples
+- **[UI Components Guide](./ui-components.md)** - React/RN components
 
-## Next Steps
+## 🐛 Troubleshooting
 
-- **[Core API Reference](./core-api.md)** - Complete API documentation
-- **[UI Components Guide](./ui-components.md)** - React/RN component usage
-- **[Express Middleware](./express-middleware.md)** - Backend integration
-- **[Examples](./examples/)** - More code examples
-- **[Troubleshooting](./troubleshooting.md)** - Common issues and solutions
+**"useOxyZeroConfig must be used within an OxyZeroConfigProvider"**
+- Make sure your component is wrapped with the provider
 
-## Example Projects
+**"req.user is undefined"**
+- Ensure middleware is applied: `app.use('/api', createOxyAuth())`
+- Check the client sends `Authorization: Bearer <token>` header
 
-Check out these example implementations:
+**CORS errors**
+- Add `app.use(cors())` to your Express server
+- Configure your frontend and backend URLs correctly
 
-- **my-app** - React Native app with authentication
-- **my-app-backend** - Express.js server with middleware
-- **Integration examples** - Various use cases and patterns
+Need more help? Check the [complete troubleshooting guide](./troubleshooting.md).

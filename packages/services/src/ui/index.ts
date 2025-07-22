@@ -9,6 +9,9 @@ import isFrontend from './isFrontend';
 // Real UI exports
 let OxyProvider, OxySignInButton, OxyLogo, Avatar, FollowButton, OxyPayButton, FontLoader, setupFonts, OxyIcon, useOxy, useOxyAuth, useOxyUser, useOxyKarma, useOxyPayments, useOxyDevices, useOxyNotifications, useOxySocket, useOxyQR, useOxyIAP, OxyContextProvider, OxyContextState, OxyContextProviderProps, useFollow, ProfileScreen, OxyRouter, useAuthStore, fontFamilies, fontStyles, toast;
 
+// Zero-config exports
+let OxyZeroConfigProvider, useOxyZeroConfig, useOxyApi;
+
 if (isFrontend) {
   OxyProvider = require('./components/OxyProvider').default;
   OxySignInButton = require('./components/OxySignInButton').default;
@@ -30,6 +33,11 @@ if (isFrontend) {
   fontFamilies = require('./styles/fonts').fontFamilies;
   fontStyles = require('./styles/fonts').fontStyles;
   toast = require('../lib/sonner').toast;
+  
+  // Zero-config components
+  OxyZeroConfigProvider = require('./zero-config').OxyZeroConfigProvider;
+  useOxyZeroConfig = require('./zero-config').useOxyZeroConfig;
+  useOxyApi = require('./zero-config').useOxyApi;
 } else {
   // Backend: no-op fallbacks
   const noopComponent = () => null;
@@ -54,6 +62,11 @@ if (isFrontend) {
   fontFamilies = {};
   fontStyles = {};
   toast = () => {};
+  
+  // Zero-config no-ops
+  OxyZeroConfigProvider = noopComponent;
+  useOxyZeroConfig = noopHook;
+  useOxyApi = () => ({});
 }
 
 export {
@@ -76,7 +89,12 @@ export {
   useAuthStore,
   fontFamilies,
   fontStyles,
-  toast
+  toast,
+  
+  // Zero-config exports
+  OxyZeroConfigProvider,
+  useOxyZeroConfig,
+  useOxyApi
 };
 
 // Re-export core services for convenience in UI context
