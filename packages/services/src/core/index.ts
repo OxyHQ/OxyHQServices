@@ -1744,6 +1744,44 @@ export class OxyServices {
       throw this.handleError(error);
     }
   }
+
+  /**
+   * Search for locations using the enhanced location search API
+   * @param query - Search query string
+   * @param limit - Maximum number of results (default: 5)
+   * @param countrycodes - Optional country codes filter (e.g., "us,ca")
+   * @returns Promise with array of location results
+   */
+  async searchLocations(query: string, limit: number = 5, countrycodes?: string): Promise<any[]> {
+    try {
+      const params = new URLSearchParams({
+        query,
+        limit: limit.toString()
+      });
+      if (countrycodes) {
+        params.append('countrycodes', countrycodes);
+      }
+      const res = await this.client.get(`/location-search/search?${params.toString()}`);
+      return res.data.results;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get detailed information about a specific location by coordinates
+   * @param lat - Latitude
+   * @param lon - Longitude
+   * @returns Promise with detailed location information
+   */
+  async getLocationDetails(lat: number, lon: number): Promise<any> {
+    try {
+      const res = await this.client.get(`/location-search/details?lat=${lat}&lon=${lon}`);
+      return res.data.result;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
 }
 
 // Default export for backward compatibility

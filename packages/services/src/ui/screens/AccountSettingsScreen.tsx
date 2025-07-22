@@ -69,6 +69,24 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const [newLinkUrl, setNewLinkUrl] = useState('');
     const [isFetchingMetadata, setIsFetchingMetadata] = useState(false);
 
+    // Location management state
+    const [tempLocations, setTempLocations] = useState<Array<{
+        id: string;
+        name: string;
+        label?: string;
+        coordinates?: { lat: number; lon: number };
+    }>>([]);
+    const [isAddingLocation, setIsAddingLocation] = useState(false);
+    const [newLocationQuery, setNewLocationQuery] = useState('');
+    const [locationSearchResults, setLocationSearchResults] = useState<Array<{
+        place_id: number;
+        display_name: string;
+        lat: string;
+        lon: string;
+        type: string;
+    }>>([]);
+    const [isSearchingLocations, setIsSearchingLocations] = useState(false);
+
     // Memoize theme-related calculations to prevent unnecessary recalculations
     const themeStyles = useMemo(() => {
         const isDarkTheme = theme === 'dark';
@@ -102,6 +120,25 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             setEmail(user.email || '');
             setBio(user.bio || '');
             setLocation(user.location || '');
+
+            // Handle locations - convert single location to array format
+            if (user.locations && Array.isArray(user.locations)) {
+                setTempLocations(user.locations.map((loc, index) => ({
+                    id: loc.id || `existing-${index}`,
+                    name: loc.name,
+                    label: loc.label,
+                    coordinates: loc.coordinates
+                })));
+            } else if (user.location) {
+                // Convert single location string to array format
+                setTempLocations([{
+                    id: 'existing-0',
+                    name: user.location,
+                    label: 'Location'
+                }]);
+            } else {
+                setTempLocations([]);
+            }
 
             // Handle links - simple and direct like other fields
             if (user.linksMetadata && Array.isArray(user.linksMetadata)) {
@@ -151,7 +188,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 username,
                 email,
                 bio,
-                location,
+                location: tempLocations.length > 0 ? tempLocations[0].name : '', // Keep backward compatibility
+                locations: tempLocations.length > 0 ? tempLocations : undefined,
                 links,
                 linksMetadata: tempLinksWithMetadata.length > 0 ? tempLinksWithMetadata : undefined,
             };
@@ -211,7 +249,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 setTempBio(currentValue);
                 break;
             case 'location':
-                setTempLocation(currentValue);
+                // Don't reset the locations - keep the existing data
                 break;
             case 'links':
                 // Don't reset the metadata - keep the existing rich metadata
@@ -239,7 +277,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 setBio(tempBio);
                 break;
             case 'location':
-                setLocation(tempLocation);
+                // Locations are handled in the main save function
                 break;
             case 'links':
                 // Save both URLs and metadata
@@ -312,6 +350,65 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         }
     };
 
+    const searchLocations = async (query: string) => {
+        if (!query.trim() || query.length < 3) {
+            setLocationSearchResults([]);
+            return;
+        }
+
+        try {
+            setIsSearchingLocations(true);
+            const response = await fetch(
+                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`
+            );
+            const data = await response.json();
+            setLocationSearchResults(data);
+        } catch (error) {
+            console.error('Error searching locations:', error);
+            setLocationSearchResults([]);
+        } finally {
+            setIsSearchingLocations(false);
+        }
+    };
+
+    const addLocation = (locationData: {
+        place_id: number;
+        display_name: string;
+        lat: string;
+        lon: string;
+        type: string;
+    }) => {
+        const newLocation = {
+            id: Date.now().toString(),
+            name: locationData.display_name,
+            label: locationData.type === 'city' ? 'City' :
+                locationData.type === 'country' ? 'Country' :
+                    locationData.type === 'state' ? 'State' : 'Location',
+            coordinates: {
+                lat: parseFloat(locationData.lat),
+                lon: parseFloat(locationData.lon)
+            }
+        };
+
+        setTempLocations(prev => [...prev, newLocation]);
+        setNewLocationQuery('');
+        setLocationSearchResults([]);
+        setIsAddingLocation(false);
+    };
+
+    const removeLocation = (id: string) => {
+        setTempLocations(prev => prev.filter(loc => loc.id !== id));
+    };
+
+    const moveLocation = (fromIndex: number, toIndex: number) => {
+        setTempLocations(prev => {
+            const newLocations = [...prev];
+            const [movedLocation] = newLocations.splice(fromIndex, 1);
+            newLocations.splice(toIndex, 0, movedLocation);
+            return newLocations;
+        });
+    };
+
     const addLink = async () => {
         if (!newLinkUrl.trim()) return;
 
@@ -373,6 +470,150 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                     />
                                 </View>
                             </View>
+                        </View>
+                    </View>
+                </View>
+            );
+        }
+
+        if (type === 'location') {
+            return (
+                <View style={styles.editingFieldContainer}>
+                    <View style={styles.editingFieldContent}>
+                        <View style={styles.newValueSection}>
+                            <View style={styles.editingFieldHeader}>
+                                <Text style={styles.editingFieldLabel}>Manage Your Locations</Text>
+                            </View>
+
+                            {/* Add new location section */}
+                            {isAddingLocation ? (
+                                <View style={styles.addLocationSection}>
+                                    <Text style={styles.addLocationLabel}>
+                                        Add New Location
+                                        {isSearchingLocations && (
+                                            <Text style={styles.searchingText}> • Searching...</Text>
+                                        )}
+                                    </Text>
+                                    <View style={styles.addLocationInputContainer}>
+                                        <TextInput
+                                            style={styles.addLocationInput}
+                                            value={newLocationQuery}
+                                            onChangeText={(text) => {
+                                                setNewLocationQuery(text);
+                                                searchLocations(text);
+                                            }}
+                                            placeholder="Search for a location..."
+                                            placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                                            autoFocus
+                                            selectionColor={themeStyles.primaryColor}
+                                        />
+                                        <View style={styles.addLocationButtons}>
+                                            <TouchableOpacity
+                                                style={[styles.addLocationButton, styles.cancelButton]}
+                                                onPress={() => {
+                                                    setIsAddingLocation(false);
+                                                    setNewLocationQuery('');
+                                                    setLocationSearchResults([]);
+                                                }}
+                                            >
+                                                <Text style={styles.cancelButtonText}>Cancel</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+
+                                    {/* Search results */}
+                                    {locationSearchResults.length > 0 && (
+                                        <View style={styles.searchResults}>
+                                            {locationSearchResults.map((result) => (
+                                                <TouchableOpacity
+                                                    key={result.place_id}
+                                                    style={styles.searchResultItem}
+                                                    onPress={() => addLocation(result)}
+                                                >
+                                                    <Text style={styles.searchResultName} numberOfLines={2}>
+                                                        {result.display_name}
+                                                    </Text>
+                                                    <Text style={styles.searchResultType}>
+                                                        {result.type}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            ))}
+                                        </View>
+                                    )}
+                                </View>
+                            ) : (
+                                <TouchableOpacity
+                                    style={styles.addLocationTrigger}
+                                    onPress={() => setIsAddingLocation(true)}
+                                >
+                                    <OxyIcon name="add" size={20} color={themeStyles.primaryColor} />
+                                    <Text style={styles.addLocationTriggerText}>Add a new location</Text>
+                                </TouchableOpacity>
+                            )}
+
+                            {/* Existing locations list */}
+                            {tempLocations.length > 0 && (
+                                <View style={styles.locationsList}>
+                                    <Text style={styles.locationsListTitle}>Your Locations ({tempLocations.length})</Text>
+                                    {tempLocations.map((location, index) => (
+                                        <View key={location.id} style={styles.locationItem}>
+                                            <View style={styles.locationItemContent}>
+                                                <View style={styles.locationItemDragHandle}>
+                                                    <View style={styles.reorderButtons}>
+                                                        <TouchableOpacity
+                                                            style={[styles.reorderButton, index === 0 && styles.reorderButtonDisabled]}
+                                                            onPress={() => index > 0 && moveLocation(index, index - 1)}
+                                                            disabled={index === 0}
+                                                        >
+                                                            <OxyIcon name="chevron-up" size={12} color={index === 0 ? "#ccc" : "#666"} />
+                                                        </TouchableOpacity>
+                                                        <TouchableOpacity
+                                                            style={[styles.reorderButton, index === tempLocations.length - 1 && styles.reorderButtonDisabled]}
+                                                            onPress={() => index < tempLocations.length - 1 && moveLocation(index, index + 1)}
+                                                            disabled={index === tempLocations.length - 1}
+                                                        >
+                                                            <OxyIcon name="chevron-down" size={12} color={index === tempLocations.length - 1 ? "#ccc" : "#666"} />
+                                                        </TouchableOpacity>
+                                                    </View>
+                                                </View>
+                                                <View style={styles.locationItemInfo}>
+                                                    <View style={styles.locationItemHeader}>
+                                                        <Text style={styles.locationItemName} numberOfLines={1}>
+                                                            {location.name}
+                                                        </Text>
+                                                        {location.label && (
+                                                            <View style={styles.locationLabel}>
+                                                                <Text style={styles.locationLabelText}>
+                                                                    {location.label}
+                                                                </Text>
+                                                            </View>
+                                                        )}
+                                                    </View>
+                                                    {location.coordinates && (
+                                                        <Text style={styles.locationCoordinates}>
+                                                            {location.coordinates.lat.toFixed(4)}, {location.coordinates.lon.toFixed(4)}
+                                                        </Text>
+                                                    )}
+                                                </View>
+                                                <View style={styles.locationItemActions}>
+                                                    <TouchableOpacity
+                                                        style={styles.locationItemButton}
+                                                        onPress={() => removeLocation(location.id)}
+                                                    >
+                                                        <OxyIcon name="trash" size={14} color="#FF3B30" />
+                                                    </TouchableOpacity>
+                                                </View>
+                                            </View>
+                                            {index < tempLocations.length - 1 && (
+                                                <View style={styles.locationItemDivider} />
+                                            )}
+                                        </View>
+                                    ))}
+                                    <View style={styles.reorderHint}>
+                                        <Text style={styles.reorderHintText}>Use ↑↓ buttons to reorder your locations</Text>
+                                    </View>
+                                </View>
+                            )}
                         </View>
                     </View>
                 </View>
@@ -619,6 +860,61 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         );
     };
 
+    const renderLocationsField = (isFirst = false, isLast = false) => {
+        const itemStyles = [
+            styles.settingItem,
+            isFirst && styles.firstSettingItem,
+            isLast && styles.lastSettingItem
+        ];
+
+        const hasLocations = tempLocations.length > 0;
+
+        return (
+            <TouchableOpacity
+                style={itemStyles}
+                onPress={() => startEditing('location', '')}
+            >
+                <View style={styles.settingInfo}>
+                    <OxyIcon name="location" size={20} color="#FF3B30" style={styles.settingIcon} />
+                    <View style={styles.linksFieldContent}>
+                        <Text style={styles.settingLabel}>Locations</Text>
+                        {hasLocations ? (
+                            <View style={styles.linksPreview}>
+                                {tempLocations.slice(0, 2).map((location, index) => (
+                                    <View key={location.id || index} style={styles.linkPreviewItem}>
+                                        <View style={styles.linkPreviewImage}>
+                                            <Text style={styles.linkPreviewImageText}>
+                                                {location.name.charAt(0).toUpperCase()}
+                                            </Text>
+                                        </View>
+                                        <View style={styles.linkPreviewContent}>
+                                            <Text style={styles.linkPreviewTitle} numberOfLines={1}>
+                                                {location.name}
+                                            </Text>
+                                            {location.label && (
+                                                <Text style={styles.linkPreviewSubtitle}>
+                                                    {location.label}
+                                                </Text>
+                                            )}
+                                        </View>
+                                    </View>
+                                ))}
+                                {tempLocations.length > 2 && (
+                                    <Text style={styles.linkPreviewMore}>
+                                        +{tempLocations.length - 2} more
+                                    </Text>
+                                )}
+                            </View>
+                        ) : (
+                            <Text style={styles.settingDescription}>Add your locations</Text>
+                        )}
+                    </View>
+                </View>
+                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+            </TouchableOpacity>
+        );
+    };
+
     const renderLinksField = (isFirst = false, isLast = false) => {
         const itemStyles = [
             styles.settingItem,
@@ -822,18 +1118,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                 false
                             )}
 
-                            {renderField(
-                                'location',
-                                'Location',
-                                location,
-                                'Add your location',
-                                'location',
-                                '#FF3B30',
-                                false,
-                                'default',
-                                false,
-                                false
-                            )}
+                            {renderLocationsField(false, false)}
 
                             {renderLinksField(false, true)}
                         </View>
@@ -1322,10 +1607,169 @@ const styles = StyleSheet.create({
         color: '#666',
         flex: 1,
     },
+    linkPreviewContent: {
+        flex: 1,
+    },
+    linkPreviewSubtitle: {
+        fontSize: 11,
+        color: '#999',
+        marginTop: 1,
+    },
     linkPreviewMore: {
         fontSize: 12,
         color: '#999',
         fontStyle: 'italic',
+    },
+    // Location management styles
+    addLocationSection: {
+        marginBottom: 16,
+    },
+    addLocationLabel: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#333',
+        marginBottom: 8,
+        fontFamily: fontFamilies.phuduSemiBold,
+    },
+    searchingText: {
+        fontSize: 12,
+        color: '#007AFF',
+        fontStyle: 'italic',
+    },
+    addLocationInputContainer: {
+        marginBottom: 8,
+    },
+    addLocationInput: {
+        backgroundColor: '#fff',
+        borderWidth: 2,
+        borderColor: '#e0e0e0',
+        borderRadius: 12,
+        padding: 16,
+        fontSize: 17,
+        minHeight: 52,
+        fontWeight: '400',
+        marginBottom: 8,
+    },
+    addLocationButtons: {
+        flexDirection: 'row',
+        gap: 8,
+    },
+    addLocationButton: {
+        flex: 1,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    addLocationTrigger: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        backgroundColor: '#F8F9FA',
+        borderRadius: 8,
+        marginBottom: 16,
+    },
+    addLocationTriggerText: {
+        marginLeft: 8,
+        fontSize: 16,
+        color: '#007AFF',
+        fontWeight: '500',
+    },
+    searchResults: {
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#e0e0e0',
+        borderRadius: 8,
+        maxHeight: 200,
+    },
+    searchResultItem: {
+        padding: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f0f0f0',
+    },
+    searchResultName: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#333',
+        marginBottom: 2,
+    },
+    searchResultType: {
+        fontSize: 12,
+        color: '#666',
+        textTransform: 'capitalize',
+    },
+    locationsList: {
+        marginTop: 8,
+    },
+    locationsListTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#333',
+        marginBottom: 12,
+        fontFamily: fontFamilies.phuduSemiBold,
+    },
+    locationItem: {
+        marginBottom: 8,
+    },
+    locationItemContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        backgroundColor: '#F8F9FA',
+        borderRadius: 8,
+    },
+    locationItemDragHandle: {
+        marginRight: 12,
+    },
+    locationItemInfo: {
+        flex: 1,
+    },
+    locationItemHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 4,
+    },
+    locationItemName: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#333',
+        flex: 1,
+    },
+    locationLabel: {
+        backgroundColor: '#007AFF',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+        marginLeft: 8,
+    },
+    locationLabelText: {
+        fontSize: 10,
+        fontWeight: '600',
+        color: '#fff',
+        textTransform: 'uppercase',
+    },
+    locationCoordinates: {
+        fontSize: 12,
+        color: '#666',
+        fontFamily: 'monospace',
+    },
+    locationItemActions: {
+        marginLeft: 8,
+    },
+    locationItemButton: {
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: '#F8F9FA',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    locationItemDivider: {
+        height: 1,
+        backgroundColor: '#E9ECEF',
+        marginHorizontal: 12,
     },
 });
 

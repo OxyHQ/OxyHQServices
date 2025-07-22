@@ -47,6 +47,35 @@ export interface IUser extends Document {
   bio?: string;
   description?: string;
   location?: string;
+  locations?: Array<{
+    id: string;
+    name: string;
+    label?: string;
+    type?: 'home' | 'work' | 'school' | 'other';
+    address?: {
+      street?: string;
+      streetNumber?: string;
+      streetDetails?: string;
+      postalCode?: string;
+      city?: string;
+      state?: string;
+      country?: string;
+      formattedAddress?: string;
+    };
+    coordinates?: {
+      lat: number;
+      lon: number;
+    };
+    metadata?: {
+      placeId?: string;
+      osmId?: string;
+      osmType?: string;
+      countryCode?: string;
+      timezone?: string;
+    };
+    createdAt?: Date;
+    updatedAt?: Date;
+  }>;
   links?: string[];
   linksMetadata?: Array<{
     url: string;
@@ -57,6 +86,38 @@ export interface IUser extends Document {
   _id: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
+  
+  // Virtual properties
+  primaryLocation?: string;
+  
+  // Instance methods
+  addLocation(locationData: {
+    id: string;
+    name: string;
+    label?: string;
+    type?: 'home' | 'work' | 'school' | 'other';
+    address?: {
+      street?: string;
+      streetNumber?: string;
+      streetDetails?: string;
+      postalCode?: string;
+      city?: string;
+      state?: string;
+      country?: string;
+      formattedAddress?: string;
+    };
+    coordinates?: { lat: number; lon: number };
+    metadata?: {
+      placeId?: string;
+      osmId?: string;
+      osmType?: string;
+      countryCode?: string;
+      timezone?: string;
+    };
+  }): Promise<IUser>;
+  removeLocation(locationId: string): Promise<IUser>;
+  findLocationsNear(lat: number, lon: number, maxDistance?: number): Promise<IUser[]>;
+  updateLocationCoordinates(locationId: string, lat: number, lon: number): Promise<IUser>;
 }
 
 const UserSchema: Schema = new Schema(
@@ -142,6 +203,39 @@ const UserSchema: Schema = new Schema(
     bio: { type: String },
     description: { type: String },
     location: { type: String },
+    locations: [{
+      id: { type: String, required: true },
+      name: { type: String, required: true },
+      label: { type: String },
+      type: { 
+        type: String, 
+        enum: ['home', 'work', 'school', 'other'],
+        default: 'other'
+      },
+      address: {
+        street: { type: String },
+        streetNumber: { type: String },
+        streetDetails: { type: String },
+        postalCode: { type: String },
+        city: { type: String },
+        state: { type: String },
+        country: { type: String },
+        formattedAddress: { type: String }
+      },
+      coordinates: {
+        lat: { type: Number, min: -90, max: 90 },
+        lon: { type: Number, min: -180, max: 180 }
+      },
+      metadata: {
+        placeId: { type: String },
+        osmId: { type: String },
+        osmType: { type: String },
+        countryCode: { type: String },
+        timezone: { type: String }
+      },
+      createdAt: { type: Date, default: Date.now },
+      updatedAt: { type: Date, default: Date.now }
+    }],
     links: [{ type: String }],
     linksMetadata: [{
       url: { type: String, required: true },
@@ -185,6 +279,12 @@ UserSchema.pre("save", function (next) {
 UserSchema.index({ following: 1 });
 UserSchema.index({ followers: 1 });
 
+// Geospatial index for locations
+UserSchema.index({ "locations.coordinates": "2dsphere" });
+UserSchema.index({ "locations.address.city": 1 });
+UserSchema.index({ "locations.address.country": 1 });
+UserSchema.index({ "locations.type": 1 });
+
 // Virtual for full name
 UserSchema.virtual('name.full').get(function() {
   const name = this.name as { first?: string; last?: string } | undefined;
@@ -195,6 +295,90 @@ UserSchema.virtual('name.full').get(function() {
   }
   return '';
 });
+
+// Virtual for primary location (backward compatibility)
+UserSchema.virtual('primaryLocation').get(function() {
+  const locations = this.locations as Array<any> | undefined;
+  if (locations && Array.isArray(locations) && locations.length > 0) {
+    return locations[0].name;
+  }
+  return this.location || '';
+});
+
+// Instance method to add a location
+UserSchema.methods.addLocation = function(locationData: {
+  id: string;
+  name: string;
+  label?: string;
+  type?: 'home' | 'work' | 'school' | 'other';
+  address?: {
+    street?: string;
+    streetNumber?: string;
+    streetDetails?: string;
+    postalCode?: string;
+    city?: string;
+    state?: string;
+    country?: string;
+    formattedAddress?: string;
+  };
+  coordinates?: { lat: number; lon: number };
+  metadata?: {
+    placeId?: string;
+    osmId?: string;
+    osmType?: string;
+    countryCode?: string;
+    timezone?: string;
+  };
+}) {
+  if (!this.locations) {
+    this.locations = [];
+  }
+  const locationWithTimestamps = {
+    ...locationData,
+    createdAt: new Date(),
+    updatedAt: new Date()
+  };
+  this.locations.push(locationWithTimestamps);
+  return this.save();
+};
+
+// Instance method to remove a location by ID
+UserSchema.methods.removeLocation = function(locationId: string) {
+  if (this.locations) {
+    this.locations = this.locations.filter((loc: any) => loc.id !== locationId);
+    return this.save();
+  }
+  return Promise.resolve(this);
+};
+
+// Instance method to find locations near a point
+UserSchema.methods.findLocationsNear = function(lat: number, lon: number, maxDistance: number = 10000) {
+  return User.find({
+    _id: this._id,
+    "locations.coordinates": {
+      $near: {
+        $geometry: {
+          type: "Point",
+          coordinates: [lon, lat] // MongoDB uses [longitude, latitude] order
+        },
+        $maxDistance: maxDistance
+      }
+    }
+  });
+};
+
+// Instance method to update location coordinates
+UserSchema.methods.updateLocationCoordinates = function(locationId: string, lat: number, lon: number) {
+  if (this.locations) {
+    const location = this.locations.find((loc: any) => loc.id === locationId);
+    if (location) {
+      location.coordinates = { lat, lon };
+      location.updatedAt = new Date();
+      return this.save();
+    }
+  }
+  return Promise.resolve(this);
+};
 
 export const User = mongoose.model<IUser>('User', UserSchema);
 export default User;
