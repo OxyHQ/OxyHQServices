@@ -54,11 +54,10 @@ router.get("/check-username/:username", async (req: Request, res: Response) => {
   try {
     const { username } = req.params;
 
-    console.log('Username check request:', { username, timestamp: new Date().toISOString() });
+    logger.debug('Username availability check', { username, timestamp: new Date().toISOString() });
 
     // Basic validation
     if (!username || username.length < 3) {
-      console.log('Username validation failed: too short');
       return res.status(400).json({
         available: false,
         message: "Username must be at least 3 characters long"
@@ -67,7 +66,6 @@ router.get("/check-username/:username", async (req: Request, res: Response) => {
 
     // Check if username matches allowed pattern
     if (!/^[a-zA-Z0-9_]+$/.test(username)) {
-      console.log('Username validation failed: invalid characters');
       return res.status(400).json({
         available: false,
         message: "Username can only contain letters, numbers, and underscores"
@@ -79,11 +77,6 @@ router.get("/check-username/:username", async (req: Request, res: Response) => {
       username: { $regex: new RegExp(`^${username}$`, 'i') }
     }).select('username email');
 
-    console.log('Database query result:', { 
-      username, 
-      existingUser: existingUser ? { username: existingUser.username, email: existingUser.email } : null 
-    });
-
     const isAvailable = !existingUser;
 
     return res.status(200).json({
@@ -92,7 +85,6 @@ router.get("/check-username/:username", async (req: Request, res: Response) => {
     });
 
   } catch (error) {
-    console.error('Username check error:', error);
     logger.error('Username check error:', error);
     return res.status(500).json({
       available: false,
@@ -106,11 +98,10 @@ router.post("/check-email", async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
 
-    console.log('Email check request:', { email, timestamp: new Date().toISOString() });
+    logger.debug('Email availability check', { email, timestamp: new Date().toISOString() });
 
     // Basic validation
     if (!email || email.length < 5) {
-      console.log('Email validation failed: too short');
       return res.status(400).json({
         available: false,
         message: "Email must be at least 5 characters long"
@@ -120,7 +111,6 @@ router.post("/check-email", async (req: Request, res: Response) => {
     // Check if email matches basic pattern
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
-      console.log('Email validation failed: invalid format');
       return res.status(400).json({
         available: false,
         message: "Please enter a valid email address"
@@ -132,11 +122,6 @@ router.post("/check-email", async (req: Request, res: Response) => {
       email: { $regex: new RegExp(`^${email}$`, 'i') }
     }).select('username email');
 
-    console.log('Database query result:', { 
-      email, 
-      existingUser: existingUser ? { username: existingUser.username, email: existingUser.email } : null 
-    });
-
     const isAvailable = !existingUser;
 
     return res.status(200).json({
@@ -145,7 +130,6 @@ router.post("/check-email", async (req: Request, res: Response) => {
     });
 
   } catch (error) {
-    console.error('Email check error:', error);
     logger.error('Email check error:', error);
     return res.status(500).json({
       available: false,
@@ -182,118 +166,20 @@ router.post("/signup", async (req: Request, res: Response) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
     
-    // Create user document with initialized profile fields
-    const userFields = {
+    // Create user using model with schema defaults
+    const user = new User({
       username,
       email,
       password: hashedPassword,
-      bookmarks: [],
-      refreshToken: null,
-      name: { first: "", last: "" },
-      privacySettings: {
-        isPrivateAccount: false,
-        hideOnlineStatus: false,
-        hideLastSeen: false,
-        profileVisibility: true,
-        postVisibility: true,
-        twoFactorEnabled: false,
-        loginAlerts: true,
-        blockScreenshots: false,
-        secureLogin: true,
-        biometricLogin: false,
-        showActivity: true,
-        allowTagging: true,
-        allowMentions: true,
-        hideReadReceipts: false,
-        allowComments: true,
-        allowDirectMessages: true,
-        dataSharing: true,
-        locationSharing: false,
-        analyticsSharing: true,
-        sensitiveContent: false,
-        autoFilter: true,
-        muteKeywords: false,
-      },
-      associated: {
-        lists: 0,
-        feedgens: 0,
-        starterPacks: 0,
-        labeler: false,
-      },
-      labels: [],
-      description: "",
-      coverPhoto: "",
-      location: "",
-      website: "",
-      pinnedPost: { cid: "", uri: "" },
-      _count: {
-        followers: 0,
-        following: 0,
-        posts: 0,
-        karma: 0,
-      }
-    };
-
-    console.log('Creating user with fields:', {
-      ...userFields,
-      password: '[HIDDEN]'
     });
 
-    // Create new user instance
-    const newUser = new User();
-    Object.assign(newUser, userFields);
+    const savedUser = await user.save();
 
-    // Double check all required fields are set
-    console.log('Field presence check:', {
-      hasUsername: !!newUser.username,
-      hasEmail: !!newUser.email,
-      hasPassword: !!newUser.password
-    });
-
-    // Validate the document
-    const validationError = newUser.validateSync();
-    if (validationError) {
-      console.error('Validation errors:', validationError.errors);
-      return res.status(400).json({
-        message: "Validation error",
-        errors: validationError.errors
-      });
+    if (!savedUser.email || !savedUser.password) {
+      throw new Error("Critical fields missing after save");
     }
 
-    console.log('Model validation passed. Document to save:', {
-      ...newUser.toObject(),
-      password: '[HIDDEN]'
-    });
-
-    // Save with explicit error handling
-    let savedUser;
-    try {
-      savedUser = await newUser.save();
-      
-      // Verify saved document has all fields
-      const rawSavedDoc = await User.findById(savedUser._id)
-        .select('+password +email +refreshToken')
-        .lean();
-      
-      console.log('Raw saved document:', {
-        ...rawSavedDoc,
-        password: rawSavedDoc?.password ? '[PRESENT]' : '[MISSING]',
-        email: rawSavedDoc?.email ? '[PRESENT]' : '[MISSING]'
-      });
-
-      if (!savedUser.email || !savedUser.password) {
-        throw new Error("Critical fields missing after save");
-      }
-
-      console.log('User saved successfully. Saved document:', {
-        ...savedUser.toObject(),
-        password: '[HIDDEN]'
-      });
-    } catch (error) {
-      throw new Error(`Error saving user: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-
-    // Create welcome notification
+    logger.debug('User saved successfully', { userId: savedUser._id });    // Create welcome notification
     await new Notification({
       recipientId: savedUser._id,
       actorId: savedUser._id, // Self-notification for welcome message
@@ -323,7 +209,7 @@ router.post("/signup", async (req: Request, res: Response) => {
       }
     });
   } catch (error) {
-    console.error('Signup error:', error);
+    logger.error('Signup error:', error);
     return res.status(500).json({ 
       message: "Signup error", 
       error: error instanceof Error ? error.message : "Unknown error"
@@ -513,7 +399,7 @@ router.get("/validate", async (req: Request, res: Response) => {
     const token = req.headers.authorization?.split(' ')[1];
     
     if (!token) {
-      console.warn('[Auth] No token provided for validation');
+      logger.warn('Token validation failed: No token provided');
       return res.status(401).json({ 
         valid: false,
         message: "No token provided" 
@@ -525,7 +411,7 @@ router.get("/validate", async (req: Request, res: Response) => {
       const user = await User.findById(decoded.id).select('+refreshToken');
 
       if (!user) {
-        console.warn('[Auth] User not found for token validation:', decoded.id);
+        logger.warn('Token validation failed: User not found', { userId: decoded.id });
         return res.status(404).json({ 
           valid: false,  
           message: "User not found" 
@@ -533,7 +419,7 @@ router.get("/validate", async (req: Request, res: Response) => {
       }
 
       if (!user.refreshToken) {
-        console.warn('[Auth] No refresh token found for user:', decoded.id);
+        logger.warn('Token validation failed: Session invalidated', { userId: decoded.id });
         return res.status(401).json({ 
           valid: false, 
           message: "Session invalidated" 
@@ -543,7 +429,7 @@ router.get("/validate", async (req: Request, res: Response) => {
       return res.status(200).json({ valid: true });
       
     } catch (jwtError) {
-      console.error('[Auth] Token verification failed:', jwtError);
+      logger.error('Token verification failed:', jwtError);
       if (jwtError instanceof jwt.TokenExpiredError) {
         return res.status(401).json({ 
           valid: false, 
@@ -559,7 +445,7 @@ router.get("/validate", async (req: Request, res: Response) => {
       throw jwtError;
     }
   } catch (error) {
-    console.error('[Auth] Unexpected error during validation:', error);
+    logger.error('Unexpected error during token validation:', error);
     return res.status(500).json({ 
       valid: false, 
       message: "Validation error" 
@@ -603,49 +489,11 @@ router.post("/register", async (req: Request, res: Response) => {
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Create new user with initialized profile fields
+    // Create new user using model with schema defaults
     const user = new User({
       username,
       email,
       password: hashedPassword,
-      name: { first: "", last: "" },
-      privacySettings: {
-        isPrivateAccount: false,
-        hideOnlineStatus: false,
-        hideLastSeen: false,
-        profileVisibility: true,
-        postVisibility: true,
-        twoFactorEnabled: false,
-        loginAlerts: true,
-        blockScreenshots: false,
-        secureLogin: true,
-        biometricLogin: false,
-        showActivity: true,
-        allowTagging: true,
-        allowMentions: true,
-        hideReadReceipts: false,
-        allowComments: true,
-        allowDirectMessages: true,
-        dataSharing: true,
-        locationSharing: false,
-        analyticsSharing: true,
-        sensitiveContent: false,
-        autoFilter: true,
-        muteKeywords: false,
-      },
-      associated: {
-        lists: 0,
-        feedgens: 0,
-        starterPacks: 0,
-        labeler: false,
-      },
-      labels: [],
-      _count: {
-        followers: 0,
-        following: 0,
-        posts: 0,
-        karma: 0,
-      }
     });
 
     await user.save();
@@ -704,11 +552,7 @@ router.get("/me", authMiddleware, async (req: AuthRequest, res: Response) => {
         name: req.user.name && typeof req.user.toObject === 'function' ? req.user.toObject({ virtuals: true }).name : req.user.name || {},
         avatar: req.user.avatar,
         privacySettings: req.user.privacySettings,
-        description: req.user.description,
-        coverPhoto: req.user.coverPhoto,
-        location: req.user.location,
-        website: req.user.website,
-        stats: req.user._count
+        description: req.user.description
       }
     });
   } catch (error) {

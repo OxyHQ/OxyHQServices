@@ -40,31 +40,15 @@ export interface IUser extends Document {
     url?: string;
     [key: string]: any;
   };
-  labels?: string[];
-  bio?: string;
-  description?: string;
-  coverPhoto?: string;
-  location?: string;
-  website?: string;
-  pinnedPost?: {
-    cid?: string;
-    uri?: string;
-  };
   _count?: {
     followers?: number;
     following?: number;
-    posts?: number;
-    karma?: number;
   };
+  bio?: string;
+  description?: string;
   _id: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
-  links?: Array<{
-    title?: string;
-    description?: string;
-    image?: string;
-    link: string;
-  }>;
 }
 
 const UserSchema: Schema = new Schema(
@@ -109,8 +93,8 @@ const UserSchema: Schema = new Schema(
       },
     ],
     name: {
-      first: { type: String},
-      last: { type: String },
+      first: { type: String, default: "" },
+      last: { type: String, default: "" },
     },
     privacySettings: {
       isPrivateAccount: { type: Boolean, default: false },
@@ -143,27 +127,12 @@ const UserSchema: Schema = new Schema(
       },
       default: { id: "", url: "" }
     },
-    associated: {
-      lists: { type: Number, default: 0 },
-      feedgens: { type: Number, default: 0 },
-      starterPacks: { type: Number, default: 0 },
-      labeler: { type: Boolean, default: false },
+    _count: {
+      followers: { type: Number, default: 0 },
+      following: { type: Number, default: 0 },
     },
-    labels: { type: [String], default: [] },
     bio: { type: String },
     description: { type: String },
-    coverPhoto: { type: String },
-    location: { type: String },
-    website: { type: String },
-    pinnedPosts: [{ type: Schema.Types.ObjectId, ref: "Post", default: [] }],
-    links: [
-      {
-        title: { type: String },
-        description: { type: String },
-        image: { type: String },
-        link: { type: String, required: true },
-      }
-    ],
   },
   {
     timestamps: true,

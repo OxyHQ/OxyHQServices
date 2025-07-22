@@ -2,6 +2,7 @@ import mongoose from 'mongoose';
 import multer from 'multer';
 import { Request } from 'express';
 import { Readable } from 'stream';
+import { logger } from './logger';
 
 let bucket: mongoose.mongo.GridFSBucket;
 

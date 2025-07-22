@@ -2,6 +2,7 @@ import { Router, Request, Response, RequestHandler } from "express";
 import mongoose from 'mongoose';
 import { authMiddleware } from '../middleware/auth';
 import { upload, writeFile, readFile, deleteFile, findFiles, fileExists } from '../utils/mongoose-gridfs';
+import { logger } from '../utils/logger';
 import express from 'express';
 
 interface GridFSFile {
@@ -66,7 +67,7 @@ router.post('/upload-raw', express.raw({ type: '*/*', limit: '50mb' }), async (r
       mimetype: mimeType
     });
   } catch (err: any) {
-    console.error('Raw upload error:', err);
+    logger.error('Raw upload error:', err);
     res.status(500).json({ message: 'Upload failed', error: err.message });
   }
 });
@@ -84,7 +85,7 @@ router.get("/list/:userID", (async (req: AuthenticatedRequest, res: Response) =>
     const files = await findFiles({ "metadata.userID": new mongoose.Types.ObjectId(req.params.userID) });
     res.json(files || []);
   } catch (error) {
-    console.error('List files error:', error);
+    logger.error('List files error:', error);
     res.status(500).json({ message: "Error retrieving files", error });
   }
 }) as RequestHandler);
@@ -109,7 +110,7 @@ router.delete("/:id", (async (req: AuthenticatedRequest, res: Response) => {
     await deleteFile(req.params.id);
     res.json({ message: "File deleted successfully" });
   } catch (err: any) {
-    console.error(err);
+    logger.error('Delete file error:', err);
     res.status(500).json({ message: `An error occurred while deleting the file: ${err.message}` });
   }
 }) as RequestHandler);
@@ -157,7 +158,7 @@ router.post("/cleanup/:userID", (async (req: AuthenticatedRequest, res: Response
     });
 
   } catch (error) {
-    console.error('Cleanup files error:', error);
+    logger.error('Cleanup files error:', error);
     res.status(500).json({ message: "Error during file cleanup", error });
   }
 }) as RequestHandler);
@@ -169,10 +170,10 @@ async function streamFileHandler(req: Request, res: Response) {
   }
 
   try {
-    console.log(`[Files] Public access request for file: ${req.params.id}`);
+    logger.debug(`Public access request for file: ${req.params.id}`);
     const readStream = await readFile(req.params.id);
     if (!readStream) {
-      console.warn(`[Files] File not found: ${req.params.id}`);
+      logger.warn(`File not found: ${req.params.id}`);
       return res.status(404).json({ message: "File not found" });
     }
     
@@ -183,7 +184,7 @@ async function streamFileHandler(req: Request, res: Response) {
     
     // Handle stream errors to prevent server crashes
     readStream.on('error', (streamErr: any) => {
-      console.error(`[Files] Stream error for file ${req.params.id}:`, streamErr);
+      logger.error(`Stream error for file ${req.params.id}:`, streamErr);
       if (!res.headersSent) {
         if (streamErr.code === 'ENOENT' || streamErr.message?.includes('FileNotFound')) {
           res.status(404).json({ message: "File not found" });

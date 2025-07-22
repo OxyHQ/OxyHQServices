@@ -24,7 +24,7 @@ const validateObjectId = (req: Request, res: Response, next: NextFunction) => {
 };
 
 // Get current authenticated user
-router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.get('/me', authMiddleware, async (req: AuthRequest, res) => {
   try {
     const user = await User.findById(req.user?.id).select('-password -refreshToken');
     if (!user) {
@@ -39,9 +39,9 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
 });
 
 // Update current authenticated user
-router.put('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
+router.put('/me', authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'coverPhoto', 'bio', 'description', 'location', 'website', 'labels'] as const;
+    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description'] as const;
     type AllowedUpdate = typeof allowedUpdates[number];
 
     const updates = Object.entries(req.body)
@@ -72,7 +72,7 @@ router.put('/me', authMiddleware, async (req: AuthRequest, res: Response) => {
 });
 
 // Get user by ID
-router.get('/:userId', validateObjectId, async (req: Request, res: Response) => {
+router.get('/:userId', validateObjectId, async (req, res) => {
   try {
     const user = await User.findById(req.params.userId).select('-password -refreshToken');
     if (!user) {
@@ -90,9 +90,9 @@ router.get('/:userId', validateObjectId, async (req: Request, res: Response) => 
       followType: 'user'
     });
 
-    // TODO: Replace with actual posts and karma counts if available
-    const postsCount = 0;
+    // karma count not implemented - requires posts collection integration
     const karmaCount = 0;
+
 
     const userObj = user.toObject({ virtuals: true });
     res.json({
@@ -100,13 +100,11 @@ router.get('/:userId', validateObjectId, async (req: Request, res: Response) => 
       stats: {
         followers: followersCount,
         following: followingCount,
-        posts: postsCount,
         karma: karmaCount
       },
       _count: {
         followers: followersCount,
         following: followingCount,
-        posts: postsCount,
         karma: karmaCount
       }
     });
@@ -117,14 +115,14 @@ router.get('/:userId', validateObjectId, async (req: Request, res: Response) => 
 });
 
 // Update user profile
-router.put('/:userId', authMiddleware, validateObjectId, async (req: AuthRequest, res: Response) => {
+router.put('/:userId', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
   try {
     // Only allow users to update their own profile
     if (req.params.userId !== req.user?.id) {
       return res.status(403).json({ message: 'Not authorized to update this profile' });
     }
 
-    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'coverPhoto', 'bio', 'description', 'location', 'website', 'labels'] as const;
+    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description'] as const;
     type AllowedUpdate = typeof allowedUpdates[number];
     
     const updates = Object.entries(req.body)
@@ -147,8 +145,7 @@ router.put('/:userId', authMiddleware, validateObjectId, async (req: AuthRequest
         };
       }, {} as Partial<Pick<IUser, AllowedUpdate>>);
 
-    console.log('Profile update request:', {
-      userId: req.params.userId,
+    logger.debug('Profile update request:', {
       requestBody: req.body,
       filteredUpdates: updates
     });
@@ -187,14 +184,13 @@ router.put('/:userId', authMiddleware, validateObjectId, async (req: AuthRequest
 
     res.json(user);
   } catch (error) {
-    console.log('[ERROR] Error updating user profile:', error);
     logger.error('Error updating user profile:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
 
 // Update privacy settings
-router.put('/:userId/privacy', authMiddleware, validateObjectId, async (req: AuthRequest, res: Response) => {
+router.put('/:userId/privacy', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
   try {
     if (req.params.userId !== req.user?.id) {
       return res.status(403).json({ message: 'Not authorized to update privacy settings' });
@@ -218,7 +214,7 @@ router.put('/:userId/privacy', authMiddleware, validateObjectId, async (req: Aut
 });
 
 // Get user's followers
-router.get('/:userId/followers', validateObjectId, async (req: Request, res: Response) => {
+router.get('/:userId/followers', validateObjectId, async (req, res) => {
   try {
     const follows = await Follow.find({
       followedId: req.params.userId,
@@ -238,7 +234,7 @@ router.get('/:userId/followers', validateObjectId, async (req: Request, res: Res
 });
 
 // Get user's following
-router.get('/:userId/following', validateObjectId, async (req: Request, res: Response) => {
+router.get('/:userId/following', validateObjectId, async (req, res) => {
   try {
     const follows = await Follow.find({
       followerUserId: req.params.userId,
@@ -258,7 +254,7 @@ router.get('/:userId/following', validateObjectId, async (req: Request, res: Res
 });
 
 // Follow a user
-router.post('/:userId/follow', authMiddleware, validateObjectId, async (req: AuthRequest, res: Response) => {
+router.post('/:userId/follow', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
   try {
     const targetUserId = req.params.userId;
     const currentUserId = req.user?.id;
@@ -341,7 +337,7 @@ router.post('/:userId/follow', authMiddleware, validateObjectId, async (req: Aut
 });
 
 // Unfollow a user
-router.delete('/:userId/follow', authMiddleware, validateObjectId, async (req: AuthRequest, res: Response) => {
+router.delete('/:userId/follow', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
   try {
     const targetUserId = req.params.userId;
     const currentUserId = req.user?.id;
@@ -402,7 +398,7 @@ router.delete('/:userId/follow', authMiddleware, validateObjectId, async (req: A
 });
 
 // Get following status
-router.get('/:userId/following-status', authMiddleware, validateObjectId, async (req: AuthRequest, res: Response) => {
+router.get('/:userId/following-status', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
   try {
     const targetUserId = req.params.userId;
     const currentUserId = req.user?.id;

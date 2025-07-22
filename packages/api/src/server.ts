@@ -19,6 +19,7 @@ import paymentRoutes from './routes/payment.routes';
 import walletRoutes from './routes/wallet.routes';
 import karmaRoutes from './routes/karma.routes';
 import jwt from 'jsonwebtoken';
+import { logger } from './utils/logger';
 
 dotenv.config();
 
@@ -102,47 +103,50 @@ io.use((socket: AuthenticatedSocket, next) => {
     socket.user = decoded as { id: string, [key: string]: any };
     next();
   } catch (error) {
-    console.error('Socket authentication error:', error);
+    logger.error('Socket authentication error:', error);
     next(new Error('Authentication error'));
   }
 });
 
 // Socket connection handling
 io.on('connection', (socket: AuthenticatedSocket) => {
-  console.log('Socket connected:', socket.id);
+  logger.debug('Socket connected', { socketId: socket.id });
   
   if (socket.user?.id) {
     const room = `user:${socket.user.id}`;
     socket.join(room);
-    console.log(`User ${socket.user.id} joined their notification room (${room})`);
+    logger.debug('User joined notification room', { userId: socket.user.id, room });
   }
   
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    logger.debug('Socket disconnected', { socketId: socket.id });
   });
 
-  // For debugging: log all events
-  socket.onAny((event, ...args) => {
-    console.log(`[Socket ${socket.id}] Event:`, event, args);
-  });
+  // For debugging in development only
+  if (process.env.NODE_ENV === 'development') {
+    socket.onAny((event, ...args) => {
+      logger.debug('Socket event received', { socketId: socket.id, event, args });
+    });
+  }
 });
 
-// Helper for emitting session_update (add this for debug, or add to your controller)
+// Helper for emitting session_update
 export function emitSessionUpdate(userId: string, payload: any) {
   const room = `user:${userId}`;
-  console.log(`Emitting session_update to room: ${room} with payload:`, payload);
+  logger.debug('Emitting session_update', { room, payload });
   io.to(room).emit('session_update', payload);
 }
 
 // Special handling for file upload requests with proper auth
 app.use("/files", (req, res, next) => {
-  if (req.path === "/upload" && req.method === "POST") {
-    console.log("Incoming file upload request:", {
+  // Debug logging for file uploads in development
+  if (req.path === "/upload" && req.method === "POST" && process.env.NODE_ENV === 'development') {
+    logger.debug('Incoming file upload request', {
       method: req.method,
       contentType: req.headers["content-type"],
       contentLength: req.headers["content-length"],
       origin: req.headers.origin,
-      authorization: !!req.headers.authorization,
+      hasAuth: !!req.headers.authorization,
     });
   }
   next();
@@ -172,10 +176,10 @@ mongoose.connect(process.env.MONGODB_URI || "", {
   autoCreate: true,
 })
 .then(() => {
-  console.log("Connected to MongoDB successfully");
+  logger.info("Connected to MongoDB successfully");
 })
 .catch((error) => {
-  console.error("MongoDB connection error:", error);
+  logger.error("MongoDB connection error:", error);
   process.exit(1); // Exit on connection failure
 });
 
@@ -188,7 +192,7 @@ app.get("/", async (req, res) => {
       users: usersCount,
     });
   } catch (error) {
-    console.error("Error in root endpoint:", error);
+    logger.error("Error in root endpoint:", error);
     res.status(500).json({ message: "Error fetching stats", error: error instanceof Error ? error.message : String(error) });
   }
 });
@@ -208,7 +212,7 @@ app.use('/wallet', walletRoutes);
 
 // Global error handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('Unhandled error:', err);
+  logger.error('Unhandled error:', err);
   const statusCode = err?.status || 500;
   res.status(statusCode).json({
     message: 'Internal server error',
@@ -225,7 +229,7 @@ app.use((req: express.Request, res: express.Response) => {
 const PORT = process.env.PORT || 3001;
 if (require.main === module) {
   server.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
+    logger.info(`Server running on port ${PORT}`);
   });
 }
 
