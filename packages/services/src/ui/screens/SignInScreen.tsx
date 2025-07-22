@@ -38,6 +38,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     username: initialUsername,
     userProfile: initialUserProfile,
 }) => {
+    console.log('SignInScreen props:', { initialStep, initialUsername, initialUserProfile });
     // Form data states
     const [username, setUsername] = useState(initialUsername || '');
     const [password, setPassword] = useState('');

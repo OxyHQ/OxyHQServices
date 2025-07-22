@@ -75,11 +75,14 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, g
 
     // Helper function to determine back action based on current step
     const handleBack = () => {
+        console.log('RecoverAccount handleBack:', { step, returnTo, returnStep, returnData });
+
         if (step === 'code') {
             setStep('request');
         } else if (step === 'done') {
             // If we have return information, use it; otherwise go to SignIn
             if (returnTo && returnStep !== undefined) {
+                console.log('Navigating back to', returnTo, 'with step', returnStep, 'and data', returnData);
                 navigate(returnTo, {
                     initialStep: returnStep,
                     ...returnData
@@ -90,6 +93,7 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, g
         } else {
             // For 'request' step, if we have return information, use it; otherwise go back
             if (returnTo && returnStep !== undefined) {
+                console.log('Navigating back to', returnTo, 'with step', returnStep, 'and data', returnData);
                 navigate(returnTo, {
                     initialStep: returnStep,
                     ...returnData
