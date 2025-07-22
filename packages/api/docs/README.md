@@ -230,3 +230,29 @@ For client integration examples, see the [examples](./examples/) directory.
 - **Database Indexing**: Optimized MongoDB queries
 - **Caching**: Response caching for static content
 - **Connection Pooling**: Efficient database connections
+
+## 📝 Recent Changes
+
+### User Model Simplification (v2.1.0)
+- **Removed unnecessary fields** from User schema:
+  - `coverPhoto`, `location`, `website`, `links` - Extended profile features
+  - `labels[]` - User labeling system
+  - `associated` object - Associated counts (lists, feedgens, starterPacks, labeler)
+  - `pinnedPost` and `pinnedPosts` - Post pinning features
+  - `_count.posts` and `_count.karma` - Post and karma counters
+- **Kept essential fields**:
+  - `_count.followers` and `_count.following` - Core social features
+  - `privacySettings` - Complete privacy control system
+  - `name`, `avatar`, `bio`, `description` - Core profile information
+- **Improved user creation**:
+  - Eliminated code duplication in user registration
+  - All defaults now handled by Mongoose schema
+  - Simplified authentication routes
+  - Direct model usage instead of factory pattern
+
+### Benefits
+- **Reduced complexity**: Simpler user model focused on core features
+- **Better maintainability**: Single source of truth for defaults
+- **Improved performance**: Fewer fields to process and store
+- **Cleaner API**: More focused user endpoints
+- **Type safety**: Better TypeScript support with simplified schema

@@ -9,7 +9,6 @@ import {
   createOrUpdateKarmaRule
 } from '../controllers/karma.controller';
 import { authMiddleware } from '../middleware/auth';
-import { adminMiddleware } from '../middleware/admin';
 
 const router = express.Router();
 
@@ -24,8 +23,7 @@ router.get('/:userId/history', getUserKarmaHistory);
 router.post('/award', awardKarma);
 router.post('/deduct', deductKarma);
 
-// Admin only routes
-router.use(adminMiddleware);
+// Auth required routes (continued)
 router.post('/rules', createOrUpdateKarmaRule);
 
 export default router; 

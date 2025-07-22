@@ -63,6 +63,35 @@ Register a new user account.
       "id": "user_id",
       "username": "testuser",
       "email": "test@example.com",
+      "name": {
+        "first": "",
+        "last": "",
+        "full": ""
+      },
+      "privacySettings": {
+        "isPrivateAccount": false,
+        "hideOnlineStatus": false,
+        "hideLastSeen": false,
+        "profileVisibility": true,
+        "postVisibility": true,
+        "twoFactorEnabled": false,
+        "loginAlerts": true,
+        "blockScreenshots": false,
+        "secureLogin": true,
+        "biometricLogin": false,
+        "showActivity": true,
+        "allowTagging": true,
+        "allowMentions": true,
+        "hideReadReceipts": false,
+        "allowComments": true,
+        "allowDirectMessages": true,
+        "dataSharing": true,
+        "locationSharing": false,
+        "analyticsSharing": true,
+        "sensitiveContent": false,
+        "autoFilter": true,
+        "muteKeywords": false
+      },
       "createdAt": "2025-06-13T10:00:00.000Z"
     }
   }
@@ -97,7 +126,23 @@ Login with username/email and password.
     "user": {
       "id": "user_id",
       "username": "testuser",
-      "email": "test@example.com"
+      "email": "test@example.com",
+      "name": {
+        "first": "",
+        "last": "",
+        "full": ""
+      },
+      "avatar": {
+        "id": "",
+        "url": ""
+      },
+      "privacySettings": {
+        "isPrivateAccount": false,
+        "profileVisibility": true,
+        "postVisibility": true,
+        "allowComments": true,
+        "allowDirectMessages": true
+      }
     }
   }
 }
@@ -182,6 +227,68 @@ Authorization: Bearer <access_token>
 }
 ```
 
+## User Schema
+
+The User object contains the following fields:
+
+```json
+{
+  "id": "string",                    // Unique user identifier
+  "username": "string",              // Unique username (3-30 chars)
+  "email": "string",                 // User's email address
+  "name": {                          // User's display name
+    "first": "string",               // First name (optional)
+    "last": "string",                // Last name (optional)
+    "full": "string"                 // Computed full name (virtual field)
+  },
+  "avatar": {                        // User's profile picture
+    "id": "string",                  // File ID in GridFS (empty by default)
+    "url": "string"                  // Avatar URL (empty by default)
+  },
+  "bio": "string",                   // Short bio (optional)
+  "description": "string",           // Longer profile description (optional)
+  "_count": {                        // Social statistics
+    "followers": "number",           // Number of followers (default: 0)
+    "following": "number"            // Number of users following (default: 0)
+  },
+  "privacySettings": {               // Privacy and security settings
+    "isPrivateAccount": "boolean",          // Default: false
+    "hideOnlineStatus": "boolean",          // Default: false
+    "hideLastSeen": "boolean",              // Default: false
+    "profileVisibility": "boolean",         // Default: true
+    "postVisibility": "boolean",            // Default: true
+    "twoFactorEnabled": "boolean",          // Default: false
+    "loginAlerts": "boolean",               // Default: true
+    "blockScreenshots": "boolean",          // Default: false
+    "secureLogin": "boolean",               // Default: true
+    "biometricLogin": "boolean",            // Default: false
+    "showActivity": "boolean",              // Default: true
+    "allowTagging": "boolean",              // Default: true
+    "allowMentions": "boolean",             // Default: true
+    "hideReadReceipts": "boolean",          // Default: false
+    "allowComments": "boolean",             // Default: true
+    "allowDirectMessages": "boolean",       // Default: true
+    "dataSharing": "boolean",               // Default: true
+    "locationSharing": "boolean",           // Default: false
+    "analyticsSharing": "boolean",          // Default: true
+    "sensitiveContent": "boolean",          // Default: false
+    "autoFilter": "boolean",                // Default: true
+    "muteKeywords": "boolean"               // Default: false
+  },
+  "following": ["ObjectId"],         // Array of user IDs being followed
+  "followers": ["ObjectId"],         // Array of follower user IDs
+  "createdAt": "string",            // ISO date when account was created
+  "updatedAt": "string"             // ISO date when account was last updated
+}
+```
+
+**Notes:**
+- `password` and `refreshToken` fields are never returned in API responses for security
+- All privacy settings have sensible defaults when a user is created
+- The `name.full` field is a virtual field that combines first and last names
+- Social counters (`_count`) are automatically maintained by the system
+- Removed fields: `coverPhoto`, `location`, `website`, `labels`, `pinnedPost`, `associated` - these were removed to simplify the user model
+
 ## User Management Endpoints
 
 ### GET /api/users/me
@@ -198,17 +305,50 @@ Authorization: Bearer <access_token>
 {
   "success": true,
   "data": {
-    "user": {
-      "id": "user_id",
-      "username": "testuser",
-      "email": "test@example.com",
-      "preferences": {
-        "theme": "light",
-        "language": "en"
-      },
-      "createdAt": "2025-06-13T10:00:00.000Z",
-      "updatedAt": "2025-06-13T10:00:00.000Z"
-    }
+    "id": "user_id",
+    "username": "testuser",
+    "email": "test@example.com",
+    "name": {
+      "first": "",
+      "last": "",
+      "full": ""
+    },
+    "avatar": {
+      "id": "",
+      "url": ""
+    },
+    "privacySettings": {
+      "isPrivateAccount": false,
+      "hideOnlineStatus": false,
+      "hideLastSeen": false,
+      "profileVisibility": true,
+      "postVisibility": true,
+      "twoFactorEnabled": false,
+      "loginAlerts": true,
+      "blockScreenshots": false,
+      "secureLogin": true,
+      "biometricLogin": false,
+      "showActivity": true,
+      "allowTagging": true,
+      "allowMentions": true,
+      "hideReadReceipts": false,
+      "allowComments": true,
+      "allowDirectMessages": true,
+      "dataSharing": true,
+      "locationSharing": false,
+      "analyticsSharing": true,
+      "sensitiveContent": false,
+      "autoFilter": true,
+      "muteKeywords": false
+    },
+    "description": "",
+    "bio": "",
+    "_count": {
+      "followers": 0,
+      "following": 0
+    },
+    "createdAt": "2025-06-13T10:00:00.000Z",
+    "updatedAt": "2025-06-13T10:00:00.000Z"
   }
 }
 ```
@@ -230,11 +370,18 @@ Authorization: Bearer <access_token>
 **Request Body:**
 ```json
 {
-  "email": "newemail@example.com",    // Optional
-  "preferences": {                    // Optional
-    "theme": "dark",
-    "language": "es"
-  }
+  "name": {                          // Optional - Update user's name
+    "first": "John",
+    "last": "Doe"
+  },
+  "email": "newemail@example.com",   // Optional - Update email
+  "username": "newusername",         // Optional - Update username
+  "avatar": {                        // Optional - Update avatar
+    "id": "avatar_file_id",
+    "url": "https://example.com/avatar.jpg"
+  },
+  "bio": "New bio text",             // Optional - Update bio
+  "description": "Profile description" // Optional - Update description
 }
 ```
 
@@ -243,16 +390,32 @@ Authorization: Bearer <access_token>
 {
   "success": true,
   "data": {
-    "user": {
-      "id": "user_id",
-      "username": "testuser",
-      "email": "newemail@example.com",
-      "preferences": {
-        "theme": "dark",
-        "language": "es"
-      },
-      "updatedAt": "2025-06-13T11:00:00.000Z"
-    }
+    "id": "user_id",
+    "username": "newusername",
+    "email": "newemail@example.com",
+    "name": {
+      "first": "John",
+      "last": "Doe",
+      "full": "John Doe"
+    },
+    "avatar": {
+      "id": "avatar_file_id",
+      "url": "https://example.com/avatar.jpg"
+    },
+    "bio": "New bio text",
+    "description": "Profile description",
+    "privacySettings": {
+      "isPrivateAccount": false,
+      "profileVisibility": true,
+      "postVisibility": true,
+      "allowComments": true,
+      "allowDirectMessages": true
+    },
+    "_count": {
+      "followers": 0,
+      "following": 0
+    },
+    "updatedAt": "2025-06-13T11:00:00.000Z"
   }
 }
 ```

@@ -43,11 +43,11 @@ The Oxy API uses JSON Web Tokens (JWT) for stateless authentication with the fol
 ```json
 {
   "id": "user_id",
-  "userId": "user_id",        // Compatibility field
+  "userId": "user_id",        // Compatibility field for OxyHQServices
   "username": "testuser",
-  "email": "test@example.com",
-  "type": "access",
-  "iat": 1623456789,
+  "iat": 1623456789,          // Issued at timestamp
+  "exp": 1623460389           // Expiration timestamp (1 hour)
+}
   "exp": 1623457689
 }
 ```
