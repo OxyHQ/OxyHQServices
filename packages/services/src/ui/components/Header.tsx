@@ -237,20 +237,11 @@ const styles = StyleSheet.create({
     container: {
         paddingTop: Platform.OS === 'ios' ? 50 : 16,
         paddingBottom: 12,
-        ...Platform.select({
-            web: {
-                position: 'sticky',
-                top: 0,
-                zIndex: 1000,
-            },
-            default: {
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                zIndex: 1000,
-            },
-        }),
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 1000,
     },
     content: {
         flexDirection: 'row',

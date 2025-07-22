@@ -98,6 +98,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         console.log('AccountSwitcherScreen - sessions changed:', sessions);
         console.log('AccountSwitcherScreen - sessions length:', sessions.length);
         console.log('AccountSwitcherScreen - activeSessionId:', activeSessionId);
+        console.log('AccountSwitcherScreen - isAuthenticated:', isAuthenticated);
 
         const loadUserProfiles = async () => {
             if (!sessions.length || !oxyServices) return;
@@ -268,6 +269,13 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                 showBackButton={true}
                 showCloseButton={true}
                 elevation="subtle"
+                rightAction={{
+                    icon: "refresh",
+                    onPress: () => {
+                        console.log('Manual refresh triggered');
+                        refreshSessions();
+                    }
+                }}
             />
 
             <ScrollView style={styles.content}>
@@ -418,7 +426,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                 onPress={() => setShowDeviceManagement(!showDeviceManagement)}
                             >
                                 <View style={styles.settingInfo}>
-                                    <OxyIcon name="devices" size={20} color="#5856D6" style={styles.settingIcon} />
+                                    <OxyIcon name="phone-portrait" size={20} color="#5856D6" style={styles.settingIcon} />
                                     <View>
                                         <Text style={styles.settingLabel}>
                                             {showDeviceManagement ? 'Hide' : 'Manage'} Device Sessions

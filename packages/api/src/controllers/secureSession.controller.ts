@@ -324,7 +324,7 @@ export class SecureSessionController {
         userId: currentSession.userId,
         isActive: true,
         expiresAt: { $gt: new Date() }
-      }).select('deviceInfo token isActive expiresAt');
+      }).select('userId deviceId deviceInfo isActive expiresAt');
 
       const clientSessions: ClientSession[] = sessions.map((session: ISession) => ({
         sessionId: (session._id as any).toString(),

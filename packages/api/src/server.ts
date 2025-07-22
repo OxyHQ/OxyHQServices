@@ -173,6 +173,7 @@ app.use((req, res, next) => {
 // Removing the duplicate middleware registration
 
 // MongoDB Connection
+console.log('MONGODB_URI from environment:', process.env.MONGODB_URI);
 mongoose.connect(process.env.MONGODB_URI || "", {
   autoIndex: true,
   autoCreate: true,

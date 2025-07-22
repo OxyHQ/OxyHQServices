@@ -33,12 +33,15 @@ export function useSessionSocket({ userId, activeSessionId, refreshSessions, log
 
     socket.on('session_update', (data: { type: string; sessionId: string }) => {
       console.log('Received session_update:', data);
+      
+      // Always refresh sessions to get the latest state
+      refreshSessions();
+      
+      // If the current session was logged out, handle it specially
       if (data.sessionId === activeSessionId) {
         if (onRemoteSignOut) onRemoteSignOut();
         else toast.info('You have been signed out remotely.');
         logout();
-      } else {
-        refreshSessions();
       }
     });
 

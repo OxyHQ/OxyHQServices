@@ -600,6 +600,37 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       console.log('refreshSessions: Sessions saved to storage');
     } catch (error) {
       console.error('Refresh sessions error:', error);
+
+      // If the current session is invalid, try to find another valid session
+      if (sessions.length > 1) {
+        console.log('Current session invalid, trying to switch to another session...');
+        const otherSessions = sessions.filter(s => s.sessionId !== activeSessionId);
+
+        for (const session of otherSessions) {
+          try {
+            // Try to validate this session
+            await oxyServices.validateSession(session.sessionId);
+            console.log('Found valid session, switching to:', session.sessionId);
+            await switchToSession(session.sessionId);
+            return; // Successfully switched to another session
+          } catch (sessionError) {
+            console.log('Session validation failed for:', session.sessionId, sessionError);
+            continue; // Try next session
+          }
+        }
+      }
+
+      // If no valid sessions found, clear all sessions
+      console.log('No valid sessions found, clearing all sessions');
+      setSessions([]);
+      setActiveSessionId(null);
+      logoutStore();
+      setMinimalUser(null);
+      await clearAllStorage();
+
+      if (onAuthStateChange) {
+        onAuthStateChange(null);
+      }
     }
   };
 
