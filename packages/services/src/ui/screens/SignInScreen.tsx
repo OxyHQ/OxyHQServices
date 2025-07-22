@@ -34,19 +34,24 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     goBack,
     onAuthenticated,
     theme,
+    initialStep,
+    username: initialUsername,
+    userProfile: initialUserProfile,
 }) => {
     // Form data states
-    const [username, setUsername] = useState('');
+    const [username, setUsername] = useState(initialUsername || '');
     const [password, setPassword] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
-    const [userProfile, setUserProfile] = useState<any>(null);
+    const [userProfile, setUserProfile] = useState<any>(initialUserProfile || null);
     const [showPassword, setShowPassword] = useState(false);
 
     // Multi-step form states
-    const [currentStep, setCurrentStep] = useState(0);
+    const [currentStep, setCurrentStep] = useState(initialStep || 0);
     const [isInputFocused, setIsInputFocused] = useState(false);
     const [isValidating, setIsValidating] = useState(false);
-    const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
+    const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>(
+        initialUserProfile ? 'valid' : 'idle'
+    );
 
     // Cache for validation results to prevent repeated API calls
     const validationCache = useRef<Map<string, { profile: any; timestamp: number }>>(new Map());
@@ -55,7 +60,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     const slideAnim = useRef(new Animated.Value(0)).current;
     const scaleAnim = useRef(new Animated.Value(1)).current;
     const logoAnim = useRef(new Animated.Value(0)).current;
-    const progressAnim = useRef(new Animated.Value(0.5)).current;
+    const progressAnim = useRef(new Animated.Value(initialStep ? 1.0 : 0.5)).current;
 
     const { login, isLoading, user, isAuthenticated, sessions, oxyServices } = useOxy();
 
@@ -375,11 +380,12 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             handleSignIn={handleSignIn}
             isLoading={isLoading}
             prevStep={prevStep}
+            navigate={navigate}
         />
     ), [
         fadeAnim, slideAnim, scaleAnim, colors, userProfile, username, theme, logoAnim,
         errorMessage, isInputFocused, password, showPassword,
-        handleInputFocus, handleInputBlur, handlePasswordChange, handleSignIn, isLoading, prevStep, styles
+        handleInputFocus, handleInputBlur, handlePasswordChange, handleSignIn, isLoading, prevStep, styles, navigate
     ]);
 
     const renderCurrentStep = useCallback(() => {
@@ -409,12 +415,6 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                 keyboardShouldPersistTaps="handled"
             >
                 {renderCurrentStep()}
-                <View style={styles.footerTextContainer}>
-                    <Text style={[styles.footerText, { color: colors.text }]}>Forgot your password? </Text>
-                    <TouchableOpacity onPress={() => navigate('RecoverAccount')}>
-                        <Text style={[styles.modernLinkText, { color: colors.primary }]}>Recover your account</Text>
-                    </TouchableOpacity>
-                </View>
             </ScrollView>
         </KeyboardAvoidingView>
     );

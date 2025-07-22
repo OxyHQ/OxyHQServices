@@ -4,7 +4,6 @@ import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
-import { useNavigation } from '@react-navigation/native';
 
 interface SignInPasswordStepProps {
     styles: any;
@@ -26,6 +25,7 @@ interface SignInPasswordStepProps {
     handleSignIn: () => void;
     isLoading: boolean;
     prevStep: () => void;
+    navigate: (screen: string, props?: Record<string, any>) => void;
 }
 
 const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
@@ -48,13 +48,9 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
     handleSignIn: parentHandleSignIn,
     isLoading,
     prevStep,
+    navigate,
 }) => {
-    const navigation = useNavigation();
     const inputRef = useRef<TextInput>(null);
-
-    const navigate = useCallback((screen: string) => {
-        navigation.navigate(screen as never);
-    }, [navigation]);
 
     // Focus password input on error or when step becomes active
     useEffect(() => {
@@ -127,7 +123,11 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                 />
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
                     <Text style={[styles.footerText, { color: colors.text }]}>Forgot your password? </Text>
-                    <TouchableOpacity onPress={() => navigate('RecoverAccount')}>
+                    <TouchableOpacity onPress={() => navigate('RecoverAccount', {
+                        returnTo: 'SignIn',
+                        returnStep: 1,
+                        returnData: { username, userProfile }
+                    })}>
                         <Text style={[styles.modernLinkText, { color: colors.primary }]}>Recover your account</Text>
                     </TouchableOpacity>
                 </View>

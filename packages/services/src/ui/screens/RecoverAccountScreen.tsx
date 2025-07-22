@@ -8,13 +8,17 @@ import { useThemeColors, createAuthStyles } from '../styles';
 import PinInput from '../components/internal/PinInput';
 
 interface RecoverAccountScreenProps {
-    navigate: (screen: string) => void;
+    navigate: (screen: string, props?: Record<string, any>) => void;
+    goBack: () => void;
     theme: string;
+    returnTo?: string;
+    returnStep?: number;
+    returnData?: Record<string, any>;
 }
 
 const PIN_LENGTH = 6;
 
-const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, theme }) => {
+const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, goBack, theme, returnTo, returnStep, returnData }) => {
     const [identifier, setIdentifier] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
@@ -69,6 +73,33 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, t
         }, 1200);
     };
 
+    // Helper function to determine back action based on current step
+    const handleBack = () => {
+        if (step === 'code') {
+            setStep('request');
+        } else if (step === 'done') {
+            // If we have return information, use it; otherwise go to SignIn
+            if (returnTo && returnStep !== undefined) {
+                navigate(returnTo, {
+                    initialStep: returnStep,
+                    ...returnData
+                });
+            } else {
+                navigate('SignIn');
+            }
+        } else {
+            // For 'request' step, if we have return information, use it; otherwise go back
+            if (returnTo && returnStep !== undefined) {
+                navigate(returnTo, {
+                    initialStep: returnStep,
+                    ...returnData
+                });
+            } else {
+                goBack();
+            }
+        }
+    };
+
     return (
         <KeyboardAvoidingView
             style={[styles.container, { backgroundColor: colors.background }]}
@@ -112,8 +143,8 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, t
                             <GroupedPillButtons
                                 buttons={[
                                     {
-                                        text: 'Back to Sign In',
-                                        onPress: () => navigate('SignIn'),
+                                        text: 'Back',
+                                        onPress: handleBack,
                                         icon: 'arrow-back',
                                         variant: 'transparent',
                                     },
@@ -153,7 +184,7 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, t
                                 buttons={[
                                     {
                                         text: 'Back',
-                                        onPress: () => setStep('request'),
+                                        onPress: handleBack,
                                         icon: 'arrow-back',
                                         variant: 'transparent',
                                     },
@@ -176,8 +207,8 @@ const RecoverAccountScreen: React.FC<RecoverAccountScreenProps> = ({ navigate, t
                             <GroupedPillButtons
                                 buttons={[
                                     {
-                                        text: 'Back to Sign In',
-                                        onPress: () => navigate('SignIn'),
+                                        text: 'Back',
+                                        onPress: handleBack,
                                         icon: 'arrow-back',
                                         variant: 'primary',
                                     },

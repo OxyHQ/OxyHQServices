@@ -13,6 +13,9 @@ export interface BaseScreenProps {
   onAuthenticated?: (user: User) => void;
   theme: 'light' | 'dark';
   containerWidth?: number;
+  initialStep?: number;
+  username?: string;
+  userProfile?: any;
 }
 
 /**
