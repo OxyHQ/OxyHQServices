@@ -1,5 +1,34 @@
 # OxyHQ Monorepo
 
+🚀 **Zero-config authentication and user management** for modern web applications. This monorepo contains all OxyHQ packages with seamless authentication that works out-of-the-box.
+
+## ✨ Zero-Config Authentication
+
+### Frontend (React/React Native)
+```tsx
+import { AuthProvider, useAuth } from '@oxyhq/services';
+
+<AuthProvider baseURL="https://api.oxy.so">
+  <App />
+</AuthProvider>
+
+// In any component:
+const { login, user, isAuthenticated } = useAuth();
+```
+
+### Backend (Express.js)
+```typescript
+import { authenticateRequest, OxyRequest } from '@oxyhq/api/middleware/zero-config-auth';
+
+app.get('/profile', authenticateRequest(), (req: OxyRequest, res) => {
+  res.json(req.user); // Automatically populated!
+});
+```
+
+**No manual token handling. No interceptors. No middleware setup. Just authentication that works.** ✨
+
+---
+
 This monorepo contains all OxyHQ packages including services and API components.
 
 ## 📦 Packages

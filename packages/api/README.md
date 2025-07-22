@@ -1,8 +1,54 @@
 # Oxy API
 
-A comprehensive Node.js/TypeScript backend server providing JWT-based authentication, user management, file storage, real-time notifications, payment processing, and social features.
+🚀 **Zero-config backend authentication** with automatic `req.user` population. A comprehensive Node.js/TypeScript backend server providing JWT-based authentication, user management, and real-time features.
+
+## ✨ Quick Start (Zero Config)
+
+```typescript
+import express from 'express';
+import { authenticateRequest, OxyRequest } from '@oxyhq/api/middleware/zero-config-auth';
+
+const app = express();
+
+// Zero-config authentication - just add the middleware!
+app.get('/profile', authenticateRequest(), (req: OxyRequest, res) => {
+  // req.user is automatically populated - no setup needed!
+  res.json({
+    message: `Welcome ${req.user!.username}!`,
+    user: req.user
+  });
+});
+
+// Optional authentication (works for both authenticated and anonymous)  
+app.get('/posts', authenticateRequest({ required: false }), (req: OxyRequest, res) => {
+  if (req.user) {
+    res.json({ posts: getPersonalizedPosts(req.user.id) });
+  } else {
+    res.json({ posts: getPublicPosts() });
+  }
+});
+
+app.listen(3001);
+```
+
+That's it! 🎉 Authentication is now fully automated with:
+- ✅ Automatic `req.user` population
+- ✅ JWT token validation and error handling
+- ✅ Flexible required/optional authentication
+- ✅ TypeScript support with proper types
+- ✅ Comprehensive error responses
+
+## 📖 Documentation
+
+- **[🚀 Zero-Config Authentication Guide](../services/ZERO_CONFIG_AUTH.md)** - Complete setup guide  
+- **[🔧 Migration Guide](../services/ZERO_CONFIG_AUTH.md#migration-from-legacy-authentication)** - Upgrade existing code
+- **[📚 Examples](../services/examples/)** - Complete integration examples
+
+---
 
 ## Features
+
+A comprehensive Node.js/TypeScript backend server providing JWT-based authentication, user management, file storage, real-time notifications, payment processing, and social features.
 
 - 🔐 **JWT Authentication** - Secure token-based auth with automatic refresh
 - 📱 **Session Management** - Device-based session isolation with secure session handling

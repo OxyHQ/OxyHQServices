@@ -1,28 +1,96 @@
 # OxyHQServices
 
-A TypeScript client library for the Oxy API providing authentication, user management, and UI components for React and React Native applications.
+🚀 **Zero-config authentication and user management** for React, React Native, and Node.js applications. No manual token handling, no interceptor setup, no middleware configuration required.
+
+## ✨ Quick Start (Zero Config)
+
+### Frontend (React/React Native)
+
+```tsx
+import React from 'react';
+import { AuthProvider, useAuth } from '@oxyhq/services';
+
+// 1. Wrap your app (that's it for setup!)
+function App() {
+  return (
+    <AuthProvider baseURL="https://api.oxy.so">
+      <MainApp />
+    </AuthProvider>
+  );
+}
+
+// 2. Use authentication anywhere
+function MainApp() {
+  const { isAuthenticated, user, login, logout } = useAuth();
+  
+  if (!isAuthenticated) {
+    return <button onClick={() => login('user', 'pass')}>Login</button>;
+  }
+  
+  return (
+    <div>
+      <h1>Welcome {user?.username}!</h1>
+      <button onClick={logout}>Logout</button>
+    </div>
+  );
+}
+```
+
+### Backend (Express.js)
+
+```typescript
+import express from 'express';
+import { authenticateRequest, OxyRequest } from '@oxyhq/services/api';
+
+const app = express();
+
+// Zero-config authentication - just add the middleware
+app.get('/profile', authenticateRequest(), (req: OxyRequest, res) => {
+  // req.user is automatically populated!
+  res.json({ 
+    message: `Hello ${req.user!.username}!`,
+    user: req.user 
+  });
+});
+```
+
+That's it! 🎉 Authentication is now fully automated with:
+- ✅ Automatic token management and refresh
+- ✅ Secure storage across app restarts  
+- ✅ Built-in error handling and retry logic
+- ✅ Cross-platform support (React Native + Web)
+- ✅ TypeScript support throughout
+
+## 📖 Documentation
+
+- **[🚀 Zero-Config Authentication Guide](./packages/services/ZERO_CONFIG_AUTH.md)** - Complete setup guide
+- **[🔧 Migration Guide](./packages/services/ZERO_CONFIG_AUTH.md#migration-from-legacy-authentication)** - Upgrade from legacy auth
+- **[📚 Examples](./packages/services/examples/)** - Complete integration examples
+- **[🔐 API Reference](./packages/services/ZERO_CONFIG_AUTH.md#complete-api-reference)** - All components and hooks
 
 ## Table of Contents
 
-- [Features](#features)
-- [Quick Start](#quick-start)
-- [Documentation](#documentation)
-- [UI Components](#ui-components)
+- [Legacy Features](#features)
+- [Legacy Quick Start](#quick-start)
 - [Package Exports](#package-exports)
 - [Requirements](#requirements)
 - [Development](#development)
 - [Integration](#integration)
 - [License](#license)
 
-## Features
+---
+
+## Legacy Features (Still Supported)
+
+A TypeScript client library for the Oxy API providing authentication, user management, and UI components for React and React Native applications.
 
 - 🔐 **Authentication**: JWT-based auth with automatic token refresh
-- 👥 **User Management**: Profile operations and social features
+- 👥 **User Management**: Profile operations and social features  
 - 🎨 **UI Components**: Pre-built React components for common functionality
 - 📱 **Cross-Platform**: Works in React Native and web applications
 - 🔧 **TypeScript**: Full type safety and IntelliSense support
 
-## Quick Start
+## Legacy Quick Start
 
 ```bash
 npm install @oxyhq/services
@@ -44,10 +112,6 @@ const response = await oxy.auth.login({
 // Get current user
 const user = await oxy.users.getCurrentUser();
 ```
-
-## Documentation
-
-For comprehensive documentation, API reference, and examples:
 
 - [📚 Full Documentation](./docs/README.md)
 - [🚀 Quick Start Guide](./docs/quick-start.md)
