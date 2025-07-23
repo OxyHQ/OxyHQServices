@@ -242,6 +242,12 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         zIndex: 1000,
+        ...Platform.select({
+            web: {
+                position: 'sticky' as any,
+            },
+            default: {},
+        }),
     },
     content: {
         flexDirection: 'row',
