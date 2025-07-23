@@ -18,6 +18,8 @@ interface GroupedItemProps {
     selected?: boolean;
     customContent?: React.ReactNode;
     customIcon?: React.ReactNode;
+    multiRow?: boolean;
+    customContentBelow?: React.ReactNode;
 }
 
 const GroupedItem: React.FC<GroupedItemProps> = ({
@@ -36,6 +38,8 @@ const GroupedItem: React.FC<GroupedItemProps> = ({
     selected = false,
     customContent,
     customIcon,
+    multiRow = false,
+    customContentBelow,
 }) => {
     const isDarkTheme = theme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
@@ -52,7 +56,7 @@ const GroupedItem: React.FC<GroupedItemProps> = ({
     ];
 
     const content = (
-        <View style={styles.groupedItemContent}>
+        <View style={[styles.groupedItemContent, multiRow && styles.groupedItemContentMultiRow]}>
             {customIcon ? (
                 <View style={styles.actionIcon}>
                     {customIcon}
@@ -67,13 +71,14 @@ const GroupedItem: React.FC<GroupedItemProps> = ({
                     <Ionicons name={icon as any} size={20} color={iconColor} />
                 </View>
             ) : null}
-            <View style={styles.actionTextContainer}>
+            <View style={[styles.actionTextContainer, multiRow && styles.actionTextContainerMultiRow]}>
                 <Text style={[styles.actionButtonText, { color: textColor }]}>{title}</Text>
                 {subtitle && (
                     <Text style={[styles.actionButtonSubtext, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                         {subtitle}
                     </Text>
                 )}
+                {customContentBelow}
             </View>
             {customContent}
             {selected ? (
@@ -148,6 +153,13 @@ const styles = StyleSheet.create({
     actionButtonSubtext: {
         fontSize: 13,
         lineHeight: 18,
+    },
+    groupedItemContentMultiRow: {
+        alignItems: 'flex-start',
+        paddingVertical: 12,
+    },
+    actionTextContainerMultiRow: {
+        alignItems: 'flex-start',
     },
 });
 

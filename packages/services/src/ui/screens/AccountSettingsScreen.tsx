@@ -607,124 +607,103 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                 <Text style={styles.editingFieldLabel}>Manage Your Links</Text>
                             </View>
 
-                            {/* Add new link section */}
-                            {isAddingLink ? (
-                                <View style={styles.addLinkSection}>
-                                    <Text style={styles.addLinkLabel}>
-                                        Add New Link
-                                        {isFetchingMetadata && (
-                                            <Text style={styles.fetchingText}> • Fetching metadata...</Text>
-                                        )}
-                                    </Text>
-                                    <View style={styles.addLinkInputContainer}>
-                                        <TextInput
-                                            style={styles.addLinkInput}
-                                            value={newLinkUrl}
-                                            onChangeText={setNewLinkUrl}
-                                            placeholder="Enter URL (e.g., https://example.com)"
-                                            placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
-                                            keyboardType="url"
-                                            autoFocus
-                                            selectionColor={themeStyles.primaryColor}
-                                        />
-                                        <View style={styles.addLinkButtons}>
-                                            <TouchableOpacity
-                                                style={[styles.addLinkButton, styles.cancelButton]}
-                                                onPress={() => {
-                                                    setIsAddingLink(false);
-                                                    setNewLinkUrl('');
-                                                }}
-                                            >
-                                                <Text style={styles.cancelButtonText}>Cancel</Text>
-                                            </TouchableOpacity>
-                                            <TouchableOpacity
-                                                style={[styles.addLinkButton, styles.addButton, { opacity: isFetchingMetadata ? 0.5 : 1 }]}
-                                                onPress={addLink}
-                                                disabled={isFetchingMetadata}
-                                            >
-                                                {isFetchingMetadata ? (
-                                                    <ActivityIndicator size="small" color="#fff" />
-                                                ) : (
-                                                    <Text style={styles.addButtonText}>Add</Text>
-                                                )}
-                                            </TouchableOpacity>
-                                        </View>
-                                    </View>
-                                </View>
-                            ) : (
-                                <TouchableOpacity
-                                    style={styles.addLinkTrigger}
-                                    onPress={() => setIsAddingLink(true)}
-                                >
-                                    <OxyIcon name="add" size={20} color={themeStyles.primaryColor} />
-                                    <Text style={styles.addLinkTriggerText}>Add a new link</Text>
-                                </TouchableOpacity>
-                            )}
-
-                            {/* Existing links list */}
-                            {tempLinksWithMetadata.length > 0 && (
-                                <View style={styles.linksList}>
-                                    <Text style={styles.linksListTitle}>Your Links ({tempLinksWithMetadata.length})</Text>
-                                    {tempLinksWithMetadata.map((link, index) => (
-                                        <View key={link.id} style={styles.linkItem}>
-                                            <View style={styles.linkItemContent}>
-                                                {link.image ? (
-                                                    <Image source={{ uri: link.image }} style={styles.linkItemImage} />
-                                                ) : (
-                                                    <View style={styles.linkItemImage}>
-                                                        <Text style={styles.linkItemImageText}>
-                                                            {link.title?.charAt(0).toUpperCase() || link.url.charAt(0).toUpperCase()}
-                                                        </Text>
-                                                    </View>
-                                                )}
-                                                <View style={styles.linkItemDragHandle}>
-                                                    <View style={styles.reorderButtons}>
-                                                        <TouchableOpacity
-                                                            style={[styles.reorderButton, index === 0 && styles.reorderButtonDisabled]}
-                                                            onPress={() => index > 0 && moveLink(index, index - 1)}
-                                                            disabled={index === 0}
-                                                        >
-                                                            <OxyIcon name="chevron-up" size={12} color={index === 0 ? "#ccc" : "#666"} />
-                                                        </TouchableOpacity>
-                                                        <TouchableOpacity
-                                                            style={[styles.reorderButton, index === tempLinksWithMetadata.length - 1 && styles.reorderButtonDisabled]}
-                                                            onPress={() => index < tempLinksWithMetadata.length - 1 && moveLink(index, index + 1)}
-                                                            disabled={index === tempLinksWithMetadata.length - 1}
-                                                        >
-                                                            <OxyIcon name="chevron-down" size={12} color={index === tempLinksWithMetadata.length - 1 ? "#ccc" : "#666"} />
-                                                        </TouchableOpacity>
-                                                    </View>
-                                                </View>
-                                                <View style={styles.linkItemInfo}>
-                                                    <Text style={styles.linkItemTitle} numberOfLines={1}>
-                                                        {link.title || link.url}
-                                                    </Text>
-                                                    {link.description && link.description !== link.title && (
-                                                        <Text style={styles.linkItemDescription} numberOfLines={1}>
-                                                            {link.description}
-                                                        </Text>
-                                                    )}
-                                                    <Text style={styles.linkItemUrl} numberOfLines={1}>
-                                                        {link.url}
-                                                    </Text>
-                                                </View>
-                                                <View style={styles.linkItemActions}>
+                            <GroupedSection
+                                items={[
+                                    // Add new link item
+                                    ...(isAddingLink ? [{
+                                        id: 'add-link-input',
+                                        icon: 'add',
+                                        iconColor: '#32D74B',
+                                        title: 'Add New Link',
+                                        subtitle: isFetchingMetadata ? 'Fetching metadata...' : 'Enter URL to add a new link',
+                                        multiRow: true,
+                                        customContent: (
+                                            <View style={styles.addLinkInputContainer}>
+                                                <TextInput
+                                                    style={styles.addLinkInput}
+                                                    value={newLinkUrl}
+                                                    onChangeText={setNewLinkUrl}
+                                                    placeholder="Enter URL (e.g., https://example.com)"
+                                                    placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                                                    keyboardType="url"
+                                                    autoFocus
+                                                    selectionColor={themeStyles.primaryColor}
+                                                />
+                                                <View style={styles.addLinkButtons}>
                                                     <TouchableOpacity
-                                                        style={styles.linkItemButton}
-                                                        onPress={() => removeLink(link.id)}
+                                                        style={[styles.addLinkButton, styles.cancelButton]}
+                                                        onPress={() => {
+                                                            setIsAddingLink(false);
+                                                            setNewLinkUrl('');
+                                                        }}
                                                     >
-                                                        <OxyIcon name="trash" size={14} color="#FF3B30" />
+                                                        <Text style={styles.cancelButtonText}>Cancel</Text>
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity
+                                                        style={[styles.addLinkButton, styles.addButton, { opacity: isFetchingMetadata ? 0.5 : 1 }]}
+                                                        onPress={addLink}
+                                                        disabled={isFetchingMetadata}
+                                                    >
+                                                        {isFetchingMetadata ? (
+                                                            <ActivityIndicator size="small" color="#fff" />
+                                                        ) : (
+                                                            <Text style={styles.addButtonText}>Add</Text>
+                                                        )}
                                                     </TouchableOpacity>
                                                 </View>
                                             </View>
-                                            {index < tempLinksWithMetadata.length - 1 && (
-                                                <View style={styles.linkItemDivider} />
-                                            )}
-                                        </View>
-                                    ))}
-                                    <View style={styles.reorderHint}>
-                                        <Text style={styles.reorderHintText}>Use ↑↓ buttons to reorder your links</Text>
-                                    </View>
+                                        ),
+                                    }] : [{
+                                        id: 'add-link-trigger',
+                                        icon: 'add',
+                                        iconColor: '#32D74B',
+                                        title: 'Add a new link',
+                                        subtitle: 'Tap to add a new link to your profile',
+                                        onPress: () => setIsAddingLink(true),
+                                    }]),
+                                    // Existing links
+                                    ...tempLinksWithMetadata.map((link, index) => ({
+                                        id: link.id,
+                                        image: link.image || undefined,
+                                        imageSize: 32,
+                                        icon: link.image ? undefined : 'link',
+                                        iconColor: '#32D74B',
+                                        title: link.title || link.url,
+                                        subtitle: link.description && link.description !== link.title ? link.description : link.url,
+                                        multiRow: true,
+                                        customContent: (
+                                            <View style={styles.linkItemActions}>
+                                                <View style={styles.reorderButtons}>
+                                                    <TouchableOpacity
+                                                        style={[styles.reorderButton, index === 0 && styles.reorderButtonDisabled]}
+                                                        onPress={() => index > 0 && moveLink(index, index - 1)}
+                                                        disabled={index === 0}
+                                                    >
+                                                        <OxyIcon name="chevron-up" size={12} color={index === 0 ? "#ccc" : "#666"} />
+                                                    </TouchableOpacity>
+                                                    <TouchableOpacity
+                                                        style={[styles.reorderButton, index === tempLinksWithMetadata.length - 1 && styles.reorderButtonDisabled]}
+                                                        onPress={() => index < tempLinksWithMetadata.length - 1 && moveLink(index, index + 1)}
+                                                        disabled={index === tempLinksWithMetadata.length - 1}
+                                                    >
+                                                        <OxyIcon name="chevron-down" size={12} color={index === tempLinksWithMetadata.length - 1 ? "#ccc" : "#666"} />
+                                                    </TouchableOpacity>
+                                                </View>
+                                                <TouchableOpacity
+                                                    style={styles.linkItemButton}
+                                                    onPress={() => removeLink(link.id)}
+                                                >
+                                                    <OxyIcon name="trash" size={14} color="#FF3B30" />
+                                                </TouchableOpacity>
+                                            </View>
+                                        ),
+                                    })),
+                                ]}
+                                theme={theme}
+                            />
+                            {tempLinksWithMetadata.length > 0 && (
+                                <View style={styles.reorderHint}>
+                                    <Text style={styles.reorderHintText}>Use ↑↓ buttons to reorder your links</Text>
                                 </View>
                             )}
                         </View>
@@ -967,7 +946,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                         subtitle: tempLocations.length > 0 ? `${tempLocations.length} location${tempLocations.length !== 1 ? 's' : ''} added` : 'Add your locations',
                                         onPress: () => startEditing('location', ''),
                                         customContent: tempLocations.length > 0 && (
-                                            <View style={styles.linksPreview}>
+                                            <View style={styles.linksPreviewContainer}>
                                                 {tempLocations.slice(0, 2).map((location, index) => (
                                                     <View key={location.id || index} style={styles.linkPreviewItem}>
                                                         <View style={styles.linkPreviewImage}>
@@ -1002,8 +981,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                         title: 'Links',
                                         subtitle: tempLinksWithMetadata.length > 0 ? `${tempLinksWithMetadata.length} link${tempLinksWithMetadata.length !== 1 ? 's' : ''} added` : 'Add your links',
                                         onPress: () => startEditing('links', ''),
-                                        customContent: tempLinksWithMetadata.length > 0 && (
-                                            <View style={styles.linksPreview}>
+                                        multiRow: true,
+                                        customContentBelow: tempLinksWithMetadata.length > 0 && (
+                                            <View style={styles.linksPreviewContainer}>
                                                 {tempLinksWithMetadata.slice(0, 2).map((link, index) => (
                                                     <View key={link.id || index} style={styles.linkPreviewItem}>
                                                         {link.image ? (
@@ -1419,6 +1399,12 @@ const styles = StyleSheet.create({
     },
     linksPreview: {
         marginTop: 4,
+        flexDirection: 'column',
+    },
+    linksPreviewContainer: {
+        marginTop: 4,
+        flexDirection: 'column',
+        width: '100%',
     },
     linkPreviewItem: {
         flexDirection: 'row',

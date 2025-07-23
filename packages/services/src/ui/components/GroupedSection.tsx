@@ -16,6 +16,8 @@ interface GroupedSectionItem {
     selected?: boolean;
     customContent?: React.ReactNode;
     customIcon?: React.ReactNode;
+    multiRow?: boolean;
+    customContentBelow?: React.ReactNode;
 }
 
 interface GroupedSectionProps {
@@ -44,6 +46,8 @@ const GroupedSection: React.FC<GroupedSectionProps> = ({ items, theme }) => {
                     selected={item.selected}
                     customContent={item.customContent}
                     customIcon={item.customIcon}
+                    multiRow={item.multiRow}
+                    customContentBelow={item.customContentBelow}
                 />
             ))}
         </View>
