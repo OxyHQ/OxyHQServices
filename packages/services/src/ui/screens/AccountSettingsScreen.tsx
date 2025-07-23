@@ -21,7 +21,7 @@ import { toast } from '../../lib/sonner';
 import { fontFamilies } from '../styles/fonts';
 import { confirmAction } from '../utils/confirmAction';
 import { useAuthStore } from '../stores/authStore';
-import { Header } from '../components';
+import { Header, GroupedSection } from '../components';
 
 const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -298,29 +298,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         setEditingField(null);
     };
 
-    const getFieldLabel = (type: string) => {
-        const labels = {
-            displayName: 'Display Name',
-            username: 'Username',
-            email: 'Email',
-            bio: 'Bio',
-            location: 'Location',
-            links: 'Links'
-        };
-        return labels[type as keyof typeof labels] || 'Field';
-    };
 
-    const getFieldIcon = (type: string) => {
-        const icons = {
-            displayName: { name: 'person', color: '#007AFF' },
-            username: { name: 'at', color: '#5856D6' },
-            email: { name: 'mail', color: '#FF9500' },
-            bio: { name: 'document-text', color: '#34C759' },
-            location: { name: 'location', color: '#FF3B30' },
-            links: { name: 'link', color: '#32D74B' }
-        };
-        return icons[type as keyof typeof icons] || { name: 'person', color: '#007AFF' };
-    };
 
     const fetchLinkMetadata = async (url: string) => {
         try {
@@ -823,149 +801,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         );
     };
 
-    const renderField = (
-        type: string,
-        label: string,
-        value: string,
-        placeholder: string,
-        icon: string,
-        iconColor: string,
-        multiline = false,
-        keyboardType: 'default' | 'email-address' | 'url' = 'default',
-        isFirst = false,
-        isLast = false
-    ) => {
-        const itemStyles = [
-            styles.settingItem,
-            isFirst && styles.firstSettingItem,
-            isLast && styles.lastSettingItem
-        ];
 
-        return (
-            <TouchableOpacity
-                style={itemStyles}
-                onPress={() => startEditing(type, value)}
-            >
-                <View style={styles.settingInfo}>
-                    <OxyIcon name={icon} size={20} color={iconColor} style={styles.settingIcon} />
-                    <View>
-                        <Text style={styles.settingLabel}>{label}</Text>
-                        <Text style={styles.settingDescription}>
-                            {value || placeholder}
-                        </Text>
-                    </View>
-                </View>
-                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-            </TouchableOpacity>
-        );
-    };
-
-    const renderLocationsField = (isFirst = false, isLast = false) => {
-        const itemStyles = [
-            styles.settingItem,
-            isFirst && styles.firstSettingItem,
-            isLast && styles.lastSettingItem
-        ];
-
-        const hasLocations = tempLocations.length > 0;
-
-        return (
-            <TouchableOpacity
-                style={itemStyles}
-                onPress={() => startEditing('location', '')}
-            >
-                <View style={styles.settingInfo}>
-                    <OxyIcon name="location" size={20} color="#FF3B30" style={styles.settingIcon} />
-                    <View style={styles.linksFieldContent}>
-                        <Text style={styles.settingLabel}>Locations</Text>
-                        {hasLocations ? (
-                            <View style={styles.linksPreview}>
-                                {tempLocations.slice(0, 2).map((location, index) => (
-                                    <View key={location.id || index} style={styles.linkPreviewItem}>
-                                        <View style={styles.linkPreviewImage}>
-                                            <Text style={styles.linkPreviewImageText}>
-                                                {location.name.charAt(0).toUpperCase()}
-                                            </Text>
-                                        </View>
-                                        <View style={styles.linkPreviewContent}>
-                                            <Text style={styles.linkPreviewTitle} numberOfLines={1}>
-                                                {location.name}
-                                            </Text>
-                                            {location.label && (
-                                                <Text style={styles.linkPreviewSubtitle}>
-                                                    {location.label}
-                                                </Text>
-                                            )}
-                                        </View>
-                                    </View>
-                                ))}
-                                {tempLocations.length > 2 && (
-                                    <Text style={styles.linkPreviewMore}>
-                                        +{tempLocations.length - 2} more
-                                    </Text>
-                                )}
-                            </View>
-                        ) : (
-                            <Text style={styles.settingDescription}>Add your locations</Text>
-                        )}
-                    </View>
-                </View>
-                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-            </TouchableOpacity>
-        );
-    };
-
-    const renderLinksField = (isFirst = false, isLast = false) => {
-        const itemStyles = [
-            styles.settingItem,
-            isFirst && styles.firstSettingItem,
-            isLast && styles.lastSettingItem
-        ];
-
-        const hasLinks = tempLinksWithMetadata.length > 0;
-
-        return (
-            <TouchableOpacity
-                style={itemStyles}
-                onPress={() => startEditing('links', '')}
-            >
-                <View style={styles.settingInfo}>
-                    <OxyIcon name="link" size={20} color="#32D74B" style={styles.settingIcon} />
-                    <View style={styles.linksFieldContent}>
-                        <Text style={styles.settingLabel}>Links</Text>
-                        {hasLinks ? (
-                            <View style={styles.linksPreview}>
-                                {tempLinksWithMetadata.slice(0, 2).map((link, index) => (
-                                    <View key={link.id || index} style={styles.linkPreviewItem}>
-                                        {link.image ? (
-                                            <Image source={{ uri: link.image }} style={styles.linkPreviewImage} />
-                                        ) : (
-                                            <View style={styles.linkPreviewImage}>
-                                                <Text style={styles.linkPreviewImageText}>
-                                                    {link.title?.charAt(0).toUpperCase() || link.url.charAt(0).toUpperCase()}
-                                                </Text>
-                                            </View>
-                                        )}
-                                        <Text style={styles.linkPreviewTitle} numberOfLines={1}>
-                                            {link.title || link.url}
-                                        </Text>
-                                    </View>
-                                ))}
-                                {tempLinksWithMetadata.length > 2 && (
-                                    <Text style={styles.linkPreviewMore}>
-                                        +{tempLinksWithMetadata.length - 2} more
-                                    </Text>
-                                )}
-                            </View>
-                        ) : (
-                            <Text style={styles.settingDescription}>Add your links</Text>
-                        )}
-                    </View>
-                </View>
-                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-            </TouchableOpacity>
-        );
-    };
 
     if (authLoading || !isAuthenticated) {
         return (
@@ -999,9 +835,33 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         </TouchableOpacity>
                     </View>
                     <View style={styles.editingHeaderBottom}>
-                        <OxyIcon name={getFieldIcon(editingField).name} size={56} color={getFieldIcon(editingField).color} style={styles.editingBottomIcon} />
+                        <OxyIcon
+                            name={
+                                editingField === 'displayName' ? 'person' :
+                                    editingField === 'username' ? 'at' :
+                                        editingField === 'email' ? 'mail' :
+                                            editingField === 'bio' ? 'document-text' :
+                                                editingField === 'location' ? 'location' :
+                                                    editingField === 'links' ? 'link' : 'person'
+                            }
+                            size={56}
+                            color={
+                                editingField === 'displayName' ? '#007AFF' :
+                                    editingField === 'username' ? '#5856D6' :
+                                        editingField === 'email' ? '#FF9500' :
+                                            editingField === 'bio' ? '#34C759' :
+                                                editingField === 'location' ? '#FF3B30' :
+                                                    editingField === 'links' ? '#32D74B' : '#007AFF'
+                            }
+                            style={styles.editingBottomIcon}
+                        />
                         <Text style={[styles.editingBottomTitle, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>
-                            {getFieldLabel(editingField)}
+                            {editingField === 'displayName' ? 'Display Name' :
+                                editingField === 'username' ? 'Username' :
+                                    editingField === 'email' ? 'Email' :
+                                        editingField === 'bio' ? 'Bio' :
+                                            editingField === 'location' ? 'Location' :
+                                                editingField === 'links' ? 'Links' : 'Field'}
                         </Text>
                     </View>
                 </View>
@@ -1033,127 +893,179 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Profile Picture</Text>
 
-                            <TouchableOpacity
-                                style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}
-                                onPress={handleAvatarUpdate}
-                            >
-                                <View style={styles.userIcon}>
-                                    <Avatar
-                                        uri={avatarUrl}
-                                        name={displayName || username}
-                                        size={50}
-                                        theme={theme}
-                                    />
-                                </View>
-                                <View style={styles.settingInfo}>
-                                    <View>
-                                        <Text style={styles.settingLabel}>Profile Photo</Text>
-                                        <Text style={styles.settingDescription}>
-                                            {avatarUrl ? 'Tap to change your profile picture' : 'Tap to add a profile picture'}
-                                        </Text>
-                                    </View>
-                                </View>
-                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                            </TouchableOpacity>
+                            <GroupedSection
+                                items={[
+                                    {
+                                        id: 'profile-photo',
+                                        icon: 'person',
+                                        iconColor: '#007AFF',
+                                        title: 'Profile Photo',
+                                        subtitle: avatarUrl ? 'Tap to change your profile picture' : 'Tap to add a profile picture',
+                                        onPress: handleAvatarUpdate,
+                                        customContent: (
+                                            <View style={styles.userIcon}>
+                                                <Avatar
+                                                    uri={avatarUrl}
+                                                    name={displayName || username}
+                                                    size={50}
+                                                    theme={theme}
+                                                />
+                                            </View>
+                                        ),
+                                    },
+                                ]}
+                                theme={theme}
+                            />
                         </View>
 
                         {/* Basic Information */}
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Basic Information</Text>
 
-                            {renderField(
-                                'displayName',
-                                'Display Name',
-                                [displayName, lastName].filter(Boolean).join(' '), // Show full name
-                                'Add your display name',
-                                'person',
-                                '#007AFF',
-                                false,
-                                'default',
-                                true,
-                                false
-                            )}
-
-                            {renderField(
-                                'username',
-                                'Username',
-                                username,
-                                'Choose a username',
-                                'at',
-                                '#5856D6',
-                                false,
-                                'default',
-                                false,
-                                false
-                            )}
-
-                            {renderField(
-                                'email',
-                                'Email',
-                                email,
-                                'Add your email address',
-                                'mail',
-                                '#FF9500',
-                                false,
-                                'email-address',
-                                false,
-                                true
-                            )}
+                            <GroupedSection
+                                items={[
+                                    {
+                                        id: 'display-name',
+                                        icon: 'person',
+                                        iconColor: '#007AFF',
+                                        title: 'Display Name',
+                                        subtitle: [displayName, lastName].filter(Boolean).join(' ') || 'Add your display name',
+                                        onPress: () => startEditing('displayName', ''),
+                                    },
+                                    {
+                                        id: 'username',
+                                        icon: 'at',
+                                        iconColor: '#5856D6',
+                                        title: 'Username',
+                                        subtitle: username || 'Choose a username',
+                                        onPress: () => startEditing('username', username),
+                                    },
+                                    {
+                                        id: 'email',
+                                        icon: 'mail',
+                                        iconColor: '#FF9500',
+                                        title: 'Email',
+                                        subtitle: email || 'Add your email address',
+                                        onPress: () => startEditing('email', email),
+                                    },
+                                ]}
+                                theme={theme}
+                            />
                         </View>
 
                         {/* About You */}
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>About You</Text>
 
-                            {renderField(
-                                'bio',
-                                'Bio',
-                                bio,
-                                'Tell people about yourself',
-                                'document-text',
-                                '#34C759',
-                                true,
-                                'default',
-                                true,
-                                false
-                            )}
-
-                            {renderLocationsField(false, false)}
-
-                            {renderLinksField(false, true)}
+                            <GroupedSection
+                                items={[
+                                    {
+                                        id: 'bio',
+                                        icon: 'document-text',
+                                        iconColor: '#34C759',
+                                        title: 'Bio',
+                                        subtitle: bio || 'Tell people about yourself',
+                                        onPress: () => startEditing('bio', bio),
+                                    },
+                                    {
+                                        id: 'locations',
+                                        icon: 'location',
+                                        iconColor: '#FF3B30',
+                                        title: 'Locations',
+                                        subtitle: tempLocations.length > 0 ? `${tempLocations.length} location${tempLocations.length !== 1 ? 's' : ''} added` : 'Add your locations',
+                                        onPress: () => startEditing('location', ''),
+                                        customContent: tempLocations.length > 0 && (
+                                            <View style={styles.linksPreview}>
+                                                {tempLocations.slice(0, 2).map((location, index) => (
+                                                    <View key={location.id || index} style={styles.linkPreviewItem}>
+                                                        <View style={styles.linkPreviewImage}>
+                                                            <Text style={styles.linkPreviewImageText}>
+                                                                {location.name.charAt(0).toUpperCase()}
+                                                            </Text>
+                                                        </View>
+                                                        <View style={styles.linkPreviewContent}>
+                                                            <Text style={styles.linkPreviewTitle} numberOfLines={1}>
+                                                                {location.name}
+                                                            </Text>
+                                                            {location.label && (
+                                                                <Text style={styles.linkPreviewSubtitle}>
+                                                                    {location.label}
+                                                                </Text>
+                                                            )}
+                                                        </View>
+                                                    </View>
+                                                ))}
+                                                {tempLocations.length > 2 && (
+                                                    <Text style={styles.linkPreviewMore}>
+                                                        +{tempLocations.length - 2} more
+                                                    </Text>
+                                                )}
+                                            </View>
+                                        ),
+                                    },
+                                    {
+                                        id: 'links',
+                                        icon: 'link',
+                                        iconColor: '#32D74B',
+                                        title: 'Links',
+                                        subtitle: tempLinksWithMetadata.length > 0 ? `${tempLinksWithMetadata.length} link${tempLinksWithMetadata.length !== 1 ? 's' : ''} added` : 'Add your links',
+                                        onPress: () => startEditing('links', ''),
+                                        customContent: tempLinksWithMetadata.length > 0 && (
+                                            <View style={styles.linksPreview}>
+                                                {tempLinksWithMetadata.slice(0, 2).map((link, index) => (
+                                                    <View key={link.id || index} style={styles.linkPreviewItem}>
+                                                        {link.image ? (
+                                                            <Image source={{ uri: link.image }} style={styles.linkPreviewImage} />
+                                                        ) : (
+                                                            <View style={styles.linkPreviewImage}>
+                                                                <Text style={styles.linkPreviewImageText}>
+                                                                    {link.title?.charAt(0).toUpperCase() || link.url.charAt(0).toUpperCase()}
+                                                                </Text>
+                                                            </View>
+                                                        )}
+                                                        <Text style={styles.linkPreviewTitle} numberOfLines={1}>
+                                                            {link.title || link.url}
+                                                        </Text>
+                                                    </View>
+                                                ))}
+                                                {tempLinksWithMetadata.length > 2 && (
+                                                    <Text style={styles.linkPreviewMore}>
+                                                        +{tempLinksWithMetadata.length - 2} more
+                                                    </Text>
+                                                )}
+                                            </View>
+                                        ),
+                                    },
+                                ]}
+                                theme={theme}
+                            />
                         </View>
 
                         {/* Quick Actions */}
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Quick Actions</Text>
 
-                            <TouchableOpacity
-                                style={[styles.settingItem, styles.firstSettingItem]}
-                                onPress={() => toast.info('Privacy settings coming soon!')}
-                            >
-                                <View style={styles.settingInfo}>
-                                    <OxyIcon name="shield-checkmark" size={20} color="#8E8E93" style={styles.settingIcon} />
-                                    <View>
-                                        <Text style={styles.settingLabel}>Privacy Settings</Text>
-                                        <Text style={styles.settingDescription}>Control who can see your profile</Text>
-                                    </View>
-                                </View>
-                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={[styles.settingItem, styles.lastSettingItem]}
-                                onPress={() => toast.info('Account verification coming soon!')}
-                            >
-                                <View style={styles.settingInfo}>
-                                    <OxyIcon name="checkmark-circle" size={20} color="#30D158" style={styles.settingIcon} />
-                                    <View>
-                                        <Text style={styles.settingLabel}>Verify Account</Text>
-                                        <Text style={styles.settingDescription}>Get a verified badge</Text>
-                                    </View>
-                                </View>
-                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                            </TouchableOpacity>
+                            <GroupedSection
+                                items={[
+                                    {
+                                        id: 'privacy-settings',
+                                        icon: 'shield-checkmark',
+                                        iconColor: '#8E8E93',
+                                        title: 'Privacy Settings',
+                                        subtitle: 'Control who can see your profile',
+                                        onPress: () => toast.info('Privacy settings coming soon!'),
+                                    },
+                                    {
+                                        id: 'verify-account',
+                                        icon: 'checkmark-circle',
+                                        iconColor: '#30D158',
+                                        title: 'Verify Account',
+                                        subtitle: 'Get a verified badge',
+                                        onPress: () => toast.info('Account verification coming soon!'),
+                                    },
+                                ]}
+                                theme={theme}
+                            />
                         </View>
                     </>
                 )}
@@ -1185,78 +1097,11 @@ const styles = StyleSheet.create({
         marginBottom: 12,
         fontFamily: fontFamilies.phuduSemiBold,
     },
-    settingItem: {
-        backgroundColor: '#fff',
-        padding: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 2,
-    },
-    firstSettingItem: {
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-    },
-    lastSettingItem: {
-        borderBottomLeftRadius: 24,
-        borderBottomRightRadius: 24,
-        marginBottom: 8,
-    },
-    settingInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
-    settingIcon: {
-        marginRight: 12,
-    },
-    settingLabel: {
-        fontSize: 16,
-        fontWeight: '500',
-        color: '#333',
-        marginBottom: 2,
-    },
-    settingDescription: {
-        fontSize: 14,
-        color: '#666',
-    },
+
     userIcon: {
         marginRight: 12,
     },
-    // Inline editing styles
-    editingContainer: {
-        flex: 1,
-    },
-    editingActions: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    editingButton: {
-        padding: 8,
-    },
-    editingButtonText: {
-        fontSize: 16,
-        fontWeight: '500',
-    },
-    inlineInput: {
-        backgroundColor: '#f8f8f8',
-        borderWidth: 1,
-        borderColor: '#e0e0e0',
-        borderRadius: 8,
-        padding: 12,
-        fontSize: 16,
-        minHeight: 44,
-    },
-    inlineTextArea: {
-        backgroundColor: '#f8f8f8',
-        borderWidth: 1,
-        borderColor: '#e0e0e0',
-        borderRadius: 8,
-        padding: 12,
-        fontSize: 16,
-        minHeight: 100,
-        textAlignVertical: 'top',
-    },
+
     // Editing-only mode styles
     editingOnlyContainer: {
         flex: 1,

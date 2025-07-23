@@ -20,7 +20,7 @@ import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';
 import { Ionicons } from '@expo/vector-icons';
-import { Header } from '../components';
+import { Header, Section, GroupedSection, GroupedItem } from '../components';
 
 /**
  * AccountOverviewScreen - Optimized for performance
@@ -30,6 +30,7 @@ import { Header } from '../components';
  * - useMemo for additional accounts filtering (only recalculates when dependencies change)
  * - useCallback for event handlers to prevent unnecessary re-renders
  * - React.memo wrapper to prevent re-renders when props haven't changed
+ * - GroupedSection components for better organization and cleaner code
  */
 const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -177,9 +178,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {/* User Profile Section */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Profile</Text>
-
+                <Section title="Profile" theme={theme} isFirst={true}>
                     <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
                         <View style={styles.userIcon}>
                             <Avatar
@@ -204,89 +203,60 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             <Text style={styles.manageButtonText}>Manage</Text>
                         </TouchableOpacity>
                     </View>
-                </View>
+                </Section>
 
                 {/* Account Settings */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Account Settings</Text>
-
-                    <TouchableOpacity
-                        style={[styles.settingItem, styles.firstSettingItem]}
-                        onPress={() => navigate?.('EditProfile', { activeTab: 'profile' })}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="person-circle" size={20} color="#007AFF" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Edit Profile</Text>
-                                <Text style={styles.settingDescription}>Update your personal information</Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.settingItem}
-                        onPress={() => navigate?.('EditProfile', { activeTab: 'password' })}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="shield-checkmark" size={20} color="#30D158" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Security & Privacy</Text>
-                                <Text style={styles.settingDescription}>Password, 2FA, and privacy settings</Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.settingItem}
-                        onPress={() => navigate?.('EditProfile', { activeTab: 'notifications' })}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="notifications" size={20} color="#FF9500" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Notifications</Text>
-                                <Text style={styles.settingDescription}>Manage your notification preferences</Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.settingItem]}
-                        onPress={() => navigate?.('PremiumSubscription')}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="star" size={20} color="#FFD700" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Oxy+ Subscriptions</Text>
-                                <Text style={styles.settingDescription}>{user?.isPremium ? 'Manage your premium plan' : 'Upgrade to premium features'}</Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-
-                    {user?.isPremium && (
-                        <TouchableOpacity
-                            style={[styles.settingItem, styles.lastSettingItem]}
-                        >
-                            <View style={styles.settingInfo}>
-                                <OxyIcon name="card" size={20} color="#34C759" style={styles.settingIcon} />
-                                <View>
-                                    <Text style={styles.settingLabel}>Billing Management</Text>
-                                    <Text style={styles.settingDescription}>Payment methods and invoices</Text>
-                                </View>
-                            </View>
-                            <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                        </TouchableOpacity>
-                    )}
-                </View>
+                <Section title="Account Settings" theme={theme}>
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'edit-profile',
+                                icon: 'person-circle',
+                                iconColor: '#007AFF',
+                                title: 'Edit Profile',
+                                subtitle: 'Update your personal information',
+                                onPress: () => navigate?.('EditProfile', { activeTab: 'profile' }),
+                            },
+                            {
+                                id: 'security-privacy',
+                                icon: 'shield-checkmark',
+                                iconColor: '#30D158',
+                                title: 'Security & Privacy',
+                                subtitle: 'Password, 2FA, and privacy settings',
+                                onPress: () => navigate?.('EditProfile', { activeTab: 'password' }),
+                            },
+                            {
+                                id: 'notifications',
+                                icon: 'notifications',
+                                iconColor: '#FF9500',
+                                title: 'Notifications',
+                                subtitle: 'Manage your notification preferences',
+                                onPress: () => navigate?.('EditProfile', { activeTab: 'notifications' }),
+                            },
+                            {
+                                id: 'premium-subscription',
+                                icon: 'star',
+                                iconColor: '#FFD700',
+                                title: 'Oxy+ Subscriptions',
+                                subtitle: user?.isPremium ? 'Manage your premium plan' : 'Upgrade to premium features',
+                                onPress: () => navigate?.('PremiumSubscription'),
+                            },
+                            ...(user?.isPremium ? [{
+                                id: 'billing-management',
+                                icon: 'card',
+                                iconColor: '#34C759',
+                                title: 'Billing Management',
+                                subtitle: 'Payment methods and invoices',
+                                onPress: () => toast.info('Billing management feature coming soon!'),
+                            }] : []),
+                        ]}
+                        theme={theme}
+                    />
+                </Section>
 
                 {/* Additional Accounts */}
                 {showMoreAccounts && (
-                    <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Additional Accounts{additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}</Text>
-
+                    <Section title={`Additional Accounts${additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}`} theme={theme}>
                         {loadingAdditionalAccounts ? (
                             <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
                                 <View style={styles.loadingContainer}>
@@ -347,192 +317,138 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 </View>
                             </View>
                         )}
-                    </View>
+                    </Section>
                 )}
 
                 {/* Account Management */}
                 {showMoreAccounts && (
-                    <View style={styles.section}>
-                        <Text style={styles.sectionTitle}>Account Management</Text>
-
-                        <TouchableOpacity
-                            style={[styles.settingItem, styles.firstSettingItem]}
-                            onPress={handleAddAccount}
-                        >
-                            <View style={styles.settingInfo}>
-                                <OxyIcon name="add" size={20} color="#007AFF" style={styles.settingIcon} />
-                                <View>
-                                    <Text style={styles.settingLabel}>Add another account</Text>
-                                    <Text style={styles.settingDescription}>Sign in with a different account</Text>
-                                </View>
-                            </View>
-                            <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                            style={[styles.settingItem, styles.lastSettingItem]}
-                            onPress={handleSignOutAll}
-                        >
-                            <View style={styles.settingInfo}>
-                                <OxyIcon name="log-out" size={20} color="#FF3B30" style={styles.settingIcon} />
-                                <View>
-                                    <Text style={styles.settingLabel}>Sign out of all accounts</Text>
-                                    <Text style={styles.settingDescription}>Remove all accounts from this device</Text>
-                                </View>
-                            </View>
-                            <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                        </TouchableOpacity>
-                    </View>
+                    <Section title="Account Management" theme={theme}>
+                        <GroupedSection
+                            items={[
+                                {
+                                    id: 'add-account',
+                                    icon: 'add',
+                                    iconColor: '#007AFF',
+                                    title: 'Add another account',
+                                    subtitle: 'Sign in with a different account',
+                                    onPress: handleAddAccount,
+                                },
+                                {
+                                    id: 'sign-out-all',
+                                    icon: 'log-out',
+                                    iconColor: '#FF3B30',
+                                    title: 'Sign out of all accounts',
+                                    subtitle: 'Remove all accounts from this device',
+                                    onPress: handleSignOutAll,
+                                },
+                            ]}
+                            theme={theme}
+                        />
+                    </Section>
                 )}
 
                 {/* Quick Actions */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Quick Actions</Text>
-
-                    <TouchableOpacity
-                        style={[styles.settingItem, styles.firstSettingItem]}
-                        onPress={() => setShowMoreAccounts(!showMoreAccounts)}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="people" size={20} color="#5856D6" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>
-                                    {showMoreAccounts ? 'Hide' : 'Show'} Account Switcher
-                                </Text>
-                                <Text style={styles.settingDescription}>
-                                    {showMoreAccounts
-                                        ? 'Hide account switcher'
-                                        : additionalAccountsData.length > 0
-                                            ? `Switch between ${additionalAccountsData.length + 1} accounts`
-                                            : loadingAdditionalAccounts
-                                                ? 'Loading additional accounts...'
-                                                : 'Manage multiple accounts'
-                                    }
-                                </Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.settingItem}
-                        onPress={() => toast.info('Download account data feature coming soon!')}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="download" size={20} color="#34C759" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Download My Data</Text>
-                                <Text style={styles.settingDescription}>Export your account information</Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.settingItem, styles.lastSettingItem]}
-                        onPress={() => toast.info('Delete account feature coming soon!')}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="trash" size={20} color="#FF3B30" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Delete Account</Text>
-                                <Text style={styles.settingDescription}>Permanently delete your account</Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-                </View>
+                <Section title="Quick Actions" theme={theme}>
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'account-switcher',
+                                icon: 'people',
+                                iconColor: '#5856D6',
+                                title: `${showMoreAccounts ? 'Hide' : 'Show'} Account Switcher`,
+                                subtitle: showMoreAccounts
+                                    ? 'Hide account switcher'
+                                    : additionalAccountsData.length > 0
+                                        ? `Switch between ${additionalAccountsData.length + 1} accounts`
+                                        : loadingAdditionalAccounts
+                                            ? 'Loading additional accounts...'
+                                            : 'Manage multiple accounts',
+                                onPress: () => setShowMoreAccounts(!showMoreAccounts),
+                            },
+                            {
+                                id: 'download-data',
+                                icon: 'download',
+                                iconColor: '#34C759',
+                                title: 'Download My Data',
+                                subtitle: 'Export your account information',
+                                onPress: () => toast.info('Download account data feature coming soon!'),
+                            },
+                            {
+                                id: 'delete-account',
+                                icon: 'trash',
+                                iconColor: '#FF3B30',
+                                title: 'Delete Account',
+                                subtitle: 'Permanently delete your account',
+                                onPress: () => toast.info('Delete account feature coming soon!'),
+                            },
+                        ]}
+                        theme={theme}
+                    />
+                </Section>
 
                 {/* Support & Settings */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Support & Settings</Text>
-
-                    <TouchableOpacity
-                        style={[styles.settingItem, styles.firstSettingItem]}
-                        onPress={() => toast.info('Account preferences coming soon!')}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="settings" size={20} color="#8E8E93" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Account Preferences</Text>
-                                <Text style={styles.settingDescription}>Customize your account experience</Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.settingItem}
-                        onPress={() => toast.info('Help & support feature coming soon!')}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="help-circle" size={20} color="#007AFF" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Help & Support</Text>
-                                <Text style={styles.settingDescription}>Get help with your account</Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.settingItem}
-                        onPress={() => toast.info('Connected apps feature coming soon!')}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="link" size={20} color="#32D74B" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Connected Apps</Text>
-                                <Text style={styles.settingDescription}>Manage third-party app access</Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.settingItem}
-                        onPress={() => toast.info('Privacy Policy feature coming soon!')}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="document-lock" size={20} color="#FF9F0A" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Privacy Policy</Text>
-                                <Text style={styles.settingDescription}>Learn about data protection</Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[styles.settingItem, styles.lastSettingItem]}
-                        onPress={() => toast.info('Terms of Service feature coming soon!')}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="document-text" size={20} color="#5856D6" style={styles.settingIcon} />
-                            <View>
-                                <Text style={styles.settingLabel}>Terms of Service</Text>
-                                <Text style={styles.settingDescription}>Read our terms and conditions</Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-                </View>
+                <Section title="Support & Settings" theme={theme}>
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'account-preferences',
+                                icon: 'settings',
+                                iconColor: '#8E8E93',
+                                title: 'Account Preferences',
+                                subtitle: 'Customize your account experience',
+                                onPress: () => toast.info('Account preferences coming soon!'),
+                            },
+                            {
+                                id: 'help-support',
+                                icon: 'help-circle',
+                                iconColor: '#007AFF',
+                                title: 'Help & Support',
+                                subtitle: 'Get help with your account',
+                                onPress: () => toast.info('Help & support feature coming soon!'),
+                            },
+                            {
+                                id: 'connected-apps',
+                                icon: 'link',
+                                iconColor: '#32D74B',
+                                title: 'Connected Apps',
+                                subtitle: 'Manage third-party app access',
+                                onPress: () => toast.info('Connected apps feature coming soon!'),
+                            },
+                            {
+                                id: 'privacy-policy',
+                                icon: 'document-lock',
+                                iconColor: '#FF9F0A',
+                                title: 'Privacy Policy',
+                                subtitle: 'Learn about data protection',
+                                onPress: () => toast.info('Privacy Policy feature coming soon!'),
+                            },
+                            {
+                                id: 'terms-of-service',
+                                icon: 'document-text',
+                                iconColor: '#5856D6',
+                                title: 'Terms of Service',
+                                subtitle: 'Read our terms and conditions',
+                                onPress: () => toast.info('Terms of Service feature coming soon!'),
+                            },
+                        ]}
+                        theme={theme}
+                    />
+                </Section>
 
                 {/* Sign Out */}
-                <View style={styles.section}>
-                    <TouchableOpacity
-                        style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem, styles.signOutButton]}
+                <Section theme={theme}>
+                    <GroupedItem
+                        icon="log-out"
+                        iconColor="#ff4757"
+                        title="Sign Out"
+                        subtitle="Sign out of your account"
+                        theme={theme}
                         onPress={confirmLogout}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="log-out" size={20} color="#ff4757" style={styles.settingIcon} />
-                            <View>
-                                <Text style={[styles.settingLabel, { color: '#ff4757' }]}>Sign Out</Text>
-                                <Text style={styles.settingDescription}>Sign out of your account</Text>
-                            </View>
-                        </View>
-                    </TouchableOpacity>
-                </View>
+                        isFirst={true}
+                        isLast={true}
+                        showChevron={false}
+                    />
+                </Section>
             </ScrollView>
         </View>
     );
@@ -543,19 +459,9 @@ const styles = StyleSheet.create({
         flex: 1,
         backgroundColor: '#f2f2f2',
     },
-
     content: {
         flex: 1,
         padding: 16,
-    },
-    section: {
-        marginBottom: 24,
-    },
-    sectionTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#333',
-        marginBottom: 12,
     },
     settingItem: {
         backgroundColor: '#fff',
@@ -623,10 +529,6 @@ const styles = StyleSheet.create({
         color: 'white',
         fontSize: 18,
         fontWeight: 'bold',
-    },
-    signOutButton: {
-        borderWidth: 1,
-        borderColor: '#ff4757',
     },
     message: {
         fontSize: 16,

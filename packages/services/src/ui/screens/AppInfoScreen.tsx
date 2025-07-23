@@ -10,6 +10,7 @@ import {
     Clipboard,
     SafeAreaView,
     ScrollView,
+    ActivityIndicator,
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
@@ -20,6 +21,7 @@ import { confirmAction } from '../utils/confirmAction';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import OxyServicesLogo from '../../assets/icons/OxyServices';
+import { Section, GroupedSection } from '../components';
 
 
 interface SystemInfo {
@@ -546,59 +548,35 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                 </View>
 
                 {/* Quick Actions */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Quick Actions</Text>
-
-                    <TouchableOpacity
-                        style={[styles.settingItem, styles.firstSettingItem]}
-                        onPress={handleCopyFullReport}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon name="copy" size={20} color="#007AFF" style={styles.settingIcon} />
-                            <View style={styles.settingDetails}>
-                                <Text style={styles.settingLabel}>Copy Full Report</Text>
-                                <Text style={styles.settingDescription}>
-                                    Copy complete application information to clipboard
-                                </Text>
-                            </View>
-                        </View>
-                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={[
-                            styles.settingItem,
-                            styles.lastSettingItem,
-                            isRunningSystemCheck && styles.disabledSettingItem
+                <Section title="Quick Actions" theme={theme}>
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'copy-full-report',
+                                icon: 'copy',
+                                iconColor: '#007AFF',
+                                title: 'Copy Full Report',
+                                subtitle: 'Copy complete application information to clipboard',
+                                onPress: handleCopyFullReport,
+                            },
+                            {
+                                id: 'run-system-check',
+                                icon: isRunningSystemCheck ? 'sync' : 'checkmark-circle',
+                                iconColor: isRunningSystemCheck ? '#FF9500' : '#34C759',
+                                title: isRunningSystemCheck ? 'Running System Check...' : 'Run System Check',
+                                subtitle: isRunningSystemCheck
+                                    ? 'Checking API, authentication, and platform status...'
+                                    : 'Verify application health and status',
+                                onPress: runSystemCheck,
+                                disabled: isRunningSystemCheck,
+                                customContent: isRunningSystemCheck ? (
+                                    <ActivityIndicator color="#FF9500" size="small" style={{ marginRight: 16 }} />
+                                ) : null,
+                            },
                         ]}
-                        onPress={runSystemCheck}
-                        disabled={isRunningSystemCheck}
-                    >
-                        <View style={styles.settingInfo}>
-                            <OxyIcon
-                                name={isRunningSystemCheck ? "sync" : "checkmark-circle"}
-                                size={20}
-                                color={isRunningSystemCheck ? "#FF9500" : "#34C759"}
-                                style={[
-                                    styles.settingIcon,
-                                    isRunningSystemCheck && styles.spinningIcon
-                                ]}
-                            />
-                            <View style={styles.settingDetails}>
-                                <Text style={styles.settingLabel}>
-                                    {isRunningSystemCheck ? 'Running System Check...' : 'Run System Check'}
-                                </Text>
-                                <Text style={styles.settingDescription}>
-                                    {isRunningSystemCheck
-                                        ? 'Checking API, authentication, and platform status...'
-                                        : 'Verify application health and status'
-                                    }
-                                </Text>
-                            </View>
-                        </View>
-                        {!isRunningSystemCheck && <OxyIcon name="chevron-forward" size={16} color="#ccc" />}
-                    </TouchableOpacity>
-                </View>
+                        theme={theme}
+                    />
+                </Section>
             </ScrollView>
         </View>
     );
@@ -683,13 +661,6 @@ const styles = StyleSheet.create({
     settingDescription: {
         fontSize: 14,
         color: '#999',
-    },
-    disabledSettingItem: {
-        opacity: 0.6,
-    },
-    spinningIcon: {
-        // Note: Animation would need to be implemented with Animated API
-        // For now, just showing the sync icon to indicate loading
     },
 });
 
