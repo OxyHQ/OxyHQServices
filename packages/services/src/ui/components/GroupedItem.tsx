@@ -44,7 +44,7 @@ const GroupedItem: React.FC<GroupedItemProps> = ({
     const isDarkTheme = theme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
     const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#FFFFFF';
-    const selectedBackgroundColor = isDarkTheme ? '#1a1a1a' : '#f0f0f0';
+    const selectedBackgroundColor = selected ? `${iconColor}15` : secondaryBackgroundColor;
 
     const itemStyles = [
         styles.groupedItem,

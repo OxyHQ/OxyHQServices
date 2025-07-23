@@ -417,11 +417,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const renderEditingField = (type: string) => {
         if (type === 'displayName') {
             return (
-                <View style={styles.editingFieldContainer}>
+                <View style={[styles.editingFieldContainer, { backgroundColor: themeStyles.backgroundColor }]}>
                     <View style={styles.editingFieldContent}>
                         <View style={styles.newValueSection}>
                             <View style={styles.editingFieldHeader}>
-                                <Text style={styles.editingFieldLabel}>Edit Display Name</Text>
+                                <Text style={[styles.editingFieldLabel, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>Edit Display Name</Text>
                             </View>
                             <View style={{ flexDirection: 'row', gap: 12 }}>
                                 <View style={{ flex: 1 }}>
@@ -456,11 +456,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
         if (type === 'location') {
             return (
-                <View style={styles.editingFieldContainer}>
+                <View style={[styles.editingFieldContainer, { backgroundColor: themeStyles.backgroundColor }]}>
                     <View style={styles.editingFieldContent}>
                         <View style={styles.newValueSection}>
                             <View style={styles.editingFieldHeader}>
-                                <Text style={styles.editingFieldLabel}>Manage Your Locations</Text>
+                                <Text style={[styles.editingFieldLabel, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>Manage Your Locations</Text>
                             </View>
 
                             {/* Add new location section */}
@@ -600,11 +600,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
         if (type === 'links') {
             return (
-                <View style={styles.editingFieldContainer}>
+                <View style={[styles.editingFieldContainer, { backgroundColor: themeStyles.backgroundColor }]}>
                     <View style={styles.editingFieldContent}>
                         <View style={styles.newValueSection}>
                             <View style={styles.editingFieldHeader}>
-                                <Text style={styles.editingFieldLabel}>Manage Your Links</Text>
+                                <Text style={[styles.editingFieldLabel, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>Manage Your Links</Text>
                             </View>
 
                             <GroupedSection
@@ -747,11 +747,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         };
 
         return (
-            <View style={styles.editingFieldContainer}>
+            <View style={[styles.editingFieldContainer, { backgroundColor: themeStyles.backgroundColor }]}>
                 <View style={styles.editingFieldContent}>
                     <View style={styles.newValueSection}>
                         <View style={styles.editingFieldHeader}>
-                            <Text style={styles.editingFieldLabel}>
+                            <Text style={[styles.editingFieldLabel, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>
                                 {`Enter ${config.label.toLowerCase()}:`}
                             </Text>
                         </View>
