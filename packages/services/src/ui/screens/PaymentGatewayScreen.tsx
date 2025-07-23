@@ -25,7 +25,7 @@ import { FAIRWalletIcon } from '../components/icon';
 import { toast } from 'sonner';
 import QRCode from 'react-native-qrcode-svg';
 import * as RNIap from 'react-native-iap';
-import { Header, GroupedSection } from '../components';
+import { GroupedSection } from '../components';
 
 // Restrict payment methods to Card, Oxy Pay, and FairCoin (QR)
 const PAYMENT_METHODS = [
@@ -428,27 +428,52 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         >
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Payment Summary</Text>
-                <Text style={{ color: colors.secondaryText, fontSize: 15, marginBottom: 16 }}>You're about to pay for the following:</Text>
 
-                {paymentItems && paymentItems.length > 0 ? (
-                    <GroupedSection
-                        items={paymentItems.map((item, idx) => ({
-                            id: `item-${idx}`,
-                            icon: getItemTypeIcon(item.type, colors.primary).props.name,
-                            iconColor: colors.primary,
-                            title: `${item.type === 'product' && item.quantity ? `${item.quantity} × ` : ''}${item.name}${item.type === 'subscription' && item.period ? ` (${item.period})` : ''}`,
-                            subtitle: item.description || `${(item.currency ? (CURRENCY_SYMBOLS[item.currency.toUpperCase()] || item.currency) : currencySymbol)} ${item.price * (item.quantity ?? 1)}`,
-                            customContent: (
-                                <Text style={{ color: colors.text, fontWeight: '600', fontSize: 16 }}>
-                                    {(item.currency ? (CURRENCY_SYMBOLS[item.currency.toUpperCase()] || item.currency) : currencySymbol)} {item.price * (item.quantity ?? 1)}
-                                </Text>
-                            ),
-                        }))}
-                        theme={theme}
-                    />
-                ) : (
-                    <Text style={{ color: colors.text }}>{description}</Text>
-                )}
+                <View style={styles.summaryCard}>
+                    <View style={styles.summaryCardContent}>
+                        <Ionicons name="receipt-outline" size={64} color={colors.primary} style={styles.summaryCardIcon} />
+                        <Text style={styles.summaryCardMainTitle}>
+                            {paymentItems && paymentItems.length > 0 ? 'Order Summary' : 'Payment'}
+                        </Text>
+                        <Text style={styles.summaryCardSubtitle}>
+                            {paymentItems && paymentItems.length > 0 ? 'Review your payment details' : 'Complete your payment'}
+                        </Text>
+
+                        {paymentItems && paymentItems.length > 0 ? (
+                            <>
+                                <View style={styles.summaryCardItems}>
+                                    <GroupedSection
+                                        items={paymentItems.map((item, idx) => ({
+                                            id: `item-${idx}`,
+                                            icon: getItemTypeIcon(item.type, colors.primary).props.name,
+                                            iconColor: colors.primary,
+                                            title: `${item.type === 'product' && item.quantity ? `${item.quantity} × ` : ''}${item.name}${item.type === 'subscription' && item.period ? ` (${item.period})` : ''}`,
+                                            subtitle: item.description || `${(item.currency ? (CURRENCY_SYMBOLS[item.currency.toUpperCase()] || item.currency) : currencySymbol)} ${item.price * (item.quantity ?? 1)}`,
+                                            customContent: (
+                                                <Text style={styles.summaryItemPrice}>
+                                                    {(item.currency ? (CURRENCY_SYMBOLS[item.currency.toUpperCase()] || item.currency) : currencySymbol)} {item.price * (item.quantity ?? 1)}
+                                                </Text>
+                                            ),
+                                        }))}
+                                        theme={theme}
+                                    />
+                                </View>
+                                <View style={{ height: 18 }} />
+                                <Text style={styles.summaryCardTotal}>Total: {(currencySymbol)} {amount}</Text>
+                            </>
+                        ) : (
+                            <>
+                                <View style={styles.summaryCardAmount}>
+                                    <Text style={styles.summaryCardAmountLabel}>Amount to Pay</Text>
+                                    <Text style={styles.summaryCardAmountValue}>{(currencySymbol)} {amount}</Text>
+                                    {description && (
+                                        <Text style={styles.summaryCardAmountDescription}>{description}</Text>
+                                    )}
+                                </View>
+                            </>
+                        )}
+                    </View>
+                </View>
             </View>
 
             <GroupedPillButtons
@@ -532,82 +557,105 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
             ]
         }]}
         >
-            <View style={paymentMethod === 'faircoin' ? { backgroundColor: '#f6fff0', paddingVertical: 24, paddingHorizontal: 0 } : undefined}>
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>
+                    {paymentMethod === 'card' ? 'Card Details' :
+                        paymentMethod === 'oxy' ? 'Oxy Pay' :
+                            paymentMethod === 'faircoin' ? 'FairCoin Payment' : 'Payment Details'}
+                </Text>
+
                 {paymentMethod === 'card' && (
-                    <>
-                        <View style={styles.cardRowInfo}>
-                            <Ionicons name="card-outline" size={24} color={colors.primary} style={styles.cardRowIcon} />
-                            <Text style={styles.cardRowText}>We accept Visa, Mastercard, and more</Text>
+                    <View style={styles.cardPaymentCard}>
+                        <View style={styles.cardPaymentContent}>
+                            <Ionicons name="card-outline" size={64} color={colors.primary} style={styles.cardPaymentIcon} />
+                            <Text style={styles.cardPaymentMainTitle}>Credit Card</Text>
+                            <Text style={styles.cardPaymentSubtitle}>Enter your card details securely</Text>
+
+                            <View style={styles.cardPaymentFields}>
+                                <View style={styles.cardRowInfo}>
+                                    <Ionicons name="card-outline" size={24} color={colors.primary} style={styles.cardRowIcon} />
+                                    <Text style={styles.cardRowText}>We accept Visa, Mastercard, and more</Text>
+                                </View>
+                                <TextField
+                                    value={cardDetails.number}
+                                    onChangeText={text => setCardDetails({ ...cardDetails, number: text })}
+                                    placeholder="Card Number"
+                                    keyboardType="numeric"
+                                    style={styles.cardFieldContainer}
+                                    leading={<Ionicons name="card-outline" size={18} color={colors.primary} />}
+                                />
+                                <View style={styles.cardFieldRow}>
+                                    <TextField
+                                        value={cardDetails.expiry}
+                                        onChangeText={text => setCardDetails({ ...cardDetails, expiry: text })}
+                                        placeholder="MM/YY"
+                                        style={styles.cardFieldHalfLeft}
+                                        leading={<Ionicons name="calendar-outline" size={16} color={colors.primary} />}
+                                    />
+                                    <TextField
+                                        value={cardDetails.cvv}
+                                        onChangeText={text => setCardDetails({ ...cardDetails, cvv: text })}
+                                        placeholder="CVV"
+                                        keyboardType="numeric"
+                                        style={styles.cardFieldHalfRight}
+                                        leading={<Ionicons name="lock-closed-outline" size={16} color={colors.primary} />}
+                                    />
+                                </View>
+                            </View>
+
+                            <View style={{ height: 18 }} />
+                            <Text style={styles.cardPaymentWaiting}>Ready to process payment...</Text>
                         </View>
-                        <TextField
-                            value={cardDetails.number}
-                            onChangeText={text => setCardDetails({ ...cardDetails, number: text })}
-                            placeholder="Card Number"
-                            keyboardType="numeric"
-                            style={styles.cardFieldContainer}
-                            leading={<Ionicons name="card-outline" size={18} color={colors.primary} />}
-                        />
-                        <View style={styles.cardFieldRow}>
-                            <TextField
-                                value={cardDetails.expiry}
-                                onChangeText={text => setCardDetails({ ...cardDetails, expiry: text })}
-                                placeholder="MM/YY"
-                                style={styles.cardFieldHalfLeft}
-                                leading={<Ionicons name="calendar-outline" size={16} color={colors.primary} />}
-                            />
-                            <TextField
-                                value={cardDetails.cvv}
-                                onChangeText={text => setCardDetails({ ...cardDetails, cvv: text })}
-                                placeholder="CVV"
-                                keyboardType="numeric"
-                                style={styles.cardFieldHalfRight}
-                                leading={<Ionicons name="lock-closed-outline" size={16} color={colors.primary} />}
-                            />
-                        </View>
-                    </>
+                    </View>
                 )}
                 {paymentMethod === 'oxy' && (
-                    <View style={styles.oxyPayContainer}>
-                        <Ionicons name="wallet-outline" size={48} color={colors.primary} style={styles.oxyPayIcon} />
-                        <Text style={styles.oxyPayTitle}>Pay with Oxy Pay</Text>
-                        <Text style={styles.oxyPaySubtitle}>(Oxy Pay is your in-app wallet. Make sure you have enough balance.)</Text>
-                        <View style={styles.oxyPayBalanceBox}>
-                            <Text style={styles.oxyPayBalanceText}>Balance: ⊜ 123.45</Text>
+                    <View style={styles.oxyPayCard}>
+                        <View style={styles.oxyPayContent}>
+                            <Ionicons name="wallet-outline" size={64} color={colors.primary} style={styles.oxyPayIcon} />
+                            <Text style={styles.oxyPayMainTitle}>Oxy Pay</Text>
+                            <Text style={styles.oxyPaySubtitle}>Pay with your in-app wallet</Text>
+                            <View style={styles.oxyPayBalanceBox}>
+                                <Text style={styles.oxyPayBalanceText}>Balance: ⊜ 123.45</Text>
+                            </View>
+                            <View style={{ height: 18 }} />
+                            <Text style={styles.oxyPayWaiting}>Ready to process payment...</Text>
                         </View>
                     </View>
                 )}
                 {paymentMethod === 'faircoin' && (
-                    <View style={{ alignItems: 'center', width: '100%' }}>
-                        <FAIRWalletIcon size={64} style={[styles.faircoinIcon, { shadowColor: '#1b1f0a', shadowOpacity: 0.18, shadowRadius: 12, elevation: 6, marginBottom: 12 }]} />
-                        <Text style={{ fontFamily: fontFamilies.phuduBold, fontWeight: 'bold', fontSize: 28, color: '#1b1f0a', marginBottom: 2, textAlign: 'center', letterSpacing: 0.5 }}>FAIRWallet</Text>
-                        <Text style={{ color: '#1b1f0a', fontWeight: '700', fontSize: 17, marginBottom: 18, textAlign: 'center', letterSpacing: 0.2 }}>Pay with FairCoin</Text>
-                        {!isMobile ? (
-                            <>
-                                <Text style={{ color: '#1b1f0a', fontWeight: '600', fontSize: 15, marginBottom: 8 }}>Scan to Pay</Text>
-                                <View style={[styles.faircoinQRBox, { width: qrSize, height: qrSize, borderColor: '#9ffb50', borderWidth: 3, position: 'relative', backgroundColor: '#fff', boxShadow: '0 2px 12px #9ffb5040', justifyContent: 'center', alignItems: 'center' }]}>
-                                    <QRCode value={faircoinAddress} size={qrSize - 32} />
-                                    <View style={{ position: 'absolute', bottom: 8, right: 8 }}>
-                                        <FAIRWalletIcon size={28} />
+                    <View style={styles.faircoinCard}>
+                        <View style={styles.faircoinContent}>
+                            <FAIRWalletIcon size={64} style={styles.faircoinIcon} />
+                            <Text style={styles.faircoinMainTitle}>FAIRWallet</Text>
+                            <Text style={styles.faircoinSubtitle}>Pay with FairCoin</Text>
+                            {!isMobile ? (
+                                <>
+                                    <Text style={styles.faircoinScanText}>Scan to Pay</Text>
+                                    <View style={styles.faircoinQRCard}>
+                                        <QRCode value={faircoinAddress} size={qrSize - 32} />
+                                        <View style={styles.faircoinQRBadge}>
+                                            <FAIRWalletIcon size={28} />
+                                        </View>
                                     </View>
-                                </View>
-                            </>
-                        ) : (
-                            <>
-                                <Text style={styles.faircoinTitle}>Use the options below to pay with FAIRWallet</Text>
-                                <Text style={styles.faircoinAddress}>{faircoinAddress}</Text>
-                                <TouchableOpacity style={[styles.faircoinButton, { backgroundColor: '#9ffb50', borderRadius: 18, marginTop: 12, width: '90%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]} onPress={handleOpenFairWallet}>
-                                    <FAIRWalletIcon size={20} style={{ marginRight: 8 }} />
-                                    <Text style={[styles.faircoinButtonText, { color: '#1b1f0a', fontWeight: 'bold', fontSize: 16 }]}>Open in FAIRWallet</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity style={[styles.faircoinButton, { backgroundColor: '#9ffb50', borderRadius: 18, marginTop: 10, width: '90%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]} onPress={handleCopyAddress}>
-                                    <FAIRWalletIcon size={20} style={{ marginRight: 8 }} />
-                                    <Text style={[styles.faircoinButtonText, { color: '#1b1f0a', fontWeight: 'bold', fontSize: 16 }]}>Copy Address</Text>
-                                </TouchableOpacity>
-                            </>
-                        )}
-                        <View style={{ height: 18 }} />
-                        <Text style={styles.faircoinWaiting}>Waiting for payment...</Text>
-                        <Text style={styles.faircoinPlaceholder}>(This is a placeholder. Integrate with a QR code generator for production.)</Text>
+                                </>
+                            ) : (
+                                <>
+                                    <Text style={styles.faircoinTitle}>Use the options below to pay with FAIRWallet</Text>
+                                    <Text style={styles.faircoinAddress}>{faircoinAddress}</Text>
+                                    <TouchableOpacity style={[styles.faircoinButton, { backgroundColor: '#9ffb50', borderRadius: 18, marginTop: 12, width: '90%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]} onPress={handleOpenFairWallet}>
+                                        <FAIRWalletIcon size={20} style={{ marginRight: 8 }} />
+                                        <Text style={[styles.faircoinButtonText, { color: '#1b1f0a', fontWeight: 'bold', fontSize: 16 }]}>Open in FAIRWallet</Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity style={[styles.faircoinButton, { backgroundColor: '#9ffb50', borderRadius: 18, marginTop: 10, width: '90%', flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }]} onPress={handleCopyAddress}>
+                                        <FAIRWalletIcon size={20} style={{ marginRight: 8 }} />
+                                        <Text style={[styles.faircoinButtonText, { color: '#1b1f0a', fontWeight: 'bold', fontSize: 16 }]}>Copy Address</Text>
+                                    </TouchableOpacity>
+                                </>
+                            )}
+                            <View style={{ height: 18 }} />
+                            <Text style={styles.faircoinWaiting}>Waiting for payment...</Text>
+                            <Text style={styles.faircoinPlaceholder}>(This is a placeholder. Integrate with a QR code generator for production.)</Text>
+                        </View>
                     </View>
                 )}
             </View>
@@ -725,12 +773,18 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
             ]
         }]}
         >
-            <View style={styles.successContainer}>
-                <View style={styles.successIconBox}>
-                    <Ionicons name="checkmark-circle" size={64} color={colors.success || '#4BB543'} />
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Payment Complete</Text>
+
+                <View style={styles.successCard}>
+                    <View style={styles.successContent}>
+                        <Ionicons name="checkmark-circle" size={64} color={colors.success || '#4BB543'} style={styles.successIcon} />
+                        <Text style={styles.successMainTitle}>Payment Successful!</Text>
+                        <Text style={styles.successSubtitle}>Thank you for your payment.</Text>
+                        <View style={{ height: 18 }} />
+                        <Text style={styles.successMessage}>Your transaction has been processed successfully.</Text>
+                    </View>
                 </View>
-                <Text style={styles.successTitle}>Payment Successful!</Text>
-                <Text style={styles.successSubtitle}>Thank you for your payment.</Text>
             </View>
             <GroupedPillButtons
                 buttons={[
@@ -758,21 +812,38 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         >
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Google Play Products</Text>
-                <Text style={{ color: colors.text, fontWeight: '600', fontSize: 16, marginBottom: 12 }}>Select a product to purchase:</Text>
-                {iapLoading && <Text style={{ color: colors.secondaryText }}>Loading products...</Text>}
-                {iapError && <Text style={{ color: 'red' }}>{iapError}</Text>}
-                {iapProducts.map(product => (
-                    <TouchableOpacity
-                        key={product.productId}
-                        style={[styles.paymentMethodButton, { marginBottom: 8 }]}
-                        onPress={() => handleIapBuy(product.productId)}
-                        disabled={iapLoading}
-                    >
-                        <Text style={{ color: colors.text, fontSize: 16 }}>{product.title} - {product.localizedPrice}</Text>
-                    </TouchableOpacity>
-                ))}
+
+                {iapLoading && (
+                    <View style={styles.loadingContainer}>
+                        <Text style={styles.loadingText}>Loading products...</Text>
+                    </View>
+                )}
+
+                {iapError && (
+                    <View style={styles.errorContainer}>
+                        <Text style={styles.errorText}>{iapError}</Text>
+                    </View>
+                )}
+
+                {!iapLoading && !iapError && (
+                    <GroupedSection
+                        items={iapProducts.map(product => ({
+                            id: product.productId,
+                            icon: 'pricetag',
+                            iconColor: colors.primary,
+                            title: product.title,
+                            subtitle: product.localizedPrice,
+                            onPress: () => handleIapBuy(product.productId),
+                            disabled: iapLoading,
+                        }))}
+                        theme={theme}
+                    />
+                )}
+
                 {iapPurchase && (
-                    <Text style={{ color: colors.success, marginTop: 10 }}>Purchase successful!</Text>
+                    <View style={styles.iapSuccessContainer}>
+                        <Text style={styles.iapSuccessText}>Purchase successful!</Text>
+                    </View>
                 )}
             </View>
             <GroupedPillButtons
@@ -814,18 +885,6 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
 
     return (
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
-            {/* Header */}
-            <Header
-                title={stepTitles[currentStep]}
-                theme={theme}
-                onBack={onClose || undefined}
-                rightAction={{
-                    icon: 'close',
-                    onPress: onClose || (() => { }),
-                }}
-                elevation="subtle"
-            />
-
             {/* Content */}
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 {renderCurrentStep()}
@@ -1002,6 +1061,33 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         color: colors.primary,
         fontWeight: '600',
     },
+    oxyPayCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 24,
+        marginBottom: 24,
+        alignItems: 'center',
+        width: '100%',
+    },
+    oxyPayContent: {
+        alignItems: 'center',
+        width: '100%',
+    },
+    oxyPayMainTitle: {
+        fontFamily: fontFamilies.phuduBold,
+        fontWeight: 'bold',
+        fontSize: 28,
+        color: colors.text,
+        marginBottom: 2,
+        textAlign: 'center',
+        letterSpacing: 0.5,
+    },
+    oxyPayWaiting: {
+        fontSize: 14,
+        color: colors.secondaryText,
+        textAlign: 'center',
+        marginBottom: 8,
+    },
     faircoinContainer: {
         alignItems: 'center',
         marginBottom: 24,
@@ -1009,6 +1095,60 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
     },
     faircoinIcon: {
         marginBottom: 8,
+    },
+    faircoinMainTitle: {
+        fontFamily: fontFamilies.phuduBold,
+        fontWeight: 'bold',
+        fontSize: 28,
+        color: '#1b1f0a',
+        marginBottom: 2,
+        textAlign: 'center',
+        letterSpacing: 0.5,
+    },
+    faircoinSubtitle: {
+        color: '#1b1f0a',
+        fontWeight: '700',
+        fontSize: 17,
+        marginBottom: 18,
+        textAlign: 'center',
+        letterSpacing: 0.2,
+    },
+    faircoinScanText: {
+        color: '#1b1f0a',
+        fontWeight: '600',
+        fontSize: 15,
+        marginBottom: 8,
+    },
+    faircoinQRCard: {
+        width: 200,
+        height: 200,
+        backgroundColor: '#fff',
+        borderRadius: 32,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 16,
+        padding: 16,
+        borderWidth: 3,
+        borderColor: '#9ffb50',
+        shadowColor: '#9ffb50',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.25,
+        shadowRadius: 12,
+        elevation: 8,
+        position: 'relative',
+    },
+    faircoinQRBadge: {
+        position: 'absolute',
+        bottom: 12,
+        right: 12,
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 4,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
     },
     faircoinTitle: {
         fontSize: 16,
@@ -1042,28 +1182,42 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         color: colors.secondaryText,
         textAlign: 'center',
     },
-
-    successContainer: {
-        alignItems: 'center',
-        justifyContent: 'center',
+    faircoinCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 24,
         marginBottom: 24,
-        width: '100%',
-    },
-    successIconBox: {
-        backgroundColor: colors.success + '22',
-        borderRadius: 48,
-        padding: 18,
-        marginBottom: 12,
         alignItems: 'center',
-        justifyContent: 'center',
-    },
-    successTitle: {
-        fontSize: 26,
-        fontWeight: '700',
-        color: colors.success || '#4BB543',
-        marginBottom: 8,
-        textAlign: 'center',
         width: '100%',
+    },
+    faircoinContent: {
+        alignItems: 'center',
+        width: '100%',
+    },
+
+    successCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 24,
+        marginBottom: 24,
+        alignItems: 'center',
+        width: '100%',
+    },
+    successContent: {
+        alignItems: 'center',
+        width: '100%',
+    },
+    successIcon: {
+        marginBottom: 8,
+    },
+    successMainTitle: {
+        fontFamily: fontFamilies.phuduBold,
+        fontWeight: 'bold',
+        fontSize: 28,
+        color: colors.success || '#4BB543',
+        marginBottom: 2,
+        textAlign: 'center',
+        letterSpacing: 0.5,
     },
     successSubtitle: {
         fontSize: 16,
@@ -1071,6 +1225,12 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         textAlign: 'center',
         marginBottom: 8,
         width: '100%',
+    },
+    successMessage: {
+        fontSize: 14,
+        color: colors.secondaryText,
+        textAlign: 'center',
+        marginBottom: 8,
     },
     methodCard: {
         flexDirection: 'row',
@@ -1207,6 +1367,183 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         textAlign: 'center',
         marginTop: 6,
         marginBottom: 2,
+    },
+    // Google Play step styles
+    loadingContainer: {
+        padding: 16,
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        marginBottom: 16,
+    },
+    loadingText: {
+        color: colors.secondaryText,
+        fontSize: 16,
+        fontStyle: 'italic',
+    },
+    errorContainer: {
+        padding: 16,
+        backgroundColor: '#ffebee',
+        borderRadius: 12,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#ffcdd2',
+    },
+    errorText: {
+        color: '#d32f2f',
+        fontSize: 14,
+        textAlign: 'center',
+    },
+    iapSuccessContainer: {
+        padding: 16,
+        backgroundColor: '#e8f5e8',
+        borderRadius: 12,
+        marginTop: 16,
+        borderWidth: 1,
+        borderColor: '#c8e6c9',
+    },
+    iapSuccessText: {
+        color: colors.success || '#4BB543',
+        fontSize: 16,
+        textAlign: 'center',
+        fontWeight: '600',
+    },
+    // Summary step styles
+    summaryDescriptionContainer: {
+        marginBottom: 16,
+    },
+    summaryDescriptionText: {
+        color: colors.secondaryText,
+        fontSize: 15,
+        lineHeight: 20,
+    },
+    summaryItemPrice: {
+        color: colors.text,
+        fontWeight: '600',
+        fontSize: 16,
+    },
+    summaryFallbackContainer: {
+        padding: 16,
+        backgroundColor: '#fff',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    summaryFallbackText: {
+        color: colors.text,
+        fontSize: 16,
+        textAlign: 'center',
+    },
+    // Card payment styles
+    cardPaymentCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 24,
+        marginBottom: 24,
+        alignItems: 'center',
+        width: '100%',
+    },
+    cardPaymentContent: {
+        alignItems: 'center',
+        width: '100%',
+    },
+    cardPaymentIcon: {
+        marginBottom: 8,
+    },
+    cardPaymentMainTitle: {
+        fontFamily: fontFamilies.phuduBold,
+        fontWeight: 'bold',
+        fontSize: 28,
+        color: colors.text,
+        marginBottom: 2,
+        textAlign: 'center',
+        letterSpacing: 0.5,
+    },
+    cardPaymentSubtitle: {
+        fontSize: 16,
+        color: colors.secondaryText,
+        textAlign: 'center',
+        marginBottom: 24,
+        width: '100%',
+    },
+    cardPaymentFields: {
+        width: '100%',
+        marginBottom: 16,
+    },
+    cardPaymentWaiting: {
+        fontSize: 14,
+        color: colors.secondaryText,
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    // Summary card styles
+    summaryCard: {
+        backgroundColor: '#fff',
+        borderRadius: 16,
+        padding: 24,
+        marginBottom: 24,
+        alignItems: 'center',
+        width: '100%',
+    },
+    summaryCardContent: {
+        alignItems: 'center',
+        width: '100%',
+    },
+    summaryCardIcon: {
+        marginBottom: 8,
+    },
+    summaryCardMainTitle: {
+        fontFamily: fontFamilies.phuduBold,
+        fontWeight: 'bold',
+        fontSize: 28,
+        color: colors.text,
+        marginBottom: 2,
+        textAlign: 'center',
+        letterSpacing: 0.5,
+    },
+    summaryCardSubtitle: {
+        fontSize: 16,
+        color: colors.secondaryText,
+        textAlign: 'center',
+        marginBottom: 24,
+        width: '100%',
+    },
+    summaryCardItems: {
+        width: '100%',
+        marginBottom: 16,
+    },
+    summaryCardTotal: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: colors.text,
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    // Simple amount styles
+    summaryCardAmount: {
+        alignItems: 'center',
+        width: '100%',
+        marginBottom: 16,
+    },
+    summaryCardAmountLabel: {
+        fontSize: 16,
+        color: colors.secondaryText,
+        textAlign: 'center',
+        marginBottom: 8,
+    },
+    summaryCardAmountValue: {
+        fontSize: 32,
+        fontWeight: 'bold',
+        color: colors.text,
+        textAlign: 'center',
+        marginBottom: 8,
+        fontFamily: fontFamilies.phuduBold,
+    },
+    summaryCardAmountDescription: {
+        fontSize: 14,
+        color: colors.secondaryText,
+        textAlign: 'center',
+        lineHeight: 20,
     },
 });
 
