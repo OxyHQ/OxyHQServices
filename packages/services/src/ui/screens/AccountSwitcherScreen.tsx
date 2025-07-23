@@ -91,7 +91,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         if (isAuthenticated && activeSessionId) {
             refreshSessions();
         }
-    }, [isAuthenticated, activeSessionId, refreshSessions]);
+    }, [isAuthenticated, activeSessionId]);
 
     // Load user profiles for sessions
     useEffect(() => {

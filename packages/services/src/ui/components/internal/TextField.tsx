@@ -423,7 +423,6 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                 position: 'relative',
                 ...Platform.select({
                     web: {
-                        outline: 'none',
                         outlineStyle: 'none',
                         outlineWidth: 0,
                         outlineOffset: 0,
@@ -444,7 +443,6 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                 ...Platform.select({
                     web: {
                         border: 'none',
-                        outline: 'none',
                         outlineStyle: 'none',
                         outlineWidth: 0,
                         outlineOffset: 0,

@@ -278,25 +278,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
   }, [storage, oxyServices, keys, onAuthStateChange]);
 
-  // Effect to restore token on app load or session switch
-  useEffect(() => {
-    const restoreToken = async () => {
-      if (activeSessionId && oxyServices) {
-        try {
-          await oxyServices.getTokenBySession(activeSessionId);
-          setTokenReady(true);
-        } catch (err) {
-          // If token restoration fails, force logout
-          await logout();
-          setTokenReady(false);
-        }
-      } else {
-        setTokenReady(true); // No session, so token is not needed
-      }
-    };
-    restoreToken();
-    // Only run when activeSessionId or oxyServices changes
-  }, [activeSessionId, oxyServices]);
+
 
   // Remove invalid session
   const removeInvalidSession = useCallback(async (sessionId: string): Promise<void> => {
@@ -376,7 +358,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }, [oxyServices, onAuthStateChange, loginSuccess, saveActiveSessionId]);
 
   // Secure login method
-  const login = async (username: string, password: string, deviceName?: string): Promise<User> => {
+  const login = useCallback(async (username: string, password: string, deviceName?: string): Promise<User> => {
     if (!storage) throw new Error('Storage not initialized');
     useAuthStore.setState({ isLoading: true, error: null });
 
@@ -458,10 +440,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     } finally {
       useAuthStore.setState({ isLoading: false });
     }
-  };
+  }, [storage, oxyServices, sessions, activeSessionId, saveSessionsToStorage, saveActiveSessionId, loginSuccess, setMinimalUser, onAuthStateChange, loginFailure]);
 
   // Logout method
-  const logout = async (targetSessionId?: string): Promise<void> => {
+  const logout = useCallback(async (targetSessionId?: string): Promise<void> => {
     if (!activeSessionId) return;
 
     try {
@@ -494,10 +476,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       console.error('Logout error:', error);
       useAuthStore.setState({ error: 'Logout failed' });
     }
-  };
+  }, [activeSessionId, oxyServices, sessions, saveSessionsToStorage, switchToSession, logoutStore, setMinimalUser, storage, keys.activeSessionId, onAuthStateChange]);
 
   // Logout all sessions
-  const logoutAll = async (): Promise<void> => {
+  const logoutAll = useCallback(async (): Promise<void> => {
     console.log('logoutAll called with activeSessionId:', activeSessionId);
 
     if (!activeSessionId) {
@@ -534,10 +516,30 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       useAuthStore.setState({ error: `Logout all failed: ${error instanceof Error ? error.message : 'Unknown error'}` });
       throw error;
     }
-  };
+  }, [activeSessionId, oxyServices, logoutStore, setMinimalUser, clearAllStorage, onAuthStateChange]);
+
+  // Effect to restore token on app load or session switch
+  useEffect(() => {
+    const restoreToken = async () => {
+      if (activeSessionId && oxyServices) {
+        try {
+          await oxyServices.getTokenBySession(activeSessionId);
+          setTokenReady(true);
+        } catch (err) {
+          // If token restoration fails, force logout
+          await logout();
+          setTokenReady(false);
+        }
+      } else {
+        setTokenReady(true); // No session, so token is not needed
+      }
+    };
+    restoreToken();
+    // Only run when activeSessionId or oxyServices changes
+  }, [activeSessionId, oxyServices, logout]);
 
   // Sign up method
-  const signUp = async (username: string, email: string, password: string): Promise<User> => {
+  const signUp = useCallback(async (username: string, email: string, password: string): Promise<User> => {
     if (!storage) throw new Error('Storage not initialized');
 
     useAuthStore.setState({ isLoading: true, error: null });
@@ -559,20 +561,20 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     } finally {
       useAuthStore.setState({ isLoading: false });
     }
-  };
+  }, [storage, oxyServices, login, loginFailure]);
 
   // Switch session method
-  const switchSession = async (sessionId: string): Promise<void> => {
+  const switchSession = useCallback(async (sessionId: string): Promise<void> => {
     await switchToSession(sessionId);
-  };
+  }, [switchToSession]);
 
   // Remove session method
-  const removeSession = async (sessionId: string): Promise<void> => {
+  const removeSession = useCallback(async (sessionId: string): Promise<void> => {
     await logout(sessionId);
-  };
+  }, [logout]);
 
   // Refresh sessions method
-  const refreshSessions = async (): Promise<void> => {
+  const refreshSessions = useCallback(async (): Promise<void> => {
     console.log('refreshSessions called with activeSessionId:', activeSessionId);
 
     if (!activeSessionId) {
@@ -632,10 +634,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         onAuthStateChange(null);
       }
     }
-  };
+  }, [activeSessionId, oxyServices, user?.id, sessions, saveSessionsToStorage, switchToSession, logoutStore, setMinimalUser, clearAllStorage, onAuthStateChange]);
 
   // Device management methods
-  const getDeviceSessions = async (): Promise<any[]> => {
+  const getDeviceSessions = useCallback(async (): Promise<any[]> => {
     if (!activeSessionId) throw new Error('No active session');
 
     try {
@@ -644,9 +646,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       console.error('Get device sessions error:', error);
       throw error;
     }
-  };
+  }, [activeSessionId, oxyServices]);
 
-  const logoutAllDeviceSessions = async (): Promise<void> => {
+  const logoutAllDeviceSessions = useCallback(async (): Promise<void> => {
     if (!activeSessionId) throw new Error('No active session');
 
     try {
@@ -666,9 +668,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       console.error('Logout all device sessions error:', error);
       throw error;
     }
-  };
+  }, [activeSessionId, oxyServices, logoutStore, setMinimalUser, clearAllStorage, onAuthStateChange]);
 
-  const updateDeviceName = async (deviceName: string): Promise<void> => {
+  const updateDeviceName = useCallback(async (deviceName: string): Promise<void> => {
     if (!activeSessionId) throw new Error('No active session');
 
     try {
@@ -680,7 +682,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       console.error('Update device name error:', error);
       throw error;
     }
-  };
+  }, [activeSessionId, oxyServices]);
 
   // Bottom sheet control methods
   const showBottomSheet = useCallback((screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => {
@@ -735,16 +737,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     userId: user?.id,
     activeSessionId,
     refreshSessions,
-    logout: () => logout(),
+    logout,
     baseURL: oxyServices.getBaseURL(),
-    onRemoteSignOut: () => {
+    onRemoteSignOut: useCallback(() => {
       toast.info('You have been signed out remotely.');
       logout();
-    },
+    }, [logout]),
   });
 
   // Context value
-  const contextValue: OxyContextState = {
+  const contextValue: OxyContextState = useMemo(() => ({
     user,
     minimalUser,
     sessions,
@@ -755,21 +757,40 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     login,
     logout,
     logoutAll,
-    signUp: async (username, email, password) => {
-      await signUp(username, email, password);
-      return user as User; // Return the latest user from Zustand
-    },
-    switchSession: async (sessionId) => { await switchToSession(sessionId); },
-    removeSession: async (sessionId) => { await removeSession(sessionId); },
-    refreshSessions: async () => { await refreshSessions(); },
-    getDeviceSessions: async () => { return await getDeviceSessions(); },
-    logoutAllDeviceSessions: async () => { await logoutAllDeviceSessions(); },
-    updateDeviceName: async (deviceName) => { await updateDeviceName(deviceName); },
+    signUp,
+    switchSession,
+    removeSession,
+    refreshSessions,
+    getDeviceSessions,
+    logoutAllDeviceSessions,
+    updateDeviceName,
     oxyServices,
     bottomSheetRef,
     showBottomSheet,
     hideBottomSheet,
-  };
+  }), [
+    user,
+    minimalUser,
+    sessions,
+    activeSessionId,
+    isAuthenticated,
+    isLoading,
+    error,
+    login,
+    logout,
+    logoutAll,
+    signUp,
+    switchSession,
+    removeSession,
+    refreshSessions,
+    getDeviceSessions,
+    logoutAllDeviceSessions,
+    updateDeviceName,
+    oxyServices,
+    bottomSheetRef,
+    showBottomSheet,
+    hideBottomSheet,
+  ]);
 
   // Wrap children rendering to block until token is ready
   if (!tokenReady) {

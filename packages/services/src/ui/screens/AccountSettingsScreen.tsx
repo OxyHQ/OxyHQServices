@@ -101,7 +101,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const animateSaveButton = useCallback((toValue: number) => {
         Animated.spring(saveButtonScale, {
             toValue,
-            useNativeDriver: true,
+            useNativeDriver: Platform.OS !== 'web',
             tension: 150,
             friction: 8,
         }).start();

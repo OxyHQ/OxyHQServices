@@ -528,7 +528,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
         Animated.timing(fadeAnim, {
             toValue: 0,
             duration: 250,
-            useNativeDriver: true,
+            useNativeDriver: Platform.OS !== 'web',
         }).start(() => {
             setCurrentStep(nextStep);
             slideAnim.setValue(-100);
@@ -537,12 +537,12 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 Animated.timing(fadeAnim, {
                     toValue: 1,
                     duration: 250,
-                    useNativeDriver: true,
+                    useNativeDriver: Platform.OS !== 'web',
                 }),
                 Animated.timing(slideAnim, {
                     toValue: 0,
                     duration: 300,
-                    useNativeDriver: true,
+                    useNativeDriver: Platform.OS !== 'web',
                 })
             ]).start();
         });

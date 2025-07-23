@@ -83,7 +83,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             toValue: 1,
             tension: 50,
             friction: 8,
-            useNativeDriver: true,
+            useNativeDriver: Platform.OS !== 'web',
         }).start();
     }, [logoAnim]);
 
@@ -230,14 +230,14 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
         Animated.timing(scaleAnim, {
             toValue: 0.95,
             duration: 150,
-            useNativeDriver: true,
+            useNativeDriver: Platform.OS !== 'web',
         }).start();
 
         // Fade out
         Animated.timing(fadeAnim, {
             toValue: 0,
             duration: 200,
-            useNativeDriver: true,
+            useNativeDriver: Platform.OS !== 'web',
         }).start(() => {
             setCurrentStep(nextStep);
 
@@ -250,19 +250,19 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                 Animated.timing(fadeAnim, {
                     toValue: 1,
                     duration: 300,
-                    useNativeDriver: true,
+                    useNativeDriver: Platform.OS !== 'web',
                 }),
                 Animated.spring(slideAnim, {
                     toValue: 0,
                     tension: 80,
                     friction: 8,
-                    useNativeDriver: true,
+                    useNativeDriver: Platform.OS !== 'web',
                 }),
                 Animated.spring(scaleAnim, {
                     toValue: 1,
                     tension: 80,
                     friction: 8,
-                    useNativeDriver: true,
+                    useNativeDriver: Platform.OS !== 'web',
                 })
             ]).start();
         });

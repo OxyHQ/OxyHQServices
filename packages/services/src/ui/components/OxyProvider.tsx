@@ -98,6 +98,10 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     autoPresent = false,
     showInternalToaster = true,
 }) => {
+    // Helper function to determine if native driver should be used
+    const shouldUseNativeDriver = () => {
+        return Platform.OS === 'ios';
+    };
     // Get oxyServices from context if not provided as prop
     const contextOxy = useOxy();
     const oxyServices = providedOxyServices || contextOxy?.oxyServices;
@@ -174,13 +178,13 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     Animated.timing(fadeAnim, {
                         toValue: 1,
                         duration: 300,
-                        useNativeDriver: Platform.OS === 'ios',
+                        useNativeDriver: shouldUseNativeDriver(),
                     }),
                     Animated.spring(slideAnim, {
                         toValue: 0,
                         friction: 8,
                         tension: 40,
-                        useNativeDriver: Platform.OS === 'ios',
+                        useNativeDriver: shouldUseNativeDriver(),
                     }),
                 ]).start();
             };
@@ -192,13 +196,13 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     Animated.timing(fadeAnim, {
                         toValue: 1,
                         duration: 300,
-                        useNativeDriver: Platform.OS === 'ios',
+                        useNativeDriver: shouldUseNativeDriver(),
                     }),
                     Animated.spring(slideAnim, {
                         toValue: 0,
                         friction: 8,
                         tension: 40,
-                        useNativeDriver: Platform.OS === 'ios',
+                        useNativeDriver: shouldUseNativeDriver(),
                     }),
                 ]).start();
             }, 100);
@@ -210,7 +214,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         Animated.timing(fadeAnim, {
             toValue: 0,
             duration: Platform.OS === 'android' ? 100 : 200,
-            useNativeDriver: Platform.OS === 'ios',
+            useNativeDriver: shouldUseNativeDriver(),
         }).start(() => {
             modalRef.current?.dismiss();
             if (onClose) {

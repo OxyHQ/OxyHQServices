@@ -209,12 +209,12 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         Animated.timing(scaleAnim, {
             toValue: 0.95,
             duration: 150,
-            useNativeDriver: true,
+            useNativeDriver: Platform.OS !== 'web',
         }).start();
         Animated.timing(fadeAnim, {
             toValue: 0,
             duration: 200,
-            useNativeDriver: true,
+            useNativeDriver: Platform.OS !== 'web',
         }).start(() => {
             setCurrentStep(nextStep);
             slideAnim.setValue(-50);
@@ -223,19 +223,19 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                 Animated.timing(fadeAnim, {
                     toValue: 1,
                     duration: 300,
-                    useNativeDriver: true,
+                    useNativeDriver: Platform.OS !== 'web',
                 }),
                 Animated.spring(slideAnim, {
                     toValue: 0,
                     tension: 80,
                     friction: 8,
-                    useNativeDriver: true,
+                    useNativeDriver: Platform.OS !== 'web',
                 }),
                 Animated.spring(scaleAnim, {
                     toValue: 1,
                     tension: 80,
                     friction: 8,
-                    useNativeDriver: true,
+                    useNativeDriver: Platform.OS !== 'web',
                 })
             ]).start();
         });
