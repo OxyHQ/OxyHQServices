@@ -458,8 +458,23 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                                         theme={theme}
                                     />
                                 </View>
-                                <View style={{ height: 18 }} />
-                                <Text style={styles.summaryCardTotal}>Total: {(currencySymbol)} {amount}</Text>
+
+                                <View style={styles.summaryCardDivider} />
+
+                                <View style={styles.summaryCardTotalSection}>
+                                    <View style={styles.summaryCardTotalRow}>
+                                        <Text style={styles.summaryCardTotalLabel}>Subtotal</Text>
+                                        <Text style={styles.summaryCardTotalValue}>{(currencySymbol)} {amount}</Text>
+                                    </View>
+                                    <View style={styles.summaryCardTotalRow}>
+                                        <Text style={styles.summaryCardTotalLabel}>Tax</Text>
+                                        <Text style={styles.summaryCardTotalValue}>{(currencySymbol)} 0.00</Text>
+                                    </View>
+                                    <View style={styles.summaryCardTotalRow}>
+                                        <Text style={styles.summaryCardTotalLabel}>Total</Text>
+                                        <Text style={styles.summaryCardTotalValue}>{(currencySymbol)} {amount}</Text>
+                                    </View>
+                                </View>
                             </>
                         ) : (
                             <>
@@ -469,6 +484,15 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                                     {description && (
                                         <Text style={styles.summaryCardAmountDescription}>{description}</Text>
                                     )}
+                                </View>
+
+                                <View style={styles.summaryCardDivider} />
+
+                                <View style={styles.summaryCardTotalSection}>
+                                    <View style={styles.summaryCardTotalRow}>
+                                        <Text style={styles.summaryCardTotalLabel}>Total</Text>
+                                        <Text style={styles.summaryCardTotalValue}>{(currencySymbol)} {amount}</Text>
+                                    </View>
                                 </View>
                             </>
                         )}
@@ -513,7 +537,9 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                     items={availablePaymentMethods.map(method => ({
                         id: method.key,
                         icon: method.key === 'faircoin' ? undefined : method.icon,
-                        iconColor: colors.primary,
+                        iconColor: method.key === 'card' ? '#007AFF' :
+                            method.key === 'oxy' ? '#32D74B' :
+                                method.key === 'faircoin' ? '#9ffb50' : colors.primary,
                         title: method.label,
                         subtitle: method.description,
                         onPress: () => setPaymentMethod(method.key),
@@ -578,25 +604,40 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                                 </View>
                                 <TextField
                                     value={cardDetails.number}
-                                    onChangeText={text => setCardDetails({ ...cardDetails, number: text })}
-                                    placeholder="Card Number"
+                                    onChangeText={text => {
+                                        // Format card number with spaces
+                                        const formatted = text.replace(/\s/g, '').replace(/(\d{4})/g, '$1 ').trim();
+                                        setCardDetails({ ...cardDetails, number: formatted });
+                                    }}
+                                    placeholder="1234 5678 9012 3456"
                                     keyboardType="numeric"
+                                    maxLength={19}
                                     style={styles.cardFieldContainer}
                                     leading={<Ionicons name="card-outline" size={18} color={colors.primary} />}
                                 />
                                 <View style={styles.cardFieldRow}>
                                     <TextField
                                         value={cardDetails.expiry}
-                                        onChangeText={text => setCardDetails({ ...cardDetails, expiry: text })}
+                                        onChangeText={text => {
+                                            // Format expiry date
+                                            const formatted = text.replace(/\D/g, '').replace(/(\d{2})(\d)/, '$1/$2');
+                                            setCardDetails({ ...cardDetails, expiry: formatted });
+                                        }}
                                         placeholder="MM/YY"
+                                        maxLength={5}
                                         style={styles.cardFieldHalfLeft}
                                         leading={<Ionicons name="calendar-outline" size={16} color={colors.primary} />}
                                     />
                                     <TextField
                                         value={cardDetails.cvv}
-                                        onChangeText={text => setCardDetails({ ...cardDetails, cvv: text })}
-                                        placeholder="CVV"
+                                        onChangeText={text => {
+                                            // Only allow numbers
+                                            const formatted = text.replace(/\D/g, '');
+                                            setCardDetails({ ...cardDetails, cvv: formatted });
+                                        }}
+                                        placeholder="123"
                                         keyboardType="numeric"
+                                        maxLength={4}
                                         style={styles.cardFieldHalfRight}
                                         leading={<Ionicons name="lock-closed-outline" size={16} color={colors.primary} />}
                                     />
@@ -1544,6 +1585,33 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         color: colors.secondaryText,
         textAlign: 'center',
         lineHeight: 20,
+    },
+    // Enhanced summary styles
+    summaryCardDivider: {
+        height: 1,
+        backgroundColor: colors.border,
+        marginVertical: 16,
+        width: '100%',
+    },
+    summaryCardTotalSection: {
+        width: '100%',
+        marginBottom: 8,
+    },
+    summaryCardTotalRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 4,
+    },
+    summaryCardTotalLabel: {
+        fontSize: 16,
+        color: colors.secondaryText,
+        fontWeight: '500',
+    },
+    summaryCardTotalValue: {
+        fontSize: 16,
+        color: colors.text,
+        fontWeight: '600',
     },
 });
 
