@@ -29,7 +29,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     useEffect(() => {
         console.log('ProfileScreen - userId:', userId);
         console.log('ProfileScreen - username:', username);
-        
+
         if (!userId) {
             setError('No user ID provided');
             setIsLoading(false);
@@ -50,11 +50,11 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 }
                 throw err;
             }),
-            oxyServices.getUserKarmaTotal ? 
+            oxyServices.getUserKarmaTotal ?
                 oxyServices.getUserKarmaTotal(userId).catch(err => {
                     console.warn('getUserKarmaTotal error:', err);
                     return { total: undefined };
-                }) : 
+                }) :
                 Promise.resolve({ total: undefined })
         ])
             .then(([profileRes, karmaRes]) => {
@@ -73,7 +73,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 console.error('Profile loading error:', err);
                 // Provide user-friendly error messages based on the error type
                 let errorMessage = 'Failed to load profile';
-                
+
                 if (err.status === 404 || err.message?.includes('not found') || err.message?.includes('Resource not found')) {
                     if (currentUser && currentUser.id === userId) {
                         errorMessage = 'Unable to load your profile from the server. This may be due to a temporary service issue.';
@@ -87,7 +87,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 } else if (err.message) {
                     errorMessage = err.message;
                 }
-                
+
                 setError(errorMessage);
             })
             .finally(() => setIsLoading(false));

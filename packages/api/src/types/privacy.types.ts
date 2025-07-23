@@ -12,7 +12,6 @@ export interface IPrivacySettings {
     hideOnlineStatus: boolean;
     hideLastSeen: boolean;
     profileVisibility: boolean;
-    postVisibility: boolean;
     twoFactorEnabled: boolean;
     loginAlerts: boolean;
     blockScreenshots: boolean;
@@ -22,7 +21,6 @@ export interface IPrivacySettings {
     allowTagging: boolean;
     allowMentions: boolean;
     hideReadReceipts: boolean;
-    allowComments: boolean;
     allowDirectMessages: boolean;
     dataSharing: boolean;
     locationSharing: boolean;

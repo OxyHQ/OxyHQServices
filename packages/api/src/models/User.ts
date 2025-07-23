@@ -16,7 +16,6 @@ export interface IUser extends Document {
     hideOnlineStatus: boolean;
     hideLastSeen: boolean;
     profileVisibility: boolean;
-    postVisibility: boolean;
     twoFactorEnabled: boolean;
     loginAlerts: boolean;
     blockScreenshots: boolean;
@@ -26,7 +25,6 @@ export interface IUser extends Document {
     allowTagging: boolean;
     allowMentions: boolean;
     hideReadReceipts: boolean;
-    allowComments: boolean;
     allowDirectMessages: boolean;
     dataSharing: boolean;
     locationSharing: boolean;
@@ -46,7 +44,6 @@ export interface IUser extends Document {
   };
   bio?: string;
   description?: string;
-  location?: string;
   locations?: Array<{
     id: string;
     name: string;
@@ -170,7 +167,6 @@ const UserSchema: Schema = new Schema(
       hideOnlineStatus: { type: Boolean, default: false },
       hideLastSeen: { type: Boolean, default: false },
       profileVisibility: { type: Boolean, default: true },
-      postVisibility: { type: Boolean, default: true },
       twoFactorEnabled: { type: Boolean, default: false },
       loginAlerts: { type: Boolean, default: true },
       blockScreenshots: { type: Boolean, default: false },
@@ -180,7 +176,6 @@ const UserSchema: Schema = new Schema(
       allowTagging: { type: Boolean, default: true },
       allowMentions: { type: Boolean, default: true },
       hideReadReceipts: { type: Boolean, default: false },
-      allowComments: { type: Boolean, default: true },
       allowDirectMessages: { type: Boolean, default: true },
       dataSharing: { type: Boolean, default: true },
       locationSharing: { type: Boolean, default: false },
@@ -202,7 +197,6 @@ const UserSchema: Schema = new Schema(
     },
     bio: { type: String },
     description: { type: String },
-    location: { type: String },
     locations: [{
       id: { type: String, required: true },
       name: { type: String, required: true },
@@ -314,7 +308,7 @@ UserSchema.virtual('primaryLocation').get(function() {
   if (locations && Array.isArray(locations) && locations.length > 0) {
     return locations[0].name;
   }
-  return this.location || '';
+  return '';
 });
 
 // Instance method to add a location
