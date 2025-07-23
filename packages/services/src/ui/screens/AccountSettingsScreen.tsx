@@ -897,21 +897,13 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                 items={[
                                     {
                                         id: 'profile-photo',
-                                        icon: 'person',
+                                        icon: avatarUrl ? undefined : 'person',
                                         iconColor: '#007AFF',
+                                        image: avatarUrl || undefined,
+                                        imageSize: 40,
                                         title: 'Profile Photo',
                                         subtitle: avatarUrl ? 'Tap to change your profile picture' : 'Tap to add a profile picture',
                                         onPress: handleAvatarUpdate,
-                                        customContent: (
-                                            <View style={styles.userIcon}>
-                                                <Avatar
-                                                    uri={avatarUrl}
-                                                    name={displayName || username}
-                                                    size={50}
-                                                    theme={theme}
-                                                />
-                                            </View>
-                                        ),
                                     },
                                 ]}
                                 theme={theme}

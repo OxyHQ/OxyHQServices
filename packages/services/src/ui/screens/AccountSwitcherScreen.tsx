@@ -21,7 +21,7 @@ import { confirmAction } from '../utils/confirmAction';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
-import { Header } from '../components';
+import { Header, GroupedSection } from '../components';
 
 interface SessionWithUser extends SecureClientSession {
     userProfile?: User;
@@ -407,56 +407,36 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Quick Actions</Text>
 
-                            <TouchableOpacity
-                                style={[styles.settingItem, styles.firstSettingItem]}
-                                onPress={() => navigate?.('SignIn')}
-                            >
-                                <View style={styles.settingInfo}>
-                                    <OxyIcon name="person-add" size={20} color="#007AFF" style={styles.settingIcon} />
-                                    <View>
-                                        <Text style={styles.settingLabel}>Add Another Account</Text>
-                                        <Text style={styles.settingDescription}>Sign in with a different account</Text>
-                                    </View>
-                                </View>
-                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={styles.settingItem}
-                                onPress={() => setShowDeviceManagement(!showDeviceManagement)}
-                            >
-                                <View style={styles.settingInfo}>
-                                    <OxyIcon name="phone-portrait" size={20} color="#5856D6" style={styles.settingIcon} />
-                                    <View>
-                                        <Text style={styles.settingLabel}>
-                                            {showDeviceManagement ? 'Hide' : 'Manage'} Device Sessions
-                                        </Text>
-                                        <Text style={styles.settingDescription}>
-                                            View and manage sessions on other devices
-                                        </Text>
-                                    </View>
-                                </View>
-                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                            </TouchableOpacity>
-
-                            <TouchableOpacity
-                                style={[styles.settingItem, styles.lastSettingItem]}
-                                onPress={handleLogoutAll}
-                                disabled={sessionsWithUsers.length === 0}
-                            >
-                                <View style={styles.settingInfo}>
-                                    <OxyIcon name="log-out" size={20} color="#FF3B30" style={styles.settingIcon} />
-                                    <View>
-                                        <Text style={[styles.settingLabel, { color: sessionsWithUsers.length === 0 ? '#ccc' : '#FF3B30' }]}>
-                                            Sign Out All Accounts
-                                        </Text>
-                                        <Text style={styles.settingDescription}>
-                                            Remove all accounts from this device
-                                        </Text>
-                                    </View>
-                                </View>
-                                <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                            </TouchableOpacity>
+                            <GroupedSection
+                                items={[
+                                    {
+                                        id: 'add-account',
+                                        icon: 'person-add',
+                                        iconColor: '#007AFF',
+                                        title: 'Add Another Account',
+                                        subtitle: 'Sign in with a different account',
+                                        onPress: () => navigate?.('SignIn'),
+                                    },
+                                    {
+                                        id: 'device-management',
+                                        icon: 'phone-portrait',
+                                        iconColor: '#5856D6',
+                                        title: `${showDeviceManagement ? 'Hide' : 'Manage'} Device Sessions`,
+                                        subtitle: 'View and manage sessions on other devices',
+                                        onPress: () => setShowDeviceManagement(!showDeviceManagement),
+                                    },
+                                    {
+                                        id: 'sign-out-all',
+                                        icon: 'log-out',
+                                        iconColor: '#FF3B30',
+                                        title: 'Sign Out All Accounts',
+                                        subtitle: 'Remove all accounts from this device',
+                                        onPress: handleLogoutAll,
+                                        disabled: sessionsWithUsers.length === 0,
+                                    },
+                                ]}
+                                theme={theme}
+                            />
                         </View>
 
                         {/* Device Management Section */}
@@ -465,67 +445,62 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                 <Text style={styles.sectionTitle}>Device Sessions</Text>
 
                                 {loadingDeviceSessions ? (
-                                    <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
-                                        <View style={styles.loadingContainer}>
-                                            <ActivityIndicator size="small" color="#007AFF" />
-                                            <Text style={styles.loadingText}>Loading device sessions...</Text>
-                                        </View>
-                                    </View>
+                                    <GroupedSection
+                                        items={[
+                                            {
+                                                id: 'loading-device-sessions',
+                                                icon: 'sync',
+                                                iconColor: '#007AFF',
+                                                title: 'Loading device sessions...',
+                                                subtitle: 'Please wait while we fetch your device sessions',
+                                                disabled: true,
+                                                customContent: (
+                                                    <ActivityIndicator size="small" color="#007AFF" style={{ marginRight: 16 }} />
+                                                ),
+                                            },
+                                        ]}
+                                        theme={theme}
+                                    />
                                 ) : deviceSessions.length === 0 ? (
-                                    <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
-                                        <View style={styles.settingInfo}>
-                                            <OxyIcon name="phone-portrait" size={20} color="#ccc" style={styles.settingIcon} />
-                                            <View>
-                                                <Text style={styles.settingLabel}>No device sessions found</Text>
-                                                <Text style={styles.settingDescription}>
-                                                    Device session management not available
-                                                </Text>
-                                            </View>
-                                        </View>
-                                    </View>
+                                    <GroupedSection
+                                        items={[
+                                            {
+                                                id: 'no-device-sessions',
+                                                icon: 'phone-portrait',
+                                                iconColor: '#ccc',
+                                                title: 'No device sessions found',
+                                                subtitle: 'Device session management not available',
+                                                disabled: true,
+                                            },
+                                        ]}
+                                        theme={theme}
+                                    />
                                 ) : (
-                                    <>
-                                        {deviceSessions.map((session, index) => (
-                                            <View
-                                                key={session.sessionId}
-                                                style={[
-                                                    styles.settingItem,
-                                                    index === 0 && styles.firstSettingItem,
-                                                    index === deviceSessions.length - 1 && styles.lastSettingItem,
-                                                ]}
-                                            >
-                                                <View style={styles.settingInfo}>
-                                                    <OxyIcon
-                                                        name={session.isCurrent ? "phone-portrait" : "phone-portrait-outline"}
-                                                        size={20}
-                                                        color={session.isCurrent ? "#34C759" : "#8E8E93"}
-                                                        style={styles.settingIcon}
-                                                    />
-                                                    <View>
-                                                        <Text style={styles.settingLabel}>
-                                                            {session.deviceName} {session.isCurrent ? '(This device)' : ''}
-                                                        </Text>
-                                                        <Text style={styles.settingDescription}>
-                                                            Last active: {new Date(session.lastActive).toLocaleDateString()}
-                                                        </Text>
-                                                    </View>
-                                                </View>
-                                                {!session.isCurrent && (
-                                                    <TouchableOpacity
-                                                        style={styles.removeButton}
-                                                        onPress={() => handleRemoteSessionLogout(session.sessionId, session.deviceName)}
-                                                        disabled={remotingLogoutSessionId === session.sessionId}
-                                                    >
-                                                        {remotingLogoutSessionId === session.sessionId ? (
-                                                            <ActivityIndicator size="small" color="#FF3B30" />
-                                                        ) : (
-                                                            <OxyIcon name="log-out" size={16} color="#FF3B30" />
-                                                        )}
-                                                    </TouchableOpacity>
-                                                )}
-                                            </View>
-                                        ))}
-                                    </>
+                                    <GroupedSection
+                                        items={deviceSessions.map((session, index) => ({
+                                            id: `device-session-${session.sessionId}`,
+                                            icon: session.isCurrent ? 'phone-portrait' : 'phone-portrait-outline',
+                                            iconColor: session.isCurrent ? '#34C759' : '#8E8E93',
+                                            title: `${session.deviceName} ${session.isCurrent ? '(This device)' : ''}`,
+                                            subtitle: `Last active: ${new Date(session.lastActive).toLocaleDateString()}`,
+                                            onPress: session.isCurrent ? undefined : () => handleRemoteSessionLogout(session.sessionId, session.deviceName),
+                                            disabled: session.isCurrent || remotingLogoutSessionId === session.sessionId,
+                                            customContent: !session.isCurrent ? (
+                                                <TouchableOpacity
+                                                    style={styles.removeButton}
+                                                    onPress={() => handleRemoteSessionLogout(session.sessionId, session.deviceName)}
+                                                    disabled={remotingLogoutSessionId === session.sessionId}
+                                                >
+                                                    {remotingLogoutSessionId === session.sessionId ? (
+                                                        <ActivityIndicator size="small" color="#FF3B30" />
+                                                    ) : (
+                                                        <OxyIcon name="log-out" size={16} color="#FF3B30" />
+                                                    )}
+                                                </TouchableOpacity>
+                                            ) : undefined,
+                                        }))}
+                                        theme={theme}
+                                    />
                                 )}
                             </View>
                         )}
@@ -533,21 +508,34 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                         {/* Empty State */}
                         {sessionsWithUsers.length === 0 && (
                             <View style={styles.section}>
-                                <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
-                                    <View style={styles.emptyStateContainer}>
-                                        <OxyIcon name="person-outline" size={48} color="#ccc" />
-                                        <Text style={styles.emptyStateTitle}>No saved accounts</Text>
-                                        <Text style={styles.emptyStateDescription}>
-                                            Add another account to switch between them quickly
-                                        </Text>
-                                        <TouchableOpacity
-                                            style={styles.addAccountButton}
-                                            onPress={() => navigate?.('SignIn')}
-                                        >
-                                            <Text style={styles.addAccountButtonText}>Add Account</Text>
-                                        </TouchableOpacity>
-                                    </View>
-                                </View>
+                                <GroupedSection
+                                    items={[
+                                        {
+                                            id: 'empty-state',
+                                            icon: 'person-outline',
+                                            iconColor: '#ccc',
+                                            title: 'No saved accounts',
+                                            subtitle: 'Add another account to switch between them quickly',
+                                            onPress: () => navigate?.('SignIn'),
+                                            customContent: (
+                                                <View style={styles.emptyStateContainer}>
+                                                    <OxyIcon name="person-outline" size={48} color="#ccc" />
+                                                    <Text style={styles.emptyStateTitle}>No saved accounts</Text>
+                                                    <Text style={styles.emptyStateDescription}>
+                                                        Add another account to switch between them quickly
+                                                    </Text>
+                                                    <TouchableOpacity
+                                                        style={styles.addAccountButton}
+                                                        onPress={() => navigate?.('SignIn')}
+                                                    >
+                                                        <Text style={styles.addAccountButtonText}>Add Account</Text>
+                                                    </TouchableOpacity>
+                                                </View>
+                                            ),
+                                        },
+                                    ]}
+                                    theme={theme}
+                                />
                             </View>
                         )}
                     </>
@@ -602,9 +590,6 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         flex: 1,
-    },
-    settingIcon: {
-        marginRight: 12,
     },
     settingLabel: {
         fontSize: 16,

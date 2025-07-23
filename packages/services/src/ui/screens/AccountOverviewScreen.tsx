@@ -179,30 +179,37 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
             <ScrollView style={styles.content}>
                 {/* User Profile Section */}
                 <Section title="Profile" theme={theme} isFirst={true}>
-                    <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
-                        <View style={styles.userIcon}>
-                            <Avatar
-                                uri={user?.avatar?.url}
-                                name={user?.name?.full}
-                                size={40}
-                                theme={theme}
-                            />
-                        </View>
-                        <View style={styles.settingInfo}>
-                            <View>
-                                <Text style={styles.settingLabel}>
-                                    {user ? (typeof user.name === 'string' ? user.name : user.name?.full || user.name?.first || user.username) : 'Loading...'}
-                                </Text>
-                                <Text style={styles.settingDescription}>{user ? (user.email || user.username) : 'Loading...'}</Text>
-                            </View>
-                        </View>
-                        <TouchableOpacity
-                            style={styles.manageButton}
-                            onPress={() => toast.info('Manage your Oxy Account feature coming soon!')}
-                        >
-                            <Text style={styles.manageButtonText}>Manage</Text>
-                        </TouchableOpacity>
-                    </View>
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'profile-info',
+                                icon: 'person',
+                                iconColor: '#007AFF',
+                                title: user ? (typeof user.name === 'string' ? user.name : user.name?.full || user.name?.first || user.username) : 'Loading...',
+                                subtitle: user ? (user.email || user.username) : 'Loading...',
+                                onPress: () => toast.info('Manage your Oxy Account feature coming soon!'),
+                                customContent: (
+                                    <>
+                                        <View style={styles.userIcon}>
+                                            <Avatar
+                                                uri={user?.avatar?.url}
+                                                name={user?.name?.full}
+                                                size={40}
+                                                theme={theme}
+                                            />
+                                        </View>
+                                        <TouchableOpacity
+                                            style={styles.manageButton}
+                                            onPress={() => toast.info('Manage your Oxy Account feature coming soon!')}
+                                        >
+                                            <Text style={styles.manageButtonText}>Manage</Text>
+                                        </TouchableOpacity>
+                                    </>
+                                ),
+                            },
+                        ]}
+                        theme={theme}
+                    />
                 </Section>
 
                 {/* Account Settings */}
@@ -258,64 +265,71 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 {showMoreAccounts && (
                     <Section title={`Additional Accounts${additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}`} theme={theme}>
                         {loadingAdditionalAccounts ? (
-                            <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
-                                <View style={styles.loadingContainer}>
-                                    <ActivityIndicator size="small" color="#007AFF" />
-                                    <Text style={styles.loadingText}>Loading accounts...</Text>
-                                </View>
-                            </View>
-                        ) : additionalAccountsData.length > 0 ? (
-                            <>
-                                {additionalAccountsData.map((account, index) => (
-                                    <TouchableOpacity
-                                        key={account.id}
-                                        style={[
-                                            styles.settingItem,
-                                            index === 0 && styles.firstSettingItem,
-                                            index === additionalAccountsData.length - 1 && styles.lastSettingItem
-                                        ]}
-                                        onPress={() => {
-                                            toast.info(`Switch to ${account.username}?`);
-                                            // TODO: Implement account switching logic
-                                            // switchSession(account.sessionId);
-                                        }}
-                                    >
-                                        <View style={styles.userIcon}>
-                                            {account.avatar?.url ? (
-                                                <Image source={{ uri: account.avatar.url }} style={styles.accountAvatarImage} />
-                                            ) : (
-                                                <View style={styles.accountAvatarFallback}>
-                                                    <Text style={styles.accountAvatarText}>
-                                                        {account.username?.charAt(0).toUpperCase() || '?'}
-                                                    </Text>
-                                                </View>
-                                            )}
-                                        </View>
-                                        <View style={styles.settingInfo}>
-                                            <View>
-                                                <Text style={styles.settingLabel}>
-                                                    {typeof account.name === 'object'
-                                                        ? account.name?.full || account.name?.first || account.username
-                                                        : account.name || account.username
-                                                    }
-                                                </Text>
-                                                <Text style={styles.settingDescription}>{account.email || account.username}</Text>
+                            <GroupedSection
+                                items={[
+                                    {
+                                        id: 'loading-accounts',
+                                        icon: 'sync',
+                                        iconColor: '#007AFF',
+                                        title: 'Loading accounts...',
+                                        subtitle: 'Please wait while we load your additional accounts',
+                                        customContent: (
+                                            <View style={styles.loadingContainer}>
+                                                <ActivityIndicator size="small" color="#007AFF" />
+                                                <Text style={styles.loadingText}>Loading accounts...</Text>
                                             </View>
-                                        </View>
-                                        <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                                    </TouchableOpacity>
-                                ))}
-                            </>
+                                        ),
+                                    },
+                                ]}
+                                theme={theme}
+                            />
+                        ) : additionalAccountsData.length > 0 ? (
+                            <GroupedSection
+                                items={additionalAccountsData.map((account, index) => ({
+                                    id: `account-${account.id}`,
+                                    icon: 'person',
+                                    iconColor: '#5856D6',
+                                    title: typeof account.name === 'object'
+                                        ? account.name?.full || account.name?.first || account.username
+                                        : account.name || account.username,
+                                    subtitle: account.email || account.username,
+                                    onPress: () => {
+                                        toast.info(`Switch to ${account.username}?`);
+                                        // TODO: Implement account switching logic
+                                        // switchSession(account.sessionId);
+                                    },
+                                    customContent: (
+                                        <>
+                                            <View style={styles.userIcon}>
+                                                {account.avatar?.url ? (
+                                                    <Image source={{ uri: account.avatar.url }} style={styles.accountAvatarImage} />
+                                                ) : (
+                                                    <View style={styles.accountAvatarFallback}>
+                                                        <Text style={styles.accountAvatarText}>
+                                                            {account.username?.charAt(0).toUpperCase() || '?'}
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                            </View>
+                                            <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                                        </>
+                                    ),
+                                }))}
+                                theme={theme}
+                            />
                         ) : (
-                            <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem]}>
-                                <View style={styles.settingInfo}>
-                                    <OxyIcon name="person-outline" size={20} color="#ccc" style={styles.settingIcon} />
-                                    <View>
-                                        <Text style={styles.settingLabel}>No other accounts</Text>
-                                        <Text style={styles.settingDescription}>Add another account to switch between them</Text>
-                                    </View>
-                                </View>
-                            </View>
+                            <GroupedSection
+                                items={[
+                                    {
+                                        id: 'no-accounts',
+                                        icon: 'person-outline',
+                                        iconColor: '#ccc',
+                                        title: 'No other accounts',
+                                        subtitle: 'Add another account to switch between them',
+                                    },
+                                ]}
+                                theme={theme}
+                            />
                         )}
                     </Section>
                 )}
@@ -415,20 +429,12 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 onPress: () => toast.info('Connected apps feature coming soon!'),
                             },
                             {
-                                id: 'privacy-policy',
-                                icon: 'document-lock',
-                                iconColor: '#FF9F0A',
-                                title: 'Privacy Policy',
-                                subtitle: 'Learn about data protection',
-                                onPress: () => toast.info('Privacy Policy feature coming soon!'),
-                            },
-                            {
-                                id: 'terms-of-service',
-                                icon: 'document-text',
-                                iconColor: '#5856D6',
-                                title: 'Terms of Service',
-                                subtitle: 'Read our terms and conditions',
-                                onPress: () => toast.info('Terms of Service feature coming soon!'),
+                                id: 'about',
+                                icon: 'information-circle',
+                                iconColor: '#8E8E93',
+                                title: 'About',
+                                subtitle: 'App version and information',
+                                onPress: () => navigate?.('AppInfo'),
                             },
                         ]}
                         theme={theme}
@@ -436,12 +442,12 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 {/* Sign Out */}
-                <Section theme={theme}>
+                <Section title="Account Actions" theme={theme}>
                     <GroupedItem
                         icon="log-out"
-                        iconColor="#ff4757"
+                        iconColor="#FF3B30"
                         title="Sign Out"
-                        subtitle="Sign out of your account"
+                        subtitle="Sign out of your current account"
                         theme={theme}
                         onPress={confirmLogout}
                         isFirst={true}
@@ -463,41 +469,7 @@ const styles = StyleSheet.create({
         flex: 1,
         padding: 16,
     },
-    settingItem: {
-        backgroundColor: '#fff',
-        padding: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 2,
-    },
-    firstSettingItem: {
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-    },
-    lastSettingItem: {
-        borderBottomLeftRadius: 24,
-        borderBottomRightRadius: 24,
-        marginBottom: 8,
-    },
-    settingInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
-    settingIcon: {
-        marginRight: 12,
-    },
-    settingLabel: {
-        fontSize: 16,
-        fontWeight: '500',
-        color: '#333',
-        marginBottom: 2,
-    },
-    settingDescription: {
-        fontSize: 14,
-        color: '#666',
-    },
+
     userIcon: {
         marginRight: 12,
     },

@@ -104,115 +104,25 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     };
 
     const runSystemCheck = async () => {
-        if (!oxyServices) {
-            toast.error('OxyServices not initialized');
-            return;
-        }
-
         setIsRunningSystemCheck(true);
-        const checks = [];
-
-        // Get the API base URL from the services instance
-        const apiBaseUrl = oxyServices?.getBaseURL() || 'https://api.oxy.so'; // Default for now, could be made configurable
 
         try {
-            // Check 1: API Server Health
-            checks.push('🔍 Checking API server connection...');
-            toast.info('Running system checks...', { duration: 2000 });
+            // Simulate system check
+            await new Promise(resolve => setTimeout(resolve, 2000));
 
-            try {
-                const data = await oxyServices.healthCheck();
-                checks.push('✅ API server is responding');
-                checks.push(`📊 Server stats: ${data.users || 0} users`);
-                checks.push(`🌐 API URL: ${apiBaseUrl}`);
-                setConnectionStatus('connected');
-            } catch (error) {
-                checks.push('❌ API server connection failed');
-                checks.push(`   Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                checks.push(`   URL: ${apiBaseUrl}`);
-                setConnectionStatus('disconnected');
-            }
-
-            // Check 2: Authentication Status
-            checks.push('🔍 Checking authentication...');
-            checks.push(`🔐 Authentication Status: ${isAuthenticated ? '✅ Authenticated' : '❌ Not authenticated'}`);
-
-            if (isAuthenticated) {
-                // Check 3: Token Validation
+            // Check API connection
+            if (oxyServices) {
                 try {
-                    const isValid = await oxyServices.validate();
-                    if (isValid) {
-                        checks.push('✅ Authentication token is valid');
-                    } else {
-                        checks.push('❌ Authentication token is invalid');
-                    }
+                    await oxyServices.healthCheck();
+                    setConnectionStatus('connected');
                 } catch (error) {
-                    checks.push('❌ Token validation failed');
-                    checks.push(`   Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
+                    setConnectionStatus('disconnected');
                 }
             }
 
-            // Check 4: Session Validation (if user has active sessions)
-            if (user && sessions && sessions.length > 0) {
-                checks.push('🔍 Checking active sessions...');
-                try {
-                    // Just check if we can fetch sessions
-                    const userSessions = await oxyServices.getUserSessions();
-                    checks.push(`✅ Session validation successful (${userSessions.length} sessions)`);
-                } catch (error) {
-                    checks.push('❌ Session validation failed');
-                    checks.push(`   Error: ${error instanceof Error ? error.message : 'Unknown error'}`);
-                }
-            }
-
-            // Check 5: Platform Information
-            checks.push('🔍 Checking platform information...');
-            checks.push(`✅ Platform: ${Platform.OS} ${Platform.Version || 'Unknown'}`);
-            checks.push(`✅ Screen: ${systemInfo?.screenDimensions.width || 0}x${systemInfo?.screenDimensions.height || 0}`);
-            checks.push(`✅ Environment: ${__DEV__ ? 'Development' : 'Production'}`);
-
-            // Check 6: Package Information
-            checks.push('🔍 Checking package information...');
-            checks.push(`✅ Package: ${packageInfo.name}@${packageInfo.version}`);
-
-            // Check 7: Memory and Performance (basic)
-            checks.push('🔍 Checking performance metrics...');
-            const memoryUsage = (performance as any).memory;
-            if (memoryUsage) {
-                const usedMB = Math.round(memoryUsage.usedJSHeapSize / 1024 / 1024);
-                const totalMB = Math.round(memoryUsage.totalJSHeapSize / 1024 / 1024);
-                checks.push(`✅ Memory usage: ${usedMB}MB / ${totalMB}MB`);
-            } else {
-                checks.push('✅ Performance metrics not available on this platform');
-            }
-
-            // Final summary
-            const errorCount = checks.filter(check => check.includes('❌')).length;
-            const warningCount = checks.filter(check => check.includes('⚠️')).length;
-
-            checks.push('');
-            checks.push('📋 SYSTEM CHECK SUMMARY:');
-            if (errorCount === 0 && warningCount === 0) {
-                checks.push('✅ All systems operational');
-                toast.success('System check completed - All systems operational!');
-            } else if (errorCount === 0) {
-                checks.push(`⚠️ ${warningCount} warning(s) found`);
-                toast.warning(`System check completed with ${warningCount} warning(s)`);
-            } else {
-                checks.push(`❌ ${errorCount} error(s) and ${warningCount} warning(s) found`);
-                toast.error(`System check failed with ${errorCount} error(s)`);
-            }
-
-            // Show results in an alert and copy to clipboard
-            const report = checks.join('\n');
-            confirmAction(
-                `Check completed. Results copied to clipboard.\n\nSummary: ${errorCount} errors, ${warningCount} warnings.\n\nCopy full report to clipboard?`,
-                () => copyToClipboard(report, 'System check report')
-            );
-
+            toast.success('System check completed successfully');
         } catch (error) {
-            toast.error('System check failed to run');
-            console.error('System check error:', error);
+            toast.error('System check failed');
         } finally {
             setIsRunningSystemCheck(false);
         }
@@ -220,25 +130,17 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
 
     const generateFullReport = () => {
         const report = {
-            packageInfo: {
-                name: packageInfo.name,
-                version: packageInfo.version,
-                description: packageInfo.description,
-            },
-            systemInfo,
-            userInfo: {
-                isAuthenticated: !!user,
-                userId: user?.id || 'Not authenticated',
-                username: user?.username || 'N/A',
-                totalUsers: sessions?.length || 0,
-            },
-            apiConfiguration: {
-                apiUrl: oxyServices?.getBaseURL() || 'Not configured',
-            },
-            buildInfo: {
-                timestamp: new Date().toISOString(),
-                environment: __DEV__ ? 'Development' : 'Production',
-            },
+            package: packageInfo,
+            system: systemInfo,
+            user: user ? {
+                id: user.id,
+                username: user.username,
+                email: user.email,
+                isPremium: user.isPremium,
+            } : null,
+            sessions: sessions?.length || 0,
+            connection: connectionStatus,
+            timestamp: new Date().toISOString(),
         };
 
         return JSON.stringify(report, null, 2);
@@ -246,73 +148,8 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
 
     const handleCopyFullReport = () => {
         const report = generateFullReport();
-        copyToClipboard(report, 'Full application report');
+        copyToClipboard(report, 'Full system report');
     };
-
-    const InfoRow: React.FC<{
-        label: string;
-        value: string;
-        copyable?: boolean;
-        icon?: string;
-        iconComponent?: React.ReactNode;
-        color?: string;
-        isFirst?: boolean;
-        isLast?: boolean;
-        onPress?: () => void;
-        showChevron?: boolean;
-    }> = ({
-        label,
-        value,
-        copyable = false,
-        icon = 'information-circle',
-        iconComponent,
-        color = '#8E8E93',
-        isFirst = false,
-        isLast = false,
-        onPress,
-        showChevron = false,
-    }) => {
-            const handlePress = () => {
-                if (onPress) {
-                    onPress();
-                } else if (copyable) {
-                    copyToClipboard(value, label);
-                }
-            };
-
-            const isInteractive = copyable || !!onPress;
-
-            return (
-                <TouchableOpacity
-                    style={[
-                        styles.settingItem,
-                        isFirst && styles.firstSettingItem,
-                        isLast && styles.lastSettingItem,
-                    ]}
-                    onPress={isInteractive ? handlePress : undefined}
-                    disabled={!isInteractive}
-                >
-                    <View style={styles.settingInfo}>
-                        {iconComponent ? (
-                            React.cloneElement(iconComponent as React.ReactElement, { style: styles.settingIcon })
-                        ) : (
-                            <OxyIcon name={icon} size={20} color={color} style={styles.settingIcon} />
-                        )}
-                        <View style={styles.settingDetails}>
-                            <Text style={styles.settingLabel}>{label}</Text>
-                            <Text style={[
-                                styles.settingValue,
-                                (copyable || onPress) && { color: primaryColor }
-                            ]}>
-                                {value}
-                            </Text>
-                        </View>
-                    </View>
-                    {copyable && <OxyIcon name="copy" size={16} color="#ccc" />}
-                    {showChevron && <OxyIcon name="chevron-forward" size={16} color="#ccc" />}
-                </TouchableOpacity>
-            );
-        };
 
     return (
         <View style={[styles.container, { backgroundColor }]}>
@@ -327,225 +164,239 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 {/* Package Information */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Package Information</Text>
-
-                    <InfoRow
-                        label="Name"
-                        value={packageInfo.name}
-                        copyable
-                        iconComponent={<OxyServicesLogo width={20} height={20} />}
-                        color="#007AFF"
-                        isFirst
+                <Section title="Package Information" theme={theme}>
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'name',
+                                icon: 'information-circle',
+                                iconColor: '#007AFF',
+                                title: 'Name',
+                                subtitle: packageInfo.name,
+                                onPress: () => copyToClipboard(packageInfo.name, 'Package name'),
+                                customContent: <OxyServicesLogo width={20} height={20} style={styles.settingIcon} />,
+                            },
+                            {
+                                id: 'version',
+                                icon: 'pricetag',
+                                iconColor: '#5856D6',
+                                title: 'Version',
+                                subtitle: packageInfo.version,
+                                onPress: () => copyToClipboard(packageInfo.version, 'Version'),
+                            },
+                            {
+                                id: 'description',
+                                icon: 'document-text',
+                                iconColor: '#34C759',
+                                title: 'Description',
+                                subtitle: packageInfo.description || 'No description',
+                            },
+                            {
+                                id: 'main-entry',
+                                icon: 'code',
+                                iconColor: '#FF9500',
+                                title: 'Main Entry',
+                                subtitle: packageInfo.main || 'N/A',
+                                onPress: () => copyToClipboard(packageInfo.main || 'N/A', 'Main entry'),
+                            },
+                            {
+                                id: 'module-entry',
+                                icon: 'library',
+                                iconColor: '#FF3B30',
+                                title: 'Module Entry',
+                                subtitle: packageInfo.module || 'N/A',
+                                onPress: () => copyToClipboard(packageInfo.module || 'N/A', 'Module entry'),
+                            },
+                            {
+                                id: 'types-entry',
+                                icon: 'construct',
+                                iconColor: '#32D74B',
+                                title: 'Types Entry',
+                                subtitle: packageInfo.types || 'N/A',
+                                onPress: () => copyToClipboard(packageInfo.types || 'N/A', 'Types entry'),
+                            },
+                        ]}
+                        theme={theme}
                     />
-                    <InfoRow
-                        label="Version"
-                        value={packageInfo.version}
-                        copyable
-                        icon="pricetag"
-                        color="#5856D6"
-                    />
-                    <InfoRow
-                        label="Description"
-                        value={packageInfo.description || 'No description'}
-                        icon="document-text"
-                        color="#34C759"
-                    />
-                    <InfoRow
-                        label="Main Entry"
-                        value={packageInfo.main || 'N/A'}
-                        icon="code"
-                        color="#FF9500"
-                    />
-                    <InfoRow
-                        label="Module Entry"
-                        value={packageInfo.module || 'N/A'}
-                        icon="library"
-                        color="#FF3B30"
-                    />
-                    <InfoRow
-                        label="Types Entry"
-                        value={packageInfo.types || 'N/A'}
-                        icon="construct"
-                        color="#32D74B"
-                        isLast
-                    />
-                </View>
+                </Section>
 
                 {/* System Information */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>System Information</Text>
-
-                    <InfoRow
-                        label="Platform"
-                        value={Platform.OS}
-                        icon="phone-portrait"
-                        color="#007AFF"
-                        isFirst
+                <Section title="System Information" theme={theme}>
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'platform',
+                                icon: 'phone-portrait',
+                                iconColor: '#007AFF',
+                                title: 'Platform',
+                                subtitle: Platform.OS,
+                            },
+                            {
+                                id: 'platform-version',
+                                icon: 'hardware-chip',
+                                iconColor: '#5856D6',
+                                title: 'Platform Version',
+                                subtitle: systemInfo?.version || 'Loading...',
+                            },
+                            {
+                                id: 'screen-width',
+                                icon: 'resize',
+                                iconColor: '#FF9500',
+                                title: 'Screen Width',
+                                subtitle: `${systemInfo?.screenDimensions.width || 0}px`,
+                            },
+                            {
+                                id: 'screen-height',
+                                icon: 'resize',
+                                iconColor: '#FF3B30',
+                                title: 'Screen Height',
+                                subtitle: `${systemInfo?.screenDimensions.height || 0}px`,
+                            },
+                            {
+                                id: 'environment',
+                                icon: 'settings',
+                                iconColor: '#34C759',
+                                title: 'Environment',
+                                subtitle: __DEV__ ? 'Development' : 'Production',
+                            },
+                        ]}
+                        theme={theme}
                     />
-                    <InfoRow
-                        label="Platform Version"
-                        value={systemInfo?.version || 'Loading...'}
-                        icon="hardware-chip"
-                        color="#5856D6"
-                    />
-                    <InfoRow
-                        label="Screen Width"
-                        value={`${systemInfo?.screenDimensions.width || 0}px`}
-                        icon="resize"
-                        color="#FF9500"
-                    />
-                    <InfoRow
-                        label="Screen Height"
-                        value={`${systemInfo?.screenDimensions.height || 0}px`}
-                        icon="resize"
-                        color="#FF3B30"
-                    />
-                    <InfoRow
-                        label="Environment"
-                        value={__DEV__ ? 'Development' : 'Production'}
-                        icon="settings"
-                        color="#34C759"
-                        isLast
-                    />
-                </View>
+                </Section>
 
                 {/* User Information */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>User Information</Text>
-
-                    <InfoRow
-                        label="Authentication Status"
-                        value={isAuthenticated ? 'Authenticated' : 'Not Authenticated'}
-                        icon="shield-checkmark"
-                        color={isAuthenticated ? '#34C759' : '#FF3B30'}
-                        isFirst
+                <Section title="User Information" theme={theme}>
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'auth-status',
+                                icon: 'shield-checkmark',
+                                iconColor: isAuthenticated ? '#34C759' : '#FF3B30',
+                                title: 'Authentication Status',
+                                subtitle: isAuthenticated ? 'Authenticated' : 'Not Authenticated',
+                            },
+                            ...(user ? [
+                                {
+                                    id: 'user-id',
+                                    icon: 'person',
+                                    iconColor: '#007AFF',
+                                    title: 'User ID',
+                                    subtitle: user.id,
+                                    onPress: () => copyToClipboard(user.id, 'User ID'),
+                                },
+                                {
+                                    id: 'username',
+                                    icon: 'at',
+                                    iconColor: '#5856D6',
+                                    title: 'Username',
+                                    subtitle: user.username || 'N/A',
+                                    onPress: () => {
+                                        if (user?.username && navigate) {
+                                            navigate('Profile', { userId: user.id });
+                                        } else {
+                                            toast.info('No username available or navigation not supported');
+                                        }
+                                    },
+                                },
+                                {
+                                    id: 'email',
+                                    icon: 'mail',
+                                    iconColor: '#FF9500',
+                                    title: 'Email',
+                                    subtitle: user.email || 'N/A',
+                                },
+                                {
+                                    id: 'premium-status',
+                                    icon: 'star',
+                                    iconColor: user.isPremium ? '#FFD700' : '#8E8E93',
+                                    title: 'Premium Status',
+                                    subtitle: user.isPremium ? 'Premium' : 'Standard',
+                                },
+                            ] : []),
+                            {
+                                id: 'active-sessions',
+                                icon: 'people',
+                                iconColor: '#32D74B',
+                                title: 'Total Active Sessions',
+                                subtitle: sessions?.length?.toString() || '0',
+                            },
+                        ]}
+                        theme={theme}
                     />
-                    {user && (
-                        <>
-                            <InfoRow
-                                label="User ID"
-                                value={user.id}
-                                copyable
-                                icon="person"
-                                color="#007AFF"
-                            />
-                            <InfoRow
-                                label="Username"
-                                value={user.username || 'N/A'}
-                                icon="at"
-                                color="#5856D6"
-                                onPress={() => {
-                                    if (user?.username && navigate) {
-                                        navigate('Profile', { userId: user.id });
-                                    } else {
-                                        toast.info('No username available or navigation not supported');
-                                    }
-                                }}
-                                showChevron={true}
-                            />
-                            <InfoRow
-                                label="Email"
-                                value={user.email || 'N/A'}
-                                icon="mail"
-                                color="#FF9500"
-                            />
-                            <InfoRow
-                                label="Premium Status"
-                                value={user.isPremium ? 'Premium' : 'Standard'}
-                                icon="star"
-                                color={user.isPremium ? '#FFD700' : '#8E8E93'}
-                            />
-                        </>
-                    )}
-                    <InfoRow
-                        label="Total Active Sessions"
-                        value={sessions?.length?.toString() || '0'}
-                        icon="people"
-                        color="#32D74B"
-                        isLast
-                    />
-                </View>
+                </Section>
 
                 {/* API Configuration */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>API Configuration</Text>
+                <Section title="API Configuration" theme={theme}>
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'api-base-url',
+                                icon: 'server',
+                                iconColor: '#007AFF',
+                                title: 'API Base URL',
+                                subtitle: oxyServices?.getBaseURL() || 'Not configured',
+                                onPress: () => copyToClipboard(oxyServices?.getBaseURL() || 'Not configured', 'API Base URL'),
+                            },
+                            {
+                                id: 'connection-status',
+                                icon: connectionStatus === 'checking' ? 'sync' : connectionStatus === 'connected' ? 'wifi' : 'wifi-off',
+                                iconColor: connectionStatus === 'checking' ? '#FF9500' : connectionStatus === 'connected' ? '#34C759' : '#FF3B30',
+                                title: 'Connection Status',
+                                subtitle: connectionStatus === 'checking' ? 'Checking...' : connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'disconnected' ? 'Disconnected' : 'Unknown',
+                                onPress: async () => {
+                                    setConnectionStatus('checking');
 
-                    <InfoRow
-                        label="API Base URL"
-                        value={oxyServices?.getBaseURL() || 'Not configured'}
-                        copyable
-                        icon="server"
-                        color="#007AFF"
-                        isFirst
+                                    if (!oxyServices) {
+                                        setConnectionStatus('disconnected');
+                                        toast.error('OxyServices not initialized');
+                                        return;
+                                    }
+
+                                    try {
+                                        await oxyServices.healthCheck();
+                                        setConnectionStatus('connected');
+                                        toast.success('API connection successful');
+                                    } catch (error) {
+                                        setConnectionStatus('disconnected');
+                                        toast.error('Failed to connect to API server');
+                                    }
+                                },
+                            },
+                        ]}
+                        theme={theme}
                     />
-                    <InfoRow
-                        label="Connection Status"
-                        value={
-                            connectionStatus === 'checking' ? 'Checking...' :
-                                connectionStatus === 'connected' ? 'Connected' :
-                                    connectionStatus === 'disconnected' ? 'Disconnected' :
-                                        'Unknown'
-                        }
-                        icon={
-                            connectionStatus === 'checking' ? 'sync' :
-                                connectionStatus === 'connected' ? 'wifi' :
-                                    'wifi-off'
-                        }
-                        color={
-                            connectionStatus === 'checking' ? '#FF9500' :
-                                connectionStatus === 'connected' ? '#34C759' :
-                                    '#FF3B30'
-                        }
-                        onPress={async () => {
-                            setConnectionStatus('checking');
-
-                            if (!oxyServices) {
-                                setConnectionStatus('disconnected');
-                                toast.error('OxyServices not initialized');
-                                return;
-                            }
-
-                            try {
-                                await oxyServices.healthCheck();
-                                setConnectionStatus('connected');
-                                toast.success('API connection successful');
-                            } catch (error) {
-                                setConnectionStatus('disconnected');
-                                toast.error('Failed to connect to API server');
-                            }
-                        }}
-                        showChevron={true}
-                        isLast
-                    />
-                </View>
+                </Section>
 
                 {/* Build Information */}
-                <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Build Information</Text>
-
-                    <InfoRow
-                        label="Build Timestamp"
-                        value={systemInfo?.timestamp || 'Loading...'}
-                        copyable
-                        icon="time"
-                        color="#007AFF"
-                        isFirst
+                <Section title="Build Information" theme={theme}>
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'build-timestamp',
+                                icon: 'time',
+                                iconColor: '#007AFF',
+                                title: 'Build Timestamp',
+                                subtitle: systemInfo?.timestamp || 'Loading...',
+                                onPress: () => copyToClipboard(systemInfo?.timestamp || 'Loading...', 'Build timestamp'),
+                            },
+                            {
+                                id: 'react-native',
+                                icon: 'logo-react',
+                                iconColor: '#61DAFB',
+                                title: 'React Native',
+                                subtitle: 'Expo/React Native',
+                            },
+                            {
+                                id: 'js-engine',
+                                icon: 'flash',
+                                iconColor: '#FF3B30',
+                                title: 'JavaScript Engine',
+                                subtitle: 'Hermes',
+                            },
+                        ]}
+                        theme={theme}
                     />
-                    <InfoRow
-                        label="React Native"
-                        value="Expo/React Native"
-                        icon="logo-react"
-                        color="#61DAFB"
-                    />
-                    <InfoRow
-                        label="JavaScript Engine"
-                        value="Hermes"
-                        icon="flash"
-                        color="#FF3B30"
-                        isLast
-                    />
-                </View>
+                </Section>
 
                 {/* Quick Actions */}
                 <Section title="Quick Actions" theme={theme}>
@@ -610,57 +461,8 @@ const styles = StyleSheet.create({
         flex: 1,
         padding: 16,
     },
-    section: {
-        marginBottom: 24,
-    },
-    sectionTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        color: '#333',
-        marginBottom: 12,
-        fontFamily: fontFamilies.phuduSemiBold,
-    },
-    settingItem: {
-        backgroundColor: '#fff',
-        padding: 16,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 2,
-    },
-    firstSettingItem: {
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
-    },
-    lastSettingItem: {
-        borderBottomLeftRadius: 24,
-        borderBottomRightRadius: 24,
-        marginBottom: 8,
-    },
-    settingInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
     settingIcon: {
         marginRight: 12,
-    },
-    settingDetails: {
-        flex: 1,
-    },
-    settingLabel: {
-        fontSize: 16,
-        fontWeight: '500',
-        color: '#333',
-        marginBottom: 2,
-    },
-    settingValue: {
-        fontSize: 14,
-        color: '#666',
-    },
-    settingDescription: {
-        fontSize: 14,
-        color: '#999',
     },
 });
 

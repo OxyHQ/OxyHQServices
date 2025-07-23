@@ -6,12 +6,16 @@ interface GroupedSectionItem {
     id: string;
     icon?: string;
     iconColor?: string;
+    image?: string;
+    imageSize?: number;
     title: string;
     subtitle?: string;
     onPress?: () => void;
     showChevron?: boolean;
     disabled?: boolean;
+    selected?: boolean;
     customContent?: React.ReactNode;
+    customIcon?: React.ReactNode;
 }
 
 interface GroupedSectionProps {
@@ -27,6 +31,8 @@ const GroupedSection: React.FC<GroupedSectionProps> = ({ items, theme }) => {
                     key={item.id}
                     icon={item.icon}
                     iconColor={item.iconColor}
+                    image={item.image}
+                    imageSize={item.imageSize}
                     title={item.title}
                     subtitle={item.subtitle}
                     theme={theme}
@@ -35,7 +41,9 @@ const GroupedSection: React.FC<GroupedSectionProps> = ({ items, theme }) => {
                     isLast={index === items.length - 1}
                     showChevron={item.showChevron}
                     disabled={item.disabled}
+                    selected={item.selected}
                     customContent={item.customContent}
+                    customIcon={item.customIcon}
                 />
             ))}
         </View>

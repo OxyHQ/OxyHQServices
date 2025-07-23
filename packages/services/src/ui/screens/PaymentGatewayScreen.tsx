@@ -25,6 +25,7 @@ import { FAIRWalletIcon } from '../components/icon';
 import { toast } from 'sonner';
 import QRCode from 'react-native-qrcode-svg';
 import * as RNIap from 'react-native-iap';
+import { Header, GroupedSection } from '../components';
 
 // Restrict payment methods to Card, Oxy Pay, and FairCoin (QR)
 const PAYMENT_METHODS = [
@@ -409,69 +410,11 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         'Review & Pay',
         'Success',
     ];
-    const PaymentGatewayHeader: React.FC<{ currentStep: number; totalSteps: number; title: string; }> = ({ currentStep, totalSteps, title }) => (
-        <View style={styles.headerWrapper}>
-            <OxyLogo style={styles.logo} />
-            <Text style={styles.headerTitle}>{title}</Text>
-            <View style={styles.headerStepIndicatorContainer}>
-                {Array.from({ length: totalSteps }).map((_, idx) => (
-                    <View
-                        key={idx}
-                        style={getStepIndicatorStyle(currentStep + 1 === idx + 1)}
-                    />
-                ))}
-            </View>
-        </View>
-    );
 
-    // Card container for main content
-    const Card: React.FC<{ children: React.ReactNode; style?: any }> = ({ children, style }) => (
-        <View style={[styles.card, style]}>
-            {children}
-        </View>
-    );
 
-    // Product/Item summary card for step 1
-    const renderItemSummary = () => {
-        if (paymentItems && paymentItems.length > 0) {
-            return (
-                <Card style={{ marginBottom: 10 }}>
-                    {paymentItems.map((item, idx) => (
-                        <View key={idx} style={{ marginBottom: 8 }}>
-                            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                                <Text style={{ fontWeight: '600', color: colors.text }}>
-                                    {item.type === 'product' && item.quantity ? `${item.quantity} × ` : ''}
-                                    {item.name}
-                                    {item.type === 'subscription' && item.period ? ` (${item.period})` : ''}
-                                </Text>
-                                <Text style={{ color: colors.text }}>
-                                    {(item.currency ? (CURRENCY_SYMBOLS[item.currency.toUpperCase()] || item.currency) : currencySymbol)} {item.price * (item.quantity ?? 1)}
-                                </Text>
-                            </View>
-                            {item.description ? (
-                                <Text style={{ color: colors.secondaryText, fontSize: 13 }}>{item.description}</Text>
-                            ) : null}
-                        </View>
-                    ))}
-                    <View style={{ borderTopWidth: 1, borderColor: colors.border, marginTop: 8, paddingTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={{ fontWeight: '700', color: colors.text }}>Total</Text>
-                        <Text style={{ fontWeight: '700', color: colors.primary, fontSize: 18 }}>{currencySymbol} {computedTotal}</Text>
-                    </View>
-                </Card>
-            );
-        } else if (description) {
-            return (
-                <Card style={{ marginBottom: 10 }}>
-                    <Text style={{ color: colors.text }}>{description}</Text>
-                    <View style={{ borderTopWidth: 1, borderColor: colors.border, marginTop: 8, paddingTop: 8, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <Text style={{ fontWeight: '700', color: colors.text }}>Total</Text>
-                        <Text style={{ fontWeight: '700', color: colors.primary, fontSize: 18 }}>{currencySymbol} {computedTotal}</Text>
-                    </View>
-                </Card>
-            );
-        }
-        return null;
-    };
+
+
+
 
     // Step 1: Summary step (new first step, no header/dots here)
     const renderSummaryStep = () => (
@@ -483,46 +426,48 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
             ]
         }]}
         >
-            <Card>
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Payment Summary</Text>
                 <Text style={{ color: colors.secondaryText, fontSize: 15, marginBottom: 16 }}>You're about to pay for the following:</Text>
-                {paymentItems && paymentItems.length > 0 ? paymentItems.map((item, idx) => (
-                    <View key={idx} style={{ marginBottom: 12, flexDirection: 'row', alignItems: 'flex-start' }}>
-                        {getItemTypeIcon(item.type, colors.primary)}
-                        <View style={{ flex: 1 }}>
-                            <Text style={{ fontWeight: '600', color: colors.text, fontSize: 16 }}>
-                                {item.type === 'product' && item.quantity ? `${item.quantity} × ` : ''}
-                                {item.name}
-                                {item.type === 'subscription' && item.period ? ` (${item.period})` : ''}
-                            </Text>
-                            {item.description ? (
-                                <Text style={{ color: colors.secondaryText, fontSize: 13, marginTop: 2 }}>{item.description}</Text>
-                            ) : null}
-                        </View>
-                        <Text style={{ color: colors.text, fontWeight: '600', fontSize: 16, marginLeft: 8 }}>
-                            {(item.currency ? (CURRENCY_SYMBOLS[item.currency.toUpperCase()] || item.currency) : currencySymbol)} {item.price * (item.quantity ?? 1)}
-                        </Text>
-                    </View>
-                )) : (
+
+                {paymentItems && paymentItems.length > 0 ? (
+                    <GroupedSection
+                        items={paymentItems.map((item, idx) => ({
+                            id: `item-${idx}`,
+                            icon: getItemTypeIcon(item.type, colors.primary).props.name,
+                            iconColor: colors.primary,
+                            title: `${item.type === 'product' && item.quantity ? `${item.quantity} × ` : ''}${item.name}${item.type === 'subscription' && item.period ? ` (${item.period})` : ''}`,
+                            subtitle: item.description || `${(item.currency ? (CURRENCY_SYMBOLS[item.currency.toUpperCase()] || item.currency) : currencySymbol)} ${item.price * (item.quantity ?? 1)}`,
+                            customContent: (
+                                <Text style={{ color: colors.text, fontWeight: '600', fontSize: 16 }}>
+                                    {(item.currency ? (CURRENCY_SYMBOLS[item.currency.toUpperCase()] || item.currency) : currencySymbol)} {item.price * (item.quantity ?? 1)}
+                                </Text>
+                            ),
+                        }))}
+                        theme={theme}
+                    />
+                ) : (
                     <Text style={{ color: colors.text }}>{description}</Text>
                 )}
-                <GroupedPillButtons
-                    buttons={[
-                        {
-                            text: 'Close',
-                            onPress: handleClose,
-                            icon: 'close',
-                            variant: 'transparent',
-                        },
-                        {
-                            text: 'Continue',
-                            onPress: nextStep,
-                            icon: 'arrow-forward',
-                            variant: 'primary',
-                        },
-                    ]}
-                    colors={colors}
-                />
-            </Card>
+            </View>
+
+            <GroupedPillButtons
+                buttons={[
+                    {
+                        text: 'Close',
+                        onPress: handleClose,
+                        icon: 'close',
+                        variant: 'transparent',
+                    },
+                    {
+                        text: 'Continue',
+                        onPress: nextStep,
+                        icon: 'arrow-forward',
+                        variant: 'primary',
+                    },
+                ]}
+                colors={colors}
+            />
         </Animated.View>
     );
 
@@ -536,39 +481,27 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
             ]
         }]}
         >
-            <Card>
-                <View style={styles.circleListContainer}>
-                    {availablePaymentMethods.map(method => {
-                        const isSelected = paymentMethod === method.key;
-                        return (
-                            <TouchableOpacity
-                                key={method.key}
-                                onPress={() => setPaymentMethod(method.key)}
-                                activeOpacity={0.85}
-                                style={[styles.circleMethod, isSelected && styles.circleMethodSelected]}
-                            >
-                                <View style={styles.circleIconWrapper}>
-                                    {method.key === 'faircoin' ? (
-                                        <FAIRWalletIcon size={28} />
-                                    ) : (
-                                        <Ionicons
-                                            name={method.icon as any}
-                                            size={28}
-                                            color={isSelected ? colors.primary : colors.text}
-                                        />
-                                    )}
-                                    {isSelected && (
-                                        <View style={styles.circleCheckOverlay}>
-                                            <Ionicons name="checkmark-circle" size={28} color={colors.primary} />
-                                        </View>
-                                    )}
-                                </View>
-                                <Text style={[styles.circleLabel, isSelected && styles.circleLabelSelected]}>{method.label}</Text>
-                            </TouchableOpacity>
-                        );
-                    })}
-                </View>
-            </Card>
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Choose Payment Method</Text>
+
+                <GroupedSection
+                    items={availablePaymentMethods.map(method => ({
+                        id: method.key,
+                        icon: method.key === 'faircoin' ? undefined : method.icon,
+                        iconColor: colors.primary,
+                        title: method.label,
+                        subtitle: method.description,
+                        onPress: () => setPaymentMethod(method.key),
+                        selected: paymentMethod === method.key,
+                        showChevron: false,
+                        customIcon: method.key === 'faircoin' ? (
+                            <FAIRWalletIcon size={20} />
+                        ) : undefined,
+                    }))}
+                    theme={theme}
+                />
+            </View>
+
             <GroupedPillButtons
                 buttons={[
                     {
@@ -599,9 +532,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
             ]
         }]}
         >
-            <Card
-                style={paymentMethod === 'faircoin' ? { backgroundColor: '#f6fff0', paddingVertical: 24, paddingHorizontal: 0 } : undefined}
-            >
+            <View style={paymentMethod === 'faircoin' ? { backgroundColor: '#f6fff0', paddingVertical: 24, paddingHorizontal: 0 } : undefined}>
                 {paymentMethod === 'card' && (
                     <>
                         <View style={styles.cardRowInfo}>
@@ -679,7 +610,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                         <Text style={styles.faircoinPlaceholder}>(This is a placeholder. Integrate with a QR code generator for production.)</Text>
                     </View>
                 )}
-            </Card>
+            </View>
             <GroupedPillButtons
                 buttons={[
                     {
@@ -712,41 +643,57 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
             ]
         }]}
         >
-            <Card>
-                <View style={styles.reviewSecureRow}>
-                    <Ionicons name="shield-checkmark" size={20} color={colors.success || '#4BB543'} style={styles.reviewSecureIcon} />
-                    <Text style={styles.reviewSecureText}>Secure payment</Text>
-                </View>
-                <View style={styles.reviewRow}>
-                    <Text style={styles.reviewLabel}>Amount</Text>
-                    <Text style={styles.reviewValue}>{currencySymbol} {amount}</Text>
-                </View>
-                <View style={styles.reviewRow}>
-                    <Text style={styles.reviewLabel}>Method</Text>
-                    <View style={styles.reviewMethodRow}>
-                        <Ionicons name={PAYMENT_METHODS.find(m => m.key === paymentMethod)?.icon as any} size={18} color={colors.primary} style={styles.reviewMethodIcon} />
-                        <Text style={styles.reviewMethodText}>{PAYMENT_METHODS.find(m => m.key === paymentMethod)?.label}</Text>
-                    </View>
-                </View>
-                {paymentMethod === 'card' && (
-                    <View style={styles.reviewRow}>
-                        <Text style={styles.reviewLabel}>Card</Text>
-                        <Text style={styles.reviewValue}>{cardDetails.number.replace(/.(?=.{4})/g, '*')}</Text>
-                    </View>
-                )}
-                {paymentMethod === 'oxy' && (
-                    <View style={styles.reviewRow}>
-                        <Text style={styles.reviewLabel}>Oxy Pay Account</Text>
-                        <Text style={styles.reviewValue}>Balance: ⊜ 123.45</Text>
-                    </View>
-                )}
-                {paymentMethod === 'faircoin' && (
-                    <View style={styles.reviewRow}>
-                        <Text style={styles.reviewLabel}>FairCoin Wallet</Text>
-                        <Text style={styles.reviewValue}>Paid via QR</Text>
-                    </View>
-                )}
-            </Card>
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Review Payment</Text>
+
+                <GroupedSection
+                    items={[
+                        {
+                            id: 'secure-payment',
+                            icon: 'shield-checkmark',
+                            iconColor: colors.success || '#4BB543',
+                            title: 'Secure payment',
+                            subtitle: 'Your payment is protected by industry-standard encryption',
+                        },
+                        {
+                            id: 'amount',
+                            icon: 'cash',
+                            iconColor: colors.primary,
+                            title: 'Amount',
+                            subtitle: `${currencySymbol} ${amount}`,
+                        },
+                        {
+                            id: 'payment-method',
+                            icon: PAYMENT_METHODS.find(m => m.key === paymentMethod)?.icon as any,
+                            iconColor: colors.primary,
+                            title: 'Payment Method',
+                            subtitle: PAYMENT_METHODS.find(m => m.key === paymentMethod)?.label,
+                        },
+                        ...(paymentMethod === 'card' ? [{
+                            id: 'card-details',
+                            icon: 'card',
+                            iconColor: colors.primary,
+                            title: 'Card',
+                            subtitle: cardDetails.number.replace(/.(?=.{4})/g, '*'),
+                        }] : []),
+                        ...(paymentMethod === 'oxy' ? [{
+                            id: 'oxy-balance',
+                            icon: 'wallet',
+                            iconColor: colors.primary,
+                            title: 'Oxy Pay Account',
+                            subtitle: 'Balance: ⊜ 123.45',
+                        }] : []),
+                        ...(paymentMethod === 'faircoin' ? [{
+                            id: 'faircoin-wallet',
+                            icon: 'qr-code',
+                            iconColor: colors.primary,
+                            title: 'FairCoin Wallet',
+                            subtitle: 'Paid via QR',
+                        }] : []),
+                    ]}
+                    theme={theme}
+                />
+            </View>
             <GroupedPillButtons
                 buttons={[
                     {
@@ -809,7 +756,8 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
             ]
         }]}
         >
-            <Card>
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Google Play Products</Text>
                 <Text style={{ color: colors.text, fontWeight: '600', fontSize: 16, marginBottom: 12 }}>Select a product to purchase:</Text>
                 {iapLoading && <Text style={{ color: colors.secondaryText }}>Loading products...</Text>}
                 {iapError && <Text style={{ color: 'red' }}>{iapError}</Text>}
@@ -826,7 +774,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                 {iapPurchase && (
                     <Text style={{ color: colors.success, marginTop: 10 }}>Purchase successful!</Text>
                 )}
-            </Card>
+            </View>
             <GroupedPillButtons
                 buttons={[
                     {
@@ -854,28 +802,35 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         }
     };
 
+    // Memoize theme-related calculations to prevent unnecessary recalculations
+    const themeStyles = useMemo(() => {
+        const isDarkTheme = theme === 'dark';
+        return {
+            isDarkTheme,
+            backgroundColor: isDarkTheme ? '#121212' : '#f2f2f2',
+            primaryColor: '#007AFF',
+        };
+    }, [theme]);
+
     return (
-        <KeyboardAvoidingView
-            style={[styles.container, { backgroundColor: colors.background }]}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-            <StatusBar
-                barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
-                backgroundColor={colors.background}
-            />
-            <PaymentGatewayHeader
-                currentStep={currentStep}
-                totalSteps={5}
+        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+            {/* Header */}
+            <Header
                 title={stepTitles[currentStep]}
+                theme={theme}
+                onBack={onClose || undefined}
+                rightAction={{
+                    icon: 'close',
+                    onPress: onClose || (() => { }),
+                }}
+                elevation="subtle"
             />
-            <ScrollView
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-            >
+
+            {/* Content */}
+            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 {renderCurrentStep()}
             </ScrollView>
-        </KeyboardAvoidingView>
+        </View>
     );
 };
 
@@ -883,16 +838,25 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
     container: {
         flex: 1,
     },
-    scrollContent: {
-        flexGrow: 1,
-        paddingHorizontal: 24,
-        paddingBottom: 20,
+    content: {
+        flex: 1,
+        padding: 16,
     },
     stepContainer: {
-        flex: 1,
         justifyContent: 'flex-start',
         alignItems: 'flex-start',
         width: '100%',
+    },
+    section: {
+        marginBottom: 24,
+        width: '100%',
+    },
+    sectionTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: colors.text,
+        marginBottom: 12,
+        fontFamily: fontFamilies.phuduSemiBold,
     },
     stepIndicatorContainer: {
         flexDirection: 'row',
@@ -926,27 +890,7 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         color: colors.text,
         letterSpacing: -0.5,
     },
-    headerWrapper: {
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: '100%',
-        gap: 8,
-        paddingVertical: 8,
-    },
-    card: {
-        backgroundColor: '#fff',
-        borderRadius: 20,
-        padding: 28,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.08,
-        shadowRadius: 8,
-        elevation: 3,
-        marginVertical: 8,
-        width: '100%',
-        alignSelf: 'center',
-    },
+
     paymentMethodButton: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -1098,45 +1042,7 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         color: colors.secondaryText,
         textAlign: 'center',
     },
-    reviewSecureRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    reviewSecureIcon: {
-        marginRight: 8,
-    },
-    reviewSecureText: {
-        color: colors.success || '#4BB543',
-        fontWeight: '600',
-        fontSize: 15,
-    },
-    reviewRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    reviewLabel: {
-        fontSize: 15,
-        color: colors.secondaryText,
-    },
-    reviewValue: {
-        fontSize: 18,
-        fontWeight: '700',
-        color: colors.text,
-    },
-    reviewMethodRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-    },
-    reviewMethodIcon: {
-        marginRight: 6,
-    },
-    reviewMethodText: {
-        fontSize: 16,
-        color: colors.text,
-    },
+
     successContainer: {
         alignItems: 'center',
         justifyContent: 'center',
@@ -1272,15 +1178,7 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         minHeight: 36,
         marginBottom: 2,
     },
-    circleCheckOverlay: {
-        position: 'absolute',
-        bottom: -8,
-        right: -8,
-        backgroundColor: '#fff',
-        borderRadius: 16,
-        padding: 0,
-        zIndex: 2,
-    },
+
     headerStepIndicatorContainer: {
         marginVertical: 2,
         flexDirection: 'row',
