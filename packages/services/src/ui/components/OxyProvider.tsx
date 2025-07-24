@@ -126,13 +126,17 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     };
                 }
             });
+
             // Add a method to navigate between screens
             // @ts-ignore
             bottomSheetRef.current._navigateToScreen = (screenName: string, props?: Record<string, any>) => {
+                console.log('_navigateToScreen called with:', screenName, props);
                 if (navigationRef.current) {
+                    console.log('Using navigationRef.current');
                     navigationRef.current(screenName, props);
                     return;
                 }
+                console.log('navigationRef.current not available, using event system');
                 if (typeof document !== 'undefined') {
                     const event = new CustomEvent('oxy:navigate', { detail: { screen: screenName, props } });
                     document.dispatchEvent(event);
@@ -140,6 +144,8 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                     (globalThis as any).oxyNavigateEvent = { screen: screenName, props };
                 }
             };
+
+            console.log('Bottom sheet ref methods exposed:', Object.keys(bottomSheetRef.current));
         }
     }, [bottomSheetRef, modalRef]);
     // Keyboard handling (unchanged)

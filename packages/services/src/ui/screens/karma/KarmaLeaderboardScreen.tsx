@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity
 import { BaseScreenProps } from '../../navigation/types';
 import { useOxy } from '../../context/OxyContext';
 import Avatar from '../../components/Avatar';
+import { Header } from '../../components';
 
 const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navigate }) => {
     const { oxyServices } = useOxy();
@@ -26,7 +27,13 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
 
     return (
         <View style={[styles.container, { backgroundColor }]}>
-            <Text style={[styles.title, { color: textColor }]}>Karma Leaderboard</Text>
+            <Header
+                title="Karma Leaderboard"
+                subtitle="Top contributors in the community"
+                theme={theme}
+                onBack={goBack}
+                elevation="subtle"
+            />
             {isLoading ? (
                 <ActivityIndicator size="large" color={primaryColor} style={{ marginTop: 40 }} />
             ) : error ? (
@@ -58,8 +65,7 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    title: { fontSize: 24, fontWeight: 'bold', margin: 24, textAlign: 'center' },
-    listContainer: { paddingBottom: 40 },
+    listContainer: { paddingBottom: 40, paddingTop: 20 },
     row: {
         flexDirection: 'row',
         alignItems: 'center',

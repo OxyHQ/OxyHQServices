@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import { BaseScreenProps } from '../../navigation/types';
 import { useOxy } from '../../context/OxyContext';
+import { Header } from '../../components';
 
 const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const { oxyServices } = useOxy();
@@ -25,7 +26,13 @@ const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
 
     return (
         <View style={[styles.container, { backgroundColor }]}>
-            <Text style={[styles.title, { color: textColor }]}>Karma Rules</Text>
+            <Header
+                title="Karma Rules"
+                subtitle="How to earn karma points"
+                theme={theme}
+                onBack={goBack}
+                elevation="subtle"
+            />
             {isLoading ? (
                 <ActivityIndicator size="large" color={primaryColor} style={{ marginTop: 40 }} />
             ) : error ? (
@@ -49,8 +56,7 @@ const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    title: { fontSize: 24, fontWeight: 'bold', margin: 24, textAlign: 'center' },
-    listContainer: { paddingBottom: 40 },
+    listContainer: { paddingBottom: 40, paddingTop: 20 },
     ruleRow: {
         paddingVertical: 14,
         paddingHorizontal: 24,

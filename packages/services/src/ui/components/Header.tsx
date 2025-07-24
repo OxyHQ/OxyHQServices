@@ -28,6 +28,8 @@ export interface HeaderProps {
     showCloseButton?: boolean;
     variant?: 'default' | 'large' | 'minimal' | 'gradient';
     elevation?: 'none' | 'subtle' | 'prominent';
+    subtitleVariant?: 'default' | 'small' | 'large' | 'muted';
+    titleAlignment?: 'left' | 'center' | 'right';
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -41,6 +43,8 @@ const Header: React.FC<HeaderProps> = ({
     showCloseButton = false,
     variant = 'default',
     elevation = 'subtle',
+    subtitleVariant = 'default',
+    titleAlignment = 'left',
 }) => {
     const isDarkTheme = theme === 'dark';
 
@@ -139,11 +143,26 @@ const Header: React.FC<HeaderProps> = ({
 
         const subtitleStyle = variant === 'large' ? styles.subtitleLarge :
             variant === 'minimal' ? styles.subtitleMinimal :
-                styles.subtitleDefault;
+                subtitleVariant === 'small' ? styles.subtitleSmall :
+                    subtitleVariant === 'large' ? styles.subtitleLarge :
+                        subtitleVariant === 'muted' ? styles.subtitleMuted :
+                            styles.subtitleDefault;
+
+        const getTitleAlignment = () => {
+            switch (titleAlignment) {
+                case 'center':
+                    return styles.titleContainerCenter;
+                case 'right':
+                    return styles.titleContainerRight;
+                default:
+                    return styles.titleContainerLeft;
+            }
+        };
 
         return (
             <View style={[
                 styles.titleContainer,
+                getTitleAlignment(),
                 variant === 'minimal' && styles.titleContainerMinimal
             ]}>
                 <Text style={[titleStyle, { color: colors.text.primary }]}>
@@ -281,6 +300,15 @@ const styles = StyleSheet.create({
         alignItems: 'flex-start',
         justifyContent: 'center',
     },
+    titleContainerLeft: {
+        alignItems: 'flex-start',
+    },
+    titleContainerCenter: {
+        alignItems: 'center',
+    },
+    titleContainerRight: {
+        alignItems: 'flex-end',
+    },
     titleContainerMinimal: {
         alignItems: 'center',
         marginHorizontal: 16,
@@ -309,21 +337,34 @@ const styles = StyleSheet.create({
     },
     subtitleDefault: {
         fontSize: 14,
-        fontFamily: fontFamilies.phuduMedium,
+        fontWeight: '400',
         lineHeight: 17,
         marginTop: 1,
     },
     subtitleLarge: {
         fontSize: 16,
-        fontFamily: fontFamilies.phuduMedium,
+        fontWeight: '400',
         lineHeight: 19,
         marginTop: 3,
     },
     subtitleMinimal: {
         fontSize: 13,
-        fontFamily: fontFamilies.phuduMedium,
+        fontWeight: '400',
         lineHeight: 15,
         marginTop: 1,
+    },
+    subtitleSmall: {
+        fontSize: 12,
+        fontWeight: '400',
+        lineHeight: 14,
+        marginTop: 0,
+    },
+    subtitleMuted: {
+        fontSize: 14,
+        fontWeight: '400',
+        lineHeight: 17,
+        marginTop: 1,
+        opacity: 0.7,
     },
     rightActionButton: {
         alignItems: 'center',

@@ -20,6 +20,7 @@ import KarmaAboutScreen from '../screens/karma/KarmaAboutScreen';
 import KarmaRewardsScreen from '../screens/karma/KarmaRewardsScreen';
 import KarmaFAQScreen from '../screens/karma/KarmaFAQScreen';
 import ProfileScreen from '../screens/ProfileScreen';
+import UserLinksScreen from '../screens/UserLinksScreen';
 import FileManagementScreen from '../screens/FileManagementScreen';
 import RecoverAccountScreen from '../screens/RecoverAccountScreen';
 import PaymentGatewayScreen from '../screens/PaymentGatewayScreen';
@@ -101,6 +102,10 @@ const routes: Record<string, RouteConfig> = {
         component: ProfileScreen,
         snapPoints: ['60%', '90%'],
     },
+    UserLinks: {
+        component: UserLinksScreen,
+        snapPoints: ['60%', '90%'],
+    },
     FileManagement: {
         component: FileManagementScreen,
         snapPoints: ['70%', '100%'],
@@ -135,11 +140,14 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
 
     // Memoized navigation methods
     const navigate = useCallback((screen: string, props: Record<string, any> = {}) => {
+        console.log('OxyRouter: navigate called with screen:', screen, 'props:', props);
         if (routes[screen]) {
+            console.log('OxyRouter: screen found in routes, navigating to:', screen);
             setCurrentScreen(screen);
             setScreenHistory(prev => [...prev, screen]);
             setScreenPropsMap(prev => ({ ...prev, [screen]: props }));
         } else {
+            console.error(`OxyRouter: Screen "${screen}" not found in routes:`, Object.keys(routes));
             if (process.env.NODE_ENV !== 'production') {
                 console.error(`Screen "${screen}" not found`);
             }
@@ -165,10 +173,12 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
     useEffect(() => {
         if (navigationRef) {
             navigationRef.current = navigate;
+            console.log('OxyRouter: navigationRef.current set to navigate function');
         }
         return () => {
             if (navigationRef) {
                 navigationRef.current = null;
+                console.log('OxyRouter: navigationRef.current cleared');
             }
         };
     }, [navigate, navigationRef]);

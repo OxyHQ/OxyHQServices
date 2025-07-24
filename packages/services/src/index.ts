@@ -69,3 +69,4 @@ export { useSessionSocket } from './ui/hooks/useSessionSocket';
 
 // UI components
 export { OxySignInButton } from './ui/components/OxySignInButton';
+export { OxyLogo } from './ui';

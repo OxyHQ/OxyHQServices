@@ -861,8 +861,8 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                 )}
 
                 {iapError && (
-                    <View style={styles.errorContainer}>
-                        <Text style={styles.errorText}>{iapError}</Text>
+                    <View style={styles.paymentErrorContainer}>
+                        <Text style={styles.paymentErrorText}>{iapError}</Text>
                     </View>
                 )}
 
@@ -1422,7 +1422,7 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         fontSize: 16,
         fontStyle: 'italic',
     },
-    errorContainer: {
+    paymentErrorContainer: {
         padding: 16,
         backgroundColor: '#ffebee',
         borderRadius: 12,
@@ -1430,7 +1430,7 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         borderWidth: 1,
         borderColor: '#ffcdd2',
     },
-    errorText: {
+    paymentErrorText: {
         color: '#d32f2f',
         fontSize: 14,
         textAlign: 'center',

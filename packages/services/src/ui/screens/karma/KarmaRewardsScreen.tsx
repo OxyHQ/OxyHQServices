@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform } from 'react-native';
 import { BaseScreenProps } from '../../navigation/types';
+import { Header } from '../../components';
 
 const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const isDarkTheme = theme === 'dark';
@@ -11,7 +12,13 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     // Placeholder: In a real app, fetch rewards from API
     return (
         <View style={[styles.container, { backgroundColor }]}>
-            <Text style={[styles.title, { color: textColor }]}>Karma Rewards</Text>
+            <Header
+                title="Karma Rewards"
+                subtitle="Unlock special features and recognition"
+                theme={theme}
+                onBack={goBack}
+                elevation="subtle"
+            />
             <ScrollView contentContainerStyle={styles.contentContainer}>
                 <Text style={[styles.paragraph, { color: textColor }]}>Unlock special features and recognition by earning karma!</Text>
                 <View style={styles.rewardBox}>
@@ -34,8 +41,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
 
 const styles = StyleSheet.create({
     container: { flex: 1 },
-    title: { fontSize: 24, fontWeight: 'bold', margin: 24, textAlign: 'center' },
-    contentContainer: { padding: 24 },
+    contentContainer: { padding: 24, paddingTop: 20 },
     rewardBox: {
         backgroundColor: '#f7eaff',
         borderRadius: 16,

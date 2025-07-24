@@ -210,7 +210,7 @@ app.use("/privacy", privacyRoutes);
 app.use("/analytics", analyticsRoutes);
 app.use('/payments', paymentRoutes);
 app.use('/notifications', notificationsRouter);
-// app.use('/karma', karmaRoutes); // Temporarily disabled due to headers error
+app.use('/karma', karmaRoutes);
 app.use('/wallet', walletRoutes);
 app.use('/link-metadata', linkMetadataRoutes);
 app.use('/location-search', locationSearchRoutes);

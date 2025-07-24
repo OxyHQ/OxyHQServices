@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, TextInput, LayoutAnimation, UIManager } from 'react-native';
 import { BaseScreenProps } from '../../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
+import { Header } from '../../components';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
@@ -79,7 +80,14 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
 
     return (
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
-            <Text style={[styles.title, { color: themeStyles.textColor }]}>Karma FAQ</Text>
+            <Header
+                title="Karma FAQ"
+                subtitle="Frequently asked questions about karma"
+                subtitleVariant="muted"
+                theme={theme}
+                onBack={goBack}
+                elevation="subtle"
+            />
             <View style={[styles.searchBar, { backgroundColor: themeStyles.inputBg, borderColor: themeStyles.inputBorder }]}>
                 <Ionicons name="search-outline" size={20} color={themeStyles.primaryColor} style={{ marginRight: 8 }} />
                 <TextInput
@@ -91,31 +99,37 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                     returnKeyType="search"
                 />
             </View>
-            <ScrollView contentContainerStyle={styles.contentContainer} keyboardShouldPersistTaps="handled">
+            <ScrollView contentContainerStyle={styles.contentContainer}>
                 {filteredFaqs.length === 0 ? (
-                    <Text style={[styles.noResults, { color: themeStyles.textColor }]}>No results found.</Text>
+                    <Text style={[styles.noResults, { color: themeStyles.textColor }]}>
+                        No FAQ items found matching "{search}"
+                    </Text>
                 ) : (
-                    filteredFaqs.map((item, idx) => {
-                        const isOpen = expanded === idx;
-                        return (
-                            <TouchableOpacity
-                                key={idx}
-                                style={[styles.card, { backgroundColor: themeStyles.cardColor, shadowColor: themeStyles.isDarkTheme ? '#000' : '#d169e5' }]}
-                                activeOpacity={0.95}
-                                onPress={() => handleToggle(idx)}
-                            >
-                                <View style={styles.questionRow}>
-                                    <Ionicons name={isOpen ? 'chevron-down' : 'chevron-forward'} size={22} color={themeStyles.primaryColor} style={{ marginRight: 8 }} />
-                                    <Text style={[styles.question, { color: themeStyles.primaryColor }]}>{item.q}</Text>
-                                </View>
-                                {isOpen && (
-                                    <Text style={[styles.answer, { color: themeStyles.textColor }]}>{item.a}</Text>
-                                )}
-                            </TouchableOpacity>
-                        );
-                    })
+                    filteredFaqs.map((faq, idx) => (
+                        <TouchableOpacity
+                            key={idx}
+                            style={[styles.card, { backgroundColor: themeStyles.cardColor }]}
+                            onPress={() => handleToggle(idx)}
+                            activeOpacity={0.7}
+                        >
+                            <View style={styles.questionRow}>
+                                <Text style={[styles.question, { color: themeStyles.textColor }]}>
+                                    {faq.q}
+                                </Text>
+                                <Ionicons
+                                    name={expanded === idx ? 'chevron-up' : 'chevron-down'}
+                                    size={20}
+                                    color={themeStyles.primaryColor}
+                                />
+                            </View>
+                            {expanded === idx && (
+                                <Text style={[styles.answer, { color: themeStyles.textColor }]}>
+                                    {faq.a}
+                                </Text>
+                            )}
+                        </TouchableOpacity>
+                    ))
                 )}
-                <Text style={[styles.paragraph, { color: themeStyles.textColor, marginTop: 32, textAlign: 'center' }]}>Still have questions? Contact support!</Text>
             </ScrollView>
         </View>
     );
@@ -146,7 +160,7 @@ const styles = StyleSheet.create({
         fontSize: 16,
         height: 44,
     },
-    contentContainer: { padding: 24, paddingBottom: 40 },
+    contentContainer: { padding: 24, paddingTop: 20, paddingBottom: 40 },
     card: {
         borderRadius: 18,
         padding: 20,
@@ -159,11 +173,13 @@ const styles = StyleSheet.create({
     questionRow: {
         flexDirection: 'row',
         alignItems: 'center',
+        justifyContent: 'space-between',
         marginBottom: 8,
     },
     question: {
         fontSize: 17,
         fontWeight: 'bold',
+        flex: 1,
     },
     answer: {
         fontSize: 16,

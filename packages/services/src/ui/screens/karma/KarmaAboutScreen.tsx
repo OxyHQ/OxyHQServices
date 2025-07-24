@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform } from 'react-native';
 import { BaseScreenProps } from '../../navigation/types';
+import { Header } from '../../components';
 
 const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const isDarkTheme = theme === 'dark';
@@ -10,7 +11,13 @@ const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
 
     return (
         <View style={[styles.container, { backgroundColor }]}>
-            <Text style={[styles.title, { color: textColor }]}>About Karma</Text>
+            <Header
+                title="About Karma"
+                subtitle="Learn about the karma system"
+                theme={theme}
+                onBack={goBack}
+                elevation="subtle"
+            />
             <ScrollView contentContainerStyle={styles.contentContainer}>
                 <Text style={[styles.paragraph, { color: textColor }]}>Karma is a recognition of your positive actions in the Oxy Ecosystem. It cannot be sent or received directly, only earned by contributing to the community.</Text>
                 <Text style={[styles.section, { color: primaryColor }]}>How to Earn Karma</Text>
@@ -37,7 +44,7 @@ const styles = StyleSheet.create({
         margin: 24,
         marginBottom: 24,
     },
-    contentContainer: { padding: 24 },
+    contentContainer: { padding: 24, paddingTop: 20 },
     section: { fontSize: 18, fontWeight: 'bold', marginTop: 24, marginBottom: 8 },
     paragraph: { fontSize: 16, marginBottom: 12 },
 });

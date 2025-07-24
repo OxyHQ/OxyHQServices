@@ -16,7 +16,6 @@ import Avatar from '../../components/Avatar';
 import { Ionicons } from '@expo/vector-icons';
 
 const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
-    onClose,
     theme,
     navigate,
     goBack,
@@ -137,11 +136,6 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                 </View>
                 {error && <Text style={{ color: '#D32F2F', marginTop: 16, textAlign: 'center' }}>{error}</Text>}
             </ScrollView>
-            <View style={styles.footer}>
-                <TouchableOpacity style={styles.closeButton} onPress={onClose}>
-                    <Text style={[styles.closeButtonText, { color: primaryColor }]}>Close</Text>
-                </TouchableOpacity>
-            </View>
         </View>
     );
 };
@@ -247,20 +241,7 @@ const styles = StyleSheet.create({
         fontSize: 13,
         marginTop: 2,
     },
-    footer: {
-        padding: 16,
-        borderTopWidth: 1,
-        borderTopColor: '#E0E0E0',
-        alignItems: 'center',
-    },
-    closeButton: {
-        paddingVertical: 8,
-        paddingHorizontal: 16,
-    },
-    closeButtonText: {
-        fontSize: 16,
-        fontWeight: '600',
-    },
+
     message: {
         fontSize: 16,
         textAlign: 'center',

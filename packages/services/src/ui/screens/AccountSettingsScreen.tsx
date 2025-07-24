@@ -1020,6 +1020,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                             <GroupedSection
                                 items={[
                                     {
+                                        id: 'preview-profile',
+                                        icon: 'eye',
+                                        iconColor: '#007AFF',
+                                        title: 'Preview Profile',
+                                        subtitle: 'See how your profile looks to others',
+                                        onPress: () => navigate?.('Profile', { userId: user?.id }),
+                                    },
+                                    {
                                         id: 'privacy-settings',
                                         icon: 'shield-checkmark',
                                         iconColor: '#8E8E93',
