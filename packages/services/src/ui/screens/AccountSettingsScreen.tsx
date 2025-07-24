@@ -945,7 +945,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                         title: 'Locations',
                                         subtitle: tempLocations.length > 0 ? `${tempLocations.length} location${tempLocations.length !== 1 ? 's' : ''} added` : 'Add your locations',
                                         onPress: () => startEditing('location', ''),
-                                        customContent: tempLocations.length > 0 && (
+                                        customContentBelow: tempLocations.length > 0 && (
                                             <View style={styles.linksPreviewContainer}>
                                                 {tempLocations.slice(0, 2).map((location, index) => (
                                                     <View key={location.id || index} style={styles.linkPreviewItem}>
