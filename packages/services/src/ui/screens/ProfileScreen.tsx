@@ -321,7 +321,7 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         fontSize: 16
     },
-    header: { alignItems: 'flex-start', paddingTop: 18, paddingBottom: 24, width: '100%', paddingHorizontal: 20 },
+    header: { alignItems: 'flex-start', width: '100%', paddingHorizontal: 20 },
     displayName: { fontSize: 24, fontWeight: 'bold', marginTop: 10, marginBottom: 2, letterSpacing: 0.1 },
     subText: { fontSize: 16, marginBottom: 2, color: '#a0a0a0' },
     bio: { fontSize: 16, marginTop: 10, marginBottom: 10, color: '#666', lineHeight: 22 },
