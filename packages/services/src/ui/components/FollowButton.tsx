@@ -21,6 +21,7 @@ import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { useFollow } from '../hooks/useFollow';
+import { useThemeColors } from '../styles/theme';
 
 export interface FollowButtonProps {
   userId: string;
@@ -32,6 +33,7 @@ export interface FollowButtonProps {
   disabled?: boolean;
   showLoadingState?: boolean;
   preventParentActions?: boolean;
+  theme?: 'light' | 'dark';
 }
 
 const FollowButton: React.FC<FollowButtonProps> = ({
@@ -44,8 +46,10 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   disabled = false,
   showLoadingState = true,
   preventParentActions = true,
+  theme = 'light',
 }) => {
   const { oxyServices, isAuthenticated } = useOxy();
+  const colors = useThemeColors(theme);
   const {
     isFollowing,
     isLoading,
@@ -96,19 +100,93 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     }
   }, [disabled, isLoading, toggleFollow, onFollowChange, isFollowing, preventParentActions]);
 
-  // Button styles
+  // Get button style based on size and follow state
   const getButtonStyle = (): StyleProp<ViewStyle> => {
-    let baseStyle = styles.buttonMedium;
-    if (size === 'small') baseStyle = styles.buttonSmall;
-    if (size === 'large') baseStyle = styles.buttonLarge;
-    return [baseStyle, isFollowing ? styles.following : styles.notFollowing, style];
+    const baseStyle = {
+      flexDirection: 'row' as const,
+      alignItems: 'center' as const,
+      justifyContent: 'center' as const,
+      borderWidth: 1,
+      ...Platform.select({
+        web: {
+          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+        },
+        default: {
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.1,
+          shadowRadius: 4,
+          elevation: 2,
+        }
+      }),
+    };
+
+    // Size-specific styles
+    let sizeStyle = {};
+    if (size === 'small') {
+      sizeStyle = {
+        paddingVertical: 6,
+        paddingHorizontal: 12,
+        minWidth: 70,
+        borderRadius: 35,
+      };
+    } else if (size === 'large') {
+      sizeStyle = {
+        paddingVertical: 12,
+        paddingHorizontal: 24,
+        minWidth: 120,
+        borderRadius: 35,
+      };
+    } else {
+      // medium
+      sizeStyle = {
+        paddingVertical: 8,
+        paddingHorizontal: 16,
+        minWidth: 90,
+        borderRadius: 35,
+      };
+    }
+
+    // State-specific colors
+    let stateStyle = {};
+    if (isFollowing) {
+      stateStyle = {
+        backgroundColor: colors.primary,
+        borderColor: colors.primary,
+        shadowColor: colors.primary,
+      };
+    } else {
+      stateStyle = {
+        backgroundColor: 'transparent',
+        borderColor: colors.border,
+        shadowColor: colors.border,
+      };
+    }
+
+    return [baseStyle, sizeStyle, stateStyle, style];
   };
 
+  // Get text style based on size and follow state
   const getTextStyle = (): StyleProp<TextStyle> => {
-    let baseStyle = styles.textMedium;
-    if (size === 'small') baseStyle = styles.textSmall;
-    if (size === 'large') baseStyle = styles.textLarge;
-    return [baseStyle, isFollowing ? styles.textFollowing : styles.textNotFollowing, textStyle];
+    const baseTextStyle = {
+      fontFamily: fontFamilies.phuduSemiBold,
+      fontWeight: '600' as const,
+    };
+
+    // Size-specific text styles
+    let sizeTextStyle = {};
+    if (size === 'small') {
+      sizeTextStyle = { fontSize: 13 };
+    } else if (size === 'large') {
+      sizeTextStyle = { fontSize: 16 };
+    } else {
+      // medium
+      sizeTextStyle = { fontSize: 15 };
+    }
+
+    // State-specific text color
+    const textColor = isFollowing ? '#FFFFFF' : colors.text;
+
+    return [baseTextStyle, sizeTextStyle, { color: textColor }, textStyle];
   };
 
   return (
@@ -119,15 +197,21 @@ const FollowButton: React.FC<FollowButtonProps> = ({
       activeOpacity={0.8}
     >
       {showLoadingState && isLoading ? (
-        <ActivityIndicator size={size === 'small' ? 'small' : 'large'} color={isFollowing ? '#fff' : '#007AFF'} />
+        <ActivityIndicator
+          size={size === 'small' ? 'small' : 'small'}
+          color={isFollowing ? '#FFFFFF' : colors.primary}
+        />
       ) : (
-        <Text style={getTextStyle()}>{isFollowing ? 'Following' : 'Follow'}</Text>
+        <Text style={getTextStyle()}>
+          {isFollowing ? 'Following' : 'Follow'}
+        </Text>
       )}
     </TouchableOpacity>
   );
 };
 
 const styles = StyleSheet.create({
+  // Legacy styles kept for backward compatibility but not used in new implementation
   buttonSmall: {
     paddingVertical: 4,
     paddingHorizontal: 12,
