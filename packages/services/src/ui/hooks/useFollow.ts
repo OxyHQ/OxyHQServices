@@ -14,6 +14,11 @@ export const useFollow = (userId?: string | string[]) => {
   const isFollowing = isSingleUser && userId ? followState.followingUsers[userId] ?? false : false;
   const isLoading = isSingleUser && userId ? followState.loadingUsers[userId] ?? false : false;
   const error = isSingleUser && userId ? followState.errors[userId] ?? null : null;
+  
+  // Follower count helpers
+  const followerCount = isSingleUser && userId ? followState.followerCounts[userId] ?? null : null;
+  const followingCount = isSingleUser && userId ? followState.followingCounts[userId] ?? null : null;
+  const isLoadingCounts = isSingleUser && userId ? followState.loadingCounts[userId] ?? false : false;
 
   const toggleFollow = useCallback(async () => {
     if (!isSingleUser || !userId) throw new Error('toggleFollow is only available for single user mode');
@@ -33,6 +38,21 @@ export const useFollow = (userId?: string | string[]) => {
   const clearError = useCallback(() => {
     if (!isSingleUser || !userId) throw new Error('clearError is only available for single user mode');
     followState.clearFollowError(userId);
+  }, [isSingleUser, userId, followState]);
+
+  const fetchUserCounts = useCallback(async () => {
+    if (!isSingleUser || !userId) throw new Error('fetchUserCounts is only available for single user mode');
+    await followState.fetchUserCounts(userId, oxyServices);
+  }, [isSingleUser, userId, followState, oxyServices]);
+
+  const setFollowerCount = useCallback((count: number) => {
+    if (!isSingleUser || !userId) throw new Error('setFollowerCount is only available for single user mode');
+    followState.setFollowerCount(userId, count);
+  }, [isSingleUser, userId, followState]);
+
+  const setFollowingCount = useCallback((count: number) => {
+    if (!isSingleUser || !userId) throw new Error('setFollowingCount is only available for single user mode');
+    followState.setFollowingCount(userId, count);
   }, [isSingleUser, userId, followState]);
 
   // Multiple user helpers
@@ -69,6 +89,11 @@ export const useFollow = (userId?: string | string[]) => {
     followState.clearFollowError(targetUserId);
   }, [followState]);
 
+  const updateCountsFromFollowAction = useCallback((targetUserId: string, action: 'follow' | 'unfollow', counts: { followers: number; following: number }) => {
+    const currentUserId = oxyServices.getCurrentUserId() || undefined;
+    followState.updateCountsFromFollowAction(targetUserId, action, counts, currentUserId);
+  }, [followState, oxyServices]);
+
   // Aggregate helpers for multiple users
   const isAnyLoading = userIds.some(uid => followState.loadingUsers[uid]);
   const hasAnyError = userIds.some(uid => !!followState.errors[uid]);
@@ -84,6 +109,13 @@ export const useFollow = (userId?: string | string[]) => {
       setFollowStatus,
       fetchStatus,
       clearError,
+      // Follower count methods
+      followerCount,
+      followingCount,
+      isLoadingCounts,
+      fetchUserCounts,
+      setFollowerCount,
+      setFollowingCount,
     };
   }
 
@@ -98,5 +130,36 @@ export const useFollow = (userId?: string | string[]) => {
     hasAnyError,
     allFollowing,
     allNotFollowing,
+  };
+};
+
+// Convenience hook for just follower counts
+export const useFollowerCounts = (userId: string) => {
+  const { oxyServices } = useOxy();
+  const followState = useFollowStore();
+
+  const followerCount = followState.followerCounts[userId] ?? null;
+  const followingCount = followState.followingCounts[userId] ?? null;
+  const isLoadingCounts = followState.loadingCounts[userId] ?? false;
+
+  const fetchUserCounts = useCallback(async () => {
+    await followState.fetchUserCounts(userId, oxyServices);
+  }, [userId, followState, oxyServices]);
+
+  const setFollowerCount = useCallback((count: number) => {
+    followState.setFollowerCount(userId, count);
+  }, [userId, followState]);
+
+  const setFollowingCount = useCallback((count: number) => {
+    followState.setFollowingCount(userId, count);
+  }, [userId, followState]);
+
+  return {
+    followerCount,
+    followingCount,
+    isLoadingCounts,
+    fetchUserCounts,
+    setFollowerCount,
+    setFollowingCount,
   };
 }; 

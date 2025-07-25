@@ -4,6 +4,7 @@ import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import Avatar from '../components/Avatar';
 import { FollowButton } from '../components';
+import { useFollow } from '../hooks/useFollow';
 import { Ionicons } from '@expo/vector-icons';
 
 interface ProfileScreenProps extends BaseScreenProps {
@@ -17,8 +18,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     const [karmaTotal, setKarmaTotal] = useState<number | null>(null);
     const [postsCount, setPostsCount] = useState<number | null>(null);
     const [commentsCount, setCommentsCount] = useState<number | null>(null);
-    const [followersCount, setFollowersCount] = useState<number | null>(null);
-    const [followingCount, setFollowingCount] = useState<number | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [links, setLinks] = useState<Array<{
@@ -28,6 +27,16 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
         image?: string;
         id: string;
     }>>([]);
+
+    // Use the follow hook for real follower data
+    const {
+        followerCount,
+        followingCount,
+        isLoadingCounts,
+        fetchUserCounts,
+        setFollowerCount,
+        setFollowingCount,
+    } = useFollow(userId);
 
     const isDarkTheme = theme === 'dark';
     const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
@@ -102,12 +111,21 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                     setLinks([]);
                 }
 
-                // Mock data for other stats
-                // In a real app, these would come from API endpoints
+                // Set real follower counts from profile data if available
+                if (profileRes._count) {
+                    setFollowerCount?.(profileRes._count.followers || 0);
+                    setFollowingCount?.(profileRes._count.following || 0);
+                } else if (profileRes.stats) {
+                    setFollowerCount?.(profileRes.stats.followers || 0);
+                    setFollowingCount?.(profileRes.stats.following || 0);
+                } else {
+                    // Fallback: fetch counts separately
+                    fetchUserCounts?.();
+                }
+
+                // Mock data for other stats (these would come from separate API endpoints)
                 setPostsCount(Math.floor(Math.random() * 50));
                 setCommentsCount(Math.floor(Math.random() * 100));
-                setFollowersCount(Math.floor(Math.random() * 200));
-                setFollowingCount(Math.floor(Math.random() * 100));
             })
             .catch((err: any) => {
                 console.error('Profile loading error:', err);
@@ -187,13 +205,10 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         ) : (
                             <FollowButton
                                 userId={userId}
+                                theme={theme}
                                 onFollowChange={(isFollowing) => {
-                                    // Update followers count when follow status changes
-                                    if (isFollowing) {
-                                        setFollowersCount(prev => prev !== null ? prev + 1 : null);
-                                    } else {
-                                        setFollowersCount(prev => prev !== null ? Math.max(0, prev - 1) : null);
-                                    }
+                                    // The follow button will automatically update counts via Zustand
+                                    console.log(`Follow status changed: ${isFollowing}`);
                                 }}
                             />
                         )}
@@ -207,8 +222,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                     )}
                     {/* Bio placeholder */}
                     <Text style={[styles.bio, { color: textColor }]}>{profile?.bio || 'This user has no bio yet.'}</Text>
-
-
 
                     {/* Info Grid Row */}
                     <View style={styles.infoGrid}>
@@ -280,11 +293,19 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                             <Text style={[styles.karmaLabel, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>Karma</Text>
                         </View>
                         <View style={styles.statItem}>
-                            <Text style={[styles.karmaAmount, { color: textColor }]}>{followersCount !== null ? followersCount : '--'}</Text>
+                            {isLoadingCounts ? (
+                                <ActivityIndicator size="small" color={textColor} />
+                            ) : (
+                                <Text style={[styles.karmaAmount, { color: textColor }]}>{followerCount !== null ? followerCount : '--'}</Text>
+                            )}
                             <Text style={[styles.karmaLabel, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>Followers</Text>
                         </View>
                         <View style={styles.statItem}>
-                            <Text style={[styles.karmaAmount, { color: textColor }]}>{followingCount !== null ? followingCount : '--'}</Text>
+                            {isLoadingCounts ? (
+                                <ActivityIndicator size="small" color={textColor} />
+                            ) : (
+                                <Text style={[styles.karmaAmount, { color: textColor }]}>{followingCount !== null ? followingCount : '--'}</Text>
+                            )}
                             <Text style={[styles.karmaLabel, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>Following</Text>
                         </View>
                     </View>

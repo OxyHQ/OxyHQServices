@@ -112,8 +112,7 @@ const getStorage = async (): Promise<StorageInterface> => {
 
 // Storage keys for secure sessions
 const getSecureStorageKeys = (prefix = 'oxy_secure') => ({
-  sessions: `${prefix}_sessions`, // Array of SecureClientSession objects
-  activeSessionId: `${prefix}_active_session_id`, // ID of currently active session
+  activeSessionId: `${prefix}_active_session_id`, // Only store the active session ID
 });
 
 export const OxyProvider: React.FC<OxyContextProviderProps> = ({
@@ -175,94 +174,60 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     initStorage();
   }, []);
 
-  // Effect to initialize authentication state
+  // Effect to initialize authentication state - only store session ID
   useEffect(() => {
     const initAuth = async () => {
       if (!storage) return;
 
       useAuthStore.setState({ isLoading: true });
       try {
-        // Load stored sessions
-        const sessionsData = await storage.getItem(keys.sessions);
+        // Only load the active session ID from storage
         const storedActiveSessionId = await storage.getItem(keys.activeSessionId);
 
-        console.log('SecureAuth - sessionsData:', sessionsData);
         console.log('SecureAuth - activeSessionId:', storedActiveSessionId);
 
-        if (sessionsData) {
-          const parsedSessions: SecureClientSession[] = JSON.parse(sessionsData);
+        if (storedActiveSessionId) {
+          // Validate the stored session with the backend
+          try {
+            const validation = await oxyServices.validateSession(storedActiveSessionId);
 
-          // Migrate old session format to include user info
-          const migratedSessions: SecureClientSession[] = [];
-          let shouldUpdateStorage = false;
+            if (validation.valid) {
+              console.log('SecureAuth - session validated successfully');
+              setActiveSessionId(storedActiveSessionId);
 
-          for (const session of parsedSessions) {
-            if (!session.userId) {
-              // Session is missing user info, try to fetch it
-              try {
-                const sessionUser = await oxyServices.getUserBySession(session.sessionId);
-                migratedSessions.push({
-                  ...session,
-                  userId: sessionUser.id
-                });
-                shouldUpdateStorage = true;
-                console.log(`Migrated session ${session.sessionId} for user ${sessionUser.id}`);
-              } catch (error) {
-                // Session might be invalid, skip it
-                console.log(`Removing invalid session ${session.sessionId}:`, error);
-                shouldUpdateStorage = true;
+              // Get access token for API calls
+              await oxyServices.getTokenBySession(storedActiveSessionId);
+
+              // Load full user data from backend
+              const fullUser = await oxyServices.getUserBySession(storedActiveSessionId);
+              loginSuccess(fullUser);
+              setMinimalUser({
+                id: fullUser.id,
+                username: fullUser.username,
+                avatar: fullUser.avatar
+              });
+
+              // Load sessions from backend
+              const serverSessions = await oxyServices.getSessionsBySessionId(storedActiveSessionId);
+              const clientSessions: SecureClientSession[] = serverSessions.map(serverSession => ({
+                sessionId: serverSession.sessionId,
+                deviceId: serverSession.deviceId,
+                expiresAt: serverSession.expiresAt || new Date().toISOString(),
+                lastActive: serverSession.lastActive || new Date().toISOString(),
+                userId: serverSession.userId || fullUser.id
+              }));
+              setSessions(clientSessions);
+
+              if (onAuthStateChange) {
+                onAuthStateChange(fullUser);
               }
             } else {
-              // Session already has user info
-              migratedSessions.push(session);
+              console.log('SecureAuth - session invalid, clearing storage');
+              await clearAllStorage();
             }
-          }
-
-          // Update storage if we made changes
-          if (shouldUpdateStorage) {
-            await saveSessionsToStorage(migratedSessions);
-          }
-
-          setSessions(migratedSessions);
-
-          if (storedActiveSessionId && migratedSessions.length > 0) {
-            const activeSession = migratedSessions.find(s => s.sessionId === storedActiveSessionId);
-
-            if (activeSession) {
-              console.log('SecureAuth - activeSession found:', activeSession);
-
-              // Validate session
-              try {
-                const validation = await oxyServices.validateSession(activeSession.sessionId);
-
-                if (validation.valid) {
-                  console.log('SecureAuth - session validated successfully');
-                  setActiveSessionId(activeSession.sessionId);
-
-                  // Get access token for API calls
-                  await oxyServices.getTokenBySession(activeSession.sessionId);
-
-                  // Load full user data
-                  const fullUser = await oxyServices.getUserBySession(activeSession.sessionId);
-                  loginSuccess(fullUser);
-                  setMinimalUser({
-                    id: fullUser.id,
-                    username: fullUser.username,
-                    avatar: fullUser.avatar
-                  });
-
-                  if (onAuthStateChange) {
-                    onAuthStateChange(fullUser);
-                  }
-                } else {
-                  console.log('SecureAuth - session invalid, removing');
-                  await removeInvalidSession(activeSession.sessionId);
-                }
-              } catch (error) {
-                console.error('SecureAuth - session validation error:', error);
-                await removeInvalidSession(activeSession.sessionId);
-              }
-            }
+          } catch (error) {
+            console.error('SecureAuth - session validation error:', error);
+            await clearAllStorage();
           }
         }
       } catch (err) {
@@ -276,15 +241,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     if (storage) {
       initAuth();
     }
-  }, [storage, oxyServices, keys, onAuthStateChange]);
+  }, [storage, oxyServices, keys, onAuthStateChange, loginSuccess, setMinimalUser]);
 
 
 
-  // Remove invalid session
+  // Remove invalid session - refresh sessions from backend
   const removeInvalidSession = useCallback(async (sessionId: string): Promise<void> => {
+    // Remove from local state
     const filteredSessions = sessions.filter(s => s.sessionId !== sessionId);
     setSessions(filteredSessions);
-    await saveSessionsToStorage(filteredSessions);
 
     // If there are other sessions, switch to the first one
     if (filteredSessions.length > 0) {
@@ -302,13 +267,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
   }, [sessions, storage, keys, onAuthStateChange, logoutStore]);
 
-  // Save sessions to storage
-  const saveSessionsToStorage = useCallback(async (sessionsList: SecureClientSession[]): Promise<void> => {
-    if (!storage) return;
-    await storage.setItem(keys.sessions, JSON.stringify(sessionsList));
-  }, [storage, keys.sessions]);
-
-  // Save active session ID to storage
+  // Save active session ID to storage (only session ID, no user data)
   const saveActiveSessionId = useCallback(async (sessionId: string): Promise<void> => {
     if (!storage) return;
     await storage.setItem(keys.activeSessionId, sessionId);
@@ -318,7 +277,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const clearAllStorage = useCallback(async (): Promise<void> => {
     if (!storage) return;
     try {
-      await storage.removeItem(keys.sessions);
       await storage.removeItem(keys.activeSessionId);
     } catch (err) {
       console.error('Clear secure storage error:', err);
@@ -357,7 +315,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
   }, [oxyServices, onAuthStateChange, loginSuccess, saveActiveSessionId]);
 
-  // Secure login method
+  // Secure login method - only store session ID, retrieve data from backend
   const login = useCallback(async (username: string, password: string, deviceName?: string): Promise<User> => {
     if (!storage) throw new Error('Storage not initialized');
     useAuthStore.setState({ isLoading: true, error: null });
@@ -379,55 +337,28 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         deviceFingerprint
       );
 
-      // Create client session object with user info for duplicate detection
-      const clientSession: SecureClientSession = {
-        sessionId: response.sessionId,
-        deviceId: response.deviceId,
-        expiresAt: response.expiresAt,
-        lastActive: new Date().toISOString(),
-        userId: response.user.id
-      };
-
-      // Check if this user already has a session (prevent duplicate accounts)
-      const existingUserSessionIndex = sessions.findIndex(s =>
-        s.userId === response.user.id
-      );
-
-      let updatedSessions: SecureClientSession[];
-
-      if (existingUserSessionIndex !== -1) {
-        // User already has a session - replace it with the new one (reused session scenario)
-        const existingSession = sessions[existingUserSessionIndex];
-        updatedSessions = [...sessions];
-        updatedSessions[existingUserSessionIndex] = clientSession;
-
-        console.log(`Reusing/updating existing session for user ${response.user.id}. Previous session: ${existingSession.sessionId}, New session: ${response.sessionId}`);
-
-        // If the replaced session was the active one, update active session
-        if (activeSessionId === existingSession.sessionId) {
-          setActiveSessionId(response.sessionId);
-          await saveActiveSessionId(response.sessionId);
-        }
-      } else {
-        // Add new session for new user
-        updatedSessions = [...sessions, clientSession];
-        console.log(`Added new session for user ${response.user.id} on device ${response.deviceId}`);
-      }
-
-      setSessions(updatedSessions);
-      await saveSessionsToStorage(updatedSessions);
-
-      // Set as active session
+      // Set as active session (only store session ID)
       setActiveSessionId(response.sessionId);
       await saveActiveSessionId(response.sessionId);
 
       // Get access token for API calls
       await oxyServices.getTokenBySession(response.sessionId);
 
-      // Load full user data
+      // Load full user data from backend
       const fullUser = await oxyServices.getUserBySession(response.sessionId);
       loginSuccess(fullUser);
       setMinimalUser(response.user);
+
+      // Load sessions from backend
+      const serverSessions = await oxyServices.getSessionsBySessionId(response.sessionId);
+      const clientSessions: SecureClientSession[] = serverSessions.map(serverSession => ({
+        sessionId: serverSession.sessionId,
+        deviceId: serverSession.deviceId,
+        expiresAt: serverSession.expiresAt || new Date().toISOString(),
+        lastActive: serverSession.lastActive || new Date().toISOString(),
+        userId: serverSession.userId || fullUser.id
+      }));
+      setSessions(clientSessions);
 
       if (onAuthStateChange) {
         onAuthStateChange(fullUser);
@@ -440,7 +371,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     } finally {
       useAuthStore.setState({ isLoading: false });
     }
-  }, [storage, oxyServices, sessions, activeSessionId, saveSessionsToStorage, saveActiveSessionId, loginSuccess, setMinimalUser, onAuthStateChange, loginFailure]);
+  }, [storage, oxyServices, saveActiveSessionId, loginSuccess, setMinimalUser, onAuthStateChange, loginFailure]);
 
   // Logout method
   const logout = useCallback(async (targetSessionId?: string): Promise<void> => {
@@ -450,10 +381,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       const sessionToLogout = targetSessionId || activeSessionId;
       await oxyServices.logoutSecureSession(activeSessionId, sessionToLogout);
 
-      // Remove session from local storage
+      // Remove session from local state
       const filteredSessions = sessions.filter(s => s.sessionId !== sessionToLogout);
       setSessions(filteredSessions);
-      await saveSessionsToStorage(filteredSessions);
 
       // If logging out active session
       if (sessionToLogout === activeSessionId) {
@@ -476,7 +406,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       console.error('Logout error:', error);
       useAuthStore.setState({ error: 'Logout failed' });
     }
-  }, [activeSessionId, oxyServices, sessions, saveSessionsToStorage, switchToSession, logoutStore, setMinimalUser, storage, keys.activeSessionId, onAuthStateChange]);
+  }, [activeSessionId, oxyServices, sessions, switchToSession, logoutStore, setMinimalUser, storage, keys.activeSessionId, onAuthStateChange]);
 
   // Logout all sessions
   const logoutAll = useCallback(async (): Promise<void> => {
@@ -598,8 +528,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
       console.log('refreshSessions: Updated sessions:', updatedSessions);
       setSessions(updatedSessions);
-      await saveSessionsToStorage(updatedSessions);
-      console.log('refreshSessions: Sessions saved to storage');
+      console.log('refreshSessions: Sessions updated in state');
     } catch (error) {
       console.error('Refresh sessions error:', error);
 
@@ -634,7 +563,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         onAuthStateChange(null);
       }
     }
-  }, [activeSessionId, oxyServices, user?.id, sessions, saveSessionsToStorage, switchToSession, logoutStore, setMinimalUser, clearAllStorage, onAuthStateChange]);
+  }, [activeSessionId, oxyServices, user?.id, sessions, switchToSession, logoutStore, setMinimalUser, clearAllStorage, onAuthStateChange]);
 
   // Device management methods
   const getDeviceSessions = useCallback(async (): Promise<any[]> => {
