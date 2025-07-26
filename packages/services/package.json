@@ -1,6 +1,6 @@
 {
     "name": "@oxyhq/services",
-    "version": "5.7.3",
+    "version": "5.8.6",
     "description": "Reusable OxyHQ module to handle authentication, user management, karma system, device-based session management and more 🚀",
     "main": "lib/commonjs/index.js",
     "module": "lib/module/index.js",
@@ -68,7 +68,6 @@
         "bootstrap": "yarn install && yarn example"
     },
     "dependencies": {
-        "@oxyhq/services": "^5.4.0",
         "@react-native-async-storage/async-storage": "^2.1.2",
         "@react-navigation/native": "^7.1.14",
         "@th3rdwave/react-navigation-bottom-sheet": "^0.3.2",
@@ -84,6 +83,8 @@
         "socket.io-client": "^4.8.1",
         "sonner": "^2.0.4",
         "sonner-native": "^0.20.0",
+        "tailwindcss": "^4.1.11",
+        "zod": "^3.25.64",
         "zustand": "^5.0.6"
     },
     "devDependencies": {

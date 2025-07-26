@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useCallback, ReactNode, useMemo, useRef, useState } from 'react';
+import { View, Text } from 'react-native';
 import { OxyServices } from '../../core';
 import { User, ApiError } from '../../models/interfaces';
 import { SecureLoginResponse, SecureClientSession, MinimalUserData } from '../../models/secureSession';
@@ -723,7 +724,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   // Wrap children rendering to block until token is ready
   if (!tokenReady) {
-    return <div>Loading authentication...</div>;
+    return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+      <Text>Loading authentication...</Text>
+    </View>;
   }
 
   return (

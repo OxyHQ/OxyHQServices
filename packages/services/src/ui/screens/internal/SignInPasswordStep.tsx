@@ -87,7 +87,6 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     { transform: [{ scale: logoAnim }] }
                 ]}>
                     <Avatar
-                        uri={userProfile?.avatar}
                         name={userProfile?.displayName || userProfile?.name || username}
                         size={100}
                         theme={theme as 'light' | 'dark'}
