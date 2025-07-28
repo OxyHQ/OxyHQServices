@@ -70,3 +70,28 @@ export { useSessionSocket } from './ui/hooks/useSessionSocket';
 // UI components
 export { OxySignInButton } from './ui/components/OxySignInButton';
 export { OxyLogo, FollowButton } from './ui';
+
+// New consolidated utilities
+export * from './utils/apiUtils';
+export { 
+  ErrorCodes, 
+  createApiError, 
+  handleHttpError, 
+  validateRequiredFields,
+  retryWithBackoff 
+} from './utils/errorUtils';
+export * from './utils/validationUtils';
+export { 
+  logger, 
+  LogLevel, 
+  LogContext,
+  logAuth,
+  logApi,
+  logSession,
+  logUser,
+  logDevice,
+  logPayment,
+  logPerformance
+} from './utils/loggerUtils';
+export * from './utils/asyncUtils';
+export * from './utils/hookUtils';

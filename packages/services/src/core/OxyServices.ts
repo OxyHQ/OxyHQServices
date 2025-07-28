@@ -1,6 +1,7 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { jwtDecode } from 'jwt-decode';
 import { OxyConfig, ApiError } from '../models/interfaces';
+import { handleHttpError } from '../utils/errorUtils';
 
 interface JwtPayload {
   exp: number;
@@ -145,19 +146,7 @@ export class OxyServices {
    * Centralized error handling
    */
   protected handleError(error: any): ApiError {
-    if (error && error.code && error.status) {
-      // Already formatted as ApiError
-      return error as ApiError;
-    }
-    
-    const apiError: ApiError = {
-      message: error?.message || (error?.response?.data as any)?.message || 'Unknown error occurred',
-      code: (error?.response?.data as any)?.code || 'UNKNOWN_ERROR',
-      status: error?.response?.status || 500,
-      details: error?.response?.data
-    };
-    
-    return apiError;
+    return handleHttpError(error);
   }
 
   /**

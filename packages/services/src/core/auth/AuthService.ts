@@ -2,6 +2,8 @@ import { jwtDecode } from 'jwt-decode';
 import { OxyServices } from '../OxyServices';
 import { User, LoginResponse, ApiError } from '../../models/interfaces';
 import { SessionLoginResponse } from '../../models/session';
+import { validateAndSanitizeUserInput } from '../../utils/validationUtils';
+import { validateRequiredFields } from '../../utils/errorUtils';
 
 interface JwtPayload {
   exp: number;
@@ -293,12 +295,8 @@ export class AuthService extends OxyServices {
             isValid = await this.validate();
             
             if (isValid && loadFullUser) {
-              try {
-                user = await this.getUserById(userId);
-              } catch (userError) {
-                if (debug) console.log(`⚠️ Auth Middleware: Failed to load full user, using minimal user`);
-                user = { id: userId } as User;
-              }
+              // Use minimal user data for performance - full user can be loaded separately if needed
+              user = { id: userId } as User;
             }
             
             if (debug) {
@@ -437,18 +435,8 @@ export class AuthService extends OxyServices {
             };
           }
           
-          // Try to get user profile
-          let user;
-          try {
-            // Use UserService for user operations
-            const userService = new (await import('../users/UserService')).UserService({
-              baseURL: this.getBaseURL()
-            });
-            userService.setTokens(this.accessToken || '', this.refreshToken || '');
-            user = await userService.getUserById(userId);
-          } catch (userError) {
-            user = { id: userId } as User;
-          }
+          // Use minimal user data for performance
+          const user = { id: userId } as User;
           
           return {
             valid: true,

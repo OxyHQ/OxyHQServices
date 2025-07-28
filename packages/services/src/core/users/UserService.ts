@@ -141,15 +141,12 @@ export class UserService extends OxyServices {
    */
   async getUserFollowers(
     userId: string,
-    limit?: number,
-    offset?: number
+    pagination?: PaginationParams
   ): Promise<{ followers: User[]; total: number; hasMore: boolean }> {
     try {
-      const params = new URLSearchParams();
-      if (limit) params.append('limit', limit.toString());
-      if (offset) params.append('offset', offset.toString());
+      const searchParams = buildPaginationParams(pagination || {});
       
-      const res = await this.getClient().get(`/users/${userId}/followers?${params.toString()}`);
+      const res = await this.getClient().get(`/users/${userId}/followers?${searchParams.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -161,15 +158,12 @@ export class UserService extends OxyServices {
    */
   async getUserFollowing(
     userId: string,
-    limit?: number,
-    offset?: number
+    pagination?: PaginationParams
   ): Promise<{ following: User[]; total: number; hasMore: boolean }> {
     try {
-      const params = new URLSearchParams();
-      if (limit) params.append('limit', limit.toString());
-      if (offset) params.append('offset', offset.toString());
+      const searchParams = buildPaginationParams(pagination || {});
       
-      const res = await this.getClient().get(`/users/${userId}/following?${params.toString()}`);
+      const res = await this.getClient().get(`/users/${userId}/following?${searchParams.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);

@@ -5,6 +5,7 @@ import {
   DeviceSessionLogoutResponse,
   UpdateDeviceNameResponse
 } from '../../models/interfaces';
+import { buildSearchParams } from '../../utils/apiUtils';
 
 /**
  * Device service for handling device session management
@@ -15,10 +16,10 @@ export class DeviceService extends OxyServices {
    */
   async getDeviceSessions(sessionId: string, deviceId?: string): Promise<DeviceSession[]> {
     try {
-      const params = new URLSearchParams();
-      if (deviceId) params.append('deviceId', deviceId);
+      const params = { deviceId };
+      const searchParams = buildSearchParams(params);
       
-      const res = await this.getClient().get(`/devices/sessions/${sessionId}?${params.toString()}`);
+      const res = await this.getClient().get(`/devices/sessions/${sessionId}?${searchParams.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -30,11 +31,10 @@ export class DeviceService extends OxyServices {
    */
   async logoutAllDeviceSessions(sessionId: string, deviceId?: string, excludeCurrent?: boolean): Promise<DeviceSessionLogoutResponse> {
     try {
-      const params = new URLSearchParams();
-      if (deviceId) params.append('deviceId', deviceId);
-      if (excludeCurrent) params.append('excludeCurrent', excludeCurrent.toString());
+      const params = { deviceId, excludeCurrent };
+      const searchParams = buildSearchParams(params);
       
-      const res = await this.getClient().delete(`/devices/sessions/${sessionId}/logout-all?${params.toString()}`);
+      const res = await this.getClient().delete(`/devices/sessions/${sessionId}/logout-all?${searchParams.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
