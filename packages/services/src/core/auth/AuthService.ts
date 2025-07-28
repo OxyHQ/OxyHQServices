@@ -146,10 +146,17 @@ export class AuthService extends OxyServices {
     const { deviceFingerprint, useHeaderValidation = false } = options;
     
     try {
-      if (useHeaderValidation) {
+            if (useHeaderValidation) {
         // Use header-based validation with device fingerprint
-        const res = await this.getClient().get(`/session/validate-header/${sessionId}`, {
-          headers: deviceFingerprint ? { 'X-Device-Fingerprint': deviceFingerprint } : {}
+        const headers: Record<string, string> = {
+          'X-Session-ID': sessionId
+        };
+        if (deviceFingerprint) {
+          headers['X-Device-Fingerprint'] = deviceFingerprint;
+        }
+        
+        const res = await this.getClient().get(`/session/validate-header`, {
+          headers
         });
         return { ...res.data, source: 'header' };
       } else {
