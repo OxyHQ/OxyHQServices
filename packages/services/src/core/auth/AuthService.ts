@@ -20,7 +20,7 @@ export class AuthService extends OxyServices {
    */
   async signUp(username: string, email: string, password: string): Promise<{ message: string; token: string; user: User }> {
     try {
-      const res = await this.getClient().post('/session/register', {
+      const res = await this.getClient().post('/auth/signup', {
         username,
         email,
         password
@@ -36,7 +36,7 @@ export class AuthService extends OxyServices {
    */
   async signIn(username: string, password: string, deviceName?: string, deviceFingerprint?: any): Promise<SessionLoginResponse> {
     try {
-      const res = await this.getClient().post('/session/login', {
+      const res = await this.getClient().post('/auth/login', {
         username,
         password,
         deviceName,
@@ -146,16 +146,15 @@ export class AuthService extends OxyServices {
     const { deviceFingerprint, useHeaderValidation = false } = options;
     
     try {
-            if (useHeaderValidation) {
+      if (useHeaderValidation) {
         // Use header-based validation with device fingerprint
-        const headers: Record<string, string> = {
-          'X-Session-ID': sessionId
-        };
+        const headers: Record<string, string> = {};
+        
         if (deviceFingerprint) {
           headers['X-Device-Fingerprint'] = deviceFingerprint;
         }
         
-        const res = await this.getClient().get(`/session/validate-header`, {
+        const res = await this.getClient().get(`/session/validate-header/${sessionId}`, {
           headers
         });
         return { ...res.data, source: 'header' };
@@ -274,8 +273,8 @@ export class AuthService extends OxyServices {
         // Validate session or token
         let isValid = false;
         let user: User | null = null;
-        
-        if (decoded.sessionId) {
+          
+          if (decoded.sessionId) {
           // Session-based validation
           if (debug) console.log(`🔐 Auth Middleware: Using session validation for session: ${decoded.sessionId}`);
           
@@ -293,8 +292,8 @@ export class AuthService extends OxyServices {
           } catch (sessionError) {
             if (debug) console.log(`❌ Auth Middleware: Session validation failed:`, sessionError);
             isValid = false;
-          }
-        } else {
+            }
+          } else {
           // Legacy token validation
           if (debug) console.log(`🔐 Auth Middleware: Using legacy token validation`);
           
@@ -304,7 +303,7 @@ export class AuthService extends OxyServices {
             if (isValid && loadFullUser) {
               // Use minimal user data for performance - full user can be loaded separately if needed
               user = { id: userId } as User;
-            }
+              }
             
             if (debug) {
               console.log(`🔐 Auth Middleware: Legacy validation result: ${isValid}`);
@@ -402,7 +401,7 @@ export class AuthService extends OxyServices {
         };
       }
       
-      const userId = decoded.userId || decoded.id;
+        const userId = decoded.userId || decoded.id;
       if (!userId) {
         return {
           valid: false,
@@ -411,26 +410,26 @@ export class AuthService extends OxyServices {
       }
       
       // Validate based on token type
-      if (decoded.sessionId) {
+        if (decoded.sessionId) {
         // Session-based validation
         try {
           const validation = await this.validateSession(decoded.sessionId, {
             useHeaderValidation: true
           });
-          return {
+            return {
             valid: validation.valid,
-            userId,
+              userId,
             user: validation.user,
             error: validation.valid ? undefined : 'Invalid or expired session'
-          };
+            };
         } catch (sessionError) {
-          return {
-            valid: false,
+            return {
+              valid: false,
             userId,
             error: 'Session validation failed'
-          };
-        }
-      } else {
+            };
+          }
+        } else {
         // Legacy token validation
         try {
           const isValid = await this.validate();
@@ -451,11 +450,11 @@ export class AuthService extends OxyServices {
             user
           };
         } catch (validationError) {
-          return {
-            valid: false,
+        return {
+          valid: false,
             userId,
             error: 'Token validation failed'
-          };
+        };
         }
       }
     } catch (error) {
@@ -501,35 +500,49 @@ export class AuthService extends OxyServices {
   }
 
   /**
-   * Check username availability by trying to get profile
-   * Note: This method uses the profiles endpoint to check if username exists
+   * Check username availability
    */
   async checkUsernameAvailability(username: string): Promise<{ available: boolean; message: string }> {
     try {
-      // Try to get profile by username - if it exists, username is not available
-      await this.getClient().get(`/profiles/username/${username}`);
-      return { available: false, message: 'Username is already taken' };
+      const res = await this.getClient().get(`/auth/check-username/${username}`);
+      return res.data;
     } catch (error: any) {
-      // If profile not found (404), username is available
+      // If the endpoint doesn't exist, fall back to basic validation
       if (error.response?.status === 404) {
-        return { available: true, message: 'Username is available' };
+        console.warn('Username validation endpoint not found, using fallback validation');
+        return { available: true, message: 'Username validation not available' };
       }
       
-      // For other errors, assume available to avoid blocking registration
-      console.warn('Username validation error, assuming available:', error);
-      return { available: true, message: 'Username validation not available' };
+      // If it's a validation error (400), return the error message
+      if (error.response?.status === 400) {
+        return { available: false, message: error.response.data.message || 'Username not available' };
+      }
+      
+      throw this.handleError(error);
     }
   }
 
   /**
    * Check email availability
-   * Note: This method is not supported by the current API
    */
   async checkEmailAvailability(email: string): Promise<{ available: boolean; message: string }> {
-    // Email validation is not supported by the current API
-    // Return available to avoid blocking registration
-    console.warn('Email validation not supported by API, assuming available');
-    return { available: true, message: 'Email validation not available' };
+    try {
+      const res = await this.getClient().get(`/auth/check-email/${email}`);
+      return res.data;
+    } catch (error: any) {
+      // If the endpoint doesn't exist, fall back to basic validation
+      if (error.response?.status === 404) {
+        console.warn('Email validation endpoint not found, using fallback validation');
+        return { available: true, message: 'Email validation not available' };
+      }
+      
+      // If it's a validation error (400), return the error message
+      if (error.response?.status === 400) {
+        return { available: false, message: error.response.data.message || 'Email not available' };
+      }
+      
+      throw this.handleError(error);
+    }
   }
 
   // Note: getUserById and getUserProfileByUsername methods have been moved to UserService

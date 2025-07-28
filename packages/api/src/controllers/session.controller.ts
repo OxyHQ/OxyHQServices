@@ -525,12 +525,12 @@ export class SessionController {
   // Validate session from header with device fingerprint validation
   static async validateSessionFromHeader(req: Request, res: Response) {
     try {
-      const sessionId = req.header('x-session-id');
+      const sessionId = req.params.sessionId;
 
       if (!sessionId) {
         return res.status(400).json({ 
           error: 'Session ID is required',
-          hint: 'Provide sessionId in x-session-id header'
+          hint: 'Provide sessionId as URL parameter'
         });
       }
 
