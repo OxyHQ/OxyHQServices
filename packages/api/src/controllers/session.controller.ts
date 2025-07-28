@@ -551,8 +551,7 @@ export class SessionController {
       // Optional device fingerprint validation
       const deviceFingerprint = req.header('x-device-fingerprint');
       if (deviceFingerprint && session.deviceInfo.fingerprint) {
-        const expectedFingerprint = generateDeviceFingerprint(session.deviceInfo.fingerprint);
-        if (deviceFingerprint !== expectedFingerprint) {
+        if (deviceFingerprint !== session.deviceInfo.fingerprint) {
           console.log(`Device fingerprint mismatch for session ${sessionId.substring(0, 8)}...`);
           // Don't reject the request, just log the mismatch
         }
