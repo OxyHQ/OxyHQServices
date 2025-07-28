@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/monorepo",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "OxyHQ Monorepo containing services and API packages",
   "private": true,
   "workspaces": [
