@@ -1,4 +1,4 @@
-export interface SecureSessionData {
+export interface SessionData {
   sessionId: string;
   deviceId: string;
   lastActive: Date;
@@ -26,4 +26,4 @@ export interface SessionAuthResponse {
     };
     // Only non-sensitive data for initial display
   };
-}
+} 

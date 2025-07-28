@@ -1,6 +1,6 @@
 {
     "name": "@oxyhq/services",
-    "version": "5.8.6",
+    "version": "5.9.2",
     "description": "Reusable OxyHQ module to handle authentication, user management, karma system, device-based session management and more 🚀",
     "main": "lib/commonjs/index.js",
     "module": "lib/module/index.js",
@@ -33,10 +33,6 @@
     "files": [
         "src",
         "lib",
-        "mock.js",
-        "UI_COMPONENTS.md",
-        "CHANGELOG.md",
-        "MIGRATION_GUIDE.md",
         "assets"
     ],
     "keywords": [
@@ -58,14 +54,12 @@
     "scripts": {
         "typescript": "tsc --skipLibCheck --noEmit",
         "lint": "biome lint --error-on-warnings ./src",
-        "build": "bob build && yarn copy-assets && yarn copy-dts && yarn delete-dts.js && yarn delete-debug-view",
+        "build": "bob build && npm run copy-assets && npm run copy-dts && npm run delete-dts.js && npm run delete-debug-view",
         "copy-assets": "copyfiles -u 1 \"src/assets/**/*\" lib/commonjs/assets && copyfiles -u 1 \"src/assets/**/*\" lib/module/assets",
         "copy-dts": "copyfiles -u 1 \"src/**/*.d.ts\" lib/typescript",
         "delete-debug-view": "rm -rf ./lib/commonjs/components/bottomSheetDebugView ./lib/module/components/bottomSheetDebugView ./lib/typescript/components/bottomSheetDebugView || true",
         "delete-dts.js": "find ./lib/commonjs -name '*.d.js*' -delete && find ./lib/module -name '*.d.js*' -delete",
-        "release": "rm -rf lib && yarn build && release-it",
-        "example": "yarn --cwd example",
-        "bootstrap": "yarn install && yarn example"
+        "release": "rm -rf lib && npm run build && release-it"
     },
     "dependencies": {
         "@react-native-async-storage/async-storage": "^2.1.2",
@@ -98,7 +92,7 @@
         "@types/invariant": "^2.2.34",
         "@types/jest": "^29.5.14",
         "@types/jwt-decode": "^2.2.1",
-        "@types/node": "^20.5.1",
+        "@types/node": "^20.19.9",
         "@types/react": "~18.3.12",
         "@types/react-native": "~0.73.0",
         "copyfiles": "^2.4.1",

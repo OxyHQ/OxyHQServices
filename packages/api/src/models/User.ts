@@ -19,7 +19,7 @@ export interface IUser extends Document {
     twoFactorEnabled: boolean;
     loginAlerts: boolean;
     blockScreenshots: boolean;
-    secureLogin: boolean;
+    login: boolean;
     biometricLogin: boolean;
     showActivity: boolean;
     allowTagging: boolean;
@@ -170,7 +170,7 @@ const UserSchema: Schema = new Schema(
       twoFactorEnabled: { type: Boolean, default: false },
       loginAlerts: { type: Boolean, default: true },
       blockScreenshots: { type: Boolean, default: false },
-      secureLogin: { type: Boolean, default: true },
+      login: { type: Boolean, default: true },
       biometricLogin: { type: Boolean, default: false },
       showActivity: { type: Boolean, default: true },
       allowTagging: { type: Boolean, default: true },

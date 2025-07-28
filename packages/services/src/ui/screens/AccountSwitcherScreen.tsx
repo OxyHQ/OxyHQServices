@@ -13,7 +13,7 @@ import {
 } from 'react-native';
 import { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
-import { SecureClientSession } from '../../models/secureSession';
+import { ClientSession } from '../../models/session';
 import { fontFamilies } from '../styles/fonts';
 import { User } from '../../models/interfaces';
 import { toast } from '../../lib/sonner';
@@ -23,7 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
 import { Header, GroupedSection } from '../components';
 
-interface SessionWithUser extends SecureClientSession {
+interface SessionWithUser extends ClientSession {
     userProfile?: User;
     isLoadingProfile?: boolean;
 }
@@ -217,7 +217,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             async () => {
                 setRemoteLogoutSessionId(sessionId);
                 try {
-                    await oxyServices?.logoutSecureSession(user?.sessionId || '', sessionId);
+                    await oxyServices?.logoutSession(user?.sessionId || '', sessionId);
                     // Refresh device sessions list
                     await loadAllDeviceSessions();
                     toast.success(`Signed out from ${deviceName} successfully!`);

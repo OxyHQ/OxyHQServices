@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useCallback, ReactNode, us
 import { View, Text } from 'react-native';
 import { OxyServices } from '../../core';
 import { User, ApiError } from '../../models/interfaces';
-import { SecureLoginResponse, SecureClientSession, MinimalUserData } from '../../models/secureSession';
+import { SessionLoginResponse, ClientSession, MinimalUserData } from '../../models/session';
 import { DeviceManager } from '../../utils/deviceManager';
 import { useSessionSocket } from '../hooks/useSessionSocket';
 import { toast } from '../../lib/sonner';
@@ -13,7 +13,7 @@ export interface OxyContextState {
   // Authentication state
   user: User | null; // Current active user (loaded from server)
   minimalUser: MinimalUserData | null; // Minimal user data for UI
-  sessions: SecureClientSession[]; // All active sessions
+  sessions: ClientSession[]; // All active sessions
   activeSessionId: string | null;
   isAuthenticated: boolean; // Single source of truth for authentication - use this instead of service methods
   isLoading: boolean;
@@ -111,8 +111,8 @@ const getStorage = async (): Promise<StorageInterface> => {
   return new WebStorage();
 };
 
-// Storage keys for secure sessions
-const getSecureStorageKeys = (prefix = 'oxy_secure') => ({
+// Storage keys for sessions
+const getStorageKeys = (prefix = 'oxy_session') => ({
   activeSessionId: `${prefix}_active_session_id`, // Only store the active session ID
 });
 
@@ -120,7 +120,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   children,
   oxyServices: providedOxyServices,
   baseURL,
-  storageKeyPrefix = 'oxy_secure',
+  storageKeyPrefix = 'oxy_session',
   onAuthStateChange,
   onError,
   bottomSheetRef,
@@ -151,14 +151,24 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   // Local state for non-auth fields
   const [minimalUser, setMinimalUser] = React.useState<MinimalUserData | null>(null);
-  const [sessions, setSessions] = React.useState<SecureClientSession[]>([]);
+  const [sessions, setSessions] = React.useState<ClientSession[]>([]);
   const [activeSessionId, setActiveSessionId] = React.useState<string | null>(null);
   const [storage, setStorage] = React.useState<StorageInterface | null>(null);
   // Add a new state to track token restoration
   const [tokenReady, setTokenReady] = React.useState(false);
 
   // Storage keys (memoized to prevent infinite loops)
-  const keys = useMemo(() => getSecureStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
+  const keys = useMemo(() => getStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
+
+  // Clear all storage - defined before initAuth to avoid dependency issues
+  const clearAllStorage = useCallback(async (): Promise<void> => {
+    if (!storage) return;
+    try {
+      await storage.removeItem(keys.activeSessionId);
+    } catch (err) {
+      console.error('Clear storage error:', err);
+    }
+  }, [storage, keys]);
 
   // Initialize storage
   useEffect(() => {
@@ -185,15 +195,19 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         // Only load the active session ID from storage
         const storedActiveSessionId = await storage.getItem(keys.activeSessionId);
 
-        console.log('SecureAuth - activeSessionId:', storedActiveSessionId);
+        console.log('Auth - activeSessionId:', storedActiveSessionId);
+        console.log('Auth - storage available:', !!storage);
+        console.log('Auth - oxyServices available:', !!oxyServices);
 
         if (storedActiveSessionId) {
           // Validate the stored session with the backend
           try {
-            const validation = await oxyServices.validateSession(storedActiveSessionId);
+            const validation = await oxyServices.validateSession(storedActiveSessionId, {
+              useHeaderValidation: true
+            });
 
             if (validation.valid) {
-              console.log('SecureAuth - session validated successfully');
+              console.log('Auth - session validated successfully');
               setActiveSessionId(storedActiveSessionId);
 
               // Get access token for API calls
@@ -210,7 +224,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
               // Load sessions from backend
               const serverSessions = await oxyServices.getSessionsBySessionId(storedActiveSessionId);
-              const clientSessions: SecureClientSession[] = serverSessions.map(serverSession => ({
+              const clientSessions: ClientSession[] = serverSessions.map(serverSession => ({
                 sessionId: serverSession.sessionId,
                 deviceId: serverSession.deviceId,
                 expiresAt: serverSession.expiresAt || new Date().toISOString(),
@@ -223,16 +237,18 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
                 onAuthStateChange(fullUser);
               }
             } else {
-              console.log('SecureAuth - session invalid, clearing storage');
+              console.log('Auth - session invalid, clearing storage');
               await clearAllStorage();
             }
           } catch (error) {
-            console.error('SecureAuth - session validation error:', error);
+            console.error('Auth - session validation error:', error);
             await clearAllStorage();
           }
+        } else {
+          console.log('Auth - no stored session found, user needs to login');
         }
       } catch (err) {
-        console.error('Secure auth initialization error:', err);
+        console.error('Auth initialization error:', err);
         await clearAllStorage();
       } finally {
         useAuthStore.setState({ isLoading: false });
@@ -242,7 +258,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     if (storage) {
       initAuth();
     }
-  }, [storage, oxyServices, keys, onAuthStateChange, loginSuccess, setMinimalUser]);
+  }, [storage, oxyServices, keys, onAuthStateChange, loginSuccess, setMinimalUser, clearAllStorage]);
 
 
 
@@ -273,16 +289,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     if (!storage) return;
     await storage.setItem(keys.activeSessionId, sessionId);
   }, [storage, keys.activeSessionId]);
-
-  // Clear all storage
-  const clearAllStorage = useCallback(async (): Promise<void> => {
-    if (!storage) return;
-    try {
-      await storage.removeItem(keys.activeSessionId);
-    } catch (err) {
-      console.error('Clear secure storage error:', err);
-    }
-  }, [storage, keys]);
 
   // Switch to a different session
   const switchToSession = useCallback(async (sessionId: string): Promise<void> => {
@@ -316,7 +322,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
   }, [oxyServices, onAuthStateChange, loginSuccess, saveActiveSessionId]);
 
-  // Secure login method - only store session ID, retrieve data from backend
+  // Login method - only store session ID, retrieve data from backend
   const login = useCallback(async (username: string, password: string, deviceName?: string): Promise<User> => {
     if (!storage) throw new Error('Storage not initialized');
     useAuthStore.setState({ isLoading: true, error: null });
@@ -328,10 +334,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // Get or generate persistent device info
       const deviceInfo = await DeviceManager.getDeviceInfo();
 
-      console.log('SecureAuth - Using device fingerprint:', deviceFingerprint);
-      console.log('SecureAuth - Using device ID:', deviceInfo.deviceId);
+      console.log('Auth - Using device fingerprint:', deviceFingerprint);
+      console.log('Auth - Using device ID:', deviceInfo.deviceId);
 
-      const response: SecureLoginResponse = await oxyServices.secureLogin(
+      const response: SessionLoginResponse = await oxyServices.signIn(
         username,
         password,
         deviceName || deviceInfo.deviceName || DeviceManager.getDefaultDeviceName(),
@@ -352,7 +358,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
       // Load sessions from backend
       const serverSessions = await oxyServices.getSessionsBySessionId(response.sessionId);
-      const clientSessions: SecureClientSession[] = serverSessions.map(serverSession => ({
+      const clientSessions: ClientSession[] = serverSessions.map(serverSession => ({
         sessionId: serverSession.sessionId,
         deviceId: serverSession.deviceId,
         expiresAt: serverSession.expiresAt || new Date().toISOString(),
@@ -380,7 +386,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
     try {
       const sessionToLogout = targetSessionId || activeSessionId;
-      await oxyServices.logoutSecureSession(activeSessionId, sessionToLogout);
+      await oxyServices.logoutSession(activeSessionId, sessionToLogout);
 
       // Remove session from local state
       const filteredSessions = sessions.filter(s => s.sessionId !== sessionToLogout);
@@ -426,9 +432,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
 
     try {
-      console.log('Calling oxyServices.logoutAllSecureSessions with sessionId:', activeSessionId);
-      await oxyServices.logoutAllSecureSessions(activeSessionId);
-      console.log('logoutAllSecureSessions completed successfully');
+      console.log('Calling oxyServices.logoutAllSessions with sessionId:', activeSessionId);
+      await oxyServices.logoutAllSessions(activeSessionId);
+      console.log('logoutAllSessions completed successfully');
 
       // Clear all local data
       setSessions([]);
@@ -481,7 +487,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
       console.log('SignUp successful:', response);
 
-      // Now log the user in securely to create a session
+      // Now log the user in to create a session
       // This will handle the session creation and device registration
       const user = await login(username, password);
 
@@ -519,7 +525,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       console.log('refreshSessions: Server sessions received:', serverSessions);
 
       // Update local sessions with server data
-      const updatedSessions: SecureClientSession[] = serverSessions.map(serverSession => ({
+      const updatedSessions: ClientSession[] = serverSessions.map(serverSession => ({
         sessionId: serverSession.sessionId,
         deviceId: serverSession.deviceId,
         expiresAt: serverSession.expiresAt || new Date().toISOString(),
@@ -541,7 +547,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         for (const session of otherSessions) {
           try {
             // Try to validate this session
-            await oxyServices.validateSession(session.sessionId);
+            await oxyServices.validateSession(session.sessionId, {
+              useHeaderValidation: true
+            });
             console.log('Found valid session, switching to:', session.sessionId);
             await switchToSession(session.sessionId);
             return; // Successfully switched to another session
@@ -662,7 +670,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }, [bottomSheetRef]);
 
   // Integrate socket for real-time session updates
-  console.log('OxyContextProvider: userId', user?.id, 'baseURL', oxyServices.getBaseURL());
   useSessionSocket({
     userId: user?.id,
     activeSessionId,
@@ -675,7 +682,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }, [logout]),
   });
 
-  // Context value
+  // Context value - optimized to prevent unnecessary re-renders
   const contextValue: OxyContextState = useMemo(() => ({
     user,
     minimalUser,
@@ -699,9 +706,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     showBottomSheet,
     hideBottomSheet,
   }), [
-    user,
-    minimalUser,
-    sessions,
+    user?.id, // Only depend on user ID, not the entire user object
+    minimalUser?.id,
+    sessions.length, // Only depend on sessions count, not the entire array
     activeSessionId,
     isAuthenticated,
     isLoading,

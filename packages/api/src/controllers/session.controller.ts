@@ -6,7 +6,7 @@ import { ISession } from '../models/Session';
 import Session from '../models/Session'; // Import the default export
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
-import { SessionAuthResponse, ClientSession } from '../types/secureSession';
+import { SessionAuthResponse, ClientSession } from '../types/session';
 import { 
   extractDeviceInfo, 
   generateDeviceFingerprint, 
@@ -16,13 +16,14 @@ import {
   DeviceFingerprint 
 } from '../utils/deviceUtils';
 import { emitSessionUpdate } from '../server';
+import Notification from '../models/Notification'; // Added import for Notification
 
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET!;
 const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET!;
 const ACCESS_TOKEN_EXPIRES_IN = '1h';
 const REFRESH_TOKEN_EXPIRES_IN = '7d';
 
-// Generate secure device ID
+// Generate device ID
 const generateDeviceId = (): string => {
   return crypto.randomBytes(32).toString('hex');
 };
@@ -58,10 +59,73 @@ const generateTokens = (userId: string, sessionId: string) => {
   return { accessToken, refreshToken };
 };
 
-export class SecureSessionController {
+export class SessionController {
   
-  // Secure login that returns only session data
-  static async secureLogin(req: Request, res: Response) {
+  // Register a new user account
+  static async register(req: Request, res: Response) {
+    try {
+      const { username, email, password } = req.body;
+
+      if (!username || !email || !password) {
+        return res.status(400).json({ error: 'Username, email, and password are required' });
+      }
+
+      // Check if user already exists
+      const existingUser = await User.findOne({
+        $or: [{ username }, { email }]
+      });
+
+      if (existingUser) {
+        return res.status(409).json({
+          error: 'User already exists',
+          details: {
+            username: existingUser.username === username ? 'Username is already taken' : null,
+            email: existingUser.email === email ? 'Email is already registered' : null
+          }
+        });
+      }
+
+      // Hash password
+      const hashedPassword = await bcrypt.hash(password, 10);
+
+      // Create new user
+      const user = new User({
+        username,
+        email,
+        password: hashedPassword,
+      });
+
+      await user.save();
+
+      // Create welcome notification
+      await new Notification({
+        recipientId: user._id,
+        actorId: user._id,
+        type: 'welcome',
+        entityId: user._id,
+        entityType: 'profile',
+        read: false
+      }).save();
+
+      return res.status(201).json({
+        success: true,
+        message: 'User registered successfully',
+        user: {
+          id: user._id,
+          username: user.username,
+          email: user.email,
+          name: user.name,
+          privacySettings: user.privacySettings
+        }
+      });
+    } catch (error) {
+      console.error('Registration error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+  
+  // Sign in that returns only session data
+  static async signIn(req: Request, res: Response) {
     try {
       const { username, password, deviceName, deviceFingerprint } = req.body;
 
@@ -139,6 +203,7 @@ export class SecureSessionController {
         
         // Create new session
         session = new Session({
+          sessionId, // Store the UUID in the sessionId field
           userId: user._id,
           deviceId: deviceInfo.deviceId,
           deviceInfo: {
@@ -153,21 +218,27 @@ export class SecureSessionController {
             fingerprint: deviceInfo.fingerprint,
             lastActive: new Date()
           },
-          accessToken,
-          refreshToken,
           isActive: true,
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+          accessToken,
+          refreshToken
         });
-
-        await session.save();
         
+        await session.save();
         console.log(`Created new session for user ${user.username} on device ${deviceInfo.deviceId}`);
       }
 
-      // Return only session data and minimal user info
+      // Emit session update for real-time updates
+      emitSessionUpdate(user._id.toString(), {
+        type: 'session_created',
+        sessionId: session.sessionId,
+        deviceId: session.deviceId
+      });
+
+      // Return session data (no tokens in response for security)
       const response: SessionAuthResponse = {
-        sessionId: (session._id as mongoose.Types.ObjectId).toString(),
-        deviceId: deviceInfo.deviceId,
+        sessionId: session.sessionId,
+        deviceId: session.deviceId,
         expiresAt: session.expiresAt.toISOString(),
         user: {
           id: user._id.toString(),
@@ -178,12 +249,12 @@ export class SecureSessionController {
 
       res.json(response);
     } catch (error) {
-      console.error('Secure login error:', error);
+      console.error('Login error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
 
-  // Get full user data by session
+  // Get user data by session ID
   static async getUserBySession(req: Request, res: Response) {
     try {
       const { sessionId } = req.params;
@@ -192,22 +263,18 @@ export class SecureSessionController {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Find active session using MongoDB _id
+      // Find active session using sessionId field and populate user data
       const session = await Session.findOne({
-        _id: sessionId,
+        sessionId: sessionId,
         isActive: true,
         expiresAt: { $gt: new Date() }
-      });
+      }).populate('userId', '-password'); // Exclude password field
 
       if (!session) {
-        return res.status(401).json({ error: 'Invalid or expired session' });
-      }
-
-      // Get user data
-      const user = await User.findById(session.userId).select('-password');
-      
-      if (!user) {
-        return res.status(404).json({ error: 'User not found' });
+        return res.status(401).json({ 
+          error: 'Invalid or expired session',
+          sessionId: sessionId.substring(0, 8) + '...'
+        });
       }
 
       // Update last activity
@@ -215,92 +282,78 @@ export class SecureSessionController {
       await session.save();
 
       // Transform user data to include id field for frontend compatibility
-      const userData = user.toObject();
-      userData.id = user._id.toString();
+      const userData = (session.userId as any).toObject();
+      userData.id = (session.userId as any)._id.toString();
 
-      res.json({ user: userData });
+      res.json(userData);
     } catch (error) {
       console.error('Get user by session error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
 
-  // Get access token by session (for API calls)
+  // Get access token by session ID
   static async getTokenBySession(req: Request, res: Response) {
     try {
       const { sessionId } = req.params;
-      console.log('[getTokenBySession] Received sessionId:', sessionId);
 
       if (!sessionId) {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Find active session using MongoDB _id
+      // Find active session using sessionId field
       const session = await Session.findOne({
-        _id: sessionId,
+        sessionId: sessionId,
         isActive: true,
         expiresAt: { $gt: new Date() }
       });
 
-      console.log('[getTokenBySession] Found session:', !!session);
-      if (session) {
-        console.log('[getTokenBySession] Session details:', {
-          id: session._id,
-          userId: session.userId,
-          isActive: session.isActive,
-          expiresAt: session.expiresAt
-        });
-      }
-
       if (!session) {
-        return res.status(401).json({ error: 'Invalid or expired session' });
+        return res.status(401).json({ 
+          error: 'Invalid or expired session',
+          sessionId: sessionId.substring(0, 8) + '...'
+        });
       }
 
-      // Check if token is still valid
+      // Check if access token is expired
       try {
-        jwt.verify(session.accessToken, ACCESS_TOKEN_SECRET);
+        const decoded = jwt.verify(session.accessToken, ACCESS_TOKEN_SECRET) as any;
+        const currentTime = Math.floor(Date.now() / 1000);
         
-        // Update last activity
-        session.deviceInfo.lastActive = new Date();
-        await session.save();
-        
-        return res.json({ 
-          accessToken: session.accessToken,
-          expiresAt: session.expiresAt 
-        });
-      } catch (tokenError) {
-        // Token expired, generate new one
-        try {
-          // Generate new token
-          const { accessToken } = generateTokens(
-            session.userId.toString(), 
-            sessionId
-          );
+        if (decoded.exp && decoded.exp < currentTime) {
+          // Token is expired, generate new tokens
+          const { accessToken, refreshToken } = generateTokens(session.userId.toString(), session.sessionId);
           
-          // Update session with new token
           session.accessToken = accessToken;
+          session.refreshToken = refreshToken;
           session.deviceInfo.lastActive = new Date();
           await session.save();
           
-          return res.json({ 
-            accessToken,
-            expiresAt: session.expiresAt 
-          });
-        } catch (refreshError) {
-          // Token expired and cannot be refreshed, invalidate session
-          session.isActive = false;
-          await session.save();
-          
-          return res.status(401).json({ error: 'Session expired' });
+          console.log(`Refreshed tokens for session ${sessionId.substring(0, 8)}...`);
         }
+      } catch (tokenError) {
+        // Token is invalid, generate new tokens
+        const { accessToken, refreshToken } = generateTokens(session.userId.toString(), session.sessionId);
+        
+        session.accessToken = accessToken;
+        session.refreshToken = refreshToken;
+        session.deviceInfo.lastActive = new Date();
+        await session.save();
+        
+        console.log(`Regenerated tokens for session ${sessionId.substring(0, 8)}...`);
       }
+
+      res.json({
+        accessToken: session.accessToken,
+        expiresAt: session.expiresAt.toISOString()
+      });
     } catch (error) {
       console.error('Get token by session error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
 
-  // Get user sessions
+  // Get all sessions for a user
   static async getUserSessions(req: Request, res: Response) {
     try {
       const { sessionId } = req.params;
@@ -309,9 +362,9 @@ export class SecureSessionController {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Find current session to get user ID using MongoDB _id
+      // Find current session to get user ID using sessionId field
       const currentSession = await Session.findOne({
-        _id: sessionId,
+        sessionId: sessionId,
         isActive: true
       });
 
@@ -324,24 +377,25 @@ export class SecureSessionController {
         userId: currentSession.userId,
         isActive: true,
         expiresAt: { $gt: new Date() }
-      }).select('userId deviceId deviceInfo isActive expiresAt');
+      }).sort({ 'deviceInfo.lastActive': -1 });
 
-      const clientSessions: ClientSession[] = sessions.map((session: ISession) => ({
-        sessionId: (session._id as any).toString(),
+      // Transform sessions for client
+      const clientSessions: ClientSession[] = sessions.map(session => ({
+        sessionId: session.sessionId,
         deviceId: session.deviceId,
-        deviceName: session.deviceInfo?.deviceName || 'Unknown Device',
-        isActive: (session._id as any).toString() === sessionId,
+        deviceName: session.deviceInfo.deviceName,
+        isActive: session.isActive,
         userId: session.userId.toString()
       }));
 
-      res.json({ sessions: clientSessions });
+      res.json(clientSessions);
     } catch (error) {
       console.error('Get user sessions error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
 
-  // Logout specific session
+  // Logout from a specific session
   static async logoutSession(req: Request, res: Response) {
     try {
       const { sessionId } = req.params;
@@ -351,34 +405,28 @@ export class SecureSessionController {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Find current session to verify user using MongoDB _id
-      const currentSession = await Session.findOne({
-        _id: sessionId,
+      // Find and deactivate session using sessionId field
+      const session = await Session.findOne({
+        sessionId: sessionId,
         isActive: true
       });
 
-      if (!currentSession) {
-        return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
       }
 
-      // Logout target session (default to current session)
-      const targetId = targetSessionId || sessionId;
-      await Session.updateOne(
-        { _id: targetId, userId: currentSession.userId },
-        { isActive: false, loggedOutAt: new Date() }
-      );
+      session.isActive = false;
+      await session.save();
 
-      // Emit session_update event to user room
-      emitSessionUpdate(currentSession.userId.toString(), { type: 'logout', sessionId: targetId });
-
-      res.json({ message: 'Session logged out successfully' });
+      console.log(`Logged out session: ${sessionId}`);
+      res.json({ success: true, message: 'Session logged out successfully' });
     } catch (error) {
       console.error('Logout session error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
 
-  // Logout all sessions for user
+  // Logout all sessions for current user
   static async logoutAllSessions(req: Request, res: Response) {
     try {
       const { sessionId } = req.params;
@@ -387,9 +435,9 @@ export class SecureSessionController {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Find current session to get user ID using MongoDB _id
+      // Find current session to get user ID using sessionId field
       const currentSession = await Session.findOne({
-        _id: sessionId,
+        sessionId: sessionId,
         isActive: true
       });
 
@@ -397,16 +445,23 @@ export class SecureSessionController {
         return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
       }
 
-      // Logout all sessions for this user
-      await Session.updateMany(
-        { userId: currentSession.userId, isActive: true },
-        { isActive: false, loggedOutAt: new Date() }
+      // Deactivate all sessions for this user except the current one
+      const result = await Session.updateMany(
+        { 
+          userId: currentSession.userId, 
+          isActive: true,
+          sessionId: { $ne: sessionId } // Exclude current session
+        },
+        { isActive: false }
       );
 
-      // Emit session_update event to user room
-      emitSessionUpdate(currentSession.userId.toString(), { type: 'logout_all' });
-
-      res.json({ message: 'All sessions logged out successfully' });
+      console.log(`Logged out ${result.modifiedCount} sessions for user ${currentSession.userId}`);
+      
+      res.json({ 
+        success: true, 
+        message: `Logged out ${result.modifiedCount} sessions`,
+        sessionsLoggedOut: result.modifiedCount
+      });
     } catch (error) {
       console.error('Logout all sessions error:', error);
       res.status(500).json({ error: 'Internal server error' });
@@ -426,9 +481,9 @@ export class SecureSessionController {
         });
       }
 
-      // Find active session using MongoDB _id and populate user data
+      // Find active session using sessionId field and populate user data
       const session = await Session.findOne({
-        _id: sessionId,
+        sessionId: sessionId,
         isActive: true,
         expiresAt: { $gt: new Date() }
       }).populate('userId', '-password'); // Exclude password field
@@ -457,10 +512,9 @@ export class SecureSessionController {
 
       res.json({ 
         valid: true,
-        expiresAt: session.expiresAt,
-        lastActivity: session.deviceInfo.lastActive,
-        user: userData,
-        source: req.header('x-session-id') ? 'header' : 'parameter' // Debug info
+        expiresAt: session.expiresAt.toISOString(),
+        lastActivity: session.deviceInfo.lastActive.toISOString(),
+        user: userData
       });
     } catch (error) {
       console.error('Validate session error:', error);
@@ -468,22 +522,21 @@ export class SecureSessionController {
     }
   }
 
-  // Validate session using header (convenience method for middleware usage)
+  // Validate session from header with device fingerprint validation
   static async validateSessionFromHeader(req: Request, res: Response) {
     try {
-      // Try to get session ID from header first, then fallback to param
-      const sessionId = req.header('x-session-id') || req.params.sessionId;
+      const sessionId = req.header('x-session-id');
 
       if (!sessionId) {
         return res.status(400).json({ 
           error: 'Session ID is required',
-          hint: 'Provide sessionId in URL parameter or x-session-id header'
+          hint: 'Provide sessionId in x-session-id header'
         });
       }
 
-      // Find active session using MongoDB _id and populate user data
+      // Find active session using sessionId field and populate user data
       const session = await Session.findOne({
-        _id: sessionId,
+        sessionId: sessionId,
         isActive: true,
         expiresAt: { $gt: new Date() }
       }).populate('userId', '-password'); // Exclude password field
@@ -495,15 +548,18 @@ export class SecureSessionController {
         });
       }
 
-      // Update last activity and optionally log device fingerprint
-      session.deviceInfo.lastActive = new Date();
-      
-      // Extract device fingerprint if provided for enhanced security logging
+      // Optional device fingerprint validation
       const deviceFingerprint = req.header('x-device-fingerprint');
-      if (deviceFingerprint) {
-        console.log(`Session ${sessionId.substring(0, 8)}... validated with device fingerprint: ${deviceFingerprint.substring(0, 16)}...`);
+      if (deviceFingerprint && session.deviceInfo.fingerprint) {
+        const expectedFingerprint = generateDeviceFingerprint(session.deviceInfo.fingerprint);
+        if (deviceFingerprint !== expectedFingerprint) {
+          console.log(`Device fingerprint mismatch for session ${sessionId.substring(0, 8)}...`);
+          // Don't reject the request, just log the mismatch
+        }
       }
-      
+
+      // Update last activity
+      session.deviceInfo.lastActive = new Date();
       await session.save();
 
       // Transform user data to include id field for frontend compatibility
@@ -512,10 +568,10 @@ export class SecureSessionController {
 
       res.json({ 
         valid: true,
-        expiresAt: session.expiresAt,
-        lastActivity: session.deviceInfo.lastActive,
+        expiresAt: session.expiresAt.toISOString(),
+        lastActivity: session.deviceInfo.lastActive.toISOString(),
         user: userData,
-        sessionId: sessionId.substring(0, 8) + '...' // Masked session ID for reference
+        sessionId: session.sessionId
       });
     } catch (error) {
       console.error('Validate session from header error:', error);
@@ -523,19 +579,18 @@ export class SecureSessionController {
     }
   }
 
-  // Get all active sessions for a specific device
+  // Get device sessions for a specific device
   static async getDeviceSessions(req: Request, res: Response) {
     try {
       const { sessionId } = req.params;
-      const deviceIdQuery = req.query.deviceId;
 
       if (!sessionId) {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Verify current session
+      // Find current session to get device ID
       const currentSession = await Session.findOne({
-        _id: sessionId,
+        sessionId: sessionId,
         isActive: true
       });
 
@@ -543,35 +598,28 @@ export class SecureSessionController {
         return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
       }
 
-      // Use provided deviceId or current session's deviceId
-      const targetDeviceId = (typeof deviceIdQuery === 'string' ? deviceIdQuery : undefined) || currentSession.deviceId;
-      
-      // Get all sessions for the device
-      const deviceSessions = await getDeviceActiveSessions(targetDeviceId);
+      // Get all sessions for this device
+      const deviceSessions = await getDeviceActiveSessions(currentSession.deviceId);
 
-      res.json({ 
-        deviceId: targetDeviceId,
-        sessions: deviceSessions 
-      });
+      res.json(deviceSessions);
     } catch (error) {
       console.error('Get device sessions error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
 
-  // Logout all sessions on a specific device
+  // Logout all sessions for a specific device
   static async logoutAllDeviceSessions(req: Request, res: Response) {
     try {
       const { sessionId } = req.params;
-      const { deviceId, excludeCurrent } = req.body;
 
       if (!sessionId) {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Verify current session
+      // Find current session to get device ID
       const currentSession = await Session.findOne({
-        _id: sessionId,
+        sessionId: sessionId,
         isActive: true
       });
 
@@ -579,25 +627,17 @@ export class SecureSessionController {
         return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
       }
 
-      // Use provided deviceId or current session's deviceId
-      const targetDeviceId = deviceId || currentSession.deviceId;
-      
-      // Logout all device sessions
-      const excludeSessionId = excludeCurrent ? sessionId : undefined;
-      const loggedOutCount = await logoutAllDeviceSessions(targetDeviceId, excludeSessionId);
+      // Logout all sessions for this device
+      const result = await logoutAllDeviceSessions(currentSession.deviceId);
 
-      res.json({ 
-        message: `Logged out ${loggedOutCount} sessions from device`,
-        deviceId: targetDeviceId,
-        sessionsTerminated: loggedOutCount
-      });
+      res.json(result);
     } catch (error) {
-      console.error('Logout device sessions error:', error);
+      console.error('Logout all device sessions error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
 
-  // Update device name
+  // Update device name for a session
   static async updateDeviceName(req: Request, res: Response) {
     try {
       const { sessionId } = req.params;
@@ -611,33 +651,27 @@ export class SecureSessionController {
         return res.status(400).json({ error: 'Device name is required' });
       }
 
-      // Find current session
+      // Find and update session
       const session = await Session.findOne({
-        _id: sessionId,
+        sessionId: sessionId,
         isActive: true
       });
 
       if (!session) {
-        return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
+        return res.status(404).json({ error: 'Session not found' });
       }
 
-      // Update device name for all sessions on this device
-      await Session.updateMany(
-        { deviceId: session.deviceId },
-        { 
-          $set: { 
-            'deviceInfo.deviceName': deviceName 
-          }
-        }
-      );
+      session.deviceInfo.deviceName = deviceName;
+      await session.save();
 
       res.json({ 
+        success: true, 
         message: 'Device name updated successfully',
-        deviceName 
+        deviceName: deviceName
       });
     } catch (error) {
       console.error('Update device name error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
-}
+} 

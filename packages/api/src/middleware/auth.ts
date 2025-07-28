@@ -1,10 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import User, { IUser } from '../models/User';
+import Session from '../models/Session';
 import dotenv from 'dotenv';
 import { logger } from '../utils/logger';
 import { Document } from 'mongoose';
-import { updateSessionActivity } from '../utils/sessionUtils';
 
 // Ensure environment variables are loaded
 dotenv.config();
@@ -40,7 +40,7 @@ const extractUserIdFromToken = (token: string): string | null => {
 
 /**
  * Authentication middleware that validates JWT tokens and attaches the full user object to the request
- * Use this when you need the complete user profile in your route handler
+ * Supports both old token format and new session-based tokens
  */
 export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -64,34 +64,92 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
     }
 
     try {
-      // Verify token and extract user ID
-      const userId = extractUserIdFromToken(token);
-      if (!userId) {
-        return res.status(401).json({
-          error: 'Invalid token',
-          message: 'User ID not found in token'
-        });
-      }
-
-      // Get user from database
-      const user = await User.findById(userId).select('+refreshToken');
-      if (!user) {
-        return res.status(401).json({
-          error: 'Invalid token',
-          message: 'User not found'
-        });
-      }
-
-      // Ensure id field is set consistently
-      user.id = user._id.toString();
-      req.user = user;
+      // Decode token to check if it's session-based
+      const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as any;
       
-      // Update session activity asynchronously
-      updateSessionActivity(token).catch(err => 
-        logger.error('Error updating session activity:', err)
-      );
+      logger.debug('Token decoded:', { 
+        hasSessionId: !!decoded.sessionId, 
+        sessionId: decoded.sessionId,
+        userId: decoded.userId,
+        exp: decoded.exp 
+      });
       
-      next();
+      if (decoded.sessionId) {
+        // Session-based token - validate session
+        logger.debug('Validating session-based token for sessionId:', decoded.sessionId);
+        
+        const session = await Session.findOne({
+          sessionId: decoded.sessionId,
+          isActive: true,
+          expiresAt: { $gt: new Date() }
+        }).populate('userId');
+
+        logger.debug('Session lookup result:', { 
+          found: !!session, 
+          sessionId: session?.sessionId,
+          isActive: session?.isActive,
+          expiresAt: session?.expiresAt 
+        });
+
+        if (!session) {
+          logger.warn('Session not found or expired for sessionId:', decoded.sessionId);
+          return res.status(401).json({
+            error: 'Invalid session',
+            message: 'Session not found or expired'
+          });
+        }
+
+        // Update session activity
+        session.deviceInfo.lastActive = new Date();
+        await session.save();
+
+        // Get user data - handle both populated and unpopulated cases
+        let user;
+        if (session.userId && typeof session.userId === 'object' && '_id' in session.userId) {
+          // userId is populated
+          user = session.userId as any;
+        } else {
+          // userId is not populated, fetch user separately
+          user = await User.findById(session.userId).select('-password');
+        }
+        
+        if (!user) {
+          return res.status(401).json({
+            error: 'Invalid session',
+            message: 'User not found'
+          });
+        }
+
+        // Ensure id field is set consistently
+        user.id = user._id.toString();
+        req.user = user;
+        
+        next();
+      } else {
+        // Old token format - use existing logic
+        const userId = extractUserIdFromToken(token);
+        if (!userId) {
+          return res.status(401).json({
+            error: 'Invalid token',
+            message: 'User ID not found in token'
+          });
+        }
+
+        // Get user from database
+        const user = await User.findById(userId).select('+refreshToken');
+        if (!user) {
+          return res.status(401).json({
+            error: 'Invalid token',
+            message: 'User not found'
+          });
+        }
+
+        // Ensure id field is set consistently
+        user.id = user._id.toString();
+        req.user = user;
+        
+        next();
+      }
     } catch (error) {
       logger.error('Token verification error:', error);
       
@@ -125,8 +183,7 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 
 /**
  * Simplified authentication middleware that only validates the token and attaches the user ID
- * to the request without fetching the full user object
- * Use this when you only need the user ID in your route handler
+ * Supports both old token format and new session-based tokens
  */
 export const simpleAuthMiddleware = async (req: SimpleAuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -148,17 +205,45 @@ export const simpleAuthMiddleware = async (req: SimpleAuthRequest, res: Response
     }
 
     try {
-      const userId = extractUserIdFromToken(token);
-      if (!userId) {
-        return res.status(401).json({
-          error: 'Invalid token',
-          message: 'User ID not found in token'
+      // Decode token to check if it's session-based
+      const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as any;
+      
+      if (decoded.sessionId) {
+        // Session-based token - validate session
+        const session = await Session.findOne({
+          sessionId: decoded.sessionId,
+          isActive: true,
+          expiresAt: { $gt: new Date() }
         });
-      }
 
-      // Set just the ID for simple auth
-      req.user = { id: userId };
-      next();
+        if (!session) {
+          return res.status(401).json({
+            error: 'Invalid session',
+            message: 'Session not found or expired'
+          });
+        }
+
+        // Update session activity
+        session.deviceInfo.lastActive = new Date();
+        await session.save();
+
+        // Set user ID
+        req.user = { id: session.userId.toString() };
+        next();
+      } else {
+        // Old token format - use existing logic
+        const userId = extractUserIdFromToken(token);
+        if (!userId) {
+          return res.status(401).json({
+            error: 'Invalid token',
+            message: 'User ID not found in token'
+          });
+        }
+
+        // Set just the ID for simple auth
+        req.user = { id: userId };
+        next();
+      }
     } catch (error) {
       logger.error('Token verification error:', error);
 

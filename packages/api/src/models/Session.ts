@@ -1,6 +1,7 @@
 import mongoose, { Document, Schema } from "mongoose";
 
 export interface ISession extends Document {
+  sessionId: string; // UUID used in JWT tokens
   userId: mongoose.Types.ObjectId;
   deviceId: string; // Unique device identifier - can be shared across users
   deviceInfo: {
@@ -26,6 +27,11 @@ export interface ISession extends Document {
 
 const SessionSchema: Schema = new Schema(
   {
+    sessionId: {
+      type: String,
+      required: true,
+      unique: true,
+    },
     userId: {
       type: Schema.Types.ObjectId,
       ref: "User",

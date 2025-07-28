@@ -15,7 +15,7 @@ export interface IPrivacySettings {
     twoFactorEnabled: boolean;
     loginAlerts: boolean;
     blockScreenshots: boolean;
-    secureLogin: boolean;
+    login: boolean;
     biometricLogin: boolean;
     showActivity: boolean;
     allowTagging: boolean;

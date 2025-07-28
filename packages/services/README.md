@@ -110,13 +110,7 @@ const user = await oxy.users.getCurrentUser();
 
 ## Documentation
 
-For comprehensive documentation, API reference, and examples:
-
-- [📚 Full Documentation](./docs/README.md)
-- [🚀 Quick Start Guide](./docs/quick-start.md)
-- [🔐 Core API Reference](./docs/core-api.md)
-- [⚡ Streamlined Authentication](./docs/core-api.md#streamlined-authentication) - **NEW!**
-- [💼 Integration Examples](./docs/examples/)
+This package provides a TypeScript client library for the Oxy API with authentication, user management, and UI components.
 
 ## UI Components
 
@@ -141,19 +135,7 @@ import { OxyProvider, Avatar } from '@oxyhq/services/ui';
 import { OxyServices, OxyProvider } from '@oxyhq/services/full';
 ```
 
-## Zero-Config Express Router
 
-Quickly mount authentication routes in any Express app:
-
-```typescript
-import express from 'express';
-import { createAuth } from '@oxyhq/services/core';
-
-const app = express();
-app.use('/auth', createAuth({ baseURL: 'http://localhost:3000' }).middleware());
-```
-
-This automatically provides sign-up, login, logout, refresh, and session management endpoints.
 
 ## Requirements
 
@@ -205,21 +187,7 @@ npm install
 
 # Build the library
 npm run build
-
-# Run tests
-npm test
-
-# Development mode
-npm run dev
 ```
-
-## Integration
-
-This library works with:
-- **[Oxy API](../oxy-api/)** - The companion authentication server
-- **Express.js** - Built-in middleware support
-- **React/React Native** - UI components and hooks
-- **Next.js** - SSR/SSG authentication
 
 ## License
 

@@ -10,7 +10,7 @@ const REFRESH_TOKEN_EXPIRES_IN = '7d'; // Longer refresh tokens
 const SESSION_EXPIRES_IN = 7 * 24 * 60 * 60 * 1000; // 7 days in milliseconds
 
 /**
- * Generate secure device ID - this should be stored locally on the device
+ * Generate device ID - this should be stored locally on the device
  * @returns A unique device identifier
  */
 export const generateDeviceId = (): string => {
@@ -235,9 +235,9 @@ export const validateSession = async (accessToken: string) => {
       return null;
     }
 
-    // Find the session in database
+    // Find the session in database using sessionId field
     const session = await Session.findOne({
-      _id: payload.sessionId,
+      sessionId: payload.sessionId,
       accessToken,
       isActive: true,
       expiresAt: { $gt: new Date() }

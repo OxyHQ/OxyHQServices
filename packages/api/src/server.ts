@@ -4,10 +4,8 @@ import mongoose from "mongoose";
 import { Server as SocketIOServer, Socket } from "socket.io";
 import profilesRouter from "./routes/profiles";
 import usersRouter from "./routes/users";
-import authRouter from "./routes/auth";
 import notificationsRouter from "./routes/notifications.routes";
-import sessionsRouter from "./routes/sessions";
-import secureSessionRouter from "./routes/secureSession";
+import sessionRouter from "./routes/session";
 import dotenv from "dotenv";
 import fileRoutes from "./routes/files";
 import { User } from "./models/User";
@@ -22,6 +20,8 @@ import linkMetadataRoutes from './routes/linkMetadata';
 import locationSearchRoutes from './routes/locationSearch';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
+import { Response } from 'express';
+import { authMiddleware } from './middleware/auth';
 
 dotenv.config();
 
@@ -203,9 +203,7 @@ app.get("/", async (req, res) => {
 app.use("/search", searchRoutes);
 app.use("/profiles", profilesRouter);
 app.use("/users", usersRouter);
-app.use("/auth", authRouter);
-app.use("/sessions", sessionsRouter);
-app.use("/secure-session", secureSessionRouter);
+app.use("/session", sessionRouter);
 app.use("/privacy", privacyRoutes);
 app.use("/analytics", analyticsRoutes);
 app.use('/payments', paymentRoutes);
@@ -214,6 +212,14 @@ app.use('/karma', karmaRoutes);
 app.use('/wallet', walletRoutes);
 app.use('/link-metadata', linkMetadataRoutes);
 app.use('/location-search', locationSearchRoutes);
+
+// Add a protected route for testing
+app.get('/api/protected-server-route', authMiddleware, (req: any, res: Response) => {
+  res.json({ 
+    message: 'Protected server route accessed successfully',
+    user: req.user 
+  });
+});
 
 // Global error handler
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {

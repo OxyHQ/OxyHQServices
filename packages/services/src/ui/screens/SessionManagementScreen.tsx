@@ -16,7 +16,7 @@ import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 import OxyIcon from '../components/icon/OxyIcon';
-import { SecureClientSession } from '../../models/secureSession';
+import { ClientSession } from '../../models/session';
 import { confirmAction } from '../utils/confirmAction';
 import { Header } from '../components';
 
@@ -189,7 +189,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             >
                 {userSessions.length > 0 ? (
                     <>
-                        {userSessions.map((session: SecureClientSession) => (
+                        {userSessions.map((session: ClientSession) => (
                             <View
                                 key={session.sessionId}
                                 style={[

@@ -1,4 +1,4 @@
-export interface SecureClientSession {
+export interface ClientSession {
   sessionId: string;
   deviceId: string;
   expiresAt: string;
@@ -7,8 +7,8 @@ export interface SecureClientSession {
   userId?: string;
 }
 
-export interface SecureStorageKeys {
-  sessions: string; // Array of SecureClientSession objects
+export interface StorageKeys {
+  sessions: string; // Array of ClientSession objects
   activeSessionId: string; // ID of currently active session
 }
 
@@ -21,9 +21,9 @@ export interface MinimalUserData {
   };
 }
 
-export interface SecureLoginResponse {
+export interface SessionLoginResponse {
   sessionId: string;
   deviceId: string;
   expiresAt: string;
   user: MinimalUserData;
-}
+} 

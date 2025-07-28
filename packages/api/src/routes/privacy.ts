@@ -22,7 +22,7 @@ const privacySettingsSchema = z.object({
   twoFactorEnabled: z.boolean().optional(),
   loginAlerts: z.boolean().optional(),
   blockScreenshots: z.boolean().optional(),
-  secureLogin: z.boolean().optional(),
+      login: z.boolean().optional(),
   biometricLogin: z.boolean().optional(),
   showActivity: z.boolean().optional(),
   allowTagging: z.boolean().optional(),

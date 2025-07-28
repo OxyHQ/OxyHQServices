@@ -58,10 +58,10 @@ export type {
 } from './models/interfaces';
 
 export type {
-  SecureLoginResponse,
-  SecureClientSession,
+  SessionLoginResponse,
+  ClientSession,
   MinimalUserData
-} from './models/secureSession';
+} from './models/session';
 
 // UI components and hooks
 export { useAuthStore } from './ui/stores/authStore';

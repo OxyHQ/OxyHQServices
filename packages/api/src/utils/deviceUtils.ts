@@ -60,7 +60,7 @@ export const extractDeviceInfo = (req: Request, providedDeviceId?: string, devic
   const deviceType = parseDeviceType(userAgent);
   
   return {
-    deviceId: providedDeviceId || generateSecureDeviceId(),
+    deviceId: providedDeviceId || generateDeviceId(),
     deviceName: deviceName || generateDefaultDeviceName(browser, os),
     deviceType,
     platform,
@@ -73,9 +73,9 @@ export const extractDeviceInfo = (req: Request, providedDeviceId?: string, devic
 };
 
 /**
- * Generate a secure device ID
+ * Generate a device ID
  */
-export const generateSecureDeviceId = (): string => {
+export const generateDeviceId = (): string => {
   return crypto.randomBytes(32).toString('hex');
 };
 
@@ -155,7 +155,7 @@ export const getDeviceActiveSessions = async (deviceId: string) => {
     .sort({ 'deviceInfo.lastActive': -1 });
 
     return sessions.map(session => ({
-      sessionId: (session._id as any).toString(),
+      sessionId: session.sessionId, // Use sessionId field instead of MongoDB _id
       user: session.userId,
       lastActive: session.deviceInfo.lastActive,
       createdAt: session.createdAt
