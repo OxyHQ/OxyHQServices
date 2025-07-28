@@ -21,13 +21,12 @@ export class UserService extends OxyServices {
   /**
    * Search user profiles
    */
-  async searchProfiles(query: string, limit?: number, offset?: number): Promise<User[]> {
+  async searchProfiles(query: string, pagination?: PaginationParams): Promise<User[]> {
     try {
-      const params = new URLSearchParams({ query });
-      if (limit) params.append('limit', limit.toString());
-      if (offset) params.append('offset', offset.toString());
+      const params = { query, ...pagination };
+      const searchParams = buildSearchParams(params);
       
-      const res = await this.getClient().get(`/users/search?${params.toString()}`);
+      const res = await this.getClient().get(`/users/search?${searchParams.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
