@@ -20,7 +20,7 @@ export class AuthService extends OxyServices {
    */
   async signUp(username: string, email: string, password: string): Promise<{ message: string; token: string; user: User }> {
     try {
-      const res = await this.getClient().post('/auth/signup', {
+      const res = await this.getClient().post('/session/register', {
         username,
         email,
         password
@@ -36,7 +36,7 @@ export class AuthService extends OxyServices {
    */
   async signIn(username: string, password: string, deviceName?: string, deviceFingerprint?: any): Promise<SessionLoginResponse> {
     try {
-      const res = await this.getClient().post('/auth/login', {
+      const res = await this.getClient().post('/session/login', {
         username,
         password,
         deviceName,
@@ -494,49 +494,35 @@ export class AuthService extends OxyServices {
   }
 
   /**
-   * Check username availability
+   * Check username availability by trying to get profile
+   * Note: This method uses the profiles endpoint to check if username exists
    */
   async checkUsernameAvailability(username: string): Promise<{ available: boolean; message: string }> {
     try {
-      const res = await this.getClient().get(`/auth/check-username/${username}`);
-      return res.data;
+      // Try to get profile by username - if it exists, username is not available
+      await this.getClient().get(`/profiles/username/${username}`);
+      return { available: false, message: 'Username is already taken' };
     } catch (error: any) {
-      // If the endpoint doesn't exist, fall back to basic validation
+      // If profile not found (404), username is available
       if (error.response?.status === 404) {
-        console.warn('Username validation endpoint not found, using fallback validation');
-        return { available: true, message: 'Username validation not available' };
+        return { available: true, message: 'Username is available' };
       }
       
-      // If it's a validation error (400), return the error message
-      if (error.response?.status === 400) {
-        return { available: false, message: error.response.data.message || 'Username not available' };
-      }
-      
-      throw this.handleError(error);
+      // For other errors, assume available to avoid blocking registration
+      console.warn('Username validation error, assuming available:', error);
+      return { available: true, message: 'Username validation not available' };
     }
   }
 
   /**
    * Check email availability
+   * Note: This method is not supported by the current API
    */
   async checkEmailAvailability(email: string): Promise<{ available: boolean; message: string }> {
-    try {
-      const res = await this.getClient().get(`/auth/check-email/${email}`);
-      return res.data;
-    } catch (error: any) {
-      // If the endpoint doesn't exist, fall back to basic validation
-      if (error.response?.status === 404) {
-        console.warn('Email validation endpoint not found, using fallback validation');
-        return { available: true, message: 'Email validation not available' };
-      }
-      
-      // If it's a validation error (400), return the error message
-      if (error.response?.status === 400) {
-        return { available: false, message: error.response.data.message || 'Email not available' };
-      }
-      
-      throw this.handleError(error);
-    }
+    // Email validation is not supported by the current API
+    // Return available to avoid blocking registration
+    console.warn('Email validation not supported by API, assuming available');
+    return { available: true, message: 'Email validation not available' };
   }
 
   // Note: getUserById and getUserProfileByUsername methods have been moved to UserService
