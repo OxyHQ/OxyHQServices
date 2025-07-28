@@ -19,9 +19,9 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
     useEffect(() => {
         setIsLoading(true);
         setError(null);
-        oxyServices.getKarmaLeaderboard()
-            .then((data) => setLeaderboard(Array.isArray(data) ? data : []))
-            .catch((err) => setError(err.message || 'Failed to load leaderboard'))
+        oxyServices.karma.getKarmaLeaderboard()
+            .then((data: any) => setLeaderboard(Array.isArray(data) ? data : []))
+            .catch((err: any) => setError(err.message || 'Failed to load leaderboard'))
             .finally(() => setIsLoading(false));
     }, [oxyServices]);
 

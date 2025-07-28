@@ -53,7 +53,7 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
       errors: { ...state.errors, [userId]: null },
     }));
     try {
-      const response = await oxyServices.getFollowStatus(userId);
+      const response = await oxyServices.users.getFollowStatus(userId);
       set((state: FollowState) => ({
         followingUsers: { ...state.followingUsers, [userId]: response.isFollowing },
         fetchingUsers: { ...state.fetchingUsers, [userId]: false },
@@ -75,10 +75,10 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
       let response: any;
       let newFollowState;
       if (isCurrentlyFollowing) {
-        response = await oxyServices.unfollowUser(userId);
+        response = await oxyServices.users.unfollowUser(userId);
         newFollowState = false;
       } else {
-        response = await oxyServices.followUser(userId);
+        response = await oxyServices.users.followUser(userId);
         newFollowState = true;
       }
       
@@ -158,7 +158,7 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
       loadingCounts: { ...state.loadingCounts, [userId]: true },
     }));
     try {
-      const user = await oxyServices.getUserById(userId);
+      const user = await oxyServices.users.getUserById(userId);
       if (user && user._count) {
         set((state: FollowState) => ({
           followerCounts: { 

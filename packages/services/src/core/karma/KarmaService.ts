@@ -39,7 +39,7 @@ export class KarmaService extends OxyServices {
    */
   async getUserKarmaTotal(userId: string): Promise<{ total: number }> {
     try {
-      const res = await this.getClient().get(`/karma/users/${userId}/total`);
+      const res = await this.getClient().get(`/karma/${userId}/total`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -59,7 +59,7 @@ export class KarmaService extends OxyServices {
       if (limit) params.append('limit', limit.toString());
       if (offset) params.append('offset', offset.toString());
       
-      const res = await this.getClient().get(`/karma/users/${userId}/history?${params.toString()}`);
+      const res = await this.getClient().get(`/karma/${userId}/history?${params.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);

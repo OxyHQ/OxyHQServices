@@ -80,7 +80,7 @@ export class FileService extends OxyServices {
    */
   async getFileMetadata(fileId: string): Promise<FileMetadata> {
     try {
-      const res = await this.getClient().get(`/files/${fileId}/metadata`);
+      const res = await this.getClient().get(`/files/meta/${fileId}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -92,7 +92,7 @@ export class FileService extends OxyServices {
    */
   async updateFileMetadata(fileId: string, updates: FileUpdateRequest): Promise<FileMetadata> {
     try {
-      const res = await this.getClient().put(`/files/${fileId}/metadata`, updates);
+      const res = await this.getClient().put(`/files/meta/${fileId}`, updates);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -145,7 +145,7 @@ export class FileService extends OxyServices {
         });
       }
       
-      const res = await this.getClient().get(`/files/user/${userId}?${params.toString()}`);
+      const res = await this.getClient().get(`/files/list/${userId}?${params.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -157,7 +157,7 @@ export class FileService extends OxyServices {
    */
   async downloadFileContent(fileId: string): Promise<Response> {
     try {
-      const res = await this.getClient().get(`/files/${fileId}/content`, {
+      const res = await this.getClient().get(`/files/${fileId}`, {
         responseType: 'blob'
       });
       return res.data;
@@ -171,7 +171,11 @@ export class FileService extends OxyServices {
    */
   async getFileContentAsText(fileId: string): Promise<string> {
     try {
-      const res = await this.getClient().get(`/files/${fileId}/content/text`);
+      const res = await this.getClient().get(`/files/${fileId}`, {
+        headers: {
+          'Accept': 'text/plain'
+        }
+      });
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -183,7 +187,7 @@ export class FileService extends OxyServices {
    */
   async getFileContentAsBlob(fileId: string): Promise<Blob> {
     try {
-      const res = await this.getClient().get(`/files/${fileId}/content/blob`, {
+      const res = await this.getClient().get(`/files/${fileId}`, {
         responseType: 'blob'
       });
       return res.data;

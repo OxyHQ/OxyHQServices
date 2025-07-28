@@ -244,7 +244,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             async () => {
                 setLoggingOutAllDevices(true);
                 try {
-                    await oxyServices?.logoutAllDeviceSessions(user?.sessionId || '', undefined, true);
+                    await oxyServices?.logoutAllDeviceSessions(user?.sessionId || '');
                     // Refresh device sessions list
                     await loadAllDeviceSessions();
                     toast.success('Signed out from all other devices successfully!');

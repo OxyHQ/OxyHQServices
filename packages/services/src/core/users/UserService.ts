@@ -11,7 +11,7 @@ export class UserService extends OxyServices {
    */
   async getProfileByUsername(username: string): Promise<User> {
     try {
-      const res = await this.getClient().get(`/users/profile/${username}`);
+      const res = await this.getClient().get(`/profiles/username/${username}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -26,7 +26,7 @@ export class UserService extends OxyServices {
       const params = { query, ...pagination };
       const searchParams = buildSearchParams(params);
       
-      const res = await this.getClient().get(`/users/search?${searchParams.toString()}`);
+      const res = await this.getClient().get(`/profiles/search?${searchParams.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -45,7 +45,7 @@ export class UserService extends OxyServices {
     [key: string]: any;
   }>> {
     try {
-      const res = await this.getClient().get('/users/recommendations');
+      const res = await this.getClient().get('/profiles/recommendations');
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -81,7 +81,7 @@ export class UserService extends OxyServices {
    */
   async updateProfile(updates: Record<string, any>): Promise<User> {
     try {
-      const res = await this.getClient().put('/users/profile', updates);
+      const res = await this.getClient().put('/users/me', updates);
       return res.data;
     } catch (error) {
       throw this.handleError(error);

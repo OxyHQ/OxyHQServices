@@ -61,7 +61,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
         // Load user profile and karma total
         Promise.all([
-            oxyServices.getUserById(userId).catch(err => {
+            oxyServices.users.getUserById(userId).catch((err: any) => {
                 console.error('getUserById error:', err);
                 // If this is the current user and the API call fails, use current user data as fallback
                 if (currentUser && currentUser.id === userId) {
@@ -70,8 +70,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 }
                 throw err;
             }),
-            oxyServices.getUserKarmaTotal ?
-                oxyServices.getUserKarmaTotal(userId).catch(err => {
+            oxyServices.karma.getUserKarmaTotal ?
+                oxyServices.karma.getUserKarmaTotal(userId).catch((err: any) => {
                     console.warn('getUserKarmaTotal error:', err);
                     return { total: undefined };
                 }) :
