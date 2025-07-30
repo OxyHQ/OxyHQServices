@@ -38,8 +38,8 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
         setIsLoading(true);
         setError(null);
         Promise.all([
-            oxyServices.karma.getUserKarmaTotal(user.id),
-            oxyServices.karma.getUserKarmaHistory(user.id, 20, 0),
+            oxyServices.getUserKarmaTotal(user.id),
+            oxyServices.getUserKarmaHistory(user.id, 20, 0),
         ])
             .then(([totalRes, historyRes]) => {
                 setKarmaTotal(totalRes.total);

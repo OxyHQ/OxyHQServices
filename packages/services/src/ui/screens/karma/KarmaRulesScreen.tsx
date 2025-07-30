@@ -18,7 +18,7 @@ const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     useEffect(() => {
         setIsLoading(true);
         setError(null);
-        oxyServices.karma.getKarmaRules()
+        oxyServices.getKarmaRules()
             .then((data: any) => setRules(Array.isArray(data) ? data : []))
             .catch((err: any) => setError(err.message || 'Failed to load rules'))
             .finally(() => setIsLoading(false));

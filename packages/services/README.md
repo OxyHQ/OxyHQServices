@@ -23,11 +23,50 @@ A TypeScript client library for the Oxy API providing authentication, user manag
 - 📱 **Cross-Platform**: Works in React Native and web applications
 - 🔧 **TypeScript**: Full type safety and IntelliSense support
 - 🚀 **Performance**: Optimized with automatic caching and state management
+- ✨ **Simple API**: All functionality in one unified class - no need to manage multiple service instances
 
 ## Quick Start
 
 ```bash
 npm install @oxyhq/services
+```
+
+### Simple & Unified API
+
+The new OxyServices provides all functionality in one simple class:
+
+```typescript
+import { OxyServices } from '@oxyhq/services';
+
+const oxy = new OxyServices({ baseURL: 'https://api.example.com' });
+
+// Authentication
+await oxy.signIn('username', 'password');
+await oxy.signUp('username', 'email', 'password');
+
+// User operations
+const user = await oxy.getCurrentUser();
+await oxy.updateProfile({ name: 'John Doe' });
+await oxy.followUser('user123');
+
+// Social features
+const followers = await oxy.getUserFollowers('user123');
+const notifications = await oxy.getNotifications();
+
+// File uploads
+const fileData = await oxy.uploadFile(file);
+
+// Payments
+const payment = await oxy.createPayment(paymentData);
+
+// Location services
+await oxy.updateLocation(40.7128, -74.0060);
+const nearby = await oxy.getNearbyUsers();
+
+// Analytics
+await oxy.trackEvent('user_action', { action: 'click' });
+
+// Everything in one place - no more managing multiple service instances!
 ```
 
 ### Streamlined Authentication (Recommended)
@@ -89,7 +128,7 @@ function Component() {
 }
 ```
 
-### Traditional Usage
+### Simple & Unified API
 
 ```typescript
 import { OxyServices } from '@oxyhq/services';
@@ -98,14 +137,23 @@ const oxy = new OxyServices({
   baseURL: 'http://localhost:3000'
 });
 
-// Authenticate
-const response = await oxy.auth.login({
-  email: 'user@example.com',
-  password: 'password'
-});
+// Authentication
+const response = await oxy.signIn('username', 'password');
 
-// Get current user
-const user = await oxy.users.getCurrentUser();
+// User operations
+const user = await oxy.getCurrentUser();
+await oxy.updateProfile({ name: 'John Doe' });
+await oxy.followUser('user123');
+
+// Social features
+const followers = await oxy.getUserFollowers('user123');
+const notifications = await oxy.getNotifications();
+
+// File operations
+const fileData = await oxy.uploadFile(file);
+const downloadUrl = oxy.getFileDownloadUrl(fileId);
+
+// Everything is available directly on the oxy instance!
 ```
 
 ## Documentation
@@ -122,17 +170,17 @@ import { OxyProvider, Avatar, FollowButton } from '@oxyhq/services/ui';
 
 ## Package Exports
 
-The library provides multiple entry points:
+The library provides a unified API:
 
 ```typescript
-// Core services only (Node.js/Express)
+// Unified OxyServices class (recommended)
 import { OxyServices } from '@oxyhq/services';
 
-// UI components only (React/React Native)
-import { OxyProvider, Avatar } from '@oxyhq/services/ui';
+// All functionality is available directly on the OxyServices instance
+const oxy = new OxyServices({ baseURL: 'https://api.example.com' });
 
-// Full package (Core + UI)
-import { OxyServices, OxyProvider } from '@oxyhq/services/full';
+// UI components (React/React Native)
+import { OxyProvider, Avatar } from '@oxyhq/services/ui';
 ```
 
 

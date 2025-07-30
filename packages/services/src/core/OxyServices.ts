@@ -1,7 +1,9 @@
 import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
 import { jwtDecode } from 'jwt-decode';
-import { OxyConfig, ApiError, User } from '../models/interfaces';
+import { OxyConfig, ApiError, User, Notification } from '../models/interfaces';
+import { SessionLoginResponse } from '../models/session';
 import { handleHttpError } from '../utils/errorUtils';
+import { buildSearchParams, buildPaginationParams, PaginationParams } from '../utils/apiUtils';
 
 interface JwtPayload {
   exp?: number;
@@ -11,10 +13,10 @@ interface JwtPayload {
 }
 
 /**
- * OxyServices - Base client library for interacting with the Oxy API
+ * OxyServices - Unified client library for interacting with the Oxy API
  * 
- * This class provides the core HTTP client setup, token management, and error handling.
- * Specific functionality is delegated to focused service modules.
+ * This class provides all API functionality in one simple, easy-to-use interface.
+ * No need to manage multiple service instances - everything is available directly.
  */
 // Centralized token store
 class TokenStore {
@@ -129,6 +131,10 @@ export class OxyServices {
     });
   }
 
+  // ============================================================================
+  // CORE METHODS (HTTP Client, Token Management, Error Handling)
+  // ============================================================================
+
   /**
    * Get the configured base URL
    */
@@ -215,6 +221,832 @@ export class OxyServices {
   }> {
     try {
       const res = await this.client.get('/health');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ============================================================================
+  // AUTHENTICATION METHODS
+  // ============================================================================
+
+  /**
+   * Sign up a new user
+   */
+  async signUp(username: string, email: string, password: string): Promise<{ message: string; token: string; user: User }> {
+    try {
+      const res = await this.client.post('/api/auth/signup', {
+        username,
+        email,
+        password
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Sign in with device management
+   */
+  async signIn(username: string, password: string, deviceName?: string, deviceFingerprint?: any): Promise<SessionLoginResponse> {
+    try {
+      const res = await this.client.post('/api/auth/login', {
+        username,
+        password,
+        deviceName,
+        deviceFingerprint
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get user by session ID
+   */
+  async getUserBySession(sessionId: string): Promise<User> {
+    try {
+      const res = await this.client.get(`/api/session/user/${sessionId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get access token by session ID and set it in the token store
+   */
+  async getTokenBySession(sessionId: string): Promise<{ accessToken: string; expiresAt: string }> {
+    try {
+      console.log('🔑 getTokenBySession - Fetching token for session:', sessionId);
+      const res = await this.client.get(`/api/session/token/${sessionId}`);
+      const { accessToken } = res.data;
+      
+      console.log('🔑 getTokenBySession - Token received:', !!accessToken);
+      
+      // Set the token in the centralized token store
+      this.setTokens(accessToken);
+      console.log('🔑 getTokenBySession - Token set in store');
+      
+      return res.data;
+    } catch (error) {
+      console.log('❌ getTokenBySession - Error:', error);
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get sessions by session ID
+   */
+  async getSessionsBySessionId(sessionId: string): Promise<any[]> {
+    try {
+      const res = await this.client.get(`/api/session/sessions/${sessionId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Logout from a specific session
+   */
+  async logoutSession(sessionId: string, targetSessionId?: string): Promise<void> {
+    try {
+      const url = targetSessionId 
+        ? `/api/session/logout/${sessionId}/${targetSessionId}`
+        : `/api/session/logout/${sessionId}`;
+      
+      await this.client.post(url);
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Logout from all sessions
+   */
+  async logoutAllSessions(sessionId: string): Promise<void> {
+    try {
+      await this.client.post(`/api/session/logout-all/${sessionId}`);
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Validate session
+   */
+  async validateSession(
+    sessionId: string, 
+    options: {
+      deviceFingerprint?: string;
+      useHeaderValidation?: boolean;
+    } = {}
+  ): Promise<{ 
+    valid: boolean; 
+    expiresAt: string; 
+    lastActivity: string; 
+    user: User;
+    sessionId?: string;
+    source?: string;
+  }> {
+    try {
+      const params = new URLSearchParams();
+      if (options.deviceFingerprint) {
+        params.append('deviceFingerprint', options.deviceFingerprint);
+      }
+      if (options.useHeaderValidation) {
+        params.append('useHeaderValidation', 'true');
+      }
+
+      const url = `/api/session/validate/${sessionId}?${params.toString()}`;
+      const res = await this.client.get(url);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Check username availability
+   */
+  async checkUsernameAvailability(username: string): Promise<{ available: boolean; message: string }> {
+    try {
+      const res = await this.client.get(`/api/auth/check-username/${username}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Check email availability
+   */
+  async checkEmailAvailability(email: string): Promise<{ available: boolean; message: string }> {
+    try {
+      const res = await this.client.get(`/api/auth/check-email/${email}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ============================================================================
+  // USER METHODS
+  // ============================================================================
+
+  /**
+   * Get profile by username
+   */
+  async getProfileByUsername(username: string): Promise<User> {
+    try {
+      const res = await this.client.get(`/api/profiles/username/${username}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Search user profiles
+   */
+  async searchProfiles(query: string, pagination?: PaginationParams): Promise<User[]> {
+    try {
+      const params = { query, ...pagination };
+      const searchParams = buildSearchParams(params);
+      
+      const res = await this.client.get(`/api/profiles/search?${searchParams.toString()}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get profile recommendations
+   */
+  async getProfileRecommendations(): Promise<Array<{
+    id: string;
+    username: string;
+    name?: { first?: string; last?: string; full?: string };
+    description?: string;
+    _count?: { followers: number; following: number };
+    [key: string]: any;
+  }>> {
+    try {
+      const res = await this.client.get('/api/profiles/recommendations');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get user by ID
+   */
+  async getUserById(userId: string): Promise<User> {
+    try {
+      const res = await this.client.get(`/api/users/${userId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get current user
+   */
+  async getCurrentUser(): Promise<User> {
+    try {
+      const res = await this.client.get('/api/users/me');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Update user profile
+   */
+  async updateProfile(updates: Record<string, any>): Promise<User> {
+    try {
+      const res = await this.client.put('/api/users/me', updates);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Update user by ID (admin function)
+   */
+  async updateUser(userId: string, updates: Record<string, any>): Promise<User> {
+    try {
+      const res = await this.client.put(`/api/users/${userId}`, updates);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Follow a user
+   */
+  async followUser(userId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await this.client.post(`/api/users/${userId}/follow`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Unfollow a user
+   */
+  async unfollowUser(userId: string): Promise<{ success: boolean; message: string }> {
+    try {
+      const res = await this.client.delete(`/api/users/${userId}/follow`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get follow status
+   */
+  async getFollowStatus(userId: string): Promise<{ isFollowing: boolean }> {
+    try {
+      const res = await this.client.get(`/api/users/${userId}/follow-status`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get user followers
+   */
+  async getUserFollowers(
+    userId: string,
+    pagination?: PaginationParams
+  ): Promise<{ followers: User[]; total: number; hasMore: boolean }> {
+    try {
+      const params = buildPaginationParams(pagination || {});
+      const res = await this.client.get(`/api/users/${userId}/followers?${params.toString()}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get user following
+   */
+  async getUserFollowing(
+    userId: string,
+    pagination?: PaginationParams
+  ): Promise<{ following: User[]; total: number; hasMore: boolean }> {
+    try {
+      const params = buildPaginationParams(pagination || {});
+      const res = await this.client.get(`/api/users/${userId}/following?${params.toString()}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get notifications
+   */
+  async getNotifications(): Promise<Notification[]> {
+    try {
+      const res = await this.client.get('/api/notifications');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get unread notification count
+   */
+  async getUnreadCount(): Promise<number> {
+    try {
+      const res = await this.client.get('/api/notifications/unread-count');
+      return res.data.count;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Create notification
+   */
+  async createNotification(data: Partial<Notification>): Promise<Notification> {
+    try {
+      const res = await this.client.post('/api/notifications', data);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Mark notification as read
+   */
+  async markNotificationAsRead(notificationId: string): Promise<void> {
+    try {
+      await this.client.put(`/api/notifications/${notificationId}/read`);
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Mark all notifications as read
+   */
+  async markAllNotificationsAsRead(): Promise<void> {
+    try {
+      await this.client.put('/api/notifications/read-all');
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Delete notification
+   */
+  async deleteNotification(notificationId: string): Promise<void> {
+    try {
+      await this.client.delete(`/api/notifications/${notificationId}`);
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ============================================================================
+  // PAYMENT METHODS
+  // ============================================================================
+
+  /**
+   * Create a payment
+   */
+  async createPayment(data: any): Promise<any> {
+    try {
+      const res = await this.client.post('/api/payments', data);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get payment by ID
+   */
+  async getPayment(paymentId: string): Promise<any> {
+    try {
+      const res = await this.client.get(`/api/payments/${paymentId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get user payments
+   */
+  async getUserPayments(): Promise<any[]> {
+    try {
+      const res = await this.client.get('/api/payments/user');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ============================================================================
+  // KARMA METHODS
+  // ============================================================================
+
+  /**
+   * Get user karma
+   */
+  async getUserKarma(userId: string): Promise<any> {
+    try {
+      const res = await this.client.get(`/api/karma/${userId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Give karma to user
+   */
+  async giveKarma(userId: string, amount: number, reason?: string): Promise<any> {
+    try {
+      const res = await this.client.post(`/api/karma/${userId}/give`, {
+        amount,
+        reason
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get user karma total
+   */
+  async getUserKarmaTotal(userId: string): Promise<any> {
+    try {
+      const res = await this.client.get(`/api/karma/${userId}/total`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get user karma history
+   */
+  async getUserKarmaHistory(userId: string, limit?: number, offset?: number): Promise<any> {
+    try {
+      const params = new URLSearchParams();
+      if (limit) params.append('limit', limit.toString());
+      if (offset) params.append('offset', offset.toString());
+      
+      const res = await this.client.get(`/api/karma/${userId}/history?${params.toString()}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get karma leaderboard
+   */
+  async getKarmaLeaderboard(): Promise<any> {
+    try {
+      const res = await this.client.get('/api/karma/leaderboard');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get karma rules
+   */
+  async getKarmaRules(): Promise<any> {
+    try {
+      const res = await this.client.get('/api/karma/rules');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ============================================================================
+  // FILE METHODS
+  // ============================================================================
+
+  /**
+   * Upload file
+   */
+  async uploadFile(file: File | FormData, options?: any): Promise<any> {
+    try {
+      const formData = file instanceof FormData ? file : new FormData();
+      if (file instanceof File) {
+        formData.append('file', file);
+      }
+      
+      const res = await this.client.post('/api/files/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data',
+        },
+        ...options
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get file by ID
+   */
+  async getFile(fileId: string): Promise<any> {
+    try {
+      const res = await this.client.get(`/api/files/${fileId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Delete file
+   */
+  async deleteFile(fileId: string): Promise<any> {
+    try {
+      const res = await this.client.delete(`/api/files/${fileId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get file download URL
+   */
+  getFileDownloadUrl(fileId: string): string {
+    return `${OXY_CLOUD_URL}/files/${fileId}/download`;
+  }
+
+  /**
+   * Get file stream URL
+   */
+  getFileStreamUrl(fileId: string): string {
+    return `${OXY_CLOUD_URL}/files/${fileId}/stream`;
+  }
+
+  /**
+   * List user files
+   */
+  async listUserFiles(
+    userId: string,
+    limit?: number,
+    offset?: number,
+    filters?: Record<string, any>
+  ): Promise<any> {
+    try {
+      const params = new URLSearchParams();
+      if (limit) params.append('limit', limit.toString());
+      if (offset) params.append('offset', offset.toString());
+      
+      if (filters) {
+        Object.entries(filters).forEach(([key, value]) => {
+          params.append(key, value.toString());
+        });
+      }
+      
+      const res = await this.client.get(`/api/files/list/${userId}?${params.toString()}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Download file content
+   */
+  async downloadFileContent(fileId: string): Promise<Response> {
+    try {
+      const res = await this.client.get(`/api/files/${fileId}`, {
+        responseType: 'blob'
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get file content as text
+   */
+  async getFileContentAsText(fileId: string): Promise<string> {
+    try {
+      const res = await this.client.get(`/api/files/${fileId}`, {
+        headers: {
+          'Accept': 'text/plain'
+        }
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get file content as blob
+   */
+  async getFileContentAsBlob(fileId: string): Promise<Blob> {
+    try {
+      const res = await this.client.get(`/api/files/${fileId}`, {
+        responseType: 'blob'
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ============================================================================
+  // LOCATION METHODS
+  // ============================================================================
+
+  /**
+   * Update user location
+   */
+  async updateLocation(latitude: number, longitude: number): Promise<any> {
+    try {
+      const res = await this.client.post('/api/location', {
+        latitude,
+        longitude
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get nearby users
+   */
+  async getNearbyUsers(radius?: number): Promise<any[]> {
+    try {
+      const params = radius ? `?radius=${radius}` : '';
+      const res = await this.client.get(`/api/location/nearby${params}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ============================================================================
+  // ANALYTICS METHODS
+  // ============================================================================
+
+  /**
+   * Track event
+   */
+  async trackEvent(eventName: string, properties?: Record<string, any>): Promise<void> {
+    try {
+      await this.client.post('/api/analytics/events', {
+        event: eventName,
+        properties
+      });
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get analytics data
+   */
+  async getAnalytics(startDate?: string, endDate?: string): Promise<any> {
+    try {
+      const params = new URLSearchParams();
+      if (startDate) params.append('startDate', startDate);
+      if (endDate) params.append('endDate', endDate);
+      
+      const res = await this.client.get(`/api/analytics?${params.toString()}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ============================================================================
+  // DEVICE METHODS
+  // ============================================================================
+
+  /**
+   * Register device
+   */
+  async registerDevice(deviceData: any): Promise<any> {
+    try {
+      const res = await this.client.post('/api/devices', deviceData);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get user devices
+   */
+  async getUserDevices(): Promise<any[]> {
+    try {
+      const res = await this.client.get('/api/devices');
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Remove device
+   */
+  async removeDevice(deviceId: string): Promise<void> {
+    try {
+      await this.client.delete(`/api/devices/${deviceId}`);
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get device sessions
+   */
+  async getDeviceSessions(sessionId: string): Promise<any[]> {
+    try {
+      const res = await this.client.get(`/api/devices/sessions/${sessionId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Logout all device sessions
+   */
+  async logoutAllDeviceSessions(sessionId: string, deviceId?: string, excludeCurrent?: boolean): Promise<any> {
+    try {
+      const params = new URLSearchParams();
+      if (deviceId) params.append('deviceId', deviceId);
+      if (excludeCurrent) params.append('excludeCurrent', 'true');
+      
+      const res = await this.client.post(`/api/devices/logout-all/${sessionId}?${params.toString()}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Update device name
+   */
+  async updateDeviceName(sessionId: string, deviceName: string): Promise<any> {
+    try {
+      const res = await this.client.put(`/api/devices/name/${sessionId}`, { deviceName });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ============================================================================
+  // UTILITY METHODS
+  // ============================================================================
+
+  /**
+   * Fetch link metadata
+   */
+  async fetchLinkMetadata(url: string): Promise<{
+    url: string;
+    title: string;
+    description: string;
+    image?: string;
+  }> {
+    try {
+      const res = await this.client.get(`/api/link-metadata?url=${encodeURIComponent(url)}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -358,3 +1190,6 @@ export class OxyServices {
     };
   }
 }
+
+// Export the cloud URL constant
+export const OXY_CLOUD_URL = 'https://cloud.oxyhq.com';

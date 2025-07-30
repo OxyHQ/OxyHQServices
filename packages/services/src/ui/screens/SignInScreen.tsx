@@ -136,7 +136,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
         try {
             // First check if username exists by trying to get profile
-            const profile = await oxyServices.users.getProfileByUsername(usernameToValidate);
+            const profile = await oxyServices.getProfileByUsername(usernameToValidate);
 
             if (profile) {
                 const profileData = {

@@ -118,7 +118,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 setLoading(true);
             }
 
-            const response = await oxyServices.files.listUserFiles(targetUserId);
+            const response = await oxyServices.listUserFiles(targetUserId);
             setFiles(response.files || []);
         } catch (error: any) {
             console.error('Failed to load files:', error);
@@ -172,7 +172,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             await Promise.all(
                 photosToLoad.map(async (photo) => {
                     try {
-                        const downloadUrl = oxyServices.files.getFileDownloadUrl(photo.id);
+                        const downloadUrl = oxyServices.getFileDownloadUrl(photo.id);
 
                         if (Platform.OS === 'web') {
                             const img = new (window as any).Image();
@@ -340,7 +340,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             console.log('Current user ID:', user?.id);
             setDeleting(fileId);
 
-            const result = await oxyServices.files.deleteFile(fileId);
+            const result = await oxyServices.deleteFile(fileId);
             console.log('Delete result:', result);
 
             toast.success('File deleted successfully');
@@ -408,7 +408,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 console.log('Downloading file:', { fileId, filename });
 
                 // Use the public download URL method
-                const downloadUrl = oxyServices.files.getFileDownloadUrl(fileId);
+                const downloadUrl = oxyServices.getFileDownloadUrl(fileId);
                 console.log('Download URL:', downloadUrl);
 
                 try {
@@ -426,7 +426,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     console.warn('Link download failed, trying fetch method:', linkError);
 
                     // Method 2: Fallback to authenticated download
-                    const blob = await oxyServices.files.getFileContentAsBlob(fileId);
+                    const blob = await oxyServices.getFileContentAsBlob(fileId);
                     const url = window.URL.createObjectURL(blob);
 
                     const link = document.createElement('a');
@@ -491,11 +491,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         file.contentType.startsWith('video/') ||
                         file.contentType.startsWith('audio/')) {
                         // For images, PDFs, videos, and audio, we'll use the URL directly
-                        const downloadUrl = oxyServices.files.getFileDownloadUrl(file.id);
+                        const downloadUrl = oxyServices.getFileDownloadUrl(file.id);
                         setFileContent(downloadUrl);
                     } else {
                         // For text files, get the content using authenticated request
-                        const content = await oxyServices.files.getFileContentAsText(file.id);
+                        const content = await oxyServices.getFileContentAsText(file.id);
                         setFileContent(content);
                     }
                 } catch (error: any) {
@@ -532,7 +532,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     };
 
     const renderSimplePhotoItem = useCallback((photo: FileMetadata, index: number) => {
-        const downloadUrl = oxyServices.files.getFileDownloadUrl(photo.id);
+        const downloadUrl = oxyServices.getFileDownloadUrl(photo.id);
 
         // Calculate photo item width based on actual container size from bottom sheet
         let itemsPerRow = 3; // Default for mobile
@@ -598,7 +598,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }, [oxyServices, containerWidth]);
 
     const renderJustifiedPhotoItem = useCallback((photo: FileMetadata, width: number, height: number, isLast: boolean) => {
-        const downloadUrl = oxyServices.files.getFileDownloadUrl(photo.id);
+        const downloadUrl = oxyServices.getFileDownloadUrl(photo.id);
 
         return (
             <TouchableOpacity
@@ -689,7 +689,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                 {isImage && (
                                     Platform.OS === 'web' ? (
                                         <img
-                                            src={oxyServices.files.getFileDownloadUrl(file.id)}
+                                            src={oxyServices.getFileDownloadUrl(file.id)}
                                             style={{
                                                 width: '100%',
                                                 height: '100%',
@@ -709,7 +709,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                         />
                                     ) : (
                                         <Image
-                                            source={{ uri: oxyServices.files.getFileDownloadUrl(file.id) }}
+                                            source={{ uri: oxyServices.getFileDownloadUrl(file.id) }}
                                             style={styles.previewImage}
                                             resizeMode="cover"
                                             onError={() => {
@@ -817,7 +817,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     };
 
     const renderPhotoItem = (photo: FileMetadata, index: number) => {
-        const downloadUrl = oxyServices.files.getFileDownloadUrl(photo.id);
+        const downloadUrl = oxyServices.getFileDownloadUrl(photo.id);
 
         // Calculate photo item width based on actual container size from bottom sheet
         let itemsPerRow = 3; // Default for mobile

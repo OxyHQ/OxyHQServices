@@ -1,28 +1,13 @@
 /**
- * OxyServices Core Module - Modular Architecture
+ * OxyServices Core Module - Unified Architecture
  * 
- * This module exports the main OxyServices class and all individual service modules
- * for a clean, maintainable, and focused architecture.
+ * This module exports the unified OxyServices class that provides all API functionality
+ * in one simple, easy-to-use interface.
  */
 
-// Main OxyServices class (backward compatible)
-export { OxyServicesMain as OxyServices } from './OxyServicesMain';
-
-// Individual service classes for focused usage
-export { AuthService } from './auth/AuthService';
-export { UserService } from './users/UserService';
-export { PaymentService } from './payments/PaymentService';
-export { KarmaService } from './karma/KarmaService';
-export { FileService } from './files/FileService';
-export { LocationService } from './locations/LocationService';
-export { AnalyticsService } from './analytics/AnalyticsService';
-export { DeviceService } from './devices/DeviceService';
-
-// Base class for custom service extensions
-export { OxyServices as BaseOxyServices } from './OxyServices';
-
-// Constants
-export { OXY_CLOUD_URL } from './files/FileService';
+// Main OxyServices class (unified)
+export { OxyServices } from './OxyServices';
+export { OXY_CLOUD_URL } from './OxyServices';
 
 // Re-export all models and types for convenience
 export * from '../models/interfaces';
@@ -32,8 +17,8 @@ export * from '../models/session';
 export { DeviceManager } from '../utils/deviceManager';
 export type { DeviceFingerprint, StoredDeviceInfo } from '../utils/deviceManager';
 
-// Import the main class for default export
-import { OxyServicesMain } from './OxyServicesMain';
+// Import for default export
+import { OxyServices } from './OxyServices';
 
 // Default export for backward compatibility
-export default OxyServicesMain;
+export default OxyServices;
