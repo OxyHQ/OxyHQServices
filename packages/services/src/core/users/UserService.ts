@@ -129,7 +129,7 @@ export class UserService extends OxyServices {
    */
   async getFollowStatus(userId: string): Promise<{ isFollowing: boolean }> {
     try {
-      const res = await this.getClient().get(`/users/${userId}/follow-status`);
+      const res = await this.getClient().get(`/users/${userId}/following-status`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
