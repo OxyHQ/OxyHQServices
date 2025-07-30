@@ -18,6 +18,7 @@ import walletRoutes from './routes/wallet.routes';
 import karmaRoutes from './routes/karma.routes';
 import linkMetadataRoutes from './routes/linkMetadata';
 import locationSearchRoutes from './routes/locationSearch';
+import authRoutes from './routes/auth';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
 import { Response } from 'express';
@@ -140,7 +141,7 @@ export function emitSessionUpdate(userId: string, payload: any) {
 }
 
 // Special handling for file upload requests with proper auth
-app.use("/files", (req, res, next) => {
+app.use("/api/files", (req, res, next) => {
   // Debug logging for file uploads in development
   if (req.path === "/upload" && req.method === "POST" && process.env.NODE_ENV === 'development') {
     logger.debug('Incoming file upload request', {
@@ -155,11 +156,11 @@ app.use("/files", (req, res, next) => {
 });
 
 // Register file routes with auth middleware
-app.use("/files", fileRoutes);
+app.use("/api/files", fileRoutes);
 
 // Apply rate limiting and security middleware to non-file upload routes
 app.use((req, res, next) => {
-  if (!req.path.startsWith("/files/upload")) {
+  if (!req.path.startsWith("/api/files/upload")) {
     rateLimiter(req, res, (err: any) => {
       if (err) return next(err);
       bruteForceProtection(req, res, next);
@@ -200,18 +201,20 @@ app.get("/", async (req, res) => {
   }
 });
 
-app.use("/search", searchRoutes);
-app.use("/profiles", profilesRouter);
-app.use("/users", usersRouter);
-app.use("/session", sessionRouter);
-app.use("/privacy", privacyRoutes);
-app.use("/analytics", analyticsRoutes);
-app.use('/payments', paymentRoutes);
-app.use('/notifications', notificationsRouter);
-app.use('/karma', karmaRoutes);
-app.use('/wallet', walletRoutes);
-app.use('/link-metadata', linkMetadataRoutes);
-app.use('/location-search', locationSearchRoutes);
+// API Routes with /api prefix
+app.use("/api/search", searchRoutes);
+app.use("/api/profiles", profilesRouter);
+app.use("/api/users", usersRouter);
+app.use("/api/session", sessionRouter);
+app.use("/api/privacy", privacyRoutes);
+app.use("/api/analytics", analyticsRoutes);
+app.use('/api/payments', paymentRoutes);
+app.use('/api/notifications', notificationsRouter);
+app.use('/api/karma', karmaRoutes);
+app.use('/api/wallet', walletRoutes);
+app.use('/api/link-metadata', linkMetadataRoutes);
+app.use('/api/location-search', locationSearchRoutes);
+app.use('/api/auth', authRoutes);
 
 // Add a protected route for testing
 app.get('/api/protected-server-route', authMiddleware, (req: any, res: Response) => {

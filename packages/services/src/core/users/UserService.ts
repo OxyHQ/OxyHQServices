@@ -11,7 +11,7 @@ export class UserService extends OxyServices {
    */
   async getProfileByUsername(username: string): Promise<User> {
     try {
-      const res = await this.getClient().get(`/profiles/username/${username}`);
+      const res = await this.getClient().get(`/api/profiles/username/${username}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -26,7 +26,7 @@ export class UserService extends OxyServices {
       const params = { query, ...pagination };
       const searchParams = buildSearchParams(params);
       
-      const res = await this.getClient().get(`/profiles/search?${searchParams.toString()}`);
+      const res = await this.getClient().get(`/api/profiles/search?${searchParams.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -45,7 +45,7 @@ export class UserService extends OxyServices {
     [key: string]: any;
   }>> {
     try {
-      const res = await this.getClient().get('/profiles/recommendations');
+      const res = await this.getClient().get('/api/profiles/recommendations');
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -57,7 +57,7 @@ export class UserService extends OxyServices {
    */
   async getUserById(userId: string): Promise<User> {
     try {
-      const res = await this.getClient().get(`/users/${userId}`);
+      const res = await this.getClient().get(`/api/users/${userId}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -69,7 +69,7 @@ export class UserService extends OxyServices {
    */
   async getCurrentUser(): Promise<User> {
     try {
-      const res = await this.getClient().get('/users/me');
+      const res = await this.getClient().get('/api/users/me');
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -81,7 +81,7 @@ export class UserService extends OxyServices {
    */
   async updateProfile(updates: Record<string, any>): Promise<User> {
     try {
-      const res = await this.getClient().put('/users/me', updates);
+      const res = await this.getClient().put('/api/users/me', updates);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -93,7 +93,7 @@ export class UserService extends OxyServices {
    */
   async updateUser(userId: string, updates: Record<string, any>): Promise<User> {
     try {
-      const res = await this.getClient().put(`/users/${userId}`, updates);
+      const res = await this.getClient().put(`/api/users/${userId}`, updates);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -105,7 +105,7 @@ export class UserService extends OxyServices {
    */
   async followUser(userId: string): Promise<{ success: boolean; message: string }> {
     try {
-      const res = await this.getClient().post(`/users/${userId}/follow`);
+      const res = await this.getClient().post(`/api/users/${userId}/follow`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -117,7 +117,7 @@ export class UserService extends OxyServices {
    */
   async unfollowUser(userId: string): Promise<{ success: boolean; message: string }> {
     try {
-      const res = await this.getClient().delete(`/users/${userId}/follow`);
+      const res = await this.getClient().delete(`/api/users/${userId}/follow`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -129,7 +129,7 @@ export class UserService extends OxyServices {
    */
   async getFollowStatus(userId: string): Promise<{ isFollowing: boolean }> {
     try {
-      const res = await this.getClient().get(`/users/${userId}/following-status`);
+      const res = await this.getClient().get(`/api/users/${userId}/following-status`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -146,7 +146,7 @@ export class UserService extends OxyServices {
     try {
       const searchParams = buildPaginationParams(pagination || {});
       
-      const res = await this.getClient().get(`/users/${userId}/followers?${searchParams.toString()}`);
+      const res = await this.getClient().get(`/api/users/${userId}/followers?${searchParams.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -163,7 +163,7 @@ export class UserService extends OxyServices {
     try {
       const searchParams = buildPaginationParams(pagination || {});
       
-      const res = await this.getClient().get(`/users/${userId}/following?${searchParams.toString()}`);
+      const res = await this.getClient().get(`/api/users/${userId}/following?${searchParams.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -175,7 +175,7 @@ export class UserService extends OxyServices {
    */
   async getNotifications(): Promise<Notification[]> {
     try {
-      const res = await this.getClient().get('/notifications');
+      const res = await this.getClient().get('/api/notifications');
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -187,7 +187,7 @@ export class UserService extends OxyServices {
    */
   async getUnreadCount(): Promise<number> {
     try {
-      const res = await this.getClient().get('/notifications/unread-count');
+      const res = await this.getClient().get('/api/notifications/unread-count');
       return res.data.count;
     } catch (error) {
       throw this.handleError(error);
@@ -199,7 +199,7 @@ export class UserService extends OxyServices {
    */
   async createNotification(data: Partial<Notification>): Promise<Notification> {
     try {
-      const res = await this.getClient().post('/notifications', data);
+      const res = await this.getClient().post('/api/notifications', data);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -211,7 +211,7 @@ export class UserService extends OxyServices {
    */
   async markNotificationAsRead(notificationId: string): Promise<void> {
     try {
-      await this.getClient().put(`/notifications/${notificationId}/read`);
+      await this.getClient().put(`/api/notifications/${notificationId}/read`);
     } catch (error) {
       throw this.handleError(error);
     }
@@ -222,7 +222,7 @@ export class UserService extends OxyServices {
    */
   async markAllNotificationsAsRead(): Promise<void> {
     try {
-      await this.getClient().put('/notifications/read-all');
+      await this.getClient().put('/api/notifications/read-all');
     } catch (error) {
       throw this.handleError(error);
     }
@@ -233,7 +233,7 @@ export class UserService extends OxyServices {
    */
   async deleteNotification(notificationId: string): Promise<void> {
     try {
-      await this.getClient().delete(`/notifications/${notificationId}`);
+      await this.getClient().delete(`/api/notifications/${notificationId}`);
     } catch (error) {
       throw this.handleError(error);
     }

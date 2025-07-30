@@ -20,7 +20,7 @@ export class AuthService extends OxyServices {
    */
   async signUp(username: string, email: string, password: string): Promise<{ message: string; token: string; user: User }> {
     try {
-      const res = await this.getClient().post('/auth/signup', {
+      const res = await this.getClient().post('/api/auth/signup', {
         username,
         email,
         password
@@ -36,7 +36,7 @@ export class AuthService extends OxyServices {
    */
   async signIn(username: string, password: string, deviceName?: string, deviceFingerprint?: any): Promise<SessionLoginResponse> {
     try {
-      const res = await this.getClient().post('/auth/login', {
+      const res = await this.getClient().post('/api/auth/login', {
         username,
         password,
         deviceName,
@@ -53,7 +53,7 @@ export class AuthService extends OxyServices {
    */
   async getUserBySession(sessionId: string): Promise<User> {
     try {
-      const res = await this.getClient().get(`/session/user/${sessionId}`);
+      const res = await this.getClient().get(`/api/session/user/${sessionId}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -61,13 +61,23 @@ export class AuthService extends OxyServices {
   }
 
   /**
-   * Get access token by session ID
+   * Get access token by session ID and set it in the token store
    */
   async getTokenBySession(sessionId: string): Promise<{ accessToken: string; expiresAt: string }> {
     try {
-      const res = await this.getClient().get(`/session/token/${sessionId}`);
+      console.log('🔑 getTokenBySession - Fetching token for session:', sessionId);
+      const res = await this.getClient().get(`/api/session/token/${sessionId}`);
+      const { accessToken } = res.data;
+      
+      console.log('🔑 getTokenBySession - Token received:', !!accessToken);
+      
+      // Set the token in the centralized token store
+      this.setTokens(accessToken);
+      console.log('🔑 getTokenBySession - Token set in store');
+      
       return res.data;
     } catch (error) {
+      console.log('❌ getTokenBySession - Error:', error);
       throw this.handleError(error);
     }
   }
@@ -77,7 +87,7 @@ export class AuthService extends OxyServices {
    */
   async getSessionsBySessionId(sessionId: string): Promise<any[]> {
     try {
-      const res = await this.getClient().get(`/session/sessions/${sessionId}`);
+      const res = await this.getClient().get(`/api/session/sessions/${sessionId}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -89,7 +99,7 @@ export class AuthService extends OxyServices {
    */
   async logoutSession(sessionId: string, targetSessionId?: string): Promise<void> {
     try {
-      await this.getClient().delete(`/session/logout/${sessionId}`, {
+      await this.getClient().delete(`/api/session/logout/${sessionId}`, {
         data: { targetSessionId }
       });
     } catch (error) {
@@ -102,7 +112,7 @@ export class AuthService extends OxyServices {
    */
   async logoutAllSessions(sessionId: string): Promise<void> {
     try {
-      await this.getClient().delete(`/session/logout-all/${sessionId}`);
+      await this.getClient().delete(`/api/session/logout-all/${sessionId}`);
     } catch (error) {
       throw this.handleError(error);
     }
@@ -154,13 +164,13 @@ export class AuthService extends OxyServices {
           headers['X-Device-Fingerprint'] = deviceFingerprint;
         }
         
-        const res = await this.getClient().get(`/session/validate-header/${sessionId}`, {
+        const res = await this.getClient().get(`/api/session/validate-header/${sessionId}`, {
           headers
         });
         return { ...res.data, source: 'header' };
       } else {
         // Use standard session validation
-        const res = await this.getClient().get(`/session/validate/${sessionId}`);
+        const res = await this.getClient().get(`/api/session/validate/${sessionId}`);
         return { ...res.data, source: 'standard' };
       }
     } catch (error) {
@@ -470,7 +480,7 @@ export class AuthService extends OxyServices {
    */
   async getDeviceSessions(sessionId: string): Promise<any[]> {
     try {
-      const res = await this.getClient().get(`/session/device/sessions/${sessionId}`);
+      const res = await this.getClient().get(`/api/session/device/sessions/${sessionId}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -482,7 +492,7 @@ export class AuthService extends OxyServices {
    */
   async logoutAllDeviceSessions(sessionId: string): Promise<void> {
     try {
-      await this.getClient().delete(`/session/device/logout-all/${sessionId}`);
+      await this.getClient().delete(`/api/session/device/logout-all/${sessionId}`);
     } catch (error) {
       throw this.handleError(error);
     }
@@ -493,7 +503,7 @@ export class AuthService extends OxyServices {
    */
   async updateDeviceName(sessionId: string, deviceName: string): Promise<void> {
     try {
-      await this.getClient().put(`/session/device/name/${sessionId}`, { deviceName });
+      await this.getClient().put(`/api/session/device/name/${sessionId}`, { deviceName });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -504,7 +514,7 @@ export class AuthService extends OxyServices {
    */
   async checkUsernameAvailability(username: string): Promise<{ available: boolean; message: string }> {
     try {
-      const res = await this.getClient().get(`/auth/check-username/${username}`);
+      const res = await this.getClient().get(`/api/auth/check-username/${username}`);
       return res.data;
     } catch (error: any) {
       // If the endpoint doesn't exist, fall back to basic validation
@@ -527,7 +537,7 @@ export class AuthService extends OxyServices {
    */
   async checkEmailAvailability(email: string): Promise<{ available: boolean; message: string }> {
     try {
-      const res = await this.getClient().get(`/auth/check-email/${email}`);
+      const res = await this.getClient().get(`/api/auth/check-email/${email}`);
       return res.data;
     } catch (error: any) {
       // If the endpoint doesn't exist, fall back to basic validation
@@ -547,4 +557,4 @@ export class AuthService extends OxyServices {
 
   // Note: getUserById and getUserProfileByUsername methods have been moved to UserService
   // Use oxyServices.users.getUserById() and oxyServices.users.getProfileByUsername() instead
-} 
+}

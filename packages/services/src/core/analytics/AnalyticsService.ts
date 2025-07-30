@@ -13,7 +13,7 @@ export class AnalyticsService extends OxyServices {
       const params = new URLSearchParams();
       if (period) params.append('period', period);
       
-      const res = await this.getClient().get(`/analytics/users/${userId}?${params.toString()}`);
+      const res = await this.getClient().get(`/api/analytics/users/${userId}?${params.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -25,7 +25,7 @@ export class AnalyticsService extends OxyServices {
    */
   async updateAnalytics(userId: string, type: string, data: Record<string, any>): Promise<{ message: string }> {
     try {
-      const res = await this.getClient().put(`/analytics/users/${userId}/${type}`, data);
+      const res = await this.getClient().put(`/api/analytics/users/${userId}/${type}`, data);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -40,7 +40,7 @@ export class AnalyticsService extends OxyServices {
       const params = new URLSearchParams();
       if (period) params.append('period', period);
       
-      const res = await this.getClient().get(`/analytics/users/${userId}/viewers?${params.toString()}`);
+      const res = await this.getClient().get(`/api/analytics/users/${userId}/viewers?${params.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -55,7 +55,7 @@ export class AnalyticsService extends OxyServices {
       const params = new URLSearchParams();
       if (period) params.append('period', period);
       
-      const res = await this.getClient().get(`/analytics/users/${userId}/followers?${params.toString()}`);
+      const res = await this.getClient().get(`/api/analytics/users/${userId}/followers?${params.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);

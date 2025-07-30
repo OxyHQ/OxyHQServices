@@ -16,10 +16,47 @@ interface JwtPayload {
  * This class provides the core HTTP client setup, token management, and error handling.
  * Specific functionality is delegated to focused service modules.
  */
-export class OxyServices {
-  protected client: AxiosInstance;
+// Centralized token store
+class TokenStore {
+  private static instance: TokenStore;
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
+
+  private constructor() {}
+
+  static getInstance(): TokenStore {
+    if (!TokenStore.instance) {
+      TokenStore.instance = new TokenStore();
+    }
+    return TokenStore.instance;
+  }
+
+  setTokens(accessToken: string, refreshToken: string = ''): void {
+    this.accessToken = accessToken;
+    this.refreshToken = refreshToken;
+  }
+
+  getAccessToken(): string | null {
+    return this.accessToken;
+  }
+
+  getRefreshToken(): string | null {
+    return this.refreshToken;
+  }
+
+  clearTokens(): void {
+    this.accessToken = null;
+    this.refreshToken = null;
+  }
+
+  hasAccessToken(): boolean {
+    return !!this.accessToken;
+  }
+}
+
+export class OxyServices {
+  protected client: AxiosInstance;
+  private tokenStore: TokenStore;
 
   /**
    * Creates a new instance of the OxyServices client
@@ -31,6 +68,7 @@ export class OxyServices {
       timeout: 10000 // 10 second timeout
     });
     
+    this.tokenStore = TokenStore.getInstance();
     this.setupInterceptors();
   }
 
@@ -40,13 +78,25 @@ export class OxyServices {
   private setupInterceptors(): void {
     // Request interceptor for adding auth header and handling token refresh
     this.client.interceptors.request.use(async (req: InternalAxiosRequestConfig) => {
-      if (!this.accessToken) {
+      console.log('🔍 Interceptor - URL:', req.url);
+      console.log('🔍 Interceptor - Has token:', this.tokenStore.hasAccessToken());
+      
+      if (!this.tokenStore.hasAccessToken()) {
+        console.log('❌ Interceptor - No token available');
         return req;
       }
       
       // Check if token is expired and refresh if needed
       try {
-        const decoded = jwtDecode<JwtPayload>(this.accessToken);
+        const accessToken = this.tokenStore.getAccessToken();
+        if (!accessToken) {
+          console.log('❌ Interceptor - No access token');
+          return req;
+        }
+        
+        console.log('✅ Interceptor - Adding Authorization header');
+        
+        const decoded = jwtDecode<JwtPayload>(accessToken);
         const currentTime = Math.floor(Date.now() / 1000);
       
         // If token expires in less than 60 seconds, refresh it
@@ -54,8 +104,8 @@ export class OxyServices {
           // For session-based tokens, get a new token from the session
           if (decoded.sessionId) {
             try {
-              const res = await this.client.get(`/session/token/${decoded.sessionId}`);
-              this.accessToken = res.data.accessToken;
+              const res = await this.client.get(`/api/session/token/${decoded.sessionId}`);
+              this.tokenStore.setTokens(res.data.accessToken);
             } catch (refreshError) {
               // If refresh fails, clear tokens
               this.clearTokens();
@@ -64,8 +114,13 @@ export class OxyServices {
         }
         
         // Add authorization header
-        req.headers.Authorization = `Bearer ${this.accessToken}`;
+        const currentToken = this.tokenStore.getAccessToken();
+        if (currentToken) {
+          req.headers.Authorization = `Bearer ${currentToken}`;
+          console.log('✅ Interceptor - Authorization header set');
+        }
       } catch (error) {
+        console.log('❌ Interceptor - Error processing token:', error);
         // If token is invalid, clear it
         this.clearTokens();
       }
@@ -85,28 +140,27 @@ export class OxyServices {
    * Set authentication tokens
    */
   public setTokens(accessToken: string, refreshToken: string = ''): void {
-    this.accessToken = accessToken;
-    this.refreshToken = refreshToken;
+    this.tokenStore.setTokens(accessToken, refreshToken);
   }
 
   /**
    * Clear stored authentication tokens
    */
   public clearTokens(): void {
-    this.accessToken = null;
-    this.refreshToken = null;
+    this.tokenStore.clearTokens();
   }
 
   /**
    * Get the current user ID from the access token
    */
   public getCurrentUserId(): string | null {
-    if (!this.accessToken) {
+    const accessToken = this.tokenStore.getAccessToken();
+    if (!accessToken) {
       return null;
     }
     
     try {
-      const decoded = jwtDecode<JwtPayload>(this.accessToken);
+      const decoded = jwtDecode<JwtPayload>(accessToken);
       return decoded.userId || decoded.id || null;
     } catch (error) {
       return null;
@@ -117,7 +171,7 @@ export class OxyServices {
    * Check if the client has a valid access token
    */
   private hasAccessToken(): boolean {
-    return !!this.accessToken;
+    return this.tokenStore.hasAccessToken();
   }
 
   /**
@@ -129,7 +183,7 @@ export class OxyServices {
     }
 
     try {
-      const res = await this.client.get('/auth/validate');
+      const res = await this.client.get('/api/auth/validate');
       return res.data.valid === true;
     } catch (error) {
       return false;
@@ -303,6 +357,4 @@ export class OxyServices {
       }
     };
   }
-
-
-} 
+}

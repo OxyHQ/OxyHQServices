@@ -44,7 +44,7 @@ export class PaymentService extends OxyServices {
    */
   async getPaymentMethods(userId: string): Promise<PaymentMethod[]> {
     try {
-      const res = await this.getClient().get(`/payments/methods/${userId}`);
+      const res = await this.getClient().get(`/api/payments/methods/${userId}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -56,7 +56,7 @@ export class PaymentService extends OxyServices {
    */
   async getWallet(userId: string): Promise<Wallet> {
     try {
-      const res = await this.getClient().get(`/wallet/${userId}`);
+      const res = await this.getClient().get(`/api/wallet/${userId}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -76,7 +76,7 @@ export class PaymentService extends OxyServices {
       if (limit) params.append('limit', limit.toString());
       if (offset) params.append('offset', offset.toString());
       
-      const res = await this.getClient().get(`/wallet/${userId}/transactions?${params.toString()}`);
+      const res = await this.getClient().get(`/api/wallet/${userId}/transactions?${params.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -88,7 +88,7 @@ export class PaymentService extends OxyServices {
    */
   async getTransaction(transactionId: string): Promise<Transaction> {
     try {
-      const res = await this.getClient().get(`/transactions/${transactionId}`);
+      const res = await this.getClient().get(`/api/transactions/${transactionId}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);

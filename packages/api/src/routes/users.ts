@@ -71,148 +71,6 @@ router.put('/me', authMiddleware, async (req: AuthRequest, res) => {
   }
 });
 
-// Get user by ID
-router.get('/:userId', validateObjectId, async (req, res) => {
-  try {
-    const user = await User.findById(req.params.userId).select('-password -refreshToken');
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    // Followers: people who follow this user
-    const followersCount = await Follow.countDocuments({
-      followedId: user._id,
-      followType: 'user'
-    });
-    // Following: people this user follows
-    const followingCount = await Follow.countDocuments({
-      followerUserId: user._id,
-      followType: 'user'
-    });
-
-    // karma count not implemented - requires posts collection integration
-    const karmaCount = 0;
-
-
-    const userObj = user.toObject({ virtuals: true });
-    res.json({
-      ...userObj,
-      stats: {
-        followers: followersCount,
-        following: followingCount,
-        karma: karmaCount
-      },
-      _count: {
-        followers: followersCount,
-        following: followingCount,
-        karma: karmaCount
-      }
-    });
-  } catch (error) {
-    logger.error('Error fetching user:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// Update user profile
-router.put('/:userId', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
-  try {
-    // Only allow users to update their own profile
-    if (req.params.userId !== req.user?.id) {
-      return res.status(403).json({ message: 'Not authorized to update this profile' });
-    }
-
-    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description'] as const;
-    type AllowedUpdate = typeof allowedUpdates[number];
-    
-    const updates = Object.entries(req.body)
-      .filter(([key]) => allowedUpdates.includes(key as AllowedUpdate))
-      .reduce((obj, [key, value]) => {
-        // Special handling for avatar field to ensure it's properly structured
-        if (key === 'avatar' && value && typeof value === 'object') {
-          const avatarValue = value as { id?: string; url?: string };
-          return {
-            ...obj,
-            [key]: {
-              id: avatarValue.id || "",
-              url: avatarValue.url || ""
-            }
-          };
-        }
-        return {
-          ...obj,
-          [key]: value
-        };
-      }, {} as Partial<Pick<IUser, AllowedUpdate>>);
-
-    logger.debug('Profile update request:', {
-      requestBody: req.body,
-      filteredUpdates: updates
-    });
-
-    // Check for email uniqueness if email is being updated
-    if (updates.email) {
-      const existingEmailUser = await User.findOne({ 
-        email: updates.email, 
-        _id: { $ne: req.params.userId } 
-      });
-      if (existingEmailUser) {
-        return res.status(400).json({ message: 'Email already exists' });
-      }
-    }
-
-    // Check for username uniqueness if username is being updated
-    if (updates.username) {
-      const existingUsernameUser = await User.findOne({ 
-        username: updates.username, 
-        _id: { $ne: req.params.userId } 
-      });
-      if (existingUsernameUser) {
-        return res.status(400).json({ message: 'Username already exists' });
-      }
-    }
-
-    const user = await User.findByIdAndUpdate(
-      req.params.userId,
-      { $set: updates },
-      { new: true }
-    ).select('-password -refreshToken');
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    res.json(user);
-  } catch (error) {
-    logger.error('Error updating user profile:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// Update privacy settings
-router.put('/:userId/privacy', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
-  try {
-    if (req.params.userId !== req.user?.id) {
-      return res.status(403).json({ message: 'Not authorized to update privacy settings' });
-    }
-
-    const user = await User.findByIdAndUpdate(
-      req.params.userId,
-      { $set: { privacySettings: req.body } },
-      { new: true }
-    ).select('-password -refreshToken');
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    res.json(user);
-  } catch (error) {
-    logger.error('Error updating privacy settings:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
 // Get user's followers
 router.get('/:userId/followers', validateObjectId, async (req, res) => {
   try {
@@ -420,7 +278,158 @@ router.get('/:userId/following-status', authMiddleware, validateObjectId, async 
   }
 });
 
+// Get user by ID
+router.get('/:userId', validateObjectId, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.userId).select('-password -refreshToken');
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    // Followers: people who follow this user
+    const followersCount = await Follow.countDocuments({
+      followedId: user._id,
+      followType: 'user'
+    });
+    // Following: people this user follows
+    const followingCount = await Follow.countDocuments({
+      followerUserId: user._id,
+      followType: 'user'
+    });
+
+    // karma count not implemented - requires posts collection integration
+    const karmaCount = 0;
+
+    const userObj = user.toObject({ virtuals: true });
+    res.json({
+      ...userObj,
+      stats: {
+        followers: followersCount,
+        following: followingCount,
+        karma: karmaCount
+      },
+      _count: {
+        followers: followersCount,
+        following: followingCount,
+        karma: karmaCount
+      }
+    });
+  } catch (error) {
+    logger.error('Error fetching user:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Update user profile
+router.put('/:userId', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
+  try {
+    // Only allow users to update their own profile
+    if (req.params.userId !== req.user?.id) {
+      return res.status(403).json({ message: 'Not authorized to update this profile' });
+    }
+
+    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description'] as const;
+    type AllowedUpdate = typeof allowedUpdates[number];
+    
+    const updates = Object.entries(req.body)
+      .filter(([key]) => allowedUpdates.includes(key as AllowedUpdate))
+      .reduce((obj, [key, value]) => {
+        // Special handling for avatar field to ensure it's properly structured
+        if (key === 'avatar' && value && typeof value === 'object') {
+          const avatarValue = value as { id?: string; url?: string };
+          return {
+            ...obj,
+            [key]: {
+              id: avatarValue.id || "",
+              url: avatarValue.url || ""
+            }
+          };
+        }
+        return {
+          ...obj,
+          [key]: value
+        };
+      }, {} as Partial<Pick<IUser, AllowedUpdate>>);
+
+    logger.debug('Profile update request:', {
+      requestBody: req.body,
+      filteredUpdates: updates
+    });
+
+    // Check for email uniqueness if email is being updated
+    if (updates.email) {
+      const existingEmailUser = await User.findOne({ 
+        email: updates.email, 
+        _id: { $ne: req.params.userId } 
+      });
+      if (existingEmailUser) {
+        return res.status(400).json({ message: 'Email already exists' });
+      }
+    }
+
+    // Check for username uniqueness if username is being updated
+    if (updates.username) {
+      const existingUsernameUser = await User.findOne({ 
+        username: updates.username, 
+        _id: { $ne: req.params.userId } 
+      });
+      if (existingUsernameUser) {
+        return res.status(400).json({ message: 'Username already exists' });
+      }
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.userId,
+      { $set: updates },
+      { new: true }
+    ).select('-password -refreshToken');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json(user);
+  } catch (error) {
+    logger.error('Error updating user:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
+// Update user privacy settings
+router.put('/:userId/privacy', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
+  try {
+    // Only allow users to update their own privacy settings
+    if (req.params.userId !== req.user?.id) {
+      return res.status(403).json({ message: 'Not authorized to update this profile' });
+    }
+
+    const allowedUpdates = ['privacySettings'] as const;
+    type AllowedUpdate = typeof allowedUpdates[number];
+    
+    const updates = Object.entries(req.body)
+      .filter(([key]) => allowedUpdates.includes(key as AllowedUpdate))
+      .reduce((obj, [key, value]) => {
+        return { ...obj, [key]: value };
+      }, {} as Partial<Pick<IUser, AllowedUpdate>>);
+
+    const user = await User.findByIdAndUpdate(
+      req.params.userId,
+      { $set: updates },
+      { new: true }
+    ).select('-password -refreshToken');
+
+    if (!user) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+
+    res.json(user);
+  } catch (error) {
+    logger.error('Error updating privacy settings:', error);
+    res.status(500).json({ message: 'Internal server error' });
+  }
+});
+
 // Search users
 router.post('/search', usersController.searchUsers.bind(usersController));
 
-export default router;
+export default router; 

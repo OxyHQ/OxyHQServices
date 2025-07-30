@@ -18,7 +18,7 @@ export class LocationService extends OxyServices {
         params.append('countrycodes', countrycodes);
       }
       
-      const res = await this.getClient().get(`/location-search/search?${params.toString()}`);
+      const res = await this.getClient().get(`/api/location-search/search?${params.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -30,7 +30,7 @@ export class LocationService extends OxyServices {
    */
   async getLocationDetails(lat: number, lon: number): Promise<any> {
     try {
-      const res = await this.getClient().get(`/location-search/reverse?lat=${lat}&lon=${lon}`);
+      const res = await this.getClient().get(`/api/location-search/reverse?lat=${lat}&lon=${lon}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -56,7 +56,7 @@ export class LocationService extends OxyServices {
         skip: skip.toString()
       });
       
-      const res = await this.getClient().get(`/location-search/near?${params.toString()}`);
+      const res = await this.getClient().get(`/api/location-search/near?${params.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -84,7 +84,7 @@ export class LocationService extends OxyServices {
       if (country) params.append('country', country);
       if (city) params.append('city', city);
       
-      const res = await this.getClient().get(`/location-search/db-search?${params.toString()}`);
+      const res = await this.getClient().get(`/api/location-search/db-search?${params.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);

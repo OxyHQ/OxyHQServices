@@ -19,7 +19,7 @@ export class DeviceService extends OxyServices {
       const params = { deviceId };
       const searchParams = buildSearchParams(params);
       
-      const res = await this.getClient().get(`/session/device/sessions/${sessionId}?${searchParams.toString()}`);
+      const res = await this.getClient().get(`/api/session/device/sessions/${sessionId}?${searchParams.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -34,7 +34,7 @@ export class DeviceService extends OxyServices {
       const params = { deviceId, excludeCurrent };
       const searchParams = buildSearchParams(params);
       
-      const res = await this.getClient().post(`/session/device/logout-all/${sessionId}?${searchParams.toString()}`);
+      const res = await this.getClient().post(`/api/session/device/logout-all/${sessionId}?${searchParams.toString()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -46,7 +46,7 @@ export class DeviceService extends OxyServices {
    */
   async updateDeviceName(sessionId: string, deviceName: string): Promise<UpdateDeviceNameResponse> {
     try {
-      const res = await this.getClient().put(`/session/device/name/${sessionId}`, { deviceName });
+      const res = await this.getClient().put(`/api/session/device/name/${sessionId}`, { deviceName });
       return res.data;
     } catch (error) {
       throw this.handleError(error);

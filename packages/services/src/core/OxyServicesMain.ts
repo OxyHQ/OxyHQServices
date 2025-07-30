@@ -48,7 +48,7 @@ export class OxyServicesMain extends AuthService {
     image?: string;
   }> {
     try {
-      const res = await this.getClient().get(`/link-metadata?url=${encodeURIComponent(url)}`);
+      const res = await this.getClient().get(`/api/link-metadata?url=${encodeURIComponent(url)}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
