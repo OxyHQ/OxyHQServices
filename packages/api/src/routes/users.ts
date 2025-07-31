@@ -256,7 +256,7 @@ router.delete('/:userId/follow', authMiddleware, validateObjectId, async (req: A
 });
 
 // Get following status
-router.get('/:userId/following-status', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
+router.get('/:userId/follow-status', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
   try {
     const targetUserId = req.params.userId;
     const currentUserId = req.user?.id;
