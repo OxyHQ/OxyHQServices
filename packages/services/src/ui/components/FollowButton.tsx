@@ -156,7 +156,7 @@ const FollowButton: React.FC<FollowButtonProps> = ({
       };
     } else {
       stateStyle = {
-        backgroundColor: 'transparent',
+        backgroundColor: colors.background,
         borderColor: colors.border,
         shadowColor: colors.border,
       };
