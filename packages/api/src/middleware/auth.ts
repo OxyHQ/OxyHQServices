@@ -78,24 +78,44 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
         // Session-based token - validate session
         logger.debug('Validating session-based token for sessionId:', decoded.sessionId);
         
-        const session = await Session.findOne({
-          sessionId: decoded.sessionId,
-          isActive: true,
-          expiresAt: { $gt: new Date() }
-        }).populate('userId');
+        let session;
+        try {
+          session = await Session.findOne({
+            sessionId: decoded.sessionId,
+            isActive: true,
+            expiresAt: { $gt: new Date() }
+          }).populate('userId');
 
-        logger.debug('Session lookup result:', { 
-          found: !!session, 
-          sessionId: session?.sessionId,
-          isActive: session?.isActive,
-          expiresAt: session?.expiresAt 
-        });
+          logger.debug('Session lookup result:', { 
+            found: !!session, 
+            sessionId: session?.sessionId,
+            isActive: session?.isActive,
+            expiresAt: session?.expiresAt 
+          });
 
-        if (!session) {
-          logger.warn('Session not found or expired for sessionId:', decoded.sessionId);
-          return res.status(401).json({
-            error: 'Invalid session',
-            message: 'Session not found or expired'
+          if (!session) {
+            // Log additional debugging info for production troubleshooting
+            const allSessions = await Session.find({ sessionId: decoded.sessionId });
+            logger.warn('Session not found or expired for sessionId:', decoded.sessionId, {
+              totalSessionsWithId: allSessions.length,
+              sessions: allSessions.map(s => ({
+                sessionId: s.sessionId,
+                isActive: s.isActive,
+                expiresAt: s.expiresAt,
+                userId: s.userId
+              }))
+            });
+            
+            return res.status(401).json({
+              error: 'Invalid session',
+              message: 'Session not found or expired'
+            });
+          }
+        } catch (dbError) {
+          logger.error('Database error during session lookup:', dbError);
+          return res.status(500).json({
+            error: 'Database error',
+            message: 'Error validating session'
           });
         }
 

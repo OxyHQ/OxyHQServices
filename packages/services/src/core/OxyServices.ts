@@ -9,7 +9,34 @@ interface JwtPayload {
   exp?: number;
   userId?: string;
   id?: string;
+  sessionId?: string;
   [key: string]: any;
+}
+
+/**
+ * Custom error types for better error handling
+ */
+export class OxyAuthenticationError extends Error {
+  public readonly code: string;
+  public readonly status: number;
+
+  constructor(message: string, code: string = 'AUTH_ERROR', status: number = 401) {
+    super(message);
+    this.name = 'OxyAuthenticationError';
+    this.code = code;
+    this.status = status;
+  }
+}
+
+export class OxyAuthenticationTimeoutError extends OxyAuthenticationError {
+  constructor(operationName: string, timeoutMs: number) {
+    super(
+      `Authentication timeout (${timeoutMs}ms): ${operationName} requires user authentication. Please ensure the user is logged in before calling this method.`,
+      'AUTH_TIMEOUT',
+      408
+    );
+    this.name = 'OxyAuthenticationTimeoutError';
+  }
 }
 
 /**
@@ -79,56 +106,78 @@ export class OxyServices {
    */
   private setupInterceptors(): void {
     // Request interceptor for adding auth header and handling token refresh
-    this.client.interceptors.request.use(async (req: InternalAxiosRequestConfig) => {
-      console.log('🔍 Interceptor - URL:', req.url);
-      console.log('🔍 Interceptor - Has token:', this.tokenStore.hasAccessToken());
-      
-      if (!this.tokenStore.hasAccessToken()) {
-        console.log('❌ Interceptor - No token available');
-        return req;
-      }
-      
-      // Check if token is expired and refresh if needed
-      try {
+    this.client.interceptors.request.use(
+      async (req: InternalAxiosRequestConfig) => {
+        console.log('🔍 Interceptor - URL:', req.url);
+        console.log('🔍 Interceptor - Has token:', this.tokenStore.hasAccessToken());
+        
         const accessToken = this.tokenStore.getAccessToken();
         if (!accessToken) {
-          console.log('❌ Interceptor - No access token');
+          console.log('❌ Interceptor - No token available');
           return req;
         }
         
-        console.log('✅ Interceptor - Adding Authorization header');
+        try {
+          console.log('✅ Interceptor - Adding Authorization header');
+          
+          const decoded = jwtDecode<JwtPayload>(accessToken);
+          const currentTime = Math.floor(Date.now() / 1000);
         
-        const decoded = jwtDecode<JwtPayload>(accessToken);
-        const currentTime = Math.floor(Date.now() / 1000);
-      
-        // If token expires in less than 60 seconds, refresh it
-        if (decoded.exp && decoded.exp - currentTime < 60) {
-          // For session-based tokens, get a new token from the session
-          if (decoded.sessionId) {
-            try {
-              const res = await this.client.get(`/api/session/token/${decoded.sessionId}`);
-              this.tokenStore.setTokens(res.data.accessToken);
-            } catch (refreshError) {
-              // If refresh fails, clear tokens
-              this.clearTokens();
+          // If token expires in less than 60 seconds, refresh it
+          if (decoded.exp && decoded.exp - currentTime < 60) {
+            // For session-based tokens, get a new token from the session
+            if (decoded.sessionId) {
+              try {
+                // Create a new axios instance to avoid interceptor recursion
+                const refreshClient = axios.create({ 
+                  baseURL: this.client.defaults.baseURL,
+                  timeout: this.client.defaults.timeout
+                });
+                const res = await refreshClient.get(`/api/session/token/${decoded.sessionId}`);
+                this.tokenStore.setTokens(res.data.accessToken);
+                req.headers.Authorization = `Bearer ${res.data.accessToken}`;
+                console.log('✅ Interceptor - Token refreshed and Authorization header set');
+              } catch (refreshError) {
+                // If refresh fails, use current token anyway
+                req.headers.Authorization = `Bearer ${accessToken}`;
+                console.log('❌ Interceptor - Token refresh failed, using current token');
+              }
+            } else {
+              // No session ID, use current token
+              req.headers.Authorization = `Bearer ${accessToken}`;
+              console.log('✅ Interceptor - No session ID, using current token');
             }
+          } else {
+            // Add authorization header with current token
+            req.headers.Authorization = `Bearer ${accessToken}`;
+            console.log('✅ Interceptor - Authorization header set with current token');
           }
+        } catch (error) {
+          console.log('❌ Interceptor - Error processing token:', error);
+          // Even if there's an error, still try to use the token
+          req.headers.Authorization = `Bearer ${accessToken}`;
+          console.log('⚠️ Interceptor - Using token despite error');
         }
         
-        // Add authorization header
-        const currentToken = this.tokenStore.getAccessToken();
-        if (currentToken) {
-          req.headers.Authorization = `Bearer ${currentToken}`;
-          console.log('✅ Interceptor - Authorization header set');
-        }
-      } catch (error) {
-        console.log('❌ Interceptor - Error processing token:', error);
-        // If token is invalid, clear it
-        this.clearTokens();
+        return req;
+      },
+      (error) => {
+        console.log('❌ Interceptor - Request error:', error);
+        return Promise.reject(error);
       }
-      
-      return req;
-    });
+    );
+
+    // Response interceptor for handling auth errors
+    this.client.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error.response?.status === 401) {
+          console.log('❌ Response interceptor - 401 Unauthorized, clearing tokens');
+          this.clearTokens();
+        }
+        return Promise.reject(error);
+      }
+    );
   }
 
   // ============================================================================
@@ -181,6 +230,108 @@ export class OxyServices {
   }
 
   /**
+   * Check if the client has a valid access token (public method)
+   */
+  public hasValidToken(): boolean {
+    return this.tokenStore.hasAccessToken();
+  }
+
+  /**
+   * Wait for authentication to be ready (public method)
+   * Useful for apps that want to ensure authentication is complete before proceeding
+   */
+  public async waitForAuth(timeoutMs: number = 5000): Promise<boolean> {
+    return this.waitForAuthentication(timeoutMs);
+  }
+
+  /**
+   * Wait for authentication to be ready with timeout
+   */
+  private async waitForAuthentication(timeoutMs: number = 5000): Promise<boolean> {
+    const startTime = Date.now();
+    const checkInterval = 100; // Check every 100ms
+
+    while (Date.now() - startTime < timeoutMs) {
+      if (this.tokenStore.hasAccessToken()) {
+        return true;
+      }
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
+    
+    return false;
+  }
+
+  /**
+   * Execute a function with automatic authentication retry logic
+   * This handles the common case where API calls are made before authentication completes
+   */
+  private async withAuthRetry<T>(
+    operation: () => Promise<T>, 
+    operationName: string,
+    options: {
+      maxRetries?: number;
+      retryDelay?: number;
+      authTimeoutMs?: number;
+    } = {}
+  ): Promise<T> {
+    const { 
+      maxRetries = 2, 
+      retryDelay = 1000,
+      authTimeoutMs = 5000 
+    } = options;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // First attempt: check if we have a token
+        if (!this.tokenStore.hasAccessToken()) {
+          if (attempt === 0) {
+            // On first attempt, wait briefly for authentication to complete
+            console.log(`🔄 ${operationName} - Waiting for authentication...`);
+            const authReady = await this.waitForAuthentication(authTimeoutMs);
+            
+            if (!authReady) {
+              throw new OxyAuthenticationTimeoutError(operationName, authTimeoutMs);
+            }
+            
+            console.log(`✅ ${operationName} - Authentication ready, proceeding...`);
+          } else {
+            // On retry attempts, fail immediately if no token
+            throw new OxyAuthenticationError(
+              `Authentication required: ${operationName} requires a valid access token.`,
+              'AUTH_REQUIRED'
+            );
+          }
+        }
+
+        // Execute the operation
+        return await operation();
+
+      } catch (error: any) {
+        const isLastAttempt = attempt === maxRetries;
+        const isAuthError = error?.response?.status === 401 || 
+                           error?.code === 'MISSING_TOKEN' ||
+                           error?.message?.includes('Authentication') ||
+                           error instanceof OxyAuthenticationError;
+
+        if (isAuthError && !isLastAttempt && !(error instanceof OxyAuthenticationTimeoutError)) {
+          console.log(`🔄 ${operationName} - Auth error on attempt ${attempt + 1}, retrying in ${retryDelay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          continue;
+        }
+
+        // If it's not an auth error, or it's the last attempt, throw the error
+        if (error instanceof OxyAuthenticationError) {
+          throw error;
+        }
+        throw this.handleError(error);
+      }
+    }
+
+    // This should never be reached, but TypeScript requires it
+    throw new OxyAuthenticationError(`${operationName} failed after ${maxRetries + 1} attempts`);
+  }
+
+  /**
    * Validate the current access token with the server
    */
   async validate(): Promise<boolean> {
@@ -197,9 +348,9 @@ export class OxyServices {
   }
 
   /**
-   * Get the HTTP client instance (protected for use by service modules)
+   * Get the HTTP client instance (public for external use)
    */
-  protected getClient(): AxiosInstance {
+  public getClient(): AxiosInstance {
     return this.client;
   }
 
@@ -436,12 +587,10 @@ export class OxyServices {
     _count?: { followers: number; following: number };
     [key: string]: any;
   }>> {
-    try {
+    return this.withAuthRetry(async () => {
       const res = await this.client.get('/api/profiles/recommendations');
       return res.data;
-    } catch (error) {
-      throw this.handleError(error);
-    }
+    }, 'getProfileRecommendations');
   }
 
   /**
@@ -460,12 +609,10 @@ export class OxyServices {
    * Get current user
    */
   async getCurrentUser(): Promise<User> {
-    try {
+    return this.withAuthRetry(async () => {
       const res = await this.client.get('/api/users/me');
       return res.data;
-    } catch (error) {
-      throw this.handleError(error);
-    }
+    }, 'getCurrentUser');
   }
 
   /**
@@ -564,12 +711,10 @@ export class OxyServices {
    * Get notifications
    */
   async getNotifications(): Promise<Notification[]> {
-    try {
+    return this.withAuthRetry(async () => {
       const res = await this.client.get('/api/notifications');
       return res.data;
-    } catch (error) {
-      throw this.handleError(error);
-    }
+    }, 'getNotifications');
   }
 
   /**

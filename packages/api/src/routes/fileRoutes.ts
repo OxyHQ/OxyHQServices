@@ -2,16 +2,6 @@ import express from 'express';
 import multer from 'multer';
 import { S3Service, createS3Service, UploadOptions } from '../services/s3Service';
 import path from 'path';
-import { authMiddleware } from '../middleware/auth';
-import { logger } from '../utils/logger';
-
-interface AuthenticatedRequest extends express.Request {
-  user?: {
-    _id: string;
-    [key: string]: any;
-  };
-  files?: Express.Multer.File[] | { [fieldname: string]: Express.Multer.File[] };
-}
 
 const router = express.Router();
 
@@ -57,15 +47,12 @@ const upload = multer({
   },
 });
 
-// Apply auth middleware to all routes
-router.use(authMiddleware);
-
 /**
  * @route POST /api/files/upload
  * @desc Upload a file to S3
  * @access Private
  */
-router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file provided' });
@@ -73,30 +60,20 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
 
     const { folder, publicRead, metadata } = req.body;
     const file = req.file;
-    const user = req.user;
     
-    // Generate unique key with user prefix
-    const userFolder = `users/${user?._id}`;
-    const finalFolder = folder ? `${userFolder}/${folder}` : userFolder;
-    const key = s3Service.generateUniqueKey(file.originalname, finalFolder);
+    // Generate unique key
+    const key = s3Service.generateUniqueKey(file.originalname, folder);
     
     // Upload options
     const uploadOptions: UploadOptions = {
       contentType: file.mimetype,
       publicRead: publicRead === 'true',
-      folder: finalFolder,
-      metadata: {
-        ...(metadata ? JSON.parse(metadata) : {}),
-        userId: user?._id,
-        originalName: file.originalname,
-        uploadedAt: new Date().toISOString(),
-      },
+      folder,
+      metadata: metadata ? JSON.parse(metadata) : undefined,
     };
 
     // Upload to S3
     const fileInfo = await s3Service.uploadBuffer(key, file.buffer, uploadOptions);
-
-    logger.info(`File uploaded successfully: ${key} by user ${user?._id}`);
 
     res.json({
       success: true,
@@ -104,7 +81,7 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
       message: 'File uploaded successfully',
     });
   } catch (error: any) {
-    logger.error('File upload error:', error);
+    console.error('File upload error:', error);
     res.status(500).json({
       error: 'Failed to upload file',
       message: error.message,
@@ -117,7 +94,7 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
  * @desc Upload multiple files to S3
  * @access Private
  */
-router.post('/upload-multiple', upload.array('files', 10), async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/upload-multiple', upload.array('files', 10), async (req, res) => {
   try {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({ error: 'No files provided' });
@@ -125,23 +102,14 @@ router.post('/upload-multiple', upload.array('files', 10), async (req: Authentic
 
     const { folder, publicRead, metadata } = req.body;
     const files = req.files as Express.Multer.File[];
-    const user = req.user;
-    
-    const userFolder = `users/${user?._id}`;
-    const finalFolder = folder ? `${userFolder}/${folder}` : userFolder;
     
     const uploadPromises = files.map((file) => {
-      const key = s3Service.generateUniqueKey(file.originalname, finalFolder);
+      const key = s3Service.generateUniqueKey(file.originalname, folder);
       const uploadOptions: UploadOptions = {
         contentType: file.mimetype,
         publicRead: publicRead === 'true',
-        folder: finalFolder,
-        metadata: {
-          ...(metadata ? JSON.parse(metadata) : {}),
-          userId: user?._id,
-          originalName: file.originalname,
-          uploadedAt: new Date().toISOString(),
-        },
+        folder,
+        metadata: metadata ? JSON.parse(metadata) : undefined,
       };
       
       return s3Service.uploadBuffer(key, file.buffer, uploadOptions);
@@ -149,15 +117,13 @@ router.post('/upload-multiple', upload.array('files', 10), async (req: Authentic
 
     const uploadedFiles = await Promise.all(uploadPromises);
 
-    logger.info(`${uploadedFiles.length} files uploaded by user ${user?._id}`);
-
     res.json({
       success: true,
       files: uploadedFiles,
       message: `${uploadedFiles.length} files uploaded successfully`,
     });
   } catch (error: any) {
-    logger.error('Multiple file upload error:', error);
+    console.error('Multiple file upload error:', error);
     res.status(500).json({
       error: 'Failed to upload files',
       message: error.message,
@@ -170,18 +136,12 @@ router.post('/upload-multiple', upload.array('files', 10), async (req: Authentic
  * @desc Download a file from S3
  * @access Private
  */
-router.get('/download/:key(*)', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/download/:key(*)', async (req, res) => {
   try {
     const { key } = req.params;
-    const user = req.user;
     
     if (!key) {
       return res.status(400).json({ error: 'File key is required' });
-    }
-
-    // Verify user has access to this file
-    if (!key.startsWith(`users/${user?._id}/`)) {
-      return res.status(403).json({ error: 'Access denied' });
     }
 
     // Get file metadata first
@@ -198,11 +158,9 @@ router.get('/download/:key(*)', async (req: AuthenticatedRequest, res: express.R
     res.setHeader('Content-Length', buffer.length);
     res.setHeader('Content-Disposition', `attachment; filename="${path.basename(key)}"`);
 
-    logger.info(`File downloaded: ${key} by user ${user?._id}`);
-
     res.send(buffer);
   } catch (error: any) {
-    logger.error('File download error:', error);
+    console.error('File download error:', error);
     res.status(500).json({
       error: 'Failed to download file',
       message: error.message,
@@ -215,18 +173,12 @@ router.get('/download/:key(*)', async (req: AuthenticatedRequest, res: express.R
  * @desc Delete a file from S3
  * @access Private
  */
-router.delete('/:key(*)', async (req: AuthenticatedRequest, res: express.Response) => {
+router.delete('/:key(*)', async (req, res) => {
   try {
     const { key } = req.params;
-    const user = req.user;
     
     if (!key) {
       return res.status(400).json({ error: 'File key is required' });
-    }
-
-    // Verify user has access to this file
-    if (!key.startsWith(`users/${user?._id}/`)) {
-      return res.status(403).json({ error: 'Access denied' });
     }
 
     // Check if file exists
@@ -238,14 +190,12 @@ router.delete('/:key(*)', async (req: AuthenticatedRequest, res: express.Respons
     // Delete file
     await s3Service.deleteFile(key);
 
-    logger.info(`File deleted: ${key} by user ${user?._id}`);
-
     res.json({
       success: true,
       message: 'File deleted successfully',
     });
   } catch (error: any) {
-    logger.error('File deletion error:', error);
+    console.error('File deletion error:', error);
     res.status(500).json({
       error: 'Failed to delete file',
       message: error.message,
@@ -258,32 +208,23 @@ router.delete('/:key(*)', async (req: AuthenticatedRequest, res: express.Respons
  * @desc Delete multiple files from S3
  * @access Private
  */
-router.delete('/batch', async (req: AuthenticatedRequest, res: express.Response) => {
+router.delete('/batch', async (req, res) => {
   try {
     const { keys } = req.body;
-    const user = req.user;
     
     if (!keys || !Array.isArray(keys) || keys.length === 0) {
       return res.status(400).json({ error: 'File keys array is required' });
     }
 
-    // Verify user has access to all files
-    const unauthorizedKeys = keys.filter((key: string) => !key.startsWith(`users/${user?._id}/`));
-    if (unauthorizedKeys.length > 0) {
-      return res.status(403).json({ error: 'Access denied to some files' });
-    }
-
     // Delete files
     await s3Service.deleteMultipleFiles(keys);
-
-    logger.info(`${keys.length} files deleted by user ${user?._id}`);
 
     res.json({
       success: true,
       message: `${keys.length} files deleted successfully`,
     });
   } catch (error: any) {
-    logger.error('Batch file deletion error:', error);
+    console.error('Batch file deletion error:', error);
     res.status(500).json({
       error: 'Failed to delete files',
       message: error.message,
@@ -296,36 +237,28 @@ router.delete('/batch', async (req: AuthenticatedRequest, res: express.Response)
  * @desc Generate presigned URL for file upload
  * @access Private
  */
-router.get('/presigned-upload', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/presigned-upload', async (req, res) => {
   try {
     const { key, contentType, expiresIn, metadata } = req.query;
-    const user = req.user;
     
     if (!key || typeof key !== 'string') {
       return res.status(400).json({ error: 'File key is required' });
     }
 
-    // Ensure key is in user's folder
-    const userKey = key.startsWith(`users/${user?._id}/`) ? key : `users/${user?._id}/${key}`;
-
-    const url = await s3Service.getPresignedUploadUrl(userKey, {
+    const url = await s3Service.getPresignedUploadUrl(key, {
       expiresIn: expiresIn ? parseInt(expiresIn as string) : 3600,
       contentType: contentType as string || 'application/octet-stream',
-      metadata: {
-        ...(metadata ? JSON.parse(metadata as string) : {}),
-        userId: user?._id,
-        generatedAt: new Date().toISOString(),
-      },
+      metadata: metadata ? JSON.parse(metadata as string) : undefined,
     });
 
     res.json({
       success: true,
       url,
-      key: userKey,
+      key,
       expiresIn: expiresIn ? parseInt(expiresIn as string) : 3600,
     });
   } catch (error: any) {
-    logger.error('Presigned upload URL error:', error);
+    console.error('Presigned upload URL error:', error);
     res.status(500).json({
       error: 'Failed to generate presigned upload URL',
       message: error.message,
@@ -338,19 +271,13 @@ router.get('/presigned-upload', async (req: AuthenticatedRequest, res: express.R
  * @desc Generate presigned URL for file download
  * @access Private
  */
-router.get('/presigned-download/:key(*)', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/presigned-download/:key(*)', async (req, res) => {
   try {
     const { key } = req.params;
     const { expiresIn } = req.query;
-    const user = req.user;
     
     if (!key) {
       return res.status(400).json({ error: 'File key is required' });
-    }
-
-    // Verify user has access to this file
-    if (!key.startsWith(`users/${user?._id}/`)) {
-      return res.status(403).json({ error: 'Access denied' });
     }
 
     // Check if file exists
@@ -371,7 +298,7 @@ router.get('/presigned-download/:key(*)', async (req: AuthenticatedRequest, res:
       expiresIn: expiresIn ? parseInt(expiresIn as string) : 3600,
     });
   } catch (error: any) {
-    logger.error('Presigned download URL error:', error);
+    console.error('Presigned download URL error:', error);
     res.status(500).json({
       error: 'Failed to generate presigned download URL',
       message: error.message,
@@ -381,20 +308,15 @@ router.get('/presigned-download/:key(*)', async (req: AuthenticatedRequest, res:
 
 /**
  * @route GET /api/files/list
- * @desc List files in S3 bucket for the authenticated user
+ * @desc List files in S3 bucket
  * @access Private
  */
-router.get('/list', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/list', async (req, res) => {
   try {
     const { prefix, maxKeys } = req.query;
-    const user = req.user;
-    
-    // Ensure prefix is within user's folder
-    const userPrefix = `users/${user?._id}/`;
-    const finalPrefix = prefix ? `${userPrefix}${prefix}` : userPrefix;
     
     const files = await s3Service.listFiles(
-      finalPrefix,
+      prefix as string || '',
       maxKeys ? parseInt(maxKeys as string) : 1000
     );
 
@@ -404,7 +326,7 @@ router.get('/list', async (req: AuthenticatedRequest, res: express.Response) => 
       count: files.length,
     });
   } catch (error: any) {
-    logger.error('File listing error:', error);
+    console.error('File listing error:', error);
     res.status(500).json({
       error: 'Failed to list files',
       message: error.message,
@@ -417,18 +339,12 @@ router.get('/list', async (req: AuthenticatedRequest, res: express.Response) => 
  * @desc Get file metadata
  * @access Private
  */
-router.get('/metadata/:key(*)', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/metadata/:key(*)', async (req, res) => {
   try {
     const { key } = req.params;
-    const user = req.user;
     
     if (!key) {
       return res.status(400).json({ error: 'File key is required' });
-    }
-
-    // Verify user has access to this file
-    if (!key.startsWith(`users/${user?._id}/`)) {
-      return res.status(403).json({ error: 'Access denied' });
     }
 
     const metadata = await s3Service.getFileMetadata(key);
@@ -441,7 +357,7 @@ router.get('/metadata/:key(*)', async (req: AuthenticatedRequest, res: express.R
       metadata,
     });
   } catch (error: any) {
-    logger.error('File metadata error:', error);
+    console.error('File metadata error:', error);
     res.status(500).json({
       error: 'Failed to get file metadata',
       message: error.message,
@@ -454,24 +370,13 @@ router.get('/metadata/:key(*)', async (req: AuthenticatedRequest, res: express.R
  * @desc Copy a file in S3
  * @access Private
  */
-router.post('/copy', async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/copy', async (req, res) => {
   try {
     const { sourceKey, destinationKey } = req.body;
-    const user = req.user;
     
     if (!sourceKey || !destinationKey) {
       return res.status(400).json({ error: 'Source and destination keys are required' });
     }
-
-    // Verify user has access to source file
-    if (!sourceKey.startsWith(`users/${user?._id}/`)) {
-      return res.status(403).json({ error: 'Access denied to source file' });
-    }
-
-    // Ensure destination is in user's folder
-    const userDestinationKey = destinationKey.startsWith(`users/${user?._id}/`) 
-      ? destinationKey 
-      : `users/${user?._id}/${destinationKey}`;
 
     // Check if source file exists
     const exists = await s3Service.fileExists(sourceKey);
@@ -479,18 +384,16 @@ router.post('/copy', async (req: AuthenticatedRequest, res: express.Response) =>
       return res.status(404).json({ error: 'Source file not found' });
     }
 
-    await s3Service.copyFile(sourceKey, userDestinationKey);
-
-    logger.info(`File copied: ${sourceKey} to ${userDestinationKey} by user ${user?._id}`);
+    await s3Service.copyFile(sourceKey, destinationKey);
 
     res.json({
       success: true,
       message: 'File copied successfully',
       sourceKey,
-      destinationKey: userDestinationKey,
+      destinationKey,
     });
   } catch (error: any) {
-    logger.error('File copy error:', error);
+    console.error('File copy error:', error);
     res.status(500).json({
       error: 'Failed to copy file',
       message: error.message,
@@ -503,24 +406,13 @@ router.post('/copy', async (req: AuthenticatedRequest, res: express.Response) =>
  * @desc Move a file in S3
  * @access Private
  */
-router.post('/move', async (req: AuthenticatedRequest, res: express.Response) => {
+router.post('/move', async (req, res) => {
   try {
     const { sourceKey, destinationKey } = req.body;
-    const user = req.user;
     
     if (!sourceKey || !destinationKey) {
       return res.status(400).json({ error: 'Source and destination keys are required' });
     }
-
-    // Verify user has access to source file
-    if (!sourceKey.startsWith(`users/${user?._id}/`)) {
-      return res.status(403).json({ error: 'Access denied to source file' });
-    }
-
-    // Ensure destination is in user's folder
-    const userDestinationKey = destinationKey.startsWith(`users/${user?._id}/`) 
-      ? destinationKey 
-      : `users/${user?._id}/${destinationKey}`;
 
     // Check if source file exists
     const exists = await s3Service.fileExists(sourceKey);
@@ -528,18 +420,16 @@ router.post('/move', async (req: AuthenticatedRequest, res: express.Response) =>
       return res.status(404).json({ error: 'Source file not found' });
     }
 
-    await s3Service.moveFile(sourceKey, userDestinationKey);
-
-    logger.info(`File moved: ${sourceKey} to ${userDestinationKey} by user ${user?._id}`);
+    await s3Service.moveFile(sourceKey, destinationKey);
 
     res.json({
       success: true,
       message: 'File moved successfully',
       sourceKey,
-      destinationKey: userDestinationKey,
+      destinationKey,
     });
   } catch (error: any) {
-    logger.error('File move error:', error);
+    console.error('File move error:', error);
     res.status(500).json({
       error: 'Failed to move file',
       message: error.message,
@@ -552,18 +442,12 @@ router.post('/move', async (req: AuthenticatedRequest, res: express.Response) =>
  * @desc Get public URL for a file
  * @access Private
  */
-router.get('/public-url/:key(*)', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/public-url/:key(*)', async (req, res) => {
   try {
     const { key } = req.params;
-    const user = req.user;
     
     if (!key) {
       return res.status(400).json({ error: 'File key is required' });
-    }
-
-    // Verify user has access to this file
-    if (!key.startsWith(`users/${user?._id}/`)) {
-      return res.status(403).json({ error: 'Access denied' });
     }
 
     const url = s3Service.getPublicUrl(key);
@@ -574,7 +458,7 @@ router.get('/public-url/:key(*)', async (req: AuthenticatedRequest, res: express
       key,
     });
   } catch (error: any) {
-    logger.error('Public URL error:', error);
+    console.error('Public URL error:', error);
     res.status(500).json({
       error: 'Failed to get public URL',
       message: error.message,
@@ -582,4 +466,4 @@ router.get('/public-url/:key(*)', async (req: AuthenticatedRequest, res: express
   }
 });
 
-export default router;
+export default router; 

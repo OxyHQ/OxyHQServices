@@ -86,7 +86,7 @@ router.get('/search', async (req: Request<{}, {}, {}, SearchQuery>, res: Respons
 });
 
 // Get recommended profiles
-router.get('/recommendations', async (req: Request<{}, {}, {}, { limit?: string; offset?: string }> & { user?: { id: string } }, res: Response) => {
+router.get('/recommendations', authMiddleware, async (req: Request<{}, {}, {}, { limit?: string; offset?: string }> & { user?: { id: string } }, res: Response) => {
   try {
     const limit = req.query.limit ? parseInt(req.query.limit) : 10;
     const offset = req.query.offset ? parseInt(req.query.offset) : 0;
