@@ -7,6 +7,8 @@ import { DeviceManager } from '../../utils/deviceManager';
 import { useSessionSocket } from '../hooks/useSessionSocket';
 import { toast } from '../../lib/sonner';
 import { useAuthStore } from '../stores/authStore';
+import { isNotNullOrUndefined, validateServiceInstance } from '../../utils/validationUtils';
+import { createApiError, ErrorCodes } from '../../utils/errorUtils';
 
 // Define the context shape
 export interface OxyContextState {
@@ -130,15 +132,30 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   if (!oxyServicesRef.current) {
     if (providedOxyServices) {
-      oxyServicesRef.current = providedOxyServices;
+      // Validate the provided service
+      try {
+        validateServiceInstance(providedOxyServices, 'OxyServices');
+        oxyServicesRef.current = providedOxyServices;
+      } catch (error) {
+        throw new Error(`Invalid OxyServices instance provided: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     } else if (baseURL) {
-      oxyServicesRef.current = new OxyServices({ baseURL });
+      try {
+        oxyServicesRef.current = new OxyServices({ baseURL });
+      } catch (error) {
+        throw new Error(`Failed to create OxyServices instance: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
     } else {
       throw new Error('Either oxyServices or baseURL must be provided to OxyContextProvider');
     }
   }
 
   const oxyServices = oxyServicesRef.current;
+
+  // Validate service is available before proceeding
+  if (!isNotNullOrUndefined(oxyServices)) {
+    throw new Error('OxyServices instance is not available');
+  }
 
   // Zustand state
   const user = useAuthStore((state) => state.user);
@@ -752,6 +769,12 @@ export const useOxy = (): OxyContextState => {
   if (!context) {
     throw new Error('useOxy must be used within an OxyContextProvider');
   }
+
+  // Additional validation to ensure oxyServices is available
+  if (!isNotNullOrUndefined(context.oxyServices)) {
+    throw new Error('OxyServices is not available in context. Ensure OxyContextProvider is properly configured.');
+  }
+
   return context;
 };
 

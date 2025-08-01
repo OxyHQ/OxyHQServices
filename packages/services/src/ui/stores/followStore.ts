@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { OxyServices } from '../../core';
+import { isNotNullOrUndefined, validateServiceInstance } from '../../utils/validationUtils';
 
 interface FollowState {
   followingUsers: Record<string, boolean>;
@@ -48,6 +49,17 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
     loadingCounts: {},
   }),
   fetchFollowStatus: async (userId: string, oxyServices: OxyServices) => {
+    // Validate inputs
+    if (!userId || typeof userId !== 'string') {
+      console.error('fetchFollowStatus: Invalid userId provided');
+      return;
+    }
+
+    if (!isNotNullOrUndefined(oxyServices)) {
+      console.error('fetchFollowStatus: OxyServices instance is not available');
+      return;
+    }
+
     set((state: FollowState) => ({
       fetchingUsers: { ...state.fetchingUsers, [userId]: true },
       errors: { ...state.errors, [userId]: null },
@@ -67,6 +79,17 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
     }
   },
   toggleFollowUser: async (userId: string, oxyServices: OxyServices, isCurrentlyFollowing: boolean) => {
+    // Validate inputs
+    if (!userId || typeof userId !== 'string') {
+      console.error('toggleFollowUser: Invalid userId provided');
+      return;
+    }
+
+    if (!isNotNullOrUndefined(oxyServices)) {
+      console.error('toggleFollowUser: OxyServices instance is not available');
+      return;
+    }
+
     set((state: FollowState) => ({
       loadingUsers: { ...state.loadingUsers, [userId]: true },
       errors: { ...state.errors, [userId]: null },
@@ -154,6 +177,17 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
     });
   },
   fetchUserCounts: async (userId: string, oxyServices: OxyServices) => {
+    // Validate inputs
+    if (!userId || typeof userId !== 'string') {
+      console.error('fetchUserCounts: Invalid userId provided');
+      return;
+    }
+
+    if (!isNotNullOrUndefined(oxyServices)) {
+      console.error('fetchUserCounts: OxyServices instance is not available');
+      return;
+    }
+
     set((state: FollowState) => ({
       loadingCounts: { ...state.loadingCounts, [userId]: true },
     }));
@@ -173,6 +207,7 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
         }));
       }
     } catch (error: unknown) {
+      console.error('fetchUserCounts error:', error);
       set((state: FollowState) => ({
         loadingCounts: { ...state.loadingCounts, [userId]: false },
       }));
