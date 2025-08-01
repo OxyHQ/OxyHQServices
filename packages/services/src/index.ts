@@ -8,7 +8,7 @@
 
 // Core exports
 export { OxyServices, OxyAuthenticationError, OxyAuthenticationTimeoutError } from './core';
-export { OXY_CLOUD_URL } from './core';
+export { OXY_CLOUD_URL, oxyClient } from './core';
 
 // React context
 export { 

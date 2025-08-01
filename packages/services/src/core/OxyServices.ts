@@ -1338,3 +1338,6 @@ export class OxyServices {
 
 // Export the cloud URL constant
 export const OXY_CLOUD_URL = 'https://cloud.oxyhq.com';
+
+// Pre-configured client instance for easy import
+export const oxyClient = new OxyServices({ baseURL: OXY_CLOUD_URL });

@@ -1,242 +1,719 @@
 # OxyHQServices
 
-A TypeScript client library for the Oxy API providing authentication, user management, and UI components for React and React Native applications.
+A comprehensive TypeScript client library for the Oxy API providing authentication, user management, and UI components for React Native, Expo, and Node.js applications.
 
-## Table of Contents
+## 📋 Table of Contents
 
 - [Features](#features)
+- [Installation](#installation)
 - [Quick Start](#quick-start)
-- [Documentation](#documentation)
+- [Usage Patterns](#usage-patterns)
+  - [Frontend (React/React Native)](#frontend-reactreact-native)
+  - [Backend (Node.js)](#backend-nodejs)
+  - [Mixed Applications](#mixed-applications)
+- [API Reference](#api-reference)
+- [Configuration](#configuration)
+- [Authentication](#authentication)
 - [UI Components](#ui-components)
-- [Package Exports](#package-exports)
+- [Troubleshooting](#troubleshooting)
 - [Requirements](#requirements)
-- [Development](#development)
-- [Integration](#integration)
-- [License](#license)
 
-## Features
+## ✨ Features
 
-- 🔐 **Streamlined Authentication**: Zero-config authentication with automatic token management
-- 🔄 **Auto Token Refresh**: Seamless token lifecycle management behind the scenes
-- 👥 **User Management**: Profile operations and social features
-- 🎨 **UI Components**: Pre-built React components for common functionality
-- 📱 **Cross-Platform**: Works in React Native and web applications
-- 🔧 **TypeScript**: Full type safety and IntelliSense support
-- 🚀 **Performance**: Optimized with automatic caching and state management
-- ✨ **Simple API**: All functionality in one unified class - no need to manage multiple service instances
+- 🔐 **Zero-Config Authentication**: Automatic token management and refresh
+- 📱 **React Native First**: Optimized for React Native and Expo applications
+- 🎨 **UI Components**: Pre-built React Native components with built-in bottom sheet
+- 🔄 **Cross-Platform**: Works seamlessly in React Native, Expo, and Node.js
+- 📱 **Multi-Session Support**: Manage multiple user sessions simultaneously
+- 🔧 **TypeScript First**: Full type safety and IntelliSense support
+- 🚀 **Performance Optimized**: Automatic caching and state management
+- 🛡️ **Production Ready**: Error handling, retry logic, and security best practices
 
-## Quick Start
+## 📦 Installation
 
 ```bash
 npm install @oxyhq/services
 ```
 
-### Simple & Unified API
+### React Native/Expo Setup
 
-The new OxyServices provides all functionality in one simple class:
+For React Native and Expo projects, add the polyfill import at the very top of your entry file:
 
-```typescript
-import { OxyServices } from '@oxyhq/services';
-
-const oxy = new OxyServices({ baseURL: 'https://api.example.com' });
-
-// Authentication
-await oxy.signIn('username', 'password');
-await oxy.signUp('username', 'email', 'password');
-
-// User operations
-const user = await oxy.getCurrentUser();
-await oxy.updateProfile({ name: 'John Doe' });
-await oxy.followUser('user123');
-
-// Social features
-const followers = await oxy.getUserFollowers('user123');
-const notifications = await oxy.getNotifications();
-
-// File uploads
-const fileData = await oxy.uploadFile(file);
-
-// Payments
-const payment = await oxy.createPayment(paymentData);
-
-// Location services
-await oxy.updateLocation(40.7128, -74.0060);
-const nearby = await oxy.getNearbyUsers();
-
-// Analytics
-await oxy.trackEvent('user_action', { action: 'click' });
-
-// Everything in one place - no more managing multiple service instances!
+```javascript
+// index.js or App.js (very first line)
+import 'react-native-url-polyfill/auto';
 ```
 
-### Streamlined Authentication (Recommended)
+**Note**: This polyfill is already included in the package dependencies, but you need to import it to activate it.
+
+## 🚀 Quick Start
+
+### React Native/Expo
 
 ```typescript
 import { OxyProvider, useOxy } from '@oxyhq/services';
 
 function App() {
   return (
-    <OxyProvider baseURL="https://api.example.com">
+    <OxyProvider baseURL="https://cloud.oxy.so">
       <YourApp />
     </OxyProvider>
   );
 }
 
 function UserProfile() {
-  const { oxyServices } = useOxy();
+  const { oxyServices, user, isAuthenticated } = useOxy();
   
-  const fetchData = async () => {
-    // No manual authentication needed - everything is automatic!
-    const user = await oxyServices.getCurrentUser();
-    const notifications = await oxyServices.getNotifications();
-  };
+  if (!isAuthenticated) {
+    return <Text>Please sign in</Text>;
+  }
+  
+  return <Text>Welcome, {user?.name}!</Text>;
 }
 ```
 
-### With Built-in Bottom Sheet
-
-The OxyProvider now includes a built-in gorhom bottom sheet - no manual setup required!
+### Backend (Node.js)
 
 ```typescript
-import { OxyProvider, useOxy, OxySignInButton } from '@oxyhq/services';
+import { oxyClient } from '@oxyhq/services';
 
+// Ready to use - no configuration needed!
+app.get('/api/user', async (req, res) => {
+  const user = await oxyClient.getCurrentUser();
+  res.json(user);
+});
+```
+
+## 📖 Usage Patterns
+
+### React Native/Expo
+
+#### 1. **OxyProvider + useOxy Hook (Recommended)**
+
+This pattern provides full React Native integration with automatic state management, UI components, and authentication flow.
+
+```typescript
+import { OxyProvider, useOxy } from '@oxyhq/services';
+
+// App.tsx - Setup the provider
 function App() {
   return (
     <OxyProvider 
-      baseURL="https://api.example.com"
-      initialScreen="SignIn"
-      theme="light"
+      baseURL="https://cloud.oxy.so"
+      onAuthStateChange={(user) => {
+        console.log('Auth state changed:', user ? 'logged in' : 'logged out');
+      }}
     >
       <YourApp />
     </OxyProvider>
   );
 }
 
-function Component() {
-  const { showBottomSheet } = useOxy();
-  
-  const openSignIn = () => {
-    showBottomSheet('SignIn'); // Works automatically!
+// Component.tsx - Use the hook
+function UserProfile() {
+  const { 
+    oxyServices,    // OxyServices instance
+    user,           // Current user data
+    isAuthenticated, // Authentication state
+    login,          // Login method
+    logout,         // Logout method
+    showBottomSheet // UI methods
+  } = useOxy();
+
+  const handleLogin = async () => {
+    try {
+      await login('username', 'password');
+    } catch (error) {
+      console.error('Login failed:', error);
+    }
   };
-  
+
+  const openSignIn = () => {
+    showBottomSheet('SignIn');
+  };
+
   return (
-    <div>
-      <button onClick={openSignIn}>Sign In</button>
-      <OxySignInButton /> {/* Also works automatically! */}
-    </div>
+    <View>
+      {isAuthenticated ? (
+        <View>
+          <Text style={styles.title}>Welcome, {user?.name}!</Text>
+          <TouchableOpacity onPress={logout} style={styles.button}>
+            <Text>Sign Out</Text>
+          </TouchableOpacity>
+        </View>
+      ) : (
+        <TouchableOpacity onPress={openSignIn} style={styles.button}>
+          <Text>Sign In</Text>
+        </TouchableOpacity>
+      )}
+    </View>
   );
 }
 ```
 
-### Simple & Unified API
+#### 2. **Direct Import (Non-React Files)**
+
+For utility functions, services, or non-React Native files:
+
+```typescript
+import { oxyClient } from '@oxyhq/services';
+
+// utils/api.ts
+export const userUtils = {
+  async fetchUserById(userId: string) {
+    return await oxyClient.getUserById(userId);
+  },
+  
+  async fetchProfileByUsername(username: string) {
+    return await oxyClient.getProfileByUsername(username);
+  },
+  
+  async updateUserProfile(updates: any) {
+    return await oxyClient.updateProfile(updates);
+  }
+};
+```
+
+### Backend (Node.js)
+
+#### 1. **Pre-configured Client (Recommended)**
+
+Use the pre-configured `oxyClient` for immediate access:
+
+```typescript
+import { oxyClient } from '@oxyhq/services';
+
+// routes/auth.ts
+export const signIn = async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const response = await oxyClient.signIn(username, password);
+    res.json(response);
+  } catch (error) {
+    res.status(401).json({ error: error.message });
+  }
+};
+
+// routes/users.ts
+export const getUserProfile = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await oxyClient.getUserById(userId);
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// routes/profiles.ts
+export const getProfileByUsername = async (req, res) => {
+  try {
+    const { username } = req.params;
+    const profile = await oxyClient.getProfileByUsername(username);
+    res.json(profile);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+
+// routes/social.ts
+export const getFollowers = async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const followers = await oxyClient.getUserFollowers(userId);
+    res.json(followers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+};
+```
+
+#### 2. **Custom Configuration**
+
+Create your own instance with custom settings:
+
+```typescript
+import { OxyServices, OXY_CLOUD_URL } from '@oxyhq/services';
+
+const oxy = new OxyServices({ 
+  baseURL: process.env.OXY_API_URL || OXY_CLOUD_URL 
+});
+
+export { oxy };
+```
+
+### Mixed Applications (React Native + Backend)
+
+You can use both patterns in the same application:
+
+```typescript
+// App.tsx - React Native setup
+import { OxyProvider } from '@oxyhq/services';
+
+function App() {
+  return (
+    <OxyProvider baseURL="https://cloud.oxy.so">
+      <YourApp />
+    </OxyProvider>
+  );
+}
+
+// utils/api.ts - Direct import
+import { oxyClient } from '@oxyhq/services';
+
+export const apiUtils = {
+  async fetchData() {
+    return await oxyClient.getCurrentUser();
+  }
+};
+
+// Component.tsx - React Native hook
+import { useOxy } from '@oxyhq/services';
+
+function Component() {
+  const { oxyServices } = useOxy();
+  // Both oxyServices and oxyClient share the same tokens!
+}
+```
+
+## 🔧 API Reference
+
+### Core Exports
+
+```typescript
+import { 
+  OxyServices,           // Main service class
+  oxyClient,            // Pre-configured instance
+  OXY_CLOUD_URL,        // Default API URL
+  OxyAuthenticationError,
+  OxyAuthenticationTimeoutError
+} from '@oxyhq/services';
+```
+
+### React Native Exports
+
+```typescript
+import { 
+  OxyProvider,          // Context provider
+  useOxy,              // React Native hook
+  OxySignInButton,     // UI components
+  Avatar,
+  FollowButton
+} from '@oxyhq/services';
+```
+
+### OxyServices Methods
+
+```typescript
+// Authentication
+await oxyClient.signIn(username, password);
+await oxyClient.signUp(username, email, password);
+await oxyClient.logout();
+
+// User Management
+const user = await oxyClient.getCurrentUser();                    // Get current user
+const userById = await oxyClient.getUserById('user123');          // Get user by ID
+const profileByUsername = await oxyClient.getProfileByUsername('john_doe'); // Get profile by username
+await oxyClient.updateProfile({ name: 'John Doe' });             // Update current user
+await oxyClient.updateUser('user123', { name: 'John' });         // Update user by ID (admin)
+
+// Session Management
+const userBySession = await oxyClient.getUserBySession('session123'); // Get user by session
+const sessions = await oxyClient.getSessionsBySessionId('session123'); // Get all sessions
+await oxyClient.logoutSession('session123');                     // Logout specific session
+await oxyClient.logoutAllSessions('session123');                 // Logout all sessions
+
+// Social Features
+await oxyClient.followUser('user123');                           // Follow user
+await oxyClient.unfollowUser('user123');                         // Unfollow user
+const followStatus = await oxyClient.getFollowStatus('user123'); // Check follow status
+const followers = await oxyClient.getUserFollowers('user123');   // Get user followers
+const following = await oxyClient.getUserFollowing('user123');   // Get user following
+
+// Notifications
+const notifications = await oxyClient.getNotifications();        // Get notifications
+const unreadCount = await oxyClient.getUnreadCount();            // Get unread count
+await oxyClient.markNotificationAsRead('notification123');       // Mark as read
+await oxyClient.markAllNotificationsAsRead();                    // Mark all as read
+await oxyClient.deleteNotification('notification123');           // Delete notification
+
+// File Management
+const fileData = await oxyClient.uploadFile(file);               // Upload file
+const file = await oxyClient.getFile('file123');                 // Get file info
+await oxyClient.deleteFile('file123');                           // Delete file
+const downloadUrl = oxyClient.getFileDownloadUrl('file123');     // Get download URL
+const streamUrl = oxyClient.getFileStreamUrl('file123');         // Get stream URL
+const userFiles = await oxyClient.listUserFiles('user123');      // List user files
+
+// Payments
+const payment = await oxyClient.createPayment(paymentData);      // Create payment
+const paymentInfo = await oxyClient.getPayment('payment123');    // Get payment info
+const userPayments = await oxyClient.getUserPayments();          // Get user payments
+
+// Karma System
+const karma = await oxyClient.getUserKarma('user123');           // Get user karma
+await oxyClient.giveKarma('user123', 10, 'helpful comment');     // Give karma
+const karmaTotal = await oxyClient.getUserKarmaTotal('user123'); // Get karma total
+const karmaHistory = await oxyClient.getUserKarmaHistory('user123'); // Get karma history
+const leaderboard = await oxyClient.getKarmaLeaderboard();       // Get leaderboard
+const rules = await oxyClient.getKarmaRules();                   // Get karma rules
+
+// Location Services
+await oxyClient.updateLocation(40.7128, -74.0060);              // Update location
+const nearby = await oxyClient.getNearbyUsers(1000);             // Get nearby users
+
+// Analytics
+await oxyClient.trackEvent('user_action', { action: 'click' });  // Track event
+const analytics = await oxyClient.getAnalytics('2024-01-01', '2024-01-31'); // Get analytics
+
+// Device Management
+await oxyClient.registerDevice(deviceData);                      // Register device
+const devices = await oxyClient.getUserDevices();                // Get user devices
+await oxyClient.removeDevice('device123');                       // Remove device
+const deviceSessions = await oxyClient.getDeviceSessions('session123'); // Get device sessions
+await oxyClient.logoutAllDeviceSessions('session123');           // Logout device sessions
+await oxyClient.updateDeviceName('session123', 'iPhone 15');     // Update device name
+
+// Utilities
+const metadata = await oxyClient.fetchLinkMetadata('https://example.com'); // Fetch link metadata
+```
+
+### useOxy Hook
+
+```typescript
+const { 
+  // Service instance
+  oxyServices,
+  
+  // Authentication state
+  user,
+  isAuthenticated,
+  isLoading,
+  error,
+  
+  // Authentication methods
+  login,
+  logout,
+  signUp,
+  
+  // Session management
+  sessions,
+  activeSessionId,
+  switchSession,
+  removeSession,
+  
+  // UI methods
+  showBottomSheet,
+  hideBottomSheet
+} = useOxy();
+```
+
+## ⚙️ Configuration
+
+### OxyProvider Props
+
+```typescript
+<OxyProvider
+  baseURL="https://cloud.oxy.so"           // API base URL
+  storageKeyPrefix="oxy_session"          // Storage key prefix
+  onAuthStateChange={(user) => {}}        // Auth state callback
+  onError={(error) => {}}                 // Error callback
+  bottomSheetRef={bottomSheetRef}         // Bottom sheet ref
+>
+  {children}
+</OxyProvider>
+```
+
+### Environment Variables
+
+```bash
+# .env
+OXY_API_URL=https://cloud.oxy.so
+NODE_ENV=production
+```
+
+### Custom Configuration
 
 ```typescript
 import { OxyServices } from '@oxyhq/services';
 
 const oxy = new OxyServices({
-  baseURL: 'http://localhost:3000'
+  baseURL: process.env.OXY_API_URL || 'https://cloud.oxy.so'
 });
-
-// Authentication
-const response = await oxy.signIn('username', 'password');
-
-// User operations
-const user = await oxy.getCurrentUser();
-await oxy.updateProfile({ name: 'John Doe' });
-await oxy.followUser('user123');
-
-// Social features
-const followers = await oxy.getUserFollowers('user123');
-const notifications = await oxy.getNotifications();
-
-// File operations
-const fileData = await oxy.uploadFile(file);
-const downloadUrl = oxy.getFileDownloadUrl(fileId);
-
-// Everything is available directly on the oxy instance!
 ```
 
-## Documentation
+## 🔐 Authentication
 
-This package provides a TypeScript client library for the Oxy API with authentication, user management, and UI components.
+### Automatic Token Management
 
-## UI Components
+The library handles authentication automatically:
 
-Import and use pre-built React components:
+- **Token Storage**: Secure storage across sessions
+- **Token Refresh**: Automatic refresh before expiration
+- **Session Management**: Multi-session support
+- **Error Handling**: Graceful handling of auth errors
+
+### Manual Token Management
 
 ```typescript
-import { OxyProvider, Avatar, FollowButton } from '@oxyhq/services/ui';
+import { oxyClient } from '@oxyhq/services';
+
+// Set tokens manually
+oxyClient.setTokens(accessToken, refreshToken);
+
+// Clear tokens
+oxyClient.clearTokens();
+
+// Check authentication
+const isAuthenticated = oxyClient.hasValidToken();
 ```
 
-## Package Exports
+## 🎨 UI Components
 
-The library provides a unified API:
+### Built-in Components
 
 ```typescript
-// Unified OxyServices class (recommended)
-import { OxyServices } from '@oxyhq/services';
+import { 
+  OxySignInButton,
+  Avatar,
+  FollowButton,
+  OxyLogo
+} from '@oxyhq/services';
 
-// All functionality is available directly on the OxyServices instance
-const oxy = new OxyServices({ baseURL: 'https://api.example.com' });
+function MyComponent() {
+  return (
+    <View style={styles.container}>
+      <OxyLogo />
+      <Avatar userId="user123" size={40} />
+      <FollowButton userId="user123" />
+      <OxySignInButton />
+    </View>
+  );
+}
 
-// UI components (React/React Native)
-import { OxyProvider, Avatar } from '@oxyhq/services/ui';
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 16,
+  },
+});
 ```
 
+### Bottom Sheet Integration
 
+```typescript
+import { useOxy } from '@oxyhq/services';
 
-## Requirements
+function MyComponent() {
+  const { showBottomSheet } = useOxy();
+  
+  const openSignIn = () => {
+    showBottomSheet('SignIn');
+  };
+  
+  const openProfile = () => {
+    showBottomSheet('Profile');
+  };
+  
+  return (
+    <View style={styles.container}>
+      <TouchableOpacity onPress={openSignIn} style={styles.button}>
+        <Text>Sign In</Text>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={openProfile} style={styles.button}>
+        <Text>Profile</Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+```
 
-- **Node.js** 16+ (for backend usage)
-- **React** 16.8+ (for React components)
-- **React Native** 0.60+ (for mobile components)
-- **TypeScript** 4.0+ (optional but recommended)
+## 🛠️ Troubleshooting
 
-## Troubleshooting
+### Common Issues
 
-### FormData Issues in React Native/Expo
+#### 1. **"useOxy must be used within an OxyContextProvider"**
 
-If you encounter `ReferenceError: Property 'FormData' doesn't exist` when using Expo with Hermes engine:
+**Solution**: Wrap your app with `OxyProvider`
 
-**For file uploads in React Native/Expo:**
-- The library handles this automatically - no additional setup required
-- File uploads will work with both native FormData (when available) and the polyfilled version
-- Ensure you're using the latest version of the package
+```typescript
+import { OxyProvider } from '@oxyhq/services';
 
-### Additional Dependencies
+function App() {
+  return (
+    <OxyProvider baseURL="https://cloud.oxy.so">
+      <YourApp />
+    </OxyProvider>
+  );
+}
+```
 
-For React Native projects, you may need to install peer dependencies:
+#### 2. **FormData Issues in React Native/Expo**
+
+**Solution**: Add polyfill import at the very top of your entry file
+
+```javascript
+// index.js or App.js (very first line)
+import 'react-native-url-polyfill/auto';
+```
+
+**Why needed**: Your app uses file uploads which require `FormData`. React Native with Hermes engine doesn't include `FormData` natively, so it needs to be polyfilled.
+
+#### 3. **Authentication Not Persisting**
+
+**Solution**: Check storage configuration
+
+```typescript
+<OxyProvider 
+  baseURL="https://cloud.oxy.so"
+  storageKeyPrefix="my_app_oxy"  // Custom storage key
+>
+  {children}
+</OxyProvider>
+```
+
+### Error Handling
+
+```typescript
+import { OxyAuthenticationError } from '@oxyhq/services';
+
+try {
+  await oxyClient.getCurrentUser();
+} catch (error) {
+  if (error instanceof OxyAuthenticationError) {
+    // Handle authentication errors
+    console.log('Auth error:', error.message);
+  } else {
+    // Handle other errors
+    console.log('Other error:', error.message);
+  }
+}
+```
+
+## 📋 Requirements
+
+- **Node.js**: 16+ (for backend usage)
+- **React Native**: 0.60+ (for mobile components)
+- **Expo**: 44+ (recommended)
+- **TypeScript**: 4.0+ (optional but recommended)
+
+### Peer Dependencies
+
+For React Native/Expo projects:
 
 ```bash
 npm install axios jwt-decode invariant
 ```
 
-## Important for React Native Hermes Users
+**Note**: `react-native-url-polyfill` is already included as a dependency in this package.
 
-If you use this package in a React Native app with the Hermes engine, you must add the following import as the very first line of your app's entry file (e.g., App.js or index.js):
+## 📚 Examples
 
-```js
-import 'react-native-url-polyfill/auto';
+### Complete React Native App
+
+```typescript
+// App.tsx
+import { OxyProvider } from '@oxyhq/services';
+
+function App() {
+  return (
+    <OxyProvider baseURL="https://cloud.oxy.so">
+      <UserDashboard />
+    </OxyProvider>
+  );
+}
+
+// UserDashboard.tsx
+import { useOxy } from '@oxyhq/services';
+import { View, Text, StyleSheet } from 'react-native';
+
+function UserDashboard() {
+  const { user, isAuthenticated, oxyServices } = useOxy();
+  
+  const [followers, setFollowers] = useState([]);
+  
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      oxyServices.getUserFollowers(user.id).then(setFollowers);
+    }
+  }, [isAuthenticated, user]);
+  
+  if (!isAuthenticated) {
+    return <Text>Please sign in</Text>;
+  }
+  
+  return (
+    <View style={styles.container}>
+      <Text style={styles.title}>Welcome, {user?.name}!</Text>
+      <Text>Followers: {followers.length}</Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    padding: 16,
+    justifyContent: 'center',
+  },
+  title: {
+    fontSize: 24,
+    fontWeight: 'bold',
+    marginBottom: 16,
+  },
+});
 ```
 
-This ensures that FormData and other web APIs are polyfilled before any dependencies are loaded. If you do not do this, you may see errors like:
+### Complete Backend API
 
-```
-ReferenceError: Property 'FormData' doesn't exist, js engine: hermes
+```typescript
+// server.ts
+import express from 'express';
+import { oxyClient } from '@oxyhq/services';
+
+const app = express();
+app.use(express.json());
+
+// Auth routes
+app.post('/api/auth/signin', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const response = await oxyClient.signIn(username, password);
+    res.json(response);
+  } catch (error) {
+    res.status(401).json({ error: error.message });
+  }
+});
+
+// User routes
+app.get('/api/users/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const user = await oxyClient.getUserById(userId);
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Social routes
+app.get('/api/users/:userId/followers', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const followers = await oxyClient.getUserFollowers(userId);
+    res.json(followers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+app.listen(3000, () => {
+  console.log('Server running on port 3000');
+});
 ```
 
 ---
 
-## Development
-
-```bash
-# Install dependencies
-npm install
-
-# Build the library
-npm run build
-```
-
-## License
+## 📄 License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

@@ -7,7 +7,7 @@
 
 // Main OxyServices class (unified)
 export { OxyServices, OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices';
-export { OXY_CLOUD_URL } from './OxyServices';
+export { OXY_CLOUD_URL, oxyClient } from './OxyServices';
 
 // Re-export all models and types for convenience
 export * from '../models/interfaces';
