@@ -57,8 +57,7 @@ export async function safeServiceCall<T>(
       return null;
     }
 
-    // @ts-ignore - We've already checked that method is a function
-    return await method.apply(oxyServices, args);
+    return await (method as Function).apply(oxyServices, args);
   } catch (error: any) {
     console.error(`safeServiceCall: Error calling ${String(methodName)}:`, error);
     return null;
