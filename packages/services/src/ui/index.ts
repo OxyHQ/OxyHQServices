@@ -7,7 +7,7 @@
 import isFrontend from './isFrontend';
 
 // Real UI exports
-let OxyProvider, OxySignInButton, OxyLogo, Avatar, FollowButton, OxyPayButton, FontLoader, setupFonts, OxyIcon, useOxy, useOxyAuth, useOxyUser, useOxyKarma, useOxyPayments, useOxyDevices, useOxyNotifications, useOxySocket, useOxyQR, useOxyIAP, OxyContextProvider, OxyContextState, OxyContextProviderProps, useFollow, ProfileScreen, OxyRouter, useAuthStore, fontFamilies, fontStyles, toast;
+let OxyProvider, OxySignInButton, OxyLogo, Avatar, FollowButton, OxyPayButton, FontLoader, setupFonts, OxyIcon, useOxy, useSafeOxy, useOxyAuth, useOxyUser, useOxyKarma, useOxyPayments, useOxyDevices, useOxyNotifications, useOxySocket, useOxyQR, useOxyIAP, OxyContextProvider, OxyContextState, OxyContextProviderProps, useFollow, useSearch, ProfileScreen, OxyRouter, useAuthStore, fontFamilies, fontStyles, toast;
 
 if (isFrontend) {
   OxyProvider = require('./components/OxyProvider').default;
@@ -20,10 +20,12 @@ if (isFrontend) {
   setupFonts = require('./components/FontLoader').setupFonts;
   OxyIcon = require('./components/icon').OxyIcon;
   useOxy = require('./context/OxyContext').useOxy;
+  useSafeOxy = require('./context/OxyContext').useSafeOxy;
   OxyContextProvider = require('./context/OxyContext').OxyContextProvider;
   OxyContextState = require('./context/OxyContext').OxyContextState;
   OxyContextProviderProps = require('./context/OxyContext').OxyContextProviderProps;
   useFollow = require('./hooks').useFollow;
+  useSearch = require('./hooks').useSearch;
   ProfileScreen = require('./screens/ProfileScreen').default;
   OxyRouter = require('./navigation/OxyRouter').default;
   useAuthStore = require('./stores/authStore').useAuthStore;
@@ -44,10 +46,12 @@ if (isFrontend) {
   setupFonts = () => {};
   OxyIcon = noopComponent;
   useOxy = noopHook;
+  useSafeOxy = noopHook;
   OxyContextProvider = noopComponent;
   OxyContextState = {};
   OxyContextProviderProps = {};
   useFollow = noopHook;
+  useSearch = noopHook;
   ProfileScreen = noopComponent;
   OxyRouter = noopComponent;
   useAuthStore = noopHook;
@@ -67,10 +71,12 @@ export {
   setupFonts,
   OxyIcon,
   useOxy,
+  useSafeOxy,
   OxyContextProvider,
   OxyContextState,
   OxyContextProviderProps,
   useFollow,
+  useSearch,
   ProfileScreen,
   OxyRouter,
   useAuthStore,

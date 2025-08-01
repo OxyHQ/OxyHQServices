@@ -778,4 +778,25 @@ export const useOxy = (): OxyContextState => {
   return context;
 };
 
+/**
+ * Safe hook to use OxyServices - returns null if service is not ready
+ * Use this when you want to handle the case where service might not be available
+ * instead of throwing an error
+ */
+export const useSafeOxy = (): OxyContextState | null => {
+  const context = useContext(OxyContext);
+  
+  if (!context) {
+    console.warn('useSafeOxy: Not used within OxyContextProvider');
+    return null;
+  }
+
+  if (!isNotNullOrUndefined(context.oxyServices)) {
+    console.warn('useSafeOxy: OxyServices is not available in context');
+    return null;
+  }
+
+  return context;
+};
+
 export default OxyContext;

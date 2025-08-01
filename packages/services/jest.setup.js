@@ -1,5 +1,4 @@
-// Jest setup file
-// Note: react-native-url-polyfill is mocked instead of imported to avoid ES module issues
+// Jest setup file - Simplified for core functionality testing
 
 // Mock React Native modules that don't exist in Node.js environment
 jest.mock('react-native', () => ({
