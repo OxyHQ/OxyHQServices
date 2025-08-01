@@ -1,9 +1,16 @@
 import { useCallback, useMemo } from 'react';
 import { useFollowStore } from '../stores/followStore';
 import { useOxy } from '../context/OxyContext';
+import { isNotNullOrUndefined } from '../../utils/validationUtils';
 
 export const useFollow = (userId?: string | string[]) => {
   const { oxyServices } = useOxy();
+  
+  // Validate oxyServices is available
+  if (!isNotNullOrUndefined(oxyServices)) {
+    throw new Error('OxyServices is not available. Ensure you are using useFollow within an OxyProvider.');
+  }
+  
   const userIds = useMemo(() => (Array.isArray(userId) ? userId : userId ? [userId] : []), [userId]);
   const isSingleUser = typeof userId === 'string';
 
@@ -136,6 +143,12 @@ export const useFollow = (userId?: string | string[]) => {
 // Convenience hook for just follower counts
 export const useFollowerCounts = (userId: string) => {
   const { oxyServices } = useOxy();
+  
+  // Validate oxyServices is available
+  if (!isNotNullOrUndefined(oxyServices)) {
+    throw new Error('OxyServices is not available. Ensure you are using useFollowerCounts within an OxyProvider.');
+  }
+  
   const followState = useFollowStore();
 
   const followerCount = followState.followerCounts[userId] ?? null;

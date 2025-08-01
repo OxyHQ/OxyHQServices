@@ -2,8 +2,9 @@ import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axio
 import { jwtDecode } from 'jwt-decode';
 import type { OxyConfig, ApiError, User, Notification } from '../models/interfaces';
 import type { SessionLoginResponse } from '../models/session';
-import { handleHttpError } from '../utils/errorUtils';
+import { handleHttpError, createApiError, ErrorCodes } from '../utils/errorUtils';
 import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
+import { isRequiredString, isNotNullOrUndefined, validateServiceInstance } from '../utils/validationUtils';
 
 interface JwtPayload {
   exp?: number;
@@ -92,6 +93,23 @@ export class OxyServices {
    * @param config - Configuration for the client
    */
   constructor(config: OxyConfig) {
+    // Validate configuration
+    if (!isNotNullOrUndefined(config)) {
+      throw createApiError(
+        'Configuration is required',
+        ErrorCodes.VALIDATION_ERROR,
+        400
+      );
+    }
+
+    if (!isRequiredString(config.baseURL)) {
+      throw createApiError(
+        'baseURL is required in configuration',
+        ErrorCodes.VALIDATION_ERROR,
+        400
+      );
+    }
+
     this.client = axios.create({ 
       baseURL: config.baseURL,
       timeout: 10000 // 10 second timeout
@@ -386,10 +404,44 @@ export class OxyServices {
    * Sign up a new user
    */
   async signUp(username: string, email: string, password: string): Promise<{ message: string; token: string; user: User }> {
+    // Validate inputs
+    if (!isRequiredString(username)) {
+      throw createApiError(
+        'Username is required and must be a non-empty string',
+        ErrorCodes.VALIDATION_ERROR,
+        400
+      );
+    }
+
+    if (!isRequiredString(email)) {
+      throw createApiError(
+        'Email is required and must be a non-empty string',
+        ErrorCodes.VALIDATION_ERROR,
+        400
+      );
+    }
+
+    if (!isRequiredString(password)) {
+      throw createApiError(
+        'Password is required and must be a non-empty string',
+        ErrorCodes.VALIDATION_ERROR,
+        400
+      );
+    }
+
+    // Validate service is initialized
+    if (!isNotNullOrUndefined(this.client)) {
+      throw createApiError(
+        'Service client is not initialized',
+        ErrorCodes.INTERNAL_ERROR,
+        500
+      );
+    }
+
     try {
       const res = await this.client.post('/api/auth/signup', {
-        username,
-        email,
+        username: username.trim(),
+        email: email.trim(),
         password
       });
       return res.data;
@@ -402,9 +454,35 @@ export class OxyServices {
    * Sign in with device management
    */
   async signIn(username: string, password: string, deviceName?: string, deviceFingerprint?: any): Promise<SessionLoginResponse> {
+    // Validate inputs
+    if (!isRequiredString(username)) {
+      throw createApiError(
+        'Username is required and must be a non-empty string',
+        ErrorCodes.VALIDATION_ERROR,
+        400
+      );
+    }
+
+    if (!isRequiredString(password)) {
+      throw createApiError(
+        'Password is required and must be a non-empty string',
+        ErrorCodes.VALIDATION_ERROR,
+        400
+      );
+    }
+
+    // Validate service is initialized
+    if (!isNotNullOrUndefined(this.client)) {
+      throw createApiError(
+        'Service client is not initialized',
+        ErrorCodes.INTERNAL_ERROR,
+        500
+      );
+    }
+
     try {
       const res = await this.client.post('/api/auth/login', {
-        username,
+        username: username.trim(),
         password,
         deviceName,
         deviceFingerprint
@@ -419,8 +497,26 @@ export class OxyServices {
    * Get user by session ID
    */
   async getUserBySession(sessionId: string): Promise<User> {
+    // Validate inputs
+    if (!isRequiredString(sessionId)) {
+      throw createApiError(
+        'Session ID is required and must be a non-empty string',
+        ErrorCodes.VALIDATION_ERROR,
+        400
+      );
+    }
+
+    // Validate service is initialized
+    if (!isNotNullOrUndefined(this.client)) {
+      throw createApiError(
+        'Service client is not initialized',
+        ErrorCodes.INTERNAL_ERROR,
+        500
+      );
+    }
+
     try {
-      const res = await this.client.get(`/api/session/user/${sessionId}`);
+      const res = await this.client.get(`/api/session/user/${sessionId.trim()}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -565,13 +661,32 @@ export class OxyServices {
    * Search user profiles
    */
   async searchProfiles(query: string, pagination?: PaginationParams): Promise<User[]> {
+    // Validate inputs
+    if (!isRequiredString(query)) {
+      throw createApiError(
+        'Search query is required and must be a non-empty string',
+        ErrorCodes.VALIDATION_ERROR,
+        400
+      );
+    }
+
+    // Validate service is initialized
+    if (!isNotNullOrUndefined(this.client)) {
+      throw createApiError(
+        'Service client is not initialized',
+        ErrorCodes.INTERNAL_ERROR,
+        500
+      );
+    }
+
     try {
-      const params = { query, ...pagination };
+      const params = { query: query.trim(), ...pagination };
       const searchParams = buildSearchParams(params);
       
       const res = await this.client.get(`/api/profiles/search?${searchParams.toString()}`);
-      return res.data;
+      return res.data || [];
     } catch (error) {
+      console.error('Search error:', error);
       throw this.handleError(error);
     }
   }

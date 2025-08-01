@@ -155,4 +155,61 @@ export function validateAndSanitizeUserInput(input: unknown, type: 'string' | 'e
     default:
       return null;
   }
+}
+
+/**
+ * Check if value is not null or undefined
+ */
+export function isNotNullOrUndefined<T>(value: T | null | undefined): value is T {
+  return value !== null && value !== undefined;
+}
+
+/**
+ * Safe property access - returns null if object is null/undefined
+ */
+export function safeGet<T, K extends keyof T>(obj: T | null | undefined, key: K): T[K] | null {
+  return isNotNullOrUndefined(obj) ? obj[key] : null;
+}
+
+/**
+ * Safe method call - only calls if object and method exist
+ */
+export function safeCall<T, K extends keyof T>(
+  obj: T | null | undefined, 
+  method: K, 
+  ...args: T[K] extends (...args: any[]) => any ? Parameters<T[K]> : never[]
+): T[K] extends (...args: any[]) => any ? ReturnType<T[K]> | null : null {
+  if (isNotNullOrUndefined(obj) && typeof obj[method] === 'function') {
+    return (obj[method] as any)(...args);
+  }
+  return null;
+}
+
+/**
+ * Validate service instance is ready for use
+ */
+export function validateServiceInstance(service: unknown, serviceName = 'Service'): void {
+  if (!isNotNullOrUndefined(service)) {
+    throw new Error(`${serviceName} instance is not initialized or has been cleared`);
+  }
+  
+  if (typeof service !== 'object') {
+    throw new Error(`${serviceName} instance is not a valid object`);
+  }
+}
+
+/**
+ * Safe async method call with error handling
+ */
+export async function safeAsyncCall<T>(
+  asyncFn: () => Promise<T>,
+  fallbackValue: T,
+  errorMessage?: string
+): Promise<T> {
+  try {
+    return await asyncFn();
+  } catch (error) {
+    console.error(errorMessage || 'Async operation failed:', error);
+    return fallbackValue;
+  }
 } 
