@@ -1,5 +1,6 @@
-import React, { useState, useRef, useCallback } from 'react';
-import { View, Text, Animated, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, StatusBar, TextInput } from 'react-native';
+import type React from 'react';
+import { useState, useRef, useCallback } from 'react';
+import { View, Text, Animated, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, StatusBar, type TextInput } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import TextField from '../components/internal/TextField';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';

@@ -12,7 +12,7 @@ import {
     Platform,
     Image,
 } from 'react-native';
-import { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import Avatar from '../components/Avatar';
 import OxyIcon from '../components/icon/OxyIcon';
@@ -363,8 +363,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 locationData.type === 'country' ? 'Country' :
                     locationData.type === 'state' ? 'State' : 'Location',
             coordinates: {
-                lat: parseFloat(locationData.lat),
-                lon: parseFloat(locationData.lon)
+                lat: Number.parseFloat(locationData.lat),
+                lon: Number.parseFloat(locationData.lon)
             }
         };
 

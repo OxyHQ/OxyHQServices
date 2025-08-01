@@ -1,6 +1,6 @@
-import React from 'react';
+import type React from 'react';
 import Svg, { Circle, Path } from 'react-native-svg';
-import { ViewStyle } from 'react-native';
+import type { ViewStyle } from 'react-native';
 import { useThemeColors } from '../styles/theme';
 
 interface OxyLogoProps {

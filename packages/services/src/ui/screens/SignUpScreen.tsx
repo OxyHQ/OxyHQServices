@@ -13,7 +13,7 @@ import {
     StatusBar,
     Alert,
 } from 'react-native';
-import { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { useThemeColors, createCommonStyles, createAuthStyles } from '../styles';
 import { Ionicons } from '@expo/vector-icons';

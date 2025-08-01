@@ -1,9 +1,9 @@
-import axios, { AxiosInstance, InternalAxiosRequestConfig } from 'axios';
+import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 import { jwtDecode } from 'jwt-decode';
-import { OxyConfig, ApiError, User, Notification } from '../models/interfaces';
-import { SessionLoginResponse } from '../models/session';
+import type { OxyConfig, ApiError, User, Notification } from '../models/interfaces';
+import type { SessionLoginResponse } from '../models/session';
 import { handleHttpError } from '../utils/errorUtils';
-import { buildSearchParams, buildPaginationParams, PaginationParams } from '../utils/apiUtils';
+import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
 
 interface JwtPayload {
   exp?: number;
@@ -20,7 +20,7 @@ export class OxyAuthenticationError extends Error {
   public readonly code: string;
   public readonly status: number;
 
-  constructor(message: string, code: string = 'AUTH_ERROR', status: number = 401) {
+  constructor(message: string, code = 'AUTH_ERROR', status = 401) {
     super(message);
     this.name = 'OxyAuthenticationError';
     this.code = code;
@@ -60,7 +60,7 @@ class TokenStore {
     return TokenStore.instance;
   }
 
-  setTokens(accessToken: string, refreshToken: string = ''): void {
+  setTokens(accessToken: string, refreshToken = ''): void {
     this.accessToken = accessToken;
     this.refreshToken = refreshToken;
   }
@@ -194,7 +194,7 @@ export class OxyServices {
   /**
    * Set authentication tokens
    */
-  public setTokens(accessToken: string, refreshToken: string = ''): void {
+  public setTokens(accessToken: string, refreshToken = ''): void {
     this.tokenStore.setTokens(accessToken, refreshToken);
   }
 
@@ -240,14 +240,14 @@ export class OxyServices {
    * Wait for authentication to be ready (public method)
    * Useful for apps that want to ensure authentication is complete before proceeding
    */
-  public async waitForAuth(timeoutMs: number = 5000): Promise<boolean> {
+  public async waitForAuth(timeoutMs = 5000): Promise<boolean> {
     return this.waitForAuthentication(timeoutMs);
   }
 
   /**
    * Wait for authentication to be ready with timeout
    */
-  private async waitForAuthentication(timeoutMs: number = 5000): Promise<boolean> {
+  private async waitForAuthentication(timeoutMs = 5000): Promise<boolean> {
     const startTime = Date.now();
     const checkInterval = 100; // Check every 100ms
 

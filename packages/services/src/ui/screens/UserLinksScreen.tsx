@@ -1,7 +1,7 @@
-import React from 'react';
+import type React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Linking } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../navigation/types';
 import { Header, GroupedSection } from '../components';
 
 interface UserLinksScreenProps extends BaseScreenProps {

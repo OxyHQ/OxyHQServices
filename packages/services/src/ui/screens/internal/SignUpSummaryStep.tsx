@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import { View, Text, Animated, TouchableOpacity } from 'react-native';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 

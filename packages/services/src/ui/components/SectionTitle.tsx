@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import { Text, StyleSheet } from 'react-native';
 import { fontFamilies } from '../styles/fonts';
 

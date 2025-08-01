@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, Image, StyleSheet, StyleProp, ViewStyle, ImageStyle, TextStyle, ActivityIndicator, Platform } from 'react-native';
+import type React from 'react';
+import { View, Text, Image, StyleSheet, type StyleProp, type ViewStyle, type ImageStyle, type TextStyle, ActivityIndicator, Platform } from 'react-native';
 import { useThemeColors } from '../styles';
 import { fontFamilies } from '../styles/fonts';
 

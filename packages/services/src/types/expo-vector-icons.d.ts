@@ -1,3 +1,10 @@
 declare module '@expo/vector-icons' {
-  export const Ionicons: any;
+  import type React from 'react';
+  
+  export const Ionicons: React.ComponentType<{
+    name: string;
+    size?: number;
+    color?: string;
+    style?: Record<string, unknown>;
+  }>;
 }

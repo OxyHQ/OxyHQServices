@@ -1,4 +1,4 @@
-import { ApiError } from '../models/interfaces';
+import type { ApiError } from '../models/interfaces';
 
 /**
  * Error handling utilities for consistent error processing
@@ -40,8 +40,8 @@ export const ErrorCodes = {
 export function createApiError(
   message: string,
   code: string = ErrorCodes.INTERNAL_ERROR,
-  status: number = 500,
-  details?: any
+  status = 500,
+  details?: Record<string, unknown>
 ): ApiError {
   return {
     message,
@@ -54,26 +54,29 @@ export function createApiError(
 /**
  * Handle common HTTP errors and convert to ApiError
  */
-export function handleHttpError(error: any): ApiError {
+export function handleHttpError(error: unknown): ApiError {
   // If it's already an ApiError, return it
   if (error && typeof error === 'object' && 'code' in error && 'status' in error) {
     return error as ApiError;
   }
 
-  // Handle axios errors
-  if (error?.response) {
-    const { status, data } = error.response;
-    
-    return createApiError(
-      data?.message || `HTTP ${status} error`,
-      data?.code || getErrorCodeFromStatus(status),
-      status,
-      data
-    );
+  // Handle axios errors - check if it looks like an axios error
+  if (error && typeof error === 'object' && 'response' in error) {
+    const axiosError = error as { response?: { status: number; data?: { message?: string; code?: string } } };
+    if (axiosError.response) {
+      const { status, data } = axiosError.response;
+      
+      return createApiError(
+        data?.message || `HTTP ${status} error`,
+        data?.code || getErrorCodeFromStatus(status),
+        status,
+        data
+      );
+    }
   }
 
-  // Handle network errors
-  if (error?.request) {
+  // Handle network errors - check if it looks like a network error
+  if (error && typeof error === 'object' && 'request' in error) {
     return createApiError(
       'Network error - no response received',
       ErrorCodes.NETWORK_ERROR,
@@ -81,9 +84,18 @@ export function handleHttpError(error: any): ApiError {
     );
   }
 
+  // Handle standard errors
+  if (error instanceof Error) {
+    return createApiError(
+      error.message || 'Unknown error occurred',
+      ErrorCodes.INTERNAL_ERROR,
+      500
+    );
+  }
+
   // Handle other errors
   return createApiError(
-    error?.message || 'Unknown error occurred',
+    String(error) || 'Unknown error occurred',
     ErrorCodes.INTERNAL_ERROR,
     500
   );
@@ -118,7 +130,7 @@ function getErrorCodeFromStatus(status: number): string {
 /**
  * Validate required fields and throw error if missing
  */
-export function validateRequiredFields(data: Record<string, any>, fields: string[]): void {
+export function validateRequiredFields(data: Record<string, unknown>, fields: string[]): void {
   const missing = fields.filter(field => !data[field]);
   
   if (missing.length > 0) {
@@ -133,7 +145,7 @@ export function validateRequiredFields(data: Record<string, any>, fields: string
 /**
  * Safe error logging with context
  */
-export function logError(error: any, context?: string): void {
+export function logError(error: unknown, context?: string): void {
   const prefix = context ? `[${context}]` : '[Error]';
   
   if (error instanceof Error) {
@@ -148,10 +160,10 @@ export function logError(error: any, context?: string): void {
  */
 export async function retryWithBackoff<T>(
   fn: () => Promise<T>,
-  maxRetries: number = 3,
-  baseDelay: number = 1000
+  maxRetries = 3,
+  baseDelay = 1000
 ): Promise<T> {
-  let lastError: any;
+  let lastError: unknown;
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -163,7 +175,7 @@ export async function retryWithBackoff<T>(
         break;
       }
       
-      const delay = baseDelay * Math.pow(2, attempt);
+      const delay = baseDelay * 2 ** attempt;
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }

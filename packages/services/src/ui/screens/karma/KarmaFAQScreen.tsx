@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, TextInput, LayoutAnimation, UIManager } from 'react-native';
-import { BaseScreenProps } from '../../navigation/types';
+import type { BaseScreenProps } from '../../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import { Header } from '../../components';
 

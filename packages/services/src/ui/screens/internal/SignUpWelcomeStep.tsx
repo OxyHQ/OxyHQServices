@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import { View, Text, Animated } from 'react-native';
 import HighFive from '../../../assets/illustrations/HighFive';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';

@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { TouchableOpacity, Text, View, StyleSheet, ViewStyle, TextStyle, StyleProp, LayoutChangeEvent } from 'react-native';
+import type React from 'react';
+import { useState } from 'react';
+import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyle, type StyleProp, type LayoutChangeEvent } from 'react-native';
 import { fontFamilies } from '../styles/fonts';
 import { useOxy } from '../context/OxyContext';
 import type { PaymentItem } from '../screens/PaymentGatewayScreen';
@@ -93,9 +94,9 @@ function isColorDark(hex: string) {
     let c = hex.replace('#', '');
     if (c.length === 3) c = c.split('').map(x => x + x).join('');
     if (c.length !== 6) return false;
-    const r = parseInt(c.substr(0, 2), 16);
-    const g = parseInt(c.substr(2, 2), 16);
-    const b = parseInt(c.substr(4, 2), 16);
+    const r = Number.parseInt(c.substr(0, 2), 16);
+    const g = Number.parseInt(c.substr(2, 2), 16);
+    const b = Number.parseInt(c.substr(4, 2), 16);
     // Perceived luminance
     return (0.299 * r + 0.587 * g + 0.114 * b) < 150;
 }

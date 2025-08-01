@@ -11,7 +11,7 @@ import {
     Image,
     TextStyle,
 } from 'react-native';
-import { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from '../components/OxyLogo';
 import Avatar from '../components/Avatar';

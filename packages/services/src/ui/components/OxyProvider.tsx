@@ -1,15 +1,16 @@
-import React, { useCallback, useRef, useState, useEffect, useMemo } from 'react';
+import type React from 'react';
+import { useCallback, useRef, useState, useEffect, useMemo } from 'react';
 import { View, Text, StyleSheet, Dimensions, Platform, Animated, StatusBar, Keyboard, KeyboardEvent } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { OxyProviderProps } from '../navigation/types';
+import type { OxyProviderProps } from '../navigation/types';
 import { OxyContextProvider, useOxy } from '../context/OxyContext';
 import OxyRouter from '../navigation/OxyRouter';
 import { FontLoader, setupFonts } from './FontLoader';
 import { Toaster } from '../../lib/sonner';
 
 // Import bottom sheet components directly - no longer a peer dependency
-import { BottomSheetModal, BottomSheetBackdrop, BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop, type BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetModalMethods as BottomSheetModalRef } from '@gorhom/bottom-sheet/lib/typescript/types';
 
 // Initialize fonts automatically
@@ -145,7 +146,9 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 }
             };
 
-            console.log('Bottom sheet ref methods exposed:', Object.keys(bottomSheetRef.current));
+            if (bottomSheetRef.current && typeof bottomSheetRef.current === 'object') {
+                console.log('Bottom sheet ref methods exposed:', Object.keys(bottomSheetRef.current));
+            }
         }
     }, [bottomSheetRef, modalRef]);
     // Keyboard handling (unchanged)

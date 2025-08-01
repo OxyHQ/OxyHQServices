@@ -1,6 +1,6 @@
-import React from 'react';
+import type React from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform } from 'react-native';
-import { BaseScreenProps } from '../../navigation/types';
+import type { BaseScreenProps } from '../../navigation/types';
 import { Header } from '../../components';
 
 const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
