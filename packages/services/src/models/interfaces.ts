@@ -9,13 +9,13 @@ export interface User {
   avatar?: {
     id?: string;
     url?: string;
-    [key: string]: any;
+    [key: string]: unknown;
   };
   name?: {
     first?: string;
     last?: string;
     full?: string; // virtual, not stored in DB, returned by API
-    [key: string]: any;
+    [key: string]: unknown;
   };
   bio?: string;
   karma?: number;
@@ -29,7 +29,16 @@ export interface User {
     image?: string;
     link: string;
   }>;
-  [key: string]: any;
+  // Social counts - can be returned by API in different formats
+  _count?: {
+    followers?: number;
+    following?: number;
+  };
+  stats?: {
+    followers?: number;
+    following?: number;
+  };
+  [key: string]: unknown;
 }
 
 export interface LoginResponse {
@@ -111,7 +120,7 @@ export interface ApiError {
   message: string;
   code: string;
   status: number;
-  details?: any;
+  details?: Record<string, unknown>;
 }
 
 export interface PaymentMethod {
@@ -163,7 +172,7 @@ export interface FileMetadata {
     description?: string;
     title?: string;
     tags?: string[];
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 
@@ -183,7 +192,7 @@ export interface FileUpdateRequest {
     description?: string;
     title?: string;
     tags?: string[];
-    [key: string]: any;
+    [key: string]: unknown;
   };
 }
 

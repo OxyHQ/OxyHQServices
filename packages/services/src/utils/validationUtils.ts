@@ -41,35 +41,35 @@ export function isValidPassword(password: string): boolean {
 /**
  * Validate required string
  */
-export function isRequiredString(value: any): boolean {
+export function isRequiredString(value: unknown): boolean {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
 /**
  * Validate required number
  */
-export function isRequiredNumber(value: any): boolean {
-  return typeof value === 'number' && !isNaN(value);
+export function isRequiredNumber(value: unknown): boolean {
+  return typeof value === 'number' && !Number.isNaN(value);
 }
 
 /**
  * Validate required boolean
  */
-export function isRequiredBoolean(value: any): boolean {
+export function isRequiredBoolean(value: unknown): boolean {
   return typeof value === 'boolean';
 }
 
 /**
  * Validate array
  */
-export function isValidArray(value: any): boolean {
+export function isValidArray(value: unknown): boolean {
   return Array.isArray(value);
 }
 
 /**
  * Validate object
  */
-export function isValidObject(value: any): boolean {
+export function isValidObject(value: unknown): boolean {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
@@ -98,7 +98,7 @@ export function isValidURL(url: string): boolean {
  */
 export function isValidDate(dateString: string): boolean {
   const date = new Date(dateString);
-  return !isNaN(date.getTime());
+  return !Number.isNaN(date.getTime());
 }
 
 /**
@@ -138,7 +138,7 @@ export function sanitizeHTML(input: string): string {
 /**
  * Validate and sanitize user input
  */
-export function validateAndSanitizeUserInput(input: any, type: 'string' | 'email' | 'username'): string | null {
+export function validateAndSanitizeUserInput(input: unknown, type: 'string' | 'email' | 'username'): string | null {
   if (typeof input !== 'string') {
     return null;
   }

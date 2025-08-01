@@ -4,7 +4,10 @@
  * In backend: exports a no-op function
  */
 
-let toast: any;
+// Define a type for the toast function
+type ToastFunction = (message: string, options?: Record<string, unknown>) => void;
+
+let toast: ToastFunction;
 
 // Environment detection
 const isFrontend = typeof window !== 'undefined' || 

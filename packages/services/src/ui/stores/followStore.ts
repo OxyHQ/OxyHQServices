@@ -163,16 +163,16 @@ export const useFollowStore = create<FollowState>((set: any, get: any) => ({
         set((state: FollowState) => ({
           followerCounts: { 
             ...state.followerCounts, 
-            [userId]: user._count.followers || 0 
+            [userId]: user._count?.followers || 0 
           },
           followingCounts: { 
             ...state.followingCounts, 
-            [userId]: user._count.following || 0 
+            [userId]: user._count?.following || 0 
           },
           loadingCounts: { ...state.loadingCounts, [userId]: false },
         }));
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       set((state: FollowState) => ({
         loadingCounts: { ...state.loadingCounts, [userId]: false },
       }));

@@ -196,12 +196,12 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
     // Device session management functions
     const loadAllDeviceSessions = async () => {
-        if (!oxyServices || !user?.sessionId) return;
+        if (!oxyServices || !activeSessionId) return;
 
         setLoadingDeviceSessions(true);
         try {
             // This would call the API to get all device sessions for the current user
-            const allSessions = await oxyServices.getDeviceSessions(user.sessionId);
+            const allSessions = await oxyServices.getDeviceSessions(activeSessionId);
             setDeviceSessions(allSessions || []);
         } catch (error) {
             console.error('Failed to load device sessions:', error);
@@ -217,7 +217,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             async () => {
                 setRemoteLogoutSessionId(sessionId);
                 try {
-                    await oxyServices?.logoutSession(user?.sessionId || '', sessionId);
+                    await oxyServices?.logoutSession(activeSessionId || '', sessionId);
                     // Refresh device sessions list
                     await loadAllDeviceSessions();
                     toast.success(`Signed out from ${deviceName} successfully!`);
@@ -244,7 +244,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             async () => {
                 setLoggingOutAllDevices(true);
                 try {
-                    await oxyServices?.logoutAllDeviceSessions(user?.sessionId || '');
+                    await oxyServices?.logoutAllDeviceSessions(activeSessionId || '');
                     // Refresh device sessions list
                     await loadAllDeviceSessions();
                     toast.success('Signed out from all other devices successfully!');
