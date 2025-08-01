@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import type React from 'react';
+import { useState, useEffect } from 'react';
 import { Text, View, ActivityIndicator, StyleSheet, Platform } from 'react-native';
 import * as Font from 'expo-font';
 
@@ -160,8 +161,9 @@ export const setupFonts = async () => {
         }
 
         return true;
-    } catch (error: any) {
-        console.warn('Error setting up fonts:', error?.message || error);
+    } catch (error: unknown) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.warn('Error setting up fonts:', errorMessage);
         return false;
     }
 };

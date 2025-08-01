@@ -1,8 +1,8 @@
-import React, { createContext, useContext, useEffect, useCallback, ReactNode, useMemo, useRef, useState } from 'react';
+import React, { createContext, useContext, useEffect, useCallback, type ReactNode, useMemo, useRef, useState } from 'react';
 import { View, Text } from 'react-native';
 import { OxyServices } from '../../core';
-import { User, ApiError } from '../../models/interfaces';
-import { SessionLoginResponse, ClientSession, MinimalUserData } from '../../models/session';
+import type { User, ApiError } from '../../models/interfaces';
+import type { SessionLoginResponse, ClientSession, MinimalUserData } from '../../models/session';
 import { DeviceManager } from '../../utils/deviceManager';
 import { useSessionSocket } from '../hooks/useSessionSocket';
 import { toast } from '../../lib/sonner';

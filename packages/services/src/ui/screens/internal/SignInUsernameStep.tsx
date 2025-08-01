@@ -1,5 +1,6 @@
-import React, { useRef } from 'react';
-import { TextInput, View, Text, Animated } from 'react-native';
+import type React from 'react';
+import { useRef } from 'react';
+import { type TextInput, View, Text, Animated } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import HighFive from '../../../assets/illustrations/HighFive';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';

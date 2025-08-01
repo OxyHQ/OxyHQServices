@@ -14,7 +14,7 @@ import {
     Alert,
     Dimensions,
 } from 'react-native';
-import { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { useThemeColors } from '../styles';
 import { Ionicons } from '@expo/vector-icons';

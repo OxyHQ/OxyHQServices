@@ -30,7 +30,7 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
   fetchUser: async (oxyServices, forceRefresh = false) => {
     const state = get();
     const now = Date.now();
-    const cacheAge = state.lastUserFetch ? now - state.lastUserFetch : Infinity;
+    const cacheAge = state.lastUserFetch ? now - state.lastUserFetch : Number.POSITIVE_INFINITY;
     const cacheValid = cacheAge < 5 * 60 * 1000; // 5 minutes cache
 
     // Use cached data if available and not forcing refresh

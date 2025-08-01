@@ -41,7 +41,7 @@ describe('Validation Utils', () => {
     });
 
     it('should return false for invalid numbers', () => {
-      expect(isRequiredNumber(NaN)).toBe(false);
+      expect(isRequiredNumber(Number.NaN)).toBe(false);
       expect(isRequiredNumber('123')).toBe(false);
       expect(isRequiredNumber(null)).toBe(false);
       expect(isRequiredNumber(undefined)).toBe(false);

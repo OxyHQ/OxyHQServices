@@ -1,4 +1,5 @@
-import React, { useState, useRef, useMemo, useCallback, useEffect } from 'react';
+import type React from 'react';
+import { useState, useRef, useMemo, useCallback, useEffect } from 'react';
 import {
     View,
     Text,
@@ -15,7 +16,7 @@ import {
     Clipboard,
     useWindowDimensions,
 } from 'react-native';
-import { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../navigation/types';
 import { fontFamilies, useThemeColors, createCommonStyles } from '../styles';
 import OxyLogo from '../components/OxyLogo';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';

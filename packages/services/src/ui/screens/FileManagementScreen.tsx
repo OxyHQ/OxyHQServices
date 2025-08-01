@@ -13,12 +13,12 @@ import {
     TextInput,
     Image,
 } from 'react-native';
-import { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
-import { FileMetadata } from '../../models/interfaces';
+import type { FileMetadata } from '../../models/interfaces';
 
 interface FileManagementScreenProps extends BaseScreenProps {
     userId?: string;
@@ -455,7 +455,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         const k = 1024;
         const sizes = ['Bytes', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     };
 
     const getFileIcon = (contentType: string): string => {

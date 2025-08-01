@@ -1,6 +1,6 @@
-import { OxyServices } from '../../core';
-import { User } from '../../models/interfaces';
-import { ComponentType, ReactNode } from 'react';
+import type { OxyServices } from '../../core';
+import type { User } from '../../models/interfaces';
+import type { ComponentType, ReactNode } from 'react';
 
 /**
  * Base props for all screens in the Oxy UI system

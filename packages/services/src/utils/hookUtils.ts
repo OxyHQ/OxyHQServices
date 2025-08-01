@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
  */
 export function useAsync<T>(
   asyncFn: () => Promise<T>,
-  deps: any[] = []
+  deps: React.DependencyList = []
 ) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(false);
@@ -40,7 +40,7 @@ export function useAsync<T>(
  */
 export function useAsyncEffect<T>(
   asyncFn: () => Promise<T>,
-  deps: any[] = []
+  deps: React.DependencyList = []
 ) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
@@ -133,7 +133,7 @@ export function usePrevious<T>(value: T): T | undefined {
 /**
  * Hook for boolean state with toggle
  */
-export function useToggle(initialValue: boolean = false) {
+export function useToggle(initialValue = false) {
   const [value, setValue] = useState(initialValue);
   
   const toggle = useCallback(() => setValue(v => !v), []);
@@ -146,7 +146,7 @@ export function useToggle(initialValue: boolean = false) {
 /**
  * Hook for counter state
  */
-export function useCounter(initialValue: number = 0) {
+export function useCounter(initialValue = 0) {
   const [count, setCount] = useState(initialValue);
   
   const increment = useCallback(() => setCount(c => c + 1), []);
@@ -352,7 +352,7 @@ export function useClickOutside(ref: React.RefObject<HTMLElement>, handler: () =
 /**
  * Hook for form validation
  */
-export function useFormValidation<T extends Record<string, any>>(
+export function useFormValidation<T extends Record<string, unknown>>(
   initialValues: T,
   validationSchema: (values: T) => Partial<Record<keyof T, string>>
 ) {
@@ -364,7 +364,7 @@ export function useFormValidation<T extends Record<string, any>>(
     return validationSchema(valuesToValidate);
   }, [validationSchema]);
 
-  const setValue = useCallback((field: keyof T, value: any) => {
+  const setValue = useCallback((field: keyof T, value: T[keyof T]) => {
     setValues(prev => ({ ...prev, [field]: value }));
     if (touched[field]) {
       const newErrors = validate({ ...values, [field]: value });

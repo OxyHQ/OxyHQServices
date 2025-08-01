@@ -1,11 +1,12 @@
-import React, { useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useEffect, useCallback } from 'react';
 import {
   TouchableOpacity,
   Text,
   StyleSheet,
-  ViewStyle,
-  TextStyle,
-  StyleProp,
+  type ViewStyle,
+  type TextStyle,
+  type StyleProp,
   Platform,
   ActivityIndicator
 } from 'react-native';
@@ -86,17 +87,18 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   }, [isFollowing, animationProgress]);
 
   // Button press handler
-  const handlePress = useCallback(async (event: any) => {
+  const handlePress = useCallback(async (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
     if (preventParentActions && event && event.preventDefault) {
       event.preventDefault();
-      event.stopPropagation();
+      event.stopPropagation?.();
     }
     if (disabled || isLoading) return;
     try {
       await toggleFollow?.();
       if (onFollowChange) onFollowChange(!isFollowing);
-    } catch (err: any) {
-      toast.error(err?.message || 'Failed to update follow status');
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      toast.error(error.message || 'Failed to update follow status');
     }
   }, [disabled, isLoading, toggleFollow, onFollowChange, isFollowing, preventParentActions]);
 

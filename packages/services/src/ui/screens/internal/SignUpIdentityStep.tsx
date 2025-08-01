@@ -1,5 +1,6 @@
-import React, { useRef } from 'react';
-import { View, Text, Animated, TouchableOpacity, TextInput } from 'react-native';
+import type React from 'react';
+import { useRef } from 'react';
+import { View, Text, Animated, TouchableOpacity, type TextInput } from 'react-native';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
 import HighFive from '../../../assets/illustrations/HighFive';

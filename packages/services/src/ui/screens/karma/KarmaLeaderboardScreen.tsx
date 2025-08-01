@@ -1,6 +1,7 @@
-import React, { useEffect, useState } from 'react';
+import type React from 'react';
+import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
-import { BaseScreenProps } from '../../navigation/types';
+import type { BaseScreenProps } from '../../navigation/types';
 import { useOxy } from '../../context/OxyContext';
 import Avatar from '../../components/Avatar';
 import { Header } from '../../components';

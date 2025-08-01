@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { OxyServices } from '../../core';
+import type { OxyServices } from '../../core';
 
 interface FollowState {
   followingUsers: Record<string, boolean>;

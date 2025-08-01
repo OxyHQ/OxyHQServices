@@ -7,15 +7,15 @@ import {
     ActivityIndicator,
     StyleSheet,
     Platform,
-    TextInputProps,
+    type TextInputProps,
     Animated,
     LayoutChangeEvent,
     AccessibilityInfo,
-    StyleProp,
-    ViewStyle,
-    NativeSyntheticEvent,
-    TargetedEvent,
-    TextInputFocusEventData,
+    type StyleProp,
+    type ViewStyle,
+    type NativeSyntheticEvent,
+    type TargetedEvent,
+    type TextInputFocusEventData,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
@@ -162,7 +162,7 @@ const formatters = {
     },
     currency: (value: string) => {
         const cleaned = value.replace(/[^\d.]/g, '');
-        const num = parseFloat(cleaned);
+        const num = Number.parseFloat(cleaned);
         return isNaN(num) ? value : `$${num.toFixed(2)}`;
     }
 };

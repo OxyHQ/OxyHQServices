@@ -1,5 +1,6 @@
-import React, { useRef, useCallback, useEffect } from 'react';
-import { View, Text, Animated, TouchableOpacity, TextInput, StatusBar } from 'react-native';
+import type React from 'react';
+import { useRef, useCallback, useEffect } from 'react';
+import { View, Text, Animated, TouchableOpacity, type TextInput, StatusBar } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';

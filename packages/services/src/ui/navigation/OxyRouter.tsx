@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import type React from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { OxyServices } from '../../core';
 
@@ -26,7 +27,7 @@ import RecoverAccountScreen from '../screens/RecoverAccountScreen';
 import PaymentGatewayScreen from '../screens/PaymentGatewayScreen';
 
 // Import types
-import { OxyRouterProps, RouteConfig } from './types';
+import type { OxyRouterProps, RouteConfig } from './types';
 
 // Define route configuration with screen components and default snap points
 const routes: Record<string, RouteConfig> = {

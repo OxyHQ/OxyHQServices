@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import OxyProvider from '../components/OxyProvider';
 import { OxyServices } from '../../core';

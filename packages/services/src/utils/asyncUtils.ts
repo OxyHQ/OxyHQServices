@@ -45,8 +45,8 @@ export async function parallelWithErrorHandling<T>(
  */
 export async function retryAsync<T>(
   operation: () => Promise<T>,
-  maxRetries: number = 3,
-  baseDelay: number = 1000,
+  maxRetries = 3,
+  baseDelay = 1000,
   shouldRetry?: (error: any) => boolean
 ): Promise<T> {
   let lastError: any;
@@ -81,7 +81,7 @@ export function debounceAsync<T extends (...args: any[]) => Promise<any>>(
   delay: number
 ): (...args: Parameters<T>) => Promise<ReturnType<T>> {
   let timeoutId: NodeJS.Timeout;
-  let lastPromise: Promise<ReturnType<T>> | null = null;
+  const lastPromise: Promise<ReturnType<T>> | null = null;
   
   return (...args: Parameters<T>): Promise<ReturnType<T>> => {
     return new Promise((resolve, reject) => {
@@ -256,7 +256,7 @@ export const delay = (ms: number): Promise<void> =>
 export async function retryOnError<T>(
   operation: () => Promise<T>,
   retryableErrors: (string | number)[],
-  maxRetries: number = 3
+  maxRetries = 3
 ): Promise<T> {
   return retryAsync(operation, maxRetries, 1000, (error) => {
     const errorCode = error?.code || error?.status || error?.message;

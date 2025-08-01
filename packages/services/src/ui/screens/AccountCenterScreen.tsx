@@ -1,4 +1,4 @@
-import React from 'react';
+import type React from 'react';
 import {
     View,
     Text,
@@ -9,7 +9,7 @@ import {
     Alert,
     Platform,
 } from 'react-native';
-import { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { packageInfo } from '../../constants/version';
 import { toast } from '../../lib/sonner';

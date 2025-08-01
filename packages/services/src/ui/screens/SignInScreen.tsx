@@ -1,4 +1,5 @@
-import React, { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import type React from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
@@ -15,7 +16,7 @@ import {
     StatusBar,
     Alert,
 } from 'react-native';
-import { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies, useThemeColors, createCommonStyles, createAuthStyles } from '../styles';
 import OxyLogo from '../components/OxyLogo';

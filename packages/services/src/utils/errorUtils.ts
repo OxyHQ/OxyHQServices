@@ -1,4 +1,4 @@
-import { ApiError } from '../models/interfaces';
+import type { ApiError } from '../models/interfaces';
 
 /**
  * Error handling utilities for consistent error processing
@@ -40,8 +40,8 @@ export const ErrorCodes = {
 export function createApiError(
   message: string,
   code: string = ErrorCodes.INTERNAL_ERROR,
-  status: number = 500,
-  details?: any
+  status = 500,
+  details?: Record<string, unknown>
 ): ApiError {
   return {
     message,
@@ -54,7 +54,7 @@ export function createApiError(
 /**
  * Handle common HTTP errors and convert to ApiError
  */
-export function handleHttpError(error: any): ApiError {
+export function handleHttpError(error: unknown): ApiError {
   // If it's already an ApiError, return it
   if (error && typeof error === 'object' && 'code' in error && 'status' in error) {
     return error as ApiError;
@@ -118,7 +118,7 @@ function getErrorCodeFromStatus(status: number): string {
 /**
  * Validate required fields and throw error if missing
  */
-export function validateRequiredFields(data: Record<string, any>, fields: string[]): void {
+export function validateRequiredFields(data: Record<string, unknown>, fields: string[]): void {
   const missing = fields.filter(field => !data[field]);
   
   if (missing.length > 0) {
@@ -133,7 +133,7 @@ export function validateRequiredFields(data: Record<string, any>, fields: string
 /**
  * Safe error logging with context
  */
-export function logError(error: any, context?: string): void {
+export function logError(error: unknown, context?: string): void {
   const prefix = context ? `[${context}]` : '[Error]';
   
   if (error instanceof Error) {
@@ -148,10 +148,10 @@ export function logError(error: any, context?: string): void {
  */
 export async function retryWithBackoff<T>(
   fn: () => Promise<T>,
-  maxRetries: number = 3,
-  baseDelay: number = 1000
+  maxRetries = 3,
+  baseDelay = 1000
 ): Promise<T> {
-  let lastError: any;
+  let lastError: unknown;
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -163,7 +163,7 @@ export async function retryWithBackoff<T>(
         break;
       }
       
-      const delay = baseDelay * Math.pow(2, attempt);
+      const delay = baseDelay * 2 ** attempt;
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }

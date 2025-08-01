@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import type React from 'react';
+import { useState, useEffect } from 'react';
 import {
     View,
     Text,
@@ -11,11 +12,11 @@ import {
     Image,
     Dimensions,
 } from 'react-native';
-import { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
-import { ClientSession } from '../../models/session';
+import type { ClientSession } from '../../models/session';
 import { fontFamilies } from '../styles/fonts';
-import { User } from '../../models/interfaces';
+import type { User } from '../../models/interfaces';
 import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';
 import OxyIcon from '../components/icon/OxyIcon';

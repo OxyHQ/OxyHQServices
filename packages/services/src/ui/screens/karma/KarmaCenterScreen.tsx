@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import type React from 'react';
+import { useEffect, useState } from 'react';
 import {
     View,
     Text,
@@ -9,7 +10,7 @@ import {
     Alert,
     Platform,
 } from 'react-native';
-import { BaseScreenProps } from '../../navigation/types';
+import type { BaseScreenProps } from '../../navigation/types';
 import { useOxy } from '../../context/OxyContext';
 import { fontFamilies } from '../../styles/fonts';
 import Avatar from '../../components/Avatar';

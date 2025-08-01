@@ -1,5 +1,5 @@
-import React from 'react';
-import { TouchableOpacity, Text, View, StyleSheet, ViewStyle, TextStyle, StyleProp, Platform } from 'react-native';
+import type React from 'react';
+import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyle, type StyleProp, Platform } from 'react-native';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
 import { fontFamilies } from '../styles/fonts';
