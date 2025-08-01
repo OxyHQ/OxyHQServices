@@ -198,7 +198,7 @@ export const useSearch = (options: UseSearchOptions = {}) => {
         if (onError) onError(error);
       },
     });
-  }, [state.isLoadingMore, state.hasMore, state.currentQuery, state.currentPage, state.results, oxyServices, pageSize, onError]);
+  }, [state.isLoadingMore, state.hasMore, state.currentQuery, state.currentPage, oxyServices, pageSize, onError]);
 
   const clearSearch = useCallback(() => {
     // Clear any pending operations
