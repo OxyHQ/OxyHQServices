@@ -7,7 +7,7 @@ import { ComponentType, ReactNode } from 'react';
  */
 export interface BaseScreenProps {
   oxyServices: OxyServices;
-  navigate: (screen: string, props?: any) => void;
+  navigate: (screen: string, props?: Record<string, unknown>) => void;
   goBack: () => void;
   onClose?: () => void;
   onAuthenticated?: (user: User) => void;
@@ -15,14 +15,14 @@ export interface BaseScreenProps {
   containerWidth?: number;
   initialStep?: number;
   username?: string;
-  userProfile?: any;
+  userProfile?: User;
 }
 
 /**
  * Route configuration for OxyRouter
  */
 export interface RouteConfig {
-  component: ComponentType<any>;
+  component: ComponentType<BaseScreenProps>;
   snapPoints: string[];
 }
 
@@ -36,7 +36,7 @@ export interface OxyRouterProps {
   onAuthenticated?: (user: User) => void;
   theme: 'light' | 'dark';
   adjustSnapPoints?: (snapPoints: string[]) => void;
-  navigationRef?: React.MutableRefObject<((screen: string, props?: Record<string, any>) => void) | null>;
+  navigationRef?: React.MutableRefObject<((screen: string, props?: Record<string, unknown>) => void) | null>;
   containerWidth?: number;
 }
 
@@ -82,7 +82,7 @@ export interface OxyProviderProps {
    * @deprecated External bottom sheet ref is no longer required as OxyProvider handles the bottom sheet internally
    * @hidden
    */
-  bottomSheetRef?: React.RefObject<any>;
+  bottomSheetRef?: React.RefObject<unknown>;
   
   /**
    * Whether to automatically present the bottom sheet when component mounts

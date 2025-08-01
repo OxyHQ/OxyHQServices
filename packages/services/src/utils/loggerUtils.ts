@@ -16,7 +16,7 @@ export interface LogContext {
   userId?: string;
   sessionId?: string;
   requestId?: string;
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 class Logger {
@@ -37,7 +37,7 @@ class Logger {
     return `[${timestamp}] ${level}${contextStr}: ${message}`;
   }
 
-  debug(message: string, context?: LogContext, ...args: any[]): void {
+  debug(message: string, context?: LogContext, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.DEBUG)) {
       const formattedMessage = this.formatMessage('DEBUG', message, context);
       if (this.isDevelopment) {
@@ -46,21 +46,21 @@ class Logger {
     }
   }
 
-  info(message: string, context?: LogContext, ...args: any[]): void {
+  info(message: string, context?: LogContext, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.INFO)) {
       const formattedMessage = this.formatMessage('INFO', message, context);
       console.log(formattedMessage, ...args);
     }
   }
 
-  warn(message: string, context?: LogContext, ...args: any[]): void {
+  warn(message: string, context?: LogContext, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.WARN)) {
       const formattedMessage = this.formatMessage('WARN', message, context);
       console.warn(formattedMessage, ...args);
     }
   }
 
-  error(message: string, error?: any, context?: LogContext, ...args: any[]): void {
+  error(message: string, error?: Error | unknown, context?: LogContext, ...args: unknown[]): void {
     if (this.shouldLog(LogLevel.ERROR)) {
       const formattedMessage = this.formatMessage('ERROR', message, context);
       if (error) {
@@ -72,27 +72,27 @@ class Logger {
   }
 
   // Specialized logging methods for common patterns
-  auth(message: string, context?: LogContext, ...args: any[]): void {
+  auth(message: string, context?: LogContext, ...args: unknown[]): void {
     this.info(`🔐 ${message}`, { ...context, category: 'auth' }, ...args);
   }
 
-  api(message: string, context?: LogContext, ...args: any[]): void {
+  api(message: string, context?: LogContext, ...args: unknown[]): void {
     this.info(`🌐 ${message}`, { ...context, category: 'api' }, ...args);
   }
 
-  session(message: string, context?: LogContext, ...args: any[]): void {
+  session(message: string, context?: LogContext, ...args: unknown[]): void {
     this.info(`📱 ${message}`, { ...context, category: 'session' }, ...args);
   }
 
-  user(message: string, context?: LogContext, ...args: any[]): void {
+  user(message: string, context?: LogContext, ...args: unknown[]): void {
     this.info(`👤 ${message}`, { ...context, category: 'user' }, ...args);
   }
 
-  device(message: string, context?: LogContext, ...args: any[]): void {
+  device(message: string, context?: LogContext, ...args: unknown[]): void {
     this.info(`📱 ${message}`, { ...context, category: 'device' }, ...args);
   }
 
-  payment(message: string, context?: LogContext, ...args: any[]): void {
+  payment(message: string, context?: LogContext, ...args: unknown[]): void {
     this.info(`💳 ${message}`, { ...context, category: 'payment' }, ...args);
   }
 
@@ -128,25 +128,25 @@ class Logger {
 export const logger = new Logger();
 
 // Convenience functions for common logging patterns
-export const logAuth = (message: string, context?: LogContext, ...args: any[]) => 
+export const logAuth = (message: string, context?: LogContext, ...args: unknown[]) => 
   logger.auth(message, context, ...args);
 
-export const logApi = (message: string, context?: LogContext, ...args: any[]) => 
+export const logApi = (message: string, context?: LogContext, ...args: unknown[]) => 
   logger.api(message, context, ...args);
 
-export const logSession = (message: string, context?: LogContext, ...args: any[]) => 
+export const logSession = (message: string, context?: LogContext, ...args: unknown[]) => 
   logger.session(message, context, ...args);
 
-export const logUser = (message: string, context?: LogContext, ...args: any[]) => 
+export const logUser = (message: string, context?: LogContext, ...args: unknown[]) => 
   logger.user(message, context, ...args);
 
-export const logDevice = (message: string, context?: LogContext, ...args: any[]) => 
+export const logDevice = (message: string, context?: LogContext, ...args: unknown[]) => 
   logger.device(message, context, ...args);
 
-export const logPayment = (message: string, context?: LogContext, ...args: any[]) => 
+export const logPayment = (message: string, context?: LogContext, ...args: unknown[]) => 
   logger.payment(message, context, ...args);
 
-export const logError = (message: string, error?: any, context?: LogContext, ...args: any[]) => 
+export const logError = (message: string, error?: Error | unknown, context?: LogContext, ...args: unknown[]) => 
   logger.error(message, error, context, ...args);
 
 export const logPerformance = (operation: string, duration: number, context?: LogContext) => 
