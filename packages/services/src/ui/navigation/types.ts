@@ -22,7 +22,7 @@ export interface BaseScreenProps {
  * Route configuration for OxyRouter
  */
 export interface RouteConfig {
-  component: ComponentType<BaseScreenProps>;
+  component: ComponentType<any>; // Allow any component type for flexibility
   snapPoints: string[];
 }
 

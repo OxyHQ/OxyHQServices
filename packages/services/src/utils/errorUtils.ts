@@ -60,20 +60,23 @@ export function handleHttpError(error: unknown): ApiError {
     return error as ApiError;
   }
 
-  // Handle axios errors
-  if (error?.response) {
-    const { status, data } = error.response;
-    
-    return createApiError(
-      data?.message || `HTTP ${status} error`,
-      data?.code || getErrorCodeFromStatus(status),
-      status,
-      data
-    );
+  // Handle axios errors - check if it looks like an axios error
+  if (error && typeof error === 'object' && 'response' in error) {
+    const axiosError = error as { response?: { status: number; data?: { message?: string; code?: string } } };
+    if (axiosError.response) {
+      const { status, data } = axiosError.response;
+      
+      return createApiError(
+        data?.message || `HTTP ${status} error`,
+        data?.code || getErrorCodeFromStatus(status),
+        status,
+        data
+      );
+    }
   }
 
-  // Handle network errors
-  if (error?.request) {
+  // Handle network errors - check if it looks like a network error
+  if (error && typeof error === 'object' && 'request' in error) {
     return createApiError(
       'Network error - no response received',
       ErrorCodes.NETWORK_ERROR,
@@ -81,9 +84,18 @@ export function handleHttpError(error: unknown): ApiError {
     );
   }
 
+  // Handle standard errors
+  if (error instanceof Error) {
+    return createApiError(
+      error.message || 'Unknown error occurred',
+      ErrorCodes.INTERNAL_ERROR,
+      500
+    );
+  }
+
   // Handle other errors
   return createApiError(
-    error?.message || 'Unknown error occurred',
+    String(error) || 'Unknown error occurred',
     ErrorCodes.INTERNAL_ERROR,
     500
   );

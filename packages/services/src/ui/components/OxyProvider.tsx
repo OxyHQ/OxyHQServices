@@ -146,7 +146,9 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 }
             };
 
-            console.log('Bottom sheet ref methods exposed:', Object.keys(bottomSheetRef.current));
+            if (bottomSheetRef.current && typeof bottomSheetRef.current === 'object') {
+                console.log('Bottom sheet ref methods exposed:', Object.keys(bottomSheetRef.current));
+            }
         }
     }, [bottomSheetRef, modalRef]);
     // Keyboard handling (unchanged)
