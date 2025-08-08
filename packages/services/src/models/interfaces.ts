@@ -174,6 +174,14 @@ export interface FileMetadata {
     tags?: string[];
     [key: string]: unknown;
   };
+  variants?: Array<{
+    type: string; // e.g. 'thumb', 'poster'
+    key: string; // storage key/path
+    width?: number;
+    height?: number;
+    readyAt?: string;
+    metadata?: Record<string, unknown>;
+  }>;
 }
 
 export interface FileUploadResponse {

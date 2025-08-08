@@ -76,11 +76,35 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     // Prevents backend warnings: "Variant thumb not supported for mime application/pdf".
     const getSafeDownloadUrl = useCallback(
         (file: FileMetadata, variant: string = 'thumb') => {
-            if (!file.contentType.startsWith('image/')) {
-                // Non-image: return original file URL (no variant)
-                return oxyServices.getFileDownloadUrl(file.id);
+            const isImage = file.contentType.startsWith('image/');
+            const isVideo = file.contentType.startsWith('video/');
+
+            // Prefer explicit variant key if variants metadata present
+            if (file.variants && file.variants.length > 0) {
+                // For videos, try 'poster' regardless of requested variant
+                if (isVideo) {
+                    const poster = file.variants.find(v => v.type === 'poster');
+                    if (poster) return oxyServices.getFileDownloadUrl(file.id, 'poster');
+                }
+                if (isImage) {
+                    const desired = file.variants.find(v => v.type === variant);
+                    if (desired) return oxyServices.getFileDownloadUrl(file.id, variant);
+                }
             }
-            return oxyServices.getFileDownloadUrl(file.id, variant);
+
+            if (isImage) {
+                return oxyServices.getFileDownloadUrl(file.id, variant);
+            }
+            if (isVideo) {
+                // Fallback to poster if backend supports implicit generation
+                try {
+                    return oxyServices.getFileDownloadUrl(file.id, 'poster');
+                } catch {
+                    return oxyServices.getFileDownloadUrl(file.id);
+                }
+            }
+            // Other mime types: no variant
+            return oxyServices.getFileDownloadUrl(file.id);
         },
         [oxyServices]
     );
@@ -125,6 +149,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 chunkSize: 0,
                 uploadDate: f.createdAt,
                 metadata: f.metadata || {},
+                variants: f.variants || [],
             }));
             setFiles(assets);
         } catch (error: any) {
@@ -667,9 +692,21 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                     </View>
                                 )}
                                 {isVideo && (
-                                    <View style={styles.videoPreview}>
-                                        <Ionicons name="play-circle" size={32} color={themeStyles.primaryColor} />
-                                        <Text style={[styles.videoLabel, { color: themeStyles.primaryColor }]}>VIDEO</Text>
+                                    <View style={styles.videoPreviewWrapper}>
+                                        <ExpoImage
+                                            source={{ uri: getSafeDownloadUrl(file, 'thumb') }}
+                                            style={styles.videoPosterImage}
+                                            contentFit="cover"
+                                            transition={120}
+                                            cachePolicy="memory-disk"
+                                            onError={(_: any) => {
+                                                // If thumbnail not available, we still show icon overlay
+                                            }}
+                                            accessibilityLabel={file.filename + ' video thumbnail'}
+                                        />
+                                        <View style={styles.videoOverlay}> 
+                                            <Ionicons name="play" size={24} color="#FFFFFF" />
+                                        </View>
                                     </View>
                                 )}
                                 {/* Fallback icon (hidden by default for images) */}
@@ -1852,6 +1889,34 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: 8,
+    },
+    videoPreviewWrapper: {
+        width: '100%',
+        height: '100%',
+        borderRadius: 8,
+        overflow: 'hidden',
+        backgroundColor: '#000000',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    videoPosterImage: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        width: '100%',
+        height: '100%',
+    },
+    videoOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.25)',
     },
     fileInfo: {
         flex: 1,
