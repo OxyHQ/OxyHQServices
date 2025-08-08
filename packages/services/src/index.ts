@@ -54,7 +54,19 @@ export type {
   DeviceSession,
   DeviceSessionsResponse,
   DeviceSessionLogoutResponse,
-  UpdateDeviceNameResponse
+  UpdateDeviceNameResponse,
+  // Central Asset Service types
+  AssetLink,
+  AssetVariant,
+  Asset,
+  AssetInitRequest,
+  AssetInitResponse,
+  AssetCompleteRequest,
+  AssetLinkRequest,
+  AssetUnlinkRequest,
+  AssetUrlResponse,
+  AssetDeleteSummary,
+  AssetUploadProgress
 } from './models/interfaces';
 
 export type {
@@ -65,7 +77,9 @@ export type {
 
 // UI components and hooks
 export { useAuthStore } from './ui/stores/authStore';
+export { useAssetStore, useAssets as useAssetsStore, useAsset, useUploadProgress, useAssetLoading, useAssetErrors, useAssetsByApp, useAssetsByEntity, useAssetUsageCount, useIsAssetLinked } from './ui/stores/assetStore';
 export { useSessionSocket } from './ui/hooks/useSessionSocket';
+export { useAssets, setOxyAssetInstance } from './ui/hooks/useAssets';
 
 // UI components
 export { OxySignInButton } from './ui/components/OxySignInButton';
