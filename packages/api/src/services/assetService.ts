@@ -42,6 +42,56 @@ export class AssetService {
   }
 
   /**
+   * Ensure a specific variant exists for a file; generate it if missing.
+   */
+  async ensureVariant(fileId: string, variantType: string): Promise<IFileVariant> {
+    const file = await File.findById(fileId);
+    if (!file) {
+      throw new Error('File not found');
+    }
+
+    // If already recorded and object exists, return it
+    const existing = file.variants.find(v => v.type === variantType && v.readyAt);
+    if (existing) {
+      const exists = await this.s3Service.fileExists(existing.key);
+      if (exists) return existing;
+    }
+
+    if (file.mime.startsWith('image/')) {
+      const variant = await this.variantService.ensureImageVariant(file, variantType);
+      return variant;
+    }
+
+    // Future: support video/pdf variants
+    throw new Error(`Variant ${variantType} not supported for mime ${file.mime}`);
+  }
+
+  /**
+   * List files owned by a user (excluding deleted)
+   */
+  async listFilesByUser(
+    userId: string,
+    limit: number = 50,
+    offset: number = 0
+  ): Promise<{ files: IFile[]; total: number }> {
+    try {
+      const query = { ownerUserId: userId, status: { $ne: 'deleted' } } as const;
+      const [files, total] = await Promise.all([
+        File.find(query)
+          .sort({ createdAt: -1 })
+          .skip(offset)
+          .limit(limit),
+        File.countDocuments(query)
+      ]);
+
+      return { files, total };
+    } catch (error) {
+      logger.error('Error listing files by user:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Initialize file upload - returns pre-signed URL and file ID
    */
   async initUpload(
@@ -66,6 +116,7 @@ export class AssetService {
         // File already exists, return existing info
         // We still need to provide an upload URL in case the client wants to verify
         const storageKey = this.generateStorageKey(expectedSha256, expectedMime);
+        // Do not include metadata in the presigned URL signature; clients aren't required to send it
         const uploadUrl = await this.s3Service.getPresignedUploadUrl(storageKey, {
           contentType: expectedMime,
           expiresIn: 3600
@@ -97,14 +148,10 @@ export class AssetService {
       await file.save();
 
       // Generate pre-signed upload URL
+      // Do not include metadata in the presigned URL signature; clients aren't required to send it
       const uploadUrl = await this.s3Service.getPresignedUploadUrl(storageKey, {
         contentType: expectedMime,
-        expiresIn: 3600,
-        metadata: {
-          fileId: file._id.toString(),
-          sha256: expectedSha256,
-          userId
-        }
+        expiresIn: 3600
       });
 
       logger.info('Asset upload initialized', { 
@@ -293,14 +340,16 @@ export class AssetService {
 
       let storageKey = file.storageKey;
 
-      // If variant requested, find variant key
+      // If variant requested, ensure or find variant key
       if (variant) {
-        const variantInfo = file.variants.find(v => v.type === variant);
-        if (variantInfo && variantInfo.readyAt) {
-          storageKey = variantInfo.key;
-        } else {
-          throw new Error(`Variant ${variant} not found or not ready`);
-        }
+        const ensured = await this.ensureVariant(fileId, variant);
+        storageKey = ensured.key;
+      }
+
+      // Verify object exists before generating URL to avoid redirecting to 404
+      const exists = await this.s3Service.fileExists(storageKey);
+      if (!exists) {
+        throw new Error('File not found in storage');
       }
 
       // For now, return presigned URL

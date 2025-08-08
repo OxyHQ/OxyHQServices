@@ -145,6 +145,7 @@ export function emitSessionUpdate(userId: string, payload: any) {
 }
 
 // Register file routes with auth middleware
+// Legacy S3-based file routes (now bridged to CAS for listing when possible)
 app.use("/api/files", fileRoutes);
 
 // MongoDB Connection

@@ -1,12 +1,8 @@
 import { File, IFile, IFileVariant } from '../models/File';
 import { S3Service } from './s3Service';
 import { logger } from '../utils/logger';
-import { spawn } from 'child_process';
-import { promisify } from 'util';
-import { pipeline } from 'stream';
+import sharp from 'sharp';
 import path from 'path';
-
-const pipelineAsync = promisify(pipeline);
 
 export interface VariantConfig {
   type: string;
@@ -83,51 +79,53 @@ export class VariantService {
   }
 
   /**
-   * Generate image variants (placeholder implementation)
+   * Generate all standard image variants using Sharp.
    */
   private async generateImageVariants(file: IFile): Promise<void> {
     try {
-      logger.info('Generating image variants (placeholder)', { fileId: file._id });
+      logger.info('Generating image variants', { fileId: file._id });
 
-      // For now, create placeholder variants without actual image processing
-      // In production, this would use Sharp or similar image processing library
-      
+      const originalBuffer = await this.s3Service.downloadBuffer(file.storageKey);
+      const base = sharp(originalBuffer, { failOn: 'none' });
+      const meta = await base.metadata();
+
       const variants: IFileVariant[] = [];
-
       for (const config of this.imageVariants) {
         const variantKey = this.generateVariantKey(file.sha256, config.type, config.format || 'webp');
-        
-        // Placeholder variant (in production, would process actual image)
+
+        const width = config.width || meta.width || 1280;
+        const height = config.height; // let sharp maintain aspect by only setting width unless both provided
+        let pipeline = sharp(originalBuffer, { failOn: 'none' }).rotate();
+        pipeline = pipeline.resize({ width, height, fit: 'inside', withoutEnlargement: true });
+
+        // Set format and quality
+        const format = (config.format || 'webp');
+  if (format === 'webp') pipeline = pipeline.webp({ quality: config.quality ?? 82 });
+  if (format === 'jpeg') pipeline = pipeline.jpeg({ quality: config.quality ?? 82 });
+  if (format === 'png') pipeline = pipeline.png();
+
+        const out = await pipeline.toBuffer();
+        await this.s3Service.uploadBuffer(variantKey, out, {
+          contentType: format === 'jpeg' ? 'image/jpeg' : `image/${format}`,
+        });
+
         variants.push({
           type: config.type,
           key: variantKey,
-          width: config.width || 1280,
-          height: config.height || (config.width ? Math.floor(config.width * 0.75) : 960),
+          width,
+          height: height || Math.round((meta.height || width) * (width / (meta.width || width))),
           readyAt: new Date(),
-          size: Math.floor(file.size * 0.7), // Estimate compressed size
-          metadata: {
-            format: config.format,
-            quality: config.quality,
-            placeholder: true
-          }
+          size: out.length,
+          metadata: { format, quality: config.quality }
         });
 
-        logger.debug('Generated placeholder image variant', {
-          fileId: file._id,
-          type: config.type,
-          width: config.width,
-          placeholder: true
-        });
+        logger.debug('Generated image variant', { fileId: file._id, type: config.type, key: variantKey });
       }
 
-      // Save variants to file
       file.variants = variants;
       await file.save();
 
-      logger.info('Image variants generated (placeholder)', {
-        fileId: file._id,
-        variantCount: variants.length
-      });
+      logger.info('Image variants generated', { fileId: file._id, variantCount: variants.length });
     } catch (error) {
       logger.error('Error generating image variants:', error);
       throw error;
@@ -251,6 +249,57 @@ export class VariantService {
       logger.error('Error checking variant readiness:', error);
       return false;
     }
+  }
+
+  /**
+   * Ensure a specific image variant exists, generate via Sharp if missing.
+   */
+  async ensureImageVariant(file: IFile, variantType: string): Promise<IFileVariant> {
+    // If already present and object exists, return
+    const existing = file.variants.find(v => v.type === variantType && v.readyAt);
+    if (existing) {
+      const ok = await this.s3Service.fileExists(existing.key);
+      if (ok) return existing;
+    }
+
+    // Map variantType to config
+    const config = this.imageVariants.find(v => v.type === variantType);
+    if (!config) {
+      throw new Error(`Unsupported image variant: ${variantType}`);
+    }
+
+    const originalBuffer = await this.s3Service.downloadBuffer(file.storageKey);
+    let pipeline = sharp(originalBuffer, { failOn: 'none' }).rotate();
+    pipeline = pipeline.resize({ width: config.width, height: config.height, fit: 'inside', withoutEnlargement: true });
+    const format = (config.format || 'webp');
+  if (format === 'webp') pipeline = pipeline.webp({ quality: config.quality ?? 82 });
+  if (format === 'jpeg') pipeline = pipeline.jpeg({ quality: config.quality ?? 82 });
+  if (format === 'png') pipeline = pipeline.png();
+
+    const out = await pipeline.toBuffer();
+    const key = this.generateVariantKey(file.sha256, variantType, format);
+    await this.s3Service.uploadBuffer(key, out, {
+      contentType: format === 'jpeg' ? 'image/jpeg' : `image/${format}`,
+    });
+
+    const imgMeta = await sharp(out).metadata();
+    const variant: IFileVariant = {
+      type: variantType,
+      key,
+      width: imgMeta.width || config.width || 0,
+      height: imgMeta.height || config.height || 0,
+      readyAt: new Date(),
+      size: out.length,
+      metadata: { format, quality: config.quality }
+    };
+
+    // Upsert in DB
+    const idx = file.variants.findIndex(v => v.type === variantType);
+    if (idx >= 0) file.variants[idx] = variant;
+    else file.variants.push(variant);
+    await file.save();
+
+    return variant;
   }
 }
 

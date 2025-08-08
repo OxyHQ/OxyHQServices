@@ -1,5 +1,4 @@
 import { create } from 'zustand';
-import { subscribeWithSelector } from 'zustand/middleware';
 import { Asset, AssetUploadProgress, AssetLink } from '../../models/interfaces';
 
 interface AssetState {
@@ -66,8 +65,7 @@ const initialState = {
   errors: {},
 };
 
-export const useAssetStore = create<AssetState>()(
-  subscribeWithSelector((set, get) => ({
+export const useAssetStore = create<AssetState>((set, get) => ({
     ...initialState,
     
     // Asset management
@@ -260,8 +258,7 @@ export const useAssetStore = create<AssetState>()(
     reset: () => {
       set(initialState);
     },
-  }))
-);
+}));
 
 // Selector hooks for convenience
 export const useAssets = () => useAssetStore((state) => Object.values(state.assets));

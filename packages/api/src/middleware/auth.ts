@@ -44,7 +44,17 @@ const extractUserIdFromToken = (token: string): string | null => {
  */
 export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
-    const authHeader = req.headers.authorization;
+    // Support Authorization via header or query parameter (?token= or ?access_token=)
+    let authHeader = req.headers.authorization;
+    let tokenFromQuery: string | undefined;
+    const q = req.query as Record<string, any>;
+    if (!authHeader) {
+      if (typeof q.token === 'string' && q.token) tokenFromQuery = q.token;
+      else if (typeof q.access_token === 'string' && q.access_token) tokenFromQuery = q.access_token;
+      if (tokenFromQuery) {
+        authHeader = `Bearer ${tokenFromQuery}`;
+      }
+    }
     
     if (!authHeader?.startsWith('Bearer ')) {
       return res.status(401).json({

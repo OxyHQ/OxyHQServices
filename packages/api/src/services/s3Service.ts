@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command, CopyObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand, GetObjectCommand, DeleteObjectCommand, ListObjectsV2Command, CopyObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createReadStream, createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
@@ -227,6 +227,47 @@ export class S3Service {
   }
 
   /**
+   * Get an object stream with metadata for streaming to clients
+   */
+  async getObjectStream(key: string): Promise<{
+    body: NodeJS.ReadableStream,
+    contentType?: string,
+    contentLength?: number,
+    lastModified?: Date,
+    metadata?: Record<string, string>
+  }> {
+    const command = new GetObjectCommand({
+      Bucket: this.bucketName,
+      Key: key,
+    });
+    const response: any = await this.s3Client.send(command);
+    if (!response.Body) {
+      throw new Error('File not found or empty');
+    }
+
+    // AWS SDK v3 returns a Body with transformToWebStream in browsers; in Node it is a Readable
+    const body: NodeJS.ReadableStream = typeof response.Body.pipe === 'function'
+      ? response.Body
+      : (response.Body.transformToWebStream && (response.Body as any).transformToWebStream()) as any;
+
+    const length = response.ContentLength != null ? Number(response.ContentLength) : undefined;
+    const metadata: Record<string, string> = {};
+    if (response.Metadata) {
+      for (const [k, v] of Object.entries(response.Metadata)) {
+        if (v != null) metadata[k] = String(v);
+      }
+    }
+
+    return {
+      body,
+      contentType: response.ContentType,
+      contentLength: length,
+      lastModified: response.LastModified,
+      metadata,
+    };
+  }
+
+  /**
    * Delete a file from S3
    */
   async deleteFile(key: string): Promise<void> {
@@ -326,18 +367,24 @@ export class S3Service {
    */
   async fileExists(key: string): Promise<boolean> {
     try {
-      const command = new GetObjectCommand({
+      // Prefer HEAD to check existence without downloading
+      const command = new HeadObjectCommand({
         Bucket: this.bucketName,
         Key: key,
       });
-
       await this.s3Client.send(command);
       return true;
     } catch (error: any) {
-      if (error.name === 'NoSuchKey') {
+      const name = error?.name || error?.Code || error?.code;
+      const status = error?.$metadata?.httpStatusCode;
+      if (name === 'NotFound' || name === 'NoSuchKey' || status === 404) {
         return false;
       }
-      throw error;
+      // Some S3-compatible services return 404 via code property
+      if (String(status).startsWith('4')) {
+        return false;
+      }
+      return false;
     }
   }
 

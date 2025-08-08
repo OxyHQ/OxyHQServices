@@ -101,8 +101,17 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 setLoading(true);
             }
 
-            const response = await oxyServices.listUserFiles(targetUserId);
-            setFiles(response.files || []);
+            const response = await oxyServices.listUserFiles();
+            const assets: FileMetadata[] = (response.files || []).map((f: any) => ({
+                id: f.id,
+                filename: f.originalName || f.sha256,
+                contentType: f.mime,
+                length: f.size,
+                chunkSize: 0,
+                uploadDate: f.createdAt,
+                metadata: f.metadata || {},
+            }));
+            setFiles(assets);
         } catch (error: any) {
             console.error('Failed to load files:', error);
             toast.error(error.message || 'Failed to load files');
@@ -155,7 +164,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             await Promise.all(
                 photosToLoad.map(async (photo) => {
                     try {
-                        const downloadUrl = oxyServices.getFileDownloadUrl(photo.id);
+                        const downloadUrl = oxyServices.getFileDownloadUrl(photo.id, 'thumb');
 
                         if (Platform.OS === 'web') {
                             const img = new (window as any).Image();
@@ -515,7 +524,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     };
 
     const renderSimplePhotoItem = useCallback((photo: FileMetadata, index: number) => {
-        const downloadUrl = oxyServices.getFileDownloadUrl(photo.id);
+    const downloadUrl = oxyServices.getFileDownloadUrl(photo.id, 'thumb');
 
         // Calculate photo item width based on actual container size from bottom sheet
         let itemsPerRow = 3; // Default for mobile
@@ -581,7 +590,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }, [oxyServices, containerWidth]);
 
     const renderJustifiedPhotoItem = useCallback((photo: FileMetadata, width: number, height: number, isLast: boolean) => {
-        const downloadUrl = oxyServices.getFileDownloadUrl(photo.id);
+    const downloadUrl = oxyServices.getFileDownloadUrl(photo.id, 'thumb');
 
         return (
             <TouchableOpacity
@@ -670,9 +679,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                 })}
                             >
                                 {isImage && (
-                                    Platform.OS === 'web' ? (
+                    Platform.OS === 'web' ? (
                                         <img
-                                            src={oxyServices.getFileDownloadUrl(file.id)}
+                        src={oxyServices.getFileDownloadUrl(file.id, 'thumb')}
                                             style={{
                                                 width: '100%',
                                                 height: '100%',
@@ -692,7 +701,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                         />
                                     ) : (
                                         <Image
-                                            source={{ uri: oxyServices.getFileDownloadUrl(file.id) }}
+                        source={{ uri: oxyServices.getFileDownloadUrl(file.id, 'thumb') }}
                                             style={styles.previewImage}
                                             resizeMode="cover"
                                             onError={() => {
@@ -800,7 +809,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     };
 
     const renderPhotoItem = (photo: FileMetadata, index: number) => {
-        const downloadUrl = oxyServices.getFileDownloadUrl(photo.id);
+                        const downloadUrl = oxyServices.getFileDownloadUrl(photo.id, 'thumb');
 
         // Calculate photo item width based on actual container size from bottom sheet
         let itemsPerRow = 3; // Default for mobile

@@ -955,8 +955,8 @@ export class OxyServices {
    */
   async deleteFile(fileId: string): Promise<any> {
     try {
-      // For S3-based files, fileId is the S3 key
-      const res = await this.client.delete(`/api/files/${encodeURIComponent(fileId)}`);
+      // Central Asset Service delete with force=true behavior controlled by caller via assetDelete
+      const res = await this.client.delete(`/api/assets/${encodeURIComponent(fileId)}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -966,14 +966,16 @@ export class OxyServices {
   /**
    * Get file download URL
    */
-  getFileDownloadUrl(fileId: string): string {
-  // Build an anchor-friendly redirect URL and append the access token as a query param
-  const base = this.getBaseURL();
-  const token = this.tokenStore.getAccessToken();
-  const keyParam = `key=${encodeURIComponent(fileId)}`;
-  const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
-  // Use query variant to avoid path encoding issues
-  return `${base}/api/files/redirect-download?${keyParam}${tokenParam}`;
+  getFileDownloadUrl(fileId: string, variant?: string, expiresIn?: number): string {
+    // Default to streaming proxy to avoid ORB; attach token via query for <img src>
+    const base = this.getBaseURL();
+    const params = new URLSearchParams();
+  if (variant) params.set('variant', variant);
+  // Request a visible server-side placeholder if object is missing
+  params.set('fallback', 'placeholderVisible');
+    const token = this.tokenStore.getAccessToken();
+    if (token) params.set('token', token);
+    return `${base}/api/assets/${encodeURIComponent(fileId)}/stream${params.size ? `?${params.toString()}` : ''}`;
   }
 
   /**
@@ -986,55 +988,29 @@ export class OxyServices {
   /**
    * List user files
    */
-  async listUserFiles(
-    userId: string,
-    limit?: number,
-    offset?: number,
-    filters?: Record<string, any>
-  ): Promise<any> {
+  async listUserFiles(limit?: number, offset?: number): Promise<{ files: any[]; total: number; hasMore: boolean }> {
     try {
       const params = new URLSearchParams();
-      if (limit) params.append('limit', limit.toString());
-      if (offset) params.append('offset', offset.toString());
-      
-      if (filters) {
-        Object.entries(filters).forEach(([key, value]) => {
-          params.append(key, value.toString());
-        });
-      }
-      
-      const res = await this.client.get(`/api/files/list/${userId}?${params.toString()}`);
+      if (limit) params.append('limit', String(limit));
+      if (offset) params.append('offset', String(offset));
+      const res = await this.client.get(`/api/assets${params.size ? `?${params.toString()}` : ''}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
     }
   }
 
-  /**
-   * Download file content
-   */
-  async downloadFileContent(fileId: string): Promise<Response> {
-    try {
-      const res = await this.client.get(`/api/files/download?key=${encodeURIComponent(fileId)}`, {
-        responseType: 'blob'
-      });
-      return res.data;
-    } catch (error) {
-      throw this.handleError(error);
-    }
-  }
+  // (removed legacy downloadFileContent; use getFileContentAsBlob/Text which resolve CAS URL first)
 
   /**
    * Get file content as text
    */
-  async getFileContentAsText(fileId: string): Promise<string> {
+  async getFileContentAsText(fileId: string, variant?: string): Promise<string> {
     try {
-      const res = await this.client.get(`/api/files/download?key=${encodeURIComponent(fileId)}`, {
-        headers: {
-          'Accept': 'text/plain'
-        }
-      });
-      return res.data;
+      const urlRes = await this.client.get(`/api/assets/${encodeURIComponent(fileId)}/url${variant ? `?variant=${encodeURIComponent(variant)}` : ''}`);
+      const downloadUrl = urlRes.data?.url;
+      const response = await fetch(downloadUrl);
+      return await response.text();
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1043,12 +1019,12 @@ export class OxyServices {
   /**
    * Get file content as blob
    */
-  async getFileContentAsBlob(fileId: string): Promise<Blob> {
+  async getFileContentAsBlob(fileId: string, variant?: string): Promise<Blob> {
     try {
-      const res = await this.client.get(`/api/files/download?key=${encodeURIComponent(fileId)}`, {
-        responseType: 'blob'
-      });
-      return res.data;
+      const urlRes = await this.client.get(`/api/assets/${encodeURIComponent(fileId)}/url${variant ? `?variant=${encodeURIComponent(variant)}` : ''}`);
+      const downloadUrl = urlRes.data?.url;
+      const response = await fetch(downloadUrl);
+      return await response.blob();
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1057,23 +1033,9 @@ export class OxyServices {
   /**
    * Upload raw file data
    */
-  async uploadRawFile(file: File | Blob): Promise<any> {
-    try {
-      const fileName = (file as any).name || 'upload.bin';
-      const mimeType = (file as any).type || 'application/octet-stream';
-
-      const res = await this.client.post('/api/files/upload-raw', file, {
-        headers: {
-          'Content-Type': mimeType,
-          'X-File-Name': encodeURIComponent(fileName),
-          // Don't send X-User-Id, let the server get it from the authenticated user
-        }
-      });
-
-      return res.data;
-    } catch (error) {
-      throw this.handleError(error);
-    }
+  async uploadRawFile(file: File | Blob, metadata?: Record<string, any>): Promise<any> {
+    // Switch to Central Asset Service upload flow
+    return this.assetUpload(file as File, metadata);
   }
 
   // ============================================================================
@@ -1134,10 +1096,19 @@ export class OxyServices {
       
       // Initialize upload
       const initResponse = await this.assetInit(sha256, file.size, file.type);
-      
-      // Upload to S3 using pre-signed URL
-      await this.uploadToPresignedUrl(initResponse.uploadUrl, file, onProgress);
-      
+
+      // Try presigned URL first
+      try {
+        await this.uploadToPresignedUrl(initResponse.uploadUrl, file, onProgress);
+      } catch (e) {
+        // Fallback: direct upload via API to avoid CORS issues
+        const fd = new FormData();
+        fd.append('file', file);
+        await this.client.post(`/api/assets/${encodeURIComponent(initResponse.fileId)}/upload-direct`, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+        });
+      }
+
       // Complete upload
       return await this.assetComplete(
         initResponse.fileId,

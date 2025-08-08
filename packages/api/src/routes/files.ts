@@ -1,6 +1,7 @@
 import express from 'express';
 import multer from 'multer';
 import { S3Service, createS3Service, UploadOptions } from '../services/s3Service';
+import { AssetService } from '../services/assetService';
 import path from 'path';
 import { authMiddleware } from '../middleware/auth';
 import { logger } from '../utils/logger';
@@ -69,6 +70,8 @@ console.log('S3 Configuration:', {
 });
 
 const s3Service = createS3Service(s3Config);
+// Back-compat: expose CAS service for legacy routes that should now source from CAS
+const assetService = new AssetService(s3Service as unknown as S3Service);
 
 // Configure multer for file uploads
 const upload = multer({
@@ -683,9 +686,34 @@ router.get('/redirect-download', async (req: AuthenticatedRequest, res: express.
  */
 router.get('/list', async (req: AuthenticatedRequest, res: express.Response) => {
   try {
-    const { prefix, maxKeys } = req.query;
-    const user = req.user;
+  const { prefix, maxKeys, limit, offset } = req.query as Record<string, any>;
+  const user = req.user;
     
+    // Back-compat shim: if prefix is undefined/null/empty, delegate to CAS listing
+    if (!prefix || prefix === 'undefined' || prefix === 'null') {
+      try {
+        const userId = (user?._id as any)?.toString?.() || (user as any)?.id;
+        const lim = limit ? parseInt(String(limit)) : 50;
+        const off = offset ? parseInt(String(offset)) : 0;
+        const { files, total } = await assetService.listFilesByUser(userId, lim, off);
+
+        const convertedFiles = files.map((f: any) => ({
+          id: f._id?.toString?.() || f.id,
+          filename: f.originalName || f.sha256,
+          contentType: f.mime || 'application/octet-stream',
+          length: f.size || 0,
+          chunkSize: 0,
+          uploadDate: (f.createdAt instanceof Date ? f.createdAt.toISOString() : f.createdAt) || new Date().toISOString(),
+          metadata: f.metadata || {},
+        }));
+
+        return res.json({ success: true, files: convertedFiles, count: total });
+      } catch (e: any) {
+        logger.error('Back-compat list (CAS, query) error:', e);
+        return res.status(500).json({ error: 'Failed to list files', message: e.message });
+      }
+    }
+
     // Ensure prefix is within user's folder
     const userId = (user?._id as any)?.toString?.() || (user as any)?.id;
     const userPrefix = `users/${userId}/`;
@@ -760,9 +788,36 @@ router.get('/list', async (req: AuthenticatedRequest, res: express.Response) => 
  */
 router.get('/list/:prefix(*)', async (req: AuthenticatedRequest, res: express.Response) => {
   try {
-    const { maxKeys } = req.query;
+    const { maxKeys, limit, offset } = req.query as Record<string, string | undefined>;
     const user = req.user;
     let rawPrefix = req.params.prefix || '';
+
+    // Back-compat shim: some older clients call /api/files/list/undefined (passing undefined userId)
+    // In that case, delegate to CAS and return user's assets instead of S3 prefix listing
+    if (!rawPrefix || rawPrefix === 'undefined' || rawPrefix === 'null') {
+      try {
+        const userId = (user?._id as any)?.toString?.() || (user as any)?.id;
+        const lim = limit ? parseInt(limit) : 50;
+        const off = offset ? parseInt(offset) : 0;
+        const { files, total } = await assetService.listFilesByUser(userId, lim, off);
+
+        // Map CAS File documents to legacy FileMetadata shape
+        const convertedFiles = files.map((f: any) => ({
+          id: f._id?.toString?.() || f.id,
+          filename: f.originalName || f.sha256,
+          contentType: f.mime || 'application/octet-stream',
+          length: f.size || 0,
+          chunkSize: 0,
+          uploadDate: (f.createdAt instanceof Date ? f.createdAt.toISOString() : f.createdAt) || new Date().toISOString(),
+          metadata: f.metadata || {},
+        }));
+
+        return res.json({ success: true, files: convertedFiles, count: total });
+      } catch (e: any) {
+        logger.error('Back-compat list (CAS) error:', e);
+        return res.status(500).json({ error: 'Failed to list files', message: e.message });
+      }
+    }
 
     // Disallow path traversal
     if (rawPrefix.includes('..')) {
@@ -788,7 +843,7 @@ router.get('/list/:prefix(*)', async (req: AuthenticatedRequest, res: express.Re
     }
   logger.debug('List (path) computed prefix', { userId, requestedPrefix: req.params.prefix, rawPrefix, finalPrefix });
 
-    const files = await s3Service.listFiles(
+  const files = await s3Service.listFiles(
       finalPrefix,
       maxKeys ? parseInt(maxKeys as string) : 1000
     );
