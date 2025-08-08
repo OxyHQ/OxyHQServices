@@ -202,6 +202,100 @@ export interface FileDeleteResponse {
   fileId: string;
 }
 
+/**
+ * Central Asset Service interfaces
+ */
+export interface AssetLink {
+  app: string;
+  entityType: string;
+  entityId: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+export interface AssetVariant {
+  type: string;
+  key: string;
+  width?: number;
+  height?: number;
+  readyAt?: string;
+  size?: number;
+  metadata?: Record<string, any>;
+}
+
+export interface Asset {
+  id: string;
+  sha256: string;
+  size: number;
+  mime: string;
+  ext: string;
+  originalName?: string;
+  ownerUserId: string;
+  status: 'active' | 'trash' | 'deleted';
+  usageCount: number;
+  createdAt: string;
+  updatedAt: string;
+  links: AssetLink[];
+  variants: AssetVariant[];
+  metadata?: Record<string, any>;
+}
+
+export interface AssetInitRequest {
+  sha256: string;
+  size: number;
+  mime: string;
+}
+
+export interface AssetInitResponse {
+  uploadUrl: string;
+  fileId: string;
+  sha256: string;
+}
+
+export interface AssetCompleteRequest {
+  fileId: string;
+  originalName: string;
+  size: number;
+  mime: string;
+  metadata?: Record<string, any>;
+}
+
+export interface AssetLinkRequest {
+  app: string;
+  entityType: string;
+  entityId: string;
+}
+
+export interface AssetUnlinkRequest {
+  app: string;
+  entityType: string;
+  entityId: string;
+}
+
+export interface AssetUrlResponse {
+  success: boolean;
+  url: string;
+  variant?: string;
+  expiresIn: number;
+}
+
+export interface AssetDeleteSummary {
+  fileId: string;
+  wouldDelete: boolean;
+  affectedApps: string[];
+  remainingLinks: number;
+  variants: string[];
+}
+
+export interface AssetUploadProgress {
+  fileId: string;
+  uploaded: number;
+  total: number;
+  percentage: number;
+  status: 'uploading' | 'processing' | 'complete' | 'error';
+  error?: string;
+}
+
 // Device Session interfaces
 export interface DeviceSession {
   sessionId: string;

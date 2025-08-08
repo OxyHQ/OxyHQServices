@@ -1,6 +1,14 @@
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 import { jwtDecode } from 'jwt-decode';
-import type { OxyConfig, ApiError, User, Notification } from '../models/interfaces';
+import type { 
+  OxyConfig, 
+  ApiError, 
+  User, 
+  Notification, 
+  AssetInitResponse, 
+  AssetUrlResponse, 
+  AssetVariant 
+} from '../models/interfaces';
 import type { SessionLoginResponse } from '../models/session';
 import { handleHttpError } from '../utils/errorUtils';
 import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
@@ -1063,6 +1071,215 @@ export class OxyServices {
       });
 
       return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ============================================================================
+  // CENTRAL ASSET SERVICE METHODS
+  // ============================================================================
+
+  /**
+   * Calculate SHA256 hash of file content
+   */
+  async calculateSHA256(file: File | Blob): Promise<string> {
+    const buffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  /**
+   * Initialize asset upload - returns pre-signed URL and file ID
+   */
+  async assetInit(sha256: string, size: number, mime: string): Promise<AssetInitResponse> {
+    try {
+      const res = await this.client.post('/api/assets/init', {
+        sha256,
+        size,
+        mime
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Complete asset upload - commit metadata and trigger variant generation
+   */
+  async assetComplete(fileId: string, originalName: string, size: number, mime: string, metadata?: Record<string, any>): Promise<any> {
+    try {
+      const res = await this.client.post('/api/assets/complete', {
+        fileId,
+        originalName,
+        size,
+        mime,
+        metadata
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Upload file using Central Asset Service
+   */
+  async assetUpload(file: File, metadata?: Record<string, any>, onProgress?: (progress: number) => void): Promise<any> {
+    try {
+      // Calculate SHA256
+      const sha256 = await this.calculateSHA256(file);
+      
+      // Initialize upload
+      const initResponse = await this.assetInit(sha256, file.size, file.type);
+      
+      // Upload to S3 using pre-signed URL
+      await this.uploadToPresignedUrl(initResponse.uploadUrl, file, onProgress);
+      
+      // Complete upload
+      return await this.assetComplete(
+        initResponse.fileId,
+        file.name,
+        file.size,
+        file.type,
+        metadata
+      );
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Upload file to pre-signed URL
+   */
+  private async uploadToPresignedUrl(url: string, file: File, onProgress?: (progress: number) => void): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      
+      xhr.upload.addEventListener('progress', (event) => {
+        if (event.lengthComputable && onProgress) {
+          const progress = (event.loaded / event.total) * 100;
+          onProgress(progress);
+        }
+      });
+      
+      xhr.addEventListener('load', () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve();
+        } else {
+          reject(new Error(`Upload failed with status ${xhr.status}`));
+        }
+      });
+      
+      xhr.addEventListener('error', () => {
+        reject(new Error('Upload failed'));
+      });
+      
+      xhr.open('PUT', url);
+      xhr.setRequestHeader('Content-Type', file.type);
+      xhr.send(file);
+    });
+  }
+
+  /**
+   * Link asset to an entity
+   */
+  async assetLink(fileId: string, app: string, entityType: string, entityId: string): Promise<any> {
+    try {
+      const res = await this.client.post(`/api/assets/${fileId}/links`, {
+        app,
+        entityType,
+        entityId
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Unlink asset from an entity
+   */
+  async assetUnlink(fileId: string, app: string, entityType: string, entityId: string): Promise<any> {
+    try {
+      const res = await this.client.delete(`/api/assets/${fileId}/links`, {
+        data: {
+          app,
+          entityType,
+          entityId
+        }
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get asset metadata
+   */
+  async assetGet(fileId: string): Promise<any> {
+    try {
+      const res = await this.client.get(`/api/assets/${fileId}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get asset URL (CDN or signed URL)
+   */
+  async assetGetUrl(fileId: string, variant?: string, expiresIn?: number): Promise<AssetUrlResponse> {
+    try {
+      const params = new URLSearchParams();
+      if (variant) params.set('variant', variant);
+      if (expiresIn) params.set('expiresIn', expiresIn.toString());
+      
+      const queryString = params.toString();
+      const url = `/api/assets/${fileId}/url${queryString ? `?${queryString}` : ''}`;
+      
+      const res = await this.client.get(url);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Restore asset from trash
+   */
+  async assetRestore(fileId: string): Promise<any> {
+    try {
+      const res = await this.client.post(`/api/assets/${fileId}/restore`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Delete asset with optional force
+   */
+  async assetDelete(fileId: string, force: boolean = false): Promise<any> {
+    try {
+      const params = force ? '?force=true' : '';
+      const res = await this.client.delete(`/api/assets/${fileId}${params}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get list of available variants for an asset
+   */
+  async assetGetVariants(fileId: string): Promise<AssetVariant[]> {
+    try {
+      const assetData = await this.assetGet(fileId);
+      return assetData.file?.variants || [];
     } catch (error) {
       throw this.handleError(error);
     }
