@@ -816,6 +816,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     theme: theme as 'light' | 'dark',
                     onPress: () => handleFileOpen(file),
                     showChevron: false,
+                    dense: true,
                     multiRow: !!file.metadata?.description,
                     customContent: (
                         <View style={styles.groupedActions}>

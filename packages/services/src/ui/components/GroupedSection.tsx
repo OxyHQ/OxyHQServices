@@ -18,6 +18,7 @@ interface GroupedSectionItem {
     customIcon?: React.ReactNode;
     multiRow?: boolean;
     customContentBelow?: React.ReactNode;
+    dense?: boolean;
 }
 
 interface GroupedSectionProps {
@@ -47,6 +48,7 @@ const GroupedSection: React.FC<GroupedSectionProps> = ({ items, theme }) => {
                     customContent={item.customContent}
                     customIcon={item.customIcon}
                     multiRow={item.multiRow}
+                    dense={item.dense}
                     customContentBelow={item.customContentBelow}
                 />
             ))}

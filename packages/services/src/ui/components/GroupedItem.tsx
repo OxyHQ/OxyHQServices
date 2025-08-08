@@ -20,6 +20,7 @@ interface GroupedItemProps {
     customIcon?: React.ReactNode;
     multiRow?: boolean;
     customContentBelow?: React.ReactNode;
+    dense?: boolean; // reduces internal padding
 }
 
 const GroupedItem: React.FC<GroupedItemProps> = ({
@@ -40,6 +41,7 @@ const GroupedItem: React.FC<GroupedItemProps> = ({
     customIcon,
     multiRow = false,
     customContentBelow,
+    dense = false,
 }) => {
     const isDarkTheme = theme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
@@ -56,7 +58,11 @@ const GroupedItem: React.FC<GroupedItemProps> = ({
     ];
 
     const content = (
-        <View style={[styles.groupedItemContent, multiRow && styles.groupedItemContentMultiRow]}>
+        <View style={[
+            styles.groupedItemContent,
+            multiRow && styles.groupedItemContentMultiRow,
+            dense && styles.groupedItemContentDense,
+        ]}>
             {customIcon ? (
                 <View style={styles.actionIcon}>
                     {customIcon}
@@ -126,6 +132,10 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         padding: 16,
         width: '100%',
+    },
+    groupedItemContentDense: {
+        paddingVertical: 10,
+        paddingHorizontal: 12,
     },
     actionIcon: {
         marginRight: 12,
