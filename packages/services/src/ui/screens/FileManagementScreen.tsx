@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
     View,
     Text,
@@ -72,6 +72,17 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [photoDimensions, setPhotoDimensions] = useState<{ [key: string]: { width: number, height: number } }>({});
     const [loadingDimensions, setLoadingDimensions] = useState(false);
     const [hoveredPreview, setHoveredPreview] = useState<string | null>(null);
+    const uploadStartRef = useRef<number | null>(null);
+    const MIN_BANNER_MS = 600;
+    const endUpload = useCallback(() => {
+        const started = uploadStartRef.current;
+        const elapsed = started ? Date.now() - started : MIN_BANNER_MS;
+        const remaining = elapsed < MIN_BANNER_MS ? MIN_BANNER_MS - elapsed : 0;
+        setTimeout(() => {
+            setUploading(false);
+            uploadStartRef.current = null;
+        }, remaining);
+    }, []);
 
     // Helper to safely request a thumbnail variant only for image mime types.
     // Prevents backend warnings: "Variant thumb not supported for mime application/pdf".
@@ -323,6 +334,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     const handleFileUpload = async () => {
         try {
+            uploadStartRef.current = Date.now();
             setUploading(true);
             setUploadProgress(null);
 
@@ -335,7 +347,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                 input.onchange = async (e: any) => {
                     const selectedFiles = Array.from(e.target.files) as File[];
+                    if (selectedFiles.length > 0) {
+                        setUploadProgress({ current: 0, total: selectedFiles.length });
+                    }
                     await processFileUploads(selectedFiles);
+                    endUpload();
                 };
 
                 input.click();
@@ -353,7 +369,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         } catch (error: any) {
             toast.error(error.message || 'Failed to upload file');
         } finally {
-            setUploading(false);
+            if (uploadStartRef.current) endUpload();
             setUploadProgress(null);
         }
     };
@@ -411,6 +427,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
     };
 
+    const handleDragEnter = (e: any) => {
+        if (Platform.OS === 'web' && user?.id === targetUserId) {
+            e.preventDefault();
+            setIsDragging(true);
+        }
+    };
+
     const handleDragLeave = (e: any) => {
         if (Platform.OS === 'web') {
             e.preventDefault();
@@ -418,19 +441,54 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
     };
 
+    // Global drag listeners (web) to catch drags outside component bounds
+    useEffect(() => {
+        if (Platform.OS !== 'web' || user?.id !== targetUserId) return;
+        const onDocDragEnter = (e: any) => {
+            if (e?.dataTransfer?.types?.includes('Files')) setIsDragging(true);
+        };
+        const onDocDragOver = (e: any) => {
+            if (e?.dataTransfer?.types?.includes('Files')) {
+                e.preventDefault();
+                setIsDragging(true);
+            }
+        };
+        const onDocDrop = (e: any) => {
+            if (e?.dataTransfer?.files?.length) {
+                e.preventDefault();
+                setIsDragging(false);
+            }
+        };
+        const onDocDragLeave = (e: any) => {
+            if (!e.relatedTarget && e.screenX === 0 && e.screenY === 0) setIsDragging(false);
+        };
+        document.addEventListener('dragenter', onDocDragEnter);
+        document.addEventListener('dragover', onDocDragOver);
+        document.addEventListener('drop', onDocDrop);
+        document.addEventListener('dragleave', onDocDragLeave);
+        return () => {
+            document.removeEventListener('dragenter', onDocDragEnter);
+            document.removeEventListener('dragover', onDocDragOver);
+            document.removeEventListener('drop', onDocDrop);
+            document.removeEventListener('dragleave', onDocDragLeave);
+        };
+    }, [user?.id, targetUserId]);
+
     const handleDrop = async (e: any) => {
         if (Platform.OS === 'web' && user?.id === targetUserId) {
             e.preventDefault();
             setIsDragging(false);
+            uploadStartRef.current = Date.now();
             setUploading(true);
 
             try {
                 const files = Array.from(e.dataTransfer.files) as File[];
+                if (files.length > 0) setUploadProgress({ current: 0, total: files.length });
                 await processFileUploads(files);
             } catch (error: any) {
                 toast.error(error.message || 'Failed to upload files');
             } finally {
-                setUploading(false);
+                endUpload();
             }
         }
     };
@@ -1545,6 +1603,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             ]}
             {...(Platform.OS === 'web' && user?.id === targetUserId ? {
                 onDragOver: handleDragOver,
+                onDragEnter: handleDragEnter,
                 onDragLeave: handleDragLeave,
                 onDrop: handleDrop,
             } : {})}
@@ -1718,6 +1777,21 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {renderFileDetailsModal()}
 
+            {/* Uploading banner overlay */}
+            {uploading && (
+                <View pointerEvents="none" style={styles.uploadBannerContainer}>
+                    <View style={[styles.uploadBanner, { backgroundColor: themeStyles.isDarkTheme ? '#222831EE' : '#FFFFFFEE', borderColor: themeStyles.borderColor }]}> 
+                        <Ionicons name="cloud-upload" size={18} color={themeStyles.primaryColor} />
+                        <Text style={[styles.uploadBannerText, { color: themeStyles.textColor }]}>Uploading{uploadProgress ? ` ${uploadProgress.current}/${uploadProgress.total}` : '...'}</Text>
+                        <View style={styles.uploadBannerDots}>
+                            {[0,1,2].map(i => (
+                                <View key={i} style={[styles.dot, { opacity: ((Date.now()/400 + i) % 3) < 1 ? 1 : 0.25 }]} />
+                            ))}
+                        </View>
+                    </View>
+                </View>
+            )}
+
             {/* Drag and Drop Overlay */}
             {isDragging && Platform.OS === 'web' && (
                 <View style={styles.dragDropOverlay}>
@@ -1803,6 +1877,43 @@ const styles = StyleSheet.create({
         fontSize: 10,
         fontWeight: '600',
         marginTop: 2,
+    },
+    uploadBannerContainer: {
+        position: 'absolute',
+        top: 72, // below header
+        left: 0,
+        right: 0,
+        alignItems: 'center',
+        zIndex: 50,
+    },
+    uploadBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 24,
+        gap: 8,
+        borderWidth: 1,
+        shadowColor: '#000',
+        shadowOpacity: 0.1,
+        shadowRadius: 6,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 2,
+    },
+    uploadBannerText: {
+        fontSize: 13,
+        fontWeight: '500',
+    },
+    uploadBannerDots: {
+        flexDirection: 'row',
+        gap: 4,
+        marginLeft: 2,
+    },
+    dot: {
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: '#007AFF',
     },
     searchContainer: {
         flexDirection: 'row',
