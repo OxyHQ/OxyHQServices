@@ -11,14 +11,16 @@ import {
     Dimensions,
     Modal,
     TextInput,
-    Image,
+    Image, // kept for Image.getSize only
 } from 'react-native';
+import { Image as ExpoImage } from 'expo-image';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 import type { FileMetadata } from '../../models/interfaces';
+import Header from '../components/Header';
 
 interface FileManagementScreenProps extends BaseScreenProps {
     userId?: string;
@@ -69,6 +71,19 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [photoDimensions, setPhotoDimensions] = useState<{ [key: string]: { width: number, height: number } }>({});
     const [loadingDimensions, setLoadingDimensions] = useState(false);
     const [hoveredPreview, setHoveredPreview] = useState<string | null>(null);
+
+    // Helper to safely request a thumbnail variant only for image mime types.
+    // Prevents backend warnings: "Variant thumb not supported for mime application/pdf".
+    const getSafeDownloadUrl = useCallback(
+        (file: FileMetadata, variant: string = 'thumb') => {
+            if (!file.contentType.startsWith('image/')) {
+                // Non-image: return original file URL (no variant)
+                return oxyServices.getFileDownloadUrl(file.id);
+            }
+            return oxyServices.getFileDownloadUrl(file.id, variant);
+        },
+        [oxyServices]
+    );
 
     // Memoize theme-related calculations to prevent unnecessary recalculations
     const themeStyles = useMemo(() => {
@@ -164,7 +179,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             await Promise.all(
                 photosToLoad.map(async (photo) => {
                     try {
-                        const downloadUrl = oxyServices.getFileDownloadUrl(photo.id, 'thumb');
+                        const downloadUrl = getSafeDownloadUrl(photo, 'thumb');
 
                         if (Platform.OS === 'web') {
                             const img = new (window as any).Image();
@@ -524,7 +539,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     };
 
     const renderSimplePhotoItem = useCallback((photo: FileMetadata, index: number) => {
-    const downloadUrl = oxyServices.getFileDownloadUrl(photo.id, 'thumb');
+        const downloadUrl = getSafeDownloadUrl(photo, 'thumb');
 
         // Calculate photo item width based on actual container size from bottom sheet
         let itemsPerRow = 3; // Default for mobile
@@ -552,45 +567,24 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 activeOpacity={0.8}
             >
                 <View style={styles.simplePhotoContainer}>
-                    {Platform.OS === 'web' ? (
-                        <img
-                            src={downloadUrl}
-                            alt={photo.filename}
-                            style={{
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover',
-                                borderRadius: 8,
-                                transition: 'transform 0.2s ease',
-                            }}
-                            loading="lazy"
-                            onError={(e) => {
-                                console.error('Photo failed to load:', e);
-                            }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.transform = 'scale(1.05)';
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.transform = 'scale(1)';
-                            }}
-                        />
-                    ) : (
-                        <Image
-                            source={{ uri: downloadUrl }}
-                            style={styles.simplePhotoImage}
-                            resizeMode="cover"
-                            onError={(e) => {
-                                console.error('Photo failed to load:', e);
-                            }}
-                        />
-                    )}
+                    <ExpoImage
+                        source={{ uri: downloadUrl }}
+                        style={styles.simplePhotoImage}
+                        contentFit="cover"
+                        transition={120}
+                        cachePolicy="memory-disk"
+                        onError={(e: any) => {
+                            console.error('Photo failed to load:', (e as any)?.nativeEvent ?? e);
+                        }}
+                        accessibilityLabel={photo.filename}
+                    />
                 </View>
             </TouchableOpacity>
         );
     }, [oxyServices, containerWidth]);
 
     const renderJustifiedPhotoItem = useCallback((photo: FileMetadata, width: number, height: number, isLast: boolean) => {
-    const downloadUrl = oxyServices.getFileDownloadUrl(photo.id, 'thumb');
+        const downloadUrl = getSafeDownloadUrl(photo, 'thumb');
 
         return (
             <TouchableOpacity
@@ -606,42 +600,17 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 activeOpacity={0.8}
             >
                 <View style={styles.justifiedPhotoContainer}>
-                    {Platform.OS === 'web' ? (
-                        <img
-                            src={downloadUrl}
-                            alt={photo.filename}
-                            style={{
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover',
-                                borderRadius: 6,
-                                transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-                            }}
-                            loading="lazy"
-                            onError={(e) => {
-                                console.error('Photo failed to load:', e);
-                            }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.transform = 'scale(1.02)';
-                                e.currentTarget.style.boxShadow = '0 8px 25px rgba(0,0,0,0.15)';
-                                e.currentTarget.style.zIndex = '10';
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.transform = 'scale(1)';
-                                e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)';
-                                e.currentTarget.style.zIndex = '1';
-                            }}
-                        />
-                    ) : (
-                        <Image
-                            source={{ uri: downloadUrl }}
-                            style={styles.justifiedPhotoImage}
-                            resizeMode="cover"
-                            onError={(e) => {
-                                console.error('Photo failed to load:', e);
-                            }}
-                        />
-                    )}
+                    <ExpoImage
+                        source={{ uri: downloadUrl }}
+                        style={styles.justifiedPhotoImage}
+                        contentFit="cover"
+                        transition={120}
+                        cachePolicy="memory-disk"
+                        onError={(e: any) => {
+                            console.error('Photo failed to load:', (e as any)?.nativeEvent ?? e);
+                        }}
+                        accessibilityLabel={photo.filename}
+                    />
                 </View>
             </TouchableOpacity>
         );
@@ -679,37 +648,17 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                 })}
                             >
                                 {isImage && (
-                    Platform.OS === 'web' ? (
-                                        <img
-                        src={oxyServices.getFileDownloadUrl(file.id, 'thumb')}
-                                            style={{
-                                                width: '100%',
-                                                height: '100%',
-                                                objectFit: 'cover',
-                                                borderRadius: 8,
-                                                transition: 'transform 0.2s ease',
-                                                transform: hoveredPreview === file.id ? 'scale(1.05)' : 'scale(1)',
-                                            }}
-                                            onError={(e) => {
-                                                // Show fallback icon if image fails to load
-                                                e.currentTarget.style.display = 'none';
-                                                const fallbackElement = e.currentTarget.parentElement?.querySelector('[data-fallback="true"]');
-                                                if (fallbackElement) {
-                                                    (fallbackElement as HTMLElement).style.display = 'flex';
-                                                }
-                                            }}
-                                        />
-                                    ) : (
-                                        <Image
-                        source={{ uri: oxyServices.getFileDownloadUrl(file.id, 'thumb') }}
-                                            style={styles.previewImage}
-                                            resizeMode="cover"
-                                            onError={() => {
-                                                // For React Native, you might want to set an error state
-                                                console.warn('Failed to load image preview for file:', file.id);
-                                            }}
-                                        />
-                                    )
+                                    <ExpoImage
+                                        source={{ uri: getSafeDownloadUrl(file, 'thumb') }}
+                                        style={styles.previewImage}
+                                        contentFit="cover"
+                                        transition={120}
+                                        cachePolicy="memory-disk"
+                                        onError={(_: any) => {
+                                            console.warn('Failed to load image preview.');
+                                        }}
+                                        accessibilityLabel={file.filename}
+                                    />
                                 )}
                                 {isPDF && (
                                     <View style={styles.pdfPreview}>
@@ -809,7 +758,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     };
 
     const renderPhotoItem = (photo: FileMetadata, index: number) => {
-                        const downloadUrl = oxyServices.getFileDownloadUrl(photo.id, 'thumb');
+        const downloadUrl = getSafeDownloadUrl(photo, 'thumb');
 
         // Calculate photo item width based on actual container size from bottom sheet
         let itemsPerRow = 3; // Default for mobile
@@ -836,39 +785,17 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 activeOpacity={0.8}
             >
                 <View style={styles.photoContainer}>
-                    {Platform.OS === 'web' ? (
-                        <img
-                            src={downloadUrl}
-                            alt={photo.filename}
-                            style={{
-                                width: '100%',
-                                height: '100%',
-                                objectFit: 'cover',
-                                borderRadius: 8,
-                                transition: 'transform 0.2s ease',
-                            }}
-                            loading="lazy"
-                            onError={(e) => {
-                                console.error('Photo failed to load:', e);
-                                // Could replace with placeholder image
-                            }}
-                            onMouseEnter={(e) => {
-                                e.currentTarget.style.transform = 'scale(1.02)';
-                            }}
-                            onMouseLeave={(e) => {
-                                e.currentTarget.style.transform = 'scale(1)';
-                            }}
-                        />
-                    ) : (
-                        <Image
-                            source={{ uri: downloadUrl }}
-                            style={styles.photoImage}
-                            resizeMode="cover"
-                            onError={(e) => {
-                                console.error('Photo failed to load:', e);
-                            }}
-                        />
-                    )}
+                    <ExpoImage
+                        source={{ uri: downloadUrl }}
+                        style={styles.photoImage}
+                        contentFit="cover"
+                        transition={120}
+                        cachePolicy="memory-disk"
+                        onError={(_: any) => {
+                            console.warn('Failed to load image preview for photo:', photo.id);
+                        }}
+                        accessibilityLabel={photo.filename}
+                    />
                 </View>
             </TouchableOpacity>
         );
@@ -882,12 +809,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 <View style={styles.emptyState}>
                     <Ionicons name="images-outline" size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
                     <Text style={[styles.emptyStateTitle, { color: themeStyles.textColor }]}>No Photos Yet</Text>
-                    <Text style={[styles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                        {user?.id === targetUserId
+                    <Text style={[styles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}> {
+                        user?.id === targetUserId
                             ? `Upload photos to get started. You can select multiple photos at once${Platform.OS === 'web' ? ' or drag & drop them here.' : '.'}`
                             : "This user hasn't uploaded any photos yet"
-                        }
-                    </Text>
+                    } </Text>
                     {user?.id === targetUserId && (
                         <TouchableOpacity
                             style={[styles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
@@ -924,9 +850,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 {loadingDimensions && (
                     <View style={styles.dimensionsLoadingIndicator}>
                         <ActivityIndicator size="small" color={themeStyles.primaryColor} />
-                        <Text style={[styles.dimensionsLoadingText, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                            Loading photo layout...
-                        </Text>
+                        <Text style={[styles.dimensionsLoadingText, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>Loading photo layout...</Text>
                     </View>
                 )}
 
@@ -1369,34 +1293,17 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         </View>
                     ) : isImage && fileContent ? (
                         <View style={styles.imageContainer}>
-                            {Platform.OS === 'web' ? (
-                                <img
-                                    src={fileContent}
-                                    alt={openedFile.filename}
-                                    style={{
-                                        maxWidth: '100%',
-                                        maxHeight: '80vh',
-                                        objectFit: 'contain',
-                                        borderRadius: 8,
-                                    }}
-                                    onError={(e) => {
-                                        console.error('Image failed to load:', e);
-                                    }}
-                                />
-                            ) : (
-                                <Image
-                                    source={{ uri: fileContent }}
-                                    style={{
-                                        width: '100%',
-                                        height: 400,
-                                        resizeMode: 'contain',
-                                        borderRadius: 8,
-                                    }}
-                                    onError={(e) => {
-                                        console.error('Image failed to load:', e);
-                                    }}
-                                />
-                            )}
+                            <ExpoImage
+                                source={{ uri: fileContent }}
+                                style={{ width: '100%', height: 400, borderRadius: 8 }}
+                                contentFit="contain"
+                                transition={120}
+                                cachePolicy="memory-disk"
+                                onError={(e: any) => {
+                                    console.error('Image failed to load:', (e as any)?.nativeEvent ?? e);
+                                }}
+                                accessibilityLabel={openedFile.filename}
+                            />
                         </View>
                     ) : isText && fileContent ? (
                         <View style={[styles.textContainer, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }]}>
@@ -1535,7 +1442,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         <View
             style={[
                 styles.container,
-                { backgroundColor },
                 isDragging && Platform.OS === 'web' && styles.dragOverlay
             ]}
             {...(Platform.OS === 'web' && user?.id === targetUserId ? {
@@ -1544,151 +1450,73 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 onDrop: handleDrop,
             } : {})}
         >
-            {/* Header */}
-            <View style={[
-                styles.header,
-                {
-                    borderBottomColor: borderColor,
-                    backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF',
-                    shadowColor: '#000000',
-                    shadowOffset: {
-                        width: 0,
-                        height: 2,
-                    },
-                    shadowOpacity: themeStyles.isDarkTheme ? 0.3 : 0.1,
-                    shadowRadius: 8,
-                    elevation: 4,
-                    ...Platform.select({
-                        web: {
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                        },
-                        default: {},
-                    }),
-                }
-            ]}>
-                <TouchableOpacity
-                    style={[
-                        styles.backButton,
-                        {
-                            backgroundColor: themeStyles.isDarkTheme ? '#2A2A2A' : '#F8F9FA',
-                            borderRadius: 12,
-                        }
-                    ]}
-                    onPress={onClose || goBack}
-                >
-                    <Ionicons name="arrow-back" size={22} color={themeStyles.textColor} />
-                </TouchableOpacity>
+            <Header
+                title={viewMode === 'photos' ? 'Photos' : 'File Management'}
+                subtitle={`${filteredFiles.length} ${filteredFiles.length === 1 ? 'item' : 'items'}`}
+                onBack={onClose || goBack}
+                theme={theme}
+                showBackButton
+                variant="minimal"
+                elevation="none"
+                titleAlignment="left"
+            />
 
-                <View style={styles.headerTitleContainer}>
-                    <Text style={[styles.headerTitle, { color: themeStyles.textColor }]}>
-                        {viewMode === 'photos' ? 'Photos' : 'File Management'}
-                    </Text>
-                    <Text style={[styles.headerSubtitle, { color: themeStyles.isDarkTheme ? '#AAAAAA' : '#666666' }]}>
-                        {filteredFiles.length} {filteredFiles.length === 1 ? 'item' : 'items'}
-                    </Text>
+            <View style={styles.controlsBar}>
+                <View style={[
+                    styles.viewModeToggle,
+                    {
+                        backgroundColor: themeStyles.isDarkTheme ? '#181818' : '#FFFFFF',
+                        borderWidth: 1,
+                        borderColor: themeStyles.isDarkTheme ? '#2A2A2A' : '#E8E9EA',
+                    }
+                ]}>
+                    <TouchableOpacity
+                        style={[
+                            styles.viewModeButton,
+                            viewMode === 'all' && { backgroundColor: themeStyles.primaryColor }
+                        ]}
+                        onPress={() => setViewMode('all')}
+                    >
+                        <Ionicons
+                            name="folder"
+                            size={18}
+                            color={viewMode === 'all' ? '#FFFFFF' : themeStyles.textColor}
+                        />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[
+                            styles.viewModeButton,
+                            viewMode === 'photos' && { backgroundColor: themeStyles.primaryColor }
+                        ]}
+                        onPress={() => setViewMode('photos')}
+                    >
+                        <Ionicons
+                            name="images"
+                            size={18}
+                            color={viewMode === 'photos' ? '#FFFFFF' : themeStyles.textColor}
+                        />
+                    </TouchableOpacity>
                 </View>
-
-                <View style={styles.headerActions}>
-                    {/* View Mode Toggle */}
-                    <View style={[
-                        styles.viewModeToggle,
-                        {
-                            backgroundColor: themeStyles.isDarkTheme ? '#2A2A2A' : '#F8F9FA',
-                            borderWidth: 1,
-                            borderColor: themeStyles.isDarkTheme ? '#3A3A3A' : '#E8E9EA',
-                            shadowColor: '#000000',
-                            shadowOffset: {
-                                width: 0,
-                                height: 1,
-                            },
-                            shadowOpacity: themeStyles.isDarkTheme ? 0.3 : 0.05,
-                            shadowRadius: 4,
-                            elevation: 2,
-                        }
-                    ]}>
-                        <TouchableOpacity
-                            style={[
-                                styles.viewModeButton,
-                                viewMode === 'all' && {
-                                    backgroundColor: themeStyles.primaryColor,
-                                    shadowColor: themeStyles.primaryColor,
-                                    shadowOffset: {
-                                        width: 0,
-                                        height: 2,
-                                    },
-                                    shadowOpacity: 0.3,
-                                    shadowRadius: 4,
-                                    elevation: 3,
-                                }
-                            ]}
-                            onPress={() => setViewMode('all')}
-                        >
-                            <Ionicons
-                                name="folder"
-                                size={18}
-                                color={viewMode === 'all' ? '#FFFFFF' : themeStyles.textColor}
-                            />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[
-                                styles.viewModeButton,
-                                viewMode === 'photos' && {
-                                    backgroundColor: themeStyles.primaryColor,
-                                    shadowColor: themeStyles.primaryColor,
-                                    shadowOffset: {
-                                        width: 0,
-                                        height: 2,
-                                    },
-                                    shadowOpacity: 0.3,
-                                    shadowRadius: 4,
-                                    elevation: 3,
-                                }
-                            ]}
-                            onPress={() => setViewMode('photos')}
-                        >
-                            <Ionicons
-                                name="images"
-                                size={18}
-                                color={viewMode === 'photos' ? '#FFFFFF' : themeStyles.textColor}
-                            />
-                        </TouchableOpacity>
-                    </View>
-
-                    {user?.id === targetUserId && (
-                        <TouchableOpacity
-                            style={[
-                                styles.uploadButton,
-                                {
-                                    backgroundColor: themeStyles.primaryColor,
-                                    shadowColor: themeStyles.primaryColor,
-                                    shadowOffset: {
-                                        width: 0,
-                                        height: 3,
-                                    },
-                                    shadowOpacity: 0.4,
-                                    shadowRadius: 6,
-                                    elevation: 5,
-                                    transform: uploading ? [{ scale: 0.95 }] : [{ scale: 1 }],
-                                }
-                            ]}
-                            onPress={handleFileUpload}
-                            disabled={uploading}
-                        >
-                            {uploading ? (
-                                <View style={styles.uploadProgress}>
-                                    <ActivityIndicator size="small" color="#FFFFFF" />
-                                    {uploadProgress && (
-                                        <Text style={styles.uploadProgressText}>
-                                            {uploadProgress.current}/{uploadProgress.total}
-                                        </Text>
-                                    )}
-                                </View>
-                            ) : (
-                                <Ionicons name="add" size={26} color="#FFFFFF" />
-                            )}
-                        </TouchableOpacity>
-                    )}
-                </View>
+                {user?.id === targetUserId && (
+                    <TouchableOpacity
+                        style={[styles.uploadButton, { backgroundColor: themeStyles.primaryColor }]}
+                        onPress={handleFileUpload}
+                        disabled={uploading}
+                    >
+                        {uploading ? (
+                            <View style={styles.uploadProgress}>
+                                <ActivityIndicator size="small" color="#FFFFFF" />
+                                {uploadProgress && (
+                                    <Text style={styles.uploadProgressText}>
+                                        {uploadProgress.current}/{uploadProgress.total}
+                                    </Text>
+                                )}
+                            </View>
+                        ) : (
+                            <Ionicons name="add" size={22} color="#FFFFFF" />
+                        )}
+                    </TouchableOpacity>
+                )}
             </View>
 
             {/* Search Bar */}
@@ -1698,14 +1526,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     {
                         backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF',
                         borderColor: themeStyles.isDarkTheme ? '#3A3A3A' : '#E8E9EA',
-                        shadowColor: '#000000',
-                        shadowOffset: {
-                            width: 0,
-                            height: 1,
-                        },
-                        shadowOpacity: themeStyles.isDarkTheme ? 0.2 : 0.05,
-                        shadowRadius: 4,
-                        elevation: 2,
                     }
                 ]}>
                     <Ionicons name="search" size={22} color={themeStyles.isDarkTheme ? '#888888' : '#666666'} />
@@ -1734,14 +1554,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     {
                         backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF',
                         borderColor: themeStyles.isDarkTheme ? '#3A3A3A' : '#E8E9EA',
-                        shadowColor: '#000000',
-                        shadowOffset: {
-                            width: 0,
-                            height: 1,
-                        },
-                        shadowOpacity: themeStyles.isDarkTheme ? 0.2 : 0.05,
-                        shadowRadius: 4,
-                        elevation: 2,
                     }
                 ]}>
                     <View style={styles.statItem}>
@@ -1832,9 +1644,9 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     dragOverlay: {
-        backgroundColor: 'rgba(0, 122, 255, 0.1)',
-        borderWidth: 2,
-        borderColor: '#007AFF',
+        backgroundColor: 'rgba(0, 122, 255, 0.06)',
+        borderWidth: 1,
+        borderColor: '#66AFFF',
         borderStyle: 'dashed',
     },
     centerContent: {
@@ -1845,8 +1657,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 24,
-        paddingVertical: 20,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
         borderBottomWidth: 1,
         position: 'relative',
     },
@@ -1898,13 +1710,13 @@ const styles = StyleSheet.create({
     searchContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
-        marginHorizontal: 24,
-        marginTop: 20,
-        borderRadius: 16,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        marginHorizontal: 16,
+        marginTop: 12,
+        borderRadius: 10,
         borderWidth: 1,
-        gap: 16,
+        gap: 10,
     },
     searchInput: {
         flex: 1,
@@ -1923,11 +1735,11 @@ const styles = StyleSheet.create({
     },
     statsContainer: {
         flexDirection: 'row',
-        paddingHorizontal: 24,
-        paddingVertical: 20,
-        marginHorizontal: 24,
-        marginTop: 20,
-        borderRadius: 16,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        marginHorizontal: 16,
+        marginTop: 12,
+        borderRadius: 10,
         borderWidth: 1,
     },
     statItem: {
@@ -1936,31 +1748,31 @@ const styles = StyleSheet.create({
         paddingVertical: 4,
     },
     statValue: {
-        fontSize: 28,
+        fontSize: 20,
         fontWeight: '800',
         fontFamily: fontFamilies.phuduBold,
         letterSpacing: -0.5,
-        lineHeight: 32,
+        lineHeight: 24,
     },
     statLabel: {
-        fontSize: 15,
+        fontSize: 12,
         fontWeight: '500',
         fontFamily: fontFamilies.phuduMedium,
-        marginTop: 4,
-        letterSpacing: 0.3,
+        marginTop: 2,
+        letterSpacing: 0.2,
     },
     scrollView: {
         flex: 1,
     },
     scrollContainer: {
-        padding: 20,
+        padding: 12,
     },
     fileItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 16,
-        marginBottom: 12,
-        borderRadius: 12,
+        padding: 10,
+        marginBottom: 8,
+        borderRadius: 10,
         borderWidth: 1,
     },
     fileContent: {
@@ -1976,15 +1788,15 @@ const styles = StyleSheet.create({
         marginRight: 12,
     },
     filePreviewContainer: {
-        width: 60,
-        height: 60,
-        marginRight: 12,
+        width: 52,
+        height: 52,
+        marginRight: 10,
     },
     filePreview: {
         width: '100%',
         height: '100%',
         borderRadius: 8,
-        backgroundColor: '#F5F5F5',
+        backgroundColor: 'transparent',
         alignItems: 'center',
         justifyContent: 'center',
         overflow: 'hidden',
@@ -2027,7 +1839,7 @@ const styles = StyleSheet.create({
         bottom: 0,
         alignItems: 'center',
         justifyContent: 'center',
-        backgroundColor: '#F5F5F5',
+        backgroundColor: 'transparent',
         borderRadius: 8,
     },
     previewOverlay: {
@@ -2036,7 +1848,7 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backgroundColor: 'rgba(0, 0, 0, 0.25)',
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: 8,
@@ -2062,16 +1874,19 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     actionButton: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         alignItems: 'center',
         justifyContent: 'center',
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        backgroundColor: 'transparent',
     },
     emptyState: {
         alignItems: 'center',
-        paddingVertical: 60,
-        paddingHorizontal: 40,
+        paddingVertical: 40,
+        paddingHorizontal: 24,
     },
     emptyStateTitle: {
         fontSize: 24,
@@ -2112,8 +1927,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
         borderBottomWidth: 1,
     },
     modalCloseButton: {
@@ -2129,11 +1944,11 @@ const styles = StyleSheet.create({
     },
     modalContent: {
         flex: 1,
-        padding: 20,
+        padding: 16,
     },
     fileDetailCard: {
-        padding: 24,
-        borderRadius: 16,
+        padding: 18,
+        borderRadius: 14,
         borderWidth: 1,
         alignItems: 'center',
     },
@@ -2196,25 +2011,25 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 1000,
     },
     dragDropContent: {
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        padding: 40,
-        borderRadius: 20,
-        borderWidth: 3,
-        borderColor: '#007AFF',
+        backgroundColor: 'rgba(255, 255, 255, 0.95)',
+        padding: 20,
+        borderRadius: 14,
+        borderWidth: 1,
+        borderColor: '#66AFFF',
         borderStyle: 'dashed',
     },
     dragDropTitle: {
-        fontSize: 24,
+        fontSize: 20,
         fontWeight: 'bold',
-        marginTop: 16,
-        marginBottom: 8,
+        marginTop: 12,
+        marginBottom: 6,
     },
     dragDropSubtitle: {
         fontSize: 16,
@@ -2228,8 +2043,8 @@ const styles = StyleSheet.create({
     fileViewerHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 16,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
         borderBottomWidth: 1,
     },
     fileViewerTitleContainer: {
@@ -2257,7 +2072,7 @@ const styles = StyleSheet.create({
     },
     fileViewerContentContainer: {
         flexGrow: 1,
-        padding: 20,
+        padding: 14,
     },
     fileViewerLoading: {
         flex: 1,
@@ -2275,10 +2090,10 @@ const styles = StyleSheet.create({
     },
     textContainer: {
         flex: 1,
-        borderRadius: 12,
+        borderRadius: 10,
         borderWidth: 1,
-        padding: 16,
-        minHeight: 200,
+        padding: 12,
+        minHeight: 180,
         maxHeight: '80%',
     },
     textContent: {
@@ -2290,8 +2105,8 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        paddingVertical: 60,
-        paddingHorizontal: 40,
+        paddingVertical: 40,
+        paddingHorizontal: 24,
     },
     unsupportedFileTitle: {
         fontSize: 24,
@@ -2310,9 +2125,9 @@ const styles = StyleSheet.create({
     downloadButtonLarge: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 24,
-        paddingVertical: 16,
-        borderRadius: 24,
+        paddingHorizontal: 18,
+        paddingVertical: 12,
+        borderRadius: 20,
         gap: 8,
     },
     downloadButtonText: {
@@ -2339,10 +2154,10 @@ const styles = StyleSheet.create({
 
     // File Details in Viewer styles
     fileDetailsSection: {
-        margin: 16,
+        margin: 12,
         marginTop: 0,
-        padding: 20,
-        borderRadius: 12,
+        padding: 14,
+        borderRadius: 10,
         borderWidth: 1,
     },
     fileDetailsSectionTitle: {
@@ -2386,6 +2201,15 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: 16,
     },
+    controlsBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingTop: 8,
+        paddingBottom: 4,
+        gap: 12,
+    },
     viewModeToggle: {
         flexDirection: 'row',
         borderRadius: 24,
@@ -2404,17 +2228,17 @@ const styles = StyleSheet.create({
 
     // Photo Grid styles
     photoScrollContainer: {
-        padding: 16,
+        padding: 10,
     },
     photoDateSection: {
-        marginBottom: 24,
+        marginBottom: 16,
     },
     photoDateHeader: {
-        fontSize: 18,
+        fontSize: 16,
         fontWeight: '600',
         fontFamily: fontFamilies.phuduSemiBold,
-        marginBottom: 12,
-        paddingHorizontal: 4,
+        marginBottom: 8,
+        paddingHorizontal: 2,
     },
     photoGrid: {
         flexDirection: 'row',
@@ -2467,7 +2291,7 @@ const styles = StyleSheet.create({
         position: 'relative',
         borderRadius: 6,
         overflow: 'hidden',
-        backgroundColor: '#F5F5F5',
+        backgroundColor: 'transparent',
     },
     justifiedPhotoImage: {
         width: '100%',
@@ -2479,7 +2303,7 @@ const styles = StyleSheet.create({
     simplePhotoItem: {
         borderRadius: 8,
         overflow: 'hidden',
-        backgroundColor: '#F5F5F5',
+        backgroundColor: 'transparent',
     },
     simplePhotoContainer: {
         width: '100%',
