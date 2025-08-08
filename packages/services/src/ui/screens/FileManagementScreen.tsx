@@ -25,25 +25,8 @@ interface FileManagementScreenProps extends BaseScreenProps {
 }
 
 // Add this helper function near the top (after imports):
-async function uploadFileRaw(file: File | Blob, userId: string) {
-    const fileName = (file as any).name || 'upload.bin';
-    const mimeType = (file as any).type || 'application/octet-stream';
-
-    const res = await fetch('/api/files/upload-raw', {
-        method: 'POST',
-        headers: {
-            'Content-Type': mimeType,
-            'X-File-Name': encodeURIComponent(fileName),
-            'X-User-Id': userId,
-        },
-        body: file,
-        credentials: 'include', // if you use cookies/session
-    });
-
-    if (!res.ok) {
-        throw new Error(await res.text());
-    }
-    return await res.json();
+async function uploadFileRaw(file: File | Blob, userId: string, oxyServices: any) {
+    return await oxyServices.uploadRawFile(file);
 }
 
 const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
@@ -263,7 +246,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             for (let i = 0; i < selectedFiles.length; i++) {
                 setUploadProgress({ current: i + 1, total: selectedFiles.length });
                 try {
-                    await uploadFileRaw(selectedFiles[i], targetUserId);
+                    await uploadFileRaw(selectedFiles[i], targetUserId, oxyServices);
                     successCount++;
                 } catch (error: any) {
                     failureCount++;

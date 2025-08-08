@@ -237,6 +237,13 @@ export class OxyServices {
   }
 
   /**
+   * Get the raw access token (for constructing anchor URLs when needed)
+   */
+  public getAccessToken(): string | null {
+    return this.tokenStore.getAccessToken();
+  }
+
+  /**
    * Wait for authentication to be ready (public method)
    * Useful for apps that want to ensure authentication is complete before proceeding
    */
@@ -940,7 +947,8 @@ export class OxyServices {
    */
   async deleteFile(fileId: string): Promise<any> {
     try {
-      const res = await this.client.delete(`/api/files/${fileId}`);
+      // For S3-based files, fileId is the S3 key
+      const res = await this.client.delete(`/api/files/${encodeURIComponent(fileId)}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -951,7 +959,13 @@ export class OxyServices {
    * Get file download URL
    */
   getFileDownloadUrl(fileId: string): string {
-    return `${OXY_CLOUD_URL}/files/${fileId}/download`;
+  // Build an anchor-friendly redirect URL and append the access token as a query param
+  const base = this.getBaseURL();
+  const token = this.tokenStore.getAccessToken();
+  const keyParam = `key=${encodeURIComponent(fileId)}`;
+  const tokenParam = token ? `&token=${encodeURIComponent(token)}` : '';
+  // Use query variant to avoid path encoding issues
+  return `${base}/api/files/redirect-download?${keyParam}${tokenParam}`;
   }
 
   /**
@@ -993,7 +1007,7 @@ export class OxyServices {
    */
   async downloadFileContent(fileId: string): Promise<Response> {
     try {
-      const res = await this.client.get(`/api/files/${fileId}`, {
+      const res = await this.client.get(`/api/files/download?key=${encodeURIComponent(fileId)}`, {
         responseType: 'blob'
       });
       return res.data;
@@ -1007,7 +1021,7 @@ export class OxyServices {
    */
   async getFileContentAsText(fileId: string): Promise<string> {
     try {
-      const res = await this.client.get(`/api/files/${fileId}`, {
+      const res = await this.client.get(`/api/files/download?key=${encodeURIComponent(fileId)}`, {
         headers: {
           'Accept': 'text/plain'
         }
@@ -1023,9 +1037,31 @@ export class OxyServices {
    */
   async getFileContentAsBlob(fileId: string): Promise<Blob> {
     try {
-      const res = await this.client.get(`/api/files/${fileId}`, {
+      const res = await this.client.get(`/api/files/download?key=${encodeURIComponent(fileId)}`, {
         responseType: 'blob'
       });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Upload raw file data
+   */
+  async uploadRawFile(file: File | Blob): Promise<any> {
+    try {
+      const fileName = (file as any).name || 'upload.bin';
+      const mimeType = (file as any).type || 'application/octet-stream';
+
+      const res = await this.client.post('/api/files/upload-raw', file, {
+        headers: {
+          'Content-Type': mimeType,
+          'X-File-Name': encodeURIComponent(fileName),
+          // Don't send X-User-Id, let the server get it from the authenticated user
+        }
+      });
+
       return res.data;
     } catch (error) {
       throw this.handleError(error);

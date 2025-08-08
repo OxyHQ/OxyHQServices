@@ -53,7 +53,10 @@ app.use((req, res, next) => {
   }
   
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Date, X-Api-Version");
+  res.setHeader(
+    "Access-Control-Allow-Headers",
+    "Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Date, X-Api-Version, X-File-Name"
+  );
   res.setHeader("Access-Control-Allow-Credentials", "true");
 
   // Ensure OPTIONS requests always have CORS headers
@@ -140,38 +143,8 @@ export function emitSessionUpdate(userId: string, payload: any) {
   io.to(room).emit('session_update', payload);
 }
 
-// Special handling for file upload requests with proper auth
-app.use("/api/files", (req, res, next) => {
-  // Debug logging for file uploads in development
-  if (req.path === "/upload" && req.method === "POST" && process.env.NODE_ENV === 'development') {
-    logger.debug('Incoming file upload request', {
-      method: req.method,
-      contentType: req.headers["content-type"],
-      contentLength: req.headers["content-length"],
-      origin: req.headers.origin,
-      hasAuth: !!req.headers.authorization,
-    });
-  }
-  next();
-});
-
 // Register file routes with auth middleware
 app.use("/api/files", fileRoutes);
-
-// Apply rate limiting and security middleware to non-file upload routes
-app.use((req, res, next) => {
-  if (!req.path.startsWith("/api/files/upload")) {
-    rateLimiter(req, res, (err: any) => {
-      if (err) return next(err);
-      bruteForceProtection(req, res, next);
-    });
-  } else {
-    next();
-  }
-});
-
-// Body parsing middleware - already applied at the top level, so this is redundant
-// Removing the duplicate middleware registration
 
 // MongoDB Connection
 console.log('MONGODB_URI from environment:', process.env.MONGODB_URI);

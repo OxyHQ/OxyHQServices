@@ -15,13 +15,60 @@ interface AuthenticatedRequest extends express.Request {
 
 const router = express.Router();
 
+// Allow token via query param/cookie for cases like direct download links
+router.use((req, _res, next) => {
+  const auth = req.headers.authorization as string | undefined;
+
+  // Accept a few query param names for flexibility
+  const q = req.query as Record<string, any>;
+  const qpToken = [
+    typeof q.token === 'string' ? q.token : undefined,
+    typeof q.accessToken === 'string' ? q.accessToken : undefined,
+    typeof q.auth === 'string' ? q.auth : undefined,
+    typeof q.t === 'string' ? q.t : undefined,
+  ].find(Boolean) as string | undefined;
+
+  if ((!auth || !auth.startsWith('Bearer ')) && qpToken) {
+    (req.headers as any).authorization = `Bearer ${qpToken}`;
+  }
+
+  // Basic cookie token support without adding cookie-parser
+  if ((!req.headers.authorization || !req.headers.authorization.startsWith('Bearer ')) && req.headers.cookie) {
+    const cookieHeader = req.headers.cookie;
+    const parts = cookieHeader.split(';').map(p => p.trim());
+    const cookieNames = ['accessToken', 'access_token'];
+    const accessCookie = parts.find(p => cookieNames.some(name => p.startsWith(`${name}=`)));
+    if (accessCookie) {
+      const cookieToken = decodeURIComponent(accessCookie.split('=')[1] || '');
+      if (cookieToken) {
+        (req.headers as any).authorization = `Bearer ${cookieToken}`;
+      }
+    }
+  }
+  next();
+});
+
+// Require authentication for all file routes to ensure req.user is available
+router.use(authMiddleware);
+
 // Initialize S3 service
-const s3Service = createS3Service({
+const s3Config = {
   region: process.env.AWS_REGION || 'us-east-1',
   accessKeyId: process.env.AWS_ACCESS_KEY_ID || '',
   secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || '',
   bucketName: process.env.AWS_S3_BUCKET || '',
+  endpointUrl: process.env.AWS_ENDPOINT_URL, // For DigitalOcean Spaces
+};
+
+console.log('S3 Configuration:', {
+  region: s3Config.region,
+  bucketName: s3Config.bucketName,
+  endpointUrl: s3Config.endpointUrl,
+  hasAccessKey: !!s3Config.accessKeyId,
+  hasSecretKey: !!s3Config.secretAccessKey,
 });
+
+const s3Service = createS3Service(s3Config);
 
 // Configure multer for file uploads
 const upload = multer({
@@ -57,8 +104,136 @@ const upload = multer({
   },
 });
 
-// Apply auth middleware to all routes
-router.use(authMiddleware);
+console.log('Files route initialized with S3 service');
+
+/**
+ * @route GET /api/files/test-connection
+ * @desc Test S3/DigitalOcean Spaces connection
+ * @access Private
+ */
+router.get('/test-connection', async (req: AuthenticatedRequest, res: express.Response) => {
+  try {
+    console.log('Testing S3 connection...');
+    
+    // Try to list files to test connection
+    const userPrefix = `users/${req.user?._id}/`;
+    const files = await s3Service.listFiles(userPrefix, 1);
+    
+    console.log('S3 connection test successful');
+    res.json({
+      success: true,
+      message: 'S3 connection test successful',
+      fileCount: files.length,
+    });
+  } catch (error: any) {
+    console.error('S3 connection test failed:', error);
+    res.status(500).json({
+      error: 'S3 connection test failed',
+      message: error.message,
+      details: error.toString(),
+    });
+  }
+});
+
+/**
+ * @route POST /api/files/upload-raw
+ * @desc Upload a raw file to S3 (for direct binary uploads)
+ * @access Private
+ */
+router.post('/upload-raw', async (req: AuthenticatedRequest, res: express.Response) => {
+  console.log('USER: ', req.user?._id);
+  try {
+    const user = req.user;
+
+    console.log('Raw file upload request received');
+    
+    if (!user?._id) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+    
+    // Get file information from headers
+    const fileName = decodeURIComponent(req.headers['x-file-name'] as string || 'upload.bin');
+    const contentType = req.headers['content-type'] || 'application/octet-stream';
+    const userId = user._id; // Always use the authenticated user's ID
+    
+    // Read the raw body data
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk) => {
+      chunks.push(chunk);
+    });
+    
+    req.on('end', async () => {
+      try {
+        const buffer = Buffer.concat(chunks);
+        
+        if (buffer.length === 0) {
+          return res.status(400).json({ error: 'No file data provided' });
+        }
+        
+        // Check file size limit (50MB as mentioned in the frontend)
+        const maxSize = 50 * 1024 * 1024; // 50MB
+        if (buffer.length > maxSize) {
+          return res.status(413).json({ error: 'File too large (max 50MB)' });
+        }
+        
+        // Generate unique key with user prefix
+        const userFolder = `users/${userId}`;
+        const key = s3Service.generateUniqueKey(fileName, userFolder);
+        
+        // Upload options
+        const uploadOptions: UploadOptions = {
+          contentType,
+          publicRead: false,
+          // Don't set folder here since it's already included in the key
+          metadata: {
+            userId,
+            originalName: fileName,
+            uploadedAt: new Date().toISOString(),
+          },
+        };
+
+        // Upload to S3
+        const fileInfo = await s3Service.uploadBuffer(key, buffer, uploadOptions);
+
+        logger.info(`Raw file uploaded successfully: ${key} by user ${userId}`);
+
+        // Return in FileMetadata format expected by the frontend
+        const response = {
+          id: fileInfo.key,
+          filename: fileName,
+          contentType: fileInfo.contentType || contentType,
+          length: fileInfo.size,
+          chunkSize: 261120, // GridFS default chunk size for compatibility
+          uploadDate: fileInfo.lastModified.toISOString(),
+          metadata: fileInfo.metadata,
+        };
+
+        res.json(response);
+      } catch (error: any) {
+        logger.error('Raw file upload error:', error);
+        res.status(500).json({
+          error: 'Failed to upload file',
+          message: error.message,
+        });
+      }
+    });
+    
+    req.on('error', (error) => {
+      logger.error('Raw file upload stream error:', error);
+      res.status(500).json({
+        error: 'Failed to upload file',
+        message: error.message,
+      });
+    });
+    
+  } catch (error: any) {
+    logger.error('Raw file upload setup error:', error);
+    res.status(500).json({
+      error: 'Failed to upload file',
+      message: error.message,
+    });
+  }
+});
 
 /**
  * @route POST /api/files/upload
@@ -84,7 +259,7 @@ router.post('/upload', upload.single('file'), async (req: AuthenticatedRequest, 
     const uploadOptions: UploadOptions = {
       contentType: file.mimetype,
       publicRead: publicRead === 'true',
-      folder: finalFolder,
+      // Don't set folder here since it's already included in the key
       metadata: {
         ...(metadata ? JSON.parse(metadata) : {}),
         userId: user?._id,
@@ -135,7 +310,7 @@ router.post('/upload-multiple', upload.array('files', 10), async (req: Authentic
       const uploadOptions: UploadOptions = {
         contentType: file.mimetype,
         publicRead: publicRead === 'true',
-        folder: finalFolder,
+        // Don't set folder here since it's already included in the key
         metadata: {
           ...(metadata ? JSON.parse(metadata) : {}),
           userId: user?._id,
@@ -181,6 +356,7 @@ router.get('/download/:key(*)', async (req: AuthenticatedRequest, res: express.R
 
     // Verify user has access to this file
     if (!key.startsWith(`users/${user?._id}/`)) {
+      logger.warn('Download access denied: key not in user folder', { userId: user?._id, key });
       return res.status(403).json({ error: 'Access denied' });
     }
 
@@ -203,6 +379,48 @@ router.get('/download/:key(*)', async (req: AuthenticatedRequest, res: express.R
     res.send(buffer);
   } catch (error: any) {
     logger.error('File download error:', error);
+    res.status(500).json({
+      error: 'Failed to download file',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * @route GET /api/files/download?key=...
+ * @desc Download a file from S3 using query param to avoid path encoding issues
+ * @access Private
+ */
+router.get('/download', async (req: AuthenticatedRequest, res: express.Response) => {
+  try {
+    const key = typeof req.query.key === 'string' ? req.query.key : undefined;
+    const user = req.user;
+
+    if (!key) {
+      return res.status(400).json({ error: 'File key is required' });
+    }
+
+    if (!key.startsWith(`users/${user?._id}/`)) {
+      logger.warn('Download (query) access denied: key not in user folder', { userId: user?._id, key });
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const metadata = await s3Service.getFileMetadata(key);
+    if (!metadata) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const buffer = await s3Service.downloadBuffer(key);
+
+    res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
+    res.setHeader('Content-Length', buffer.length);
+    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(key)}"`);
+
+    logger.info(`File downloaded (query): ${key} by user ${user?._id}`);
+
+    res.send(buffer);
+  } catch (error: any) {
+    logger.error('File download (query) error:', error);
     res.status(500).json({
       error: 'Failed to download file',
       message: error.message,
@@ -380,6 +598,85 @@ router.get('/presigned-download/:key(*)', async (req: AuthenticatedRequest, res:
 });
 
 /**
+ * @route GET /api/files/redirect-download/:key
+ * @desc Validate and redirect to a presigned URL for file download (anchor-friendly)
+ * @access Private
+ */
+router.get('/redirect-download/:key(*)', async (req: AuthenticatedRequest, res: express.Response) => {
+  try {
+    const { key } = req.params;
+    const { expiresIn } = req.query;
+    const user = req.user;
+
+    if (!key) {
+      return res.status(400).json({ error: 'File key is required' });
+    }
+
+    if (!key.startsWith(`users/${user?._id}/`)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const exists = await s3Service.fileExists(key);
+    if (!exists) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const url = await s3Service.getPresignedDownloadUrl(
+      key,
+      expiresIn ? parseInt(expiresIn as string) : 3600
+    );
+
+    // 302 redirect to S3/Spaces
+    return res.redirect(url);
+  } catch (error: any) {
+    logger.error('Redirect download error:', error);
+    return res.status(500).json({
+      error: 'Failed to redirect to download URL',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * @route GET /api/files/redirect-download?key=...
+ * @desc Query-param variant to avoid path encoding issues
+ * @access Private
+ */
+router.get('/redirect-download', async (req: AuthenticatedRequest, res: express.Response) => {
+  try {
+    const key = typeof req.query.key === 'string' ? req.query.key : undefined;
+    const { expiresIn } = req.query;
+    const user = req.user;
+
+    if (!key) {
+      return res.status(400).json({ error: 'File key is required' });
+    }
+
+    if (!key.startsWith(`users/${user?._id}/`)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const exists = await s3Service.fileExists(key);
+    if (!exists) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    const url = await s3Service.getPresignedDownloadUrl(
+      key,
+      expiresIn ? parseInt(expiresIn as string) : 3600
+    );
+
+    return res.redirect(url);
+  } catch (error: any) {
+    logger.error('Redirect download (query) error:', error);
+    return res.status(500).json({
+      error: 'Failed to redirect to download URL',
+      message: error.message,
+    });
+  }
+});
+
+/**
  * @route GET /api/files/list
  * @desc List files in S3 bucket for the authenticated user
  * @access Private
@@ -390,21 +687,145 @@ router.get('/list', async (req: AuthenticatedRequest, res: express.Response) => 
     const user = req.user;
     
     // Ensure prefix is within user's folder
-    const userPrefix = `users/${user?._id}/`;
-    const finalPrefix = prefix ? `${userPrefix}${prefix}` : userPrefix;
+    const userId = (user?._id as any)?.toString?.() || (user as any)?.id;
+    const userPrefix = `users/${userId}/`;
+    // Normalize provided prefix: remove leading '/', ensure trailing '/'
+  let normalized = typeof prefix === 'string' ? prefix : '';
+    if (normalized.startsWith('/')) normalized = normalized.slice(1);
+    if (normalized && !normalized.endsWith('/')) normalized = `${normalized}/`;
+
+    // If client passed userId or already passed absolute users/<id>/..., avoid double-prefix
+  let finalPrefix = userPrefix;
+    if (normalized) {
+      if (normalized === `${userId}/`) {
+        finalPrefix = userPrefix;
+      } else if (normalized.startsWith(`users/${userId}/`)) {
+        finalPrefix = normalized; // already absolute
+      } else {
+        finalPrefix = `${userPrefix}${normalized}`;
+      }
+    }
+  logger.debug('List files computed prefix', { userId, requestedPrefix: prefix, normalized, finalPrefix });
     
     const files = await s3Service.listFiles(
       finalPrefix,
       maxKeys ? parseInt(maxKeys as string) : 1000
     );
 
+    // Convert S3 FileInfo format to FileMetadata format
+    const convertedFiles = await Promise.all(files.map(async (file) => {
+      try {
+        const metadata = await s3Service.getFileMetadata(file.key);
+        return {
+          id: file.key,
+          filename: metadata?.metadata?.originalName || file.key.split('/').pop() || file.key,
+          contentType: metadata?.contentType || 'application/octet-stream',
+          length: file.size,
+          chunkSize: 261120,
+          uploadDate: file.lastModified.toISOString(),
+          metadata: metadata?.metadata || {},
+        };
+      } catch (e) {
+        // Fallback if metadata fetch fails
+        return {
+          id: file.key,
+          filename: file.key.split('/').pop() || file.key,
+          contentType: 'application/octet-stream',
+          length: file.size,
+          chunkSize: 261120,
+          uploadDate: file.lastModified.toISOString(),
+          metadata: {},
+        };
+      }
+    }));
+
     res.json({
       success: true,
-      files,
-      count: files.length,
+      files: convertedFiles,
+      count: convertedFiles.length,
     });
   } catch (error: any) {
     logger.error('File listing error:', error);
+    res.status(500).json({
+      error: 'Failed to list files',
+      message: error.message,
+    });
+  }
+});
+
+/**
+ * @route GET /api/files/list/:prefix
+ * @desc List files in S3 bucket for the authenticated user (path-param variant)
+ * @access Private
+ */
+router.get('/list/:prefix(*)', async (req: AuthenticatedRequest, res: express.Response) => {
+  try {
+    const { maxKeys } = req.query;
+    const user = req.user;
+    let rawPrefix = req.params.prefix || '';
+
+    // Disallow path traversal
+    if (rawPrefix.includes('..')) {
+      return res.status(400).json({ error: 'Invalid prefix' });
+    }
+
+  const userId = (user?._id as any)?.toString?.() || (user as any)?.id;
+  const userPrefix = `users/${userId}/`;
+    // Normalize prefix: strip leading '/', ensure trailing '/'
+    if (rawPrefix.startsWith('/')) rawPrefix = rawPrefix.slice(1);
+    if (rawPrefix && !rawPrefix.endsWith('/')) rawPrefix = `${rawPrefix}/`;
+
+    // If client passed userId or already passed absolute users/<id>/..., avoid double-prefix
+  let finalPrefix = userPrefix;
+    if (rawPrefix) {
+      if (rawPrefix === `${userId}/`) {
+        finalPrefix = userPrefix;
+      } else if (rawPrefix.startsWith(`users/${userId}/`)) {
+        finalPrefix = rawPrefix; // already absolute
+      } else {
+        finalPrefix = `${userPrefix}${rawPrefix}`;
+      }
+    }
+  logger.debug('List (path) computed prefix', { userId, requestedPrefix: req.params.prefix, rawPrefix, finalPrefix });
+
+    const files = await s3Service.listFiles(
+      finalPrefix,
+      maxKeys ? parseInt(maxKeys as string) : 1000
+    );
+
+    // Convert S3 FileInfo format to FileMetadata format
+    const convertedFiles = await Promise.all(files.map(async (file) => {
+      try {
+        const metadata = await s3Service.getFileMetadata(file.key);
+        return {
+          id: file.key,
+          filename: metadata?.metadata?.originalName || file.key.split('/').pop() || file.key,
+          contentType: metadata?.contentType || 'application/octet-stream',
+          length: file.size,
+          chunkSize: 261120,
+          uploadDate: file.lastModified.toISOString(),
+          metadata: metadata?.metadata || {},
+        };
+      } catch (e) {
+        return {
+          id: file.key,
+          filename: file.key.split('/').pop() || file.key,
+          contentType: 'application/octet-stream',
+          length: file.size,
+          chunkSize: 261120,
+          uploadDate: file.lastModified.toISOString(),
+          metadata: {},
+        };
+      }
+    }));
+
+    res.json({
+      success: true,
+      files: convertedFiles,
+      count: convertedFiles.length,
+    });
+  } catch (error: any) {
+    logger.error('File listing (path) error:', error);
     res.status(500).json({
       error: 'Failed to list files',
       message: error.message,

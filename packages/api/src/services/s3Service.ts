@@ -10,6 +10,7 @@ export interface S3Config {
   accessKeyId: string;
   secretAccessKey: string;
   bucketName: string;
+  endpointUrl?: string; // For DigitalOcean Spaces and other S3-compatible services
 }
 
 export interface UploadOptions {
@@ -37,16 +38,36 @@ export interface PresignedUrlOptions {
 export class S3Service {
   private s3Client: S3Client;
   private bucketName: string;
+  private endpointUrl?: string;
+  private region: string;
 
   constructor(config: S3Config) {
-    this.s3Client = new S3Client({
+    const clientConfig: any = {
       region: config.region,
       credentials: {
         accessKeyId: config.accessKeyId,
         secretAccessKey: config.secretAccessKey,
       },
+    };
+
+    // Add custom endpoint for DigitalOcean Spaces or other S3-compatible services
+    if (config.endpointUrl) {
+      clientConfig.endpoint = config.endpointUrl;
+      clientConfig.forcePathStyle = false; // Try without forcing path style first
+      clientConfig.useAccelerateEndpoint = false;
+      clientConfig.useArnRegion = false;
+    }
+
+    console.log('S3Client Configuration:', {
+      region: clientConfig.region,
+      endpoint: clientConfig.endpoint,
+      forcePathStyle: clientConfig.forcePathStyle,
     });
+
+    this.s3Client = new S3Client(clientConfig);
     this.bucketName = config.bucketName;
+    this.endpointUrl = config.endpointUrl;
+    this.region = config.region;
   }
 
   /**
@@ -71,12 +92,22 @@ export class S3Service {
 
       const finalKey = options.folder ? `${options.folder}/${key}` : key;
 
+      // Sanitize metadata to ensure all values are strings
+      const sanitizedMetadata: Record<string, string> = {};
+      if (options.metadata) {
+        for (const [key, value] of Object.entries(options.metadata)) {
+          if (value !== null && value !== undefined) {
+            sanitizedMetadata[key] = String(value);
+          }
+        }
+      }
+
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: finalKey,
         Body: body as any, // Type assertion for compatibility
         ContentType: contentType,
-        Metadata: options.metadata,
+        Metadata: Object.keys(sanitizedMetadata).length > 0 ? sanitizedMetadata : undefined,
         ACL: options.publicRead ? 'public-read' : 'private',
       });
 
@@ -87,8 +118,8 @@ export class S3Service {
         size: 0, // Will be updated below
         lastModified: new Date(),
         contentType,
-        metadata: options.metadata,
-        url: options.publicRead ? `https://${this.bucketName}.s3.amazonaws.com/${finalKey}` : undefined,
+        metadata: sanitizedMetadata,
+        url: options.publicRead ? this.generatePublicUrl(finalKey) : undefined,
       };
     } catch (error) {
       throw new Error(`Failed to upload file to S3: ${error}`);
@@ -107,12 +138,22 @@ export class S3Service {
       const contentType = options.contentType || 'application/octet-stream';
       const finalKey = options.folder ? `${options.folder}/${key}` : key;
 
+      // Sanitize metadata to ensure all values are strings
+      const sanitizedMetadata: Record<string, string> = {};
+      if (options.metadata) {
+        for (const [key, value] of Object.entries(options.metadata)) {
+          if (value !== null && value !== undefined) {
+            sanitizedMetadata[key] = String(value);
+          }
+        }
+      }
+
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: finalKey,
         Body: buffer,
         ContentType: contentType,
-        Metadata: options.metadata,
+        Metadata: Object.keys(sanitizedMetadata).length > 0 ? sanitizedMetadata : undefined,
         ACL: options.publicRead ? 'public-read' : 'private',
       });
 
@@ -123,8 +164,8 @@ export class S3Service {
         size: buffer.length,
         lastModified: new Date(),
         contentType,
-        metadata: options.metadata,
-        url: options.publicRead ? `https://${this.bucketName}.s3.amazonaws.com/${finalKey}` : undefined,
+        metadata: sanitizedMetadata,
+        url: options.publicRead ? this.generatePublicUrl(finalKey) : undefined,
       };
     } catch (error) {
       throw new Error(`Failed to upload buffer to S3: ${error}`);
@@ -211,11 +252,21 @@ export class S3Service {
     try {
       const { expiresIn = 3600, contentType = 'application/octet-stream', metadata } = options;
       
+      // Sanitize metadata to ensure all values are strings
+      const sanitizedMetadata: Record<string, string> = {};
+      if (metadata) {
+        for (const [key, value] of Object.entries(metadata)) {
+          if (value !== null && value !== undefined) {
+            sanitizedMetadata[key] = String(value);
+          }
+        }
+      }
+      
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: key,
         ContentType: contentType,
-        Metadata: metadata,
+        Metadata: Object.keys(sanitizedMetadata).length > 0 ? sanitizedMetadata : undefined,
       });
 
       return getSignedUrl(this.s3Client, command, { expiresIn });
@@ -413,7 +464,28 @@ export class S3Service {
    * Get public URL for a file (if bucket is public)
    */
   getPublicUrl(key: string): string {
-    return `https://${this.bucketName}.s3.amazonaws.com/${key}`;
+    if (this.endpointUrl) {
+      // For DigitalOcean Spaces or other S3-compatible services
+      const baseUrl = this.endpointUrl.replace('https://', '');
+      return `https://${this.bucketName}.${baseUrl}/${key}`;
+    } else {
+      // For AWS S3
+      return `https://${this.bucketName}.s3.amazonaws.com/${key}`;
+    }
+  }
+
+  /**
+   * Generate URL for public read files
+   */
+  private generatePublicUrl(key: string): string {
+    if (this.endpointUrl) {
+      // For DigitalOcean Spaces or other S3-compatible services
+      const baseUrl = this.endpointUrl.replace('https://', '');
+      return `https://${this.bucketName}.${baseUrl}/${key}`;
+    } else {
+      // For AWS S3
+      return `https://${this.bucketName}.s3.amazonaws.com/${key}`;
+    }
   }
 
   /**
