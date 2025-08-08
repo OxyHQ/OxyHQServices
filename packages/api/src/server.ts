@@ -19,6 +19,7 @@ import karmaRoutes from './routes/karma.routes';
 import linkMetadataRoutes from './routes/linkMetadata';
 import locationSearchRoutes from './routes/locationSearch';
 import authRoutes from './routes/auth';
+import assetRoutes from './routes/assets';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
 import { Response } from 'express';
@@ -175,6 +176,7 @@ app.get("/", async (req, res) => {
 });
 
 // API Routes with /api prefix
+app.use("/api/assets", assetRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/profiles", profilesRouter);
 app.use("/api/users", usersRouter);
