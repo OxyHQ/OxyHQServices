@@ -21,6 +21,7 @@ import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 import type { FileMetadata } from '../../models/interfaces';
 import Header from '../components/Header';
+import { GroupedSection } from '../components';
 
 interface FileManagementScreenProps extends BaseScreenProps {
     userId?: string;
@@ -793,6 +794,66 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             </View>
         );
     };
+
+    // GroupedSection-based file items (for 'all' view) replacing legacy flat list look
+    const groupedFileItems = useMemo(() => {
+        return filteredFiles
+            .filter(f => true) // placeholder for future filtering
+            .sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime())
+            .map((file) => {
+                const isImage = file.contentType.startsWith('image/');
+                const isVideo = file.contentType.startsWith('video/');
+                const hasPreview = isImage || isVideo;
+                const previewUrl = hasPreview ? (isVideo ? getSafeDownloadUrl(file, 'poster') : getSafeDownloadUrl(file, 'thumb')) : undefined;
+                return {
+                    id: file.id,
+                    image: previewUrl,
+                    imageSize: 44,
+                    icon: !previewUrl ? getFileIcon(file.contentType) : undefined,
+                    iconColor: themeStyles.primaryColor,
+                    title: file.filename,
+                    subtitle: `${formatFileSize(file.length)} • ${new Date(file.uploadDate).toLocaleDateString()}`,
+                    theme: theme as 'light' | 'dark',
+                    onPress: () => handleFileOpen(file),
+                    showChevron: false,
+                    multiRow: !!file.metadata?.description,
+                    customContent: (
+                        <View style={styles.groupedActions}>
+                            {(isImage || isVideo || file.contentType.includes('pdf')) && (
+                                <TouchableOpacity
+                                    style={[styles.groupedActionBtn, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
+                                    onPress={() => handleFileOpen(file)}
+                                >
+                                    <Ionicons name="eye" size={18} color={themeStyles.primaryColor} />
+                                </TouchableOpacity>
+                            )}
+                            <TouchableOpacity
+                                style={[styles.groupedActionBtn, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
+                                onPress={() => handleFileDownload(file.id, file.filename)}
+                            >
+                                <Ionicons name="download" size={18} color={themeStyles.primaryColor} />
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.groupedActionBtn, { backgroundColor: themeStyles.isDarkTheme ? '#400000' : '#FFEBEE' }]}
+                                onPress={() => handleFileDelete(file.id, file.filename)}
+                                disabled={deleting === file.id}
+                            >
+                                {deleting === file.id ? (
+                                    <ActivityIndicator size="small" color={themeStyles.dangerColor} />
+                                ) : (
+                                    <Ionicons name="trash" size={18} color={themeStyles.dangerColor} />
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    ),
+                    customContentBelow: file.metadata?.description ? (
+                        <Text style={[styles.groupedDescription, { color: themeStyles.isDarkTheme ? '#AAAAAA' : '#666666' }]} numberOfLines={2}>
+                            {file.metadata.description}
+                        </Text>
+                    ) : undefined,
+                } as any; // GroupedSectionItem shape
+            });
+    }, [filteredFiles, theme, themeStyles, deleting, handleFileDownload, handleFileDelete, handleFileOpen, getSafeDownloadUrl]);
 
     const renderPhotoItem = (photo: FileMetadata, index: number) => {
         const downloadUrl = getSafeDownloadUrl(photo, 'thumb');
@@ -1649,9 +1710,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             </TouchableOpacity>
                         </View>
                     ) : filteredFiles.length === 0 ? renderEmptyState() : (
-                        <>
-                            {filteredFiles.map(renderFileItem)}
-                        </>
+                        <GroupedSection items={groupedFileItems} theme={theme as 'light' | 'dark'} />
                     )}
                 </ScrollView>
             )}
@@ -1889,6 +1948,24 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         borderRadius: 8,
+    },
+    groupedActions: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        marginLeft: 12,
+    },
+    groupedActionBtn: {
+        width: 34,
+        height: 34,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    groupedDescription: {
+        fontSize: 12,
+        lineHeight: 16,
+        marginTop: 6,
     },
     videoPreviewWrapper: {
         width: '100%',
