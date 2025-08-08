@@ -28,7 +28,7 @@
     "@aws-sdk/s3-request-presigner": "^3.857.0",
     "@types/cheerio": "^0.22.35",
     "@types/uuid": "^10.0.0",
-    "axios": "^1.7.9",
+    "axios": "^1.11.0",
     "bcrypt": "^5.1.1",
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.1.2",
