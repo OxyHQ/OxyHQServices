@@ -401,8 +401,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         } catch (error: any) {
             toast.error(error.message || 'Failed to upload file');
         } finally {
-            if (uploadStartRef.current) endUpload();
-            storeSetUploadProgress(null);
+            // IMPORTANT: Do NOT call endUpload here.
+            // We only want to hide the banner after the actual upload(s) complete.
+            // The input.onchange handler invokes processFileUploads then calls endUpload().
+            // Calling endUpload here caused the banner to disappear while files were still uploading.
+            storeSetUploadProgress(null); // keep clearing any stale progress
         }
     };
 
