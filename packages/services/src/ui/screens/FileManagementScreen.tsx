@@ -376,12 +376,24 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 input.type = 'file';
                 input.multiple = true;
                 input.accept = '*/*';
+                // Fallback: if the user cancels the dialog (no onchange fires or 0 files), hide banner
+                const cancellationTimer = setTimeout(() => {
+                    const state = useFileStore.getState();
+                    if (state.uploading && uploadStartRef.current && !state.uploadProgress) {
+                        // No selection happened; treat as cancel
+                        endUpload();
+                    }
+                }, 1500); // allow enough time for user to pick
 
                 input.onchange = async (e: any) => {
-                    const selectedFiles = Array.from(e.target.files) as File[];
-                    if (selectedFiles.length > 0) {
-                        storeSetUploadProgress({ current: 0, total: selectedFiles.length });
+                    clearTimeout(cancellationTimer);
+                    const selectedFiles = Array.from(e.target.files || []) as File[];
+                    if (selectedFiles.length === 0) {
+                        // User explicitly canceled (some browsers still fire onchange with empty list)
+                        endUpload();
+                        return;
                     }
+                    storeSetUploadProgress({ current: 0, total: selectedFiles.length });
                     await processFileUploads(selectedFiles);
                     endUpload();
                 };

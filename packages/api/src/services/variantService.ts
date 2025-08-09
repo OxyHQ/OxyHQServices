@@ -48,8 +48,8 @@ export class VariantService {
 
       if (existingFile && existingFile.variants.length > 0) {
         // Reuse existing variants
-        file.variants = existingFile.variants;
-        await file.save();
+  file.variants = existingFile.variants;
+  await this.commitVariants(file);
         
         logger.info('Reused existing variants for duplicate content', { 
           fileId, 
@@ -122,8 +122,8 @@ export class VariantService {
         logger.debug('Generated image variant', { fileId: file._id, type: config.type, key: variantKey });
       }
 
-      file.variants = variants;
-      await file.save();
+  file.variants = variants;
+  await this.commitVariants(file);
 
       logger.info('Image variants generated', { fileId: file._id, variantCount: variants.length });
     } catch (error) {
@@ -157,8 +157,8 @@ export class VariantService {
         metadata: { type: 'poster', position: '00:00:01' }
       }];
 
-      file.variants = variants;
-      await file.save();
+  file.variants = variants;
+  await this.commitVariants(file);
 
       logger.info('Video variants generated (placeholder)', {
         fileId: file._id,
@@ -192,8 +192,8 @@ export class VariantService {
         metadata: { page: 1 }
       }];
 
-      file.variants = variants;
-      await file.save();
+  file.variants = variants;
+  await this.commitVariants(file);
 
       logger.info('PDF variants generated (placeholder)', {
         fileId: file._id,
@@ -297,11 +297,71 @@ export class VariantService {
     const idx = file.variants.findIndex(v => v.type === variantType);
     if (idx >= 0) file.variants[idx] = variant;
     else file.variants.push(variant);
-    await file.save();
+    try {
+      await this.commitVariants(file);
+    } catch (error) {
+      logger.warn('Failed committing single ensured variant, retrying fetch & update', { fileId: file._id, variantType, error });
+      // Retry once with fresh document to mitigate race conditions
+      const fresh = await File.findById(file._id);
+      if (fresh) {
+        const idx2 = fresh.variants.findIndex(v => v.type === variantType);
+        if (idx2 >= 0) fresh.variants[idx2] = variant; else fresh.variants.push(variant);
+        try {
+          await File.updateOne({ _id: fresh._id }, { $set: { variants: fresh.variants } });
+        } catch (err2) {
+          logger.error('Retry failed committing ensured variant', { fileId: file._id, variantType, error: err2 });
+        }
+      }
+    }
 
     return variant;
   }
 }
+
+// Helper methods appended to class
+export interface VariantCommitRetryOptions {
+  retries?: number;
+  delayMs?: number;
+}
+
+// Extend class with private method via declaration merging pattern
+declare module './variantService' {
+  interface VariantService {
+    commitVariants(file: IFile, options?: VariantCommitRetryOptions): Promise<void>;
+  }
+}
+
+VariantService.prototype.commitVariants = async function(file: IFile, options: VariantCommitRetryOptions = {}): Promise<void> {
+  const { retries = 2, delayMs = 60 } = options;
+  let attempt = 0;
+  // We only update the variants field to avoid version key conflicts; using updateOne bypasses optimistic concurrency
+  while (attempt <= retries) {
+    try {
+      await File.updateOne({ _id: file._id }, { $set: { variants: file.variants } }).exec();
+      return;
+    } catch (err: any) {
+      if (String(err?.name) === 'VersionError' && attempt < retries) {
+        logger.warn('VersionError committing variants, retrying', { fileId: file._id, attempt });
+        await new Promise(res => setTimeout(res, delayMs * (attempt + 1)));
+        // Refresh variants from DB to merge if needed
+        const fresh = await File.findById(file._id);
+        if (fresh) {
+          // Simple merge preferring in-memory variants by type
+            const merged: IFileVariant[] = [];
+            const byType: Record<string, IFileVariant> = {};
+            for (const v of fresh.variants) byType[v.type] = v;
+            for (const v of file.variants) byType[v.type] = v; // overwrite with latest
+            for (const k of Object.keys(byType)) merged.push(byType[k]);
+            file.variants = merged;
+        }
+        attempt++;
+        continue;
+      }
+      logger.error('Failed to commit variants', { fileId: file._id, attempt, error: err });
+      throw err;
+    }
+  }
+};
 
 // Note: This implementation uses a placeholder for Sharp
 // In a real deployment, you would install Sharp with: npm install sharp
