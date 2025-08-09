@@ -20,6 +20,7 @@ import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 import type { FileMetadata } from '../../models/interfaces';
+import { useFileStore, useFiles, useUploading as useUploadingStore, useUploadAggregateProgress, useDeleting as useDeletingStore } from '../stores/fileStore';
 import Header from '../components/Header';
 import { GroupedSection } from '../components';
 
@@ -53,12 +54,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         console.log('[FileManagementScreen] Available content width:', availableContentWidth);
         console.log('[FileManagementScreen] Spacing fix applied: 4px uniform gap both horizontal and vertical');
     }, [containerWidth]);
-    const [files, setFiles] = useState<FileMetadata[]>([]);
+    const files = useFiles();
+    const uploading = useUploadingStore();
+    const uploadProgress = useUploadAggregateProgress();
+    const deleting = useDeletingStore();
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
-    const [uploading, setUploading] = useState(false);
-    const [uploadProgress, setUploadProgress] = useState<{ current: number, total: number } | null>(null);
-    const [deleting, setDeleting] = useState<string | null>(null);
     const [selectedFile, setSelectedFile] = useState<FileMetadata | null>(null);
     const [showFileDetails, setShowFileDetails] = useState(false);
     const [openedFile, setOpenedFile] = useState<FileMetadata | null>(null);
@@ -67,7 +68,22 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [showFileDetailsInViewer, setShowFileDetailsInViewer] = useState(false);
     const [viewMode, setViewMode] = useState<'all' | 'photos'>('all');
     const [searchQuery, setSearchQuery] = useState('');
-    const [filteredFiles, setFilteredFiles] = useState<FileMetadata[]>([]);
+    // Derived filtered files (avoid setState loops)
+    const filteredFiles = useMemo(() => {
+        let filteredByMode = files;
+        if (viewMode === 'photos') {
+            filteredByMode = files.filter(file => file.contentType.startsWith('image/'));
+        }
+        if (!searchQuery.trim()) {
+            return filteredByMode;
+        }
+        const query = searchQuery.toLowerCase();
+        return filteredByMode.filter(file =>
+            file.filename.toLowerCase().includes(query) ||
+            file.contentType.toLowerCase().includes(query) ||
+            (file.metadata?.description && file.metadata.description.toLowerCase().includes(query))
+        );
+    }, [files, searchQuery, viewMode]);
     const [isDragging, setIsDragging] = useState(false);
     const [photoDimensions, setPhotoDimensions] = useState<{ [key: string]: { width: number, height: number } }>({});
     const [loadingDimensions, setLoadingDimensions] = useState(false);
@@ -79,7 +95,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         const elapsed = started ? Date.now() - started : MIN_BANNER_MS;
         const remaining = elapsed < MIN_BANNER_MS ? MIN_BANNER_MS - elapsed : 0;
         setTimeout(() => {
-            setUploading(false);
+            useFileStore.getState().setUploading(false);
             uploadStartRef.current = null;
         }, remaining);
     }, []);
@@ -142,13 +158,17 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     const targetUserId = userId || user?.id;
 
-    const loadFiles = useCallback(async (isRefresh = false) => {
+    const storeSetUploading = useFileStore(s => s.setUploading);
+    const storeSetUploadProgress = useFileStore(s => s.setUploadProgress);
+    const storeSetDeleting = useFileStore(s => s.setDeleting);
+
+    const loadFiles = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
         if (!targetUserId) return;
 
         try {
-            if (isRefresh) {
+            if (mode === 'refresh') {
                 setRefreshing(true);
-            } else {
+            } else if (mode === 'initial') {
                 setLoading(true);
             }
 
@@ -163,7 +183,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 metadata: f.metadata || {},
                 variants: f.variants || [],
             }));
-            setFiles(assets);
+            // Merge to preserve existing order & allow incremental updates
+            useFileStore.getState().setFiles(assets, { merge: true });
         } catch (error: any) {
             console.error('Failed to load files:', error);
             toast.error(error.message || 'Failed to load files');
@@ -173,28 +194,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
     }, [targetUserId, oxyServices]);
 
-    // Filter files based on search query and view mode
-    useEffect(() => {
-        let filteredByMode = files;
-
-        // Filter by view mode first
-        if (viewMode === 'photos') {
-            filteredByMode = files.filter(file => file.contentType.startsWith('image/'));
-        }
-
-        // Then filter by search query
-        if (!searchQuery.trim()) {
-            setFilteredFiles(filteredByMode);
-        } else {
-            const query = searchQuery.toLowerCase();
-            const filtered = filteredByMode.filter(file =>
-                file.filename.toLowerCase().includes(query) ||
-                file.contentType.toLowerCase().includes(query) ||
-                (file.metadata?.description && file.metadata.description.toLowerCase().includes(query))
-            );
-            setFilteredFiles(filtered);
-        }
-    }, [files, searchQuery, viewMode]);
+    // (removed effect; filteredFiles is memoized)
 
     // Load photo dimensions for justified grid
     const loadPhotoDimensions = useCallback(async (photos: FileMetadata[]) => {
@@ -293,7 +293,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         if (selectedFiles.length === 0) return;
         if (!targetUserId) return; // Guard clause to ensure userId is defined
         try {
-            setUploadProgress({ current: 0, total: selectedFiles.length });
+            storeSetUploadProgress({ current: 0, total: selectedFiles.length });
             const maxSize = 50 * 1024 * 1024; // 50MB
             const oversizedFiles = selectedFiles.filter(file => file.size > maxSize);
             if (oversizedFiles.length > 0) {
@@ -305,9 +305,42 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             let failureCount = 0;
             const errors: string[] = [];
             for (let i = 0; i < selectedFiles.length; i++) {
-                setUploadProgress({ current: i + 1, total: selectedFiles.length });
+                storeSetUploadProgress({ current: i + 1, total: selectedFiles.length });
                 try {
-                    await uploadFileRaw(selectedFiles[i], targetUserId, oxyServices);
+                    const raw = selectedFiles[i];
+                    const optimisticId = `temp-${Date.now()}-${i}`;
+                    const optimisticFile: FileMetadata = {
+                        id: optimisticId,
+                        filename: raw.name,
+                        contentType: raw.type || 'application/octet-stream',
+                        length: raw.size,
+                        chunkSize: 0,
+                        uploadDate: new Date().toISOString(),
+                        metadata: { uploading: true },
+                        variants: [],
+                    };
+                    useFileStore.getState().addFile(optimisticFile, { prepend: true });
+                    const result = await uploadFileRaw(raw, targetUserId, oxyServices);
+                    // Attempt to refresh file list incrementally – fetch single file metadata if API allows
+                    if (result?.file || result?.files?.[0]) {
+                        const f = result.file || result.files[0];
+                        const merged: FileMetadata = {
+                            id: f.id,
+                            filename: f.originalName || f.sha256 || raw.name,
+                            contentType: f.mime || raw.type || 'application/octet-stream',
+                            length: f.size || raw.size,
+                            chunkSize: 0,
+                            uploadDate: f.createdAt || new Date().toISOString(),
+                            metadata: f.metadata || {},
+                            variants: f.variants || [],
+                        };
+                        // Remove optimistic then add real
+                        useFileStore.getState().removeFile(optimisticId);
+                        useFileStore.getState().addFile(merged, { prepend: true });
+                    } else {
+                        // Fallback: will reconcile on later list refresh
+                        useFileStore.getState().updateFile(optimisticId, { metadata: { uploading: false } as any });
+                    }
                     successCount++;
                 } catch (error: any) {
                     failureCount++;
@@ -321,22 +354,21 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 const errorMessage = `${failureCount} file(s) failed to upload${errors.length > 0 ? ':\n' + errors.slice(0, 3).join('\n') + (errors.length > 3 ? '\n...' : '') : ''}`;
                 toast.error(errorMessage);
             }
-            setTimeout(async () => {
-                await loadFiles();
-            }, 500);
+            // Silent background refresh to ensure metadata/variants updated
+            setTimeout(() => { loadFiles('silent'); }, 1200);
         } catch (error: any) {
             console.error('Upload error:', error);
             toast.error(error.message || 'Failed to upload files');
         } finally {
-            setUploadProgress(null);
+            storeSetUploadProgress(null);
         }
     };
 
     const handleFileUpload = async () => {
         try {
             uploadStartRef.current = Date.now();
-            setUploading(true);
-            setUploadProgress(null);
+            storeSetUploading(true);
+            storeSetUploadProgress(null);
 
             if (Platform.OS === 'web') {
                 // Web file picker implementation
@@ -348,7 +380,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 input.onchange = async (e: any) => {
                     const selectedFiles = Array.from(e.target.files) as File[];
                     if (selectedFiles.length > 0) {
-                        setUploadProgress({ current: 0, total: selectedFiles.length });
+                        storeSetUploadProgress({ current: 0, total: selectedFiles.length });
                     }
                     await processFileUploads(selectedFiles);
                     endUpload();
@@ -370,7 +402,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             toast.error(error.message || 'Failed to upload file');
         } finally {
             if (uploadStartRef.current) endUpload();
-            setUploadProgress(null);
+            storeSetUploadProgress(null);
         }
     };
 
@@ -387,7 +419,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             console.log('Deleting file:', { fileId, filename });
             console.log('Target user ID:', targetUserId);
             console.log('Current user ID:', user?.id);
-            setDeleting(fileId);
+            storeSetDeleting(fileId);
 
             const result = await oxyServices.deleteFile(fileId);
             console.log('Delete result:', result);
@@ -395,9 +427,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             toast.success('File deleted successfully');
 
             // Reload files after successful deletion
-            setTimeout(async () => {
-                await loadFiles();
-            }, 500);
+            // Optimistic remove
+            useFileStore.getState().removeFile(fileId);
+            // Silent background reconcile
+            setTimeout(() => loadFiles('silent'), 800);
         } catch (error: any) {
             console.error('Delete error:', error);
             console.error('Error details:', error.response?.data || error.message);
@@ -406,16 +439,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             if (error.message?.includes('File not found') || error.message?.includes('404')) {
                 toast.error('File not found. It may have already been deleted.');
                 // Still reload files to refresh the list
-                setTimeout(async () => {
-                    await loadFiles();
-                }, 500);
+                setTimeout(() => loadFiles('silent'), 800);
             } else if (error.message?.includes('permission') || error.message?.includes('403')) {
                 toast.error('You do not have permission to delete this file.');
             } else {
                 toast.error(error.message || 'Failed to delete file');
             }
         } finally {
-            setDeleting(null);
+            storeSetDeleting(null);
         }
     };
 
@@ -479,11 +510,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             e.preventDefault();
             setIsDragging(false);
             uploadStartRef.current = Date.now();
-            setUploading(true);
+            storeSetUploading(true);
 
             try {
                 const files = Array.from(e.dataTransfer.files) as File[];
-                if (files.length > 0) setUploadProgress({ current: 0, total: files.length });
+                if (files.length > 0) storeSetUploadProgress({ current: 0, total: files.length });
                 await processFileUploads(files);
             } catch (error: any) {
                 toast.error(error.message || 'Failed to upload files');
@@ -700,9 +731,16 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         );
     }, [oxyServices]);
 
+    // Run initial load once per targetUserId change to avoid accidental loops
+    const lastLoadedFor = useRef<string | undefined>(undefined);
     useEffect(() => {
-        loadFiles();
-    }, [loadFiles]);
+        const key = targetUserId || 'anonymous';
+        if (lastLoadedFor.current !== key) {
+            lastLoadedFor.current = key;
+            loadFiles('initial');
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [targetUserId]);
 
     const renderFileItem = (file: FileMetadata) => {
         const isImage = file.contentType.startsWith('image/');
@@ -998,7 +1036,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
-                        onRefresh={() => loadFiles(true)}
+                        onRefresh={() => loadFiles('refresh')}
                         tintColor={themeStyles.primaryColor}
                     />
                 }
@@ -1064,7 +1102,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         // Load dimensions for new photos
         React.useEffect(() => {
             loadPhotoDimensions(photos);
-        }, [photos.map(p => p.id).join(','), loadPhotoDimensions]);
+            // Depend only on photo IDs to avoid re-running from dimension state changes
+            // eslint-disable-next-line react-hooks/exhaustive-deps
+        }, [photos.map(p => p.id).join(',')]);
 
         // Group photos by date
         const photosByDate = React.useMemo(() => {
@@ -1749,7 +1789,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     refreshControl={
                         <RefreshControl
                             refreshing={refreshing}
-                            onRefresh={() => loadFiles(true)}
+                            onRefresh={() => loadFiles('refresh')}
                             tintColor={themeStyles.primaryColor}
                         />
                     }
