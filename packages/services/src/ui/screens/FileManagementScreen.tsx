@@ -801,7 +801,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                             }}
                                             accessibilityLabel={file.filename + ' video thumbnail'}
                                         />
-                                        <View style={styles.videoOverlay}> 
+                                        <View style={styles.videoOverlay}>
                                             <Ionicons name="play" size={24} color="#FFFFFF" />
                                         </View>
                                     </View>
@@ -1820,12 +1820,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             {/* Uploading banner overlay */}
             {uploading && (
                 <View pointerEvents="none" style={styles.uploadBannerContainer}>
-                    <View style={[styles.uploadBanner, { backgroundColor: themeStyles.isDarkTheme ? '#222831EE' : '#FFFFFFEE', borderColor: themeStyles.borderColor }]}> 
+                    <View style={[styles.uploadBanner, { backgroundColor: themeStyles.isDarkTheme ? '#222831EE' : '#FFFFFFEE', borderColor: themeStyles.borderColor }]}>
                         <Ionicons name="cloud-upload" size={18} color={themeStyles.primaryColor} />
                         <Text style={[styles.uploadBannerText, { color: themeStyles.textColor }]}>Uploading{uploadProgress ? ` ${uploadProgress.current}/${uploadProgress.total}` : '...'}</Text>
                         <View style={styles.uploadBannerDots}>
-                            {[0,1,2].map(i => (
-                                <View key={i} style={[styles.dot, { opacity: ((Date.now()/400 + i) % 3) < 1 ? 1 : 0.25 }]} />
+                            {[0, 1, 2].map(i => (
+                                <View key={i} style={[styles.dot, { opacity: ((Date.now() / 400 + i) % 3) < 1 ? 1 : 0.25 }]} />
                             ))}
                         </View>
                     </View>
