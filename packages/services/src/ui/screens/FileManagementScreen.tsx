@@ -26,6 +26,15 @@ import { GroupedSection } from '../components';
 
 interface FileManagementScreenProps extends BaseScreenProps {
     userId?: string;
+    // Select mode configuration
+    selectMode?: boolean;
+    allowMultipleSelection?: boolean;
+    maxSelectionCount?: number;
+    allowedFileTypes?: string[]; // MIME types or categories like 'image/*', 'application/pdf'
+    allowedExtensions?: string[]; // File extensions like '.jpg', '.pdf', '.txt'
+    maxFileSize?: number; // Maximum file size in bytes
+    onFilesSelected?: (files: FileMetadata[]) => void;
+    preSelectedFiles?: string[]; // Array of file IDs that should be pre-selected
 }
 
 // Add this helper function near the top (after imports):
@@ -40,6 +49,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     navigate,
     userId,
     containerWidth = 400, // Fallback for when not provided by the router
+    // Select mode props
+    selectMode = false,
+    allowMultipleSelection = true,
+    maxSelectionCount,
+    allowedFileTypes,
+    allowedExtensions,
+    maxFileSize,
+    onFilesSelected,
+    preSelectedFiles = [],
 }) => {
     const { user, oxyServices } = useOxy();
 
@@ -68,12 +86,22 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [showFileDetailsInViewer, setShowFileDetailsInViewer] = useState(false);
     const [viewMode, setViewMode] = useState<'all' | 'photos'>('all');
     const [searchQuery, setSearchQuery] = useState('');
+    
+    // Selection mode state
+    const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set(preSelectedFiles));
+    const [selectionError, setSelectionError] = useState<string | null>(null);
     // Derived filtered files (avoid setState loops)
     const filteredFiles = useMemo(() => {
         let filteredByMode = files;
         if (viewMode === 'photos') {
             filteredByMode = files.filter(file => file.contentType.startsWith('image/'));
         }
+        
+        // In select mode, also filter by allowed file types
+        if (selectMode) {
+            filteredByMode = filteredByMode.filter(isFileAllowed);
+        }
+        
         if (!searchQuery.trim()) {
             return filteredByMode;
         }
@@ -83,7 +111,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             file.contentType.toLowerCase().includes(query) ||
             (file.metadata?.description && file.metadata.description.toLowerCase().includes(query))
         );
-    }, [files, searchQuery, viewMode]);
+    }, [files, searchQuery, viewMode, selectMode, isFileAllowed]);
     const [isDragging, setIsDragging] = useState(false);
     const [photoDimensions, setPhotoDimensions] = useState<{ [key: string]: { width: number, height: number } }>({});
     const [loadingDimensions, setLoadingDimensions] = useState(false);
@@ -157,6 +185,89 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const borderColor = themeStyles.borderColor;
 
     const targetUserId = userId || user?.id;
+
+    // Selection mode helper functions
+    const isFileAllowed = useCallback((file: FileMetadata): boolean => {
+        // Check file type restrictions
+        if (allowedFileTypes && allowedFileTypes.length > 0) {
+            const isTypeAllowed = allowedFileTypes.some(allowedType => {
+                if (allowedType.endsWith('/*')) {
+                    // Handle wildcard types like 'image/*'
+                    const baseType = allowedType.slice(0, -2);
+                    return file.contentType.startsWith(baseType + '/');
+                }
+                return file.contentType === allowedType;
+            });
+            if (!isTypeAllowed) return false;
+        }
+
+        // Check file extension restrictions
+        if (allowedExtensions && allowedExtensions.length > 0) {
+            const fileExtension = '.' + file.filename.split('.').pop()?.toLowerCase();
+            const isExtensionAllowed = allowedExtensions.some(ext => 
+                ext.toLowerCase() === fileExtension
+            );
+            if (!isExtensionAllowed) return false;
+        }
+
+        // Check file size restrictions
+        if (maxFileSize && file.length > maxFileSize) {
+            return false;
+        }
+
+        return true;
+    }, [allowedFileTypes, allowedExtensions, maxFileSize]);
+
+    const toggleFileSelection = useCallback((fileId: string) => {
+        if (!selectMode) return;
+
+        const file = files.find(f => f.id === fileId);
+        if (!file || !isFileAllowed(file)) {
+            setSelectionError('This file type is not allowed');
+            setTimeout(() => setSelectionError(null), 3000);
+            return;
+        }
+
+        setSelectedFiles(prev => {
+            const newSelection = new Set(prev);
+            
+            if (newSelection.has(fileId)) {
+                // Remove from selection
+                newSelection.delete(fileId);
+                setSelectionError(null);
+            } else {
+                // Add to selection
+                if (!allowMultipleSelection) {
+                    // Single selection mode - clear previous selection
+                    newSelection.clear();
+                    newSelection.add(fileId);
+                } else {
+                    // Multiple selection mode - check max count
+                    if (maxSelectionCount && newSelection.size >= maxSelectionCount) {
+                        setSelectionError(`Maximum ${maxSelectionCount} files can be selected`);
+                        setTimeout(() => setSelectionError(null), 3000);
+                        return prev;
+                    }
+                    newSelection.add(fileId);
+                }
+                setSelectionError(null);
+            }
+            
+            return newSelection;
+        });
+    }, [selectMode, files, isFileAllowed, allowMultipleSelection, maxSelectionCount]);
+
+    const handleDoneSelection = useCallback(() => {
+        if (!selectMode || !onFilesSelected) return;
+
+        const selectedFileObjects = files.filter(file => selectedFiles.has(file.id));
+        onFilesSelected(selectedFileObjects);
+    }, [selectMode, onFilesSelected, files, selectedFiles]);
+
+    const clearSelection = useCallback(() => {
+        setSelectedFiles(new Set());
+        setSelectionError(null);
+    }, []);
 
     const storeSetUploading = useFileStore(s => s.setUploading);
     const storeSetUploadProgress = useFileStore(s => s.setUploadProgress);
@@ -607,6 +718,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     };
 
     const handleFileOpen = async (file: FileMetadata) => {
+        // In select mode, toggle selection instead of opening
+        if (selectMode) {
+            toggleFileSelection(file.id);
+            return;
+        }
+
         try {
             setLoadingFileContent(true);
             setOpenedFile(file);
@@ -764,15 +881,40 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         const isAudio = file.contentType.startsWith('audio/');
         const hasPreview = isImage || isPDF || isVideo;
         const borderColor = themeStyles.borderColor;
+        const isSelected = selectMode && selectedFiles.has(file.id);
+        const isFileSelectable = !selectMode || isFileAllowed(file);
 
         return (
             <View
                 key={file.id}
-                style={[styles.fileItem, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }]}
+                style={[
+                    styles.fileItem, 
+                    { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor },
+                    isSelected && { borderColor: themeStyles.primaryColor, borderWidth: 2 },
+                    !isFileSelectable && selectMode && { opacity: 0.5 }
+                ]}
             >
+                {/* Selection checkbox for select mode */}
+                {selectMode && (
+                    <TouchableOpacity
+                        style={[styles.selectionCheckbox, { borderColor: themeStyles.borderColor }]}
+                        onPress={() => toggleFileSelection(file.id)}
+                        disabled={!isFileSelectable}
+                    >
+                        {isSelected && (
+                            <Ionicons 
+                                name="checkmark" 
+                                size={18} 
+                                color={themeStyles.primaryColor} 
+                            />
+                        )}
+                    </TouchableOpacity>
+                )}
+
                 <TouchableOpacity
                     style={styles.fileContent}
                     onPress={() => handleFileOpen(file)}
+                    disabled={!isFileSelectable}
                 >
                     {/* Preview Thumbnail */}
                     <View style={styles.filePreviewContainer}>
@@ -869,7 +1011,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     </View>
                 </TouchableOpacity>
 
-                <View style={styles.fileActions}>
+                {/* File actions - hidden in select mode */}
+                {!selectMode && (
+                    <View style={styles.fileActions}>
                     {/* Preview button for supported files */}
                     {hasPreview && (
                         <TouchableOpacity
@@ -902,6 +1046,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         )}
                     </TouchableOpacity>
                 </View>
+                )}
             </View>
         );
     };
@@ -916,6 +1061,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 const isVideo = file.contentType.startsWith('video/');
                 const hasPreview = isImage || isVideo;
                 const previewUrl = hasPreview ? (isVideo ? getSafeDownloadUrl(file, 'poster') : getSafeDownloadUrl(file, 'thumb')) : undefined;
+                const isSelected = selectMode && selectedFiles.has(file.id);
+                const isFileSelectable = !selectMode || isFileAllowed(file);
+                
                 return {
                     id: file.id,
                     image: previewUrl,
@@ -929,7 +1077,25 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     showChevron: false,
                     dense: true,
                     multiRow: !!file.metadata?.description,
-                    customContent: (
+                    disabled: !isFileSelectable,
+                    selected: isSelected,
+                    customContent: selectMode ? (
+                        <View style={styles.groupedActions}>
+                            <TouchableOpacity
+                                style={[styles.selectionCheckbox, { borderColor: themeStyles.borderColor }]}
+                                onPress={() => toggleFileSelection(file.id)}
+                                disabled={!isFileSelectable}
+                            >
+                                {isSelected && (
+                                    <Ionicons 
+                                        name="checkmark" 
+                                        size={18} 
+                                        color={themeStyles.primaryColor} 
+                                    />
+                                )}
+                            </TouchableOpacity>
+                        </View>
+                    ) : (
                         <View style={styles.groupedActions}>
                             {(isImage || isVideo || file.contentType.includes('pdf')) && (
                                 <TouchableOpacity
@@ -965,10 +1131,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     ) : undefined,
                 } as any; // GroupedSectionItem shape
             });
-    }, [filteredFiles, theme, themeStyles, deleting, handleFileDownload, handleFileDelete, handleFileOpen, getSafeDownloadUrl]);
+    }, [filteredFiles, theme, themeStyles, deleting, handleFileDownload, handleFileDelete, handleFileOpen, getSafeDownloadUrl, selectMode, selectedFiles, isFileAllowed, toggleFileSelection]);
 
     const renderPhotoItem = (photo: FileMetadata, index: number) => {
         const downloadUrl = getSafeDownloadUrl(photo, 'thumb');
+        const isSelected = selectMode && selectedFiles.has(photo.id);
+        const isPhotoSelectable = !selectMode || isFileAllowed(photo);
 
         // Calculate photo item width based on actual container size from bottom sheet
         let itemsPerRow = 3; // Default for mobile
@@ -989,10 +1157,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     {
                         width: itemWidth,
                         height: itemWidth,
-                    }
+                    },
+                    isSelected && { borderColor: themeStyles.primaryColor, borderWidth: 3 },
+                    !isPhotoSelectable && selectMode && { opacity: 0.5 }
                 ]}
                 onPress={() => handleFileOpen(photo)}
                 activeOpacity={0.8}
+                disabled={!isPhotoSelectable}
             >
                 <View style={styles.photoContainer}>
                     <ExpoImage
@@ -1006,6 +1177,27 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         }}
                         accessibilityLabel={photo.filename}
                     />
+                    
+                    {/* Selection indicator for photos */}
+                    {selectMode && (
+                        <View style={[styles.photoSelectionOverlay, { backgroundColor: isSelected ? 'rgba(0, 122, 255, 0.3)' : 'transparent' }]}>
+                            <View style={[
+                                styles.photoSelectionCheckbox, 
+                                { 
+                                    backgroundColor: isSelected ? themeStyles.primaryColor : 'rgba(255, 255, 255, 0.8)',
+                                    borderColor: isSelected ? themeStyles.primaryColor : 'rgba(0, 0, 0, 0.3)'
+                                }
+                            ]}>
+                                {isSelected && (
+                                    <Ionicons 
+                                        name="checkmark" 
+                                        size={16} 
+                                        color="#FFFFFF" 
+                                    />
+                                )}
+                            </View>
+                        </View>
+                    )}
                 </View>
             </TouchableOpacity>
         );
@@ -1017,14 +1209,18 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         if (photos.length === 0) {
             return (
                 <View style={styles.emptyState}>
-                    <Ionicons name="images-outline" size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
-                    <Text style={[styles.emptyStateTitle, { color: themeStyles.textColor }]}>No Photos Yet</Text>
+                    <Ionicons name={selectMode ? "checkmark-circle-outline" : "images-outline"} size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
+                    <Text style={[styles.emptyStateTitle, { color: themeStyles.textColor }]}>
+                        {selectMode ? 'No Selectable Photos' : 'No Photos Yet'}
+                    </Text>
                     <Text style={[styles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}> {
-                        user?.id === targetUserId
-                            ? `Upload photos to get started. You can select multiple photos at once${Platform.OS === 'web' ? ' or drag & drop them here.' : '.'}`
-                            : "This user hasn't uploaded any photos yet"
+                        selectMode ?
+                            'No photos match the selection criteria. Try adjusting the file type or size filters.' :
+                            (user?.id === targetUserId
+                                ? `Upload photos to get started. You can select multiple photos at once${Platform.OS === 'web' ? ' or drag & drop them here.' : '.'}`
+                                : "This user hasn't uploaded any photos yet")
                     } </Text>
-                    {user?.id === targetUserId && (
+                    {user?.id === targetUserId && !selectMode && (
                         <TouchableOpacity
                             style={[styles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
                             onPress={handleFileUpload}
@@ -1604,15 +1800,19 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     const renderEmptyState = () => (
         <View style={styles.emptyState}>
-            <Ionicons name="folder-open-outline" size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
-            <Text style={[styles.emptyStateTitle, { color: themeStyles.textColor }]}>No Files Yet</Text>
+            <Ionicons name={selectMode ? "checkmark-circle-outline" : "folder-open-outline"} size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
+            <Text style={[styles.emptyStateTitle, { color: themeStyles.textColor }]}>
+                {selectMode ? 'No Selectable Files' : 'No Files Yet'}
+            </Text>
             <Text style={[styles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                {user?.id === targetUserId
-                    ? `Upload files to get started. You can select multiple files at once${Platform.OS === 'web' ? ' or drag & drop them here.' : '.'}`
-                    : "This user hasn't uploaded any files yet"
+                {selectMode ? 
+                    'No files match the selection criteria. Try adjusting the file type or size filters.' :
+                    (user?.id === targetUserId
+                        ? `Upload files to get started. You can select multiple files at once${Platform.OS === 'web' ? ' or drag & drop them here.' : '.'}`
+                        : "This user hasn't uploaded any files yet")
                 }
             </Text>
-            {user?.id === targetUserId && (
+            {user?.id === targetUserId && !selectMode && (
                 <TouchableOpacity
                     style={[styles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
                     onPress={handleFileUpload}
@@ -1664,53 +1864,82 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             } : {})}
         >
             <Header
-                title={viewMode === 'photos' ? 'Photos' : 'File Management'}
-                subtitle={`${filteredFiles.length} ${filteredFiles.length === 1 ? 'item' : 'items'}`}
-                onBack={onClose || goBack}
+                title={selectMode ? (selectedFiles.size > 0 ? `${selectedFiles.size} Selected` : 'Select Files') : (viewMode === 'photos' ? 'Photos' : 'File Management')}
+                subtitle={selectMode ? (
+                    maxSelectionCount ? `Max ${maxSelectionCount} ${allowMultipleSelection ? 'files' : 'file'}` : 
+                    `${filteredFiles.length} available`
+                ) : `${filteredFiles.length} ${filteredFiles.length === 1 ? 'item' : 'items'}`}
+                onBack={selectMode && selectedFiles.size > 0 ? clearSelection : (onClose || goBack)}
                 theme={theme}
                 showBackButton
                 variant="minimal"
                 elevation="none"
                 titleAlignment="left"
+                rightAction={selectMode && selectedFiles.size > 0 ? {
+                    text: "Done",
+                    onPress: handleDoneSelection
+                } : undefined}
             />
 
             <View style={styles.controlsBar}>
-                <View style={[
-                    styles.viewModeToggle,
-                    {
-                        backgroundColor: themeStyles.isDarkTheme ? '#181818' : '#FFFFFF',
-                        borderWidth: 1,
-                        borderColor: themeStyles.isDarkTheme ? '#2A2A2A' : '#E8E9EA',
-                    }
-                ]}>
-                    <TouchableOpacity
-                        style={[
-                            styles.viewModeButton,
-                            viewMode === 'all' && { backgroundColor: themeStyles.primaryColor }
-                        ]}
-                        onPress={() => setViewMode('all')}
-                    >
-                        <Ionicons
-                            name="folder"
-                            size={18}
-                            color={viewMode === 'all' ? '#FFFFFF' : themeStyles.textColor}
-                        />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[
-                            styles.viewModeButton,
-                            viewMode === 'photos' && { backgroundColor: themeStyles.primaryColor }
-                        ]}
-                        onPress={() => setViewMode('photos')}
-                    >
-                        <Ionicons
-                            name="images"
-                            size={18}
-                            color={viewMode === 'photos' ? '#FFFFFF' : themeStyles.textColor}
-                        />
-                    </TouchableOpacity>
-                </View>
-                {user?.id === targetUserId && (
+                {!selectMode && (
+                    <View style={[
+                        styles.viewModeToggle,
+                        {
+                            backgroundColor: themeStyles.isDarkTheme ? '#181818' : '#FFFFFF',
+                            borderWidth: 1,
+                            borderColor: themeStyles.isDarkTheme ? '#2A2A2A' : '#E8E9EA',
+                        }
+                    ]}>
+                        <TouchableOpacity
+                            style={[
+                                styles.viewModeButton,
+                                viewMode === 'all' && { backgroundColor: themeStyles.primaryColor }
+                            ]}
+                            onPress={() => setViewMode('all')}
+                        >
+                            <Ionicons
+                                name="folder"
+                                size={18}
+                                color={viewMode === 'all' ? '#FFFFFF' : themeStyles.textColor}
+                            />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[
+                                styles.viewModeButton,
+                                viewMode === 'photos' && { backgroundColor: themeStyles.primaryColor }
+                            ]}
+                            onPress={() => setViewMode('photos')}
+                        >
+                            <Ionicons
+                                name="images"
+                                size={18}
+                                color={viewMode === 'photos' ? '#FFFFFF' : themeStyles.textColor}
+                            />
+                        </TouchableOpacity>
+                    </View>
+                )}
+                
+                {/* Selection info in select mode */}
+                {selectMode && (
+                    <View style={styles.selectionInfo}>
+                        <Text style={[styles.selectionText, { color: themeStyles.textColor }]}>
+                            {selectedFiles.size === 0 ? 'Tap to select' : 
+                             allowMultipleSelection ? `${selectedFiles.size} selected` : 
+                             '1 selected'}
+                        </Text>
+                        {selectedFiles.size > 0 && (
+                            <TouchableOpacity
+                                style={[styles.clearSelectionButton, { borderColor: themeStyles.borderColor }]}
+                                onPress={clearSelection}
+                            >
+                                <Text style={[styles.clearSelectionText, { color: themeStyles.primaryColor }]}>Clear</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                )}
+                
+                {user?.id === targetUserId && !selectMode && (
                     <TouchableOpacity
                         style={[styles.uploadButton, { backgroundColor: themeStyles.primaryColor }]}
                         onPress={handleFileUpload}
@@ -1731,6 +1960,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     </TouchableOpacity>
                 )}
             </View>
+
+            {/* Selection error banner */}
+            {selectMode && selectionError && (
+                <View style={[styles.errorBanner, { backgroundColor: themeStyles.dangerColor }]}>
+                    <Ionicons name="warning" size={16} color="#FFFFFF" />
+                    <Text style={styles.errorBannerText}>{selectionError}</Text>
+                </View>
+            )}
 
             {/* Search Bar */}
             {files.length > 0 && (viewMode === 'all' || files.some(f => f.contentType.startsWith('image/'))) && (
@@ -1814,7 +2051,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             <Ionicons name="search" size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
                             <Text style={[styles.emptyStateTitle, { color: themeStyles.textColor }]}>No Results Found</Text>
                             <Text style={[styles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                No files match your search for "{searchQuery}"
+                                {selectMode ? 
+                                    `No selectable files match your search for "${searchQuery}"` :
+                                    `No files match your search for "${searchQuery}"`
+                                }
                             </Text>
                             <TouchableOpacity
                                 style={[styles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
@@ -2639,6 +2879,80 @@ const styles = StyleSheet.create({
         aspectRatio: 1,
         borderRadius: 8,
         marginBottom: 4,
+    },
+
+    // Selection mode styles
+    selectionCheckbox: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        borderWidth: 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginRight: 12,
+        backgroundColor: 'transparent',
+    },
+    selectionInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    selectionText: {
+        fontSize: 14,
+        fontWeight: '500',
+        fontFamily: fontFamilies.phuduMedium,
+    },
+    clearSelectionButton: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 12,
+        borderWidth: 1,
+        backgroundColor: 'transparent',
+    },
+    clearSelectionText: {
+        fontSize: 12,
+        fontWeight: '600',
+        fontFamily: fontFamilies.phuduSemiBold,
+    },
+    errorBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        marginHorizontal: 16,
+        marginTop: 8,
+        borderRadius: 8,
+        gap: 8,
+    },
+    errorBannerText: {
+        color: '#FFFFFF',
+        fontSize: 13,
+        fontWeight: '500',
+        fontFamily: fontFamilies.phuduMedium,
+        flex: 1,
+    },
+    photoSelectionOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        alignItems: 'flex-end',
+        justifyContent: 'flex-start',
+        padding: 8,
+    },
+    photoSelectionCheckbox: {
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        borderWidth: 2,
+        alignItems: 'center',
+        justifyContent: 'center',
+        shadowColor: '#000',
+        shadowOpacity: 0.3,
+        shadowRadius: 3,
+        shadowOffset: { width: 0, height: 1 },
+        elevation: 2,
     },
 });
 
