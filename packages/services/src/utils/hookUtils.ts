@@ -121,7 +121,7 @@ export function useThrottle<T>(value: T, delay: number): T {
  * Hook for previous value
  */
 export function usePrevious<T>(value: T): T | undefined {
-  const ref = useRef<T>();
+  const ref = useRef<T | undefined>(undefined);
   
   useEffect(() => {
     ref.current = value;

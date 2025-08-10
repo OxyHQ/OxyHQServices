@@ -1109,8 +1109,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         photoDimensions: { [key: string]: { width: number, height: number } };
         loadPhotoDimensions: (photos: FileMetadata[]) => Promise<void>;
         createJustifiedRows: (photos: FileMetadata[], containerWidth: number) => FileMetadata[][];
-        renderJustifiedPhotoItem: (photo: FileMetadata, width: number, height: number, isLast: boolean) => JSX.Element;
-        renderSimplePhotoItem: (photo: FileMetadata, index: number) => JSX.Element;
+        renderJustifiedPhotoItem: (photo: FileMetadata, width: number, height: number, isLast: boolean) => React.ReactElement;
+        renderSimplePhotoItem: (photo: FileMetadata, index: number) => React.ReactElement;
         textColor: string;
         containerWidth: number;
     }) => {

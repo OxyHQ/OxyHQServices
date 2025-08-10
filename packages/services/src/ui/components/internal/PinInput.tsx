@@ -45,7 +45,7 @@ const PinInput: React.FC<PinInputProps> = ({ value, onChange, length = 6, disabl
             {Array.from({ length }).map((_, idx) => (
                 <TextInput
                     key={idx}
-                    ref={ref => (inputs.current[idx] = ref)}
+                    ref={(ref) => { inputs.current[idx] = ref; }}
                     style={[
                         styles.pinInput,
                         { borderColor: colors.primary, color: colors.text, backgroundColor: colors.inputBackground },

@@ -267,10 +267,8 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
     // Helper function to clone React elements with updated color
     const cloneWithColor = (element: React.ReactNode, color: string): React.ReactNode => {
         if (React.isValidElement(element) && element.type) {
-            return React.cloneElement(element, {
-                ...element.props,
-                color: color,
-            });
+            // Avoid spreading props directly to satisfy TS complaining about non-object spread sources
+            return React.cloneElement(element as any, { color });
         }
         return element;
     };
