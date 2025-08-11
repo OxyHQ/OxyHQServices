@@ -730,11 +730,9 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
             const user = await signUp(formData.username, formData.email, formData.password);
             toast.success('Account created successfully! Welcome to Oxy!');
 
-            if (onAuthenticated) {
-                onAuthenticated(user);
-            }
-
-            resetForm();
+            // Instead of finalizing immediately, route to post-signup welcome & avatar setup
+            navigate('WelcomeNewUser', { newUser: user });
+            resetForm(); // Clear the form for potential future use
         } catch (error: any) {
             toast.error(error.message || 'Sign up failed');
         }
