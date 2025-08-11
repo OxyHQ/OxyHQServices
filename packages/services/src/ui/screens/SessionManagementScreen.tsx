@@ -13,23 +13,22 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
-import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
-import { Ionicons } from '@expo/vector-icons';
-import OxyIcon from '../components/icon/OxyIcon';
 import type { ClientSession } from '../../models/session';
 import { confirmAction } from '../utils/confirmAction';
-import { Header } from '../components';
+import { Header, GroupedSection } from '../components';
 
 const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     goBack,
 }) => {
-    const { sessions: userSessions, activeSessionId, refreshSessions, logout, logoutAll, oxyServices } = useOxy();
+    const { sessions: userSessions, activeSessionId, refreshSessions, logout, logoutAll, switchSession } = useOxy();
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [actionLoading, setActionLoading] = useState<string | null>(null);
+    const [switchLoading, setSwitchLoading] = useState<string | null>(null);
+    const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
     const isDarkTheme = theme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
@@ -49,6 +48,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             }
 
             await refreshSessions();
+            setLastRefreshed(new Date());
         } catch (error) {
             console.error('Failed to load sessions:', error);
             if (Platform.OS === 'web') {
@@ -126,33 +126,36 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         );
     };
 
-    const formatDate = (dateString: string) => {
+    // Relative time formatter (past & future)
+    const formatRelative = (dateString?: string) => {
+        if (!dateString) return 'Unknown';
         const date = new Date(dateString);
         const now = new Date();
-        const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-
-        if (diffInMinutes < 1) return 'Just now';
-        if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-        if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
-        if (diffInMinutes < 10080) return `${Math.floor(diffInMinutes / 1440)}d ago`;
-
+        const diffMs = date.getTime() - now.getTime();
+        const absMin = Math.abs(diffMs) / 60000;
+        const isFuture = diffMs > 0;
+        const fmt = (n: number) => (n < 1 ? 'moments' : Math.floor(n));
+        if (absMin < 1) return isFuture ? 'in moments' : 'just now';
+        if (absMin < 60) return isFuture ? `in ${fmt(absMin)}m` : `${fmt(absMin)}m ago`;
+        const hrs = absMin / 60;
+        if (hrs < 24) return isFuture ? `in ${fmt(hrs)}h` : `${fmt(hrs)}h ago`;
+        const days = hrs / 24;
+        if (days < 7) return isFuture ? `in ${fmt(days)}d` : `${fmt(days)}d ago`;
         return date.toLocaleDateString();
     };
 
-    const getDeviceIcon = (deviceType: string, platform: string) => {
-        if (platform.toLowerCase().includes('ios') || platform.toLowerCase().includes('iphone')) {
-            return '📱';
+    const handleSwitchSession = async (sessionId: string) => {
+        if (sessionId === activeSessionId) return;
+        setSwitchLoading(sessionId);
+        try {
+            await switchSession(sessionId);
+            toast.success('Switched session');
+        } catch (e) {
+            console.error('Switch session failed', e);
+            toast.error('Failed to switch session');
+        } finally {
+            setSwitchLoading(null);
         }
-        if (platform.toLowerCase().includes('android')) {
-            return '📱';
-        }
-        if (deviceType.toLowerCase().includes('mobile')) {
-            return '📱';
-        }
-        if (deviceType.toLowerCase().includes('tablet')) {
-            return '📱';
-        }
-        return '💻'; // Desktop/web
     };
 
     useEffect(() => {
@@ -167,6 +170,85 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             </View>
         );
     }
+
+    // Build grouped section items for sessions
+    const sessionItems = userSessions.map((session: ClientSession) => {
+        const isCurrent = session.sessionId === activeSessionId;
+        const subtitleParts: string[] = [];
+        if (session.deviceId) subtitleParts.push(`Device ${session.deviceId.substring(0, 10)}...`);
+        subtitleParts.push(`Last ${formatRelative(session.lastActive)}`);
+        subtitleParts.push(`Expires ${formatRelative(session.expiresAt)}`);
+
+        return {
+            id: session.sessionId,
+            icon: isCurrent ? 'shield-checkmark' : 'laptop-outline',
+            iconColor: isCurrent ? successColor : primaryColor,
+            title: isCurrent ? 'Current Session' : `Session ${session.sessionId.substring(0, 8)}...`,
+            subtitle: subtitleParts.join(' \u2022 '),
+            showChevron: false,
+            multiRow: true,
+            customContentBelow: !isCurrent ? (
+                <View style={styles.sessionActionsRow}>
+                    <TouchableOpacity
+                        onPress={() => handleSwitchSession(session.sessionId)}
+                        style={[styles.sessionPillButton, { backgroundColor: isDarkTheme ? '#1E2A38' : '#E6F2FF', borderColor: primaryColor }]}
+                        disabled={switchLoading === session.sessionId || actionLoading === session.sessionId}
+                    >
+                        {switchLoading === session.sessionId ? (
+                            <ActivityIndicator size="small" color={primaryColor} />
+                        ) : (
+                            <Text style={[styles.sessionPillText, { color: primaryColor }]}>Switch</Text>
+                        )}
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        onPress={() => handleLogoutSession(session.sessionId)}
+                        style={[styles.sessionPillButton, { backgroundColor: isDarkTheme ? '#3A1E1E' : '#FFEBEE', borderColor: dangerColor }]}
+                        disabled={actionLoading === session.sessionId || switchLoading === session.sessionId}
+                    >
+                        {actionLoading === session.sessionId ? (
+                            <ActivityIndicator size="small" color={dangerColor} />
+                        ) : (
+                            <Text style={[styles.sessionPillText, { color: dangerColor }]}>Logout</Text>
+                        )}
+                    </TouchableOpacity>
+                </View>
+            ) : (
+                <View style={styles.sessionActionsRow}>
+                    <Text style={[styles.currentBadgeText, { color: successColor }]}>Active</Text>
+                </View>
+            ),
+            selected: isCurrent,
+            dense: true,
+        };
+    });
+
+    // Bulk actions as grouped section items
+    const bulkItems = [
+        {
+            id: 'logout-others',
+            icon: 'exit-outline',
+            iconColor: primaryColor,
+            title: 'Logout Other Sessions',
+            subtitle: userSessions.filter(s => s.sessionId !== activeSessionId).length === 0 ? 'No other sessions' : 'End all sessions except this one',
+            onPress: handleLogoutOtherSessions,
+            showChevron: false,
+            customContent: actionLoading === 'others' ? <ActivityIndicator size="small" color={primaryColor} /> : undefined,
+            disabled: actionLoading === 'others' || userSessions.filter(s => s.sessionId !== activeSessionId).length === 0,
+            dense: true,
+        },
+        {
+            id: 'logout-all',
+            icon: 'warning-outline',
+            iconColor: dangerColor,
+            title: 'Logout All Sessions',
+            subtitle: 'End all sessions including this one',
+            onPress: handleLogoutAllSessions,
+            showChevron: false,
+            customContent: actionLoading === 'all' ? <ActivityIndicator size="small" color={dangerColor} /> : undefined,
+            disabled: actionLoading === 'all',
+            dense: true,
+        },
+    ];
 
     return (
         <View style={[styles.container, { backgroundColor }]}>
@@ -190,72 +272,15 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             >
                 {userSessions.length > 0 ? (
                     <>
-                        {userSessions.map((session: ClientSession) => (
-                            <View
-                                key={session.sessionId}
-                                style={[
-                                    styles.sessionCard,
-                                    {
-                                        backgroundColor: secondaryBackgroundColor,
-                                        borderColor,
-                                        borderLeftColor: session.sessionId === activeSessionId ? successColor : borderColor,
-                                    },
-                                ]}
-                            >
-                                <View style={styles.sessionHeader}>
-                                    <View style={styles.sessionTitleRow}>
-                                        <Text style={styles.deviceIcon}>💻</Text>
-                                        <View style={styles.sessionTitleText}>
-                                            <Text style={[styles.deviceName, { color: textColor }]}>Session {session.sessionId.substring(0, 8)}...</Text>
-                                            {session.sessionId === activeSessionId && (
-                                                <Text style={[styles.currentBadge, { color: successColor }]}>Current Session</Text>
-                                            )}
-                                        </View>
-                                    </View>
-                                </View>
-                                <View style={styles.sessionDetails}>
-                                    <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>Device ID: {session.deviceId ? session.deviceId.substring(0, 12) + '...' : 'Unknown'}</Text>
-                                    <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>Last active: {session.lastActive ? new Date(session.lastActive).toLocaleDateString() : 'Unknown'}</Text>
-                                    <Text style={[styles.sessionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>Expires: {session.expiresAt ? new Date(session.expiresAt).toLocaleDateString() : 'Unknown'}</Text>
-                                </View>
-                                {session.sessionId !== activeSessionId && (
-                                    <TouchableOpacity
-                                        style={[styles.logoutButton, { backgroundColor: isDarkTheme ? '#400000' : '#FFEBEE' }]}
-                                        onPress={() => handleLogoutSession(session.sessionId)}
-                                        disabled={actionLoading === session.sessionId}
-                                    >
-                                        {actionLoading === session.sessionId ? (
-                                            <ActivityIndicator size="small" color={dangerColor} />
-                                        ) : (
-                                            <Text style={[styles.logoutButtonText, { color: dangerColor }]}>Logout</Text>
-                                        )}
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                        ))}
-                        <View style={styles.bulkActions}>
-                            <TouchableOpacity
-                                style={[styles.bulkActionButton, { backgroundColor: isDarkTheme ? '#1A1A1A' : '#F0F0F0', borderColor }]}
-                                onPress={handleLogoutOtherSessions}
-                                disabled={actionLoading === 'others' || userSessions.filter(s => s.sessionId !== activeSessionId).length === 0}
-                            >
-                                {actionLoading === 'others' ? (
-                                    <ActivityIndicator size="small" color={primaryColor} />
-                                ) : (
-                                    <Text style={[styles.bulkActionButtonText, { color: textColor }]}>Logout Other Sessions</Text>
-                                )}
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.bulkActionButton, styles.dangerButton, { backgroundColor: isDarkTheme ? '#400000' : '#FFEBEE' }]}
-                                onPress={handleLogoutAllSessions}
-                                disabled={actionLoading === 'all'}
-                            >
-                                {actionLoading === 'all' ? (
-                                    <ActivityIndicator size="small" color={dangerColor} />
-                                ) : (
-                                    <Text style={[styles.bulkActionButtonText, { color: dangerColor }]}>Logout All Sessions</Text>
-                                )}
-                            </TouchableOpacity>
+                        {lastRefreshed && (
+                            <Text style={[styles.metaText, { color: isDarkTheme ? '#777' : '#777', marginBottom: 6 }]}>Last refreshed {formatRelative(lastRefreshed.toISOString())}</Text>
+                        )}
+                        <View style={styles.fullBleed}>
+                            <GroupedSection items={sessionItems} theme={theme as 'light' | 'dark'} />
+                        </View>
+                        <View style={{ height: 12 }} />
+                        <View style={styles.fullBleed}>
+                            <GroupedSection items={bulkItems} theme={theme as 'light' | 'dark'} />
                         </View>
                     </>
                 ) : (
@@ -290,74 +315,46 @@ const styles = StyleSheet.create({
         padding: 20,
         paddingTop: 0,
     },
-    sessionCard: {
-        borderRadius: 12,
+    // Removed legacy session card & bulk action styles (now using GroupedSection)
+    sessionActionsRow: {
+        flexDirection: 'row',
+        gap: 8,
+        marginTop: 6,
+    },
+    sessionPillButton: {
+        paddingHorizontal: 14,
+        paddingVertical: 6,
+        borderRadius: 20,
         borderWidth: 1,
-        borderLeftWidth: 4,
-        padding: 16,
-        marginBottom: 12,
-    },
-    sessionHeader: {
-        marginBottom: 12,
-    },
-    sessionTitleRow: {
         flexDirection: 'row',
         alignItems: 'center',
     },
-    deviceIcon: {
-        fontSize: 20,
-        marginRight: 12,
-    },
-    sessionTitleText: {
-        flex: 1,
-    },
-    deviceName: {
-        fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 2,
-    },
-    currentBadge: {
+    sessionPillText: {
         fontSize: 12,
-        fontWeight: '500',
+        fontWeight: '600',
+        letterSpacing: 0.3,
+        textTransform: 'uppercase',
     },
-    sessionDetails: {
-        marginBottom: 12,
+    currentBadgeText: {
+        fontSize: 12,
+        fontWeight: '600',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        backgroundColor: '#2E7D3215',
+        borderRadius: 16,
+        overflow: 'hidden',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
     },
-    sessionDetail: {
-        fontSize: 14,
-        marginBottom: 2,
+    metaText: {
+        fontSize: 12,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
+        fontWeight: '600',
     },
-    logoutButton: {
-        paddingVertical: 8,
-        paddingHorizontal: 16,
-        borderRadius: 6,
-        alignItems: 'center',
-        alignSelf: 'flex-start',
-    },
-    logoutButtonText: {
-        fontSize: 14,
-        fontWeight: '500',
-    },
-    bulkActions: {
-        marginTop: 20,
-        paddingTop: 20,
-        borderTopWidth: 1,
-        borderTopColor: '#E0E0E0',
-    },
-    bulkActionButton: {
-        paddingVertical: 12,
-        paddingHorizontal: 20,
-        borderRadius: 8,
-        borderWidth: 1,
-        alignItems: 'center',
-        marginBottom: 12,
-    },
-    dangerButton: {
-        borderColor: 'transparent',
-    },
-    bulkActionButtonText: {
-        fontSize: 16,
-        fontWeight: '500',
+    fullBleed: {
+        width: '100%',
+        alignSelf: 'stretch',
     },
     emptyState: {
         alignItems: 'center',

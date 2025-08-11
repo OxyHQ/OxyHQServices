@@ -20,6 +20,7 @@ import { useThemeColors } from '../styles';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { packageInfo } from '../../constants/version';
+import { GroupedSection } from '../components';
 
 // Types for better type safety
 interface FeedbackData {
@@ -63,6 +64,10 @@ const CATEGORIES = {
 const createStyles = (colors: any, theme: string) => StyleSheet.create({
     container: {
         flex: 1,
+    },
+    fullBleed: {
+        width: '100%',
+        alignSelf: 'stretch',
     },
     scrollContent: {
         flexGrow: 1,
@@ -622,6 +627,42 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
     }, [feedbackData, user, isTypeStepValid, isDetailsStepValid, isContactStepValid, resetForm]);
 
     // Step components
+    // Memoized grouped section items
+    const feedbackTypeItems = useMemo(() => FEEDBACK_TYPES.map(type => ({
+        id: type.id,
+        icon: type.icon,
+        iconColor: type.color,
+        title: type.label,
+        subtitle: type.description,
+        onPress: () => { updateField('type', type.id); updateField('category', ''); },
+        selected: feedbackData.type === type.id,
+        showChevron: false,
+        multiRow: true,
+        dense: true,
+    })), [feedbackData.type, updateField]);
+
+    const categoryItems = useMemo(() => (feedbackData.type ? (CATEGORIES[feedbackData.type as keyof typeof CATEGORIES] || []).map(cat => ({
+        id: cat,
+        icon: feedbackData.category === cat ? 'checkmark-circle' : 'ellipse-outline',
+        iconColor: feedbackData.category === cat ? colors.primary : colors.secondaryText,
+        title: cat,
+        onPress: () => updateField('category', cat),
+        selected: feedbackData.category === cat,
+        showChevron: false,
+        dense: true,
+    })) : []), [feedbackData.type, feedbackData.category, colors.primary, colors.secondaryText, updateField]);
+
+    const priorityItems = useMemo(() => PRIORITY_LEVELS.map(p => ({
+        id: p.id,
+        icon: p.icon,
+        iconColor: p.color,
+        title: p.label,
+        onPress: () => updateField('priority', p.id),
+        selected: feedbackData.priority === p.id,
+        showChevron: false,
+        dense: true,
+    })), [feedbackData.priority, updateField]);
+
     const renderTypeStep = useCallback(() => (
         <Animated.View style={[
             styles.stepContainer,
@@ -635,63 +676,16 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                     Choose the category that best describes your feedback
                 </Text>
             </View>
-
-            <View style={styles.typeGrid}>
-                {FEEDBACK_TYPES.map((type) => (
-                    <TouchableOpacity
-                        key={type.id}
-                        style={[
-                            styles.typeCard,
-                            {
-                                borderColor: feedbackData.type === type.id ? type.color : colors.border,
-                                backgroundColor: feedbackData.type === type.id ? type.color + '10' : colors.inputBackground,
-                            }
-                        ]}
-                        onPress={() => {
-                            updateField('type', type.id);
-                            updateField('category', '');
-                        }}
-                    >
-                        <View style={[styles.typeIcon, { backgroundColor: type.color + '20', padding: 12, borderRadius: 12 }]}>
-                            <Ionicons name={type.icon as any} size={24} color={type.color} />
-                        </View>
-                        <Text style={[styles.typeLabel, { color: colors.text }]}>
-                            {type.label}
-                        </Text>
-                        <Text style={[styles.typeDescription, { color: colors.secondaryText }]}>
-                            {type.description}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
+            <View style={styles.fullBleed}>
+                <GroupedSection items={feedbackTypeItems} theme={theme as 'light' | 'dark'} />
             </View>
 
             {feedbackData.type && (
                 <View style={styles.categoryContainer}>
-                    <Text style={[styles.modernLabel, { color: colors.secondaryText, marginBottom: 12 }]}>
-                        Category
-                    </Text>
-                    {CATEGORIES[feedbackData.type as keyof typeof CATEGORIES]?.map((category) => (
-                        <TouchableOpacity
-                            key={category}
-                            style={[
-                                styles.categoryButton,
-                                {
-                                    borderColor: feedbackData.category === category ? colors.primary : colors.border,
-                                    backgroundColor: feedbackData.category === category ? colors.primary + '10' : colors.inputBackground,
-                                }
-                            ]}
-                            onPress={() => updateField('category', category)}
-                        >
-                            <Ionicons
-                                name={feedbackData.category === category ? 'checkmark-circle' : 'ellipse-outline'}
-                                size={20}
-                                color={feedbackData.category === category ? colors.primary : colors.secondaryText}
-                            />
-                            <Text style={[styles.categoryText, { color: colors.text }]}>
-                                {category}
-                            </Text>
-                        </TouchableOpacity>
-                    ))}
+                    <Text style={[styles.modernLabel, { color: colors.secondaryText, marginBottom: 8 }]}>Category</Text>
+                    <View style={styles.fullBleed}>
+                        <GroupedSection items={categoryItems} theme={theme as 'light' | 'dark'} />
+                    </View>
                 </View>
             )}
 
@@ -730,7 +724,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 </TouchableOpacity>
             </View>
         </Animated.View>
-    ), [fadeAnim, slideAnim, colors, feedbackData, updateField, goBack, nextStep, isTypeStepValid, styles]);
+    ), [fadeAnim, slideAnim, colors, feedbackData, feedbackTypeItems, categoryItems, updateField, goBack, nextStep, isTypeStepValid, styles, theme]);
 
     const renderDetailsStep = useCallback(() => (
         <Animated.View style={[
@@ -776,28 +770,11 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 styles={styles}
             />
 
-            <View style={styles.priorityContainer}>
-                <Text style={[styles.modernLabel, { color: colors.secondaryText, marginBottom: 12 }]}>
-                    Priority Level
-                </Text>
-                {PRIORITY_LEVELS.map((priority) => (
-                    <TouchableOpacity
-                        key={priority.id}
-                        style={[
-                            styles.priorityButton,
-                            {
-                                borderColor: feedbackData.priority === priority.id ? priority.color : colors.border,
-                                backgroundColor: feedbackData.priority === priority.id ? priority.color + '10' : colors.inputBackground,
-                            }
-                        ]}
-                        onPress={() => updateField('priority', priority.id)}
-                    >
-                        <Ionicons name={priority.icon as any} size={20} color={priority.color} />
-                        <Text style={[styles.priorityLabel, { color: colors.text }]}>
-                            {priority.label}
-                        </Text>
-                    </TouchableOpacity>
-                ))}
+            <View style={{ marginBottom: 24 }}>
+                <Text style={[styles.modernLabel, { color: colors.secondaryText, marginBottom: 8 }]}>Priority Level</Text>
+                <View style={styles.fullBleed}>
+                    <GroupedSection items={priorityItems} theme={theme as 'light' | 'dark'} />
+                </View>
             </View>
 
             <View style={styles.navigationButtons}>
@@ -826,7 +803,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 </TouchableOpacity>
             </View>
         </Animated.View>
-    ), [fadeAnim, slideAnim, colors, feedbackData, updateField, setErrorMessage, prevStep, nextStep, isDetailsStepValid, styles]);
+    ), [fadeAnim, slideAnim, colors, feedbackData, updateField, setErrorMessage, prevStep, nextStep, isDetailsStepValid, styles, priorityItems, theme]);
 
     const renderContactStep = useCallback(() => (
         <Animated.View style={[
@@ -1032,16 +1009,16 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <KeyboardAvoidingView
-            style={[styles.container, { backgroundColor: colors.background }]}
+            style={[styles.container, { backgroundColor: theme === 'dark' ? colors.background : '#F7F9FC' }]}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
             <StatusBar
                 barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
-                backgroundColor={colors.background}
+                backgroundColor={theme === 'dark' ? colors.background : '#F7F9FC'}
             />
 
             <ScrollView
-                contentContainerStyle={styles.scrollContent}
+                contentContainerStyle={[styles.scrollContent, { backgroundColor: 'transparent' }]}
                 showsVerticalScrollIndicator={false}
                 keyboardShouldPersistTaps="handled"
             >

@@ -117,6 +117,7 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         marginBottom: 2,
         overflow: 'hidden',
+        width: '100%',
     },
     firstGroupedItem: {
         borderTopLeftRadius: 24,

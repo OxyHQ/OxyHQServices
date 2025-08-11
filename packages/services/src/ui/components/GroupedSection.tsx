@@ -28,7 +28,7 @@ interface GroupedSectionProps {
 
 const GroupedSection: React.FC<GroupedSectionProps> = ({ items, theme }) => {
     return (
-        <View>
+        <View style={{ width: '100%' }}>
             {items.map((item, index) => (
                 <GroupedItem
                     key={item.id}
