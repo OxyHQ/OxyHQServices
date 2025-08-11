@@ -9,6 +9,9 @@ import { toast } from '../../lib/sonner';
 import { useAuthStore } from '../stores/authStore';
 
 // Define the context shape
+
+import { useFollow as baseUseFollow } from '../hooks/useFollow';
+
 export interface OxyContextState {
   // Authentication state
   user: User | null; // Current active user (loaded from server)
@@ -42,6 +45,11 @@ export interface OxyContextState {
   // Methods to directly control the bottom sheet
   showBottomSheet?: (screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => void;
   hideBottomSheet?: () => void;
+
+  /**
+   * useFollow hook, exposed for convenience so you can do const { useFollow } = useOxy();
+   */
+  useFollow: any;
 }
 
 // Create the context with default values
@@ -705,6 +713,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     bottomSheetRef,
     showBottomSheet,
     hideBottomSheet,
+    useFollow: baseUseFollow,
   }), [
     user?.id, // Only depend on user ID, not the entire user object
     minimalUser?.id,

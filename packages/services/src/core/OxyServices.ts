@@ -1,7 +1,65 @@
+/**
+ * OxyServices - Unified client for Oxy API and Oxy Cloud
+ *
+ * # Usage Examples
+ *
+ * ## Browser (ESM/TypeScript)
+ *
+ * ```typescript
+ * import { OxyServices } from './core/OxyServices';
+ *
+ * const oxy = new OxyServices({
+ *   baseURL: 'https://api.oxy.so',
+ *   cloudURL: 'https://cloud.oxy.so',
+ * });
+ *
+ * // Authenticate and fetch user
+ * await oxy.setTokens('ACCESS_TOKEN');
+ * const user = await oxy.getCurrentUser();
+ *
+ * // Upload a file (browser File API)
+ * const fileInput = document.querySelector('input[type=file]');
+ * const file = fileInput.files[0];
+ * await oxy.uploadFile(file);
+ *
+ * // Get a file stream URL for <img src>
+ * const url = oxy.getFileStreamUrl('fileId');
+ * ```
+ *
+ * ## Node.js (CommonJS/TypeScript)
+ *
+ * ```typescript
+ * import { OxyServices } from './core/OxyServices';
+ * import fs from 'fs';
+ *
+ * const oxy = new OxyServices({
+ *   baseURL: 'https://api.oxy.so',
+ *   cloudURL: 'https://cloud.oxy.so',
+ * });
+ *
+ * // Authenticate and fetch user
+ * await oxy.setTokens('ACCESS_TOKEN');
+ * const user = await oxy.getCurrentUser();
+ *
+ * // Upload a file (Node.js Buffer)
+ * const buffer = fs.readFileSync('myfile.png');
+ * const blob = new Blob([buffer]);
+ * await oxy.uploadRawFile(blob, { filename: 'myfile.png' });
+ *
+ * // Get a file download URL
+ * const url = oxy.getFileDownloadUrl('fileId');
+ * ```
+ *
+ * ## Configuration
+ * - `baseURL`: Oxy API endpoint (e.g., https://api.oxy.so)
+ * - `cloudURL`: Oxy Cloud/CDN endpoint (e.g., https://cloud.oxy.so)
+ *
+ * See method JSDoc for more details and options.
+ */
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 import { jwtDecode } from 'jwt-decode';
 import type { 
-  OxyConfig, 
+  OxyConfig as OxyConfigBase, 
   ApiError, 
   User, 
   Notification, 
@@ -9,6 +67,14 @@ import type {
   AssetUrlResponse, 
   AssetVariant 
 } from '../models/interfaces';
+/**
+ * OxyConfig - Configuration for OxyServices
+ * @property baseURL - The Oxy API base URL (e.g., https://api.oxy.so)
+ * @property cloudURL - The Oxy Cloud (file storage/CDN) URL (e.g., https://cloud.oxy.so)
+ */
+export interface OxyConfig extends OxyConfigBase {
+  cloudURL?: string;
+}
 import type { SessionLoginResponse } from '../models/session';
 import { handleHttpError } from '../utils/errorUtils';
 import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
@@ -94,17 +160,25 @@ class TokenStore {
 export class OxyServices {
   protected client: AxiosInstance;
   private tokenStore: TokenStore;
+  private cloudURL: string;
 
   /**
    * Creates a new instance of the OxyServices client
    * @param config - Configuration for the client
+   */
+  /**
+   * Creates a new instance of the OxyServices client
+   * @param config - Configuration for the client
+   *   config.baseURL: Oxy API URL (e.g., https://api.oxy.so)
+   *   config.cloudURL: Oxy Cloud URL (e.g., https://cloud.oxy.so)
    */
   constructor(config: OxyConfig) {
     this.client = axios.create({ 
       baseURL: config.baseURL,
       timeout: 10000 // 10 second timeout
     });
-    
+    this.cloudURL = config.cloudURL || 'https://cloud.oxyhq.com';
+    this.cloudURL = config.cloudURL || 'https://cloud.oxy.so';
     this.tokenStore = TokenStore.getInstance();
     this.setupInterceptors();
   }
@@ -193,10 +267,17 @@ export class OxyServices {
   // ============================================================================
 
   /**
-   * Get the configured base URL
+   * Get the configured Oxy API base URL
    */
   public getBaseURL(): string {
     return this.client.defaults.baseURL || '';
+  }
+
+  /**
+   * Get the configured Oxy Cloud (file storage/CDN) URL
+   */
+  public getCloudURL(): string {
+    return this.cloudURL;
   }
 
   /**
@@ -966,24 +1047,27 @@ export class OxyServices {
   /**
    * Get file download URL
    */
+  /**
+   * Get file download URL (API streaming proxy, attaches token for <img src>)
+   */
   getFileDownloadUrl(fileId: string, variant?: string, expiresIn?: number): string {
-    // Default to streaming proxy to avoid ORB; attach token via query for <img src>
     const base = this.getBaseURL();
     const params = new URLSearchParams();
-  if (variant) params.set('variant', variant);
-  // Request a visible server-side placeholder if object is missing
-  params.set('fallback', 'placeholderVisible');
+    if (variant) params.set('variant', variant);
+    params.set('fallback', 'placeholderVisible');
     const token = this.tokenStore.getAccessToken();
     if (token) params.set('token', token);
     return `${base}/api/assets/${encodeURIComponent(fileId)}/stream${params.size ? `?${params.toString()}` : ''}`;
   }
 
   /**
-   * Get file stream URL
+   * Get file stream URL (direct Oxy Cloud/CDN URL, no token)
    */
   getFileStreamUrl(fileId: string): string {
-    return `${OXY_CLOUD_URL}/files/${fileId}/stream`;
+    return `${this.getCloudURL()}/files/${fileId}/stream`;
   }
+
+  // ...existing code...
 
   /**
    * List user files
@@ -1560,8 +1644,18 @@ export class OxyServices {
   }
 }
 
-// Export the cloud URL constant
-export const OXY_CLOUD_URL = 'https://cloud.oxyhq.com';
+/**
+ * Export the default Oxy Cloud URL (for backward compatibility)
+ */
+export const OXY_CLOUD_URL = 'https://cloud.oxy.so';
 
-// Pre-configured client instance for easy import
-export const oxyClient = new OxyServices({ baseURL: OXY_CLOUD_URL });
+/**
+ * Export the default Oxy API URL (for documentation)
+ */
+export const OXY_API_URL = 'https://api.oxy.so';
+
+/**
+ * Pre-configured client instance for easy import
+ * Uses OXY_API_URL as baseURL and OXY_CLOUD_URL as cloudURL
+ */
+export const oxyClient = new OxyServices({ baseURL: OXY_API_URL, cloudURL: OXY_CLOUD_URL });

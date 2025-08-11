@@ -11,6 +11,7 @@ export interface IUser extends Document {
     first?: string;
     last?: string;
   };
+  verified?: boolean;
   privacySettings: {
     isPrivateAccount: boolean;
     hideOnlineStatus: boolean;
@@ -143,6 +144,10 @@ const UserSchema: Schema = new Schema(
       type: String,
       default: null,
       select: false,
+    },
+    verified: {
+      type: Boolean,
+      default: false,
     },
     following: [
       {

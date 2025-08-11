@@ -22,10 +22,26 @@ import { Ionicons } from '@expo/vector-icons';
 import type { FileMetadata } from '../../models/interfaces';
 import { useFileStore, useFiles, useUploading as useUploadingStore, useUploadAggregateProgress, useDeleting as useDeletingStore } from '../stores/fileStore';
 import Header from '../components/Header';
+import JustifiedPhotoGrid from '../components/photogrid/JustifiedPhotoGrid';
 import { GroupedSection } from '../components';
 
-interface FileManagementScreenProps extends BaseScreenProps {
+// Exporting props & callback types so external callers (e.g. showBottomSheet config objects) can annotate
+export type OnConfirmFileSelection = (files: FileMetadata[]) => void;
+
+export interface FileManagementScreenProps extends BaseScreenProps {
     userId?: string;
+    // Enable selection mode (acts like a picker). When true, opening a file selects it instead of showing viewer
+    selectMode?: boolean;
+    // Allow selecting multiple files; only used if selectMode is true
+    multiSelect?: boolean;
+    // Callback when a file is selected (single select mode)
+    onSelect?: (file: FileMetadata) => void;
+    // Callback when confirm pressed in multi-select mode
+    onConfirmSelection?: OnConfirmFileSelection;
+    // Initial selected file IDs for multi-select
+    initialSelectedIds?: string[];
+    maxSelection?: number;
+    disabledMimeTypes?: string[];
 }
 
 // Add this helper function near the top (after imports):
@@ -40,6 +56,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     navigate,
     userId,
     containerWidth = 400, // Fallback for when not provided by the router
+    selectMode = false,
+    multiSelect = false,
+    onSelect,
+    onConfirmSelection,
+    initialSelectedIds = [],
+    maxSelection,
+    disabledMimeTypes = [],
 }) => {
     const { user, oxyServices } = useOxy();
 
@@ -60,8 +83,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const deleting = useDeletingStore();
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [paging, setPaging] = useState({ offset: 0, limit: 40, total: 0, hasMore: true, loadingMore: false });
     const [selectedFile, setSelectedFile] = useState<FileMetadata | null>(null);
     const [showFileDetails, setShowFileDetails] = useState(false);
+    // In selectMode we never open the detailed viewer
     const [openedFile, setOpenedFile] = useState<FileMetadata | null>(null);
     const [fileContent, setFileContent] = useState<string | null>(null);
     const [loadingFileContent, setLoadingFileContent] = useState(false);
@@ -90,6 +115,53 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [hoveredPreview, setHoveredPreview] = useState<string | null>(null);
     const uploadStartRef = useRef<number | null>(null);
     const MIN_BANNER_MS = 600;
+    // Selection state
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(initialSelectedIds));
+    useEffect(() => {
+        if (initialSelectedIds && initialSelectedIds.length) {
+            setSelectedIds(new Set(initialSelectedIds));
+        }
+    }, [initialSelectedIds]);
+
+    const toggleSelect = useCallback((file: FileMetadata) => {
+        if (!selectMode) return;
+        if (disabledMimeTypes.length) {
+            const blocked = disabledMimeTypes.some(mt => file.contentType === mt || file.contentType.startsWith(mt.endsWith('/') ? mt : mt + '/'));
+            if (blocked) {
+                toast.error('This file type cannot be selected');
+                return;
+            }
+        }
+        if (!multiSelect) {
+            onSelect?.(file);
+            onClose?.();
+            return;
+        }
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            const already = next.has(file.id);
+            if (!already) {
+                if (maxSelection && next.size >= maxSelection) {
+                    toast.error(`You can select up to ${maxSelection}`);
+                    return prev;
+                }
+                next.add(file.id);
+            } else {
+                next.delete(file.id);
+            }
+            return next;
+        });
+    }, [selectMode, multiSelect, onSelect, onClose, disabledMimeTypes, maxSelection]);
+
+    const confirmMultiSelection = useCallback(() => {
+        if (!selectMode || !multiSelect) return;
+        const map: Record<string, FileMetadata> = {};
+        files.forEach(f => { map[f.id] = f; });
+        const chosen = Array.from(selectedIds).map(id => map[id]).filter(Boolean);
+        onConfirmSelection?.(chosen);
+        onClose?.();
+    }, [selectMode, multiSelect, selectedIds, files, onConfirmSelection, onClose]);
+
     const endUpload = useCallback(() => {
         const started = uploadStartRef.current;
         const elapsed = started ? Date.now() - started : MIN_BANNER_MS;
@@ -162,7 +234,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const storeSetUploadProgress = useFileStore(s => s.setUploadProgress);
     const storeSetDeleting = useFileStore(s => s.setDeleting);
 
-    const loadFiles = useCallback(async (mode: 'initial' | 'refresh' | 'silent' = 'initial') => {
+    const loadFiles = useCallback(async (mode: 'initial' | 'refresh' | 'silent' | 'more' = 'initial') => {
         if (!targetUserId) return;
 
         try {
@@ -170,9 +242,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 setRefreshing(true);
             } else if (mode === 'initial') {
                 setLoading(true);
+                setPaging(p => ({ ...p, offset: 0, hasMore: true }));
+            } else if (mode === 'more') {
+                // Prevent duplicate fetches
+                setPaging(p => ({ ...p, loadingMore: true }));
             }
-
-            const response = await oxyServices.listUserFiles();
+            const currentPaging = mode === 'more' ? (prevPagingRef.current ?? paging) : paging;
+            const effectiveOffset = mode === 'more' ? currentPaging.offset + currentPaging.limit : 0;
+            const response = await oxyServices.listUserFiles(currentPaging.limit, effectiveOffset);
             const assets: FileMetadata[] = (response.files || []).map((f: any) => ({
                 id: f.id,
                 filename: f.originalName || f.sha256,
@@ -183,16 +260,39 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 metadata: f.metadata || {},
                 variants: f.variants || [],
             }));
-            // Merge to preserve existing order & allow incremental updates
-            useFileStore.getState().setFiles(assets, { merge: true });
+            if (mode === 'more') {
+                // append
+                useFileStore.getState().setFiles(assets, { merge: true });
+                setPaging(p => ({
+                    ...p,
+                    offset: effectiveOffset,
+                    total: response.total || (effectiveOffset + assets.length),
+                    hasMore: response.hasMore,
+                    loadingMore: false,
+                }));
+            } else {
+                useFileStore.getState().setFiles(assets, { merge: false });
+                setPaging(p => ({
+                    ...p,
+                    offset: 0,
+                    total: response.total || assets.length,
+                    hasMore: response.hasMore,
+                    loadingMore: false,
+                }));
+            }
         } catch (error: any) {
             console.error('Failed to load files:', error);
             toast.error(error.message || 'Failed to load files');
         } finally {
             setLoading(false);
             setRefreshing(false);
+            setPaging(p => ({ ...p, loadingMore: false }));
         }
-    }, [targetUserId, oxyServices]);
+    }, [targetUserId, oxyServices, paging]);
+
+    // Keep a ref to avoid stale closure when calculating next offset
+    const prevPagingRef = useRef(paging);
+    useEffect(() => { prevPagingRef.current = paging; }, [paging]);
 
     // (removed effect; filteredFiles is memoized)
 
@@ -607,6 +707,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     };
 
     const handleFileOpen = async (file: FileMetadata) => {
+        if (selectMode) {
+            toggleSelect(file);
+            return;
+        }
         try {
             setLoadingFileContent(true);
             setOpenedFile(file);
@@ -691,6 +795,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         width: itemWidth,
                         height: itemWidth,
                         marginRight: (index + 1) % itemsPerRow === 0 ? 0 : 4,
+                        ...(selectMode && selectedIds.has(photo.id) ? { borderWidth: 2, borderColor: themeStyles.primaryColor } : {})
                     }
                 ]}
                 onPress={() => handleFileOpen(photo)}
@@ -708,10 +813,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         }}
                         accessibilityLabel={photo.filename}
                     />
+                    {selectMode && (
+                        <View style={styles.selectionBadge}>
+                            <Ionicons name={selectedIds.has(photo.id) ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={selectedIds.has(photo.id) ? themeStyles.primaryColor : themeStyles.textColor} />
+                        </View>
+                    )}
                 </View>
             </TouchableOpacity>
         );
-    }, [oxyServices, containerWidth]);
+    }, [oxyServices, containerWidth, selectMode, selectedIds, themeStyles.primaryColor, themeStyles.textColor]);
 
     const renderJustifiedPhotoItem = useCallback((photo: FileMetadata, width: number, height: number, isLast: boolean) => {
         const downloadUrl = getSafeDownloadUrl(photo, 'thumb');
@@ -724,7 +834,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     {
                         width,
                         height,
-                    }
+                        ...(selectMode && selectedIds.has(photo.id) ? { borderWidth: 2, borderColor: themeStyles.primaryColor } : {}),
+                        ...(selectMode && multiSelect && selectedIds.size > 0 && !selectedIds.has(photo.id) ? { opacity: 0.4 } : {}),
+                    },
                 ]}
                 onPress={() => handleFileOpen(photo)}
                 activeOpacity={0.8}
@@ -741,10 +853,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         }}
                         accessibilityLabel={photo.filename}
                     />
+                    {selectMode && (
+                        <View style={styles.selectionBadge}>
+                            <Ionicons name={selectedIds.has(photo.id) ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={selectedIds.has(photo.id) ? themeStyles.primaryColor : themeStyles.textColor} />
+                        </View>
+                    )}
                 </View>
             </TouchableOpacity>
         );
-    }, [oxyServices]);
+    }, [oxyServices, selectMode, selectedIds, multiSelect, themeStyles.primaryColor, themeStyles.textColor]);
 
     // Run initial load once per targetUserId change to avoid accidental loops
     const lastLoadedFor = useRef<string | undefined>(undefined);
@@ -768,7 +885,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         return (
             <View
                 key={file.id}
-                style={[styles.fileItem, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }]}
+                style={[styles.fileItem, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }, selectMode && selectedIds.has(file.id) && { borderColor: themeStyles.primaryColor, borderWidth: 2 }]}
             >
                 <TouchableOpacity
                     style={styles.fileContent}
@@ -834,9 +951,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                 </View>
 
                                 {/* Preview overlay for hover effect */}
-                                {Platform.OS === 'web' && hoveredPreview === file.id && isImage && (
+                                {!selectMode && Platform.OS === 'web' && hoveredPreview === file.id && isImage && (
                                     <View style={styles.previewOverlay}>
                                         <Ionicons name="eye" size={24} color="#FFFFFF" />
+                                    </View>
+                                )}
+                                {selectMode && (
+                                    <View style={styles.selectionBadge}>
+                                        <Ionicons name={selectedIds.has(file.id) ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={selectedIds.has(file.id) ? themeStyles.primaryColor : themeStyles.textColor} />
                                     </View>
                                 )}
                             </View>
@@ -869,39 +991,41 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     </View>
                 </TouchableOpacity>
 
-                <View style={styles.fileActions}>
-                    {/* Preview button for supported files */}
-                    {hasPreview && (
+                {!selectMode && (
+                    <View style={styles.fileActions}>
+                        {/* Preview button for supported files */}
+                        {hasPreview && (
+                            <TouchableOpacity
+                                style={[styles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
+                                onPress={() => handleFileOpen(file)}
+                            >
+                                <Ionicons name="eye" size={20} color={themeStyles.primaryColor} />
+                            </TouchableOpacity>
+                        )}
+
                         <TouchableOpacity
                             style={[styles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
-                            onPress={() => handleFileOpen(file)}
+                            onPress={() => handleFileDownload(file.id, file.filename)}
                         >
-                            <Ionicons name="eye" size={20} color={themeStyles.primaryColor} />
+                            <Ionicons name="download" size={20} color={themeStyles.primaryColor} />
                         </TouchableOpacity>
-                    )}
 
-                    <TouchableOpacity
-                        style={[styles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
-                        onPress={() => handleFileDownload(file.id, file.filename)}
-                    >
-                        <Ionicons name="download" size={20} color={themeStyles.primaryColor} />
-                    </TouchableOpacity>
-
-                    {/* Always show delete button for debugging */}
-                    <TouchableOpacity
-                        style={[styles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#400000' : '#FFEBEE' }]}
-                        onPress={() => {
-                            handleFileDelete(file.id, file.filename);
-                        }}
-                        disabled={deleting === file.id}
-                    >
-                        {deleting === file.id ? (
-                            <ActivityIndicator size="small" color={themeStyles.dangerColor} />
-                        ) : (
-                            <Ionicons name="trash" size={20} color={themeStyles.dangerColor} />
-                        )}
-                    </TouchableOpacity>
-                </View>
+                        {/* Always show delete button for debugging */}
+                        <TouchableOpacity
+                            style={[styles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#400000' : '#FFEBEE' }]}
+                            onPress={() => {
+                                handleFileDelete(file.id, file.filename);
+                            }}
+                            disabled={deleting === file.id}
+                        >
+                            {deleting === file.id ? (
+                                <ActivityIndicator size="small" color={themeStyles.dangerColor} />
+                            ) : (
+                                <Ionicons name="trash" size={20} color={themeStyles.dangerColor} />
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                )}
             </View>
         );
     };
@@ -909,13 +1033,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     // GroupedSection-based file items (for 'all' view) replacing legacy flat list look
     const groupedFileItems = useMemo(() => {
         return filteredFiles
-            .filter(f => true) // placeholder for future filtering
+            .filter(f => true)
             .sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime())
             .map((file) => {
                 const isImage = file.contentType.startsWith('image/');
                 const isVideo = file.contentType.startsWith('video/');
                 const hasPreview = isImage || isVideo;
                 const previewUrl = hasPreview ? (isVideo ? getSafeDownloadUrl(file, 'poster') : getSafeDownloadUrl(file, 'thumb')) : undefined;
+                const isSelected = selectedIds.has(file.id);
                 return {
                     id: file.id,
                     image: previewUrl,
@@ -929,7 +1054,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     showChevron: false,
                     dense: true,
                     multiRow: !!file.metadata?.description,
-                    customContent: (
+                    selected: selectMode && isSelected,
+                    // Hide action buttons when selecting
+                    customContent: !selectMode ? (
                         <View style={styles.groupedActions}>
                             {(isImage || isVideo || file.contentType.includes('pdf')) && (
                                 <TouchableOpacity
@@ -957,15 +1084,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                 )}
                             </TouchableOpacity>
                         </View>
-                    ),
+                    ) : undefined,
                     customContentBelow: file.metadata?.description ? (
                         <Text style={[styles.groupedDescription, { color: themeStyles.isDarkTheme ? '#AAAAAA' : '#666666' }]} numberOfLines={2}>
                             {file.metadata.description}
                         </Text>
                     ) : undefined,
-                } as any; // GroupedSectionItem shape
+                } as any;
             });
-    }, [filteredFiles, theme, themeStyles, deleting, handleFileDownload, handleFileDelete, handleFileOpen, getSafeDownloadUrl]);
+    }, [filteredFiles, theme, themeStyles, deleting, handleFileDownload, handleFileDelete, handleFileOpen, getSafeDownloadUrl, selectMode, selectedIds]);
 
     const renderPhotoItem = (photo: FileMetadata, index: number) => {
         const downloadUrl = getSafeDownloadUrl(photo, 'thumb');
@@ -1056,6 +1183,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     />
                 }
                 showsVerticalScrollIndicator={false}
+                onScroll={({ nativeEvent }) => {
+                    const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+                    const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+                    if (distanceFromBottom < 200 && !paging.loadingMore && paging.hasMore) {
+                        loadFiles('more');
+                    }
+                }}
+                scrollEventThrottle={250}
             >
                 {loadingDimensions && (
                     <View style={styles.dimensionsLoadingIndicator}>
@@ -1094,129 +1229,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         containerWidth
     ]);
 
-    // Separate component for the photo grid to optimize rendering
-    const JustifiedPhotoGrid = React.memo(({
-        photos,
-        photoDimensions,
-        loadPhotoDimensions,
-        createJustifiedRows,
-        renderJustifiedPhotoItem,
-        renderSimplePhotoItem,
-        textColor,
-        containerWidth
-    }: {
-        photos: FileMetadata[];
-        photoDimensions: { [key: string]: { width: number, height: number } };
-        loadPhotoDimensions: (photos: FileMetadata[]) => Promise<void>;
-        createJustifiedRows: (photos: FileMetadata[], containerWidth: number) => FileMetadata[][];
-        renderJustifiedPhotoItem: (photo: FileMetadata, width: number, height: number, isLast: boolean) => React.ReactElement;
-        renderSimplePhotoItem: (photo: FileMetadata, index: number) => React.ReactElement;
-        textColor: string;
-        containerWidth: number;
-    }) => {
-        // Load dimensions for new photos
-        React.useEffect(() => {
-            loadPhotoDimensions(photos);
-            // Depend only on photo IDs to avoid re-running from dimension state changes
-            // eslint-disable-next-line react-hooks/exhaustive-deps
-        }, [photos.map(p => p.id).join(',')]);
-
-        // Group photos by date
-        const photosByDate = React.useMemo(() => {
-            return photos.reduce((groups: { [key: string]: FileMetadata[] }, photo) => {
-                const date = new Date(photo.uploadDate).toDateString();
-                if (!groups[date]) {
-                    groups[date] = [];
-                }
-                groups[date].push(photo);
-                return groups;
-            }, {});
-        }, [photos]);
-
-        const sortedDates = React.useMemo(() => {
-            return Object.keys(photosByDate).sort((a, b) =>
-                new Date(b).getTime() - new Date(a).getTime()
-            );
-        }, [photosByDate]);
-
-        return (
-            <>
-                {sortedDates.map(date => {
-                    const dayPhotos = photosByDate[date];
-                    const justifiedRows = createJustifiedRows(dayPhotos, containerWidth);
-
-                    return (
-                        <View key={date} style={styles.photoDateSection}>
-                            <Text style={[styles.photoDateHeader, { color: themeStyles.textColor }]}>
-                                {new Date(date).toLocaleDateString('en-US', {
-                                    weekday: 'long',
-                                    year: 'numeric',
-                                    month: 'long',
-                                    day: 'numeric'
-                                })}
-                            </Text>
-                            <View style={styles.justifiedPhotoGrid}>
-                                {justifiedRows.map((row, rowIndex) => {
-                                    // Calculate row height based on available width
-                                    const gap = 4;
-                                    let totalAspectRatio = 0;
-
-                                    // Calculate total aspect ratio for this row
-                                    row.forEach(photo => {
-                                        const dimensions = photoDimensions[photo.id];
-                                        const aspectRatio = dimensions ?
-                                            (dimensions.width / dimensions.height) :
-                                            1.33; // Default 4:3 ratio
-                                        totalAspectRatio += aspectRatio;
-                                    });
-
-                                    // Calculate the height that makes the row fill the available width
-                                    // Account for photoScrollContainer padding (32px total) and gaps between photos
-                                    const scrollContainerPadding = 32;
-                                    const availableWidth = containerWidth - scrollContainerPadding - (gap * (row.length - 1));
-                                    const calculatedHeight = availableWidth / totalAspectRatio;
-
-                                    // Clamp height for visual consistency
-                                    const rowHeight = Math.max(120, Math.min(calculatedHeight, 300));
-
-                                    return (
-                                        <View
-                                            key={`row-${rowIndex}`}
-                                            style={[
-                                                styles.justifiedPhotoRow,
-                                                {
-                                                    height: rowHeight,
-                                                    maxWidth: containerWidth - 32, // Account for scroll container padding
-                                                    gap: 4, // Add horizontal gap between photos in row
-                                                }
-                                            ]}
-                                        >
-                                            {row.map((photo, photoIndex) => {
-                                                const dimensions = photoDimensions[photo.id];
-                                                const aspectRatio = dimensions ?
-                                                    (dimensions.width / dimensions.height) :
-                                                    1.33; // Default 4:3 ratio
-
-                                                const photoWidth = rowHeight * aspectRatio;
-                                                const isLast = photoIndex === row.length - 1;
-
-                                                return renderJustifiedPhotoItem(
-                                                    photo,
-                                                    photoWidth,
-                                                    rowHeight,
-                                                    isLast
-                                                );
-                                            })}
-                                        </View>
-                                    );
-                                })}
-                            </View>
-                        </View>
-                    );
-                })}
-            </>
-        );
-    });
+    // Inline justified grid removed (moved to components/photogrid/JustifiedPhotoGrid.tsx)
 
     const renderFileDetailsModal = () => {
         const backgroundColor = themeStyles.backgroundColor;
@@ -1641,7 +1654,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }
 
     // If a file is opened, show the file viewer
-    if (openedFile) {
+    if (!selectMode && openedFile) {
         return (
             <>
                 {renderFileViewer()}
@@ -1664,8 +1677,22 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             } : {})}
         >
             <Header
-                title={viewMode === 'photos' ? 'Photos' : 'File Management'}
-                subtitle={`${filteredFiles.length} ${filteredFiles.length === 1 ? 'item' : 'items'}`}
+                title={selectMode ? (multiSelect ? `${selectedIds.size}${maxSelection ? '/' + maxSelection : ''} Selected` : 'Select a File') : (viewMode === 'photos' ? 'Photos' : 'File Management')}
+                subtitle={selectMode ? (multiSelect ? `${filteredFiles.length} available` : 'Tap to select') : `${filteredFiles.length} ${filteredFiles.length === 1 ? 'item' : 'items'}`}
+                rightActions={selectMode && multiSelect ? [
+                    {
+                        key: 'clear',
+                        text: 'Clear',
+                        onPress: () => setSelectedIds(new Set()),
+                        disabled: selectedIds.size === 0,
+                    },
+                    {
+                        key: 'confirm',
+                        text: 'Confirm',
+                        onPress: confirmMultiSelection,
+                        disabled: selectedIds.size === 0,
+                    }
+                ] : undefined}
                 onBack={onClose || goBack}
                 theme={theme}
                 showBackButton
@@ -1710,7 +1737,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         />
                     </TouchableOpacity>
                 </View>
-                {user?.id === targetUserId && (
+                {user?.id === targetUserId && !selectMode && (
                     <TouchableOpacity
                         style={[styles.uploadButton, { backgroundColor: themeStyles.primaryColor }]}
                         onPress={handleFileUpload}
@@ -1808,6 +1835,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             tintColor={themeStyles.primaryColor}
                         />
                     }
+                    onScroll={({ nativeEvent }) => {
+                        const { layoutMeasurement, contentOffset, contentSize } = nativeEvent;
+                        const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+                        if (distanceFromBottom < 200 && !paging.loadingMore && paging.hasMore) {
+                            loadFiles('more');
+                        }
+                    }}
+                    scrollEventThrottle={250}
                 >
                     {filteredFiles.length === 0 && searchQuery.length > 0 ? (
                         <View style={styles.emptyState}>
@@ -1825,15 +1860,23 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             </TouchableOpacity>
                         </View>
                     ) : filteredFiles.length === 0 ? renderEmptyState() : (
-                        <GroupedSection items={groupedFileItems} theme={theme as 'light' | 'dark'} />
+                        <>
+                            <GroupedSection items={groupedFileItems} theme={theme as 'light' | 'dark'} />
+                            {paging.loadingMore && (
+                                <View style={styles.loadingMoreBar}>
+                                    <ActivityIndicator size="small" color={themeStyles.primaryColor} />
+                                    <Text style={[styles.loadingMoreText, { color: themeStyles.textColor }]}>Loading more...</Text>
+                                </View>
+                            )}
+                        </>
                     )}
                 </ScrollView>
             )}
 
-            {renderFileDetailsModal()}
+            {!selectMode && renderFileDetailsModal()}
 
             {/* Uploading banner overlay */}
-            {uploading && (
+            {!selectMode && uploading && (
                 <View pointerEvents="none" style={styles.uploadBannerContainer}>
                     <View style={[styles.uploadBanner, { backgroundColor: themeStyles.isDarkTheme ? '#222831EE' : '#FFFFFFEE', borderColor: themeStyles.borderColor }]}>
                         <Ionicons name="cloud-upload" size={18} color={themeStyles.primaryColor} />
@@ -1846,6 +1889,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     </View>
                 </View>
             )}
+
+            {/* Selection bar removed; actions are now in header */}
+            {/* Global loadingMore bar removed; now inline in scroll areas */}
 
             {/* Drag and Drop Overlay */}
             {isDragging && Platform.OS === 'web' && (
@@ -1868,6 +1914,48 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+    },
+    selectionBadge: {
+        position: 'absolute',
+        top: 4,
+        right: 4,
+        backgroundColor: 'rgba(0,0,0,0.4)',
+        borderRadius: 12,
+        padding: 2,
+    },
+    selectionBar: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        bottom: 0,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        padding: 12,
+        backgroundColor: 'rgba(0,0,0,0.55)',
+        gap: 12,
+    },
+    selectionBarButton: {
+        flex: 1,
+        paddingVertical: 14,
+        borderRadius: 10,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    selectionBarButtonText: {
+        color: '#FFFFFF',
+        fontSize: 15,
+        fontWeight: '600',
+    },
+    loadingMoreBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        gap: 8,
+    },
+    loadingMoreText: {
+        fontSize: 13,
+        fontWeight: '500',
     },
     dragOverlay: {
         backgroundColor: 'rgba(0, 122, 255, 0.06)',
@@ -2026,6 +2114,7 @@ const styles = StyleSheet.create({
     },
     scrollView: {
         flex: 1,
+        backgroundColor: '#e5f1ff',
     },
     scrollContainer: {
         padding: 12,

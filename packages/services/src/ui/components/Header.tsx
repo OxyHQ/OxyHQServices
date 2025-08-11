@@ -22,7 +22,16 @@ export interface HeaderProps {
         loading?: boolean;
         disabled?: boolean;
         text?: string;
+        key?: string;
     };
+    rightActions?: Array<{
+        icon?: string;
+        onPress: () => void;
+        loading?: boolean;
+        disabled?: boolean;
+        text?: string;
+        key?: string; // optional identifier
+    }>;
     theme: 'light' | 'dark';
     showBackButton?: boolean;
     showCloseButton?: boolean;
@@ -38,6 +47,7 @@ const Header: React.FC<HeaderProps> = ({
     onBack,
     onClose,
     rightAction,
+    rightActions,
     theme,
     showBackButton = true,
     showCloseButton = false,
@@ -100,26 +110,24 @@ const Header: React.FC<HeaderProps> = ({
         );
     };
 
-    const renderRightAction = () => {
-        if (!rightAction) return null;
-
-        const isTextAction = rightAction.text;
-
+    const renderRightActionButton = (action: NonNullable<HeaderProps['rightAction']>, idx: number) => {
+        const isTextAction = action.text;
         return (
             <TouchableOpacity
+                key={action.key || idx}
                 style={[
                     styles.rightActionButton,
                     isTextAction ? styles.textActionButton : styles.iconActionButton,
                     {
                         backgroundColor: isTextAction ? colors.primary : colors.surface,
-                        opacity: rightAction.disabled ? 0.5 : 1
+                        opacity: action.disabled ? 0.5 : 1
                     }
                 ]}
-                onPress={rightAction.onPress}
-                disabled={rightAction.disabled || rightAction.loading}
+                onPress={action.onPress}
+                disabled={action.disabled || action.loading}
                 activeOpacity={0.7}
             >
-                {rightAction.loading ? (
+                {action.loading ? (
                     <View style={styles.loadingContainer}>
                         <View style={[styles.loadingDot, { backgroundColor: isTextAction ? '#FFFFFF' : colors.primary }]} />
                         <View style={[styles.loadingDot, { backgroundColor: isTextAction ? '#FFFFFF' : colors.primary }]} />
@@ -127,13 +135,25 @@ const Header: React.FC<HeaderProps> = ({
                     </View>
                 ) : isTextAction ? (
                     <Text style={[styles.actionText, { color: '#FFFFFF' }]}>
-                        {rightAction.text}
+                        {action.text}
                     </Text>
                 ) : (
-                    <Ionicons name={rightAction.icon as any} size={18} color={colors.primary} />
+                    <Ionicons name={action.icon as any} size={18} color={colors.primary} />
                 )}
             </TouchableOpacity>
         );
+    };
+
+    const renderRightActions = () => {
+        if (rightActions && rightActions.length) {
+            return (
+                <View style={styles.rightActionsRow}>
+                    {rightActions.map((a, i) => renderRightActionButton(a, i))}
+                </View>
+            );
+        }
+        if (rightAction) return renderRightActionButton(rightAction, 0);
+        return null;
     };
 
     const renderTitle = () => {
@@ -245,7 +265,7 @@ const Header: React.FC<HeaderProps> = ({
             ]}>
                 {renderBackButton()}
                 {renderTitle()}
-                {renderRightAction()}
+                {renderRightActions()}
                 {renderCloseButton()}
             </View>
         </View>
@@ -399,6 +419,10 @@ const styles = StyleSheet.create({
         height: 4,
         borderRadius: 2,
         opacity: 0.6,
+    },
+    rightActionsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
 });
 

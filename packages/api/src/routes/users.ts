@@ -280,9 +280,14 @@ router.get('/:userId/follow-status', authMiddleware, validateObjectId, async (re
 
 // Get user by ID
 router.get('/:userId', validateObjectId, async (req, res) => {
+  console.log('[DEBUG] GET /:userId called', { userId: req.params.userId, headers: req.headers });
   try {
-    const user = await User.findById(req.params.userId).select('-password -refreshToken');
+    const user = await User.findById(req.params.userId)
+      .select('username name avatar verified bio description links linksMetadata createdAt updatedAt')
+      .lean();
+    console.log('[DEBUG] User lookup result:', user);
     if (!user) {
+      console.log('[DEBUG] User not found');
       return res.status(404).json({ message: 'User not found' });
     }
 
@@ -300,9 +305,18 @@ router.get('/:userId', validateObjectId, async (req, res) => {
     // karma count not implemented - requires posts collection integration
     const karmaCount = 0;
 
-    const userObj = user.toObject({ virtuals: true });
-    res.json({
-      ...userObj,
+    const response = {
+      id: user._id,
+      username: user.username,
+      name: user.name,
+      avatar: user.avatar,
+      verified: user.verified,
+      bio: user.bio,
+      description: user.description,
+      links: user.links,
+      linksMetadata: user.linksMetadata,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
       stats: {
         followers: followersCount,
         following: followingCount,
@@ -313,9 +327,12 @@ router.get('/:userId', validateObjectId, async (req, res) => {
         following: followingCount,
         karma: karmaCount
       }
-    });
+    };
+    console.log('[DEBUG] Sending response:', response);
+    res.json(response);
   } catch (error) {
     logger.error('Error fetching user:', error);
+    console.log('[DEBUG] Error in GET /:userId:', error);
     res.status(500).json({ message: 'Internal server error' });
   }
 });
