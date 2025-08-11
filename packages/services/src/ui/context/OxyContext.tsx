@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useCallback, type ReactNode, useMemo, useRef, useState } from 'react';
+import type { UseFollowHook } from '../hooks/useFollow.types';
 import { View, Text } from 'react-native';
 import { OxyServices } from '../../core';
 import type { User, ApiError } from '../../models/interfaces';
@@ -9,8 +10,8 @@ import { toast } from '../../lib/sonner';
 import { useAuthStore } from '../stores/authStore';
 
 // Define the context shape
-
-import { useFollow as baseUseFollow } from '../hooks/useFollow';
+// NOTE: We intentionally avoid importing useFollow here to prevent a require cycle.
+// If consumers relied on `const { useFollow } = useOxy()`, we provide a lazy proxy below.
 
 export interface OxyContextState {
   // Authentication state
@@ -47,9 +48,10 @@ export interface OxyContextState {
   hideBottomSheet?: () => void;
 
   /**
-   * useFollow hook, exposed for convenience so you can do const { useFollow } = useOxy();
+   * (Deprecated) useFollow hook access via context. Prefer: import { useFollow } from '@oxyhq/services';
+   * Kept for backward compatibility; implemented as a lazy dynamic require to avoid circular dependency.
    */
-  useFollow: any;
+  useFollow: UseFollowHook; // Back-compat; prefer direct import
 }
 
 // Create the context with default values
@@ -185,88 +187,56 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         const platformStorage = await getStorage();
         setStorage(platformStorage);
       } catch (error) {
-        console.error('Failed to initialize storage:', error);
+        console.error('Init storage failed', error);
         useAuthStore.setState({ error: 'Failed to initialize storage' });
       }
     };
-
     initStorage();
   }, []);
 
-  // Effect to initialize authentication state - only store session ID
+  // Initialize authentication state
   useEffect(() => {
     const initAuth = async () => {
       if (!storage) return;
-
       useAuthStore.setState({ isLoading: true });
       try {
-        // Only load the active session ID from storage
         const storedActiveSessionId = await storage.getItem(keys.activeSessionId);
-
-        console.log('Auth - activeSessionId:', storedActiveSessionId);
-        console.log('Auth - storage available:', !!storage);
-        console.log('Auth - oxyServices available:', !!oxyServices);
-
         if (storedActiveSessionId) {
-          // Validate the stored session with the backend
           try {
-            const validation = await oxyServices.validateSession(storedActiveSessionId, {
-              useHeaderValidation: true
-            });
-
+            const validation = await oxyServices.validateSession(storedActiveSessionId, { useHeaderValidation: true });
             if (validation.valid) {
-              console.log('Auth - session validated successfully');
               setActiveSessionId(storedActiveSessionId);
-
-              // Get access token for API calls
               await oxyServices.getTokenBySession(storedActiveSessionId);
-
-              // Load full user data from backend
               const fullUser = await oxyServices.getUserBySession(storedActiveSessionId);
               loginSuccess(fullUser);
-              setMinimalUser({
-                id: fullUser.id,
-                username: fullUser.username,
-                avatar: fullUser.avatar
-              });
-
-              // Load sessions from backend
+              setMinimalUser({ id: fullUser.id, username: fullUser.username, avatar: fullUser.avatar });
               const serverSessions = await oxyServices.getSessionsBySessionId(storedActiveSessionId);
-              const clientSessions: ClientSession[] = serverSessions.map(serverSession => ({
-                sessionId: serverSession.sessionId,
-                deviceId: serverSession.deviceId,
-                expiresAt: serverSession.expiresAt || new Date().toISOString(),
-                lastActive: serverSession.lastActive || new Date().toISOString(),
-                userId: serverSession.userId || fullUser.id
+              const clientSessions: ClientSession[] = serverSessions.map(s => ({
+                sessionId: s.sessionId,
+                deviceId: s.deviceId,
+                expiresAt: s.expiresAt || new Date().toISOString(),
+                lastActive: s.lastActive || new Date().toISOString(),
+                userId: s.userId || fullUser.id
               }));
               setSessions(clientSessions);
-
-              if (onAuthStateChange) {
-                onAuthStateChange(fullUser);
-              }
+              onAuthStateChange?.(fullUser);
             } else {
-              console.log('Auth - session invalid, clearing storage');
               await clearAllStorage();
             }
-          } catch (error) {
-            console.error('Auth - session validation error:', error);
+          } catch (e) {
+            console.error('Session validation error', e);
             await clearAllStorage();
           }
-        } else {
-          console.log('Auth - no stored session found, user needs to login');
         }
-      } catch (err) {
-        console.error('Auth initialization error:', err);
+      } catch (e) {
+        console.error('Auth init error', e);
         await clearAllStorage();
       } finally {
         useAuthStore.setState({ isLoading: false });
       }
     };
-
-    if (storage) {
-      initAuth();
-    }
-  }, [storage, oxyServices, keys, onAuthStateChange, loginSuccess, setMinimalUser, clearAllStorage]);
+    initAuth();
+  }, [storage, oxyServices, keys, onAuthStateChange, loginSuccess, clearAllStorage]);
 
 
 
@@ -691,6 +661,24 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   });
 
   // Context value - optimized to prevent unnecessary re-renders
+  // Lazy proxy to load the hook only when accessed, breaking the static import cycle.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
+  const useFollowProxy: UseFollowHook = (userId?: string | string[]) => {
+    try {
+      // Dynamically require to avoid top-level cycle
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const mod = require('../hooks/useFollow');
+      if (mod && typeof mod.useFollow === 'function') {
+        return mod.useFollow(userId);
+      }
+      console.warn('useFollow module did not export a function as expected');
+      return { isFollowing: false, isLoading: false, error: null, toggleFollow: async () => { }, setFollowStatus: () => { }, fetchStatus: async () => { }, clearError: () => { }, followerCount: null, followingCount: null, isLoadingCounts: false, fetchUserCounts: async () => { }, setFollowerCount: () => { }, setFollowingCount: () => { } } as any;
+    } catch (e) {
+      console.warn('Failed to dynamically load useFollow hook:', e);
+      return { isFollowing: false, isLoading: false, error: null, toggleFollow: async () => { }, setFollowStatus: () => { }, fetchStatus: async () => { }, clearError: () => { }, followerCount: null, followingCount: null, isLoadingCounts: false, fetchUserCounts: async () => { }, setFollowerCount: () => { }, setFollowingCount: () => { } } as any;
+    }
+  };
+
   const contextValue: OxyContextState = useMemo(() => ({
     user,
     minimalUser,
@@ -713,7 +701,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     bottomSheetRef,
     showBottomSheet,
     hideBottomSheet,
-    useFollow: baseUseFollow,
+    useFollow: useFollowProxy,
   }), [
     user?.id, // Only depend on user ID, not the entire user object
     minimalUser?.id,
