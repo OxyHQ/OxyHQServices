@@ -41,6 +41,7 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res) => {
 // Update current authenticated user
 router.put('/me', authMiddleware, async (req: AuthRequest, res) => {
   try {
+  logger.debug('PUT /users/me called', { body: req.body });
   const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description', 'links', 'linksMetadata', 'locations'] as const;
     type AllowedUpdate = typeof allowedUpdates[number];
 
@@ -57,6 +58,8 @@ router.put('/me', authMiddleware, async (req: AuthRequest, res) => {
         }
         return { ...obj, [key]: value };
       }, {} as any);
+
+    logger.debug('PUT /users/me filtered updates', { updates });
 
     const user = await User.findByIdAndUpdate(
       req.user?.id,

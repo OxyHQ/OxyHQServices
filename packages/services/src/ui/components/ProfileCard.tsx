@@ -41,7 +41,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
             ]}>
                 <View style={styles.userProfile}>
                     <Avatar
-                        uri={user?.avatar ? oxyServices.getFileStreamUrl(user.avatar) : undefined}
+                        uri={user?.avatar ? oxyServices.getFileDownloadUrl(user.avatar as string, 'thumb') : undefined}
                         name={user?.name?.full || user?.username}
                         size={60}
                         theme={theme}
@@ -54,7 +54,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
                             </Text>
                         )}
                         {onEditPress && (
-                            <TouchableOpacity 
+                            <TouchableOpacity
                                 style={styles.editProfileButton}
                                 onPress={onEditPress}
                             >

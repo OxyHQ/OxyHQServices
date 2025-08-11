@@ -73,7 +73,7 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
                 <View style={styles.walletHeader}>
                     <Avatar
-                        uri={user?.avatar ? oxyServices.getFileStreamUrl(user.avatar as string) : undefined}
+                        uri={user?.avatar ? oxyServices.getFileDownloadUrl(user.avatar as string, 'thumb') : undefined}
                         name={user?.username}
                         size={60}
                         theme={theme}

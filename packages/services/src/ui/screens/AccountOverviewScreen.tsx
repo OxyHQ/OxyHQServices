@@ -192,7 +192,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     <>
                                         <View style={styles.userIcon}>
                                             <Avatar
-                                                uri={user?.avatar ? oxyServices.getFileStreamUrl(user.avatar as string) : undefined}
+                                                uri={user?.avatar ? oxyServices.getFileDownloadUrl(user.avatar as string, 'thumb') : undefined}
                                                 name={user?.name?.full}
                                                 size={40}
                                                 theme={theme}

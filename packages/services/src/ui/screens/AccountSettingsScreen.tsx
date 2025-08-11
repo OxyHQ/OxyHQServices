@@ -239,19 +239,41 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             props: {
                 selectMode: true,
                 multiSelect: false,
+                afterSelect: 'back',
                 onSelect: (file: FileMetadata) => {
                     if (!file.contentType.startsWith('image/')) {
                         toast.error('Please select an image file');
                         return;
                     }
+                    // If already selected, do nothing
+                    if (file.id === avatarFileId) {
+                        toast.info?.('Avatar unchanged');
+                        return;
+                    }
                     setAvatarFileId(file.id);
                     toast.success('Avatar selected');
+                    // Auto-save avatar immediately (does not close edit profile screen)
+                    (async () => {
+                        try {
+                            console.log('[AccountSettings] Auto-saving avatar', file.id);
+                            setIsSaving(true);
+                            await updateUser({ avatar: file.id }, oxyServices);
+                            // Force refresh current user cache (updateUser already does a fetch with force=true internally)
+                            // Extra safeguard: ensure avatarFileId reflects saved id (already set) and trigger any dependent UI.
+                            toast.success('Avatar updated');
+                        } catch (e: any) {
+                            console.error('[AccountSettings] Failed to auto-save avatar', e);
+                            toast.error(e.message || 'Failed to update avatar');
+                        } finally {
+                            setIsSaving(false);
+                        }
+                    })();
                 },
                 // Limit to images client-side by using photos view if later exposed
                 disabledMimeTypes: ['video/', 'audio/', 'application/pdf']
             }
         });
-    }, [showBottomSheet, oxyServices]);
+    }, [showBottomSheet, oxyServices, avatarFileId, updateUser]);
 
     const startEditing = (type: string, currentValue: string) => {
         switch (type) {
@@ -897,7 +919,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                         id: 'profile-photo',
                                         icon: avatarFileId ? undefined : 'person',
                                         iconColor: '#007AFF',
-                                        image: avatarFileId ? oxyServices.getFileStreamUrl(avatarFileId) : undefined,
+                                        // Use download URL (includes token + fallback) instead of raw stream for reliability
+                                        image: avatarFileId ? oxyServices.getFileDownloadUrl(avatarFileId, 'thumb') : undefined,
                                         imageSize: 40,
                                         title: 'Profile Photo',
                                         subtitle: avatarFileId ? 'Tap to change your profile picture' : 'Tap to add a profile picture',

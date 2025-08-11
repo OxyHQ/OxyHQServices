@@ -295,7 +295,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                 <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem, styles.currentAccountCard]}>
                                     <View style={styles.userIcon}>
                                         {typeof user.avatar === 'string' && user.avatar ? (
-                                            <Image source={{ uri: oxyServices.getFileStreamUrl(user.avatar) }} style={styles.accountAvatarImage} />
+                                            <Image source={{ uri: oxyServices.getFileDownloadUrl(user.avatar as string, 'thumb') }} style={styles.accountAvatarImage} />
                                         ) : (
                                             <View style={styles.accountAvatarFallback}>
                                                 <Text style={styles.accountAvatarText}>
@@ -357,7 +357,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                             <ActivityIndicator size="small" color="#007AFF" />
                                                         </View>
                                                     ) : (typeof userProfile?.avatar === 'string' && userProfile.avatar) ? (
-                                                        <Image source={{ uri: oxyServices.getFileStreamUrl(userProfile.avatar) }} style={styles.accountAvatarImage} />
+                                                        <Image source={{ uri: oxyServices.getFileDownloadUrl(userProfile.avatar as string, 'thumb') }} style={styles.accountAvatarImage} />
                                                     ) : (
                                                         <View style={styles.accountAvatarFallback}>
                                                             <Text style={styles.accountAvatarText}>

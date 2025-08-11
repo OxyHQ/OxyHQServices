@@ -42,6 +42,13 @@ export interface FileManagementScreenProps extends BaseScreenProps {
     initialSelectedIds?: string[];
     maxSelection?: number;
     disabledMimeTypes?: string[];
+    /**
+     * What to do after a single selection (non-multiSelect) is made.
+     * 'close' (default) will dismiss the bottom sheet via onClose.
+     * 'back' will navigate back to the previous screen (e.g., return to AccountSettings without closing sheet).
+     * 'none' will keep the picker open (caller can manually close or navigate).
+     */
+    afterSelect?: 'close' | 'back' | 'none';
 }
 
 // Add this helper function near the top (after imports):
@@ -63,6 +70,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     initialSelectedIds = [],
     maxSelection,
     disabledMimeTypes = [],
+    afterSelect = 'close',
 }) => {
     const { user, oxyServices } = useOxy();
 
@@ -134,7 +142,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
         if (!multiSelect) {
             onSelect?.(file);
-            onClose?.();
+            if (afterSelect === 'back') {
+                goBack?.();
+            } else if (afterSelect === 'close') {
+                onClose?.();
+            }
             return;
         }
         setSelectedIds(prev => {
@@ -151,7 +163,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             }
             return next;
         });
-    }, [selectMode, multiSelect, onSelect, onClose, disabledMimeTypes, maxSelection]);
+    }, [selectMode, multiSelect, onSelect, onClose, goBack, disabledMimeTypes, maxSelection, afterSelect]);
 
     const confirmMultiSelection = useCallback(() => {
         if (!selectMode || !multiSelect) return;
