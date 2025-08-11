@@ -6,11 +6,8 @@ export interface User {
   id: string;
   username: string;
   email?: string;
-  avatar?: {
-    id?: string;
-    url?: string;
-    [key: string]: unknown;
-  };
+  // Avatar file id (asset id)
+  avatar?: string;
   name?: {
     first?: string;
     last?: string;

@@ -192,7 +192,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 {/* Avatar overlapping banner */}
                 <View style={styles.avatarRow}>
                     <View style={styles.avatarWrapper}>
-                        <Avatar uri={profile?.avatar?.url} name={profile?.username || username} size={96} theme={theme} />
+                        <Avatar uri={profile?.avatar ? oxyServices.getFileStreamUrl(profile.avatar as string) : undefined} name={profile?.username || username} size={96} theme={theme} />
                     </View>
                     {/* Conditional Action Button */}
                     <View style={styles.actionButtonWrapper}>

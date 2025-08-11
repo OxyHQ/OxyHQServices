@@ -15,6 +15,7 @@ import {
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import Avatar from '../components/Avatar';
+import type { FileMetadata } from '../../models/interfaces';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
@@ -29,7 +30,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     goBack,
     navigate,
 }) => {
-    const { user, oxyServices, isLoading: authLoading, isAuthenticated } = useOxy();
+    const { user, oxyServices, isLoading: authLoading, isAuthenticated, showBottomSheet } = useOxy();
     const updateUser = useAuthStore((state) => state.updateUser);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -45,7 +46,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const [bio, setBio] = useState('');
     const [location, setLocation] = useState('');
     const [links, setLinks] = useState<string[]>([]);
-    const [avatarUrl, setAvatarUrl] = useState('');
+    const [avatarFileId, setAvatarFileId] = useState('');
 
     // Editing states
     const [editingField, setEditingField] = useState<string | null>(null);
@@ -173,7 +174,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 setLinks([]);
                 setTempLinksWithMetadata([]);
             }
-            setAvatarUrl(user.avatar?.url || '');
+            setAvatarFileId(typeof user.avatar === 'string' ? user.avatar : '');
         }
     }, [user]);
 
@@ -203,8 +204,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             }
 
             // Handle avatar
-            if (avatarUrl !== user.avatar?.url) {
-                updates.avatar = { url: avatarUrl };
+            if (avatarFileId !== (typeof user.avatar === 'string' ? user.avatar : '')) {
+                updates.avatar = avatarFileId;
             }
 
             await updateUser(updates, oxyServices);
@@ -225,13 +226,32 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         }
     };
 
-    const handleAvatarUpdate = () => {
-        // Always use confirmAction for both web and native
+    const handleAvatarRemove = () => {
         confirmAction('Remove your profile picture?', () => {
-            setAvatarUrl('');
+            setAvatarFileId('');
             toast.success('Avatar removed');
         });
     };
+
+    const openAvatarPicker = useCallback(() => {
+        showBottomSheet?.({
+            screen: 'FileManagement',
+            props: {
+                selectMode: true,
+                multiSelect: false,
+                onSelect: (file: FileMetadata) => {
+                    if (!file.contentType.startsWith('image/')) {
+                        toast.error('Please select an image file');
+                        return;
+                    }
+                    setAvatarFileId(file.id);
+                    toast.success('Avatar selected');
+                },
+                // Limit to images client-side by using photos view if later exposed
+                disabledMimeTypes: ['video/', 'audio/', 'application/pdf']
+            }
+        });
+    }, [showBottomSheet, oxyServices]);
 
     const startEditing = (type: string, currentValue: string) => {
         switch (type) {
@@ -871,19 +891,28 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         {/* Profile Picture Section */}
                         <View style={styles.section}>
                             <Text style={styles.sectionTitle}>Profile Picture</Text>
-
                             <GroupedSection
                                 items={[
                                     {
                                         id: 'profile-photo',
-                                        icon: avatarUrl ? undefined : 'person',
+                                        icon: avatarFileId ? undefined : 'person',
                                         iconColor: '#007AFF',
-                                        image: avatarUrl || undefined,
+                                        image: avatarFileId ? oxyServices.getFileStreamUrl(avatarFileId) : undefined,
                                         imageSize: 40,
                                         title: 'Profile Photo',
-                                        subtitle: avatarUrl ? 'Tap to change your profile picture' : 'Tap to add a profile picture',
-                                        onPress: handleAvatarUpdate,
+                                        subtitle: avatarFileId ? 'Tap to change your profile picture' : 'Tap to add a profile picture',
+                                        onPress: openAvatarPicker,
                                     },
+                                    ...(avatarFileId ? [
+                                        {
+                                            id: 'remove-profile-photo',
+                                            icon: 'trash',
+                                            iconColor: '#FF3B30',
+                                            title: 'Remove Photo',
+                                            subtitle: 'Delete current profile picture',
+                                            onPress: handleAvatarRemove,
+                                        }
+                                    ] : []),
                                 ]}
                                 theme={theme}
                             />

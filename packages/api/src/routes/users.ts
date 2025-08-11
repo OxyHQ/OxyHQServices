@@ -41,18 +41,22 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res) => {
 // Update current authenticated user
 router.put('/me', authMiddleware, async (req: AuthRequest, res) => {
   try {
-    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description', 'links', 'linksMetadata', 'locations'] as const;
+  const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description', 'links', 'linksMetadata', 'locations'] as const;
     type AllowedUpdate = typeof allowedUpdates[number];
 
     const updates = Object.entries(req.body)
       .filter(([key]) => allowedUpdates.includes(key as AllowedUpdate))
       .reduce((obj, [key, value]) => {
-        if (key === 'avatar' && value && typeof value === 'object') {
-          const avatarValue = value as { id?: string; url?: string };
-          return { ...obj, [key]: { id: avatarValue.id || '', url: avatarValue.url || '' } };
+        if (key === 'avatar') {
+          // Expect a string file id; ignore objects
+            if (typeof value === 'string') return { ...obj, avatar: value };
+            if (value && typeof value === 'object' && 'id' in (value as any)) {
+              return { ...obj, avatar: (value as any).id || '' };
+            }
+            return obj;
         }
         return { ...obj, [key]: value };
-      }, {} as Partial<Pick<IUser, AllowedUpdate>>);
+      }, {} as any);
 
     const user = await User.findByIdAndUpdate(
       req.user?.id,
@@ -283,7 +287,7 @@ router.get('/:userId', validateObjectId, async (req, res) => {
   console.log('[DEBUG] GET /:userId called', { userId: req.params.userId, headers: req.headers });
   try {
     const user = await User.findById(req.params.userId)
-      .select('username name avatar verified bio description links linksMetadata createdAt updatedAt')
+  .select('username name avatar verified bio description links linksMetadata createdAt updatedAt')
       .lean();
     console.log('[DEBUG] User lookup result:', user);
     if (!user) {
@@ -345,28 +349,21 @@ router.put('/:userId', authMiddleware, validateObjectId, async (req: AuthRequest
       return res.status(403).json({ message: 'Not authorized to update this profile' });
     }
 
-    const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description'] as const;
+  const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description'] as const;
     type AllowedUpdate = typeof allowedUpdates[number];
     
     const updates = Object.entries(req.body)
       .filter(([key]) => allowedUpdates.includes(key as AllowedUpdate))
       .reduce((obj, [key, value]) => {
-        // Special handling for avatar field to ensure it's properly structured
-        if (key === 'avatar' && value && typeof value === 'object') {
-          const avatarValue = value as { id?: string; url?: string };
-          return {
-            ...obj,
-            [key]: {
-              id: avatarValue.id || "",
-              url: avatarValue.url || ""
-            }
-          };
+        if (key === 'avatar') {
+          if (typeof value === 'string') return { ...obj, avatar: value };
+          if (value && typeof value === 'object' && 'id' in (value as any)) {
+            return { ...obj, avatar: (value as any).id || '' };
+          }
+          return obj;
         }
-        return {
-          ...obj,
-          [key]: value
-        };
-      }, {} as Partial<Pick<IUser, AllowedUpdate>>);
+        return { ...obj, [key]: value };
+      }, {} as any);
 
     logger.debug('Profile update request:', {
       requestBody: req.body,

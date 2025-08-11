@@ -15,10 +15,7 @@ export interface StorageKeys {
 export interface MinimalUserData {
   id: string;
   username: string;
-  avatar?: {
-    id?: string;
-    url?: string;
-  };
+  avatar?: string; // file id
 }
 
 export interface SessionLoginResponse {

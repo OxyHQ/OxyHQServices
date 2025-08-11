@@ -294,8 +294,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
                                 <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem, styles.currentAccountCard]}>
                                     <View style={styles.userIcon}>
-                                        {user.avatar?.url ? (
-                                            <Image source={{ uri: user.avatar.url }} style={styles.accountAvatarImage} />
+                                        {typeof user.avatar === 'string' && user.avatar ? (
+                                            <Image source={{ uri: oxyServices.getFileStreamUrl(user.avatar) }} style={styles.accountAvatarImage} />
                                         ) : (
                                             <View style={styles.accountAvatarFallback}>
                                                 <Text style={styles.accountAvatarText}>
@@ -356,8 +356,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                         <View style={styles.accountAvatarFallback}>
                                                             <ActivityIndicator size="small" color="#007AFF" />
                                                         </View>
-                                                    ) : userProfile?.avatar?.url ? (
-                                                        <Image source={{ uri: userProfile.avatar.url }} style={styles.accountAvatarImage} />
+                                                    ) : (typeof userProfile?.avatar === 'string' && userProfile.avatar) ? (
+                                                        <Image source={{ uri: oxyServices.getFileStreamUrl(userProfile.avatar) }} style={styles.accountAvatarImage} />
                                                     ) : (
                                                         <View style={styles.accountAvatarFallback}>
                                                             <Text style={styles.accountAvatarText}>

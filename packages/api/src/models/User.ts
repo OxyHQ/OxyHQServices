@@ -34,11 +34,8 @@ export interface IUser extends Document {
     autoFilter: boolean;
     muteKeywords: boolean;
   };
-  avatar?: {
-    id?: string;
-    url?: string;
-    [key: string]: any;
-  };
+  // Avatar file ID referencing assets collection
+  avatar?: string; // file id
   _count?: {
     followers?: number;
     following?: number;
@@ -189,13 +186,7 @@ const UserSchema: Schema = new Schema(
       autoFilter: { type: Boolean, default: true },
       muteKeywords: { type: Boolean, default: false },
     },
-    avatar: {
-      type: {
-        id: { type: String, default: "" },
-        url: { type: String, default: "" }
-      },
-      default: { id: "", url: "" }
-    },
+  avatar: { type: String, default: "" },
     _count: {
       followers: { type: Number, default: 0 },
       following: { type: Number, default: 0 },

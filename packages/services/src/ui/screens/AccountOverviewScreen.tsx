@@ -192,7 +192,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     <>
                                         <View style={styles.userIcon}>
                                             <Avatar
-                                                uri={user?.avatar?.url}
+                                                uri={user?.avatar ? oxyServices.getFileStreamUrl(user.avatar as string) : undefined}
                                                 name={user?.name?.full}
                                                 size={40}
                                                 theme={theme}
@@ -301,8 +301,8 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     customContent: (
                                         <>
                                             <View style={styles.userIcon}>
-                                                {account.avatar?.url ? (
-                                                    <Image source={{ uri: account.avatar.url }} style={styles.accountAvatarImage} />
+                                                {account.avatar ? (
+                                                    <Image source={{ uri: oxyServices.getFileStreamUrl(account.avatar as string) }} style={styles.accountAvatarImage} />
                                                 ) : (
                                                     <View style={styles.accountAvatarFallback}>
                                                         <Text style={styles.accountAvatarText}>

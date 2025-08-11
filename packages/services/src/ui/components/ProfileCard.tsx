@@ -2,18 +2,15 @@ import type React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from './Avatar';
+import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 
 interface ProfileCardProps {
     user: {
         username: string;
         email?: string;
-        name?: {
-            full?: string;
-        };
-        avatar?: {
-            url?: string;
-        };
+        name?: { full?: string };
+        avatar?: string; // file id
     };
     theme: 'light' | 'dark';
     onEditPress?: () => void;
@@ -29,6 +26,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
     showCloseButton = false,
 }) => {
     const isDarkTheme = theme === 'dark';
+    const { oxyServices } = useOxy();
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
     const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#FFFFFF';
     const primaryColor = '#0066CC';
@@ -43,7 +41,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
             ]}>
                 <View style={styles.userProfile}>
                     <Avatar
-                        uri={user?.avatar?.url}
+                        uri={user?.avatar ? oxyServices.getFileStreamUrl(user.avatar) : undefined}
                         name={user?.name?.full || user?.username}
                         size={60}
                         theme={theme}
