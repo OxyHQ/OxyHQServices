@@ -49,6 +49,7 @@ export interface FileManagementScreenProps extends BaseScreenProps {
      * 'none' will keep the picker open (caller can manually close or navigate).
      */
     afterSelect?: 'close' | 'back' | 'none';
+    allowUploadInSelectMode?: boolean;
 }
 
 // Add this helper function near the top (after imports):
@@ -71,6 +72,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     maxSelection,
     disabledMimeTypes = [],
     afterSelect = 'close',
+    allowUploadInSelectMode = true,
 }) => {
     const { user, oxyServices } = useOxy();
 
@@ -1749,7 +1751,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         />
                     </TouchableOpacity>
                 </View>
-                {user?.id === targetUserId && !selectMode && (
+                {user?.id === targetUserId && (!selectMode || (selectMode && allowUploadInSelectMode)) && (
                     <TouchableOpacity
                         style={[styles.uploadButton, { backgroundColor: themeStyles.primaryColor }]}
                         onPress={handleFileUpload}
