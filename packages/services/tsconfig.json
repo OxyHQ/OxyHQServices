@@ -1,10 +1,10 @@
 {
     "compilerOptions": {
-        "target": "es2018",
+        "target": "es2020",
         "module": "NodeNext",
         "moduleResolution": "nodenext",
         "lib": [
-            "es2018",
+            "es2020",
             "dom"
         ],
         "typeRoots": [
@@ -17,7 +17,8 @@
         "esModuleInterop": true,
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
-        "jsx": "react-jsx"
+        "jsx": "react-jsx",
+        "types": ["node"]
     },
     "include": [
         "src/**/*"
