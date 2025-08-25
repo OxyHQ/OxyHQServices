@@ -4,7 +4,7 @@
   "description": "OxyHQ Monorepo containing services and API packages",
   "private": true,
   "workspaces": [
-    "packages/*"
+    "packages/api"
   ],
   "scripts": {
     "build": "npm run api:build",
@@ -27,7 +27,7 @@
     "typescript": "^5.9.2"
   },
   "engines": {
-    "node": ">=18.0.0",
+    "node": "18.x || 20.x",
     "npm": ">=9.0.0"
   },
   "repository": {
@@ -45,9 +45,5 @@
   "author": "OxyHQ",
   "license": "MIT",
   "dependencies": {
-    "@amir-hossein-karimi/bottom-sheet": "^9.1.2",
-    "@gorhom/bottom-sheet": "^5.1.6",
-    "react-native-iap": "^12.16.4",
-    "react-native-url-polyfill": "^2.0.0"
   }
 }

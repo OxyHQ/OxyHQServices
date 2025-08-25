@@ -24,7 +24,7 @@
   "author": "OxyHQ",
   "license": "MIT",
   "engines": {
-    "node": ">=18.0.0",
+    "node": "18.x || 20.x",
     "npm": ">=9.0.0"
   },
   "dependencies": {
