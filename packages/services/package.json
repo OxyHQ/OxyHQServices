@@ -47,6 +47,10 @@
   "repository": "https://github.com/oxyhq/oxyhqservices",
   "author": "OxyHQ",
   "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=9.0.0"
+  },
   "bugs": {
     "url": "https://github.com/oxyhq/oxyhqservices/issues"
   },
@@ -85,7 +89,8 @@
     "tailwindcss": "^4.1.11",
     "zod": "^3.25.64",
     "zustand": "^5.0.6",
-    "@tanstack/react-query": "^5.59.0"
+    "@tanstack/react-query": "^5.59.0",
+    "react": "^18.3.1"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
