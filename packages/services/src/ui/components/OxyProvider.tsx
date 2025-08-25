@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, Dimensions, Platform, Animated, StatusBar, Keyboard, KeyboardEvent } from 'react-native';
+import { View, Text, StyleSheet, Dimensions, Platform, Animated, StatusBar, Keyboard, KeyboardEvent, AppState } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import type { OxyProviderProps } from '../navigation/types';
@@ -8,6 +8,7 @@ import { OxyContextProvider, useOxy } from '../context/OxyContext';
 import OxyRouter from '../navigation/OxyRouter';
 import { FontLoader, setupFonts } from './FontLoader';
 import { Toaster } from '../../lib/sonner';
+import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 
 // Import bottom sheet components directly - no longer a peer dependency
 import { BottomSheetModal, BottomSheetBackdrop, type BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView, BottomSheetScrollView } from '@gorhom/bottom-sheet';
@@ -38,47 +39,80 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
     // Create internal bottom sheet ref
     const internalBottomSheetRef = useRef<BottomSheetModalRef>(null);
 
+    // Initialize React Query Client (use provided client or create a default one once)
+    const queryClientRef = useRef<QueryClient | null>(null);
+    if (!queryClientRef.current) {
+        queryClientRef.current = props.queryClient ?? new QueryClient({
+            defaultOptions: {
+                queries: {
+                    staleTime: 30_000,
+                    gcTime: 5 * 60_000,
+                    retry: 2,
+                    refetchOnReconnect: true,
+                    refetchOnWindowFocus: false,
+                },
+                mutations: {
+                    retry: 1,
+                },
+            },
+        });
+    }
+
+    // Hook React Query focus manager into React Native AppState
+    useEffect(() => {
+        const subscription = AppState.addEventListener('change', (state) => {
+            focusManager.setFocused(state === 'active');
+        });
+        return () => {
+            subscription.remove();
+        };
+    }, []);
+
     // If contextOnly is true, we just provide the context without the bottom sheet UI
     if (contextOnly) {
         return (
-            <OxyContextProvider
-                oxyServices={oxyServices}
-                baseURL={baseURL}
-                storageKeyPrefix={storageKeyPrefix}
-                onAuthStateChange={onAuthStateChange}
-            >
-                {children}
-            </OxyContextProvider>
+            <QueryClientProvider client={queryClientRef.current}>
+                <OxyContextProvider
+                    oxyServices={oxyServices}
+                    baseURL={baseURL}
+                    storageKeyPrefix={storageKeyPrefix}
+                    onAuthStateChange={onAuthStateChange}
+                >
+                    {children}
+                </OxyContextProvider>
+            </QueryClientProvider>
         );
     }
 
     // Otherwise, provide both the context and the bottom sheet UI
     return (
-        <OxyContextProvider
-            oxyServices={oxyServices}
-            baseURL={baseURL}
-            storageKeyPrefix={storageKeyPrefix}
-            onAuthStateChange={onAuthStateChange}
-            bottomSheetRef={internalBottomSheetRef}
-        >
-            <FontLoader>
-                <GestureHandlerRootView style={styles.gestureHandlerRoot}>
-                    <BottomSheetModalProvider>
-                        <StatusBar translucent backgroundColor="transparent" />
-                        <SafeAreaProvider>
-                            <OxyBottomSheet {...bottomSheetProps} bottomSheetRef={internalBottomSheetRef} oxyServices={oxyServices} />
-                            {children}
-                        </SafeAreaProvider>
-                    </BottomSheetModalProvider>
-                    {/* Global Toaster for app-wide notifications outside of Modal contexts - only show if internal toaster is disabled */}
-                    {!showInternalToaster && (
-                        <View style={styles.toasterContainer}>
-                            <Toaster position="top-center" swipeToDismissDirection="left" offset={15} />
-                        </View>
-                    )}
-                </GestureHandlerRootView>
-            </FontLoader>
-        </OxyContextProvider>
+        <QueryClientProvider client={queryClientRef.current}>
+            <OxyContextProvider
+                oxyServices={oxyServices}
+                baseURL={baseURL}
+                storageKeyPrefix={storageKeyPrefix}
+                onAuthStateChange={onAuthStateChange}
+                bottomSheetRef={internalBottomSheetRef}
+            >
+                <FontLoader>
+                    <GestureHandlerRootView style={styles.gestureHandlerRoot}>
+                        <BottomSheetModalProvider>
+                            <StatusBar translucent backgroundColor="transparent" />
+                            <SafeAreaProvider>
+                                <OxyBottomSheet {...bottomSheetProps} bottomSheetRef={internalBottomSheetRef} oxyServices={oxyServices} />
+                                {children}
+                            </SafeAreaProvider>
+                        </BottomSheetModalProvider>
+                        {/* Global Toaster for app-wide notifications outside of Modal contexts - only show if internal toaster is disabled */}
+                        {!showInternalToaster && (
+                            <View style={styles.toasterContainer}>
+                                <Toaster position="top-center" swipeToDismissDirection="left" offset={15} />
+                            </View>
+                        )}
+                    </GestureHandlerRootView>
+                </FontLoader>
+            </OxyContextProvider>
+        </QueryClientProvider>
     );
 };
 

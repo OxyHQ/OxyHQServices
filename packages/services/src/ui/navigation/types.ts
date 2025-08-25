@@ -1,6 +1,7 @@
 import type { OxyServices } from '../../core';
 import type { User } from '../../models/interfaces';
 import type { ComponentType, ReactNode } from 'react';
+import type { QueryClient } from '@tanstack/react-query';
 
 /**
  * Base props for all screens in the Oxy UI system
@@ -138,4 +139,9 @@ export interface OxyProviderProps {
    * @default true
    */
   showInternalToaster?: boolean;
+
+  /**
+   * Optional QueryClient instance for React Query. If not provided, a sensible default is created.
+   */
+  queryClient?: QueryClient;
 }
