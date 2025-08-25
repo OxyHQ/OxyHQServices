@@ -1,0 +1,13 @@
+packages/services/
+docs/
+*.md
+.git/
+.gitignore
+.vscode/
+*.log
+packages/api/src/
+packages/api/__tests__/
+packages/api/jest.config.js
+packages/api/jest.setup.js
+packages/api/tsconfig.json
+packages/api/nodemon.json

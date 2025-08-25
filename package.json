@@ -7,7 +7,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run api:build",
+    "start": "cd packages/api && npm start",
     "test": "npm run test --workspaces",
     "dev": "npm run dev --workspaces",
     "install:all": "npm install",
@@ -16,7 +17,8 @@
     "services:test": "npm run test -w @oxyhq/services",
     "api:build": "npm run build -w @oxyhq/api",
     "api:dev": "npm run dev -w @oxyhq/api",
-    "api:start": "npm run start -w @oxyhq/api"
+    "api:start": "npm run start -w @oxyhq/api",
+    "heroku-postbuild": "npm run api:build"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
