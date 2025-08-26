@@ -23,6 +23,9 @@ export interface OxyContextState {
   isLoading: boolean;
   error: string | null;
 
+  // Language state
+  currentLanguage: string;
+
   // Auth methods
   login: (username: string, password: string, deviceName?: string) => Promise<User>;
   logout: (targetSessionId?: string) => Promise<void>;
@@ -33,6 +36,9 @@ export interface OxyContextState {
   switchSession: (sessionId: string) => Promise<void>;
   removeSession: (sessionId: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
+
+  // Language methods
+  setLanguage: (languageId: string) => Promise<void>;
 
   // Device management methods
   getDeviceSessions: () => Promise<any[]>;
@@ -124,6 +130,7 @@ const getStorage = async (): Promise<StorageInterface> => {
 // Storage keys for sessions
 const getStorageKeys = (prefix = 'oxy_session') => ({
   activeSessionId: `${prefix}_active_session_id`, // Only store the active session ID
+  language: `${prefix}_language`, // Store the selected language
 });
 
 export const OxyProvider: React.FC<OxyContextProviderProps> = ({
@@ -164,6 +171,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const [sessions, setSessions] = React.useState<ClientSession[]>([]);
   const [activeSessionId, setActiveSessionId] = React.useState<string | null>(null);
   const [storage, setStorage] = React.useState<StorageInterface | null>(null);
+  const [currentLanguage, setCurrentLanguage] = React.useState<string>('en');
   // Add a new state to track token restoration
   const [tokenReady, setTokenReady] = React.useState(false);
 
@@ -200,6 +208,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       if (!storage) return;
       useAuthStore.setState({ isLoading: true });
       try {
+        setTokenReady(false);
+        
+        // Load saved language preference
+        const savedLanguage = await storage.getItem(keys.language);
+        if (savedLanguage) {
+          setCurrentLanguage(savedLanguage);
+        }
+
+        // Try to restore active session from storage
         const storedActiveSessionId = await storage.getItem(keys.activeSessionId);
         if (storedActiveSessionId) {
           try {
@@ -228,6 +245,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             await clearAllStorage();
           }
         }
+        setTokenReady(true);
       } catch (e) {
         console.error('Auth init error', e);
         await clearAllStorage();
@@ -600,6 +618,26 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
   }, [activeSessionId, oxyServices]);
 
+  // Language management method
+  const setLanguage = useCallback(async (languageId: string): Promise<void> => {
+    if (!storage) throw new Error('Storage not initialized');
+
+    try {
+      // Save language preference
+      await storage.setItem(keys.language, languageId);
+      setCurrentLanguage(languageId);
+      
+      console.log(`Language changed to ${languageId}`);
+      
+      // TODO: Here you can add any additional logic needed for app-wide language updates
+      // such as updating i18n configuration, refreshing translations, etc.
+      
+    } catch (error) {
+      console.error('Error saving language preference:', error);
+      throw error;
+    }
+  }, [storage, keys.language]);
+
   // Bottom sheet control methods
   const showBottomSheet = useCallback((screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => {
     console.log('showBottomSheet called with:', screenOrConfig);
@@ -687,6 +725,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     isAuthenticated,
     isLoading,
     error,
+    currentLanguage,
     login,
     logout,
     logoutAll,
@@ -694,6 +733,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     switchSession,
     removeSession,
     refreshSessions,
+    setLanguage,
     getDeviceSessions,
     logoutAllDeviceSessions,
     updateDeviceName,
@@ -710,6 +750,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     isAuthenticated,
     isLoading,
     error,
+    currentLanguage,
     login,
     logout,
     logoutAll,
@@ -717,6 +758,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     switchSession,
     removeSession,
     refreshSessions,
+    setLanguage,
     getDeviceSessions,
     logoutAllDeviceSessions,
     updateDeviceName,

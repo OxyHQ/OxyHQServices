@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
     View,
     Text,
@@ -14,7 +14,6 @@ import { useThemeColors } from '../styles';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { Header, GroupedSection } from '../components';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 
 // Supported languages with their metadata
 const SUPPORTED_LANGUAGES = [
@@ -100,57 +99,33 @@ const SUPPORTED_LANGUAGES = [
     },
 ];
 
-const STORAGE_KEY = 'oxy_selected_language';
-
-interface LanguageSelectorScreenProps extends BaseScreenProps {}
+interface LanguageSelectorScreenProps extends BaseScreenProps { }
 
 const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     goBack,
     theme,
     navigate,
 }) => {
-    const { user } = useOxy();
+    const { user, currentLanguage, setLanguage } = useOxy();
     const colors = useThemeColors(theme);
-    const [selectedLanguage, setSelectedLanguage] = useState<string>('en');
     const [isLoading, setIsLoading] = useState(false);
 
-    // Load saved language preference on mount
-    useEffect(() => {
-        loadSavedLanguage();
-    }, []);
-
-    const loadSavedLanguage = async () => {
-        try {
-            const savedLanguage = await AsyncStorage.getItem(STORAGE_KEY);
-            if (savedLanguage) {
-                setSelectedLanguage(savedLanguage);
-            }
-        } catch (error) {
-            console.error('Error loading saved language:', error);
-        }
-    };
-
     const handleLanguageSelect = async (languageId: string) => {
-        if (languageId === selectedLanguage) {
+        if (languageId === currentLanguage) {
             return; // Already selected
         }
 
         setIsLoading(true);
-        
+
         try {
-            // Save language preference
-            await AsyncStorage.setItem(STORAGE_KEY, languageId);
-            setSelectedLanguage(languageId);
+            // Use OxyContext to set language (this handles storage and app-wide updates)
+            await setLanguage(languageId);
 
             const selectedLang = SUPPORTED_LANGUAGES.find(lang => lang.id === languageId);
             toast.success(`Language changed to ${selectedLang?.name || languageId}`);
 
-            // Simulate language change across the app
-            // In a real implementation, this would trigger app-wide language updates
-            setTimeout(() => {
-                setIsLoading(false);
-                goBack();
-            }, 1000);
+            setIsLoading(false);
+            goBack();
 
         } catch (error) {
             console.error('Error saving language preference:', error);
@@ -166,7 +141,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
         subtitle: language.nativeName,
         icon: language.icon,
         iconColor: language.color,
-        selected: selectedLanguage === language.id,
+        selected: currentLanguage === language.id,
         onPress: () => handleLanguageSelect(language.id),
         customContent: (
             <View style={styles.languageFlag}>
@@ -183,7 +158,6 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                 theme={theme}
                 onBack={goBack}
                 elevation="subtle"
-                showLoading={isLoading}
             />
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -205,9 +179,9 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
 
                 {/* Information section */}
                 <View style={styles.infoSection}>
-                    <View style={[styles.infoCard, { 
+                    <View style={[styles.infoCard, {
                         backgroundColor: colors.inputBackground,
-                        borderColor: colors.border 
+                        borderColor: colors.border
                     }]}>
                         <View style={styles.infoHeader}>
                             <Ionicons name="information-circle" size={20} color={colors.primary} />
@@ -225,17 +199,17 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                 </View>
 
                 {/* Current selection indicator */}
-                {selectedLanguage && (
+                {currentLanguage && (
                     <View style={styles.currentSection}>
                         <Text style={[styles.currentLabel, { color: colors.secondaryText }]}>
                             Current Language
                         </Text>
-                        <View style={[styles.currentLanguage, { 
+                        <View style={[styles.currentLanguage, {
                             backgroundColor: colors.inputBackground,
-                            borderColor: colors.primary 
+                            borderColor: colors.primary
                         }]}>
                             {(() => {
-                                const current = SUPPORTED_LANGUAGES.find(lang => lang.id === selectedLanguage);
+                                const current = SUPPORTED_LANGUAGES.find(lang => lang.id === currentLanguage);
                                 return current ? (
                                     <>
                                         <Text style={styles.currentFlag}>{current.flag}</Text>
