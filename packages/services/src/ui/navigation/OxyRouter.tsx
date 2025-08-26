@@ -26,6 +26,7 @@ import FileManagementScreen from '../screens/FileManagementScreen';
 import RecoverAccountScreen from '../screens/RecoverAccountScreen';
 import PaymentGatewayScreen from '../screens/PaymentGatewayScreen';
 import WelcomeNewUserScreen from '../screens/WelcomeNewUserScreen';
+import LanguageSelectorScreen from '../screens/LanguageSelectorScreen';
 
 // Import types
 import type { OxyRouterProps, RouteConfig } from './types';
@@ -119,6 +120,10 @@ const routes: Record<string, RouteConfig> = {
     WelcomeNewUser: {
         component: WelcomeNewUserScreen,
         snapPoints: ['65%', '90%'],
+    },
+    LanguageSelector: {
+        component: LanguageSelectorScreen,
+        snapPoints: ['70%', '100%'],
     },
 };
 

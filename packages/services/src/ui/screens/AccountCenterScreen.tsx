@@ -217,6 +217,14 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 onPress: () => toast.info('Notifications feature coming soon!'),
                             }] : []),
                             {
+                                id: 'language',
+                                icon: 'language',
+                                iconColor: '#32D74B',
+                                title: 'Language',
+                                subtitle: 'Choose your preferred language',
+                                onPress: () => navigate('LanguageSelector'),
+                            },
+                            {
                                 id: 'help',
                                 icon: 'help-circle',
                                 iconColor: '#007AFF',
