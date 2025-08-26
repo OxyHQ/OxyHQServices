@@ -260,7 +260,7 @@ export const createAuthStyles = (colors: AuthThemeColors, theme: string) => Styl
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
     fontSize: 42,
     marginBottom: 4,
-    textAlign: 'center',
+    textAlign: 'left',
     letterSpacing: -0.5,
   },
   modernUsernameSubtext: {

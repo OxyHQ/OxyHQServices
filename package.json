@@ -44,6 +44,5 @@
   ],
   "author": "OxyHQ",
   "license": "MIT",
-  "dependencies": {
-  }
+  "dependencies": {}
 }

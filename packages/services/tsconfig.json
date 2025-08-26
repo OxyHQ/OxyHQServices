@@ -18,7 +18,9 @@
         "skipLibCheck": true,
         "forceConsistentCasingInFileNames": true,
         "jsx": "react-jsx",
-        "types": ["node"]
+        "types": [
+            "node"
+        ]
     },
     "include": [
         "src/**/*"

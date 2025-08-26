@@ -1,6 +1,10 @@
 import type React from 'react';
 import { useRef } from 'react';
-import { type TextInput, View, Text, Animated } from 'react-native';
+import { type TextInput, View, Text } from 'react-native';
+import Animated, {
+    useAnimatedStyle,
+    SharedValue,
+} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import HighFive from '../../../assets/illustrations/HighFive';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
@@ -8,9 +12,9 @@ import TextField from '../../components/internal/TextField';
 
 interface SignInUsernameStepProps {
     styles: any;
-    fadeAnim: Animated.Value;
-    slideAnim: Animated.Value;
-    scaleAnim: Animated.Value;
+    fadeAnim: SharedValue<number>;
+    slideAnim: SharedValue<number>;
+    scaleAnim: SharedValue<number>;
     colors: any;
     isAddAccountMode: boolean;
     user: any;
@@ -48,6 +52,18 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
     navigate,
 }) => {
     const inputRef = useRef<TextInput>(null);
+
+    // Animated styles
+    const animatedStyle = useAnimatedStyle(() => {
+        return {
+            opacity: fadeAnim.value,
+            transform: [
+                { translateX: slideAnim.value },
+                { scale: scaleAnim.value }
+            ]
+        };
+    }, [fadeAnim, slideAnim, scaleAnim]);
+
     const handleUsernameContinue = () => {
         if (!username || validationStatus === 'invalid') {
             setTimeout(() => {
@@ -59,13 +75,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
     return (
         <Animated.View style={[
             styles.stepContainer,
-            {
-                opacity: fadeAnim,
-                transform: [
-                    { translateX: slideAnim },
-                    { scale: scaleAnim }
-                ]
-            }
+            animatedStyle
         ]}>
             <HighFive width={100} height={100} />
             <View style={styles.modernHeader}>

@@ -24,6 +24,10 @@ import { toast } from '../../lib/sonner';
 import { useFollow } from '../hooks/useFollow';
 import { useThemeColors } from '../styles/theme';
 
+// Create animated TouchableOpacity
+const AnimatedTouchableOpacity = Animated.createAnimatedComponent(TouchableOpacity);
+const AnimatedText = Animated.createAnimatedComponent(Text);
+
 export interface FollowButtonProps {
   userId: string;
   initiallyFollowing?: boolean;
@@ -65,6 +69,30 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   const animationProgress = useSharedValue(isFollowing ? 1 : 0);
   const scale = useSharedValue(1);
 
+  // Button press handler with animation
+  const handlePress = useCallback(async (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
+    if (preventParentActions && event && event.preventDefault) {
+      event.preventDefault();
+      event.stopPropagation?.();
+    }
+    if (disabled || isLoading) return;
+    
+    // Press animation
+    scale.value = withTiming(0.95, { duration: 100 }, (finished) => {
+      if (finished) {
+        scale.value = withSpring(1, { damping: 15, stiffness: 200 });
+      }
+    });
+
+    try {
+      await toggleFollow?.();
+      if (onFollowChange) onFollowChange(!isFollowing);
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      toast.error(error.message || 'Failed to update follow status');
+    }
+  }, [disabled, isLoading, toggleFollow, onFollowChange, isFollowing, preventParentActions, scale]);
+
   // Initialize Zustand state with initial value if not already set
   useEffect(() => {
     if (userId && !isFollowing && initiallyFollowing) {
@@ -86,24 +114,35 @@ const FollowButton: React.FC<FollowButtonProps> = ({
     animationProgress.value = withTiming(isFollowing ? 1 : 0, { duration: 300, easing: Easing.inOut(Easing.ease) });
   }, [isFollowing, animationProgress]);
 
-  // Button press handler
-  const handlePress = useCallback(async (event?: { preventDefault?: () => void; stopPropagation?: () => void }) => {
-    if (preventParentActions && event && event.preventDefault) {
-      event.preventDefault();
-      event.stopPropagation?.();
-    }
-    if (disabled || isLoading) return;
-    try {
-      await toggleFollow?.();
-      if (onFollowChange) onFollowChange(!isFollowing);
-    } catch (err: unknown) {
-      const error = err instanceof Error ? err : new Error(String(err));
-      toast.error(error.message || 'Failed to update follow status');
-    }
-  }, [disabled, isLoading, toggleFollow, onFollowChange, isFollowing, preventParentActions]);
+  // Animated styles for better performance
+  const animatedButtonStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: scale.value }],
+      backgroundColor: interpolateColor(
+        animationProgress.value,
+        [0, 1],
+        [colors.background, colors.primary]
+      ),
+      borderColor: interpolateColor(
+        animationProgress.value,
+        [0, 1],
+        [colors.border, colors.primary]
+      ),
+    };
+  }, [colors]);
 
-  // Get button style based on size and follow state
-  const getButtonStyle = (): StyleProp<ViewStyle> => {
+  const animatedTextStyle = useAnimatedStyle(() => {
+    return {
+      color: interpolateColor(
+        animationProgress.value,
+        [0, 1],
+        [colors.text, '#FFFFFF']
+      ),
+    };
+  }, [colors]);
+
+  // Get base button style (without state-specific colors since they're animated)
+  const getBaseButtonStyle = (): StyleProp<ViewStyle> => {
     const baseStyle = {
       flexDirection: 'row' as const,
       alignItems: 'center' as const,
@@ -148,27 +187,11 @@ const FollowButton: React.FC<FollowButtonProps> = ({
       };
     }
 
-    // State-specific colors
-    let stateStyle = {};
-    if (isFollowing) {
-      stateStyle = {
-        backgroundColor: colors.primary,
-        borderColor: colors.primary,
-        shadowColor: colors.primary,
-      };
-    } else {
-      stateStyle = {
-        backgroundColor: colors.background,
-        borderColor: colors.border,
-        shadowColor: colors.border,
-      };
-    }
-
-    return [baseStyle, sizeStyle, stateStyle, style];
+    return [baseStyle, sizeStyle, style];
   };
 
-  // Get text style based on size and follow state
-  const getTextStyle = (): StyleProp<TextStyle> => {
+  // Get base text style (without state-specific colors since they're animated)
+  const getBaseTextStyle = (): StyleProp<TextStyle> => {
     const baseTextStyle = {
       fontFamily: fontFamilies.phuduSemiBold,
       fontWeight: '600' as const,
@@ -185,15 +208,12 @@ const FollowButton: React.FC<FollowButtonProps> = ({
       sizeTextStyle = { fontSize: 15 };
     }
 
-    // State-specific text color
-    const textColor = isFollowing ? '#FFFFFF' : colors.text;
-
-    return [baseTextStyle, sizeTextStyle, { color: textColor }, textStyle];
+    return [baseTextStyle, sizeTextStyle, textStyle];
   };
 
   return (
-    <TouchableOpacity
-      style={getButtonStyle()}
+    <AnimatedTouchableOpacity
+      style={[getBaseButtonStyle(), animatedButtonStyle]}
       onPress={handlePress}
       disabled={disabled || isLoading}
       activeOpacity={0.8}
@@ -204,11 +224,11 @@ const FollowButton: React.FC<FollowButtonProps> = ({
           color={isFollowing ? '#FFFFFF' : colors.primary}
         />
       ) : (
-        <Text style={getTextStyle()}>
+        <AnimatedText style={[getBaseTextStyle(), animatedTextStyle]}>
           {isFollowing ? 'Following' : 'Follow'}
-        </Text>
+        </AnimatedText>
       )}
-    </TouchableOpacity>
+    </AnimatedTouchableOpacity>
   );
 };
 

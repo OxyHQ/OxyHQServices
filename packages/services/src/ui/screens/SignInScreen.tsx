@@ -11,11 +11,19 @@ import {
     KeyboardAvoidingView,
     ScrollView,
     TextStyle,
-    Animated,
     Dimensions,
     StatusBar,
     Alert,
 } from 'react-native';
+import Animated, {
+    useSharedValue,
+    useAnimatedStyle,
+    withSpring,
+    withTiming,
+    interpolate,
+    runOnJS,
+    Easing,
+} from 'react-native-reanimated';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies, useThemeColors, createCommonStyles, createAuthStyles } from '../styles';
@@ -61,11 +69,12 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     // Cache for validation results to prevent repeated API calls
     const validationCache = useRef<Map<string, { profile: any; timestamp: number }>>(new Map());
 
-    const fadeAnim = useRef(new Animated.Value(1)).current;
-    const slideAnim = useRef(new Animated.Value(0)).current;
-    const scaleAnim = useRef(new Animated.Value(1)).current;
-    const logoAnim = useRef(new Animated.Value(0)).current;
-    const progressAnim = useRef(new Animated.Value(initialStep ? 1.0 : 0.5)).current;
+    // Reanimated shared values
+    const fadeAnim = useSharedValue(1);
+    const slideAnim = useSharedValue(0);
+    const scaleAnim = useSharedValue(1);
+    const logoAnim = useSharedValue(0);
+    const progressAnim = useSharedValue(initialStep ? 1.0 : 0.5);
 
     const { login, isLoading, user, isAuthenticated, sessions, oxyServices } = useOxy();
 
@@ -83,12 +92,10 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
     // Initialize logo animation
     useEffect(() => {
-        Animated.spring(logoAnim, {
-            toValue: 1,
-            tension: 50,
-            friction: 8,
-            useNativeDriver: Platform.OS !== 'web',
-        }).start();
+        logoAnim.value = withSpring(1, {
+            damping: 15,
+            stiffness: 150,
+        });
     }, [logoAnim]);
 
     // Input focus handlers (no animation)
@@ -231,56 +238,35 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     // Animation functions
     const animateTransition = useCallback((nextStep: number) => {
         // Scale down current content
-        Animated.timing(scaleAnim, {
-            toValue: 0.95,
-            duration: 150,
-            useNativeDriver: Platform.OS !== 'web',
-        }).start();
+        scaleAnim.value = withTiming(0.95, { duration: 150 });
 
-        // Fade out
-        Animated.timing(fadeAnim, {
-            toValue: 0,
-            duration: 200,
-            useNativeDriver: Platform.OS !== 'web',
-        }).start(() => {
-            setCurrentStep(nextStep);
+        // Fade out and then animate in new content
+        fadeAnim.value = withTiming(0, { duration: 200 }, (finished) => {
+            if (finished) {
+                runOnJS(setCurrentStep)(nextStep);
+                
+                // Reset animations
+                slideAnim.value = -50;
+                scaleAnim.value = 0.95;
 
-            // Reset animations
-            slideAnim.setValue(-50);
-            scaleAnim.setValue(0.95);
-
-            // Animate in new content
-            Animated.parallel([
-                Animated.timing(fadeAnim, {
-                    toValue: 1,
-                    duration: 300,
-                    useNativeDriver: Platform.OS !== 'web',
-                }),
-                Animated.spring(slideAnim, {
-                    toValue: 0,
-                    tension: 80,
-                    friction: 8,
-                    useNativeDriver: Platform.OS !== 'web',
-                }),
-                Animated.spring(scaleAnim, {
-                    toValue: 1,
-                    tension: 80,
-                    friction: 8,
-                    useNativeDriver: Platform.OS !== 'web',
-                })
-            ]).start();
+                // Animate in new content
+                fadeAnim.value = withTiming(1, { duration: 300 });
+                slideAnim.value = withSpring(0, {
+                    damping: 15,
+                    stiffness: 200,
+                });
+                scaleAnim.value = withSpring(1, {
+                    damping: 15,
+                    stiffness: 200,
+                });
+            }
         });
     }, [fadeAnim, slideAnim, scaleAnim]);
 
     const nextStep = useCallback(() => {
         if (currentStep < 1) {
             // Animate progress bar
-            Animated.timing(progressAnim, {
-                toValue: 1.0,
-                duration: 300,
-                useNativeDriver: false,
-            }).start();
-
+            progressAnim.value = withTiming(1.0, { duration: 300 });
             animateTransition(currentStep + 1);
         }
     }, [currentStep, progressAnim, animateTransition]);
@@ -288,12 +274,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     const prevStep = useCallback(() => {
         if (currentStep > 0) {
             // Animate progress bar
-            Animated.timing(progressAnim, {
-                toValue: 0.5,
-                duration: 300,
-                useNativeDriver: false,
-            }).start();
-
+            progressAnim.value = withTiming(0.5, { duration: 300 });
             animateTransition(currentStep - 1);
         }
     }, [currentStep, progressAnim, animateTransition]);

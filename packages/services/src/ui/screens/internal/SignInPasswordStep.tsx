@@ -1,6 +1,10 @@
 import type React from 'react';
 import { useRef, useCallback, useEffect } from 'react';
-import { View, Text, Animated, TouchableOpacity, type TextInput, StatusBar } from 'react-native';
+import { View, Text, TouchableOpacity, type TextInput, StatusBar } from 'react-native';
+import Animated, {
+    useAnimatedStyle,
+    SharedValue,
+} from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
@@ -8,14 +12,14 @@ import TextField from '../../components/internal/TextField';
 
 interface SignInPasswordStepProps {
     styles: any;
-    fadeAnim: Animated.Value;
-    slideAnim: Animated.Value;
-    scaleAnim: Animated.Value;
+    fadeAnim: SharedValue<number>;
+    slideAnim: SharedValue<number>;
+    scaleAnim: SharedValue<number>;
     colors: any;
     userProfile: any;
     username: string;
     theme: string;
-    logoAnim: Animated.Value;
+    logoAnim: SharedValue<number>;
     errorMessage: string;
     isInputFocused: boolean;
     password: string;
@@ -53,6 +57,23 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
 }) => {
     const inputRef = useRef<TextInput>(null);
 
+    // Animated styles
+    const containerAnimatedStyle = useAnimatedStyle(() => {
+        return {
+            opacity: fadeAnim.value,
+            transform: [
+                { translateX: slideAnim.value },
+                { scale: scaleAnim.value }
+            ]
+        };
+    }, [fadeAnim, slideAnim, scaleAnim]);
+
+    const logoAnimatedStyle = useAnimatedStyle(() => {
+        return {
+            transform: [{ scale: logoAnim.value }]
+        };
+    }, [logoAnim]);
+
     // Focus password input on error or when step becomes active
     useEffect(() => {
         if (errorMessage) {
@@ -74,18 +95,12 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
     return (
         <Animated.View style={[
             styles.stepContainer,
-            {
-                opacity: fadeAnim,
-                transform: [
-                    { translateX: slideAnim },
-                    { scale: scaleAnim }
-                ]
-            }
+            containerAnimatedStyle
         ]}>
             <View style={styles.modernUserProfileContainer}>
                 <Animated.View style={[
                     styles.avatarContainer,
-                    { transform: [{ scale: logoAnim }] }
+                    logoAnimatedStyle
                 ]}>
                     <Avatar
                         name={userProfile?.displayName || userProfile?.name || username}
