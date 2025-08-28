@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import type React from 'react';
+import { useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -15,7 +16,7 @@ import Animated, {
 // Example component showcasing improved Reanimated usage
 const AnimationExample: React.FC = () => {
   const [currentStep, setCurrentStep] = useState(0);
-  
+
   // Shared values for better performance
   const opacity = useSharedValue(1);
   const scale = useSharedValue(1);
@@ -60,11 +61,11 @@ const AnimationExample: React.FC = () => {
   // Complex animation sequence
   const animateSequence = () => {
     'worklet';
-    
+
     // Staggered animations for smooth transitions
     opacity.value = withTiming(0.5, { duration: 200 });
     scale.value = withSpring(0.8, { damping: 15, stiffness: 150 });
-    
+
     // Delayed follow-up animations
     translateX.value = withDelay(
       100,
@@ -83,9 +84,9 @@ const AnimationExample: React.FC = () => {
     );
 
     // Progress animation with easing
-    progress.value = withTiming(1, { 
-      duration: 1000, 
-      easing: Easing.out(Easing.exp) 
+    progress.value = withTiming(1, {
+      duration: 1000,
+      easing: Easing.out(Easing.exp)
     }, (finished) => {
       if (finished) {
         runOnJS(setCurrentStep)(currentStep + 1);
@@ -108,7 +109,7 @@ const AnimationExample: React.FC = () => {
     <Animated.View style={[styles.container, backgroundStyle]}>
       <Text style={styles.title}>Advanced Reanimated Example</Text>
       <Text style={styles.subtitle}>Step: {currentStep}</Text>
-      
+
       <Animated.View style={[styles.box, animatedStyle]}>
         <Text style={styles.boxText}>Animated Box</Text>
       </Animated.View>

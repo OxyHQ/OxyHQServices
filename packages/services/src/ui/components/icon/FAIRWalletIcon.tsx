@@ -1,10 +1,10 @@
 import type React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Svg, { G, Path } from 'react-native-svg';
 
 interface FAIRWalletIconProps {
     size?: number;
-    style?: any;
+    style?: StyleProp<ViewStyle>;
 }
 
 const FAIRWalletIcon: React.FC<FAIRWalletIconProps> = ({ size = 28, style }) => {

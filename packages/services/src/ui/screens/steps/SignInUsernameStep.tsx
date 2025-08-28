@@ -1,82 +1,113 @@
 import type React from 'react';
-import { useRef } from 'react';
-import { type TextInput, View, Text } from 'react-native';
-import Animated, {
-    useAnimatedStyle,
-    SharedValue,
-} from 'react-native-reanimated';
+import { useRef, useEffect } from 'react';
+import { View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import HighFive from '../../../assets/illustrations/HighFive';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
 
 interface SignInUsernameStepProps {
-    styles: any;
-    fadeAnim: SharedValue<number>;
-    slideAnim: SharedValue<number>;
-    scaleAnim: SharedValue<number>;
+    // Common props from StepBasedScreen
     colors: any;
-    isAddAccountMode: boolean;
-    user: any;
-    errorMessage: string;
-    isInputFocused: boolean;
+    styles: any;
+    theme: string;
+    navigate: (screen: string, props?: Record<string, any>) => void;
+
+    // Step navigation
+    nextStep: () => void;
+    prevStep: () => void;
+    currentStep: number;
+    totalSteps: number;
+
+    // Data management
+    stepData?: any;
+    updateStepData: (data: any) => void;
+    allStepData: any[];
+
+    // Form state
     username: string;
+    setUsername: (username: string) => void;
+    errorMessage: string;
+    setErrorMessage: (message: string) => void;
     validationStatus: 'idle' | 'validating' | 'valid' | 'invalid';
     userProfile: any;
     isValidating: boolean;
-    handleInputFocus: () => void;
-    handleInputBlur: () => void;
-    handleUsernameChange: (text: string) => void;
-    handleUsernameContinue: () => void;
-    navigate: any;
+
+    // Add account mode
+    isAddAccountMode?: boolean;
+    user?: any;
+
+    // Validation function
+    validateUsername: (username: string) => Promise<boolean>;
 }
 
 const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
-    styles,
-    fadeAnim,
-    slideAnim,
-    scaleAnim,
     colors,
-    isAddAccountMode,
-    user,
-    errorMessage,
-    isInputFocused,
+    styles,
+    navigate,
+    nextStep,
     username,
+    setUsername,
+    errorMessage,
+    setErrorMessage,
     validationStatus,
     userProfile,
     isValidating,
-    handleInputFocus,
-    handleInputBlur,
-    handleUsernameChange,
-    handleUsernameContinue: parentHandleUsernameContinue,
-    navigate,
+    isAddAccountMode,
+    user,
+    validateUsername,
 }) => {
-    const inputRef = useRef<TextInput>(null);
+    const inputRef = useRef<any>(null);
 
-    // Animated styles - properly memoized to prevent re-renders
-    const animatedStyle = useAnimatedStyle(() => {
-        return {
-            opacity: fadeAnim.value,
-            transform: [
-                { translateX: slideAnim.value },
-                { scale: scaleAnim.value }
-            ]
-        };
-    });
+    // Monitor username prop changes
+    useEffect(() => {
+        console.log('👀 SignInUsernameStep username prop changed:', username);
+    }, [username]);
 
-    const handleUsernameContinue = () => {
-        if (!username || validationStatus === 'invalid') {
-            setTimeout(() => {
-                inputRef.current?.focus();
-            }, 0);
-        }
-        parentHandleUsernameContinue();
+    const handleUsernameChange = (text: string) => {
+        console.log('📝 Username input changed:', text);
+        setUsername(text);
+        if (errorMessage) setErrorMessage('');
     };
+
+    const handleContinue = async () => {
+        console.log('🚀 Continue button pressed, username:', username);
+
+        const trimmedUsername = username?.trim() || '';
+
+        if (!trimmedUsername) {
+            console.log('❌ Username is empty');
+            setErrorMessage('Please enter your username.');
+            setTimeout(() => inputRef.current?.focus(), 0);
+            return;
+        }
+
+        if (trimmedUsername.length < 2) {
+            console.log('❌ Username too short');
+            setErrorMessage('Username must be at least 3 characters.');
+            return;
+        }
+
+        console.log('🔍 Starting username validation...');
+        try {
+            // Validate the username before proceeding
+            const isValid = await validateUsername(trimmedUsername);
+            console.log('📊 Validation result:', isValid);
+
+            if (isValid) {
+                console.log('✅ Validation passed, proceeding to next step');
+                nextStep();
+            } else {
+                console.log('❌ Validation failed, staying on current step');
+            }
+        } catch (error) {
+            console.error('🚨 Error during validation:', error);
+            setErrorMessage('Unable to validate username. Please try again.');
+        }
+    };
+
     return (
-        <Animated.View style={[
-            styles.stepContainer,
-            animatedStyle
-        ]}>
+        <>
             <HighFive width={100} height={100} />
             <View style={styles.modernHeader}>
                 <Text style={[styles.modernTitle, { color: colors.text }]}>
@@ -89,14 +120,16 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                     }
                 </Text>
             </View>
-            {isAddAccountMode && (
+
+            {isAddAccountMode && user && (
                 <View style={[styles.modernInfoCard, { backgroundColor: colors.inputBackground }]}>
                     <Ionicons name="information-circle" size={20} color={colors.primary} />
                     <Text style={[styles.modernInfoText, { color: colors.text }]}>
-                        Currently signed in as <Text style={{ fontWeight: 'bold' }}>{user?.username}</Text>
+                        Currently signed in as <Text style={{ fontWeight: 'bold' }}>{user.username}</Text>
                     </Text>
                 </View>
             )}
+
             <View style={styles.modernInputContainer}>
                 <TextField
                     ref={inputRef}
@@ -104,8 +137,6 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                     leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
                     value={username}
                     onChangeText={handleUsernameChange}
-                    onFocus={handleInputFocus}
-                    onBlur={handleInputBlur}
                     autoCapitalize="none"
                     autoCorrect={false}
                     testID="username-input"
@@ -113,10 +144,11 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                     error={validationStatus === 'invalid' ? errorMessage : undefined}
                     loading={validationStatus === 'validating'}
                     success={validationStatus === 'valid'}
-                    onSubmitEditing={handleUsernameContinue}
+                    onSubmitEditing={() => handleContinue()}
                     autoFocus
                 />
             </View>
+
             <GroupedPillButtons
                 buttons={[
                     {
@@ -127,17 +159,18 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                     },
                     {
                         text: 'Continue',
-                        onPress: handleUsernameContinue,
+                        onPress: handleContinue,
                         icon: 'arrow-forward',
                         variant: 'primary',
                         loading: isValidating,
+                        disabled: !username || username.trim().length < 2 || isValidating,
                         testID: 'username-next-button',
                     },
                 ]}
                 colors={colors}
             />
-        </Animated.View>
+        </>
     );
 };
 
-export default SignInUsernameStep; 
+export default SignInUsernameStep;

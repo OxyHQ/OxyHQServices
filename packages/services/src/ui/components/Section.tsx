@@ -1,5 +1,5 @@
 import type React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import SectionTitle from './SectionTitle';
 
 interface SectionProps {
@@ -7,15 +7,15 @@ interface SectionProps {
     theme: 'light' | 'dark';
     children: React.ReactNode;
     isFirst?: boolean;
-    style?: any;
+    style?: StyleProp<ViewStyle>;
 }
 
-const Section: React.FC<SectionProps> = ({ 
-    title, 
-    theme, 
-    children, 
+const Section: React.FC<SectionProps> = ({
+    title,
+    theme,
+    children,
     isFirst = false,
-    style 
+    style
 }) => {
     return (
         <View style={[styles.section, isFirst && styles.firstSection, style]}>

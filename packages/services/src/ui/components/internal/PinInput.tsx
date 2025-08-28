@@ -1,6 +1,15 @@
 import type React from 'react';
 import { useRef } from 'react';
-import { View, TextInput, StyleSheet, Platform } from 'react-native';
+import { View, TextInput, StyleSheet, Platform, type NativeSyntheticEvent, type TextInputKeyPressEventData } from 'react-native';
+
+interface PinInputColors {
+    primary: string;
+    secondary?: string;
+    background: string;
+    inputBackground: string;
+    text: string;
+    border: string;
+}
 
 interface PinInputProps {
     value: string;
@@ -8,7 +17,7 @@ interface PinInputProps {
     length?: number;
     disabled?: boolean;
     autoFocus?: boolean;
-    colors: any;
+    colors: PinInputColors;
 }
 
 const PinInput: React.FC<PinInputProps> = ({ value, onChange, length = 6, disabled, autoFocus, colors }) => {
@@ -34,7 +43,7 @@ const PinInput: React.FC<PinInputProps> = ({ value, onChange, length = 6, disabl
         }
     };
 
-    const handleKeyPress = (e: any, idx: number) => {
+    const handleKeyPress = (e: NativeSyntheticEvent<TextInputKeyPressEventData>, idx: number) => {
         if (e.nativeEvent.key === 'Backspace' && !value[idx] && idx > 0) {
             inputs.current[idx - 1]?.focus();
         }
@@ -44,7 +53,7 @@ const PinInput: React.FC<PinInputProps> = ({ value, onChange, length = 6, disabl
         <View style={styles.pinContainer}>
             {Array.from({ length }).map((_, idx) => (
                 <TextInput
-                    key={idx}
+                    key={`pin-input-${idx}`}
                     ref={(ref) => { inputs.current[idx] = ref; }}
                     style={[
                         styles.pinInput,

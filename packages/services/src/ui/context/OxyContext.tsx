@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useEffect, useCallback, type ReactNode, useMemo, useRef, useState } from 'react';
+import type React from 'react';
+import { createContext, useContext, useEffect, useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { UseFollowHook } from '../hooks/useFollow.types';
 import { View, Text } from 'react-native';
 import { OxyServices } from '../../core';
@@ -167,13 +168,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const logoutStore = useAuthStore((state) => state.logout);
 
   // Local state for non-auth fields
-  const [minimalUser, setMinimalUser] = React.useState<MinimalUserData | null>(null);
-  const [sessions, setSessions] = React.useState<ClientSession[]>([]);
-  const [activeSessionId, setActiveSessionId] = React.useState<string | null>(null);
-  const [storage, setStorage] = React.useState<StorageInterface | null>(null);
-  const [currentLanguage, setCurrentLanguage] = React.useState<string>('en');
+  const [minimalUser, setMinimalUser] = useState<MinimalUserData | null>(null);
+  const [sessions, setSessions] = useState<ClientSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [storage, setStorage] = useState<StorageInterface | null>(null);
+  const [currentLanguage, setCurrentLanguage] = useState<string>('en');
   // Add a new state to track token restoration
-  const [tokenReady, setTokenReady] = React.useState(false);
+  const [tokenReady, setTokenReady] = useState(false);
 
   // Storage keys (memoized to prevent infinite loops)
   const keys = useMemo(() => getStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
@@ -209,7 +210,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       useAuthStore.setState({ isLoading: true });
       try {
         setTokenReady(false);
-        
+
         // Load saved language preference
         const savedLanguage = await storage.getItem(keys.language);
         if (savedLanguage) {
@@ -626,12 +627,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // Save language preference
       await storage.setItem(keys.language, languageId);
       setCurrentLanguage(languageId);
-      
+
       console.log(`Language changed to ${languageId}`);
-      
+
       // TODO: Here you can add any additional logic needed for app-wide language updates
       // such as updating i18n configuration, refreshing translations, etc.
-      
+
     } catch (error) {
       console.error('Error saving language preference:', error);
       throw error;

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState, useCallback } from 'react';
-import { View, Text, LayoutChangeEvent } from 'react-native';
+import { View, Text, type LayoutChangeEvent } from 'react-native';
 import type { FileMetadata } from '../../../models/interfaces';
 // Using plain React Native styles (nativewind not installed in this repo)
 

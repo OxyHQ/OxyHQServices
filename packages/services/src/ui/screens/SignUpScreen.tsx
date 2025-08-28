@@ -1,383 +1,69 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import {
-    View,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    StyleSheet,
-    ActivityIndicator,
-    Platform,
-    KeyboardAvoidingView,
-    ScrollView,
-    Animated,
-    StatusBar,
-    Alert,
-} from 'react-native';
+import type React from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
-import { useThemeColors, createCommonStyles, createAuthStyles } from '../styles';
-import { Ionicons } from '@expo/vector-icons';
-import Svg, { Path, Circle } from 'react-native-svg';
+import { useThemeColors } from '../styles';
 import { toast } from '../../lib/sonner';
-import HighFive from '../../assets/illustrations/HighFive';
-import GroupedPillButtons from '../components/internal/GroupedPillButtons';
-import TextField from '../components/internal/TextField';
-import SignUpIdentityStep from './internal/SignUpIdentityStep';
-import SignUpSecurityStep from './internal/SignUpSecurityStep';
-import SignUpSummaryStep from './internal/SignUpSummaryStep';
-import SignUpWelcomeStep from './internal/SignUpWelcomeStep';
+import StepBasedScreen, { type StepConfig } from '../components/StepBasedScreen';
+import SignUpWelcomeStep from './steps/SignUpWelcomeStep';
+import SignUpIdentityStep from './steps/SignUpIdentityStep';
+import SignUpSecurityStep from './steps/SignUpSecurityStep';
+import SignUpSummaryStep from './steps/SignUpSummaryStep';
 
 // Types for better type safety
-interface FormData {
-    username: string;
-    email: string;
-    password: string;
-    confirmPassword: string;
-}
-
 interface ValidationState {
     status: 'idle' | 'validating' | 'valid' | 'invalid';
     message: string;
 }
 
-interface PasswordVisibility {
-    password: boolean;
-    confirmPassword: boolean;
-}
-
 // Constants
 const USERNAME_MIN_LENGTH = 3;
 const PASSWORD_MIN_LENGTH = 8;
-const VALIDATION_DEBOUNCE_MS = 800;
-const CACHE_DURATION_MS = 5 * 60 * 1000; // 5 minutes
 
 // Email validation regex
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-// Styles factory function
-const createStyles = (colors: any, theme: string) => StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    scrollContent: {
-        flexGrow: 1,
-        paddingHorizontal: 24,
-        paddingTop: 4,
-        paddingBottom: 20,
-    },
-    stepContainer: {
-        flex: 1,
-        justifyContent: 'flex-start',
-        alignItems: 'flex-start',
-    },
-    modernHeader: {
-        alignItems: 'flex-start',
-        width: '100%',
-        marginBottom: 24,
-    },
-    modernTitle: {
-        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontSize: 62,
-        lineHeight: 48,
-        marginBottom: 18,
-        textAlign: 'left',
-        letterSpacing: -1,
-    },
-    modernSubtitle: {
-        fontSize: 18,
-        lineHeight: 24,
-        textAlign: 'left',
-        opacity: 0.8,
-        marginBottom: 24,
-    },
-    welcomeImageContainer: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginVertical: 20,
-    },
-    welcomeTitle: {
-        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontSize: 42,
-        lineHeight: 48,
-        marginBottom: 12,
-        textAlign: 'left',
-        letterSpacing: -1,
-    },
-    welcomeText: {
-        fontSize: 18,
-        lineHeight: 24,
-        textAlign: 'left',
-        opacity: 0.8,
-        marginBottom: 24,
-    },
-    stepTitle: {
-        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
-        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontSize: 42,
-        lineHeight: 48,
-        marginBottom: 12,
-        textAlign: 'left',
-        letterSpacing: -1,
-    },
-    inputContainer: {
-        width: '100%',
-        marginBottom: 24,
-    },
-    premiumInputWrapper: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        height: 56,
-        borderRadius: 16,
-        paddingHorizontal: 20,
-        borderWidth: 2,
-        backgroundColor: colors.inputBackground,
-    },
-    inputIcon: {
-        marginRight: 12,
-    },
-    inputContent: {
-        flex: 1,
-    },
-    modernLabel: {
-        fontSize: 12,
-        fontWeight: '500',
-        marginBottom: 2,
-    },
-    modernInput: {
-        flex: 1,
-        fontSize: 16,
-        height: '100%',
-    },
-    validationIndicator: {
-        marginLeft: 8,
-    },
-    validationCard: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 12,
-        borderRadius: 12,
-        marginTop: 8,
-        gap: 8,
-    },
-    belowInputMessage: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginTop: 4,
-        marginBottom: 0,
-        gap: 6,
-    },
-    belowInputText: {
-        fontSize: 13,
-        fontWeight: '500',
-    },
-    validationIconContainer: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        justifyContent: 'center',
-        alignItems: 'center',
-        marginRight: 12,
-    },
-    validationTextContainer: {
-        flex: 1,
-    },
-    validationTitle: {
-        fontSize: 12,
-        fontWeight: '600',
-        marginBottom: 2,
-    },
-    validationSubtitle: {
-        fontSize: 11,
-        opacity: 0.8,
-    },
-    passwordToggle: {
-        padding: 4,
-    },
-    passwordHint: {
-        fontSize: 12,
-        marginTop: 4,
-    },
-    button: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 18,
-        paddingHorizontal: 32,
-        borderRadius: 16,
-        marginVertical: 8,
-        gap: 8,
-        width: '100%',
-        ...Platform.select({
-            web: {
-                boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
-            },
-            default: {
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.3,
-                shadowRadius: 8,
-                elevation: 6,
-            }
-        }),
-    },
-    buttonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
-        letterSpacing: 0.5,
-    },
-    footerTextContainer: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        marginTop: 16,
-    },
-    footerText: {
-        fontSize: 15,
-    },
-    linkText: {
-        fontSize: 14,
-        lineHeight: 20,
-        fontWeight: '600',
-        textDecorationLine: 'underline',
-    },
-    userInfoContainer: {
-        padding: 20,
-        marginVertical: 20,
-        borderRadius: 24,
-        alignItems: 'center',
-        ...Platform.select({
-            web: {
-                boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-            },
-            default: {
-                shadowColor: '#000',
-                shadowOpacity: 0.04,
-                shadowOffset: { width: 0, height: 1 },
-                shadowRadius: 4,
-                elevation: 1,
-            }
-        }),
-    },
-    userInfoText: {
-        fontSize: 16,
-        marginBottom: 8,
-        textAlign: 'center',
-    },
-    actionButtonsContainer: {
-        marginTop: 24,
-    },
-    navigationButtons: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        marginTop: 16,
-        marginBottom: 8,
-        width: '100%',
-        gap: 8,
-    },
-    navButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 6,
-        paddingHorizontal: 12,
-        gap: 6,
-        minWidth: 70,
-        borderWidth: 1,
-        ...Platform.select({
-            web: {
-                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-            },
-            default: {
-                shadowOffset: { width: 0, height: 2 },
-                shadowOpacity: 0.1,
-                shadowRadius: 4,
-                elevation: 2,
-            }
-        }),
-    },
-    backButton: {
-        backgroundColor: 'transparent',
-        borderTopLeftRadius: 35,
-        borderBottomLeftRadius: 35,
-        borderTopRightRadius: 12,
-        borderBottomRightRadius: 12,
-    },
-    nextButton: {
-        backgroundColor: 'transparent',
-        borderTopRightRadius: 35,
-        borderBottomRightRadius: 35,
-        borderTopLeftRadius: 12,
-        borderBottomLeftRadius: 12,
-    },
-    navButtonText: {
-        fontSize: 13,
-        fontWeight: '500',
-    },
-    progressContainer: {
-        flexDirection: 'row',
-        justifyContent: 'center',
-        marginBottom: 20,
-        marginTop: 8,
-    },
-    progressDot: {
-        height: 10,
-        width: 10,
-        borderRadius: 5,
-        marginHorizontal: 6,
-        borderWidth: 2,
-        borderColor: '#fff',
-        ...Platform.select({
-            web: {
-                boxShadow: '0 1px 2px rgba(0,0,0,0.08)',
-            },
-            default: {
-                shadowColor: colors.primary,
-                shadowOpacity: 0.08,
-                shadowOffset: { width: 0, height: 1 },
-                shadowRadius: 2,
-                elevation: 1,
-            }
-        }),
-    },
-    summaryContainer: {
-        padding: 0,
-        marginBottom: 24,
-        width: '100%',
-    },
-    summaryRow: {
-        flexDirection: 'row',
-        marginBottom: 10,
-    },
-    summaryLabel: {
-        fontSize: 15,
-        width: 90,
-    },
-    summaryValue: {
-        fontSize: 15,
-        fontWeight: '600',
-        flex: 1,
-    },
-});
+// Main component
+const SignUpScreen: React.FC<BaseScreenProps> = ({
+    navigate,
+    goBack,
+    onAuthenticated,
+    theme,
+}) => {
+    const { signUp, oxyServices } = useOxy();
+    const colors = useThemeColors(theme);
 
-// Custom hooks for better separation of concerns
-const useFormValidation = (oxyServices: any) => {
+    // Form data state
+    const [username, setUsername] = useState('');
+    const [email, setEmail] = useState('');
+    const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
+    const [showPassword, setShowPassword] = useState(false);
+    const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Validation state
     const [validationState, setValidationState] = useState<ValidationState>({
         status: 'idle',
-        message: ''
+        message: '',
     });
 
-    const validationCache = useRef<Map<string, { available: boolean; timestamp: number }>>(new Map());
+    // Error message state
+    const [errorMessage, setErrorMessage] = useState('');
 
-    const validateUsername = useCallback(async (username: string): Promise<boolean> => {
-        if (!username || username.length < USERNAME_MIN_LENGTH) {
-            setValidationState({ status: 'invalid', message: '' });
+    // Username validation with caching
+    const usernameCache = useRef<Map<string, { available: boolean; timestamp: number }>>(new Map());
+
+    const validateUsername = useCallback(async (usernameToValidate: string): Promise<boolean> => {
+        if (!usernameToValidate || usernameToValidate.length < USERNAME_MIN_LENGTH) {
+            setValidationState({ status: 'invalid', message: 'Username must be at least 3 characters' });
             return false;
         }
 
         // Check cache first
-        const cached = validationCache.current.get(username);
+        const cached = usernameCache.current.get(usernameToValidate);
         const now = Date.now();
-        if (cached && (now - cached.timestamp) < CACHE_DURATION_MS) {
+        if (cached && (now - cached.timestamp) < 5 * 60 * 1000) {
             const isValid = cached.available;
             setValidationState({
                 status: isValid ? 'valid' : 'invalid',
@@ -389,11 +75,11 @@ const useFormValidation = (oxyServices: any) => {
         setValidationState({ status: 'validating', message: '' });
 
         try {
-            const result = await oxyServices.checkUsernameAvailability(username);
+            const result = await oxyServices.checkUsernameAvailability(usernameToValidate);
             const isValid = result.available;
 
             // Cache the result
-            validationCache.current.set(username, {
+            usernameCache.current.set(usernameToValidate, {
                 available: isValid,
                 timestamp: now
             });
@@ -414,428 +100,140 @@ const useFormValidation = (oxyServices: any) => {
         }
     }, [oxyServices]);
 
-    const validateEmail = useCallback((email: string): boolean => {
-        return EMAIL_REGEX.test(email);
+    // Email validation
+    const validateEmail = useCallback((emailToValidate: string): boolean => {
+        return EMAIL_REGEX.test(emailToValidate);
     }, []);
 
-    const validatePassword = useCallback((password: string): boolean => {
-        return password.length >= PASSWORD_MIN_LENGTH;
+    // Password validation
+    const validatePassword = useCallback((passwordToValidate: string): boolean => {
+        return passwordToValidate.length >= PASSWORD_MIN_LENGTH;
     }, []);
 
-    const validatePasswordsMatch = useCallback((password: string, confirmPassword: string): boolean => {
-        return password === confirmPassword;
-    }, []);
-
-    // Cleanup cache on unmount
-    useEffect(() => {
-        return () => {
-            validationCache.current.clear();
-        };
-    }, []);
-
-    return {
-        validationState,
-        validateUsername,
-        validateEmail,
-        validatePassword,
-        validatePasswordsMatch
-    };
-};
-
-const useFormData = () => {
-    const [formData, setFormData] = useState<FormData>({
-        username: '',
-        email: '',
-        password: '',
-        confirmPassword: ''
-    });
-
-    const [passwordVisibility, setPasswordVisibility] = useState<PasswordVisibility>({
-        password: false,
-        confirmPassword: false
-    });
-
-    const updateField = useCallback((field: keyof FormData, value: string) => {
-        setFormData(prev => ({ ...prev, [field]: value }));
-    }, []);
-
-    const togglePasswordVisibility = useCallback((field: keyof PasswordVisibility) => {
-        setPasswordVisibility(prev => ({ ...prev, [field]: !prev[field] }));
-    }, []);
-
-    const resetForm = useCallback(() => {
-        setFormData({
-            username: '',
-            email: '',
-            password: '',
-            confirmPassword: ''
-        });
-        setPasswordVisibility({
-            password: false,
-            confirmPassword: false
-        });
-    }, []);
-
-    return {
-        formData,
-        passwordVisibility,
-        updateField,
-        togglePasswordVisibility,
-        resetForm
-    };
-};
-
-// Reusable components
-const ValidationIndicator: React.FC<{ status: ValidationState['status']; colors: any; styles: any }> = React.memo(({ status, colors, styles }) => {
-    if (status === 'validating') {
-        return <ActivityIndicator size="small" color={colors.primary} style={styles.validationIndicator} />;
-    }
-    if (status === 'valid') {
-        return <Ionicons name="checkmark-circle" size={22} color={colors.success} style={styles.validationIndicator} />;
-    }
-    if (status === 'invalid') {
-        return <Ionicons name="close-circle" size={22} color={colors.error} style={styles.validationIndicator} />;
-    }
-    return null;
-});
-
-const ValidationMessage: React.FC<{ validationState: ValidationState; colors: any; styles: any }> = React.memo(({ validationState, colors, styles }) => {
-    if (validationState.status === 'idle' || !validationState.message) return null;
-
-    const isSuccess = validationState.status === 'valid';
-    const backgroundColor = isSuccess ? colors.success + '10' : colors.error + '10';
-    const borderColor = isSuccess ? colors.success + '30' : colors.error + '30';
-    const iconColor = isSuccess ? colors.success : colors.error;
-    const iconName = isSuccess ? 'checkmark-circle' : 'alert-circle';
-    const title = isSuccess ? 'Username Available' : 'Username Taken';
-    const subtitle = isSuccess ? 'Good choice! This username is available' : validationState.message;
-
-    return (
-        <View style={[styles.validationCard, { backgroundColor, borderColor }]}>
-            <View style={[styles.validationIconContainer, { backgroundColor: iconColor + '20' }]}>
-                <Ionicons name={iconName} size={16} color={iconColor} />
-            </View>
-            <View style={styles.validationTextContainer}>
-                <Text style={[styles.validationTitle, { color: iconColor }]}>
-                    {title}
-                </Text>
-                <Text style={[styles.validationSubtitle, { color: colors.secondaryText }]}>
-                    {subtitle}
-                </Text>
-            </View>
-        </View>
-    );
-});
-
-const FormInput: React.FC<{
-    icon: string;
-    label: string;
-    value: string;
-    onChangeText: (text: string) => void;
-    secureTextEntry?: boolean;
-    keyboardType?: 'default' | 'email-address';
-    autoCapitalize?: 'none' | 'sentences';
-    autoCorrect?: boolean;
-    testID?: string;
-    colors: any;
-    styles: any;
-    borderColor?: string;
-    rightComponent?: React.ReactNode;
-}> = React.memo(({
-    icon,
-    label,
-    value,
-    onChangeText,
-    secureTextEntry = false,
-    keyboardType = 'default',
-    autoCapitalize = 'sentences',
-    autoCorrect = true,
-    testID,
-    colors,
-    styles,
-    borderColor,
-    rightComponent
-}) => (
-    <View style={styles.inputContainer}>
-        <View style={[
-            styles.premiumInputWrapper,
-            {
-                borderColor: borderColor || colors.border,
-                backgroundColor: colors.inputBackground,
-                shadowColor: colors.primary,
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.1,
-                shadowRadius: 12,
-                elevation: 3,
-            }
-        ]}>
-            <Ionicons
-                name={icon as any}
-                size={22}
-                color={colors.secondaryText}
-                style={styles.inputIcon}
-            />
-            <View style={styles.inputContent}>
-                <Text style={[styles.modernLabel, { color: colors.secondaryText }]}>
-                    {label}
-                </Text>
-                <TextInput
-                    style={[styles.modernInput, { color: colors.text }]}
-                    value={value}
-                    onChangeText={onChangeText}
-                    secureTextEntry={secureTextEntry}
-                    keyboardType={keyboardType}
-                    autoCapitalize={autoCapitalize}
-                    autoCorrect={autoCorrect}
-                    testID={testID}
-                    placeholderTextColor="transparent"
-                />
-            </View>
-            {rightComponent}
-        </View>
-    </View>
-));
-
-const ProgressIndicator: React.FC<{ currentStep: number; totalSteps: number; colors: any; styles: any }> = React.memo(({ currentStep, totalSteps, colors, styles }) => (
-    <View style={styles.progressContainer}>
-        {Array.from({ length: totalSteps }, (_, index) => (
-            <View
-                key={index}
-                style={[
-                    styles.progressDot,
-                    currentStep === index ?
-                        { backgroundColor: colors.primary, width: 24 } :
-                        { backgroundColor: colors.border }
-                ]}
-            />
-        ))}
-    </View>
-));
-
-// Main component
-const SignUpScreen: React.FC<BaseScreenProps> = ({
-    navigate,
-    goBack,
-    onAuthenticated,
-    theme,
-}) => {
-    const { signUp, isLoading, user, isAuthenticated, oxyServices } = useOxy();
-    const colors = useThemeColors(theme);
-
-    // Form state
-    const { formData, passwordVisibility, updateField, togglePasswordVisibility, resetForm } = useFormData();
-    const { validationState, validateUsername, validateEmail, validatePassword, validatePasswordsMatch } = useFormValidation(oxyServices);
-
-    // UI state
-    const [currentStep, setCurrentStep] = useState(0);
-    const [errorMessage, setErrorMessage] = useState('');
-
-    // Animation refs
-    const fadeAnim = useRef(new Animated.Value(1)).current;
-    const slideAnim = useRef(new Animated.Value(0)).current;
-
-    // Memoized styles
-    const styles = useMemo(() => createAuthStyles(colors, theme), [colors, theme]);
-
-    // Debounced username validation
-    useEffect(() => {
-        if (!formData.username || formData.username.length < USERNAME_MIN_LENGTH) {
+    // Handle form completion
+    const handleComplete = useCallback(async (stepData: any[]) => {
+        if (!username || !email || !password) {
+            toast.error('Please fill in all required fields');
             return;
         }
 
-        const timeoutId = setTimeout(() => {
-            validateUsername(formData.username);
-        }, VALIDATION_DEBOUNCE_MS);
-
-        return () => clearTimeout(timeoutId);
-    }, [formData.username, validateUsername]);
-
-    // Animation functions
-    const animateTransition = useCallback((nextStep: number) => {
-        Animated.timing(fadeAnim, {
-            toValue: 0,
-            duration: 250,
-            useNativeDriver: Platform.OS !== 'web',
-        }).start(() => {
-            setCurrentStep(nextStep);
-            slideAnim.setValue(-100);
-
-            Animated.parallel([
-                Animated.timing(fadeAnim, {
-                    toValue: 1,
-                    duration: 250,
-                    useNativeDriver: Platform.OS !== 'web',
-                }),
-                Animated.timing(slideAnim, {
-                    toValue: 0,
-                    duration: 300,
-                    useNativeDriver: Platform.OS !== 'web',
-                })
-            ]).start();
-        });
-    }, [fadeAnim, slideAnim]);
-
-    const nextStep = useCallback(() => {
-        if (currentStep < 3) {
-            animateTransition(currentStep + 1);
-        }
-    }, [currentStep, animateTransition]);
-
-    const prevStep = useCallback(() => {
-        if (currentStep > 0) {
-            animateTransition(currentStep - 1);
-        }
-    }, [currentStep, animateTransition]);
-
-    // Form validation helpers
-    const isIdentityStepValid = useCallback(() => {
-        return formData.username &&
-            formData.email &&
-            validateEmail(formData.email) &&
-            validationState.status === 'valid';
-    }, [formData.username, formData.email, validateEmail, validationState.status]);
-
-    const isSecurityStepValid = useCallback(() => {
-        return formData.password &&
-            validatePassword(formData.password) &&
-            validatePasswordsMatch(formData.password, formData.confirmPassword);
-    }, [formData.password, formData.confirmPassword, validatePassword, validatePasswordsMatch]);
-
-    // Custom next handlers for validation
-    const handleIdentityNext = useCallback(() => {
-        if (!isIdentityStepValid()) {
-            toast.error('Please enter a valid username and email.');
+        if (!validateEmail(email)) {
+            toast.error('Please enter a valid email address');
             return;
         }
-        nextStep();
-    }, [isIdentityStepValid, nextStep]);
 
-    const handleSecurityNext = useCallback(() => {
-        if (!isSecurityStepValid()) {
-            toast.error('Please enter a valid password and confirm it.');
+        if (!validatePassword(password)) {
+            toast.error('Password must be at least 8 characters long');
             return;
         }
-        nextStep();
-    }, [isSecurityStepValid, nextStep]);
 
-    // Sign up handler
-    const handleSignUp = useCallback(async () => {
-        if (!isIdentityStepValid() || !isSecurityStepValid()) {
-            toast.error('Please fill in all fields correctly');
+        if (password !== confirmPassword) {
+            toast.error('Passwords do not match');
             return;
         }
 
         try {
-            setErrorMessage('');
-            const user = await signUp(formData.username, formData.email, formData.password);
+            setIsLoading(true);
+            const user = await signUp(username, email, password);
             toast.success('Account created successfully! Welcome to Oxy!');
 
-            // Instead of finalizing immediately, route to post-signup welcome & avatar setup
+            // Navigate to welcome screen or handle authentication
             navigate('WelcomeNewUser', { newUser: user });
-            resetForm(); // Clear the form for potential future use
         } catch (error: any) {
             toast.error(error.message || 'Sign up failed');
+        } finally {
+            setIsLoading(false);
         }
-    }, [formData, isIdentityStepValid, isSecurityStepValid, signUp, onAuthenticated, resetForm]);
+    }, [username, email, password, confirmPassword, validateEmail, validatePassword, signUp, navigate]);
 
-    // Memoized step components
-    const updateFieldString = (field: string, value: string) => updateField(field as keyof FormData, value);
-    const validatePasswordsMatchNoArgs = () => validatePasswordsMatch(formData.password, formData.confirmPassword);
-    const togglePasswordVisibilityNoArgs = () => togglePasswordVisibility('password');
+    // Cleanup cache on unmount
+    useEffect(() => {
+        return () => {
+            usernameCache.current.clear();
+        };
+    }, []);
 
-    const renderWelcomeStep = useMemo(() => (
-        <SignUpWelcomeStep
-            styles={styles}
-            fadeAnim={fadeAnim}
-            slideAnim={slideAnim}
-            colors={colors}
-            nextStep={nextStep}
-            navigate={navigate}
-        />
-    ), [styles, fadeAnim, slideAnim, colors, nextStep, navigate]);
+    // Step configurations
+    const steps: StepConfig[] = useMemo(() => [
+        {
+            id: 'welcome',
+            component: SignUpWelcomeStep,
+            canProceed: () => true,
+        },
+        {
+            id: 'identity',
+            component: SignUpIdentityStep,
+            canProceed: () => !!(username.trim() && email.trim() && validateEmail(email) && validationState.status === 'valid'),
+            onEnter: () => {
+                // Auto-validate username when entering this step
+                if (username && validationState.status === 'idle') {
+                    validateUsername(username);
+                }
+            },
+        },
+        {
+            id: 'security',
+            component: SignUpSecurityStep,
+            canProceed: () => !!(password && validatePassword(password) && password === confirmPassword),
+        },
+        {
+            id: 'summary',
+            component: SignUpSummaryStep,
+            canProceed: () => true,
+        },
+    ], [username, email, password, confirmPassword, validationState.status, validateEmail, validatePassword, validateUsername]);
 
-    const renderIdentityStep = useMemo(() => (
-        <SignUpIdentityStep
-            styles={styles}
-            fadeAnim={fadeAnim}
-            slideAnim={slideAnim}
-            colors={colors}
-            formData={formData}
-            validationState={validationState}
-            updateField={updateFieldString}
-            setErrorMessage={setErrorMessage}
-            prevStep={prevStep}
-            handleIdentityNext={handleIdentityNext}
-            ValidationMessage={ValidationMessage}
-            validateEmail={validateEmail}
-            navigate={navigate}
-        />
-    ), [styles, fadeAnim, slideAnim, colors, formData, validationState, updateFieldString, setErrorMessage, prevStep, handleIdentityNext, ValidationMessage, validateEmail, navigate]);
-
-    const renderSecurityStep = useMemo(() => (
-        <SignUpSecurityStep
-            styles={styles}
-            fadeAnim={fadeAnim}
-            slideAnim={slideAnim}
-            colors={colors}
-            formData={formData}
-            passwordVisibility={passwordVisibility}
-            updateField={updateFieldString}
-            validatePassword={validatePassword}
-            validatePasswordsMatch={validatePasswordsMatchNoArgs}
-            prevStep={prevStep}
-            handleSecurityNext={handleSecurityNext}
-            setErrorMessage={setErrorMessage}
-            togglePasswordVisibility={togglePasswordVisibilityNoArgs}
-            PASSWORD_MIN_LENGTH={PASSWORD_MIN_LENGTH}
-        />
-    ), [styles, fadeAnim, slideAnim, colors, formData, passwordVisibility, updateFieldString, validatePassword, validatePasswordsMatchNoArgs, prevStep, handleSecurityNext, setErrorMessage, togglePasswordVisibilityNoArgs, PASSWORD_MIN_LENGTH]);
-
-    const renderSummaryStep = useMemo(() => (
-        <SignUpSummaryStep
-            styles={styles}
-            fadeAnim={fadeAnim}
-            slideAnim={slideAnim}
-            colors={colors}
-            formData={formData}
-            isLoading={isLoading}
-            handleSignUp={handleSignUp}
-            prevStep={prevStep}
-        />
-    ), [styles, fadeAnim, slideAnim, colors, formData, isLoading, handleSignUp, prevStep]);
-
-    const renderCurrentStep = useCallback(() => {
-        switch (currentStep) {
-            case 0:
-                return renderWelcomeStep;
-            case 1:
-                return renderIdentityStep;
-            case 2:
-                return renderSecurityStep;
-            case 3:
-                return renderSummaryStep;
-            default:
-                return renderWelcomeStep;
-        }
-    }, [currentStep, renderWelcomeStep, renderIdentityStep, renderSecurityStep, renderSummaryStep]);
+    // Step data for the reusable component
+    const stepData = useMemo(() => [
+        // Welcome step - no data needed
+        {},
+        // Identity step
+        {
+            username,
+            email,
+            setUsername,
+            setEmail,
+            validationState,
+            setValidationState,
+            setErrorMessage,
+            validateEmail,
+            validateUsername,
+        },
+        // Security step
+        {
+            password,
+            confirmPassword,
+            setPassword,
+            setConfirmPassword,
+            showPassword,
+            showConfirmPassword,
+            setShowPassword,
+            setShowConfirmPassword,
+            setErrorMessage,
+            validatePassword,
+        },
+        // Summary step
+        {
+            isLoading,
+        },
+    ], [
+        username, email, password, confirmPassword, showPassword, showConfirmPassword,
+        validationState, errorMessage, validateEmail, validatePassword, isLoading
+    ]);
 
     return (
-        <KeyboardAvoidingView
-            style={[styles.container, { backgroundColor: colors.background }]}
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        >
-            <StatusBar
-                barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
-                backgroundColor={colors.background}
-            />
-            <ScrollView
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-            >
-                {renderCurrentStep()}
-            </ScrollView>
-        </KeyboardAvoidingView>
+        <StepBasedScreen
+            steps={steps}
+            stepData={stepData}
+            onComplete={handleComplete}
+            navigate={navigate}
+            goBack={goBack}
+            onAuthenticated={onAuthenticated}
+            theme={theme}
+            showProgressIndicator={true}
+            enableAnimations={true}
+            oxyServices={oxyServices}
+        />
     );
 };
 

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, Image } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
+import { useThemeColors } from '../styles';
 import Avatar from '../components/Avatar';
 import { FollowButton } from '../components';
 import { useFollow } from '../hooks/useFollow';
@@ -39,10 +40,8 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
         setFollowingCount,
     } = useFollow(userId);
 
-    const isDarkTheme = theme === 'dark';
-    const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
-    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
-    const primaryColor = '#d169e5';
+    const colors = useThemeColors(theme);
+    const styles = createStyles(colors);
 
     // Check if current user is viewing their own profile
     const isOwnProfile = currentUser && currentUser.id === userId;
@@ -154,27 +153,27 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
     if (isLoading) {
         return (
-            <View style={[styles.container, { backgroundColor, justifyContent: 'center' }]}>
-                <ActivityIndicator size="large" color={primaryColor} />
+            <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center' }]}>
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }
 
     if (error) {
         return (
-            <View style={[styles.container, { backgroundColor }]}>
+            <View style={[styles.container, { backgroundColor: colors.background }]}>
                 <View style={styles.errorHeader}>
                     {goBack && (
                         <TouchableOpacity onPress={goBack} style={styles.backButton}>
-                            <Ionicons name="arrow-back" size={24} color={textColor} />
+                            <Ionicons name="arrow-back" size={24} color={colors.text} />
                         </TouchableOpacity>
                     )}
-                    <Text style={[styles.errorTitle, { color: textColor }]}>Profile Error</Text>
+                    <Text style={[styles.errorTitle, { color: colors.text }]}>Profile Error</Text>
                 </View>
                 <View style={styles.errorContent}>
-                    <Ionicons name="alert-circle" size={48} color="#D32F2F" style={styles.errorIcon} />
-                    <Text style={[styles.errorText, { color: '#D32F2F' }]}>{error}</Text>
-                    <Text style={[styles.errorSubtext, { color: textColor }]}>
+                    <Ionicons name="alert-circle" size={48} color={colors.error} style={styles.errorIcon} />
+                    <Text style={[styles.errorText, { color: colors.error }]}>{error}</Text>
+                    <Text style={[styles.errorSubtext, { color: colors.secondaryText }]}>
                         This could happen if the user doesn't exist or the profile service is unavailable.
                     </Text>
                 </View>
@@ -183,7 +182,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     }
 
     return (
-        <View style={[styles.container, { backgroundColor }]}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
             <ScrollView contentContainerStyle={styles.scrollContainer}>
                 {/* Banner Image */}
                 <View style={styles.bannerContainer}>
@@ -222,55 +221,55 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 </View>
                 {/* Profile Info */}
                 <View style={styles.header}>
-                    <Text style={[styles.displayName, { color: textColor }]}>{profile?.displayName || profile?.username || username || profile?.id}</Text>
+                    <Text style={[styles.displayName, { color: colors.text }]}>{profile?.displayName || profile?.username || username || profile?.id}</Text>
                     {profile?.username && (
-                        <Text style={[styles.subText, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>@{profile.username}</Text>
+                        <Text style={[styles.subText, { color: colors.secondaryText }]}>@{profile.username}</Text>
                     )}
                     {/* Bio placeholder */}
-                    <Text style={[styles.bio, { color: textColor }]}>{profile?.bio || 'This user has no bio yet.'}</Text>
+                    <Text style={[styles.bio, { color: colors.text }]}>{profile?.bio || 'This user has no bio yet.'}</Text>
 
                     {/* Info Grid Row */}
                     <View style={styles.infoGrid}>
                         {profile?.createdAt && (
                             <View style={styles.infoGridItem}>
-                                <Ionicons name="calendar-outline" size={16} color={isDarkTheme ? '#BBBBBB' : '#888888'} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>Joined {new Date(profile.createdAt).toLocaleDateString()}</Text>
+                                <Ionicons name="calendar-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
+                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]}>Joined {new Date(profile.createdAt).toLocaleDateString()}</Text>
                             </View>
                         )}
                         {profile?.location && (
                             <View style={styles.infoGridItem}>
-                                <Ionicons name="location-outline" size={16} color={isDarkTheme ? '#BBBBBB' : '#888888'} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]} numberOfLines={1}>{profile.location}</Text>
+                                <Ionicons name="location-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
+                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>{profile.location}</Text>
                             </View>
                         )}
                         {profile?.website && (
                             <View style={styles.infoGridItem}>
-                                <Ionicons name="globe-outline" size={16} color={isDarkTheme ? '#BBBBBB' : '#888888'} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]} numberOfLines={1}>{profile.website}</Text>
+                                <Ionicons name="globe-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
+                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>{profile.website}</Text>
                             </View>
                         )}
                         {profile?.company && (
                             <View style={styles.infoGridItem}>
-                                <Ionicons name="business-outline" size={16} color={isDarkTheme ? '#BBBBBB' : '#888888'} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]} numberOfLines={1}>{profile.company}</Text>
+                                <Ionicons name="business-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
+                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>{profile.company}</Text>
                             </View>
                         )}
                         {profile?.jobTitle && (
                             <View style={styles.infoGridItem}>
-                                <Ionicons name="briefcase-outline" size={16} color={isDarkTheme ? '#BBBBBB' : '#888888'} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]} numberOfLines={1}>{profile.jobTitle}</Text>
+                                <Ionicons name="briefcase-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
+                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>{profile.jobTitle}</Text>
                             </View>
                         )}
                         {profile?.education && (
                             <View style={styles.infoGridItem}>
-                                <Ionicons name="school-outline" size={16} color={isDarkTheme ? '#BBBBBB' : '#888888'} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]} numberOfLines={1}>{profile.education}</Text>
+                                <Ionicons name="school-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
+                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>{profile.education}</Text>
                             </View>
                         )}
                         {profile?.birthday && (
                             <View style={styles.infoGridItem}>
-                                <Ionicons name="gift-outline" size={16} color={isDarkTheme ? '#BBBBBB' : '#888888'} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>Born {new Date(profile.birthday).toLocaleDateString()}</Text>
+                                <Ionicons name="gift-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
+                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]}>Born {new Date(profile.birthday).toLocaleDateString()}</Text>
                             </View>
                         )}
                         {links.length > 0 && (
@@ -278,12 +277,12 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                                 style={styles.infoGridItem}
                                 onPress={() => navigate?.('UserLinks', { userId, links })}
                             >
-                                <Ionicons name="link-outline" size={16} color={isDarkTheme ? '#BBBBBB' : '#888888'} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]} numberOfLines={1}>
+                                <Ionicons name="link-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
+                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>
                                     {links[0].url}
                                 </Text>
                                 {links.length > 1 && (
-                                    <Text style={[styles.linksMore, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>
+                                    <Text style={[styles.linksMore, { color: colors.secondaryText }]}>
                                         + {links.length - 1} more
                                     </Text>
                                 )}
@@ -295,24 +294,24 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                     {/* All Stats in one row */}
                     <View style={styles.statsRow}>
                         <View style={styles.statItem}>
-                            <Text style={[styles.karmaAmount, { color: primaryColor }]}>{karmaTotal !== null && karmaTotal !== undefined ? karmaTotal : '--'}</Text>
-                            <Text style={[styles.karmaLabel, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>Karma</Text>
+                            <Text style={[styles.karmaAmount, { color: colors.primary }]}>{karmaTotal !== null && karmaTotal !== undefined ? karmaTotal : '--'}</Text>
+                            <Text style={[styles.karmaLabel, { color: colors.secondaryText }]}>Karma</Text>
                         </View>
                         <View style={styles.statItem}>
                             {isLoadingCounts ? (
-                                <ActivityIndicator size="small" color={textColor} />
+                                <ActivityIndicator size="small" color={colors.text} />
                             ) : (
-                                <Text style={[styles.karmaAmount, { color: textColor }]}>{followerCount !== null ? followerCount : '--'}</Text>
+                                <Text style={[styles.karmaAmount, { color: colors.text }]}>{followerCount !== null ? followerCount : '--'}</Text>
                             )}
-                            <Text style={[styles.karmaLabel, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>Followers</Text>
+                            <Text style={[styles.karmaLabel, { color: colors.secondaryText }]}>Followers</Text>
                         </View>
                         <View style={styles.statItem}>
                             {isLoadingCounts ? (
-                                <ActivityIndicator size="small" color={textColor} />
+                                <ActivityIndicator size="small" color={colors.text} />
                             ) : (
-                                <Text style={[styles.karmaAmount, { color: textColor }]}>{followingCount !== null ? followingCount : '--'}</Text>
+                                <Text style={[styles.karmaAmount, { color: colors.text }]}>{followingCount !== null ? followingCount : '--'}</Text>
                             )}
-                            <Text style={[styles.karmaLabel, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>Following</Text>
+                            <Text style={[styles.karmaLabel, { color: colors.secondaryText }]}>Following</Text>
                         </View>
                     </View>
                 </View>
@@ -321,37 +320,37 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     );
 };
 
-const styles = StyleSheet.create({
+const createStyles = (colors: any) => StyleSheet.create({
     container: { flex: 1 },
     scrollContainer: { alignItems: 'stretch', paddingBottom: 40 },
-    bannerContainer: { height: 160, backgroundColor: '#e1bee7', position: 'relative', overflow: 'hidden' },
-    bannerImage: { flex: 1, backgroundColor: '#d169e5' }, // Placeholder, replace with Image if available
+    bannerContainer: { height: 160, backgroundColor: colors.primary + '20', position: 'relative', overflow: 'hidden' },
+    bannerImage: { flex: 1, backgroundColor: colors.primary }, // Placeholder, replace with Image if available
     avatarRow: { flexDirection: 'row', alignItems: 'flex-end', marginTop: -56, paddingHorizontal: 20, justifyContent: 'space-between', zIndex: 2 },
-    avatarWrapper: { borderWidth: 5, borderColor: '#fff', borderRadius: 64, overflow: 'hidden', backgroundColor: '#fff', },
+    avatarWrapper: { borderWidth: 5, borderColor: colors.background, borderRadius: 64, overflow: 'hidden', backgroundColor: colors.background },
     actionButtonWrapper: { flex: 1, alignItems: 'flex-end', justifyContent: 'flex-end' },
     actionButton: {
-        backgroundColor: '#fff',
+        backgroundColor: colors.background,
         borderWidth: 1,
-        borderColor: '#d169e5',
+        borderColor: colors.primary,
         borderRadius: 24,
         paddingVertical: 7,
         paddingHorizontal: 22,
         marginBottom: 8,
         elevation: 2,
-        shadowColor: '#d169e5',
+        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.08,
         shadowRadius: 2
     },
     actionButtonText: {
-        color: '#d169e5',
+        color: colors.primary,
         fontWeight: 'bold',
         fontSize: 16
     },
     header: { alignItems: 'flex-start', width: '100%', paddingHorizontal: 20 },
     displayName: { fontSize: 24, fontWeight: 'bold', marginTop: 10, marginBottom: 2, letterSpacing: 0.1 },
-    subText: { fontSize: 16, marginBottom: 2, color: '#a0a0a0' },
-    bio: { fontSize: 16, marginTop: 10, marginBottom: 10, color: '#666', lineHeight: 22 },
+    subText: { fontSize: 16, marginBottom: 2, color: colors.secondaryText },
+    bio: { fontSize: 16, marginTop: 10, marginBottom: 10, color: colors.text, lineHeight: 22 },
     infoGrid: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -365,16 +364,17 @@ const styles = StyleSheet.create({
         marginBottom: 4
     },
     infoGridText: {
-        fontSize: 15
+        fontSize: 15,
+        color: colors.text
     },
-    divider: { height: 1, backgroundColor: '#e0e0e0', width: '100%', marginVertical: 14 },
+    divider: { height: 1, backgroundColor: colors.border, width: '100%', marginVertical: 14 },
     linksMore: {
         fontSize: 15,
         marginLeft: 4
     },
     statsRow: { width: '100%', flex: 1, flexDirection: 'row', alignItems: 'center', marginTop: 6, marginBottom: 2, justifyContent: 'space-between' },
     statItem: { flex: 1, alignItems: 'center', minWidth: 50, marginBottom: 12 },
-    karmaLabel: { fontSize: 14, marginBottom: 2, textAlign: 'center', color: '#a0a0a0' },
+    karmaLabel: { fontSize: 14, marginBottom: 2, textAlign: 'center', color: colors.secondaryText },
     karmaAmount: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', letterSpacing: 0.2 },
     // Error handling styles
     errorHeader: {

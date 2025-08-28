@@ -145,7 +145,7 @@ const Header: React.FC<HeaderProps> = ({
     };
 
     const renderRightActions = () => {
-        if (rightActions && rightActions.length) {
+        if (rightActions?.length) {
             return (
                 <View style={styles.rightActionsRow}>
                     {rightActions.map((a, i) => renderRightActionButton(a, i))}
@@ -283,7 +283,7 @@ const styles = StyleSheet.create({
         zIndex: 1000,
         ...Platform.select({
             web: {
-                position: 'sticky' as any,
+                position: 'absolute' as const,
             },
             default: {},
         }),

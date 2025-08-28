@@ -1,80 +1,86 @@
 import type React from 'react';
-import { useRef, useCallback, useEffect } from 'react';
-import { View, Text, TouchableOpacity, type TextInput, StatusBar } from 'react-native';
-import Animated, {
-    useAnimatedStyle,
-    SharedValue,
-} from 'react-native-reanimated';
+import { useRef, useEffect } from 'react';
+import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
 
 interface SignInPasswordStepProps {
-    styles: any;
-    fadeAnim: SharedValue<number>;
-    slideAnim: SharedValue<number>;
-    scaleAnim: SharedValue<number>;
+    // Common props from StepBasedScreen
     colors: any;
+    styles: any;
+    theme: string;
+    navigate: (screen: string, props?: Record<string, any>) => void;
+
+    // Step navigation
+    nextStep: () => void;
+    prevStep: () => void;
+    currentStep: number;
+    totalSteps: number;
+
+    // Data management
+    stepData?: any;
+    updateStepData: (data: any) => void;
+    allStepData: any[];
+
+    // Form state
+    password: string;
+    setPassword: (password: string) => void;
+    showPassword: boolean;
+    setShowPassword: (show: boolean) => void;
+    errorMessage: string;
+    setErrorMessage: (message: string) => void;
+    isLoading: boolean;
+
+    // User profile
     userProfile: any;
     username: string;
-    theme: string;
-    logoAnim: SharedValue<number>;
-    errorMessage: string;
-    isInputFocused: boolean;
-    password: string;
-    showPassword: boolean;
-    handleInputFocus: () => void;
-    handleInputBlur: () => void;
-    handlePasswordChange: (text: string) => void;
-    handleSignIn: () => void;
-    isLoading: boolean;
-    prevStep: () => void;
-    navigate: (screen: string, props?: Record<string, any>) => void;
+
+    // Sign-in function
+    handleSignIn: () => Promise<void>;
 }
 
 const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
-    styles,
-    fadeAnim,
-    slideAnim,
-    scaleAnim,
     colors,
+    styles,
+    theme,
+    navigate,
+    prevStep,
+    password,
+    setPassword,
+    showPassword,
+    setShowPassword,
+    errorMessage,
+    setErrorMessage,
+    isLoading,
     userProfile,
     username,
-    theme,
-    logoAnim,
-    errorMessage,
-    isInputFocused,
-    password,
-    showPassword,
-    handleInputFocus,
-    handleInputBlur,
-    handlePasswordChange,
-    handleSignIn: parentHandleSignIn,
-    isLoading,
-    prevStep,
-    navigate,
+    handleSignIn,
 }) => {
-    const inputRef = useRef<TextInput>(null);
+    const inputRef = useRef<any>(null);
 
-    // Animated styles - properly memoized to prevent re-renders
-    const containerAnimatedStyle = useAnimatedStyle(() => {
-        return {
-            opacity: fadeAnim.value,
-            transform: [
-                { translateX: slideAnim.value },
-                { scale: scaleAnim.value }
-            ]
-        };
-    });
+    const handlePasswordChange = (text: string) => {
+        setPassword(text);
+        if (errorMessage) setErrorMessage('');
+    };
 
-    const logoAnimatedStyle = useAnimatedStyle(() => {
-        return {
-            transform: [{ scale: logoAnim.value }]
-        };
-    });
+    const handleSignInSubmit = async () => {
+        if (!password) {
+            setErrorMessage('Please enter your password.');
+            setTimeout(() => inputRef.current?.focus(), 0);
+            return;
+        }
 
-    // Focus password input on error or when step becomes active
+        // Call the actual sign-in function passed from props
+        await handleSignIn();
+    };
+
+    const togglePasswordVisibility = () => {
+        setShowPassword(!showPassword);
+    };
+
+    // Focus password input on error
     useEffect(() => {
         if (errorMessage) {
             setTimeout(() => {
@@ -83,25 +89,10 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
         }
     }, [errorMessage]);
 
-    const handleSignIn = useCallback(() => {
-        if (!password || errorMessage) {
-            setTimeout(() => {
-                inputRef.current?.focus();
-            }, 0);
-        }
-        parentHandleSignIn();
-    }, [password, errorMessage, parentHandleSignIn]);
-
     return (
-        <Animated.View style={[
-            styles.stepContainer,
-            containerAnimatedStyle
-        ]}>
+        <>
             <View style={styles.modernUserProfileContainer}>
-                <Animated.View style={[
-                    styles.avatarContainer,
-                    logoAnimatedStyle
-                ]}>
+                <View style={styles.avatarContainer}>
                     <Avatar
                         name={userProfile?.displayName || userProfile?.name || username}
                         size={100}
@@ -110,7 +101,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                         backgroundColor={colors.primary + '20'}
                     />
                     <View style={[styles.statusIndicator, { backgroundColor: colors.primary }]} />
-                </Animated.View>
+                </View>
                 <Text style={[styles.modernUserDisplayName, { color: colors.text }]}>
                     {userProfile?.displayName || userProfile?.name || username}
                 </Text>
@@ -118,6 +109,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     @{username}
                 </Text>
             </View>
+
             <View style={styles.modernInputContainer}>
                 <TextField
                     ref={inputRef}
@@ -125,17 +117,16 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
                     value={password}
                     onChangeText={handlePasswordChange}
-                    onFocus={handleInputFocus}
-                    onBlur={handleInputBlur}
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
                     autoCorrect={false}
                     testID="password-input"
                     variant="filled"
                     error={errorMessage || undefined}
-                    onSubmitEditing={handleSignIn}
+                    onSubmitEditing={handleSignInSubmit}
                     autoFocus
                 />
+
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
                     <Text style={[styles.footerText, { color: colors.text }]}>Forgot your password? </Text>
                     <TouchableOpacity onPress={() => navigate('RecoverAccount', {
@@ -147,6 +138,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     </TouchableOpacity>
                 </View>
             </View>
+
             <GroupedPillButtons
                 buttons={[
                     {
@@ -157,7 +149,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     },
                     {
                         text: 'Sign In',
-                        onPress: handleSignIn,
+                        onPress: handleSignInSubmit,
                         icon: 'log-in',
                         variant: 'primary',
                         loading: isLoading,
@@ -166,18 +158,15 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                 ]}
                 colors={colors}
             />
+
             <View style={styles.securityNotice}>
                 <Ionicons name="shield-checkmark" size={14} color={colors.secondaryText} />
                 <Text style={[styles.securityText, { color: colors.secondaryText }]}>
                     Your data is encrypted and secure
                 </Text>
             </View>
-            <StatusBar
-                barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
-                backgroundColor={colors.background}
-            />
-        </Animated.View>
+        </>
     );
 };
 
-export default SignInPasswordStep; 
+export default SignInPasswordStep;

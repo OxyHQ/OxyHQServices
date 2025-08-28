@@ -1,26 +1,25 @@
 import type React from 'react';
-import { Platform } from 'react-native';
+import { Platform, type StyleProp, type TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 export interface IconProps {
   name: string;
   size?: number;
   color?: string;
-  style?: any;
+  style?: Record<string, unknown>;
 }
 
-const OxyIcon: React.FC<IconProps> = ({ 
-  name, 
-  size = 24, 
-  color = '#000', 
-  style 
+const OxyIcon: React.FC<IconProps> = ({
+  name,
+  size = 24,
+  color = '#000',
+  style
 }) => {
-  // Handle both string and Ionicons name types
-  const iconName = name as any;
-  
+  // Icon name is already properly typed as IoniconsGlyphs
+
   return (
     <Ionicons
-      name={iconName}
+      name={name as any}
       size={size}
       color={color}
       style={style}

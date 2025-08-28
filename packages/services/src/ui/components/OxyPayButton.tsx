@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyle, type StyleProp, type LayoutChangeEvent } from 'react-native';
 import { fontFamilies } from '../styles/fonts';
 import { useOxy } from '../context/OxyContext';
-import type { PaymentItem } from '../screens/PaymentGatewayScreen';
+import type { PaymentItem, PaymentGatewayResult } from '../screens/PaymentGatewayScreen';
 import OxyLogo from './OxyLogo';
 
 export interface OxyPayButtonProps {
@@ -15,7 +15,7 @@ export interface OxyPayButtonProps {
     currency?: string;
     paymentItems?: PaymentItem[];
     description?: string;
-    onPaymentResult?: (result: any) => void;
+    onPaymentResult?: (result: PaymentGatewayResult) => void;
     /**
      * Button background color. If not provided, uses variant ('white' or 'black').
      */

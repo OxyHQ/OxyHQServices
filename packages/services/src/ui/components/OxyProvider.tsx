@@ -142,7 +142,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     const oxyServices = providedOxyServices || contextOxy?.oxyServices;
     // Use the internal ref (which is passed as a prop from OxyProvider)
     const modalRef = useRef<BottomSheetModalRef>(null);
-    const navigationRef = useRef<((screen: string, props?: Record<string, any>) => void) | null>(null);
+    const navigationRef = useRef<((screen: string, props?: Record<string, unknown>) => void) | null>(null);
     // Remove contentHeight, containerWidth, and snap point state/logic
     // Animation values - keep for content fade/slide
     const fadeAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 1 : 0)).current;

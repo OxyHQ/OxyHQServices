@@ -218,6 +218,8 @@ export interface AssetLink {
   createdAt: string;
 }
 
+export type AssetMetadata = Record<string, string | number | boolean | null | undefined>;
+
 export interface AssetVariant {
   type: string;
   key: string;
@@ -225,7 +227,7 @@ export interface AssetVariant {
   height?: number;
   readyAt?: string;
   size?: number;
-  metadata?: Record<string, any>;
+  metadata?: AssetMetadata;
 }
 
 export interface Asset {
@@ -242,7 +244,7 @@ export interface Asset {
   updatedAt: string;
   links: AssetLink[];
   variants: AssetVariant[];
-  metadata?: Record<string, any>;
+  metadata?: AssetMetadata;
 }
 
 export interface AssetInitRequest {
@@ -262,7 +264,7 @@ export interface AssetCompleteRequest {
   originalName: string;
   size: number;
   mime: string;
-  metadata?: Record<string, any>;
+  metadata?: AssetMetadata;
 }
 
 export interface AssetLinkRequest {

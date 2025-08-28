@@ -16,6 +16,8 @@ import {
     type NativeSyntheticEvent,
     type TargetedEvent,
     type TextInputFocusEventData,
+    type FocusEvent,
+    type BlurEvent,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Svg, { Path } from 'react-native-svg';
@@ -304,16 +306,20 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
     }, [formatValue, inputMask, customMask]);
 
     // Handle focus
-    const handleFocus = useCallback((event: NativeSyntheticEvent<TextInputFocusEventData>) => {
+    const handleFocus = useCallback((event: FocusEvent) => {
         if (disabled) return;
         setFocused(true);
-        onFocus?.(event);
+        // Convert FocusEvent to the expected type for parent callback
+        const syntheticEvent = event as any;
+        onFocus?.(syntheticEvent);
     }, [disabled, onFocus]);
 
     // Handle blur
-    const handleBlur = useCallback((event: NativeSyntheticEvent<TextInputFocusEventData>) => {
+    const handleBlur = useCallback((event: BlurEvent) => {
         setFocused(false);
-        onBlur?.(event);
+        // Convert BlurEvent to the expected type for parent callback
+        const syntheticEvent = event as any;
+        onBlur?.(syntheticEvent);
     }, [onBlur]);
 
     // Handle mouse events
@@ -421,7 +427,7 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                 position: 'relative',
                 ...Platform.select({
                     web: {
-                        outlineStyle: 'none',
+                        outlineStyle: undefined,
                         outlineWidth: 0,
                         outlineOffset: 0,
                     },
@@ -441,7 +447,7 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                 ...Platform.select({
                     web: {
                         border: 'none',
-                        outlineStyle: 'none',
+                        outlineStyle: undefined,
                         outlineWidth: 0,
                         outlineOffset: 0,
                         boxShadow: 'none',

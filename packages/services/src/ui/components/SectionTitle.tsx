@@ -1,11 +1,11 @@
 import type React from 'react';
-import { Text, StyleSheet } from 'react-native';
+import { Text, StyleSheet, type StyleProp, type TextStyle } from 'react-native';
 import { fontFamilies } from '../styles/fonts';
 
 interface SectionTitleProps {
     title: string;
     theme: 'light' | 'dark';
-    style?: any;
+    style?: StyleProp<TextStyle>;
 }
 
 const SectionTitle: React.FC<SectionTitleProps> = ({ title, theme, style }) => {

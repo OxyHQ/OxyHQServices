@@ -58,9 +58,9 @@ export type PaymentItem = {
 };
 
 // Extend props to accept onPaymentResult, amount, and currency
-interface PaymentGatewayResult {
+export interface PaymentGatewayResult {
     success: boolean;
-    details?: any;
+    details?: Record<string, string | number | boolean | null>;
     error?: string;
 }
 
