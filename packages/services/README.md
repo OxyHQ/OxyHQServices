@@ -35,6 +35,22 @@ A comprehensive TypeScript client library for the Oxy API providing authenticati
 npm install @oxyhq/services
 ```
 
+### Peer dependencies
+To avoid duplicate native modules and ensure smooth integration across apps, install (or ensure your app already includes) the following peer dependencies:
+
+- react: >=18, react-native: >=0.76
+- react-native-reanimated: >=3.16, react-native-gesture-handler: >=2.16
+- react-native-safe-area-context: ^5.4.0, react-native-svg: >=13
+- Expo projects: expo, expo-font, expo-image, expo-linear-gradient
+- Navigation (if you use the provided screens): @react-navigation/native
+- Optional (only if you use IAP screens): react-native-iap
+
+Example for Expo:
+```bash
+npm i react-native-reanimated react-native-gesture-handler react-native-safe-area-context react-native-svg \
+  expo expo-font expo-image expo-linear-gradient @react-navigation/native
+```
+
 ### React Native/Expo Setup
 
 For React Native and Expo projects, add the polyfill import at the very top of your entry file:
@@ -72,16 +88,41 @@ function UserProfile() {
 }
 ```
 
-### Backend (Node.js)
+### Backend (Node.js / Express)
 
 ```typescript
-import { oxyClient } from '@oxyhq/services';
+// Prefer the core-only entry on the backend
+import { oxyClient, OxyServices } from '@oxyhq/services/core';
 
-// Ready to use - no configuration needed!
-app.get('/api/user', async (req, res) => {
-  const user = await oxyClient.getCurrentUser();
-  res.json(user);
+// Quick Express example
+import express from 'express';
+
+const app = express();
+app.use(express.json());
+
+// Optional: create your own client (e.g., different baseURL per env)
+const services = new OxyServices({ baseURL: process.env.OXY_CLOUD_URL || 'https://cloud.oxy.so' });
+
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    const session = await oxyClient.signIn(username, password);
+    res.json(session);
+  } catch (err: any) {
+    res.status(401).json({ error: err.message });
+  }
 });
+
+app.get('/api/users/:id', async (req, res) => {
+  try {
+    const user = await services.getUserById(req.params.id);
+    res.json(user);
+  } catch (err: any) {
+    res.status(404).json({ error: err.message });
+  }
+});
+
+app.listen(3000);
 ```
 
 ## 📖 Usage Patterns
@@ -181,7 +222,7 @@ export const userUtils = {
 Use the pre-configured `oxyClient` for immediate access:
 
 ```typescript
-import { oxyClient } from '@oxyhq/services';
+import { oxyClient } from '@oxyhq/services/core';
 
 // routes/auth.ts
 export const signIn = async (req, res) => {

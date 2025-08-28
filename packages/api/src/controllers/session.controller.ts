@@ -398,8 +398,11 @@ export class SessionController {
   // Logout from a specific session
   static async logoutSession(req: Request, res: Response) {
     try {
-      const { sessionId } = req.params;
-      const { targetSessionId } = req.body;
+      const { sessionId, targetSessionId } = req.params;
+      const bodyTargetSessionId = req.body?.targetSessionId;
+
+      // Use targetSessionId from URL params if provided, otherwise from body
+      const sessionIdToLogout = targetSessionId || bodyTargetSessionId || sessionId;
 
       if (!sessionId) {
         return res.status(400).json({ error: 'Session ID is required' });
@@ -407,7 +410,7 @@ export class SessionController {
 
       // Find and deactivate session using sessionId field
       const session = await Session.findOne({
-        sessionId: sessionId,
+        sessionId: sessionIdToLogout,
         isActive: true
       });
 
@@ -418,7 +421,7 @@ export class SessionController {
       session.isActive = false;
       await session.save();
 
-      console.log(`Logged out session: ${sessionId}`);
+      console.log(`Logged out session: ${sessionIdToLogout}`);
       res.json({ success: true, message: 'Session logged out successfully' });
     } catch (error) {
       console.error('Logout session error:', error);

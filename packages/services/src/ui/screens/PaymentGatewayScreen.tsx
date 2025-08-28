@@ -241,7 +241,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                 })
             ]).start();
         });
-    }, [fadeAnim, slideAnim, scaleAnim]);
+    }, []);
 
     const nextStep = useCallback(() => {
         if (currentStep < 4) {

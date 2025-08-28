@@ -76,7 +76,7 @@ const FollowButton: React.FC<FollowButtonProps> = ({
       event.stopPropagation?.();
     }
     if (disabled || isLoading) return;
-    
+
     // Press animation
     scale.value = withTiming(0.95, { duration: 100 }, (finished) => {
       if (finished) {
@@ -112,7 +112,7 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   // Animate button on follow/unfollow
   useEffect(() => {
     animationProgress.value = withTiming(isFollowing ? 1 : 0, { duration: 300, easing: Easing.inOut(Easing.ease) });
-  }, [isFollowing, animationProgress]);
+  }, [isFollowing]);
 
   // Animated styles for better performance
   const animatedButtonStyle = useAnimatedStyle(() => {

@@ -15,6 +15,7 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
     navigate,
     goBack,
     theme,
+    oxyServices,
 }) => {
     const colors = useThemeColors(theme);
 
@@ -25,17 +26,10 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
     const [errorMessage, setErrorMessage] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
 
-    // Handle back navigation based on return parameters
+    // Handle back navigation
     const handleBack = useCallback(() => {
-        if (returnTo && returnStep !== undefined) {
-            navigate(returnTo, {
-                initialStep: returnStep,
-                ...returnData
-            });
-        } else {
-            navigate('SignIn');
-        }
-    }, [navigate, returnTo, returnStep, returnData]);
+        navigate('SignIn');
+    }, [navigate]);
 
     // Step configurations
     const steps: StepConfig[] = [
@@ -114,6 +108,7 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
             navigate={navigate}
             goBack={handleBack}
             theme={theme}
+            oxyServices={oxyServices}
             showProgressIndicator={true}
             enableAnimations={true}
         />

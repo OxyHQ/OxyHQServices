@@ -251,7 +251,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             }, 100);
             return () => clearTimeout(timer);
         }
-    }, [bottomSheetRef, modalRef, fadeAnim, slideAnim, autoPresent]);
+    }, [bottomSheetRef, modalRef, autoPresent]);
     // Close the bottom sheet with animation (unchanged)
     const handleClose = useCallback(() => {
         Animated.timing(fadeAnim, {
@@ -266,7 +266,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 }, Platform.OS === 'android' ? 150 : 100);
             }
         });
-    }, [onClose, fadeAnim]);
+    }, [onClose]);
     // Handle authentication success (unchanged)
     const handleAuthenticated = useCallback((user: any) => {
         fadeAnim.stopAnimation();
@@ -280,7 +280,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 onClose();
             }, 100);
         }
-    }, [onAuthenticated, onClose, fadeAnim, slideAnim]);
+    }, [onAuthenticated, onClose]);
     // Backdrop rendering (unchanged)
     const renderBackdrop = useCallback(
         (props: BottomSheetBackdropProps) => (

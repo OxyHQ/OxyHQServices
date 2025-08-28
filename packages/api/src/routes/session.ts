@@ -14,6 +14,7 @@ router.get('/sessions/:sessionId', SessionController.getUserSessions);
 
 // Session management routes
 router.post('/logout/:sessionId', SessionController.logoutSession);
+router.post('/logout/:sessionId/:targetSessionId', SessionController.logoutSession);
 router.post('/logout-all/:sessionId', SessionController.logoutAllSessions);
 router.get('/validate/:sessionId', SessionController.validateSession);
 router.get('/validate-header/:sessionId', SessionController.validateSessionFromHeader);

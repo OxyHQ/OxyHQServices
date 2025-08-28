@@ -237,18 +237,22 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
             withTiming(0.95, { duration: 50 })
         );
 
+        // Define a JS function for runOnJS to avoid inline closures
+        const applyStepChange = (targetStep: number, totalSteps: number) => {
+            setState(prev => ({
+                ...prev,
+                currentStep: targetStep,
+                isTransitioning: false,
+            }));
+            onStepChangeRef.current?.(targetStep, totalSteps);
+        };
+
         fadeAnim.value = withSequence(
             withTiming(0, { duration: 200 }),
             withTiming(0, { duration: 50 }, (finished) => {
                 if (finished) {
-                    runOnJS(() => {
-                        setState(prev => ({
-                            ...prev,
-                            currentStep: nextStep,
-                            isTransitioning: false
-                        }));
-                        onStepChangeRef.current?.(nextStep, steps.length);
-                    })();
+                    // Call back to JS thread correctly
+                    runOnJS(applyStepChange)(nextStep, steps.length);
 
                     // Reset animations with proper timing
                     slideAnim.value = withDelay(16, withTiming(-50, { duration: 0 }));
@@ -267,7 +271,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
                 }
             })
         );
-    }, [fadeAnim, slideAnim, scaleAnim, enableAnimations, steps.length]);
+    }, [enableAnimations, steps.length]);
 
     // Navigation functions
     const nextStep = useCallback(() => {
