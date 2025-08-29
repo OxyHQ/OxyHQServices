@@ -331,13 +331,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 width: 40,
                 height: 4,
             }}
-            handleStyle={{
-                position: 'absolute',
-                width: '100%',
-                height: 4,
-                borderTopLeftRadius: 35,
-                borderTopRightRadius: 35,
-            }}
+            handleStyle={{ paddingTop: 10, position: 'absolute', top: 0, left: 0, right: 0 }}
             onChange={handleSheetChanges}
             style={styles.bottomSheetContainer}
             keyboardBehavior="interactive"
@@ -349,6 +343,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             overDragResistanceFactor={2.5}
             enableBlurKeyboardOnGesture={true}
             detached
+            topInset={insets?.top ?? 0}
             bottomInset={(keyboardVisible ? keyboardHeight : 0) + (insets?.bottom ?? 0)}
             // Uncomment below to use a sticky footer
             // footerComponent={<YourFooterComponent />}
