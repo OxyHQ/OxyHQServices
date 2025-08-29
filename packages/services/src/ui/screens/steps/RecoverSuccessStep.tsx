@@ -37,8 +37,8 @@ const RecoverSuccessStep: React.FC<RecoverSuccessStepProps> = ({
     const { identifier } = requestData;
 
     const handleContinueToReset = () => {
-        // Navigate to password reset with the identifier
-        navigate('ResetPassword', { identifier });
+        // Navigate back to SignIn and let host app open its reset flow
+        navigate('SignIn', { showReset: true, identifier });
     };
 
     const handleBackToSignIn = () => {

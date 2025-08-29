@@ -56,7 +56,24 @@ app.use((req, res, next) => {
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
   res.setHeader(
     "Access-Control-Allow-Headers",
-    "Content-Type, Authorization, X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Date, X-Api-Version, X-File-Name"
+    [
+      'Content-Type',
+      'Authorization',
+      'X-CSRF-Token',
+      'X-Requested-With',
+      'Accept',
+      'Accept-Version',
+      'Content-Length',
+      'Content-MD5',
+      'Date',
+      'X-Api-Version',
+      'X-File-Name',
+      // Custom application headers used by clients
+      'X-Session-Id',
+      'x-session-id',
+      'X-Device-Fingerprint',
+      'x-device-fingerprint',
+    ].join(', ')
   );
   res.setHeader("Access-Control-Allow-Credentials", "true");
 

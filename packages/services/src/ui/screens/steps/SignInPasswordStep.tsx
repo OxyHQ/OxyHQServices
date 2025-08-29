@@ -39,6 +39,7 @@ interface SignInPasswordStepProps {
 
     // Sign-in function
     handleSignIn: () => Promise<void>;
+    mfaToken?: string | null;
 }
 
 const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
@@ -46,6 +47,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
     styles,
     theme,
     navigate,
+    nextStep,
     prevStep,
     password,
     setPassword,
@@ -57,6 +59,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
     userProfile,
     username,
     handleSignIn,
+    mfaToken,
 }) => {
     const inputRef = useRef<any>(null);
 
@@ -88,6 +91,14 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
             }, 0);
         }
     }, [errorMessage]);
+
+    // Auto-advance when MFA is required
+    useEffect(() => {
+        if (mfaToken) {
+            // Move to TOTP step when token is available
+            nextStep();
+        }
+    }, [mfaToken, nextStep]);
 
     return (
         <>

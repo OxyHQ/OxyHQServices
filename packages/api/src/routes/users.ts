@@ -42,7 +42,7 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res) => {
 router.put('/me', authMiddleware, async (req: AuthRequest, res) => {
   try {
   logger.debug('PUT /users/me called', { body: req.body });
-  const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description', 'links', 'linksMetadata', 'locations'] as const;
+  const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description', 'links', 'linksMetadata', 'locations', 'language'] as const;
     type AllowedUpdate = typeof allowedUpdates[number];
 
     const updates = Object.entries(req.body)

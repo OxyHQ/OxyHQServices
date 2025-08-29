@@ -5,6 +5,8 @@ import { Ionicons } from '@expo/vector-icons';
 import HighFive from '../../../assets/illustrations/HighFive';
 import TextField from '../../components/internal/TextField';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
+import { toast } from '../../../lib/sonner';
+import type { OxyServices } from '../../../core';
 
 interface RecoverRequestStepProps {
     // Common props from StepBasedScreen
@@ -29,6 +31,7 @@ interface RecoverRequestStepProps {
     setErrorMessage: (message: string) => void;
     isLoading: boolean;
     setIsLoading: (loading: boolean) => void;
+    oxyServices?: OxyServices;
 }
 
 const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
@@ -42,6 +45,7 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
     setErrorMessage,
     isLoading,
     setIsLoading,
+    oxyServices,
 }) => {
     const inputRef = useRef<any>(null);
 
@@ -50,9 +54,9 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
         if (errorMessage) setErrorMessage('');
     };
 
-    const handleRequest = () => {
+    const handleRequest = async () => {
         if (!identifier || identifier.length < 3) {
-            setErrorMessage('Please enter your email or username.');
+            setErrorMessage('Please enter your username.');
             setTimeout(() => inputRef.current?.focus(), 0);
             return;
         }
@@ -60,11 +64,11 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
         setErrorMessage('');
         setIsLoading(true);
 
-        // Simulate API call
-        setTimeout(() => {
+        try {
+            toast.info('Email recovery is disabled. Use your authenticator app during sign-in or contact support.');
+        } finally {
             setIsLoading(false);
-            nextStep(); // Move to verification step
-        }, 1200);
+        }
     };
 
     const handleRequestWithFocus = () => {
@@ -82,14 +86,14 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
                     Recover Account
                 </Text>
                 <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
-                    Enter your email or username to receive a 6-digit code.
+                    We no longer send recovery emails. If you enabled Two‑Factor Authentication (TOTP), sign in with your username and password, then enter your authenticator code. Otherwise, contact support to regain access.
                 </Text>
             </View>
 
             <View style={styles.modernInputContainer}>
                 <TextField
                     ref={inputRef}
-                    label="Email or Username"
+                    label="Username"
                     leading={<Ionicons name="mail-outline" size={24} color={colors.secondaryText} />}
                     value={identifier}
                     onChangeText={handleIdentifierChange}
@@ -113,9 +117,9 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
                         variant: 'transparent',
                     },
                     {
-                        text: 'Send Code',
+                        text: 'Continue',
                         onPress: handleRequest,
-                        icon: 'mail-open-outline',
+                        icon: 'information-circle-outline',
                         variant: 'primary',
                         loading: isLoading,
                         disabled: isLoading,

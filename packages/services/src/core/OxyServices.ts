@@ -495,9 +495,80 @@ export class OxyServices {
   }
 
   /**
+   * Request account recovery (send verification code)
+   */
+  async requestRecovery(identifier: string): Promise<{ delivery?: string; destination?: string }> {
+    try {
+      const res = await this.client.post('/api/auth/recover/request', { identifier });
+      return res.data;
+    } catch (error: any) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Verify recovery code
+   */
+  async verifyRecoveryCode(identifier: string, code: string): Promise<{ verified: boolean }> {
+    try {
+      const res = await this.client.post('/api/auth/recover/verify', { identifier, code });
+      return res.data;
+    } catch (error: any) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Reset password using verified code
+   */
+  async resetPassword(identifier: string, code: string, newPassword: string): Promise<{ success: boolean }> {
+    try {
+      const res = await this.client.post('/api/auth/recover/reset', { identifier, code, newPassword });
+      return res.data;
+    } catch (error: any) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Reset password using TOTP code (recommended recovery)
+   */
+  async resetPasswordWithTotp(identifier: string, code: string, newPassword: string): Promise<{ success: boolean }> {
+    try {
+      const res = await this.client.post('/api/auth/recover/totp/reset', { identifier, code, newPassword });
+      return res.data;
+    } catch (error: any) {
+      throw this.handleError(error);
+    }
+  }
+
+  async resetPasswordWithBackupCode(identifier: string, backupCode: string, newPassword: string): Promise<{ success: boolean }> {
+    try {
+      const res = await this.client.post('/api/auth/recover/backup/reset', { identifier, backupCode, newPassword });
+      return res.data;
+    } catch (error: any) {
+      throw this.handleError(error);
+    }
+  }
+
+  async resetPasswordWithRecoveryKey(identifier: string, recoveryKey: string, newPassword: string): Promise<{ success: boolean; nextRecoveryKey?: string }> {
+    try {
+      const res = await this.client.post('/api/auth/recover/recovery-key/reset', { identifier, recoveryKey, newPassword });
+      return res.data;
+    } catch (error: any) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
    * Sign in with device management
    */
-  async signIn(username: string, password: string, deviceName?: string, deviceFingerprint?: any): Promise<SessionLoginResponse> {
+  async signIn(
+    username: string,
+    password: string,
+    deviceName?: string,
+    deviceFingerprint?: any
+  ): Promise<SessionLoginResponse | { mfaRequired: true; mfaToken: string; expiresAt: string }> {
     try {
       const res = await this.client.post('/api/auth/login', {
         username,
@@ -505,6 +576,18 @@ export class OxyServices {
         deviceName,
         deviceFingerprint
       });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Complete login by verifying TOTP with MFA token
+   */
+  async verifyTotpLogin(mfaToken: string, code: string): Promise<SessionLoginResponse> {
+    try {
+      const res = await this.client.post('/api/auth/totp/verify-login', { mfaToken, code });
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -651,6 +734,43 @@ export class OxyServices {
   async getProfileByUsername(username: string): Promise<User> {
     try {
       const res = await this.client.get(`/api/profiles/username/${username}`);
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ============================================================================
+  // TOTP ENROLLMENT
+  // ============================================================================
+
+  async startTotpEnrollment(sessionId: string): Promise<{ secret: string; otpauthUrl: string; issuer: string; label: string }> {
+    try {
+      const res = await this.client.post('/api/auth/totp/enroll/start', { sessionId }, {
+        headers: { 'x-session-id': sessionId }
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async verifyTotpEnrollment(sessionId: string, code: string): Promise<{ enabled: boolean; backupCodes?: string[]; recoveryKey?: string }> {
+    try {
+      const res = await this.client.post('/api/auth/totp/enroll/verify', { sessionId, code }, {
+        headers: { 'x-session-id': sessionId }
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  async disableTotp(sessionId: string, code: string): Promise<{ disabled: boolean }> {
+    try {
+      const res = await this.client.post('/api/auth/totp/disable', { sessionId, code }, {
+        headers: { 'x-session-id': sessionId }
+      });
       return res.data;
     } catch (error) {
       throw this.handleError(error);

@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import PinInput from '../../components/internal/PinInput';
+import { toast } from '../../../lib/sonner';
 
 interface RecoverVerifyStepProps {
     // Common props from StepBasedScreen
@@ -30,6 +31,7 @@ interface RecoverVerifyStepProps {
     setSuccessMessage: (message: string) => void;
     isLoading: boolean;
     setIsLoading: (loading: boolean) => void;
+    identifier?: string;
 }
 
 const RecoverVerifyStep: React.FC<RecoverVerifyStepProps> = ({
@@ -45,8 +47,9 @@ const RecoverVerifyStep: React.FC<RecoverVerifyStepProps> = ({
     setSuccessMessage,
     isLoading,
     setIsLoading,
+    identifier,
 }) => {
-    const handleVerifyCode = () => {
+    const handleVerifyCode = async () => {
         setErrorMessage('');
         setSuccessMessage('');
 
@@ -54,19 +57,8 @@ const RecoverVerifyStep: React.FC<RecoverVerifyStepProps> = ({
             setErrorMessage('Please enter the 6-digit code.');
             return;
         }
-
-        setIsLoading(true);
-
-        // Simulate verification
-        setTimeout(() => {
-            setIsLoading(false);
-            if (verificationCode === '123456') { // Simulate correct code
-                setSuccessMessage('Your account has been verified! You can now reset your password.');
-                nextStep(); // Move to success step
-            } else {
-                setErrorMessage('Invalid code. Please try again.');
-            }
-        }, 1200);
+        // For recovery via TOTP, proceed to reset step; server will validate during reset
+        nextStep();
     };
 
     return (

@@ -32,6 +32,7 @@ export interface OxyContextState {
   logout: (targetSessionId?: string) => Promise<void>;
   logoutAll: () => Promise<void>;
   signUp: (username: string, email: string, password: string) => Promise<User>;
+  completeMfaLogin?: (mfaToken: string, code: string) => Promise<User>;
 
   // Multi-session methods
   switchSession: (sessionId: string) => Promise<void>;
@@ -172,7 +173,18 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const [sessions, setSessions] = useState<ClientSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [storage, setStorage] = useState<StorageInterface | null>(null);
-  const [currentLanguage, setCurrentLanguage] = useState<string>('en');
+  const [currentLanguage, setCurrentLanguage] = useState<string>('en-US');
+
+  // Normalize language codes to BCP-47 (e.g., en-US)
+  const normalizeLanguageCode = useCallback((lang?: string | null): string | null => {
+    if (!lang) return null;
+    if (lang.includes('-')) return lang;
+    const map: Record<string, string> = {
+      en: 'en-US', es: 'es-ES', ca: 'ca-ES', fr: 'fr-FR', de: 'de-DE', it: 'it-IT', pt: 'pt-PT',
+      ja: 'ja-JP', ko: 'ko-KR', zh: 'zh-CN', ar: 'ar-SA'
+    };
+    return map[lang] || lang;
+  }, []);
   // Add a new state to track token restoration
   const [tokenReady, setTokenReady] = useState(false);
 
@@ -212,7 +224,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         setTokenReady(false);
 
         // Load saved language preference
-        const savedLanguage = await storage.getItem(keys.language);
+        const savedLanguageRaw = await storage.getItem(keys.language);
+        const savedLanguage = normalizeLanguageCode(savedLanguageRaw) || savedLanguageRaw;
         if (savedLanguage) {
           setCurrentLanguage(savedLanguage);
         }
@@ -228,6 +241,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               const fullUser = await oxyServices.getUserBySession(storedActiveSessionId);
               loginSuccess(fullUser);
               setMinimalUser({ id: fullUser.id, username: fullUser.username, avatar: fullUser.avatar });
+              // Apply server language if present
+              if ((fullUser as any)?.language) {
+                try {
+                  const serverLang = normalizeLanguageCode((fullUser as any).language) || (fullUser as any).language;
+                  await storage.setItem(keys.language, serverLang);
+                  setCurrentLanguage(serverLang);
+                } catch (e) {
+                  console.warn('Failed to apply server language preference', e);
+                }
+              }
               const serverSessions = await oxyServices.getSessionsBySessionId(storedActiveSessionId);
               const clientSessions: ClientSession[] = serverSessions.map(s => ({
                 sessionId: s.sessionId,
@@ -307,6 +330,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       });
 
       await saveActiveSessionId(sessionId);
+      // Apply server language if present
+      if ((fullUser as any)?.language) {
+        try {
+          const serverLang = normalizeLanguageCode((fullUser as any).language) || (fullUser as any).language;
+          await storage?.setItem(keys.language, serverLang);
+          setCurrentLanguage(serverLang);
+        } catch (e) {
+          console.warn('Failed to apply server language after switch', e);
+        }
+      }
 
       if (onAuthStateChange) {
         onAuthStateChange(fullUser);
@@ -334,27 +367,36 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       console.log('Auth - Using device fingerprint:', deviceFingerprint);
       console.log('Auth - Using device ID:', deviceInfo.deviceId);
 
-      const response: SessionLoginResponse = await oxyServices.signIn(
+      const response: any = await oxyServices.signIn(
         username,
         password,
         deviceName || deviceInfo.deviceName || DeviceManager.getDefaultDeviceName(),
         deviceFingerprint
       );
 
+      // Handle MFA requirement
+      if (response && response.mfaRequired) {
+        const err: any = new Error('Multi-factor authentication required');
+        err.code = 'MFA_REQUIRED';
+        err.mfaToken = response.mfaToken;
+        err.expiresAt = response.expiresAt;
+        throw err;
+      }
+
       // Set as active session (only store session ID)
-      setActiveSessionId(response.sessionId);
-      await saveActiveSessionId(response.sessionId);
+      setActiveSessionId((response as SessionLoginResponse).sessionId);
+      await saveActiveSessionId((response as SessionLoginResponse).sessionId);
 
       // Get access token for API calls
       await oxyServices.getTokenBySession(response.sessionId);
 
       // Load full user data from backend
-      const fullUser = await oxyServices.getUserBySession(response.sessionId);
+      const fullUser = await oxyServices.getUserBySession((response as SessionLoginResponse).sessionId);
       loginSuccess(fullUser);
       setMinimalUser(response.user);
 
       // Load sessions from backend
-      const serverSessions = await oxyServices.getSessionsBySessionId(response.sessionId);
+      const serverSessions = await oxyServices.getSessionsBySessionId((response as SessionLoginResponse).sessionId);
       const clientSessions: ClientSession[] = serverSessions.map(serverSession => ({
         sessionId: serverSession.sessionId,
         deviceId: serverSession.deviceId,
@@ -496,6 +538,63 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       useAuthStore.setState({ isLoading: false });
     }
   }, [storage, oxyServices, login, loginFailure]);
+
+  // Complete MFA login by verifying TOTP
+  const completeMfaLogin = useCallback(async (mfaToken: string, code: string): Promise<User> => {
+    if (!storage) throw new Error('Storage not initialized');
+    useAuthStore.setState({ isLoading: true, error: null });
+    try {
+      const response = await oxyServices.verifyTotpLogin(mfaToken, code);
+
+      // Set as active session
+      setActiveSessionId(response.sessionId);
+      await saveActiveSessionId(response.sessionId);
+
+      // Fetch access token and user data
+      await oxyServices.getTokenBySession(response.sessionId);
+      const fullUser = await oxyServices.getUserBySession(response.sessionId);
+      loginSuccess(fullUser);
+      setMinimalUser({ id: fullUser.id, username: fullUser.username, avatar: fullUser.avatar });
+      // Apply server language if present
+      if ((fullUser as any)?.language) {
+        try {
+          const serverLang = normalizeLanguageCode((fullUser as any).language) || (fullUser as any).language;
+          await storage.setItem(keys.language, serverLang);
+          setCurrentLanguage(serverLang);
+        } catch (e) {
+          console.warn('Failed to apply server language on MFA login', e);
+        }
+      }
+
+      // Load sessions list
+      const serverSessions = await oxyServices.getSessionsBySessionId(response.sessionId);
+      const clientSessions: ClientSession[] = serverSessions.map(s => ({
+        sessionId: s.sessionId,
+        deviceId: s.deviceId,
+        expiresAt: s.expiresAt || new Date().toISOString(),
+        lastActive: s.lastActive || new Date().toISOString(),
+        userId: s.userId || fullUser.id
+      }));
+      setSessions(clientSessions);
+      // Apply server language if present
+      if ((fullUser as any)?.language) {
+        try {
+          await storage.setItem(keys.language, (fullUser as any).language);
+          setCurrentLanguage((fullUser as any).language);
+        } catch (e) {
+          console.warn('Failed to apply server language on MFA login', e);
+        }
+      }
+
+      if (onAuthStateChange) onAuthStateChange(fullUser);
+      return fullUser;
+    } catch (error: any) {
+      loginFailure(error.message || 'MFA verification failed');
+      throw error;
+    } finally {
+      useAuthStore.setState({ isLoading: false });
+    }
+  }, [storage, oxyServices, loginSuccess, loginFailure, saveActiveSessionId, onAuthStateChange]);
 
   // Switch session method
   const switchSession = useCallback(async (sessionId: string): Promise<void> => {
@@ -731,6 +830,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     logout,
     logoutAll,
     signUp,
+    completeMfaLogin,
     switchSession,
     removeSession,
     refreshSessions,
@@ -756,6 +856,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     logout,
     logoutAll,
     signUp,
+    completeMfaLogin,
     switchSession,
     removeSession,
     refreshSessions,

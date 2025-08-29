@@ -1,12 +1,36 @@
 import express from 'express';
 import { SessionController } from '../controllers/session.controller';
 import { User } from '../models/User';
+import { rateLimit } from '../middleware/rateLimiter';
 
 const router = express.Router();
 
 // Auth routes that map to session controller methods
 router.post('/signup', SessionController.register);
-router.post('/login', SessionController.signIn);
+// Back-compat alias
+router.post('/register', SessionController.register);
+// Limit login attempts per IP to reduce brute-force
+const loginLimiter = rateLimit({ windowMs: 10 * 60 * 1000, max: 10 });
+router.post('/login', loginLimiter, SessionController.signIn);
+router.post('/totp/verify-login', SessionController.verifyTotpForLogin);
+
+// Account recovery endpoints with tighter rate limits per IP+identifier
+const recoverLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => `${req.ip}:${(req.body?.identifier || '').toString()}`,
+});
+router.post('/recover/request', recoverLimiter, SessionController.requestRecovery);
+router.post('/recover/verify', recoverLimiter, SessionController.verifyRecoveryCode);
+router.post('/recover/reset', recoverLimiter, SessionController.resetPassword);
+router.post('/recover/totp/reset', recoverLimiter, SessionController.resetPasswordWithTotp);
+router.post('/recover/backup/reset', recoverLimiter, SessionController.resetPasswordWithBackupCode);
+router.post('/recover/recovery-key/reset', recoverLimiter, SessionController.resetPasswordWithRecoveryKey);
+
+// TOTP enrollment (requires session via x-session-id)
+router.post('/totp/enroll/start', SessionController.startTotpEnrollment);
+router.post('/totp/enroll/verify', SessionController.verifyTotpEnrollment);
+router.post('/totp/disable', SessionController.disableTotp);
 
 // Auth validation endpoint
 router.get('/validate', (req, res) => {
@@ -81,3 +105,4 @@ router.get('/check-email/:email', async (req, res) => {
 });
 
 export default router; 
+ 

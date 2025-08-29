@@ -92,6 +92,22 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
                     alignItems: 'center',
                     marginTop: 16,
                     padding: 12,
+                    backgroundColor: colors.warning + '10',
+                    borderRadius: 8,
+                    borderWidth: 1,
+                    borderColor: colors.warning + '30',
+                }}>
+                    <Ionicons name="shield-checkmark" size={20} color={colors.warning} style={{ marginRight: 8 }} />
+                    <Text style={[styles.footerText, { color: colors.warning, fontSize: 14, flex: 1 }]}>
+                        For stronger security, we recommend enabling Two‑Factor Authentication (TOTP) from Account Settings after you create your account.
+                    </Text>
+                </View>
+
+                <View style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    marginTop: 16,
+                    padding: 12,
                     backgroundColor: colors.success + '10',
                     borderRadius: 8,
                     borderWidth: 1,

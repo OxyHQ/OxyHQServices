@@ -146,6 +146,12 @@ const UserSchema: Schema = new Schema(
       type: Boolean,
       default: false,
     },
+    language: {
+      type: String,
+      default: 'en-US',
+      select: true,
+      trim: true,
+    },
     following: [
       {
         type: Schema.Types.ObjectId,

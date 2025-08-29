@@ -17,11 +17,17 @@ import {
 } from '../utils/deviceUtils';
 import { emitSessionUpdate } from '../server';
 import Notification from '../models/Notification'; // Added import for Notification
+import RecoveryCode from '../models/RecoveryCode';
+import Totp from '../models/Totp';
+import RecoveryFactors from '../models/RecoveryFactors';
+import { authenticator } from 'otplib';
 
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET!;
 const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET!;
 const ACCESS_TOKEN_EXPIRES_IN = '1h';
 const REFRESH_TOKEN_EXPIRES_IN = '7d';
+const MFA_TOKEN_SECRET: import('jsonwebtoken').Secret = (process.env.MFA_TOKEN_SECRET || process.env.REFRESH_TOKEN_SECRET!) as import('jsonwebtoken').Secret;
+const MFA_TOKEN_TTL_SECONDS: number = Number(process.env.MFA_TOKEN_TTL_SECONDS || 300); // default 5 minutes
 
 // Generate device ID
 const generateDeviceId = (): string => {
@@ -127,7 +133,7 @@ export class SessionController {
   // Sign in that returns only session data
   static async signIn(req: Request, res: Response) {
     try {
-      const { username, password, deviceName, deviceFingerprint } = req.body;
+      const { username, password, deviceName, deviceFingerprint, backupCode } = req.body;
 
       if (!username || !password) {
         return res.status(400).json({ error: 'Username and password are required' });
@@ -155,6 +161,48 @@ export class SessionController {
       const isPasswordValid = await bcrypt.compare(password, user.password);
       if (!isPasswordValid) {
         return res.status(401).json({ error: 'Invalid credentials' });
+      }
+
+      // If TOTP is enabled, require second factor unless a valid backup code is provided
+      if (user.privacySettings?.twoFactorEnabled) {
+        // Allow backup code as substitute
+        if (typeof backupCode === 'string' && backupCode.length > 0) {
+          const rf = await RecoveryFactors.findOne({ userId: user._id });
+          if (rf && rf.backupCodes && rf.backupCodes.length > 0) {
+            let matched = false;
+            for (const bc of rf.backupCodes) {
+              if (bc.used) continue;
+              const ok = await bcrypt.compare(backupCode, bc.codeHash);
+              if (ok) {
+                bc.used = true; bc.usedAt = new Date();
+                matched = true;
+                break;
+              }
+            }
+            if (matched) {
+              await rf.save();
+              // proceed without TOTP challenge
+            } else {
+              return res.status(401).json({ error: 'Invalid backup code' });
+            }
+          } else {
+            return res.status(400).json({ error: 'No backup codes configured' });
+          }
+        } else {
+          // Require TOTP challenge
+          const totp = await Totp.findOne({ userId: user._id }).select('+secret');
+          if (totp && totp.verified) {
+            const mfaPayload = {
+              userId: user._id.toString(),
+              username: user.username,
+              deviceName: deviceName || null,
+              deviceFingerprint: deviceFingerprint || null,
+              type: 'mfa'
+            };
+            const mfaToken = jwt.sign(mfaPayload, MFA_TOKEN_SECRET, { expiresIn: MFA_TOKEN_TTL_SECONDS });
+            return res.json({ mfaRequired: true, mfaToken, expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString() });
+          }
+        }
       }
 
       // Extract device info with potential fingerprint reuse
@@ -251,6 +299,209 @@ export class SessionController {
     } catch (error) {
       console.error('Login error:', error);
       res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Verify TOTP for login and create a session
+  static async verifyTotpForLogin(req: Request, res: Response) {
+    try {
+      const { mfaToken, code } = req.body || {};
+      if (!mfaToken || !code) {
+        return res.status(400).json({ error: 'mfaToken and code are required' });
+      }
+      let payload: any;
+      try {
+        payload = jwt.verify(mfaToken, MFA_TOKEN_SECRET) as any;
+      } catch (e) {
+        return res.status(401).json({ error: 'Invalid or expired MFA token' });
+      }
+
+      if (payload.type !== 'mfa' || !payload.userId) {
+        return res.status(400).json({ error: 'Invalid MFA token payload' });
+      }
+
+      const user = await User.findById(payload.userId).select('+password');
+      if (!user) {
+        return res.status(401).json({ error: 'Invalid user' });
+      }
+
+      // Load TOTP secret
+      const totp = await Totp.findOne({ userId: user._id }).select('+secret');
+      if (!totp || !totp.secret) {
+        return res.status(400).json({ error: 'TOTP not configured' });
+      }
+
+      // Verify code
+      const isValid = authenticator.verify({ token: code, secret: totp.secret });
+      if (!isValid) {
+        return res.status(401).json({ error: 'Invalid TOTP code' });
+      }
+
+      // Extract device info (fallbacks from mfa payload)
+      let deviceInfo = extractDeviceInfo(req, undefined, payload.deviceName || undefined);
+      if (payload.deviceFingerprint) {
+        const fingerprint = generateDeviceFingerprint(payload.deviceFingerprint);
+        deviceInfo = await registerDevice(deviceInfo, fingerprint);
+      }
+
+      // Create session as in signIn
+      const sessionId = crypto.randomUUID();
+      const { accessToken, refreshToken } = generateTokens(user._id.toString(), sessionId);
+      const session = new Session({
+        sessionId,
+        userId: user._id,
+        deviceId: deviceInfo.deviceId,
+        deviceInfo: {
+          deviceName: deviceInfo.deviceName,
+          deviceType: deviceInfo.deviceType,
+          platform: deviceInfo.platform,
+          browser: deviceInfo.browser,
+          os: deviceInfo.os,
+          ipAddress: deviceInfo.ipAddress,
+          userAgent: deviceInfo.userAgent,
+          location: deviceInfo.location,
+          fingerprint: deviceInfo.fingerprint,
+          lastActive: new Date()
+        },
+        isActive: true,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        accessToken,
+        refreshToken
+      });
+      await session.save();
+
+      emitSessionUpdate(user._id.toString(), {
+        type: 'session_created',
+        sessionId: session.sessionId,
+        deviceId: session.deviceId
+      });
+
+      const response: SessionAuthResponse = {
+        sessionId: session.sessionId,
+        deviceId: session.deviceId,
+        expiresAt: session.expiresAt.toISOString(),
+        user: {
+          id: user._id.toString(),
+          username: user.username,
+          avatar: user.avatar
+        }
+      };
+      return res.json(response);
+    } catch (error) {
+      console.error('Verify TOTP for login error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Start TOTP enrollment: generate secret and return otpauth URL
+  static async startTotpEnrollment(req: Request, res: Response) {
+    try {
+      const sessionId = req.header('x-session-id') || req.body?.sessionId;
+      if (!sessionId) return res.status(400).json({ error: 'Session ID required' });
+
+      // Lookup session and user
+      const session = await Session.findOne({ sessionId, isActive: true }).populate('userId', '+password');
+      if (!session) return res.status(401).json({ error: 'Invalid session' });
+      const user = session.userId as any;
+
+      // Generate secret
+      const secret = authenticator.generateSecret();
+      const issuer = process.env.TOTP_ISSUER || 'Oxy';
+      const label = `${issuer}:${user.username}`;
+      const otpauth = authenticator.keyuri(user.username, issuer, secret);
+
+      // Upsert Totp record (unverified)
+      await Totp.findOneAndUpdate(
+        { userId: user._id },
+        { secret, verified: false },
+        { upsert: true }
+      );
+
+      return res.json({ secret, otpauthUrl: otpauth, issuer, label });
+    } catch (error) {
+      console.error('Start TOTP enrollment error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Verify TOTP enrollment: confirm code and enable 2FA
+  static async verifyTotpEnrollment(req: Request, res: Response) {
+    try {
+      const sessionId = req.header('x-session-id') || req.body?.sessionId;
+      const { code } = req.body || {};
+      if (!sessionId || !code) return res.status(400).json({ error: 'Session ID and code are required' });
+
+      const session = await Session.findOne({ sessionId, isActive: true }).populate('userId', '+password');
+      if (!session) return res.status(401).json({ error: 'Invalid session' });
+      const user = session.userId as any;
+
+      const totp = await Totp.findOne({ userId: user._id }).select('+secret');
+      if (!totp || !totp.secret) return res.status(400).json({ error: 'TOTP not initialized' });
+
+      const ok = authenticator.verify({ token: code, secret: totp.secret });
+      if (!ok) return res.status(401).json({ error: 'Invalid TOTP code' });
+
+      totp.verified = true;
+      await totp.save();
+
+      // Enable 2FA on user profile
+      user.privacySettings = user.privacySettings || {};
+      user.privacySettings.twoFactorEnabled = true;
+      await user.save();
+
+      // Generate backup codes and a recovery key (plaintext shown once)
+      const codes: string[] = [];
+      for (let i = 0; i < 10; i++) {
+        // Format: XXXX-XXXX (A-Z,0-9)
+        const raw = crypto.randomBytes(4).toString('hex').slice(0, 8).toUpperCase();
+        codes.push(`${raw.slice(0,4)}-${raw.slice(4)}`);
+      }
+      const backupCodeHashes = await Promise.all(codes.map(async (c) => ({
+        codeHash: await bcrypt.hash(c, 10), used: false, createdAt: new Date()
+      })));
+
+      // Recovery key format: oxy-xxxx-xxxx-xxxx (alnum lower)
+      const rkRaw = 'oxy-' + crypto.randomBytes(6).toString('hex').match(/.{1,4}/g)!.slice(0,3).join('-');
+      const recoveryKeyHash = await bcrypt.hash(rkRaw, 10);
+
+      await RecoveryFactors.findOneAndUpdate(
+        { userId: user._id },
+        { backupCodes: backupCodeHashes, recoveryKeyHash, lastRotatedAt: new Date() },
+        { upsert: true }
+      );
+
+      return res.json({ enabled: true, backupCodes: codes, recoveryKey: rkRaw });
+    } catch (error) {
+      console.error('Verify TOTP enrollment error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Disable TOTP: require valid code
+  static async disableTotp(req: Request, res: Response) {
+    try {
+      const sessionId = req.header('x-session-id') || req.body?.sessionId;
+      const { code } = req.body || {};
+      if (!sessionId || !code) return res.status(400).json({ error: 'Session ID and code are required' });
+
+      const session = await Session.findOne({ sessionId, isActive: true }).populate('userId', '+password');
+      if (!session) return res.status(401).json({ error: 'Invalid session' });
+      const user = session.userId as any;
+
+      const totp = await Totp.findOne({ userId: user._id }).select('+secret');
+      if (!totp || !totp.secret) return res.status(400).json({ error: 'TOTP not configured' });
+
+      const ok = authenticator.verify({ token: code, secret: totp.secret });
+      if (!ok) return res.status(401).json({ error: 'Invalid TOTP code' });
+
+      await Totp.deleteOne({ userId: user._id });
+      user.privacySettings.twoFactorEnabled = false;
+      await user.save();
+
+      return res.json({ disabled: true });
+    } catch (error) {
+      console.error('Disable TOTP error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
     }
   }
 
@@ -676,4 +927,272 @@ export class SessionController {
       res.status(500).json({ error: 'Internal server error' });
     }
   }
-} 
+
+  // Request account recovery (send 6-digit code)
+  static async requestRecovery(req: Request, res: Response) {
+    try {
+      const { identifier } = req.body || {};
+      if (!identifier || typeof identifier !== 'string') {
+        return res.status(400).json({ error: 'Identifier (email or username) is required' });
+      }
+
+      // Find user by email or username
+      const user = await User.findOne({
+        $or: [{ email: identifier }, { username: identifier }]
+      });
+
+      // Always respond 200 to prevent user enumeration; only proceed if user exists
+      if (!user) {
+        return res.json({ success: true });
+      }
+
+      // Generate a 6-digit numeric code
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+
+      // Hash the code using bcrypt
+      const codeHash = await bcrypt.hash(code, 10);
+
+      // Create recovery record with 15-minute expiration
+      const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
+      await RecoveryCode.create({
+        userId: user._id,
+        identifier,
+        codeHash,
+        expiresAt,
+        used: false,
+        attempts: 0,
+      });
+
+      // Log masked output for development visibility
+      const mask = (email: string) => {
+        const at = email.indexOf('@');
+        if (at > 1) return email[0] + '***' + email.slice(at - 1);
+        return '***';
+      };
+      const destination = user.email ? mask(user.email) : 'on-file';
+      console.log(`[Recovery] Code for ${user.username}: ${code} (expires in 15m)`);
+
+      return res.json({ success: true, delivery: 'email', destination });
+    } catch (error) {
+      console.error('Request recovery error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Verify recovery code (without changing password)
+  static async verifyRecoveryCode(req: Request, res: Response) {
+    try {
+      const { identifier, code } = req.body || {};
+      if (!identifier || !code) {
+        return res.status(400).json({ verified: false, error: 'Identifier and code are required' });
+      }
+
+      const user = await User.findOne({
+        $or: [{ email: identifier }, { username: identifier }]
+      });
+      if (!user) {
+        // Do not reveal if user exists
+        return res.json({ verified: false });
+      }
+
+      // Get the latest unused, unexpired code
+      const rec = await RecoveryCode.findOne({
+        userId: user._id,
+        used: false,
+        expiresAt: { $gt: new Date() }
+      }).sort({ createdAt: -1 });
+
+      if (!rec) {
+        return res.json({ verified: false });
+      }
+
+      // Compare code
+      const ok = await bcrypt.compare(code, rec.codeHash);
+      if (!ok) {
+        // Increment attempts but do not block
+        rec.attempts += 1;
+        await rec.save();
+        return res.json({ verified: false });
+      }
+
+      return res.json({ verified: true });
+    } catch (error) {
+      console.error('Verify recovery code error:', error);
+      return res.status(500).json({ verified: false, error: 'Internal server error' });
+    }
+  }
+
+  // Reset password using identifier + code
+  static async resetPassword(req: Request, res: Response) {
+    try {
+      const { identifier, code, newPassword } = req.body || {};
+      if (!identifier || !code || !newPassword) {
+        return res.status(400).json({ success: false, error: 'Identifier, code and newPassword are required' });
+      }
+
+      const user = await User.findOne({
+        $or: [{ email: identifier }, { username: identifier }]
+      }).select('+password');
+      if (!user) {
+        // Do not reveal existence
+        return res.json({ success: true });
+      }
+
+      const rec = await RecoveryCode.findOne({
+        userId: user._id,
+        used: false,
+        expiresAt: { $gt: new Date() }
+      }).sort({ createdAt: -1 });
+
+      if (!rec) {
+        return res.status(401).json({ success: false, error: 'Invalid or expired code' });
+      }
+
+      const ok = await bcrypt.compare(code, rec.codeHash);
+      if (!ok) {
+        rec.attempts += 1;
+        await rec.save();
+        return res.status(401).json({ success: false, error: 'Invalid code' });
+      }
+
+      // Update password
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      user.password = hashedPassword as any;
+      await user.save();
+
+      // Mark code as used
+      rec.used = true;
+      await rec.save();
+
+      // Invalidate all active sessions for this user
+      await Session.updateMany({ userId: user._id, isActive: true }, { isActive: false });
+
+      console.log(`Password reset for user ${user.username}. Active sessions invalidated.`);
+      return res.json({ success: true });
+    } catch (error) {
+      console.error('Reset password error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  // Reset password using TOTP code (no email)
+  static async resetPasswordWithTotp(req: Request, res: Response) {
+    try {
+      const { identifier, code, newPassword } = req.body || {};
+      if (!identifier || !code || !newPassword) {
+        return res.status(400).json({ success: false, error: 'Identifier, code and newPassword are required' });
+      }
+
+      const user = await User.findOne({
+        $or: [{ email: identifier }, { username: identifier }]
+      }).select('+password');
+      if (!user) {
+        // do not reveal existence
+        return res.json({ success: true });
+      }
+
+      const totp = await Totp.findOne({ userId: user._id }).select('+secret');
+      if (!totp || !totp.secret || !totp.verified) {
+        return res.status(400).json({ success: false, error: 'TOTP is not configured for this account' });
+      }
+
+      const ok = authenticator.verify({ token: code, secret: totp.secret });
+      if (!ok) {
+        return res.status(401).json({ success: false, error: 'Invalid TOTP code' });
+      }
+
+      // Update password
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      user.password = hashedPassword as any;
+      await user.save();
+
+      // Invalidate all active sessions
+      await Session.updateMany({ userId: user._id, isActive: true }, { isActive: false });
+
+      return res.json({ success: true });
+    } catch (error) {
+      console.error('Reset password with TOTP error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  // Reset with backup code
+  static async resetPasswordWithBackupCode(req: Request, res: Response) {
+    try {
+      const { identifier, backupCode, newPassword } = req.body || {};
+      if (!identifier || !backupCode || !newPassword) {
+        return res.status(400).json({ success: false, error: 'Identifier, backupCode and newPassword are required' });
+      }
+      const user = await User.findOne({ $or: [{ email: identifier }, { username: identifier }] }).select('+password');
+      if (!user) return res.json({ success: true });
+
+      const rf = await RecoveryFactors.findOne({ userId: user._id });
+      if (!rf || !rf.backupCodes || rf.backupCodes.length === 0) {
+        return res.status(400).json({ success: false, error: 'No backup codes configured' });
+      }
+      let matched = false;
+      for (const bc of rf.backupCodes) {
+        if (bc.used) continue;
+        const ok = await bcrypt.compare(backupCode, bc.codeHash);
+        if (ok) { bc.used = true; bc.usedAt = new Date(); matched = true; break; }
+      }
+      if (!matched) return res.status(401).json({ success: false, error: 'Invalid backup code' });
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      user.password = hashedPassword as any;
+      await user.save();
+
+      await rf.save();
+      await Session.updateMany({ userId: user._id, isActive: true }, { isActive: false });
+
+      // Force disabling TOTP to require re-enrollment later
+      user.privacySettings.twoFactorEnabled = false;
+      await user.save();
+      await Totp.deleteOne({ userId: user._id });
+
+      return res.json({ success: true });
+    } catch (error) {
+      console.error('Reset password with backup code error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+
+  // Reset with recovery key
+  static async resetPasswordWithRecoveryKey(req: Request, res: Response) {
+    try {
+      const { identifier, recoveryKey, newPassword } = req.body || {};
+      if (!identifier || !recoveryKey || !newPassword) {
+        return res.status(400).json({ success: false, error: 'Identifier, recoveryKey and newPassword are required' });
+      }
+      const user = await User.findOne({ $or: [{ email: identifier }, { username: identifier }] }).select('+password');
+      if (!user) return res.json({ success: true });
+
+      const rf = await RecoveryFactors.findOne({ userId: user._id });
+      if (!rf || !rf.recoveryKeyHash) return res.status(400).json({ success: false, error: 'No recovery key configured' });
+      const ok = await bcrypt.compare(recoveryKey, rf.recoveryKeyHash);
+      if (!ok) return res.status(401).json({ success: false, error: 'Invalid recovery key' });
+
+      const hashedPassword = await bcrypt.hash(newPassword, 10);
+      user.password = hashedPassword as any;
+      await user.save();
+
+      // Rotate the recovery key (invalidate old); generate a new hash
+      const rkRaw = 'oxy-' + crypto.randomBytes(6).toString('hex').match(/.{1,4}/g)!.slice(0,3).join('-');
+      rf.recoveryKeyHash = await bcrypt.hash(rkRaw, 10);
+      rf.lastRotatedAt = new Date();
+      await rf.save();
+
+      await Session.updateMany({ userId: user._id, isActive: true }, { isActive: false });
+
+      // Force disabling TOTP to require re-enrollment later
+      user.privacySettings.twoFactorEnabled = false;
+      await user.save();
+      await Totp.deleteOne({ userId: user._id });
+
+      return res.json({ success: true, nextRecoveryKey: rkRaw });
+    } catch (error) {
+      console.error('Reset password with recovery key error:', error);
+      return res.status(500).json({ success: false, error: 'Internal server error' });
+    }
+  }
+}

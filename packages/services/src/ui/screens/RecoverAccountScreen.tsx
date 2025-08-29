@@ -6,6 +6,7 @@ import StepBasedScreen, { type StepConfig } from '../components/StepBasedScreen'
 import RecoverRequestStep from './steps/RecoverRequestStep';
 import RecoverVerifyStep from './steps/RecoverVerifyStep';
 import RecoverSuccessStep from './steps/RecoverSuccessStep';
+import RecoverResetPasswordStep from './steps/RecoverResetPasswordStep';
 
 // Constants
 const PIN_LENGTH = 6;
@@ -22,6 +23,8 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
     // Form state
     const [identifier, setIdentifier] = useState('');
     const [verificationCode, setVerificationCode] = useState('');
+    const [password, setPassword] = useState('');
+    const [confirmPassword, setConfirmPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [errorMessage, setErrorMessage] = useState('');
     const [successMessage, setSuccessMessage] = useState('');
@@ -48,20 +51,21 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
             component: RecoverVerifyStep,
             canProceed: () => verificationCode.length === PIN_LENGTH,
             onEnter: () => {
-                // Simulate sending verification code
-                setIsLoading(true);
-                setTimeout(() => {
-                    setIsLoading(false);
-                    setSuccessMessage('A 6-digit code has been sent to your email or phone.');
-                }, 1000);
+                setIsLoading(false);
+                setSuccessMessage('Enter the 6‑digit code from your authenticator app.');
             },
+        },
+        {
+            id: 'reset',
+            component: RecoverResetPasswordStep,
+            canProceed: () => true,
         },
         {
             id: 'success',
             component: RecoverSuccessStep,
             canProceed: () => true,
             onEnter: () => {
-                setSuccessMessage('Your account has been verified! You can now reset your password.');
+                setSuccessMessage('Your password has been reset! You can now sign in.');
             },
         },
     ];
@@ -93,6 +97,21 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
             setSuccessMessage,
             isLoading,
             setIsLoading,
+            identifier,
+        },
+        // Reset step
+        {
+            identifier,
+            verificationCode,
+            password,
+            confirmPassword,
+            setPassword,
+            setConfirmPassword,
+            errorMessage,
+            setErrorMessage,
+            isLoading,
+            setIsLoading,
+            oxyServices,
         },
         // Success step
         {

@@ -7,6 +7,7 @@ import { toast } from '../../lib/sonner';
 import StepBasedScreen, { type StepConfig } from '../components/StepBasedScreen';
 import SignInUsernameStep from './steps/SignInUsernameStep';
 import SignInPasswordStep from './steps/SignInPasswordStep';
+import SignInTotpStep from './steps/SignInTotpStep';
 
 const SignInScreen: React.FC<BaseScreenProps> = ({
     navigate,
@@ -37,7 +38,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     // Cache for validation results to prevent repeated API calls
     const validationCache = useRef<Map<string, { profile: any }>>(new Map());
 
-    const { login, isLoading, user, isAuthenticated, sessions, oxyServices } = useOxy();
+    const { login, completeMfaLogin, isLoading, user, isAuthenticated, sessions, oxyServices } = useOxy();
 
     // Only log props in development mode to reduce console noise
     if (__DEV__) {
@@ -179,6 +180,8 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
         return valid;
     }, [username, validateUsername]);
 
+    const [mfaToken, setMfaToken] = useState<string | null>(null);
+
     const handleSignIn = useCallback(async () => {
         if (!password) {
             setErrorMessage('Please enter your password.');
@@ -195,6 +198,10 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                 onAuthenticated(user);
             }
         } catch (error: any) {
+            if (error?.code === 'MFA_REQUIRED' && error?.mfaToken) {
+                setMfaToken(error.mfaToken);
+                return; // Password step will auto-advance when MFA token is set
+            }
             setErrorMessage(error.message || 'Login failed');
         }
     }, [username, password, login, onAuthenticated, userProfile]);
@@ -207,18 +214,16 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     }, []);
 
     // Step configurations
-    const steps: StepConfig[] = useMemo(() => [
-        {
-            id: 'username',
-            component: SignInUsernameStep,
-            canProceed: () => true, // Let the component handle validation internally
-        },
-        {
-            id: 'password',
-            component: SignInPasswordStep,
-            canProceed: () => true, // Let the component handle validation internally
-        },
-    ], [username, password, validationStatus, validateUsername, handleSignIn]);
+    const steps: StepConfig[] = useMemo(() => {
+        const base: StepConfig[] = [
+            { id: 'username', component: SignInUsernameStep, canProceed: () => true },
+            { id: 'password', component: SignInPasswordStep, canProceed: () => true },
+        ];
+        if (mfaToken) {
+            base.push({ id: 'totp', component: SignInTotpStep, canProceed: () => true });
+        }
+        return base;
+    }, [mfaToken, username, password, validationStatus, validateUsername, handleSignIn]);
 
     // Handle step completion (final step)
     const handleComplete = useCallback(async (stepData: any[]) => {
@@ -258,12 +263,21 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             handleInputFocus,
             handleInputBlur,
             handleSignIn, // Add sign-in function for password step
+            mfaToken,
         },
+        ...(mfaToken ? [{
+            username,
+            mfaToken,
+            completeMfaLogin,
+            errorMessage,
+            setErrorMessage,
+            isLoading,
+        }] : []),
     ], [
-        username, password, errorMessage, validationStatus, userProfile,
+        username, password, errorMessage, validationStatus, userProfile, mfaToken,
         isValidating, isInputFocused, isAddAccountMode, user, showPassword,
         isLoading, handleUsernameChange, handlePasswordChange, handleInputFocus, handleInputBlur,
-        validateUsername, handleSignIn
+        validateUsername, handleSignIn, completeMfaLogin
     ]);
 
     return (

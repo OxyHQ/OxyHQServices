@@ -18,7 +18,7 @@ import { Header, GroupedSection } from '../components';
 // Supported languages with their metadata
 const SUPPORTED_LANGUAGES = [
     {
-        id: 'en',
+        id: 'en-US',
         name: 'English',
         nativeName: 'English',
         flag: '🇺🇸',
@@ -26,7 +26,7 @@ const SUPPORTED_LANGUAGES = [
         color: '#007AFF',
     },
     {
-        id: 'es',
+        id: 'es-ES',
         name: 'Spanish',
         nativeName: 'Español',
         flag: '🇪🇸',
@@ -34,7 +34,15 @@ const SUPPORTED_LANGUAGES = [
         color: '#FF3B30',
     },
     {
-        id: 'fr',
+        id: 'ca-ES',
+        name: 'Catalan',
+        nativeName: 'Català',
+        flag: '🇪🇸',
+        icon: 'language-outline',
+        color: '#0CA678',
+    },
+    {
+        id: 'fr-FR',
         name: 'French',
         nativeName: 'Français',
         flag: '🇫🇷',
@@ -42,7 +50,7 @@ const SUPPORTED_LANGUAGES = [
         color: '#5856D6',
     },
     {
-        id: 'de',
+        id: 'de-DE',
         name: 'German',
         nativeName: 'Deutsch',
         flag: '🇩🇪',
@@ -50,7 +58,7 @@ const SUPPORTED_LANGUAGES = [
         color: '#FF9500',
     },
     {
-        id: 'it',
+        id: 'it-IT',
         name: 'Italian',
         nativeName: 'Italiano',
         flag: '🇮🇹',
@@ -58,7 +66,7 @@ const SUPPORTED_LANGUAGES = [
         color: '#34C759',
     },
     {
-        id: 'pt',
+        id: 'pt-PT',
         name: 'Portuguese',
         nativeName: 'Português',
         flag: '🇵🇹',
@@ -66,7 +74,7 @@ const SUPPORTED_LANGUAGES = [
         color: '#AF52DE',
     },
     {
-        id: 'ja',
+        id: 'ja-JP',
         name: 'Japanese',
         nativeName: '日本語',
         flag: '🇯🇵',
@@ -74,7 +82,7 @@ const SUPPORTED_LANGUAGES = [
         color: '#FF2D92',
     },
     {
-        id: 'ko',
+        id: 'ko-KR',
         name: 'Korean',
         nativeName: '한국어',
         flag: '🇰🇷',
@@ -82,7 +90,7 @@ const SUPPORTED_LANGUAGES = [
         color: '#32D74B',
     },
     {
-        id: 'zh',
+        id: 'zh-CN',
         name: 'Chinese',
         nativeName: '中文',
         flag: '🇨🇳',
@@ -90,7 +98,7 @@ const SUPPORTED_LANGUAGES = [
         color: '#FF9F0A',
     },
     {
-        id: 'ar',
+        id: 'ar-SA',
         name: 'Arabic',
         nativeName: 'العربية',
         flag: '🇸🇦',
@@ -103,10 +111,11 @@ interface LanguageSelectorScreenProps extends BaseScreenProps { }
 
 const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     goBack,
+    onClose,
     theme,
     navigate,
 }) => {
-    const { user, currentLanguage, setLanguage } = useOxy();
+    const { user, currentLanguage, setLanguage, oxyServices, isAuthenticated } = useOxy();
     const colors = useThemeColors(theme);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -118,14 +127,24 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
         setIsLoading(true);
 
         try {
-            // Use OxyContext to set language (this handles storage and app-wide updates)
+            // If signed in, persist preference to backend user settings
+            if (isAuthenticated && user?.id) {
+                try {
+                    await oxyServices.updateProfile({ language: languageId });
+                } catch (e: any) {
+                    console.warn('Failed to update language on server, falling back to local storage', e);
+                }
+            }
+
+            // Always persist locally for immediate UX and for guests
             await setLanguage(languageId);
 
             const selectedLang = SUPPORTED_LANGUAGES.find(lang => lang.id === languageId);
             toast.success(`Language changed to ${selectedLang?.name || languageId}`);
 
             setIsLoading(false);
-            goBack();
+            // Close the bottom sheet if possible; otherwise, go back
+            if (onClose) onClose(); else goBack();
 
         } catch (error) {
             console.error('Error saving language preference:', error);
@@ -156,11 +175,41 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                 title="Language"
                 subtitle="Choose your preferred language"
                 theme={theme}
-                onBack={goBack}
+                onBack={onClose || goBack}
                 elevation="subtle"
             />
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+                {/* Current selection indicator moved to top */}
+                {currentLanguage && (
+                    <View style={styles.currentSection}>
+                        <Text style={[styles.currentLabel, { color: colors.secondaryText }]}>
+                            Current Language
+                        </Text>
+                        <View style={[styles.currentLanguage, {
+                            backgroundColor: colors.inputBackground,
+                            borderColor: colors.primary
+                        }]}>
+                            {(() => {
+                                const current = SUPPORTED_LANGUAGES.find(lang => lang.id === currentLanguage);
+                                return current ? (
+                                    <>
+                                        <Text style={styles.currentFlag}>{current.flag}</Text>
+                                        <View style={styles.currentInfo}>
+                                            <Text style={[styles.currentName, { color: colors.text }]}>
+                                                {current.name}
+                                            </Text>
+                                            <Text style={[styles.currentNative, { color: colors.secondaryText }]}>
+                                                {current.nativeName}
+                                            </Text>
+                                        </View>
+                                        <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
+                                    </>
+                                ) : null;
+                            })()}
+                        </View>
+                    </View>
+                )}
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>
                         Available Languages
@@ -198,36 +247,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                     </View>
                 </View>
 
-                {/* Current selection indicator */}
-                {currentLanguage && (
-                    <View style={styles.currentSection}>
-                        <Text style={[styles.currentLabel, { color: colors.secondaryText }]}>
-                            Current Language
-                        </Text>
-                        <View style={[styles.currentLanguage, {
-                            backgroundColor: colors.inputBackground,
-                            borderColor: colors.primary
-                        }]}>
-                            {(() => {
-                                const current = SUPPORTED_LANGUAGES.find(lang => lang.id === currentLanguage);
-                                return current ? (
-                                    <>
-                                        <Text style={styles.currentFlag}>{current.flag}</Text>
-                                        <View style={styles.currentInfo}>
-                                            <Text style={[styles.currentName, { color: colors.text }]}>
-                                                {current.name}
-                                            </Text>
-                                            <Text style={[styles.currentNative, { color: colors.secondaryText }]}>
-                                                {current.nativeName}
-                                            </Text>
-                                        </View>
-                                        <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
-                                    </>
-                                ) : null;
-                            })()}
-                        </View>
-                    </View>
-                )}
+                {/* Current selection indicator moved above */}
             </ScrollView>
         </View>
     );

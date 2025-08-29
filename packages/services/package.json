@@ -83,7 +83,10 @@
     "prepublishOnly": "npm run typescript && npm test && npm run build"
   },
   "dependencies": {
+    "@amir-hossein-karimi/bottom-sheet": "^9.1.2",
+    "@gorhom/bottom-sheet": "^5.1.6",
     "@react-native-async-storage/async-storage": "2.1.2",
+    "@tanstack/react-query": "^5.59.0",
     "@th3rdwave/react-navigation-bottom-sheet": "^0.3.2",
     "axios": "^1.9.0",
     "invariant": "^2.2.4",
@@ -94,10 +97,7 @@
     "sonner": "^2.0.4",
     "sonner-native": "^0.20.0",
     "zod": "^3.25.64",
-    "zustand": "^5.0.6",
-    "@tanstack/react-query": "^5.59.0",
-    "@amir-hossein-karimi/bottom-sheet": "^9.1.2",
-    "@gorhom/bottom-sheet": "^5.1.6"
+    "zustand": "^5.0.6"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
@@ -128,24 +128,24 @@
     "typescript": "^5.9.2"
   },
   "peerDependencies": {
+    "@expo/vector-icons": "^14.1.0",
+    "@react-navigation/native": "^7.0.0",
+    "@types/react": "*",
+    "@types/react-native": "*",
+    "axios": "^1.9.0",
     "expo": "^53.0.0",
     "expo-font": "^13.0.0",
     "expo-image": "^2.4.0",
     "expo-linear-gradient": "^14.0.0",
-    "@react-navigation/native": "^7.0.0",
-    "@expo/vector-icons": "^14.1.0",
-    "@types/react": "*",
-    "@types/react-native": "*",
-    "axios": "^1.9.0",
     "invariant": "^2.2.4",
     "jwt-decode": "^4.0.0",
     "react": ">=18.0.0",
     "react-native": ">=0.76.0",
     "react-native-gesture-handler": ">=2.16.1",
+    "react-native-iap": "^12.16.0",
     "react-native-reanimated": ">=3.16.0",
     "react-native-safe-area-context": "^5.4.0",
-    "react-native-svg": ">=13.0.0",
-    "react-native-iap": "^12.16.0"
+    "react-native-svg": ">=13.0.0"
   },
   "peerDependenciesMeta": {
     "@expo/vector-icons": {
@@ -157,13 +157,27 @@
     "@types/react": {
       "optional": true
     },
-    "react-native-qrcode-svg": { "optional": true },
-    "expo": { "optional": true },
-    "expo-font": { "optional": true },
-    "expo-image": { "optional": true },
-    "expo-linear-gradient": { "optional": true },
-    "@react-navigation/native": { "optional": true },
-    "react-native-iap": { "optional": true }
+    "react-native-qrcode-svg": {
+      "optional": true
+    },
+    "expo": {
+      "optional": true
+    },
+    "expo-font": {
+      "optional": true
+    },
+    "expo-image": {
+      "optional": true
+    },
+    "expo-linear-gradient": {
+      "optional": true
+    },
+    "@react-navigation/native": {
+      "optional": true
+    },
+    "react-native-iap": {
+      "optional": true
+    }
   },
   "react-native-builder-bob": {
     "source": "src",

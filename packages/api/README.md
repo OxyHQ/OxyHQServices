@@ -64,9 +64,20 @@ npm run dev
 |----------|--------|-------------|
 | `/api/auth/register` | POST | Register new user |
 | `/api/auth/login` | POST | Login with credentials |
+| `/api/auth/totp/verify-login` | POST | Verify TOTP after password |
 | `/api/auth/refresh` | POST | Refresh access token |
 | `/api/auth/logout` | POST | Logout user |
 | `/api/auth/validate` | GET | Validate current token |
+| `/api/auth/recover/request` | POST | Request account recovery code |
+| `/api/auth/recover/verify` | POST | Verify recovery code |
+| `/api/auth/recover/reset` | POST | Reset password with verified code |
+
+### TOTP (Two-Factor)
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/auth/totp/enroll/start` | POST | Start TOTP enrollment (needs x-session-id) |
+| `/api/auth/totp/enroll/verify` | POST | Verify TOTP enrollment code |
+| `/api/auth/totp/disable` | POST | Disable TOTP (code required) |
 
 ### User Management
 | Endpoint | Method | Description |
@@ -154,6 +165,15 @@ RATE_LIMIT_MAX_REQUESTS=100
 
 # CORS (comma-separated)
 ALLOWED_ORIGINS=https://mention.earth,https://homiio.com,https://api.oxy.so
+# Email (Nodemailer SMTP)
+# Set EMAIL_PROVIDER=console to log emails to console instead of sending.
+EMAIL_PROVIDER=smtp
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_SECURE=false
+SMTP_USER=apikey_or_username
+SMTP_PASS=secret
+SMTP_FROM="Oxy <no-reply@oxy.so>"
 ```
 
 ## Development
@@ -252,3 +272,7 @@ Response:
 ## License
 
 This project is part of the OxyServices ecosystem.
+# MFA
+MFA_TOKEN_SECRET=replace_me
+MFA_TOKEN_TTL_SECONDS=300
+TOTP_ISSUER=Oxy

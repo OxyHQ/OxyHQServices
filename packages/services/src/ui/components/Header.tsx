@@ -276,16 +276,17 @@ const styles = StyleSheet.create({
     container: {
         paddingTop: Platform.OS === 'ios' ? 50 : 16,
         paddingBottom: 12,
-        position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         zIndex: 1000,
         ...Platform.select({
             web: {
-                position: 'absolute' as const,
+                position: 'sticky' as any,
             },
-            default: {},
+            default: {
+                position: 'absolute',
+            },
         }),
     },
     content: {
