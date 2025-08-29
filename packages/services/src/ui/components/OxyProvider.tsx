@@ -381,6 +381,7 @@ const styles = StyleSheet.create({
         maxWidth: 800,
         width: '100%',
         alignSelf: 'center',
+        marginHorizontal: 'auto',
     },
     contentContainer: {
         width: '100%',

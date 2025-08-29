@@ -129,7 +129,6 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
             lineHeight: 50.4, // 42 * 1.2
             marginBottom: 12,
             textAlign: 'left' as const,
-            letterSpacing: -0.5,
         },
         modernSubtitle: {
             fontSize: 18,
@@ -139,7 +138,6 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         },
         modernInputContainer: {
             width: '100%',
-            marginBottom: 24,
         },
         button: {
             flexDirection: 'row' as const,
