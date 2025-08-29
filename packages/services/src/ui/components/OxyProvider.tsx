@@ -297,8 +297,6 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         ),
         []
     );
-    // Handle sheet index changes (unchanged)
-    const handleSheetChanges = useCallback((index: number) => { }, []);
     // Modernized BottomSheetModal usage
     return (
         <BottomSheetModal
@@ -326,7 +324,6 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 left: 0,
                 right: 0,
             }}
-            onChange={handleSheetChanges}
             style={styles.bottomSheetContainer}
             keyboardBehavior="interactive"
             keyboardBlurBehavior="restore"
