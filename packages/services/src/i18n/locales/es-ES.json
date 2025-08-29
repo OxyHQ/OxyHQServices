@@ -78,6 +78,52 @@
       "email": "Correo electrónico",
       "password": "Contraseña",
       "confirmPassword": "Confirmar contraseña"
+    },
+    "errors": {
+      "signOutFailed": "Hubo un problema al cerrar sesión. Inténtalo de nuevo."
+    },
+    "confirms": {
+      "signOut": "¿Seguro que quieres cerrar sesión?",
+      "signOutAll": "¿Seguro que quieres cerrar sesión en todas las cuentas?"
+    },
+    "status": {
+      "notSignedIn": "No has iniciado sesión",
+      "loading": "Cargando..."
     }
+  },
+  "accountOverview": {
+    "title": "Cuenta",
+    "sections": {
+      "profile": "Perfil",
+      "accountSettings": "Configuración de la cuenta",
+      "quickActions": "Acciones rápidas",
+      "support": "Soporte y ajustes",
+      "actions": "Acciones de la cuenta"
+    },
+    "actions": { "manage": "Gestionar" },
+    "items": {
+      "editProfile": { "title": "Editar perfil", "subtitle": "Actualiza tu información personal" },
+      "security": { "title": "Seguridad y privacidad", "subtitle": "Contraseña, 2FA y ajustes de privacidad" },
+      "notifications": { "title": "Notificaciones", "subtitle": "Gestiona tus preferencias de notificación" },
+      "premium": { "title": "Suscripciones Oxy+", "manage": "Gestionar tu plan premium", "upgrade": "Mejorar a funciones premium" },
+      "billing": { "title": "Gestión de facturación", "subtitle": "Métodos de pago y facturas", "coming": "¡La gestión de facturación estará disponible pronto!" },
+      "accountSwitcher": {
+        "titleShow": "Mostrar conmutador de cuentas",
+        "titleHide": "Ocultar conmutador de cuentas",
+        "subtitleHide": "Ocultar el conmutador de cuentas",
+        "subtitleSwitchBetween": "Cambiar entre {{count}} cuentas",
+        "subtitleLoading": "Cargando cuentas adicionales...",
+        "subtitleManageMultiple": "Gestionar varias cuentas"
+      },
+      "downloadData": { "title": "Descargar mis datos", "subtitle": "Exporta la información de tu cuenta", "coming": "¡La descarga de datos estará disponible pronto!" },
+      "deleteAccount": { "title": "Eliminar cuenta", "subtitle": "Elimina tu cuenta permanentemente", "coming": "¡La eliminación de cuenta estará disponible pronto!" },
+      "preferences": { "title": "Preferencias de la cuenta", "subtitle": "Personaliza tu experiencia", "coming": "¡Las preferencias de la cuenta estarán disponibles pronto!" },
+      "help": { "title": "Ayuda y soporte", "subtitle": "Obtén ayuda con tu cuenta", "coming": "¡La ayuda y soporte estarán disponibles pronto!" },
+      "connectedApps": { "title": "Aplicaciones conectadas", "subtitle": "Gestiona el acceso de terceros", "coming": "¡Las aplicaciones conectadas estarán disponibles pronto!" },
+      "about": { "title": "Acerca de", "subtitle": "Versión e información de la app" },
+      "signOut": { "title": "Cerrar sesión", "subtitle": "Cierra sesión en tu cuenta actual" }
+    },
+    "manageComing": "¡La gestión de tu cuenta Oxy estará disponible pronto!",
+    "addAccountComing": "¡La función de agregar otra cuenta estará disponible pronto!"
   }
 }

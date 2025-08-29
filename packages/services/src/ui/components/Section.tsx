@@ -27,7 +27,7 @@ const Section: React.FC<SectionProps> = ({
 
 const styles = StyleSheet.create({
     section: {
-        marginBottom: 24,
+        marginBottom: 10,
     },
     firstSection: {
         marginTop: 8,

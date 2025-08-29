@@ -131,7 +131,8 @@ const styles = StyleSheet.create({
     groupedItemContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        padding: 16,
+        paddingVertical: 12,
+        paddingHorizontal: 12,
         width: '100%',
     },
     groupedItemContentDense: {

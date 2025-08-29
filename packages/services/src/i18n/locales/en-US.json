@@ -4,37 +4,15 @@
     "subtitle": "Sign in to continue your journey",
     "addAccountTitle": "Add Another Account",
     "addAccountSubtitle": "Sign in with another account",
-    "username": {
-      "label": "Username",
-      "placeholder": "Enter your username"
-    },
-    "password": {
-      "label": "Password",
-      "placeholder": "Enter your password"
-    },
-    "actions": {
-      "continue": "Continue",
-      "back": "Back",
-      "signIn": "Sign In"
-    }
+    "username": { "label": "Username", "placeholder": "Enter your username" },
+    "password": { "label": "Password", "placeholder": "Enter your password" },
+    "actions": { "continue": "Continue", "back": "Back", "signIn": "Sign In" }
   },
   "signup": {
-    "welcome": {
-      "title": "Welcome to Oxy!",
-      "subtitle": "Let's create your account in just a few steps"
-    },
-    "identity": {
-      "title": "Who are you?",
-      "subtitle": "Choose your username and enter your email"
-    },
-    "security": {
-      "title": "Secure Your Account",
-      "subtitle": "Create a strong password to protect your account"
-    },
-    "summary": {
-      "title": "Almost There!",
-      "subtitle": "Review your information and create your account"
-    }
+    "welcome": { "title": "Welcome to Oxy!", "subtitle": "Let's create your account in just a few steps" },
+    "identity": { "title": "Who are you?", "subtitle": "Choose your username and enter your email" },
+    "security": { "title": "Secure Your Account", "subtitle": "Create a strong password to protect your account" },
+    "summary": { "title": "Almost There!", "subtitle": "Review your information and create your account" }
   },
   "language": {
     "title": "Language",
@@ -45,20 +23,36 @@
   },
   "recover": {
     "title": "Recover Account",
-    "username": {
-      "label": "Username",
-      "placeholder": "Enter your username"
-    },
-    "verify": {
-      "title": "Verify Code",
-      "action": "Verify Code"
-    },
+    "username": { "label": "Username", "placeholder": "Enter your username" },
+    "verify": { "title": "Verify Code", "action": "Verify Code" },
     "enterCode": "Enter the 6‑digit code from your authenticator app.",
     "newPassword": "Set New Password",
     "resetSuccess": "Your password has been reset! You can now sign in.",
     "noEmail": "We no longer send recovery emails. If you enabled Two‑Factor Authentication (TOTP), sign in with your username and password, then enter your authenticator code. Otherwise, contact support to regain access."
   },
+  "accountOverview": {
+    "title": "Account",
+    "sections": {
+      "profile": "Profile",
+      "accountSettings": "Account Settings",
+      "support": "Support & Settings",
+      "actions": "Account Actions"
+    },
+    "actions": { "manage": "Manage" },
+    "items": {
+      "editProfile": { "title": "Edit Profile", "subtitle": "Update your personal information" },
+      "security": { "title": "Security & Privacy", "subtitle": "Password, 2FA, and privacy settings" },
+      "notifications": { "title": "Notifications", "subtitle": "Manage your notification preferences" },
+      "premium": { "title": "Oxy+ Subscriptions", "manage": "Manage your premium plan", "upgrade": "Upgrade to premium features" },
+      "billing": { "title": "Billing Management", "subtitle": "Payment methods and invoices", "coming": "Billing management feature coming soon!" }
+    },
+    "manageComing": "Manage your Oxy Account feature coming soon!",
+    "addAccountComing": "Add another account feature coming soon!"
+  },
   "common": {
+    "errors": { "signOutFailed": "There was a problem signing you out. Please try again." },
+    "confirms": { "signOut": "Are you sure you want to sign out?", "signOutAll": "Are you sure you want to sign out of all accounts?" },
+    "status": { "notSignedIn": "Not signed in", "loading": "Loading..." },
     "actions": {
       "back": "Back",
       "continue": "Continue",
@@ -69,15 +63,7 @@
       "verify": "Verify",
       "resetPassword": "Reset Password"
     },
-    "links": {
-      "recoverAccount": "Recover your account",
-      "signUp": "Sign Up"
-    },
-    "labels": {
-      "username": "Username",
-      "email": "Email",
-      "password": "Password",
-      "confirmPassword": "Confirm Password"
-    }
+    "links": { "recoverAccount": "Recover your account", "signUp": "Sign Up" },
+    "labels": { "username": "Username", "email": "Email", "password": "Password", "confirmPassword": "Confirm Password" }
   }
 }
