@@ -1,14 +1,15 @@
 import type { OxyServices } from '../../core';
 import type { User } from '../../models/interfaces';
-import type { ComponentType, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
+import type { RouteName } from './routes';
 
 /**
  * Base props for all screens in the Oxy UI system
  */
 export interface BaseScreenProps {
   oxyServices: OxyServices;
-  navigate: (screen: string, props?: Record<string, unknown>) => void;
+  navigate: (screen: RouteName, props?: Record<string, unknown>) => void;
   goBack: () => void;
   onClose?: () => void;
   onAuthenticated?: (user: User) => void;
@@ -22,22 +23,21 @@ export interface BaseScreenProps {
 /**
  * Route configuration for OxyRouter
  */
-export interface RouteConfig {
-  component: ComponentType<any>; // Allow any component type for flexibility
-  snapPoints: string[];
-}
+// Route config moved to routes.ts to avoid cycles; re-exported here if needed
+export { routes } from './routes';
+export type { RouteName } from './routes';
 
 /**
  * Props for OxyRouter component
  */
 export interface OxyRouterProps {
   oxyServices: OxyServices;
-  initialScreen: string;
+  initialScreen: RouteName;
   onClose?: () => void;
   onAuthenticated?: (user: User) => void;
   theme: 'light' | 'dark';
   adjustSnapPoints?: (snapPoints: string[]) => void;
-  navigationRef?: React.MutableRefObject<((screen: string, props?: Record<string, unknown>) => void) | null>;
+  navigationRef?: React.MutableRefObject<((screen: RouteName, props?: Record<string, unknown>) => void) | null>;
   containerWidth?: number;
 }
 
@@ -59,7 +59,7 @@ export interface OxyProviderProps {
    * Initial screen to display
    * @default "SignIn"
    */
-  initialScreen?: 'SignIn' | 'SignUp' | 'AccountCenter';
+  initialScreen?: RouteName;
   
   /**
    * Callback when the bottom sheet is closed
@@ -83,7 +83,7 @@ export interface OxyProviderProps {
    * @deprecated External bottom sheet ref is no longer required as OxyProvider handles the bottom sheet internally
    * @hidden
    */
-  bottomSheetRef?: React.RefObject<unknown>;
+  bottomSheetRef?: React.RefObject<BottomSheetController | null>;
   
   /**
    * Whether to automatically present the bottom sheet when component mounts
@@ -151,4 +151,15 @@ export interface OxyProviderProps {
     bottom: number;
     left: number;
   };
+}
+
+// Typed imperative controller for the bottom sheet UI
+export interface BottomSheetController {
+  present: () => void;
+  dismiss: () => void;
+  expand: () => void;
+  collapse: () => void;
+  snapToIndex: (index: number) => void;
+  snapToPosition: (position: number | string) => void;
+  navigate: (screen: RouteName | string, props?: Record<string, any>) => void;
 }

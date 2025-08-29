@@ -9,6 +9,8 @@ import { DeviceManager } from '../../utils/deviceManager';
 import { useSessionSocket } from '../hooks/useSessionSocket';
 import { toast } from '../../lib/sonner';
 import { useAuthStore } from '../stores/authStore';
+import type { BottomSheetController } from '../navigation/types';
+import type { RouteName } from '../navigation/routes';
 
 // Define the context shape
 // NOTE: We intentionally avoid importing useFollow here to prevent a require cycle.
@@ -49,10 +51,10 @@ export interface OxyContextState {
 
   // Access to services
   oxyServices: OxyServices;
-  bottomSheetRef?: React.RefObject<any>;
+  bottomSheetRef?: React.RefObject<BottomSheetController | null>;
 
   // Methods to directly control the bottom sheet
-  showBottomSheet?: (screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => void;
+  showBottomSheet?: (screenOrConfig?: RouteName | string | { screen: RouteName | string; props?: Record<string, any> }) => void;
   hideBottomSheet?: () => void;
 
   /**
@@ -73,7 +75,7 @@ export interface OxyContextProviderProps {
   storageKeyPrefix?: string;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: ApiError) => void; // New: Error callback
-  bottomSheetRef?: React.RefObject<any>;
+  bottomSheetRef?: React.RefObject<BottomSheetController | null>;
 }
 
 // Platform storage implementation
@@ -739,22 +741,22 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }, [storage, keys.language]);
 
   // Bottom sheet control methods
-  const showBottomSheet = useCallback((screenOrConfig?: string | { screen: string; props?: Record<string, any> }) => {
-    console.log('showBottomSheet called with:', screenOrConfig);
+  const showBottomSheet = useCallback((screenOrConfig?: RouteName | string | { screen: RouteName | string; props?: Record<string, any> }) => {
+    if (__DEV__) console.log('showBottomSheet called with:', screenOrConfig);
 
     if (bottomSheetRef?.current) {
-      console.log('bottomSheetRef is available');
+      if (__DEV__) console.log('bottomSheetRef is available');
 
       // First, show the bottom sheet
       if (bottomSheetRef.current.expand) {
-        console.log('Expanding bottom sheet');
+        if (__DEV__) console.log('Expanding bottom sheet');
         bottomSheetRef.current.expand();
       } else if (bottomSheetRef.current.present) {
-        console.log('Presenting bottom sheet');
+        if (__DEV__) console.log('Presenting bottom sheet');
         bottomSheetRef.current.present();
       } else {
         console.warn('No expand or present method available on bottomSheetRef');
-        console.log('Available methods on bottomSheetRef.current:', Object.keys(bottomSheetRef.current));
+        if (__DEV__) console.log('Available methods on bottomSheetRef.current:', Object.keys(bottomSheetRef.current as any));
       }
 
       // Then navigate to the specified screen if provided
@@ -763,12 +765,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         setTimeout(() => {
           if (typeof screenOrConfig === 'string') {
             // Simple screen name
-            console.log('Navigating to screen:', screenOrConfig);
-            bottomSheetRef.current?._navigateToScreen?.(screenOrConfig);
+            if (__DEV__) console.log('Navigating to screen:', screenOrConfig);
+            bottomSheetRef.current?.navigate?.(screenOrConfig);
           } else {
             // Screen with props
-            console.log('Navigating to screen with props:', screenOrConfig.screen, screenOrConfig.props);
-            bottomSheetRef.current?._navigateToScreen?.(screenOrConfig.screen, screenOrConfig.props);
+            if (__DEV__) console.log('Navigating to screen with props:', screenOrConfig.screen, screenOrConfig.props);
+            bottomSheetRef.current?.navigate?.(screenOrConfig.screen, screenOrConfig.props);
           }
         }, 100);
       }

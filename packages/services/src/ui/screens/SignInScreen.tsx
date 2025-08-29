@@ -30,11 +30,6 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
         initialUserProfile ? 'valid' : 'idle'
     );
 
-    // Monitor username state changes
-    useEffect(() => {
-        console.log('👀 SignInScreen username state changed:', username);
-    }, [username]);
-
     // Cache for validation results to prevent repeated API calls
     const validationCache = useRef<Map<string, { profile: any }>>(new Map());
 
@@ -56,10 +51,10 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
     // Username validation using core services with caching
     const validateUsername = useCallback(async (usernameToValidate: string) => {
-        console.log('🔍 Validating username:', usernameToValidate);
+        if (__DEV__) console.log('🔍 Validating username:', usernameToValidate);
 
         if (!usernameToValidate || usernameToValidate.length < 3) {
-            console.log('❌ Username too short');
+            if (__DEV__) console.log('❌ Username too short');
             setValidationStatus('invalid');
             setErrorMessage('Username must be at least 3 characters.');
             return false;
@@ -76,21 +71,21 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
         // Check cache first
         const cached = validationCache.current.get(usernameToValidate);
         if (cached) {
-            console.log('✅ Username found in cache:', cached.profile);
+            if (__DEV__) console.log('✅ Username found in cache:', cached.profile);
             setUserProfile(cached.profile);
             setValidationStatus('valid');
             setErrorMessage('');
             return true;
         }
 
-        console.log('🔄 Validating username with API...');
+        if (__DEV__) console.log('🔄 Validating username with API...');
         setIsValidating(true);
         setValidationStatus('validating');
 
         try {
             // Check if username exists
             const profile = await oxyServices.getProfileByUsername(usernameToValidate);
-            console.log('📋 Profile response:', profile);
+            if (__DEV__) console.log('📋 Profile response:', profile);
 
             if (profile && profile.username) {
                 const profileData = {
@@ -100,7 +95,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                     id: profile.id
                 };
 
-                console.log('✅ Username is valid:', profileData);
+                if (__DEV__) console.log('✅ Username is valid:', profileData);
                 setUserProfile(profileData);
                 setValidationStatus('valid');
                 setErrorMessage('');
@@ -112,13 +107,13 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
                 return true;
             } else {
-                console.log('❌ Username not found');
+                if (__DEV__) console.log('❌ Username not found');
                 setValidationStatus('invalid');
                 setErrorMessage('Username not found.');
                 return false;
             }
         } catch (error: any) {
-            console.log('🚨 Validation error:', error);
+            if (__DEV__) console.log('🚨 Validation error:', error);
 
             // If user not found (404), username doesn't exist
             if (error.status === 404 || error.code === 'USER_NOT_FOUND') {
@@ -130,7 +125,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
             // For development/testing: if API fails, allow any 3+ character username
             if (__DEV__) {
-                console.log('⚠️ Development mode: allowing username due to API error');
+                if (__DEV__) console.log('⚠️ Development mode: allowing username due to API error');
                 setValidationStatus('valid');
                 setErrorMessage('');
                 return true;
@@ -229,7 +224,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     const handleComplete = useCallback(async (stepData: any[]) => {
         // The sign-in is handled by the password step component
         // This callback is here for interface compatibility
-        console.log('Sign-in flow completed');
+        if (__DEV__) console.log('Sign-in flow completed');
     }, []);
 
     // Step data for the reusable component

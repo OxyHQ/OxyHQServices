@@ -1,9 +1,8 @@
-import type React from 'react';
-import { useCallback, useRef, useState, useEffect, useMemo } from 'react';
-import { View, Text, StyleSheet, Dimensions, Platform, Animated, StatusBar, Keyboard, KeyboardEvent, AppState } from 'react-native';
+import React, { useCallback, useRef, useState, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
+import { View, Text, StyleSheet, Platform, Animated, StatusBar, Keyboard, KeyboardEvent, AppState } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import type { OxyProviderProps } from '../navigation/types';
+import type { OxyProviderProps, BottomSheetController } from '../navigation/types';
 import { OxyContextProvider, useOxy } from '../context/OxyContext';
 import OxyRouter from '../navigation/OxyRouter';
 import { FontLoader, setupFonts } from './FontLoader';
@@ -36,8 +35,8 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
         ...bottomSheetProps
     } = props;
 
-    // Create internal bottom sheet ref
-    const internalBottomSheetRef = useRef<BottomSheetModalRef>(null);
+    // Create typed internal bottom sheet controller ref
+    const internalBottomSheetRef = useRef<BottomSheetController>(null);
 
     // Initialize React Query Client (use provided client or create a default one once)
     const queryClientRef = useRef<QueryClient | null>(null);
@@ -67,6 +66,14 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
             subscription.remove();
         };
     }, []);
+
+    // Mirror internal controller to external ref if provided (back-compat)
+    useEffect(() => {
+        if (props.bottomSheetRef) {
+            props.bottomSheetRef.current = internalBottomSheetRef.current;
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [props.bottomSheetRef]);
 
     // If contextOnly is true, we just provide the context without the bottom sheet UI
     if (contextOnly) {
@@ -99,7 +106,7 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
                         <BottomSheetModalProvider>
                             <StatusBar translucent backgroundColor="transparent" />
                             <SafeAreaProvider>
-                                <OxyBottomSheet {...bottomSheetProps} bottomSheetRef={internalBottomSheetRef} oxyServices={oxyServices} />
+                                <OxyBottomSheet {...bottomSheetProps} ref={internalBottomSheetRef} oxyServices={oxyServices} />
                                 {children}
                             </SafeAreaProvider>
                         </BottomSheetModalProvider>
@@ -122,18 +129,19 @@ const OxyProvider: React.FC<OxyProviderProps> = (props) => {
  * This is the original OxyProvider UI functionality, now extracted into its own component
  * and reimplemented using BottomSheetModal for better Android compatibility
  */
-const OxyBottomSheet: React.FC<OxyProviderProps> = ({
+type OxyBottomSheetProps = Omit<OxyProviderProps, 'children' | 'contextOnly' | 'queryClient' | 'bottomSheetRef'>;
+
+const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
     oxyServices: providedOxyServices,
     initialScreen = 'SignIn',
     onClose,
     onAuthenticated,
     theme = 'light',
     customStyles = {},
-    bottomSheetRef,
     autoPresent = false,
     showInternalToaster = true,
     appInsets,
-}) => {
+}, ref) => {
     // Helper function to determine if native driver should be used
     const shouldUseNativeDriver = () => {
         return Platform.OS === 'ios';
@@ -143,49 +151,48 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     const oxyServices = providedOxyServices || contextOxy?.oxyServices;
     // Use the internal ref (which is passed as a prop from OxyProvider)
     const modalRef = useRef<BottomSheetModalRef>(null);
-    const navigationRef = useRef<((screen: string, props?: Record<string, unknown>) => void) | null>(null);
+    const navigationRef = useRef<((screen: any, props?: Record<string, unknown>) => void) | null>(null);
     // Remove contentHeight, containerWidth, and snap point state/logic
     // Animation values - keep for content fade/slide
     const fadeAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 1 : 0)).current;
     const slideAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 0 : 50)).current;
-    useEffect(() => {
-        if (bottomSheetRef && modalRef.current) {
-            const methodsToExpose = ['snapToIndex', 'snapToPosition', 'close', 'expand', 'collapse', 'present', 'dismiss'];
-            methodsToExpose.forEach((method) => {
-                if (modalRef.current && typeof modalRef.current[method as keyof typeof modalRef.current] === 'function') {
-                    // @ts-ignore
-                    bottomSheetRef.current = bottomSheetRef.current || {};
-                    // @ts-ignore
-                    bottomSheetRef.current[method] = (...args: any[]) => {
-                        // @ts-ignore
-                        return modalRef.current?.[method]?.(...args);
-                    };
-                }
-            });
-
-            // Add a method to navigate between screens
-            // @ts-ignore
-            bottomSheetRef.current._navigateToScreen = (screenName: string, props?: Record<string, any>) => {
-                console.log('_navigateToScreen called with:', screenName, props);
-                if (navigationRef.current) {
-                    console.log('Using navigationRef.current');
-                    navigationRef.current(screenName, props);
-                    return;
-                }
-                console.log('navigationRef.current not available, using event system');
-                if (typeof document !== 'undefined') {
-                    const event = new CustomEvent('oxy:navigate', { detail: { screen: screenName, props } });
-                    document.dispatchEvent(event);
-                } else {
-                    (globalThis as any).oxyNavigateEvent = { screen: screenName, props };
-                }
-            };
-
-            if (bottomSheetRef.current && typeof bottomSheetRef.current === 'object') {
-                console.log('Bottom sheet ref methods exposed:', Object.keys(bottomSheetRef.current));
+    // Expose a clean, typed imperative API
+    useImperativeHandle(ref, () => ({
+        present: () => modalRef.current?.present?.(),
+        dismiss: () => modalRef.current?.dismiss?.(),
+        expand: () => {
+            // Present then animate content in
+            modalRef.current?.present?.();
+            Animated.parallel([
+                Animated.timing(fadeAnim, {
+                    toValue: 1,
+                    duration: 300,
+                    useNativeDriver: shouldUseNativeDriver(),
+                }),
+                Animated.spring(slideAnim, {
+                    toValue: 0,
+                    friction: 8,
+                    tension: 40,
+                    useNativeDriver: shouldUseNativeDriver(),
+                }),
+            ]).start();
+        },
+        collapse: () => modalRef.current?.collapse?.(),
+        snapToIndex: (index: number) => modalRef.current?.snapToIndex?.(index),
+        snapToPosition: (position: number | string) => modalRef.current?.snapToPosition?.(position as any),
+        navigate: (screen: any, props?: Record<string, any>) => {
+            if (navigationRef.current) {
+                navigationRef.current(screen, props);
+                return;
+            }
+            if (typeof document !== 'undefined') {
+                const event = new CustomEvent('oxy:navigate', { detail: { screen, props } });
+                document.dispatchEvent(event);
+            } else {
+                (globalThis as any).oxyNavigateEvent = { screen, props };
             }
         }
-    }, [bottomSheetRef, modalRef]);
+    }), [fadeAnim, slideAnim]);
     // Keyboard handling (unchanged)
     const [keyboardVisible, setKeyboardVisible] = useState(false);
     const [keyboardHeight, setKeyboardHeight] = useState(0);
@@ -217,25 +224,6 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     }, []);
     // Present the modal when component mounts, but only if autoPresent is true
     useEffect(() => {
-        if (bottomSheetRef && modalRef.current) {
-            // @ts-ignore
-            bottomSheetRef.current.expand = () => {
-                modalRef.current?.present();
-                Animated.parallel([
-                    Animated.timing(fadeAnim, {
-                        toValue: 1,
-                        duration: 300,
-                        useNativeDriver: shouldUseNativeDriver(),
-                    }),
-                    Animated.spring(slideAnim, {
-                        toValue: 0,
-                        friction: 8,
-                        tension: 40,
-                        useNativeDriver: shouldUseNativeDriver(),
-                    }),
-                ]).start();
-            };
-        }
         if (autoPresent && modalRef.current) {
             const timer = setTimeout(() => {
                 modalRef.current?.present();
@@ -255,7 +243,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             }, 100);
             return () => clearTimeout(timer);
         }
-    }, [bottomSheetRef, modalRef, autoPresent]);
+    }, [modalRef, autoPresent]);
     // Close the bottom sheet with animation (unchanged)
     const handleClose = useCallback(() => {
         Animated.timing(fadeAnim, {
@@ -338,9 +326,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             bottomInset={(keyboardVisible ? (keyboardHeight + (0)) : 0) + (appInsets?.bottom ?? 0)}
         >
             <BottomSheetScrollView
-                style={[
-                    styles.contentContainer,
-                ]}
+                style={[styles.contentContainer]}
                 contentContainerStyle={{ paddingBottom: (insets?.bottom ?? 0) + (appInsets?.bottom ?? 0) }}
             >
                 <View style={styles.centeredContentWrapper}>
@@ -377,13 +363,13 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             )}
         </BottomSheetModal>
     );
-};
+});
 
 const styles = StyleSheet.create({
     bottomSheetContainer: {
         maxWidth: 800,
         width: '100%',
-        marginHorizontal: 'auto',
+        alignSelf: 'center',
     },
     contentContainer: {
         width: '100%',
@@ -392,7 +378,7 @@ const styles = StyleSheet.create({
     },
     centeredContentWrapper: {
         width: '100%',
-        marginHorizontal: 'auto',
+        alignSelf: 'center',
     },
     animatedContent: {
         width: '100%',

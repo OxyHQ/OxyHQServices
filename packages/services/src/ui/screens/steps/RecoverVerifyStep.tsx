@@ -1,4 +1,5 @@
 import type React from 'react';
+import type { RouteName } from '../../navigation/routes';
 import { View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
@@ -11,7 +12,7 @@ interface RecoverVerifyStepProps {
     colors: any;
     styles: any;
     theme: string;
-    navigate: (screen: string, props?: Record<string, any>) => void;
+    navigate: (screen: RouteName, props?: Record<string, any>) => void;
 
     // Step navigation
     nextStep: () => void;

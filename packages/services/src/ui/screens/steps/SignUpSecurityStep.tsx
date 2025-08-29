@@ -1,4 +1,5 @@
 import type React from 'react';
+import type { RouteName } from '../../navigation/routes';
 import { useRef, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,7 +12,7 @@ interface SignUpSecurityStepProps {
     colors: any;
     styles: any;
     theme: string;
-    navigate: (screen: string, props?: Record<string, any>) => void;
+    navigate: (screen: RouteName, props?: Record<string, any>) => void;
 
     // Step navigation
     nextStep: () => void;

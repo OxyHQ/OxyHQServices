@@ -96,7 +96,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             { id: 'settings', icon: 'settings', iconColor: '#5856D6', title: t('accountCenter.quickActions.editProfile') || 'Edit Profile', onPress: () => navigate('EditProfile') },
                             { id: 'sessions', icon: 'shield-checkmark', iconColor: '#30D158', title: t('accountCenter.quickActions.sessions') || 'Sessions', onPress: () => navigate('SessionManagement') },
                             { id: 'premium', icon: 'star', iconColor: '#FFD700', title: t('accountCenter.quickActions.premium') || 'Premium', onPress: () => navigate('PremiumSubscription') },
-                            ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: '#34C759', title: t('accountCenter.quickActions.billing') || 'Billing', onPress: () => navigate('') }] : []),
+                            ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: '#34C759', title: t('accountCenter.quickActions.billing') || 'Billing', onPress: () => navigate('PaymentGateway') }] : []),
                             ...(sessions && sessions.length > 1 ? [{ id: 'switch', icon: 'swap-horizontal', iconColor: '#FF9500', title: t('accountCenter.quickActions.switch') || 'Switch', onPress: () => navigate('AccountSwitcher') }] : []),
                         ]}
                         theme={theme}
@@ -153,7 +153,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: '#34C759',
                                 title: t('accountCenter.items.billing.title') || 'Billing Management',
                                 subtitle: t('accountCenter.items.billing.subtitle') || 'Payment methods and invoices',
-                                onPress: () => navigate(''),
+                                onPress: () => navigate('PaymentGateway'),
                             }] : []),
                         ]}
                         theme={theme}

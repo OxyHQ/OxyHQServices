@@ -1,4 +1,5 @@
 import type React from 'react';
+import type { RouteName } from '../../navigation/routes';
 import { useRef, useCallback, useEffect } from 'react';
 import { View, Text, TouchableOpacity, type TextInput, StatusBar } from 'react-native';
 import Animated, {
@@ -31,7 +32,7 @@ interface SignInPasswordStepProps {
     handleSignIn: () => void;
     isLoading: boolean;
     prevStep: () => void;
-    navigate: (screen: string, props?: Record<string, any>) => void;
+    navigate: (screen: RouteName, props?: Record<string, any>) => void;
 }
 
 const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({

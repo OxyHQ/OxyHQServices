@@ -21,6 +21,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useThemeColors, createAuthStyles } from '../styles';
 import type { BaseScreenProps } from '../navigation/types';
+import type { RouteName } from '../navigation/routes';
 
 export interface StepConfig {
     id: string;
@@ -39,7 +40,7 @@ export interface StepBasedScreenProps extends Omit<BaseScreenProps, 'navigate'> 
     onStepChange?: (currentStep: number, totalSteps: number) => void;
     onComplete?: (stepData: any[]) => void;
     stepData?: any[];
-    navigate: (screen: string, props?: Record<string, any>) => void;
+    navigate: (screen: RouteName, props?: Record<string, any>) => void;
     oxyServices: any; // Required services for step components
 }
 

@@ -280,7 +280,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         if (onPaymentResult) {
             onPaymentResult({ success: true });
         }
-        navigate('AccountOverviewScreen');
+        navigate('AccountOverview');
     }, [onPaymentResult, navigate]);
 
     // Handle close/cancel: return failure result if payment is not completed

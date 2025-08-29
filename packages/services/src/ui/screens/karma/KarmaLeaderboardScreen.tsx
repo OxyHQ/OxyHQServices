@@ -50,7 +50,7 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
                             <TouchableOpacity
                                 key={entry.userId}
                                 style={[styles.row, idx < 3 && { backgroundColor: '#f7eaff' }]}
-                                onPress={() => navigate && navigate('KarmaProfile', { userId: entry.userId, username: entry.username })}
+                                onPress={() => navigate && navigate('Profile', { userId: entry.userId, username: entry.username })}
                                 activeOpacity={0.7}
                             >
                                 <Text style={[styles.rank, { color: primaryColor }]}>{idx + 1}</Text>
