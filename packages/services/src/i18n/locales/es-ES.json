@@ -34,7 +34,7 @@
   },
   "signup": {
     "welcome": {
-      "title": "¡Bienvenido a Oxy!",
+      "title": "¡Te damos la bienvenida a Oxy!",
       "subtitle": "Crea tu cuenta en pocos pasos"
     },
     "identity": {
@@ -622,6 +622,51 @@
       },
       "includedInPlan": "Incluido en tu plan",
       "subscribed": "Suscrito"
+    }
+  },
+  "welcomeNew": {
+    "welcome": {
+      "titleWithName": "Te damos la bienvenida, {{username}} 👋",
+      "title": "Te damos la bienvenida 👋",
+      "body": "Acabas de crear una cuenta en un espacio tranquilo y ético. Unas pocas cosas rápidas — y listo."
+    },
+    "account": {
+      "title": "Una sola cuenta. Simple.",
+      "bullets": [
+        "Una identidad en todo",
+        "Sin volver a iniciar sesión todo el tiempo",
+        "Tus preferencias van contigo"
+      ]
+    },
+    "principles": {
+      "title": "En qué creemos",
+      "bullets": [
+        "Privacidad por defecto",
+        "Sin feeds manipuladores",
+        "Tú decides qué compartir",
+        "No vendemos tus datos"
+      ]
+    },
+    "karma": {
+      "title": "Karma = Confianza y crecimiento",
+      "body": "Oxy Karma es un sistema de puntos que reacciona a lo que haces. Las acciones útiles, respetuosas y constructivas lo aumentan. Las acciones dañinas o de poco esfuerzo lo reducen. Más karma puede desbloquear beneficios; poco karma puede limitar funciones. Mantiene la justicia y recompensa la contribución real."
+    },
+    "avatar": {
+      "title": "Hazlo tuyo",
+      "body": "Añade un avatar para que te reconozcan. Se mostrará donde aparezcas aquí. Puedes omitirlo — puedes añadirlo más tarde.",
+      "add": "Añadir avatar",
+      "change": "Cambiar avatar"
+    },
+    "ready": {
+      "title": "¡Todo listo!",
+      "body": "Explora. Contribuye. Gana karma. Mantén el control."
+    },
+    "actions": {
+      "back": "Atrás",
+      "next": "Siguiente",
+      "skip": "Omitir",
+      "enter": "Entrar",
+      "continue": "Continuar"
     }
   }
 }
