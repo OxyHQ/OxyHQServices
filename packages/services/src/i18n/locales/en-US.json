@@ -607,6 +607,39 @@
         "title": "Billing Management",
         "subtitle": "Payment methods and invoices",
         "coming": "Billing management feature coming soon!"
+      },
+      "downloadData": {
+        "title": "Download My Data",
+        "subtitle": "Export your account information",
+        "coming": "Download account data feature coming soon!"
+      },
+      "deleteAccount": {
+        "title": "Delete Account",
+        "subtitle": "Permanently delete your account",
+        "coming": "Delete account feature coming soon!"
+      },
+      "preferences": {
+        "title": "Account Preferences",
+        "subtitle": "Customize your account experience",
+        "coming": "Account preferences coming soon!"
+      },
+      "help": {
+        "title": "Help & Support",
+        "subtitle": "Get help with your account",
+        "coming": "Help & support feature coming soon!"
+      },
+      "connectedApps": {
+        "title": "Connected Apps",
+        "subtitle": "Manage third-party app access",
+        "coming": "Connected apps feature coming soon!"
+      },
+      "about": {
+        "title": "About",
+        "subtitle": "App version and information"
+      },
+      "signOut": {
+        "title": "Sign Out",
+        "subtitle": "Sign out of your current account"
       }
     },
     "manageComing": "Manage your Oxy Account feature coming soon!",
