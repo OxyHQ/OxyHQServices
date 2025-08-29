@@ -32,6 +32,7 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
             gap: 6,
             minWidth: 70,
             borderWidth: 1,
+            flexShrink: 0,
             ...Platform.select({
                 web: {
                     boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
@@ -122,7 +123,8 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
         const baseTextStyle = {
             fontSize: 15,
             fontWeight: '600' as const,
-            flex: 1,
+            // Avoid stretching that can cause wraps on native
+            flexShrink: 1,
         };
 
         let textColor = colors.text;
@@ -140,6 +142,7 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
         return {
             ...baseTextStyle,
             color: textColor,
+            ...(Platform.OS === 'web' ? { whiteSpace: 'nowrap' as any } : null),
         };
     };
 
@@ -180,7 +183,7 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
             // Single button: icon on right
             return (
                 <>
-                    <Text style={getTextStyle(button, colors)}>
+                    <Text style={getTextStyle(button, colors)} numberOfLines={1} ellipsizeMode="tail">
                         {button.text}
                     </Text>
                     {button.icon && (
@@ -203,7 +206,7 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
                             color={iconColor}
                         />
                     )}
-                    <Text style={getTextStyle(button, colors)}>
+                    <Text style={getTextStyle(button, colors)} numberOfLines={1} ellipsizeMode="tail">
                         {button.text}
                     </Text>
                 </>
@@ -212,7 +215,7 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
             // Second button or forward/action button: text on left, icon on right
             return (
                 <>
-                    <Text style={getTextStyle(button, colors)}>
+                    <Text style={getTextStyle(button, colors)} numberOfLines={1} ellipsizeMode="tail">
                         {button.text}
                     </Text>
                     {button.icon && (
