@@ -208,6 +208,8 @@
     "sections": {
       "profile": "Perfil",
       "accountSettings": "Configuración de la cuenta",
+      "accountManagement": "Gestión de la cuenta",
+      "additionalAccounts": "Cuentas adicionales",
       "quickActions": "Acciones rápidas",
       "support": "Soporte y ajustes",
       "actions": "Acciones de la cuenta"
@@ -215,7 +217,22 @@
     "actions": {
       "manage": "Gestionar"
     },
+    "loadingAdditional": { "title": "Cargando cuentas...", "subtitle": "Espera mientras cargamos tus cuentas adicionales" },
+    "additional": {
+      "noAccounts": { "title": "No hay otras cuentas", "subtitle": "Añade otra cuenta para cambiar entre ellas" }
+    },
     "items": {
+      "addAccount": { "title": "Añadir otra cuenta", "subtitle": "Inicia sesión con otra cuenta" },
+      "signOutAll": { "title": "Cerrar sesión en todas las cuentas", "subtitle": "Eliminar todas las cuentas de este dispositivo" },
+      "accountSwitcher": {
+        "switchPrompt": "¿Cambiar a {{username}}?",
+        "titleShow": "Mostrar conmutador de cuentas",
+        "titleHide": "Ocultar conmutador de cuentas",
+        "subtitleHide": "Ocultar el conmutador de cuentas",
+        "subtitleSwitchBetween": "Cambiar entre {{count}} cuentas",
+        "subtitleLoading": "Cargando cuentas adicionales...",
+        "subtitleManageMultiple": "Gestionar varias cuentas"
+      },
       "editProfile": {
         "title": "Editar perfil",
         "subtitle": "Actualiza tu información personal"

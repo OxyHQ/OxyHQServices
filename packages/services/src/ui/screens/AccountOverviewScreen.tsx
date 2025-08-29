@@ -259,7 +259,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                 {/* Additional Accounts */}
                 {showMoreAccounts && (
-                    <Section title={`Additional Accounts${additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}`} theme={theme}>
+                    <Section title={`${t('accountOverview.sections.additionalAccounts') || 'Additional Accounts'}${additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}`} theme={theme}>
                         {loadingAdditionalAccounts ? (
                             <GroupedSection
                                 items={[
@@ -267,12 +267,12 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                         id: 'loading-accounts',
                                         icon: 'sync',
                                         iconColor: '#007AFF',
-                                        title: 'Loading accounts...',
-                                        subtitle: 'Please wait while we load your additional accounts',
+                                        title: t('accountOverview.loadingAdditional.title') || 'Loading accounts...',
+                                        subtitle: t('accountOverview.loadingAdditional.subtitle') || 'Please wait while we load your additional accounts',
                                         customContent: (
                                             <View style={styles.loadingContainer}>
                                                 <ActivityIndicator size="small" color="#007AFF" />
-                                                <Text style={styles.loadingText}>Loading accounts...</Text>
+                                                <Text style={styles.loadingText}>{t('accountOverview.loadingAdditional.title') || 'Loading accounts...'}</Text>
                                             </View>
                                         ),
                                     },
@@ -290,7 +290,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                         : account.name || account.username,
                                     subtitle: account.email || account.username,
                                     onPress: () => {
-                                        toast.info(`Switch to ${account.username}?`);
+                                        toast.info(t('accountOverview.items.accountSwitcher.switchPrompt', { username: account.username }) || `Switch to ${account.username}?`);
                                         // TODO: Implement account switching logic
                                         // switchSession(account.sessionId);
                                     },
@@ -320,8 +320,8 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                         id: 'no-accounts',
                                         icon: 'person-outline',
                                         iconColor: '#ccc',
-                                        title: 'No other accounts',
-                                        subtitle: 'Add another account to switch between them',
+                                        title: t('accountOverview.additional.noAccounts.title') || 'No other accounts',
+                                        subtitle: t('accountOverview.additional.noAccounts.subtitle') || 'Add another account to switch between them',
                                     },
                                 ]}
                                 theme={theme}
@@ -332,23 +332,23 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                 {/* Account Management */}
                 {showMoreAccounts && (
-                    <Section title="Account Management" theme={theme}>
+                    <Section title={t('accountOverview.sections.accountManagement') || 'Account Management'} theme={theme}>
                         <GroupedSection
                             items={[
                                 {
                                     id: 'add-account',
                                     icon: 'add',
                                     iconColor: '#007AFF',
-                                    title: 'Add another account',
-                                    subtitle: 'Sign in with a different account',
+                                    title: t('accountOverview.items.addAccount.title') || 'Add Another Account',
+                                    subtitle: t('accountOverview.items.addAccount.subtitle') || 'Sign in with a different account',
                                     onPress: handleAddAccount,
                                 },
                                 {
                                     id: 'sign-out-all',
                                     icon: 'log-out',
                                     iconColor: '#FF3B30',
-                                    title: 'Sign out of all accounts',
-                                    subtitle: 'Remove all accounts from this device',
+                                    title: t('accountOverview.items.signOutAll.title') || 'Sign out of all accounts',
+                                    subtitle: t('accountOverview.items.signOutAll.subtitle') || 'Remove all accounts from this device',
                                     onPress: handleSignOutAll,
                                 },
                             ]}

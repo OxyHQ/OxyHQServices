@@ -561,13 +561,31 @@
     "sections": {
       "profile": "Profile",
       "accountSettings": "Account Settings",
+      "accountManagement": "Account Management",
+      "additionalAccounts": "Additional Accounts",
+      "quickActions": "Quick Actions",
       "support": "Support & Settings",
       "actions": "Account Actions"
     },
     "actions": {
       "manage": "Manage"
     },
+    "loadingAdditional": { "title": "Loading accounts...", "subtitle": "Please wait while we load your additional accounts" },
+    "additional": {
+      "noAccounts": { "title": "No other accounts", "subtitle": "Add another account to switch between them" }
+    },
     "items": {
+      "addAccount": { "title": "Add Another Account", "subtitle": "Sign in with a different account" },
+      "signOutAll": { "title": "Sign out of all accounts", "subtitle": "Remove all accounts from this device" },
+      "accountSwitcher": {
+        "switchPrompt": "Switch to {{username}}?",
+        "titleShow": "Show Account Switcher",
+        "titleHide": "Hide Account Switcher",
+        "subtitleHide": "Hide account switcher",
+        "subtitleSwitchBetween": "Switch between {{count}} accounts",
+        "subtitleLoading": "Loading additional accounts...",
+        "subtitleManageMultiple": "Manage multiple accounts"
+      },
       "editProfile": {
         "title": "Edit Profile",
         "subtitle": "Update your personal information"
