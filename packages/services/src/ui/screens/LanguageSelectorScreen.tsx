@@ -14,6 +14,7 @@ import { useThemeColors } from '../styles';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { Header, GroupedSection } from '../components';
+import { useI18n } from '../hooks/useI18n';
 
 // Supported languages with their metadata
 const SUPPORTED_LANGUAGES = [
@@ -116,6 +117,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     navigate,
 }) => {
     const { user, currentLanguage, setLanguage, oxyServices, isAuthenticated } = useOxy();
+    const { t } = useI18n();
     const colors = useThemeColors(theme);
     const [isLoading, setIsLoading] = useState(false);
 
@@ -140,7 +142,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
             await setLanguage(languageId);
 
             const selectedLang = SUPPORTED_LANGUAGES.find(lang => lang.id === languageId);
-            toast.success(`Language changed to ${selectedLang?.name || languageId}`);
+            toast.success(t('language.changed', { lang: selectedLang?.name || languageId }));
 
             setIsLoading(false);
             // Close the bottom sheet if possible; otherwise, go back
@@ -172,8 +174,8 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
             <Header
-                title="Language"
-                subtitle="Choose your preferred language"
+                title={t('language.title')}
+                subtitle={t('language.subtitle')}
                 theme={theme}
                 onBack={onClose || goBack}
                 elevation="subtle"
@@ -184,7 +186,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                 {currentLanguage && (
                     <View style={styles.currentSection}>
                         <Text style={[styles.currentLabel, { color: colors.secondaryText }]}>
-                            Current Language
+                            {t('language.current')}
                         </Text>
                         <View style={[styles.currentLanguage, {
                             backgroundColor: colors.inputBackground,
@@ -212,10 +214,10 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                 )}
                 <View style={styles.section}>
                     <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>
-                        Available Languages
+                        {t('language.available')}
                     </Text>
                     <Text style={[styles.sectionDescription, { color: colors.secondaryText }]}>
-                        Select your preferred language. Changes will be applied across the entire application.
+                        {t('language.subtitle')}
                     </Text>
 
                     <View style={styles.languageList}>

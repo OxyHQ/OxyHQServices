@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
+import { useI18n } from '../../hooks/useI18n';
 
 interface SignInPasswordStepProps {
     // Common props from StepBasedScreen
@@ -62,6 +63,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
     mfaToken,
 }) => {
     const inputRef = useRef<any>(null);
+    const { t } = useI18n();
 
     const handlePasswordChange = (text: string) => {
         setPassword(text);
@@ -124,7 +126,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
             <View style={styles.modernInputContainer}>
                 <TextField
                     ref={inputRef}
-                    label="Password"
+                    label={t('common.labels.password')}
                     leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
                     value={password}
                     onChangeText={handlePasswordChange}
@@ -139,13 +141,13 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                 />
 
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                    <Text style={[styles.footerText, { color: colors.text }]}>Forgot your password? </Text>
+                    <Text style={[styles.footerText, { color: colors.text }]}>{t('signin.forgotPrompt') || 'Forgot your password?'} </Text>
                     <TouchableOpacity onPress={() => navigate('RecoverAccount', {
                         returnTo: 'SignIn',
                         returnStep: 1,
                         returnData: { username, userProfile }
                     })}>
-                        <Text style={[styles.modernLinkText, { color: colors.primary }]}>Recover your account</Text>
+                        <Text style={[styles.modernLinkText, { color: colors.primary }]}>{t('common.links.recoverAccount')}</Text>
                     </TouchableOpacity>
                 </View>
             </View>
@@ -153,13 +155,13 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Back',
+                        text: t('common.actions.back'),
                         onPress: prevStep,
                         icon: 'arrow-back',
                         variant: 'transparent',
                     },
                     {
-                        text: 'Sign In',
+                        text: t('common.actions.signIn'),
                         onPress: handleSignInSubmit,
                         icon: 'log-in',
                         variant: 'primary',

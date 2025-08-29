@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import HighFive from '../../../assets/illustrations/HighFive';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
+import { useI18n } from '../../hooks/useI18n';
 
 interface SignInUsernameStepProps {
     // Common props from StepBasedScreen
@@ -58,6 +59,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
     validateUsername,
 }) => {
     const inputRef = useRef<any>(null);
+    const { t } = useI18n();
 
     // Monitor username prop changes
     useEffect(() => {
@@ -111,13 +113,10 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
             <HighFive width={100} height={100} />
             <View style={styles.modernHeader}>
                 <Text style={[styles.modernTitle, { color: colors.text }]}>
-                    {isAddAccountMode ? 'Add Another Account' : 'Sign In'}
+                    {isAddAccountMode ? t('signin.addAccountTitle') : t('signin.title')}
                 </Text>
                 <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
-                    {isAddAccountMode
-                        ? 'Sign in with another account'
-                        : 'Sign in to continue your journey'
-                    }
+                    {isAddAccountMode ? t('signin.addAccountSubtitle') : t('signin.subtitle')}
                 </Text>
             </View>
 
@@ -133,7 +132,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
             <View style={styles.modernInputContainer}>
                 <TextField
                     ref={inputRef}
-                    label="Username"
+                    label={t('common.labels.username')}
                     leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
                     value={username}
                     onChangeText={handleUsernameChange}
@@ -152,13 +151,13 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Sign Up',
+                        text: t('common.links.signUp'),
                         onPress: () => navigate('SignUp'),
                         icon: 'person-add',
                         variant: 'transparent',
                     },
                     {
-                        text: 'Continue',
+                        text: t('common.actions.continue'),
                         onPress: handleContinue,
                         icon: 'arrow-forward',
                         variant: 'primary',

@@ -4,6 +4,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
+import { useI18n } from '../../hooks/useI18n';
 
 interface SignUpSecurityStepProps {
     // Common props from StepBasedScreen
@@ -54,6 +55,7 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
     validatePassword,
 }) => {
     const passwordRef = useRef<any>(null);
+    const { t } = useI18n();
 
     const handlePasswordChange = (text: string) => {
         setPassword(text);
@@ -96,18 +98,14 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
     return (
         <>
             <View style={styles.modernHeader}>
-                <Text style={[styles.modernTitle, { color: colors.text }]}>
-                    Secure Your Account
-                </Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
-                    Create a strong password to protect your account
-                </Text>
+                <Text style={[styles.modernTitle, { color: colors.text }]}>{t('signup.security.title')}</Text>
+                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>{t('signup.security.subtitle')}</Text>
             </View>
 
             <View style={styles.modernInputContainer}>
                 <TextField
                     ref={passwordRef}
-                    label="Password"
+                    label={t('common.labels.password')}
                     leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
                     trailing={
                         <TouchableOpacity
@@ -134,7 +132,7 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
                 />
 
                 <TextField
-                    label="Confirm Password"
+                    label={t('common.labels.confirmPassword')}
                     leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
                     trailing={
                         <TouchableOpacity
@@ -169,13 +167,13 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Back',
+                        text: t('common.actions.back'),
                         onPress: prevStep,
                         icon: 'arrow-back',
                         variant: 'transparent',
                     },
                     {
-                        text: 'Next',
+                        text: t('common.actions.next'),
                         onPress: handleNext,
                         icon: 'arrow-forward',
                         variant: 'primary',

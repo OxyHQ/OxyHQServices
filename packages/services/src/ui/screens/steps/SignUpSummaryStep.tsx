@@ -2,6 +2,7 @@ import type React from 'react';
 import { View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
+import { useI18n } from '../../hooks/useI18n';
 
 interface SignUpSummaryStepProps {
     // Common props from StepBasedScreen
@@ -31,6 +32,7 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
     allStepData,
     isLoading,
 }) => {
+    const { t } = useI18n();
     // Extract data from previous steps
     const identityData = allStepData[1] || {}; // Step 2 (index 1)
     const securityData = allStepData[2] || {}; // Step 3 (index 2)
@@ -46,12 +48,8 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
     return (
         <>
             <View style={styles.modernHeader}>
-                <Text style={[styles.modernTitle, { color: colors.text }]}>
-                    Almost There!
-                </Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
-                    Review your information and create your account
-                </Text>
+                <Text style={[styles.modernTitle, { color: colors.text }]}>{t('signup.summary.title')}</Text>
+                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>{t('signup.summary.subtitle')}</Text>
             </View>
 
             <View style={[styles.modernInputContainer, { marginBottom: 32 }]}>
@@ -123,13 +121,13 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Back',
+                        text: t('common.actions.back'),
                         onPress: prevStep,
                         icon: 'arrow-back',
                         variant: 'transparent',
                     },
                     {
-                        text: 'Create Account',
+                        text: t('common.actions.createAccount'),
                         onPress: nextStep,
                         icon: 'checkmark-circle',
                         variant: 'primary',

@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import PinInput from '../../components/internal/PinInput';
 import { toast } from '../../../lib/sonner';
+import { useI18n } from '../../hooks/useI18n';
 
 interface RecoverVerifyStepProps {
     // Common props from StepBasedScreen
@@ -49,6 +50,7 @@ const RecoverVerifyStep: React.FC<RecoverVerifyStepProps> = ({
     setIsLoading,
     identifier,
 }) => {
+    const { t } = useI18n();
     const handleVerifyCode = async () => {
         setErrorMessage('');
         setSuccessMessage('');
@@ -64,12 +66,8 @@ const RecoverVerifyStep: React.FC<RecoverVerifyStepProps> = ({
     return (
         <>
             <View style={styles.modernHeader}>
-                <Text style={[styles.modernTitle, { color: colors.text }]}>
-                    Verify Code
-                </Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
-                    Enter the 6-digit code sent to your email or phone.
-                </Text>
+                <Text style={[styles.modernTitle, { color: colors.text }]}>{t('recover.verify.title')}</Text>
+                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>{t('recover.enterCode')}</Text>
             </View>
 
             <View style={styles.modernInputContainer}>
@@ -122,13 +120,13 @@ const RecoverVerifyStep: React.FC<RecoverVerifyStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Back',
+                        text: t('common.actions.back'),
                         onPress: prevStep,
                         icon: 'arrow-back',
                         variant: 'transparent',
                     },
                     {
-                        text: 'Verify Code',
+                        text: t('recover.verify.action'),
                         onPress: handleVerifyCode,
                         icon: 'checkmark-circle-outline',
                         variant: 'primary',

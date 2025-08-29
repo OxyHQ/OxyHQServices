@@ -4,6 +4,7 @@ import { View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
+import { useI18n } from '../../hooks/useI18n';
 
 interface SignUpIdentityStepProps {
     // Common props from StepBasedScreen
@@ -53,6 +54,7 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
     validateUsername,
 }) => {
     const usernameRef = useRef<any>(null);
+    const { t } = useI18n();
     const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     // Debounced username validation
@@ -132,18 +134,14 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
     return (
         <>
             <View style={styles.modernHeader}>
-                <Text style={[styles.modernTitle, { color: colors.text }]}>
-                    Who are you?
-                </Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
-                    Choose your username and enter your email
-                </Text>
+                <Text style={[styles.modernTitle, { color: colors.text }]}>{t('signup.identity.title')}</Text>
+                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>{t('signup.identity.subtitle')}</Text>
             </View>
 
             <View style={styles.modernInputContainer}>
                 <TextField
                     ref={usernameRef}
-                    label="Username"
+                    label={t('common.labels.username')}
                     leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
                     value={username}
                     onChangeText={handleUsernameChange}
@@ -159,7 +157,7 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
                 />
 
                 <TextField
-                    label="Email"
+                    label={t('common.labels.email')}
                     leading={<Ionicons name="mail-outline" size={24} color={colors.secondaryText} />}
                     value={email}
                     onChangeText={handleEmailChange}
@@ -176,13 +174,13 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Back',
+                        text: t('common.actions.back'),
                         onPress: prevStep,
                         icon: 'arrow-back',
                         variant: 'transparent',
                     },
                     {
-                        text: 'Next',
+                        text: t('common.actions.next'),
                         onPress: handleNext,
                         icon: 'arrow-forward',
                         variant: 'primary',

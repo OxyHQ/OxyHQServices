@@ -1,0 +1,83 @@
+{
+  "signin": {
+    "title": "Iniciar sesión",
+    "subtitle": "Inicia sesión para continuar",
+    "addAccountTitle": "Agregar otra cuenta",
+    "addAccountSubtitle": "Inicia sesión con otra cuenta",
+    "username": {
+      "label": "Usuario",
+      "placeholder": "Introduce tu usuario"
+    },
+    "password": {
+      "label": "Contraseña",
+      "placeholder": "Introduce tu contraseña"
+    },
+    "actions": {
+      "continue": "Continuar",
+      "back": "Atrás",
+      "signIn": "Entrar"
+    }
+  },
+  "signup": {
+    "welcome": {
+      "title": "¡Bienvenido a Oxy!",
+      "subtitle": "Crea tu cuenta en pocos pasos"
+    },
+    "identity": {
+      "title": "¿Quién eres?",
+      "subtitle": "Elige tu usuario e introduce tu correo"
+    },
+    "security": {
+      "title": "Protege tu cuenta",
+      "subtitle": "Crea una contraseña fuerte para proteger tu cuenta"
+    },
+    "summary": {
+      "title": "¡Ya casi!",
+      "subtitle": "Revisa tu información y crea tu cuenta"
+    }
+  },
+  "language": {
+    "title": "Idioma",
+    "subtitle": "Elige tu idioma preferido",
+    "current": "Idioma actual",
+    "available": "Idiomas disponibles",
+    "changed": "Idioma cambiado a {{lang}}"
+  },
+  "recover": {
+    "title": "Recuperar cuenta",
+    "username": {
+      "label": "Usuario",
+      "placeholder": "Introduce tu usuario"
+    },
+    "verify": {
+      "title": "Verificar código",
+      "action": "Verificar código"
+    },
+    "enterCode": "Introduce el código de 6 dígitos de tu app de autenticación.",
+    "newPassword": "Establecer nueva contraseña",
+    "resetSuccess": "¡Tu contraseña ha sido restablecida! Ahora puedes iniciar sesión.",
+    "noEmail": "Ya no enviamos correos de recuperación. Si activaste la autenticación de dos factores (TOTP), inicia sesión con tu usuario y contraseña y luego introduce el código del autenticador. De lo contrario, contacta con soporte."
+  },
+  "common": {
+    "actions": {
+      "back": "Atrás",
+      "continue": "Continuar",
+      "next": "Siguiente",
+      "getStarted": "Comenzar",
+      "createAccount": "Crear cuenta",
+      "signIn": "Entrar",
+      "verify": "Verificar",
+      "resetPassword": "Restablecer contraseña"
+    },
+    "links": {
+      "recoverAccount": "Recuperar tu cuenta",
+      "signUp": "Registrarse"
+    },
+    "labels": {
+      "username": "Usuario",
+      "email": "Correo electrónico",
+      "password": "Contraseña",
+      "confirmPassword": "Confirmar contraseña"
+    }
+  }
+}

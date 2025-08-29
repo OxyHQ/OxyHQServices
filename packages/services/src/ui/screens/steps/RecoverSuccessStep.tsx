@@ -2,6 +2,7 @@ import type React from 'react';
 import { View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
+import { useI18n } from '../../hooks/useI18n';
 
 interface RecoverSuccessStepProps {
     // Common props from StepBasedScreen
@@ -32,6 +33,7 @@ const RecoverSuccessStep: React.FC<RecoverSuccessStepProps> = ({
     allStepData,
     successMessage,
 }) => {
+    const { t } = useI18n();
     // Extract identifier from previous steps
     const requestData = allStepData[0] || {};
     const { identifier } = requestData;
@@ -66,12 +68,8 @@ const RecoverSuccessStep: React.FC<RecoverSuccessStepProps> = ({
             </View>
 
             <View style={styles.modernHeader}>
-                <Text style={[styles.modernTitle, { color: colors.text }]}>
-                    Account Verified!
-                </Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
-                    Your account has been successfully verified.
-                </Text>
+                <Text style={[styles.modernTitle, { color: colors.text }]}>{t('recover.title')}</Text>
+                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>{successMessage || t('recover.resetSuccess')}</Text>
             </View>
 
             <View style={styles.modernInputContainer}>
@@ -110,16 +108,10 @@ const RecoverSuccessStep: React.FC<RecoverSuccessStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Back to Sign In',
+                        text: t('common.actions.signIn'),
                         onPress: handleBackToSignIn,
                         icon: 'arrow-back',
                         variant: 'transparent',
-                    },
-                    {
-                        text: 'Reset Password',
-                        onPress: handleContinueToReset,
-                        icon: 'key-outline',
-                        variant: 'primary',
                     },
                 ]}
                 colors={colors}

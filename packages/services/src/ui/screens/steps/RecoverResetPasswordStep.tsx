@@ -3,6 +3,7 @@ import { View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
+import { useI18n } from '../../hooks/useI18n';
 
 interface RecoverResetPasswordStepProps {
   // Common props
@@ -50,6 +51,7 @@ const RecoverResetPasswordStep: React.FC<RecoverResetPasswordStepProps> = ({
   setIsLoading,
   oxyServices,
 }) => {
+  const { t } = useI18n();
   const handleReset = async () => {
     if (!password || password.length < 8) {
       setErrorMessage('Password must be at least 8 characters long');
@@ -84,13 +86,13 @@ const RecoverResetPasswordStep: React.FC<RecoverResetPasswordStepProps> = ({
   return (
     <>
       <View style={styles.modernHeader}>
-        <Text style={[styles.modernTitle, { color: colors.text }]}>Set New Password</Text>
-        <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>Enter a new password for @{identifier}</Text>
+        <Text style={[styles.modernTitle, { color: colors.text }]}>{t('recover.newPassword')}</Text>
+        <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>{t('recover.title')} @{identifier}</Text>
       </View>
 
       <View style={styles.modernInputContainer}>
         <TextField
-          label="New Password"
+          label={t('common.labels.password')}
           leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
           value={password}
           onChangeText={setPassword}
@@ -104,7 +106,7 @@ const RecoverResetPasswordStep: React.FC<RecoverResetPasswordStepProps> = ({
         />
 
         <TextField
-          label="Confirm Password"
+          label={t('common.labels.confirmPassword')}
           leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
           value={confirmPassword}
           onChangeText={setConfirmPassword}
@@ -118,8 +120,8 @@ const RecoverResetPasswordStep: React.FC<RecoverResetPasswordStepProps> = ({
 
       <GroupedPillButtons
         buttons={[
-          { text: 'Back', onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
-          { text: 'Reset Password', onPress: handleReset, icon: 'key-outline', variant: 'primary', loading: isLoading, disabled: isLoading },
+          { text: t('common.actions.back'), onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
+          { text: t('common.actions.resetPassword'), onPress: handleReset, icon: 'key-outline', variant: 'primary', loading: isLoading, disabled: isLoading },
         ]}
         colors={colors}
       />

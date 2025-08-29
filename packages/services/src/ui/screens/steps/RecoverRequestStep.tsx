@@ -7,6 +7,7 @@ import TextField from '../../components/internal/TextField';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import { toast } from '../../../lib/sonner';
 import type { OxyServices } from '../../../core';
+import { useI18n } from '../../hooks/useI18n';
 
 interface RecoverRequestStepProps {
     // Common props from StepBasedScreen
@@ -48,6 +49,7 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
     oxyServices,
 }) => {
     const inputRef = useRef<any>(null);
+    const { t } = useI18n();
 
     const handleIdentifierChange = (text: string) => {
         setIdentifier(text);
@@ -82,18 +84,14 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
         <>
             <HighFive width={100} height={100} />
             <View style={styles.modernHeader}>
-                <Text style={[styles.modernTitle, { color: colors.text }]}>
-                    Recover Account
-                </Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
-                    We no longer send recovery emails. If you enabled Two‑Factor Authentication (TOTP), sign in with your username and password, then enter your authenticator code. Otherwise, contact support to regain access.
-                </Text>
+                <Text style={[styles.modernTitle, { color: colors.text }]}>{t('recover.title')}</Text>
+                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>{t('recover.noEmail')}</Text>
             </View>
 
             <View style={styles.modernInputContainer}>
                 <TextField
                     ref={inputRef}
-                    label="Username"
+                    label={t('recover.username.label')}
                     leading={<Ionicons name="mail-outline" size={24} color={colors.secondaryText} />}
                     value={identifier}
                     onChangeText={handleIdentifierChange}
@@ -111,13 +109,13 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Back to Sign In',
+                        text: t('common.actions.back'),
                         onPress: () => navigate('SignIn'),
                         icon: 'arrow-back',
                         variant: 'transparent',
                     },
                     {
-                        text: 'Continue',
+                        text: t('common.actions.continue'),
                         onPress: handleRequest,
                         icon: 'information-circle-outline',
                         variant: 'primary',
