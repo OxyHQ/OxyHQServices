@@ -13,7 +13,7 @@ import { useOxy } from '../context/OxyContext';
 import { useThemeColors } from '../styles';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
-import { Header, GroupedSection } from '../components';
+import { Header, Section, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
 
 // Supported languages with their metadata
@@ -160,76 +160,76 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
         id: language.id,
         title: language.name,
         subtitle: language.nativeName,
-        icon: language.icon,
-        iconColor: language.color,
-        selected: currentLanguage === language.id,
-        onPress: () => handleLanguageSelect(language.id),
-        customContent: (
-            <View style={styles.languageFlag}>
+        customIcon: (
+            <View style={[styles.languageFlag, { backgroundColor: `${language.color}20` }]}>
                 <Text style={styles.flagEmoji}>{language.flag}</Text>
             </View>
         ),
+        iconColor: language.color,
+        selected: currentLanguage === language.id,
+        onPress: () => handleLanguageSelect(language.id),
+        dense: true,
     }));
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.container, { backgroundColor: '#f2f2f2' }]}>
             <Header
                 title={t('language.title')}
                 subtitle={t('language.subtitle')}
                 theme={theme}
                 onBack={onClose || goBack}
+                variant="minimal"
                 elevation="subtle"
             />
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-                {/* Current selection indicator moved to top */}
+                {/* Current selection */}
                 {currentLanguage && (
-                    <View style={styles.currentSection}>
-                        <Text style={[styles.currentLabel, { color: colors.secondaryText }]}>
-                            {t('language.current')}
-                        </Text>
-                        <View style={[styles.currentLanguage, {
-                            backgroundColor: colors.inputBackground,
-                            borderColor: colors.primary
-                        }]}>
-                            {(() => {
-                                const current = SUPPORTED_LANGUAGES.find(lang => lang.id === currentLanguage);
-                                return current ? (
-                                    <>
-                                        <Text style={styles.currentFlag}>{current.flag}</Text>
-                                        <View style={styles.currentInfo}>
-                                            <Text style={[styles.currentName, { color: colors.text }]}>
-                                                {current.name}
-                                            </Text>
-                                            <Text style={[styles.currentNative, { color: colors.secondaryText }]}>
-                                                {current.nativeName}
-                                            </Text>
-                                        </View>
-                                        <Ionicons name="checkmark-circle" size={20} color={colors.primary} />
-                                    </>
-                                ) : null;
-                            })()}
-                        </View>
-                    </View>
+                    <Section title={t('language.current')} theme={theme} isFirst={true}>
+                        {(() => {
+                            const current = SUPPORTED_LANGUAGES.find(lang => lang.id === currentLanguage);
+                            if (!current) return null;
+                            return (
+                                <GroupedSection
+                                    items={[
+                                        {
+                                            id: `current-${current.id}`,
+                                            title: current.name,
+                                            subtitle: current.nativeName,
+                                            customIcon: (
+                                                <View style={[styles.languageFlag, { backgroundColor: `${current.color}20` }]}>
+                                                    <Text style={styles.flagEmoji}>{current.flag}</Text>
+                                                </View>
+                                            ),
+                                            iconColor: current.color,
+                                            selected: false,
+                                            showChevron: false,
+                                            dense: true,
+                                            disabled: true,
+                                        },
+                                    ]}
+                                    theme={theme}
+                                />
+                            );
+                        })()}
+                    </Section>
                 )}
-                <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>
-                        {t('language.available')}
-                    </Text>
+
+                {/* Available languages */}
+                <Section title={t('language.available')} theme={theme}>
                     <Text style={[styles.sectionDescription, { color: colors.secondaryText }]}>
                         {t('language.subtitle')}
                     </Text>
-
                     <View style={styles.languageList}>
                         <GroupedSection
                             items={languageItems}
                             theme={theme}
                         />
                     </View>
-                </View>
+                </Section>
 
-                {/* Information section */}
-                <View style={styles.infoSection}>
+                {/* Information */}
+                <Section theme={theme}>
                     <View style={[styles.infoCard, {
                         backgroundColor: colors.inputBackground,
                         borderColor: colors.border
@@ -247,9 +247,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                             • You can change this setting anytime
                         </Text>
                     </View>
-                </View>
-
-                {/* Current selection indicator moved above */}
+                </Section>
             </ScrollView>
         </View>
     );
@@ -280,12 +278,14 @@ const styles = StyleSheet.create({
         marginTop: 8,
     },
     languageFlag: {
+        width: 38,
+        height: 38,
+        borderRadius: 19,
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: 8,
     },
     flagEmoji: {
-        fontSize: 24,
+        fontSize: 18,
     },
     infoSection: {
         marginBottom: 24,
@@ -325,8 +325,15 @@ const styles = StyleSheet.create({
         borderWidth: 2,
     },
     currentFlag: {
-        fontSize: 24,
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        alignItems: 'center',
+        justifyContent: 'center',
         marginRight: 12,
+    },
+    currentFlagEmoji: {
+        fontSize: 18,
     },
     currentInfo: {
         flex: 1,
