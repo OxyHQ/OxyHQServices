@@ -132,6 +132,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     bottomSheetRef,
     autoPresent = false,
     showInternalToaster = true,
+    appInsets,
 }) => {
     // Helper function to determine if native driver should be used
     const shouldUseNativeDriver = () => {
@@ -331,20 +332,25 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 width: 40,
                 height: 4,
             }}
-            handleStyle={{ paddingTop: 10, position: 'absolute', top: 0, left: 0, right: 0 }}
+            handleStyle={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                right: 0,
+            }}
             onChange={handleSheetChanges}
             style={styles.bottomSheetContainer}
             keyboardBehavior="interactive"
             keyboardBlurBehavior="restore"
-            android_keyboardInputMode="adjustResize"
+            android_keyboardInputMode="adjustPan"
             enableOverDrag={false}
             enableContentPanningGesture={true}
             enableHandlePanningGesture={true}
             overDragResistanceFactor={2.5}
             enableBlurKeyboardOnGesture={true}
             detached
-            topInset={insets?.top ?? 0}
-            bottomInset={(keyboardVisible ? keyboardHeight : 0) + (insets?.bottom ?? 0)}
+            topInset={(insets?.top ?? 0) + (appInsets?.top ?? 0)}
+            bottomInset={(keyboardVisible ? keyboardHeight : 0) + (appInsets?.bottom ?? 0)}
             // Uncomment below to use a sticky footer
             // footerComponent={<YourFooterComponent />}
             onAnimate={(fromIndex: number, toIndex: number) => {
@@ -355,7 +361,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 style={[
                     styles.contentContainer,
                 ]}
-                contentContainerStyle={{ paddingBottom: (insets?.bottom ?? 0) + 16 }}
+                contentContainerStyle={{ paddingBottom: (insets?.bottom ?? 0) + (appInsets?.bottom ?? 0) + 16 }}
             >
                 <View style={styles.centeredContentWrapper}>
                     <Animated.View
