@@ -346,6 +346,17 @@
         "support": { "q": "¿Cómo obtengo soporte?", "a": "Contacta con el soporte de Oxy a través de la app o el sitio web para cualquier pregunta relacionada con el karma." }
       }
     }
+    ,
+    "rules": {
+      "title": "Reglas de karma",
+      "subtitle": "Cómo ganar puntos de karma",
+      "empty": "No se encontraron reglas."
+    },
+    "leaderboard": {
+      "title": "Clasificación de karma",
+      "subtitle": "Mayores contribuidores de la comunidad",
+      "empty": "No hay datos de clasificación."
+    }
   }
   ,
   "premium": {
@@ -383,6 +394,39 @@
       "title": "Suscripción actual",
       "renewsOn": "Se renueva el {{date}}",
       "willCancelOn": "La suscripción se cancelará el {{date}}"
+    },
+    "actions": {
+      "reactivate": "Reactivar",
+      "cancelSubBtn": "Cancelar suscripción",
+      "manageBilling": "Gestionar facturación",
+      "subscribeTo": "Suscribirse a {{name}}",
+      "subscribe": "Suscribirse",
+      "unsubscribe": "Darse de baja"
+    },
+    "billing": {
+      "monthly": "Mensual",
+      "yearly": "Anual",
+      "saveYearly": "💰 Ahorra un 20% con la facturación anual"
+    },
+    "tabs": { "plans": "Planes completos", "features": "Funciones individuales" },
+    "plan": {
+      "scope": {
+        "allApps": "Funciona en todas las apps de Oxy",
+        "exclusive": "Exclusivo de la app {{app}}",
+        "availableIn": "Disponible en: {{apps}}"
+      },
+      "badge": { "appExclusive": "Exclusivo de la app", "notAvailable": "No disponible" },
+      "perInterval": "por {{interval}}",
+      "current": "Plan actual",
+      "notAvailableInApp": "No disponible en la app actual"
+    },
+    "feature": {
+      "scope": {
+        "allApps": "Disponible en todas las apps de Oxy",
+        "availableIn": "Disponible en: {{apps}}"
+      },
+      "includedInPlan": "Incluido en tu plan",
+      "subscribed": "Suscrito"
     }
   }
 }

@@ -4,9 +4,11 @@ import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-nat
 import type { BaseScreenProps } from '../../navigation/types';
 import { useOxy } from '../../context/OxyContext';
 import { Header } from '../../components';
+import { useI18n } from '../../hooks/useI18n';
 
 const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const { oxyServices } = useOxy();
+    const { t } = useI18n();
     const [rules, setRules] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -28,8 +30,8 @@ const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     return (
         <View style={[styles.container, { backgroundColor }]}>
             <Header
-                title="Karma Rules"
-                subtitle="How to earn karma points"
+                title={t('karma.rules.title') || 'Karma Rules'}
+                subtitle={t('karma.rules.subtitle') || 'How to earn karma points'}
                 theme={theme}
                 onBack={goBack}
                 elevation="subtle"
@@ -41,7 +43,7 @@ const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             ) : (
                 <ScrollView contentContainerStyle={styles.listContainer}>
                     {rules.length === 0 ? (
-                        <Text style={[styles.placeholder, { color: textColor }]}>No rules found.</Text>
+                        <Text style={[styles.placeholder, { color: textColor }]}>{t('karma.rules.empty') || 'No rules found.'}</Text>
                     ) : (
                         rules.map((rule, idx) => (
                             <View key={rule.id || idx} style={styles.ruleRow}>

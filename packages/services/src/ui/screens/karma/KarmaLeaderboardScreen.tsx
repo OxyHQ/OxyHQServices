@@ -5,9 +5,11 @@ import type { BaseScreenProps } from '../../navigation/types';
 import { useOxy } from '../../context/OxyContext';
 import Avatar from '../../components/Avatar';
 import { Header } from '../../components';
+import { useI18n } from '../../hooks/useI18n';
 
 const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navigate }) => {
     const { oxyServices } = useOxy();
+    const { t } = useI18n();
     const [leaderboard, setLeaderboard] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -29,8 +31,8 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
     return (
         <View style={[styles.container, { backgroundColor }]}>
             <Header
-                title="Karma Leaderboard"
-                subtitle="Top contributors in the community"
+                title={t('karma.leaderboard.title') || 'Karma Leaderboard'}
+                subtitle={t('karma.leaderboard.subtitle') || 'Top contributors in the community'}
                 theme={theme}
                 onBack={goBack}
                 elevation="subtle"
@@ -42,7 +44,7 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
             ) : (
                 <ScrollView contentContainerStyle={styles.listContainer}>
                     {leaderboard.length === 0 ? (
-                        <Text style={[styles.placeholder, { color: textColor }]}>No leaderboard data.</Text>
+                        <Text style={[styles.placeholder, { color: textColor }]}>{t('karma.leaderboard.empty') || 'No leaderboard data.'}</Text>
                     ) : (
                         leaderboard.map((entry, idx) => (
                             <TouchableOpacity

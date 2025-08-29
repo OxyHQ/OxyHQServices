@@ -193,6 +193,17 @@
         "support": { "q": "How do I get support?", "a": "Contact Oxy support via the app or website for any karma-related questions." }
       }
     }
+    ,
+    "rules": {
+      "title": "Karma Rules",
+      "subtitle": "How to earn karma points",
+      "empty": "No rules found."
+    },
+    "leaderboard": {
+      "title": "Karma Leaderboard",
+      "subtitle": "Top contributors in the community",
+      "empty": "No leaderboard data."
+    }
   },
   "premium": {
     "title": "Oxy+ Subscriptions",
@@ -229,6 +240,39 @@
       "title": "Current Subscription",
       "renewsOn": "Renews on {{date}}",
       "willCancelOn": "Subscription will cancel on {{date}}"
+    },
+    "actions": {
+      "reactivate": "Reactivate",
+      "cancelSubBtn": "Cancel Subscription",
+      "manageBilling": "Manage Billing",
+      "subscribeTo": "Subscribe to {{name}}",
+      "subscribe": "Subscribe",
+      "unsubscribe": "Unsubscribe"
+    },
+    "billing": {
+      "monthly": "Monthly",
+      "yearly": "Yearly",
+      "saveYearly": "💰 Save 20% with yearly billing"
+    },
+    "tabs": { "plans": "Full Plans", "features": "Individual Features" },
+    "plan": {
+      "scope": {
+        "allApps": "Works across all Oxy apps",
+        "exclusive": "Exclusive to {{app}} app",
+        "availableIn": "Available in: {{apps}}"
+      },
+      "badge": { "appExclusive": "App Exclusive", "notAvailable": "Not Available" },
+      "perInterval": "per {{interval}}",
+      "current": "Current Plan",
+      "notAvailableInApp": "Not Available in Current App"
+    },
+    "feature": {
+      "scope": {
+        "allApps": "Available across all Oxy apps",
+        "availableIn": "Available in: {{apps}}"
+      },
+      "includedInPlan": "Included in your plan",
+      "subscribed": "Subscribed"
     }
   },
   "editProfile": {

@@ -405,14 +405,14 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             const selectedPlan = mockPlans.find(plan => plan.id === planId);
             if (!selectedPlan?.applicableApps.includes(currentAppPackage)) {
                 console.log(`❌ Subscription blocked: Plan "${selectedPlan?.name}" not available for app "${currentAppPackage}"`);
-            toast.error(t('premium.toasts.planUnavailable', { app: currentAppPackage }) || `This plan is not available for the current app (${currentAppPackage})`);
+                toast.error(t('premium.toasts.planUnavailable', { app: currentAppPackage }) || `This plan is not available for the current app (${currentAppPackage})`);
                 return;
             }
 
             // Special restriction for Mention+ plan - only available in mention app
             if (planId === 'mention-plus' && currentAppPackage !== 'mention') {
                 console.log(`❌ Subscription blocked: Mention+ plan requires app to be "mention", current app is "${currentAppPackage}"`);
-            toast.error(t('premium.toasts.mentionOnly') || 'Mention+ is only available in the Mention app');
+                toast.error(t('premium.toasts.mentionOnly') || 'Mention+ is only available in the Mention app');
                 return;
             }
 
@@ -640,14 +640,14 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                                 style={[styles.actionButton, { backgroundColor: successColor }]}
                                 onPress={handleReactivateSubscription}
                             >
-                                <Text style={styles.actionButtonText}>Reactivate</Text>
+                                <Text style={styles.actionButtonText}>{t('premium.actions.reactivate') || 'Reactivate'}</Text>
                             </TouchableOpacity>
                         ) : (
                             <TouchableOpacity
                                 style={[styles.actionButton, { backgroundColor: dangerColor }]}
                                 onPress={handleCancelSubscription}
                             >
-                                <Text style={styles.actionButtonText}>Cancel Subscription</Text>
+                                <Text style={styles.actionButtonText}>{t('premium.actions.cancelSubBtn') || 'Cancel Subscription'}</Text>
                             </TouchableOpacity>
                         )}
 
@@ -655,7 +655,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                             style={[styles.actionButton, styles.secondaryButton, { borderColor }]}
 
                         >
-                            <Text style={[styles.actionButtonText, { color: textColor }]}>Manage Billing</Text>
+                            <Text style={[styles.actionButtonText, { color: textColor }]}>{t('premium.actions.manageBilling') || 'Manage Billing'}</Text>
                         </TouchableOpacity>
                     </View>
                 </View>
@@ -677,7 +677,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         styles.billingOptionText,
                         { color: billingInterval === 'month' ? '#FFFFFF' : textColor }
                     ]}>
-                        Monthly
+                        {t('premium.billing.monthly') || 'Monthly'}
                     </Text>
                 </TouchableOpacity>
 
@@ -692,14 +692,14 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         styles.billingOptionText,
                         { color: billingInterval === 'year' ? '#FFFFFF' : textColor }
                     ]}>
-                        Yearly
+                        {t('premium.billing.yearly') || 'Yearly'}
                     </Text>
                 </TouchableOpacity>
             </View>
 
             {billingInterval === 'year' && (
                 <Text style={[styles.savingsText, { color: successColor }]}>
-                    💰 Save 20% with yearly billing
+                    {t('premium.billing.saveYearly') || '💰 Save 20% with yearly billing'}
                 </Text>
             )}
         </View>
@@ -714,12 +714,12 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
         const getAppScopeText = () => {
             if (plan.appScope === 'ecosystem') {
-                return 'Works across all Oxy apps';
+                return t('premium.plan.scope.allApps') || 'Works across all Oxy apps';
             } else if (isAppSpecific) {
                 const appName = plan.applicableApps[0];
-                return `Exclusive to ${appName} app`;
+                return t('premium.plan.scope.exclusive', { app: appName }) || `Exclusive to ${appName} app`;
             } else {
-                return `Available in: ${plan.applicableApps.join(', ')}`;
+                return t('premium.plan.scope.availableIn', { apps: plan.applicableApps.join(', ') }) || `Available in: ${plan.applicableApps.join(', ')}`;
             }
         };
 
@@ -728,7 +728,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 const requiredApp = plan.applicableApps[0];
                 return {
                     available: false,
-                    reason: `Only available in ${requiredApp} app`
+                    reason: t('premium.plan.scope.exclusive', { app: requiredApp }) || `Only available in ${requiredApp} app`
                 };
             }
             return { available: true, reason: null };
@@ -758,7 +758,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         backgroundColor: isAvailableForCurrentApp ? successColor : warningColor
                     }]}>
                         <Text style={styles.appSpecificText}>
-                            {isAvailableForCurrentApp ? 'App Exclusive' : 'Not Available'}
+                            {isAvailableForCurrentApp ? (t('premium.plan.badge.appExclusive') || 'App Exclusive') : (t('premium.plan.badge.notAvailable') || 'Not Available')}
                         </Text>
                     </View>
                 )}
@@ -783,7 +783,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         {pricing.formatted}
                     </Text>
                     <Text style={[styles.planInterval, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                        per {pricing.interval}
+                        {t('premium.plan.perInterval', { interval: pricing.interval }) || `per ${pricing.interval}`}
                     </Text>
                 </View>
 
@@ -798,12 +798,12 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
                 {isCurrentPlan ? (
                     <View style={[styles.currentPlanButton, { backgroundColor: successColor }]}>
-                        <Text style={styles.currentPlanText}>Current Plan</Text>
+                        <Text style={styles.currentPlanText}>{t('premium.plan.current') || 'Current Plan'}</Text>
                     </View>
                 ) : !availability.available ? (
                     <View style={[styles.unavailablePlanButton, { backgroundColor: isDarkTheme ? '#444444' : '#E0E0E0' }]}>
                         <Text style={[styles.unavailablePlanText, { color: isDarkTheme ? '#888888' : '#999999' }]}>
-                            Not Available in Current App
+                            {t('premium.plan.notAvailableInApp') || 'Not Available in Current App'}
                         </Text>
                     </View>
                 ) : (
@@ -822,7 +822,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                                 styles.selectPlanText,
                                 { color: plan.isPopular ? '#FFFFFF' : textColor }
                             ]}>
-                                Subscribe to {plan.name}
+                                {t('premium.actions.subscribeTo', { name: plan.name }) || `Subscribe to ${plan.name}`}
                             </Text>
                         )}
                     </TouchableOpacity>
@@ -845,7 +845,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         styles.tabText,
                         { color: activeTab === 'plans' ? primaryColor : textColor }
                     ]}>
-                        Full Plans
+                        {t('premium.tabs.plans') || 'Full Plans'}
                     </Text>
                 </TouchableOpacity>
 
@@ -860,7 +860,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         styles.tabText,
                         { color: activeTab === 'features' ? primaryColor : textColor }
                     ]}>
-                        Individual Features
+                        {t('premium.tabs.features') || 'Individual Features'}
                     </Text>
                 </TouchableOpacity>
             </View>
@@ -897,9 +897,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
         const getAppScopeText = () => {
             if (feature.appScope === 'ecosystem') {
-                return 'Available across all Oxy apps';
+                return t('premium.feature.scope.allApps');
             } else {
-                return `Available in: ${feature.applicableApps.join(', ')}`;
+                return t('premium.feature.scope.availableIn', { apps: feature.applicableApps.join(', ') }) || `Available in: ${feature.applicableApps.join(', ')}`;
             }
         };
 
@@ -945,7 +945,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                             {pricing.formatted}
                         </Text>
                         <Text style={[styles.featureInterval, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                            per {pricing.interval}
+                            {t('premium.plan.perInterval', { interval: pricing.interval }) || `per ${pricing.interval}`}
                         </Text>
                     </View>
                 )}
@@ -953,19 +953,19 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 {isIncludedInCurrentPlan ? (
                     <View style={[styles.includedInPlanButton, { backgroundColor: primaryColor }]}>
                         <Ionicons name="checkmark-circle" size={16} color="#FFFFFF" />
-                        <Text style={styles.includedInPlanText}>Included in your plan</Text>
+                        <Text style={styles.includedInPlanText}>{t('premium.feature.includedInPlan') || 'Included in your plan'}</Text>
                     </View>
                 ) : isSubscribed ? (
                     <View style={styles.featureActions}>
                         <View style={[styles.subscribedButton, { backgroundColor: successColor }]}>
                             <Ionicons name="checkmark" size={16} color="#FFFFFF" />
-                            <Text style={styles.subscribedText}>Subscribed</Text>
+                            <Text style={styles.subscribedText}>{t('premium.feature.subscribed') || 'Subscribed'}</Text>
                         </View>
                         <TouchableOpacity
                             style={[styles.unsubscribeButton, { borderColor: dangerColor }]}
                             onPress={() => handleFeatureUnsubscribe(feature.id)}
                         >
-                            <Text style={[styles.unsubscribeText, { color: dangerColor }]}>Unsubscribe</Text>
+                            <Text style={[styles.unsubscribeText, { color: dangerColor }]}>{t('premium.actions.unsubscribe') || 'Unsubscribe'}</Text>
                         </TouchableOpacity>
                     </View>
                 ) : canPurchase ? (
@@ -977,7 +977,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         {processingPayment ? (
                             <ActivityIndicator color="#FFFFFF" size="small" />
                         ) : (
-                            <Text style={styles.subscribeFeatureText}>Subscribe</Text>
+                            <Text style={styles.subscribeFeatureText}>{t('premium.actions.subscribe') || 'Subscribe'}</Text>
                         )}
                     </TouchableOpacity>
                 ) : (
