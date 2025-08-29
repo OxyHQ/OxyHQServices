@@ -58,7 +58,7 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
 
     const handleRequest = async () => {
         if (!identifier || identifier.length < 3) {
-            setErrorMessage('Please enter your username.');
+            setErrorMessage(t('recover.username.errorRequired') || 'Please enter your username.');
             setTimeout(() => inputRef.current?.focus(), 0);
             return;
         }
@@ -67,7 +67,7 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
         setIsLoading(true);
 
         try {
-            toast.info('Email recovery is disabled. Use your authenticator app during sign-in or contact support.');
+            toast.info(t('recover.noEmail'));
         } finally {
             setIsLoading(false);
         }

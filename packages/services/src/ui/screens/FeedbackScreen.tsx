@@ -21,6 +21,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { packageInfo } from '../../constants/version';
 import { GroupedSection } from '../components';
+import { useI18n } from '../hooks/useI18n';
 
 // Types for better type safety
 interface FeedbackData {
@@ -513,6 +514,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const { user, oxyServices } = useOxy();
     const colors = useThemeColors(theme);
+    const { t } = useI18n();
 
     // Form state
     const { feedbackData, feedbackState, setFeedbackState, updateField, resetForm } = useFeedbackForm();
@@ -581,7 +583,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
     // Submit feedback handler
     const handleSubmitFeedback = useCallback(async () => {
         if (!isTypeStepValid() || !isDetailsStepValid() || !isContactStepValid()) {
-            toast.error('Please fill in all required fields');
+            toast.error(t('feedback.toasts.fillRequired') || 'Please fill in all required fields');
             return;
         }
 
@@ -611,8 +613,8 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
             // In a real implementation, you would call oxyServices.submitFeedback(feedbackPayload)
             await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate API call
 
-            setFeedbackState({ status: 'success', message: 'Feedback submitted successfully!' });
-            toast.success('Thank you for your feedback!');
+            setFeedbackState({ status: 'success', message: t('feedback.toasts.submitSuccess') || 'Feedback submitted successfully!' });
+            toast.success(t('feedback.toasts.thanks') || 'Thank you for your feedback!');
 
             // Reset form after success
             setTimeout(() => {
@@ -621,8 +623,8 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
             }, 3000);
 
         } catch (error: any) {
-            setFeedbackState({ status: 'error', message: error.message || 'Failed to submit feedback' });
-            toast.error(error.message || 'Failed to submit feedback');
+            setFeedbackState({ status: 'error', message: error.message || (t('feedback.toasts.submitFailed') || 'Failed to submit feedback') });
+            toast.error(error.message || (t('feedback.toasts.submitFailed') || 'Failed to submit feedback'));
         }
     }, [feedbackData, user, isTypeStepValid, isDetailsStepValid, isContactStepValid, resetForm]);
 
@@ -670,10 +672,10 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
         ]}>
             <View style={styles.modernHeader}>
                 <Text style={[styles.stepTitle, { color: colors.text }]}>
-                    What type of feedback?
+                    {t('feedback.type.title') || 'What type of feedback?'}
                 </Text>
                 <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
-                    Choose the category that best describes your feedback
+                    {t('feedback.type.subtitle') || 'Choose the category that best describes your feedback'}
                 </Text>
             </View>
             <View style={styles.fullBleed}>
@@ -682,7 +684,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
 
             {feedbackData.type && (
                 <View style={styles.categoryContainer}>
-                    <Text style={[styles.modernLabel, { color: colors.secondaryText, marginBottom: 8 }]}>Category</Text>
+                    <Text style={[styles.modernLabel, { color: colors.secondaryText, marginBottom: 8 }]}>{t('feedback.category.label') || 'Category'}</Text>
                     <View style={styles.fullBleed}>
                         <GroupedSection items={categoryItems} theme={theme as 'light' | 'dark'} />
                     </View>
@@ -703,7 +705,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                     onPress={goBack}
                 >
                     <Ionicons name="arrow-back" size={16} color={colors.text} />
-                    <Text style={[styles.navButtonText, { color: colors.text }]}>Back</Text>
+                    <Text style={[styles.navButtonText, { color: colors.text }]}>{t('common.actions.back') || 'Back'}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -719,7 +721,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                     onPress={nextStep}
                     disabled={!isTypeStepValid()}
                 >
-                    <Text style={[styles.navButtonText, { color: '#FFFFFF' }]}>Next</Text>
+                    <Text style={[styles.navButtonText, { color: '#FFFFFF' }]}>{t('common.actions.next') || 'Next'}</Text>
                     <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
                 </TouchableOpacity>
             </View>
@@ -733,22 +735,22 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
         ]}>
             <View style={styles.modernHeader}>
                 <Text style={[styles.stepTitle, { color: colors.text }]}>
-                    Tell us more
+                    {t('feedback.details.title') || 'Tell us more'}
                 </Text>
                 <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
-                    Provide details about your feedback
+                    {t('feedback.details.subtitle') || 'Provide details about your feedback'}
                 </Text>
             </View>
 
             <FormInput
                 icon="create-outline"
-                label="Title"
+                label={t('feedback.fields.title.label') || 'Title'}
                 value={feedbackData.title}
                 onChangeText={(text) => {
                     updateField('title', text);
                     setErrorMessage('');
                 }}
-                placeholder="Brief summary of your feedback"
+                placeholder={t('feedback.fields.title.placeholder') || 'Brief summary of your feedback'}
                 testID="feedback-title-input"
                 colors={colors}
                 styles={styles}
@@ -756,13 +758,13 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
 
             <FormInput
                 icon="document-text-outline"
-                label="Description"
+                label={t('feedback.fields.description.label') || 'Description'}
                 value={feedbackData.description}
                 onChangeText={(text) => {
                     updateField('description', text);
                     setErrorMessage('');
                 }}
-                placeholder="Please provide detailed information..."
+                placeholder={t('feedback.fields.description.placeholder') || 'Please provide detailed information...'}
                 multiline={true}
                 numberOfLines={6}
                 testID="feedback-description-input"
@@ -771,7 +773,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
             />
 
             <View style={{ marginBottom: 24 }}>
-                <Text style={[styles.modernLabel, { color: colors.secondaryText, marginBottom: 8 }]}>Priority Level</Text>
+                <Text style={[styles.modernLabel, { color: colors.secondaryText, marginBottom: 8 }]}>{t('feedback.priority.label') || 'Priority Level'}</Text>
                 <View style={styles.fullBleed}>
                     <GroupedSection items={priorityItems} theme={theme as 'light' | 'dark'} />
                 </View>
@@ -786,7 +788,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                     onPress={prevStep}
                 >
                     <Ionicons name="arrow-back" size={16} color={colors.text} />
-                    <Text style={[styles.navButtonText, { color: colors.text }]}>Back</Text>
+                    <Text style={[styles.navButtonText, { color: colors.text }]}>{t('common.actions.back') || 'Back'}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -798,7 +800,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                     onPress={nextStep}
                     disabled={!isDetailsStepValid()}
                 >
-                    <Text style={[styles.navButtonText, { color: '#FFFFFF' }]}>Next</Text>
+                    <Text style={[styles.navButtonText, { color: '#FFFFFF' }]}>{t('common.actions.next') || 'Next'}</Text>
                     <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
                 </TouchableOpacity>
             </View>
@@ -812,22 +814,22 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
         ]}>
             <View style={styles.modernHeader}>
                 <Text style={[styles.stepTitle, { color: colors.text }]}>
-                    Contact Information
+                    {t('feedback.contact.title') || 'Contact Information'}
                 </Text>
                 <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
-                    Help us get back to you
+                    {t('feedback.contact.subtitle') || 'Help us get back to you'}
                 </Text>
             </View>
 
             <FormInput
                 icon="mail-outline"
-                label="Email Address"
+                label={t('feedback.fields.email.label') || 'Email Address'}
                 value={feedbackData.contactEmail}
                 onChangeText={(text) => {
                     updateField('contactEmail', text);
                     setErrorMessage('');
                 }}
-                placeholder={user?.email || "Enter your email address"}
+                placeholder={user?.email || (t('feedback.fields.email.placeholder') || 'Enter your email address')}
                 testID="feedback-email-input"
                 colors={colors}
                 styles={styles}
@@ -849,7 +851,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                     )}
                 </TouchableOpacity>
                 <Text style={[styles.checkboxText, { color: colors.text }]}>
-                    Include system information to help us better understand your issue
+                    {t('feedback.contact.includeSystemInfo') || 'Include system information to help us better understand your issue'}
                 </Text>
             </View>
 
@@ -888,40 +890,40 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
         ]}>
             <View style={styles.modernHeader}>
                 <Text style={[styles.stepTitle, { color: colors.text }]}>
-                    Review & Submit
+                    {t('feedback.summary.title') || 'Summary'}
                 </Text>
                 <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
-                    Please review your feedback before submitting
+                    {t('feedback.summary.subtitle') || 'Please review your feedback before submitting'}
                 </Text>
             </View>
 
             <View style={styles.summaryContainer}>
                 <View style={styles.summaryRow}>
-                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>Type:</Text>
+                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>{t('feedback.summary.type') || 'Type:'}</Text>
                     <Text style={[styles.summaryValue, { color: colors.text }]}>
                         {FEEDBACK_TYPES.find(t => t.id === feedbackData.type)?.label}
                     </Text>
                 </View>
 
                 <View style={styles.summaryRow}>
-                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>Category:</Text>
+                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>{t('feedback.summary.category') || 'Category:'}</Text>
                     <Text style={[styles.summaryValue, { color: colors.text }]}>{feedbackData.category}</Text>
                 </View>
 
                 <View style={styles.summaryRow}>
-                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>Priority:</Text>
+                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>{t('feedback.summary.priority') || 'Priority:'}</Text>
                     <Text style={[styles.summaryValue, { color: colors.text }]}>
                         {PRIORITY_LEVELS.find(p => p.id === feedbackData.priority)?.label}
                     </Text>
                 </View>
 
                 <View style={styles.summaryRow}>
-                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>Title:</Text>
+                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>{t('feedback.summary.titleLabel') || 'Title:'}</Text>
                     <Text style={[styles.summaryValue, { color: colors.text }]}>{feedbackData.title}</Text>
                 </View>
 
                 <View style={styles.summaryRow}>
-                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>Contact:</Text>
+                    <Text style={[styles.summaryLabel, { color: colors.secondaryText }]}>{t('feedback.summary.contact') || 'Contact:'}</Text>
                     <Text style={[styles.summaryValue, { color: colors.text }]}>
                         {feedbackData.contactEmail || user?.email}
                     </Text>
@@ -938,7 +940,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                     <ActivityIndicator color="#FFFFFF" size="small" />
                 ) : (
                     <>
-                        <Text style={styles.buttonText}>Submit Feedback</Text>
+                        <Text style={styles.buttonText}>{t('feedback.actions.submit') || 'Submit Feedback'}</Text>
                         <Ionicons name="send" size={20} color="#FFFFFF" />
                     </>
                 )}
@@ -958,7 +960,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                     onPress={prevStep}
                 >
                     <Ionicons name="arrow-back" size={16} color={colors.text} />
-                    <Text style={[styles.navButtonText, { color: colors.text }]}>Back</Text>
+                    <Text style={[styles.navButtonText, { color: colors.text }]}>{t('common.actions.back') || 'Back'}</Text>
                 </TouchableOpacity>
             </View>
         </Animated.View>
@@ -974,10 +976,10 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                     <Ionicons name="checkmark-circle" size={48} color={colors.success} />
                 </View>
                 <Text style={[styles.successTitle, { color: colors.text }]}>
-                    Thank You!
+                    {t('feedback.success.thanks') || 'Thank You!'}
                 </Text>
                 <Text style={[styles.successMessage, { color: colors.secondaryText }]}>
-                    Your feedback has been submitted successfully. We'll review it and get back to you soon.
+                    {t('feedback.success.message') || "Your feedback has been submitted successfully. We'll review it and get back to you soon."}
                 </Text>
                 <TouchableOpacity
                     style={[styles.button, { backgroundColor: colors.primary }]}
@@ -986,7 +988,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                         setCurrentStep(0);
                     }}
                 >
-                    <Text style={styles.buttonText}>Submit Another</Text>
+                    <Text style={styles.buttonText}>{t('feedback.actions.submitAnother') || 'Submit Another'}</Text>
                 </TouchableOpacity>
             </View>
         </Animated.View>

@@ -82,10 +82,10 @@ const RecoverSuccessStep: React.FC<RecoverSuccessStepProps> = ({
                     marginBottom: 24,
                 }}>
                     <Text style={[styles.footerText, { color: colors.text, fontSize: 16, marginBottom: 8 }]}>
-                        What's next?
+                        {t('recover.whatsNextTitle') || "What's next?"}
                     </Text>
                     <Text style={[styles.footerText, { color: colors.secondaryText, fontSize: 14, lineHeight: 20 }]}>
-                        You can now reset your password or return to sign in with your existing credentials.
+                        {t('recover.whatsNextBody') || 'You can now reset your password or return to sign in with your existing credentials.'}
                     </Text>
                 </View>
 
@@ -100,7 +100,7 @@ const RecoverSuccessStep: React.FC<RecoverSuccessStepProps> = ({
                 }}>
                     <Ionicons name="shield-checkmark" size={20} color={colors.success} style={{ marginRight: 8 }} />
                     <Text style={[styles.footerText, { color: colors.success, fontSize: 14, flex: 1 }]}>
-                        {successMessage || 'Your account recovery is complete and secure.'}
+                        {successMessage || t('recover.completeSecure') || 'Your account recovery is complete and secure.'}
                     </Text>
                 </View>
             </View>

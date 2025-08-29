@@ -23,6 +23,7 @@ import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
 import { Header, GroupedSection } from '../components';
+import { useI18n } from '../hooks/useI18n';
 
 interface SessionWithUser extends ClientSession {
     userProfile?: User;
@@ -71,6 +72,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
     const screenWidth = Dimensions.get('window').width;
     const isDarkTheme = theme === 'dark';
+    const { t } = useI18n();
 
     // Modern color scheme
     const colors = {
@@ -146,13 +148,13 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         setSwitchingToUserId(sessionId);
         try {
             await switchSession(sessionId);
-            toast.success('Account switched successfully!');
+            toast.success(t('accountSwitcher.toasts.switchSuccess') || 'Account switched successfully!');
             if (onClose) {
                 onClose();
             }
         } catch (error) {
             console.error('Switch session failed:', error);
-            toast.error('There was a problem switching accounts. Please try again.');
+            toast.error(t('accountSwitcher.toasts.switchFailed') || 'There was a problem switching accounts. Please try again.');
         } finally {
             setSwitchingToUserId(null);
         }
@@ -160,15 +162,15 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
     const handleRemoveSession = async (sessionId: string, displayName: string) => {
         confirmAction(
-            `Are you sure you want to remove ${displayName} from this device? You'll need to sign in again to access this account.`,
+            t('accountSwitcher.confirms.remove', { displayName }) || `Are you sure you want to remove ${displayName} from this device? You'll need to sign in again to access this account.`,
             async () => {
                 setRemovingUserId(sessionId);
                 try {
                     await removeSession(sessionId);
-                    toast.success('Account removed successfully!');
+                    toast.success(t('accountSwitcher.toasts.removeSuccess') || 'Account removed successfully!');
                 } catch (error) {
                     console.error('Remove session failed:', error);
-                    toast.error('There was a problem removing the account. Please try again.');
+                    toast.error(t('accountSwitcher.toasts.removeFailed') || 'There was a problem removing the account. Please try again.');
                 } finally {
                     setRemovingUserId(null);
                 }
@@ -178,18 +180,18 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
     const handleLogoutAll = async () => {
         confirmAction(
-            'Are you sure you want to sign out of all accounts? This will remove all saved accounts from this device.',
+            t('accountSwitcher.confirms.logoutAll') || 'Are you sure you want to sign out of all accounts? This will remove all saved accounts from this device.',
             async () => {
                 try {
                     await logoutAll();
-                    toast.success('All accounts signed out successfully!');
+                    toast.success(t('accountSwitcher.toasts.signOutAllSuccess') || 'All accounts signed out successfully!');
                     if (onClose) {
                         onClose();
                     }
                 } catch (error) {
                     console.error('Logout all failed:', error);
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
-                    toast.error(`There was a problem signing out: ${errorMessage}`);
+                    toast.error(t('accountSwitcher.toasts.signOutAllFailed', { error: errorMessage }) || `There was a problem signing out: ${errorMessage}`);
                 }
             }
         );
@@ -206,7 +208,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             setDeviceSessions(allSessions || []);
         } catch (error) {
             console.error('Failed to load device sessions:', error);
-            toast.error('Failed to load device sessions. Please try again.');
+            toast.error(t('accountSwitcher.toasts.deviceLoadFailed') || 'Failed to load device sessions. Please try again.');
         } finally {
             setLoadingDeviceSessions(false);
         }
@@ -214,17 +216,17 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
     const handleRemoteSessionLogout = async (sessionId: string, deviceName: string) => {
         confirmAction(
-            `Are you sure you want to sign out from "${deviceName}"? This will end the session on that device.`,
+            t('accountSwitcher.confirms.remoteLogout', { deviceName }) || `Are you sure you want to sign out from "${deviceName}"? This will end the session on that device.`,
             async () => {
                 setRemoteLogoutSessionId(sessionId);
                 try {
                     await oxyServices?.logoutSession(activeSessionId || '', sessionId);
                     // Refresh device sessions list
                     await loadAllDeviceSessions();
-                    toast.success(`Signed out from ${deviceName} successfully!`);
+                    toast.success(t('accountSwitcher.toasts.remoteSignOutSuccess', { deviceName }) || `Signed out from ${deviceName} successfully!`);
                 } catch (error) {
                     console.error('Remote logout failed:', error);
-                    toast.error('There was a problem signing out from the device. Please try again.');
+                    toast.error(t('accountSwitcher.toasts.remoteSignOutFailed') || 'There was a problem signing out from the device. Please try again.');
                 } finally {
                     setRemoteLogoutSessionId(null);
                 }
@@ -236,22 +238,22 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         const otherDevicesCount = deviceSessions.filter(session => !session.isCurrent).length;
 
         if (otherDevicesCount === 0) {
-            toast.info('No other device sessions found to sign out from.');
+            toast.info(t('accountSwitcher.toasts.noOtherDeviceSessions') || 'No other device sessions found to sign out from.');
             return;
         }
 
         confirmAction(
-            `Are you sure you want to sign out from all ${otherDevicesCount} other device(s)? This will end sessions on all other devices except this one.`,
+            t('accountSwitcher.confirms.logoutOthers', { count: otherDevicesCount }) || `Are you sure you want to sign out from all ${otherDevicesCount} other device(s)? This will end sessions on all other devices except this one.`,
             async () => {
                 setLoggingOutAllDevices(true);
                 try {
                     await oxyServices?.logoutAllDeviceSessions(activeSessionId || '');
                     // Refresh device sessions list
                     await loadAllDeviceSessions();
-                    toast.success('Signed out from all other devices successfully!');
+                    toast.success(t('accountSwitcher.toasts.signOutOthersSuccess') || 'Signed out from all other devices successfully!');
                 } catch (error) {
                     console.error('Logout all devices failed:', error);
-                    toast.error('There was a problem signing out from other devices. Please try again.');
+                    toast.error(t('accountSwitcher.toasts.signOutOthersFailed') || 'There was a problem signing out from other devices. Please try again.');
                 } finally {
                     setLoggingOutAllDevices(false);
                 }
@@ -263,7 +265,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor: '#f2f2f2' }]}>
             {/* Header */}
             <Header
-                title="Account Switcher"
+                title={t('accountSwitcher.title') || 'Account Switcher'}
                 theme={theme}
                 onBack={goBack}
                 onClose={onClose}
@@ -283,14 +285,14 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                 {isLoading ? (
                     <View style={styles.loadingContainer}>
                         <ActivityIndicator size="large" color="#007AFF" />
-                        <Text style={styles.loadingText}>Loading accounts...</Text>
+                        <Text style={styles.loadingText}>{t('accountSwitcher.loading') || 'Loading accounts...'}</Text>
                     </View>
                 ) : (
                     <>
                         {/* Current Account */}
                         {isAuthenticated && user && (
                             <View style={styles.section}>
-                                <Text style={styles.sectionTitle}>Current Account</Text>
+                                <Text style={styles.sectionTitle}>{t('accountSwitcher.sections.current') || 'Current Account'}</Text>
 
                                 <View style={[styles.settingItem, styles.firstSettingItem, styles.lastSettingItem, styles.currentAccountCard]}>
                                     <View style={styles.userIcon}>
@@ -316,7 +318,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                         </View>
                                     </View>
                                     <View style={styles.currentBadge}>
-                                        <Text style={styles.currentBadgeText}>Current</Text>
+                                        <Text style={styles.currentBadgeText}>{t('accountSwitcher.currentBadge') || 'Current'}</Text>
                                     </View>
                                 </View>
                             </View>
@@ -326,7 +328,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                         {sessionsWithUsers.filter(s => s.sessionId !== activeSessionId).length > 0 && (
                             <View style={styles.section}>
                                 <Text style={styles.sectionTitle}>
-                                    Other Accounts ({sessionsWithUsers.filter(s => s.sessionId !== activeSessionId).length})
+                                    {t('accountSwitcher.sections.otherWithCount', { count: sessionsWithUsers.filter(s => s.sessionId !== activeSessionId).length }) || `Other Accounts (${sessionsWithUsers.filter(s => s.sessionId !== activeSessionId).length})`}
                                 </Text>
 
                                 {sessionsWithUsers
@@ -443,7 +445,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                         {/* Device Management Section */}
                         {showDeviceManagement && (
                             <View style={styles.section}>
-                                <Text style={styles.sectionTitle}>Device Sessions</Text>
+                                <Text style={styles.sectionTitle}>{t('accountSwitcher.sections.deviceSessions') || 'Device Sessions'}</Text>
 
                                 {loadingDeviceSessions ? (
                                     <GroupedSection
@@ -452,8 +454,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                 id: 'loading-device-sessions',
                                                 icon: 'sync',
                                                 iconColor: '#007AFF',
-                                                title: 'Loading device sessions...',
-                                                subtitle: 'Please wait while we fetch your device sessions',
+                                                title: t('accountSwitcher.device.loadingTitle') || 'Loading device sessions...',
+                                                subtitle: t('accountSwitcher.device.loadingSubtitle') || 'Please wait while we fetch your device sessions',
                                                 disabled: true,
                                                 customContent: (
                                                     <ActivityIndicator size="small" color="#007AFF" style={{ marginRight: 16 }} />
@@ -469,8 +471,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                 id: 'no-device-sessions',
                                                 icon: 'phone-portrait',
                                                 iconColor: '#ccc',
-                                                title: 'No device sessions found',
-                                                subtitle: 'Device session management not available',
+                                                title: t('accountSwitcher.device.noneTitle') || 'No device sessions found',
+                                                subtitle: t('accountSwitcher.device.noneSubtitle') || 'Device session management not available',
                                                 disabled: true,
                                             },
                                         ]}
@@ -482,8 +484,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                             id: `device-session-${session.sessionId}`,
                                             icon: session.isCurrent ? 'phone-portrait' : 'phone-portrait-outline',
                                             iconColor: session.isCurrent ? '#34C759' : '#8E8E93',
-                                            title: `${session.deviceName} ${session.isCurrent ? '(This device)' : ''}`,
-                                            subtitle: `Last active: ${new Date(session.lastActive).toLocaleDateString()}`,
+                                            title: `${session.deviceName} ${session.isCurrent ? '(' + (t('accountSwitcher.device.thisDevice') || 'This device') + ')' : ''}`,
+                                            subtitle: t('accountSwitcher.device.lastActive', { date: new Date(session.lastActive).toLocaleDateString() }) || `Last active: ${new Date(session.lastActive).toLocaleDateString()}`,
                                             onPress: session.isCurrent ? undefined : () => handleRemoteSessionLogout(session.sessionId, session.deviceName),
                                             disabled: session.isCurrent || remotingLogoutSessionId === session.sessionId,
                                             customContent: !session.isCurrent ? (
@@ -515,21 +517,21 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                             id: 'empty-state',
                                             icon: 'person-outline',
                                             iconColor: '#ccc',
-                                            title: 'No saved accounts',
-                                            subtitle: 'Add another account to switch between them quickly',
+                                            title: t('accountSwitcher.empty.title') || 'No saved accounts',
+                                            subtitle: t('accountSwitcher.empty.subtitle') || 'Add another account to switch between them quickly',
                                             onPress: () => navigate?.('SignIn'),
                                             customContent: (
                                                 <View style={styles.emptyStateContainer}>
                                                     <OxyIcon name="person-outline" size={48} color="#ccc" />
-                                                    <Text style={styles.emptyStateTitle}>No saved accounts</Text>
+                                                    <Text style={styles.emptyStateTitle}>{t('accountSwitcher.empty.title') || 'No saved accounts'}</Text>
                                                     <Text style={styles.emptyStateDescription}>
-                                                        Add another account to switch between them quickly
+                                                        {t('accountSwitcher.empty.subtitle') || 'Add another account to switch between them quickly'}
                                                     </Text>
                                                     <TouchableOpacity
                                                         style={styles.addAccountButton}
                                                         onPress={() => navigate?.('SignIn')}
                                                     >
-                                                        <Text style={styles.addAccountButtonText}>Add Account</Text>
+                                                        <Text style={styles.addAccountButtonText}>{t('accountCenter.sections.addAccount') || 'Add Account'}</Text>
                                                     </TouchableOpacity>
                                                 </View>
                                             ),

@@ -4,6 +4,7 @@ import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import PinInput from '../../components/internal/PinInput';
+import { useI18n } from '../../hooks/useI18n';
 
 interface SignInTotpStepProps {
   // Common props
@@ -43,10 +44,11 @@ const SignInTotpStep: React.FC<SignInTotpStepProps> = ({
 }) => {
   const [code, setCode] = useState('');
   const inputRef = useRef<any>(null);
+  const { t } = useI18n();
 
   const handleVerify = async () => {
     if (!code || code.length !== 6) {
-      setErrorMessage?.('Enter the 6-digit code from your authenticator app.');
+      setErrorMessage?.(t('recover.enterCode'));
       return;
     }
     try {
@@ -54,7 +56,7 @@ const SignInTotpStep: React.FC<SignInTotpStepProps> = ({
       await completeMfaLogin?.(mfaToken, code);
       // Login completed; higher-level navigation should continue automatically
     } catch (e: any) {
-      setErrorMessage?.(e?.message || 'Invalid code. Please try again.');
+      setErrorMessage?.(e?.message || (t('signin.totp.invalidCode') || 'Invalid code. Please try again.'));
       setTimeout(() => inputRef.current?.focus(), 0);
     }
   };
@@ -62,9 +64,9 @@ const SignInTotpStep: React.FC<SignInTotpStepProps> = ({
   return (
     <>
       <View style={styles.modernHeader}>
-        <Text style={[styles.modernTitle, { color: colors.text }]}>Two‑Factor Code</Text>
+        <Text style={[styles.modernTitle, { color: colors.text }]}>{t('signin.totp.title') || 'Two‑Factor Code'}</Text>
         <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}> 
-          Enter the 6‑digit code from your authenticator app for @{username}
+          {t('signin.totp.subtitle', { username }) || `Enter the 6‑digit code from your authenticator app for @${username}`}
         </Text>
       </View>
 
@@ -100,21 +102,21 @@ const SignInTotpStep: React.FC<SignInTotpStepProps> = ({
 
       <GroupedPillButtons
         buttons={[
-          { text: 'Back', onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
-          { text: 'Verify', onPress: handleVerify, icon: 'shield-checkmark', variant: 'primary', loading: isLoading, disabled: isLoading || code.length !== 6 },
+          { text: t('common.actions.back'), onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
+          { text: t('signin.actions.verify'), onPress: handleVerify, icon: 'shield-checkmark', variant: 'primary', loading: isLoading, disabled: isLoading || code.length !== 6 },
         ]}
         colors={colors}
       />
 
       <View style={{ marginTop: 12, alignItems: 'center' }}>
-        <Text style={[styles.footerText, { color: colors.secondaryText }]}>No access to your authenticator?</Text>
+        <Text style={[styles.footerText, { color: colors.secondaryText }]}>{t('signin.totp.noAccess') || 'No access to your authenticator?'}</Text>
         <View style={{ flexDirection: 'row', gap: 12, marginTop: 6 }}>
           <TouchableOpacity onPress={() => navigate('RecoverAccount', { prefillUsername: username })}>
-            <Text style={[styles.linkText, { color: colors.primary }]}>Use backup code</Text>
+            <Text style={[styles.linkText, { color: colors.primary }]}>{t('signin.totp.useBackupCode') || 'Use backup code'}</Text>
           </TouchableOpacity>
           <Text style={[styles.footerText, { color: colors.secondaryText }]}>•</Text>
           <TouchableOpacity onPress={() => navigate('RecoverAccount', { prefillUsername: username })}>
-            <Text style={[styles.linkText, { color: colors.primary }]}>Use recovery key</Text>
+            <Text style={[styles.linkText, { color: colors.primary }]}>{t('signin.totp.useRecoveryKey') || 'Use recovery key'}</Text>
           </TouchableOpacity>
         </View>
       </View>

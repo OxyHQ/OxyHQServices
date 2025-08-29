@@ -54,18 +54,18 @@ const RecoverResetPasswordStep: React.FC<RecoverResetPasswordStepProps> = ({
   const { t } = useI18n();
   const handleReset = async () => {
     if (!password || password.length < 8) {
-      setErrorMessage('Password must be at least 8 characters long');
+      setErrorMessage(t('recover.password.minLength') || 'Password must be at least 8 characters long');
       return;
     }
     if (password !== confirmPassword) {
-      setErrorMessage('Passwords do not match');
+      setErrorMessage(t('recover.password.mismatch') || 'Passwords do not match');
       return;
     }
     setErrorMessage('');
     setIsLoading(true);
     try {
       const code = verificationCode?.trim();
-      if (!code) throw new Error('Missing code');
+      if (!code) throw new Error(t('recover.missingCode') || 'Missing code');
 
       // Heuristic: recovery key starts with 'oxy-' or longer strings, backup codes have dashes of short format, else assume TOTP
       if (code.toLowerCase().startsWith('oxy-') || code.length >= 16) {
@@ -77,7 +77,7 @@ const RecoverResetPasswordStep: React.FC<RecoverResetPasswordStepProps> = ({
       }
       nextStep();
     } catch (e: any) {
-      setErrorMessage(e?.message || 'Failed to reset password');
+      setErrorMessage(e?.message || t('recover.password.resetFailed') || 'Failed to reset password');
     } finally {
       setIsLoading(false);
     }

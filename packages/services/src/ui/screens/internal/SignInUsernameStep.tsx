@@ -6,6 +6,7 @@ import Animated, {
     SharedValue,
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
+import { useI18n } from '../../hooks/useI18n';
 import HighFive from '../../../assets/illustrations/HighFive';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
@@ -52,6 +53,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
     navigate,
 }) => {
     const inputRef = useRef<TextInput>(null);
+    const { t } = useI18n();
 
     // Animated styles - properly memoized to prevent re-renders
     const animatedStyle = useAnimatedStyle(() => {
@@ -80,12 +82,12 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
             <HighFive width={100} height={100} />
             <View style={styles.modernHeader}>
                 <Text style={[styles.modernTitle, { color: colors.text }]}>
-                    {isAddAccountMode ? 'Add Another Account' : 'Sign In'}
+                    {isAddAccountMode ? (t('signin.addAccountTitle') || 'Add Another Account') : (t('signin.title') || 'Sign In')}
                 </Text>
                 <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
                     {isAddAccountMode
-                        ? 'Sign in with another account'
-                        : 'Sign in to continue your journey'
+                        ? (t('signin.addAccountSubtitle') || 'Sign in with another account')
+                        : (t('signin.subtitle') || 'Sign in to continue your journey')
                     }
                 </Text>
             </View>
@@ -93,14 +95,14 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                 <View style={[styles.modernInfoCard, { backgroundColor: colors.inputBackground }]}>
                     <Ionicons name="information-circle" size={20} color={colors.primary} />
                     <Text style={[styles.modernInfoText, { color: colors.text }]}>
-                        Currently signed in as <Text style={{ fontWeight: 'bold' }}>{user?.username}</Text>
+                        {t('signin.currentlySignedInAs', { username: user?.username }) || 'Currently signed in as '}<Text style={{ fontWeight: 'bold' }}>{user?.username}</Text>
                     </Text>
                 </View>
             )}
             <View style={styles.modernInputContainer}>
                 <TextField
                     ref={inputRef}
-                    label="Username"
+                    label={t('common.labels.username')}
                     leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
                     value={username}
                     onChangeText={handleUsernameChange}
@@ -120,13 +122,13 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Sign Up',
+                        text: t('common.links.signUp') || 'Sign Up',
                         onPress: () => navigate('SignUp'),
                         icon: 'person-add',
                         variant: 'transparent',
                     },
                     {
-                        text: 'Continue',
+                        text: t('common.actions.continue'),
                         onPress: handleUsernameContinue,
                         icon: 'arrow-forward',
                         variant: 'primary',

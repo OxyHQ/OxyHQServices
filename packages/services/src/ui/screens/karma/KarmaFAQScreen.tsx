@@ -3,37 +3,13 @@ import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, TextInp
 import type { BaseScreenProps } from '../../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import { Header } from '../../components';
+import { useI18n } from '../../hooks/useI18n';
 
 if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
     UIManager.setLayoutAnimationEnabledExperimental(true);
 }
 
-const FAQS = [
-    {
-        q: 'What is karma?',
-        a: 'Karma is a recognition of your positive actions in the Oxy Ecosystem. It cannot be sent or received directly.'
-    },
-    {
-        q: 'How do I earn karma?',
-        a: 'By helping others, reporting bugs, contributing content, and participating in community events.'
-    },
-    {
-        q: 'Can I lose karma?',
-        a: 'Karma may be reduced for negative actions or breaking community rules.'
-    },
-    {
-        q: 'What can I do with karma?',
-        a: 'Unlock rewards, badges, and special features as you earn more karma.'
-    },
-    {
-        q: 'Can I transfer karma to others?',
-        a: 'No, karma cannot be sent or received. It is only earned by your actions.'
-    },
-    {
-        q: 'How do I get support?',
-        a: 'Contact Oxy support via the app or website for any karma-related questions.'
-    },
-];
+const FAQ_KEYS = ['what', 'earn', 'lose', 'use', 'transfer', 'support'] as const;
 
 /**
  * KarmaFAQScreen - Optimized for performance
@@ -45,6 +21,7 @@ const FAQS = [
  * - React.memo wrapper to prevent re-renders when props haven't changed
  */
 const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
+    const { t } = useI18n();
     const [expanded, setExpanded] = useState<number | null>(0);
     const [search, setSearch] = useState('');
 
@@ -63,14 +40,19 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     }, [theme]);
 
     // Memoize filtered FAQs to prevent filtering on every render
+    const faqs = useMemo(() => FAQ_KEYS.map(key => ({
+        q: t(`karma.faq.items.${key}.q`) || '',
+        a: t(`karma.faq.items.${key}.a`) || '',
+    })), [t]);
+
     const filteredFaqs = useMemo(() => {
-        if (!search.trim()) return FAQS;
+        if (!search.trim()) return faqs;
         const searchLower = search.toLowerCase();
-        return FAQS.filter(faq =>
+        return faqs.filter(faq =>
             faq.q.toLowerCase().includes(searchLower) ||
             faq.a.toLowerCase().includes(searchLower)
         );
-    }, [search]);
+    }, [search, faqs]);
 
     // Memoize toggle handler to prevent recreation on every render
     const handleToggle = useCallback((idx: number) => {
@@ -81,8 +63,8 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     return (
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
-                title="Karma FAQ"
-                subtitle="Frequently asked questions about karma"
+                title={t('karma.faq.title') || 'Karma FAQ'}
+                subtitle={t('karma.faq.subtitle') || 'Frequently asked questions about karma'}
                 subtitleVariant="muted"
                 theme={theme}
                 onBack={goBack}
@@ -92,7 +74,7 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 <Ionicons name="search-outline" size={20} color={themeStyles.primaryColor} style={{ marginRight: 8 }} />
                 <TextInput
                     style={[styles.searchInput, { color: themeStyles.textColor }]}
-                    placeholder="Search FAQ..."
+                    placeholder={t('karma.faq.search') || 'Search FAQ...'}
                     placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#888'}
                     value={search}
                     onChangeText={setSearch}
@@ -102,7 +84,7 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             <ScrollView contentContainerStyle={styles.contentContainer}>
                 {filteredFaqs.length === 0 ? (
                     <Text style={[styles.noResults, { color: themeStyles.textColor }]}>
-                        No FAQ items found matching "{search}"
+                        {t('karma.faq.noResults', { query: search }) || `No FAQ items found matching "${search}"`}
                     </Text>
                 ) : (
                     filteredFaqs.map((faq, idx) => (

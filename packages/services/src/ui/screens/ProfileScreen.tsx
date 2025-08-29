@@ -8,6 +8,7 @@ import Avatar from '../components/Avatar';
 import { FollowButton } from '../components';
 import { useFollow } from '../hooks/useFollow';
 import { Ionicons } from '@expo/vector-icons';
+import { useI18n } from '../hooks/useI18n';
 
 interface ProfileScreenProps extends BaseScreenProps {
     userId: string;
@@ -42,6 +43,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
     const colors = useThemeColors(theme);
     const styles = createStyles(colors);
+    const { t } = useI18n();
 
     // Check if current user is viewing their own profile
     const isOwnProfile = currentUser && currentUser.id === userId;
@@ -205,7 +207,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                                 style={styles.actionButton}
                                 onPress={() => navigate?.('EditProfile')}
                             >
-                                <Text style={styles.actionButtonText}>Edit Profile</Text>
+                                <Text style={styles.actionButtonText}>{t('editProfile.title') || 'Edit Profile'}</Text>
                             </TouchableOpacity>
                         ) : (
                             <FollowButton
@@ -226,14 +228,16 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         <Text style={[styles.subText, { color: colors.secondaryText }]}>@{profile.username}</Text>
                     )}
                     {/* Bio placeholder */}
-                    <Text style={[styles.bio, { color: colors.text }]}>{profile?.bio || 'This user has no bio yet.'}</Text>
+                    <Text style={[styles.bio, { color: colors.text }]}>{profile?.bio || (t('profile.noBio') || 'This user has no bio yet.')}</Text>
 
                     {/* Info Grid Row */}
                     <View style={styles.infoGrid}>
                         {profile?.createdAt && (
                             <View style={styles.infoGridItem}>
                                 <Ionicons name="calendar-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]}>Joined {new Date(profile.createdAt).toLocaleDateString()}</Text>
+                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]}>
+                                    {t('profile.joinedOn', { date: new Date(profile.createdAt).toLocaleDateString() }) || `Joined ${new Date(profile.createdAt).toLocaleDateString()}`}
+                                </Text>
                             </View>
                         )}
                         {profile?.location && (
@@ -269,7 +273,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         {profile?.birthday && (
                             <View style={styles.infoGridItem}>
                                 <Ionicons name="gift-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
-                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]}>Born {new Date(profile.birthday).toLocaleDateString()}</Text>
+                                <Text style={[styles.infoGridText, { color: colors.secondaryText }]}>
+                                    {t('profile.bornOn', { date: new Date(profile.birthday).toLocaleDateString() }) || `Born ${new Date(profile.birthday).toLocaleDateString()}`}
+                                </Text>
                             </View>
                         )}
                         {links.length > 0 && (
@@ -283,7 +289,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                                 </Text>
                                 {links.length > 1 && (
                                     <Text style={[styles.linksMore, { color: colors.secondaryText }]}>
-                                        + {links.length - 1} more
+                                        {t('profile.more', { count: links.length - 1 }) || `+ ${links.length - 1} more`}
                                     </Text>
                                 )}
                             </TouchableOpacity>
@@ -295,7 +301,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                     <View style={styles.statsRow}>
                         <View style={styles.statItem}>
                             <Text style={[styles.karmaAmount, { color: colors.primary }]}>{karmaTotal !== null && karmaTotal !== undefined ? karmaTotal : '--'}</Text>
-                            <Text style={[styles.karmaLabel, { color: colors.secondaryText }]}>Karma</Text>
+                            <Text style={[styles.karmaLabel, { color: colors.secondaryText }]}>{t('profile.karma') || 'Karma'}</Text>
                         </View>
                         <View style={styles.statItem}>
                             {isLoadingCounts ? (
@@ -303,7 +309,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                             ) : (
                                 <Text style={[styles.karmaAmount, { color: colors.text }]}>{followerCount !== null ? followerCount : '--'}</Text>
                             )}
-                            <Text style={[styles.karmaLabel, { color: colors.secondaryText }]}>Followers</Text>
+                            <Text style={[styles.karmaLabel, { color: colors.secondaryText }]}>{t('profile.followers') || 'Followers'}</Text>
                         </View>
                         <View style={styles.statItem}>
                             {isLoadingCounts ? (
@@ -311,7 +317,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                             ) : (
                                 <Text style={[styles.karmaAmount, { color: colors.text }]}>{followingCount !== null ? followingCount : '--'}</Text>
                             )}
-                            <Text style={[styles.karmaLabel, { color: colors.secondaryText }]}>Following</Text>
+                            <Text style={[styles.karmaLabel, { color: colors.secondaryText }]}>{t('profile.following') || 'Following'}</Text>
                         </View>
                     </View>
                 </View>

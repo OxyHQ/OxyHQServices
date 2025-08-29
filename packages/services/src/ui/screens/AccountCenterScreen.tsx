@@ -21,6 +21,7 @@ import Section from '../components/Section';
 import QuickActions from '../components/QuickActions';
 import GroupedSection from '../components/GroupedSection';
 import GroupedItem from '../components/GroupedItem';
+import { useI18n } from '../hooks/useI18n';
 
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -28,6 +29,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     navigate,
 }) => {
     const { user, logout, isLoading, sessions, isAuthenticated } = useOxy();
+    const { t } = useI18n();
 
     const isDarkTheme = theme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
@@ -45,13 +47,13 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
             }
         } catch (error) {
             console.error('Logout failed:', error);
-            toast.error('There was a problem signing you out. Please try again.');
+            toast.error(t('common.errors.signOutFailed') || 'There was a problem signing you out. Please try again.');
         }
     };
 
     const confirmLogout = () => {
         confirmAction(
-            'Are you sure you want to sign out?',
+            t('common.confirms.signOut') || 'Are you sure you want to sign out?',
             handleLogout
         );
     };
@@ -59,7 +61,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     if (!isAuthenticated) {
         return (
             <View style={[styles.container, { backgroundColor }]}>
-                <Text style={[styles.message, { color: textColor }]}>Not signed in</Text>
+                <Text style={[styles.message, { color: textColor }]}>{t('common.status.notSignedIn') || 'Not signed in'}</Text>
             </View>
         );
     }
@@ -87,70 +89,70 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
                 {/* Quick Actions */}
-                <Section title="Quick Actions" theme={theme} isFirst={true}>
+                <Section title={t('accountCenter.sections.quickActions') || 'Quick Actions'} theme={theme} isFirst={true}>
                     <QuickActions
                         actions={[
-                            { id: 'overview', icon: 'person-circle', iconColor: '#007AFF', title: 'Overview', onPress: () => navigate('AccountOverview') },
-                            { id: 'settings', icon: 'settings', iconColor: '#5856D6', title: 'Edit Profile', onPress: () => navigate('EditProfile') },
-                            { id: 'sessions', icon: 'shield-checkmark', iconColor: '#30D158', title: 'Sessions', onPress: () => navigate('SessionManagement') },
-                            { id: 'premium', icon: 'star', iconColor: '#FFD700', title: 'Premium', onPress: () => navigate('PremiumSubscription') },
-                            ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: '#34C759', title: 'Billing', onPress: () => navigate('') }] : []),
-                            ...(sessions && sessions.length > 1 ? [{ id: 'switch', icon: 'swap-horizontal', iconColor: '#FF9500', title: 'Switch', onPress: () => navigate('AccountSwitcher') }] : []),
+                            { id: 'overview', icon: 'person-circle', iconColor: '#007AFF', title: t('accountCenter.quickActions.overview') || 'Overview', onPress: () => navigate('AccountOverview') },
+                            { id: 'settings', icon: 'settings', iconColor: '#5856D6', title: t('accountCenter.quickActions.editProfile') || 'Edit Profile', onPress: () => navigate('EditProfile') },
+                            { id: 'sessions', icon: 'shield-checkmark', iconColor: '#30D158', title: t('accountCenter.quickActions.sessions') || 'Sessions', onPress: () => navigate('SessionManagement') },
+                            { id: 'premium', icon: 'star', iconColor: '#FFD700', title: t('accountCenter.quickActions.premium') || 'Premium', onPress: () => navigate('PremiumSubscription') },
+                            ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: '#34C759', title: t('accountCenter.quickActions.billing') || 'Billing', onPress: () => navigate('') }] : []),
+                            ...(sessions && sessions.length > 1 ? [{ id: 'switch', icon: 'swap-horizontal', iconColor: '#FF9500', title: t('accountCenter.quickActions.switch') || 'Switch', onPress: () => navigate('AccountSwitcher') }] : []),
                         ]}
                         theme={theme}
                     />
                 </Section>
 
                 {/* Account Management */}
-                <Section title="Account Management" theme={theme}>
+                <Section title={t('accountCenter.sections.accountManagement') || 'Account Management'} theme={theme}>
                     <GroupedSection
                         items={[
                             {
                                 id: 'overview',
                                 icon: 'person-circle',
                                 iconColor: '#007AFF',
-                                title: 'Account Overview',
-                                subtitle: 'Complete account information',
+                                title: t('accountCenter.items.accountOverview.title') || 'Account Overview',
+                                subtitle: t('accountCenter.items.accountOverview.subtitle') || 'Complete account information',
                                 onPress: () => navigate('AccountOverview'),
                             },
                             {
                                 id: 'settings',
                                 icon: 'settings',
                                 iconColor: '#5856D6',
-                                title: 'Edit Profile',
-                                subtitle: 'Manage your profile and preferences',
+                                title: t('accountCenter.items.editProfile.title') || 'Edit Profile',
+                                subtitle: t('accountCenter.items.editProfile.subtitle') || 'Manage your profile and preferences',
                                 onPress: () => navigate('EditProfile'),
                             },
                             {
                                 id: 'sessions',
                                 icon: 'shield-checkmark',
                                 iconColor: '#30D158',
-                                title: 'Manage Sessions',
-                                subtitle: 'Security and active devices',
+                                title: t('accountCenter.items.manageSessions.title') || 'Manage Sessions',
+                                subtitle: t('accountCenter.items.manageSessions.subtitle') || 'Security and active devices',
                                 onPress: () => navigate('SessionManagement'),
                             },
                             {
                                 id: 'files',
                                 icon: 'folder',
                                 iconColor: '#FF9500',
-                                title: 'File Management',
-                                subtitle: 'Upload, download, and manage your files',
+                                title: t('accountCenter.items.fileManagement.title') || 'File Management',
+                                subtitle: t('accountCenter.items.fileManagement.subtitle') || 'Upload, download, and manage your files',
                                 onPress: () => navigate('FileManagement'),
                             },
                             {
                                 id: 'premium',
                                 icon: 'star',
                                 iconColor: '#FFD700',
-                                title: 'Oxy+ Subscriptions',
-                                subtitle: user?.isPremium ? 'Manage your premium plan' : 'Upgrade to premium features',
+                                title: t('accountCenter.items.premium.title') || 'Oxy+ Subscriptions',
+                                subtitle: user?.isPremium ? (t('accountCenter.items.premium.manage') || 'Manage your premium plan') : (t('accountCenter.items.premium.upgrade') || 'Upgrade to premium features'),
                                 onPress: () => navigate('PremiumSubscription'),
                             },
                             ...(user?.isPremium ? [{
                                 id: 'billing',
                                 icon: 'card',
                                 iconColor: '#34C759',
-                                title: 'Billing Management',
-                                subtitle: 'Payment methods and invoices',
+                                title: t('accountCenter.items.billing.title') || 'Billing Management',
+                                subtitle: t('accountCenter.items.billing.subtitle') || 'Payment methods and invoices',
                                 onPress: () => navigate(''),
                             }] : []),
                         ]}
@@ -160,23 +162,23 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 
                 {/* Multi-Account Management */}
                 {sessions && sessions.length > 1 && (
-                    <Section title="Multi-Account" theme={theme}>
+                    <Section title={t('accountCenter.sections.multiAccount') || 'Multi-Account'} theme={theme}>
                         <GroupedSection
                             items={[
                                 {
                                     id: 'switch',
                                     icon: 'people',
                                     iconColor: '#FF9500',
-                                    title: 'Switch Account',
-                                    subtitle: `${sessions.length} accounts available`,
+                                    title: t('accountCenter.items.switchAccount.title') || 'Switch Account',
+                                    subtitle: t('accountCenter.items.switchAccount.subtitle', { count: sessions.length }) || `${sessions.length} accounts available`,
                                     onPress: () => navigate('AccountSwitcher'),
                                 },
                                 {
                                     id: 'add',
                                     icon: 'person-add',
                                     iconColor: '#30D158',
-                                    title: 'Add Another Account',
-                                    subtitle: 'Sign in with a different account',
+                                    title: t('accountCenter.items.addAccount.title') || 'Add Another Account',
+                                    subtitle: t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account',
                                     onPress: () => navigate('SignIn'),
                                 },
                             ]}
@@ -187,15 +189,15 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 
                 {/* Single Account Setup */}
                 {(!sessions || sessions.length <= 1) && (
-                    <Section title="Add Account" theme={theme}>
+                    <Section title={t('accountCenter.sections.addAccount') || 'Add Account'} theme={theme}>
                         <GroupedSection
                             items={[
                                 {
                                     id: 'add',
                                     icon: 'person-add',
                                     iconColor: '#30D158',
-                                    title: 'Add Another Account',
-                                    subtitle: 'Sign in with a different account',
+                                    title: t('accountCenter.items.addAccount.title') || 'Add Another Account',
+                                    subtitle: t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account',
                                     onPress: () => navigate('SignIn'),
                                 },
                             ]}
@@ -205,39 +207,39 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 )}
 
                 {/* Additional Options */}
-                <Section title="More Options" theme={theme}>
+                <Section title={t('accountCenter.sections.moreOptions') || 'More Options'} theme={theme}>
                     <GroupedSection
                         items={[
                             ...(Platform.OS !== 'web' ? [{
                                 id: 'notifications',
                                 icon: 'notifications',
                                 iconColor: '#FF9500',
-                                title: 'Notifications',
-                                subtitle: 'Manage notification settings',
-                                onPress: () => toast.info('Notifications feature coming soon!'),
+                                title: t('accountCenter.items.notifications.title') || 'Notifications',
+                                subtitle: t('accountCenter.items.notifications.subtitle') || 'Manage notification settings',
+                                onPress: () => toast.info(t('accountCenter.items.notifications.coming') || 'Notifications feature coming soon!'),
                             }] : []),
                             {
                                 id: 'language',
                                 icon: 'language',
                                 iconColor: '#32D74B',
-                                title: 'Language',
-                                subtitle: 'Choose your preferred language',
+                                title: t('language.title') || 'Language',
+                                subtitle: t('language.subtitle') || 'Choose your preferred language',
                                 onPress: () => navigate('LanguageSelector'),
                             },
                             {
                                 id: 'help',
                                 icon: 'help-circle',
                                 iconColor: '#007AFF',
-                                title: 'Help & Support',
-                                subtitle: 'Get help and contact support',
-                                onPress: () => toast.info('Help & Support feature coming soon!'),
+                                title: t('accountOverview.items.help.title') || 'Help & Support',
+                                subtitle: t('accountOverview.items.help.subtitle') || 'Get help and contact support',
+                                onPress: () => toast.info(t('accountOverview.items.help.coming') || 'Help & Support feature coming soon!'),
                             },
                             {
                                 id: 'appinfo',
                                 icon: 'information-circle',
                                 iconColor: '#8E8E93',
-                                title: 'App Information',
-                                subtitle: 'Version and system details',
+                                title: t('accountCenter.items.appInfo.title') || 'App Information',
+                                subtitle: t('accountCenter.items.appInfo.subtitle') || 'Version and system details',
                                 onPress: () => navigate('AppInfo'),
                             },
                         ]}
@@ -250,7 +252,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                     <GroupedItem
                         icon="log-out"
                         iconColor={dangerColor}
-                        title={isLoading ? "Signing out..." : "Sign Out"}
+                        title={isLoading ? (t('accountCenter.signingOut') || 'Signing out...') : (t('common.actions.signOut') || 'Sign Out')}
                         theme={theme}
                         onPress={confirmLogout}
                         isFirst={true}
@@ -265,7 +267,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 
                 <View style={styles.versionContainer}>
                     <Text style={[styles.versionText, { color: isDarkTheme ? '#666666' : '#999999' }]}>
-                        Version {packageInfo.version}
+                        {t('accountCenter.version', { version: packageInfo.version }) || `Version ${packageInfo.version}`}
                     </Text>
                 </View>
             </ScrollView>

@@ -56,7 +56,7 @@ const RecoverVerifyStep: React.FC<RecoverVerifyStepProps> = ({
         setSuccessMessage('');
 
         if (verificationCode.length !== 6) {
-            setErrorMessage('Please enter the 6-digit code.');
+            setErrorMessage(t('recover.enterCode'));
             return;
         }
         // For recovery via TOTP, proceed to reset step; server will validate during reset

@@ -19,6 +19,7 @@ import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
+import { useI18n } from '../hooks/useI18n';
 
 interface SubscriptionPlan {
     id: string;
@@ -79,6 +80,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const [currentAppPackage, setCurrentAppPackage] = useState<string>('mention'); // Default to mention for demo
 
     const isDarkTheme = theme === 'dark';
+    const { t } = useI18n();
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
     const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
     const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#F5F5F5';
@@ -403,14 +405,14 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             const selectedPlan = mockPlans.find(plan => plan.id === planId);
             if (!selectedPlan?.applicableApps.includes(currentAppPackage)) {
                 console.log(`❌ Subscription blocked: Plan "${selectedPlan?.name}" not available for app "${currentAppPackage}"`);
-                toast.error(`This plan is not available for the current app (${currentAppPackage})`);
+            toast.error(t('premium.toasts.planUnavailable', { app: currentAppPackage }) || `This plan is not available for the current app (${currentAppPackage})`);
                 return;
             }
 
             // Special restriction for Mention+ plan - only available in mention app
             if (planId === 'mention-plus' && currentAppPackage !== 'mention') {
                 console.log(`❌ Subscription blocked: Mention+ plan requires app to be "mention", current app is "${currentAppPackage}"`);
-                toast.error('Mention+ is only available in the Mention app');
+            toast.error(t('premium.toasts.mentionOnly') || 'Mention+ is only available in the Mention app');
                 return;
             }
 
@@ -421,7 +423,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             // Mock payment processing
             await new Promise(resolve => setTimeout(resolve, 2000));
 
-            toast.success('Subscription activated successfully!');
+            toast.success(t('premium.toasts.activated') || 'Subscription activated successfully!');
 
             // Mock subscription update
             setSubscription({
@@ -438,7 +440,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
         } catch (error) {
             console.error('Payment failed:', error);
-            toast.error('Payment failed. Please try again.');
+            toast.error(t('premium.toasts.paymentFailed') || 'Payment failed. Please try again.');
         } finally {
             setProcessingPayment(false);
         }
@@ -446,7 +448,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
     const handleCancelSubscription = () => {
         confirmAction(
-            'Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your current billing period.',
+            t('premium.confirms.cancelSub') || 'Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your current billing period.',
             async () => {
                 try {
                     // Mock cancellation
@@ -454,9 +456,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         ...prev,
                         cancelAtPeriodEnd: true
                     } : null);
-                    toast.success('Subscription will be canceled at the end of the billing period');
+                    toast.success(t('premium.toasts.willCancel') || 'Subscription will be canceled at the end of the billing period');
                 } catch (error) {
-                    toast.error('Failed to cancel subscription');
+                    toast.error(t('premium.toasts.cancelFailed') || 'Failed to cancel subscription');
                 }
             }
         );
@@ -468,9 +470,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 ...prev,
                 cancelAtPeriodEnd: false
             } : null);
-            toast.success('Subscription reactivated successfully');
+            toast.success(t('premium.toasts.reactivated') || 'Subscription reactivated successfully');
         } catch (error) {
-            toast.error('Failed to reactivate subscription');
+            toast.error(t('premium.toasts.reactivateFailed') || 'Failed to reactivate subscription');
         }
     };
 
@@ -525,11 +527,11 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             );
 
             const feature = individualFeatures.find(f => f.id === featureId);
-            toast.success(`Subscribed to ${feature?.name} successfully!`);
+            toast.success(t('premium.toasts.featureSubscribed', { name: feature?.name }) || `Subscribed to ${feature?.name} successfully!`);
 
         } catch (error) {
             console.error('Feature subscription failed:', error);
-            toast.error('Feature subscription failed. Please try again.');
+            toast.error(t('premium.toasts.featureSubscribeFailed') || 'Feature subscription failed. Please try again.');
         } finally {
             setProcessingPayment(false);
         }
@@ -538,7 +540,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const handleFeatureUnsubscribe = async (featureId: string) => {
         const feature = individualFeatures.find(f => f.id === featureId);
         confirmAction(
-            `Are you sure you want to unsubscribe from ${feature?.name}?`,
+            t('premium.confirms.unsubscribeFeature', { name: feature?.name }) || `Are you sure you want to unsubscribe from ${feature?.name}?`,
             async () => {
                 try {
                     setIndividualFeatures(prev =>
@@ -548,9 +550,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                                 : f
                         )
                     );
-                    toast.success(`Unsubscribed from ${feature?.name}`);
+                    toast.success(t('premium.toasts.featureUnsubscribed', { name: feature?.name }) || `Unsubscribed from ${feature?.name}`);
                 } catch (error) {
-                    toast.error('Failed to unsubscribe from feature');
+                    toast.error(t('premium.toasts.featureUnsubscribeFailed') || 'Failed to unsubscribe from feature');
                 }
             }
         );
@@ -575,9 +577,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                     <Ionicons name="arrow-back" size={24} color={textColor} />
                 </TouchableOpacity>
                 <View style={styles.headerTitleContainer}>
-                    <Text style={[styles.headerTitle, { color: textColor }]}>Oxy+ Subscriptions</Text>
+                    <Text style={[styles.headerTitle, { color: textColor }]}>{t('premium.title') || 'Oxy+ Subscriptions'}</Text>
                     <Text style={[styles.currentAppText, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                        for {getAppDisplayName(currentAppPackage)}
+                        {t('premium.forApp', { app: getAppDisplayName(currentAppPackage) }) || `for ${getAppDisplayName(currentAppPackage)}`}
                     </Text>
                 </View>
                 {onClose && (
@@ -602,7 +604,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
         return (
             <View style={styles.section}>
-                <Text style={[styles.sectionTitle, { color: textColor }]}>Current Subscription</Text>
+                <Text style={[styles.sectionTitle, { color: textColor }]}>{t('premium.current.title') || 'Current Subscription'}</Text>
 
                 <View style={[styles.currentSubscriptionCard, { backgroundColor: secondaryBackgroundColor, borderColor }]}>
                     <View style={styles.subscriptionHeader}>
@@ -620,14 +622,14 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                     </View>
 
                     <Text style={[styles.subscriptionDetail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                        Renews on {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
+                        {t('premium.current.renewsOn', { date: new Date(subscription.currentPeriodEnd).toLocaleDateString() }) || `Renews on ${new Date(subscription.currentPeriodEnd).toLocaleDateString()}`}
                     </Text>
 
                     {subscription.cancelAtPeriodEnd && (
                         <View style={styles.cancelNotice}>
                             <Ionicons name="warning" size={16} color={warningColor} />
                             <Text style={[styles.cancelText, { color: warningColor }]}>
-                                Subscription will cancel on {new Date(subscription.currentPeriodEnd).toLocaleDateString()}
+                                {t('premium.current.willCancelOn', { date: new Date(subscription.currentPeriodEnd).toLocaleDateString() }) || `Subscription will cancel on ${new Date(subscription.currentPeriodEnd).toLocaleDateString()}`}
                             </Text>
                         </View>
                     )}
@@ -1064,7 +1066,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         return (
             <View style={[styles.container, { backgroundColor, justifyContent: 'center' }]}>
                 <ActivityIndicator size="large" color={primaryColor} />
-                <Text style={[styles.loadingText, { color: textColor }]}>Loading subscription plans...</Text>
+                <Text style={[styles.loadingText, { color: textColor }]}>{t('premium.loading') || 'Loading subscription plans...'}</Text>
             </View>
         );
     }
@@ -1079,9 +1081,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
                 {!subscription && (
                     <View style={styles.section}>
-                        <Text style={[styles.sectionTitle, { color: textColor }]}>Choose Your Plan</Text>
+                        <Text style={[styles.sectionTitle, { color: textColor }]}>{t('premium.choosePlan') || 'Choose Your Plan'}</Text>
                         <Text style={[styles.sectionSubtitle, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                            Unlock premium features and take your experience to the next level
+                            {t('premium.choosePlanSubtitle') || 'Unlock premium features and take your experience to the next level'}
                         </Text>
                     </View>
                 )}
@@ -1093,7 +1095,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                 {activeTab === 'plans' ? (
                     <View style={styles.section}>
                         {!subscription && (
-                            <Text style={[styles.sectionTitle, { color: textColor }]}>Available Plans</Text>
+                            <Text style={[styles.sectionTitle, { color: textColor }]}>{t('premium.availablePlans') || 'Available Plans'}</Text>
                         )}
 
                         {plans.map(renderPlanCard)}
@@ -1104,15 +1106,15 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
                 {/* Features Comparison */}
                 <View style={styles.section}>
-                    <Text style={[styles.sectionTitle, { color: textColor }]}>Why Go Premium?</Text>
+                    <Text style={[styles.sectionTitle, { color: textColor }]}>{t('premium.why') || 'Why Go Premium?'}</Text>
 
                     <View style={[styles.benefitsCard, { backgroundColor: secondaryBackgroundColor, borderColor }]}>
                         <View style={styles.benefitItem}>
                             <Ionicons name="flash" size={24} color={primaryColor} />
                             <View style={styles.benefitContent}>
-                                <Text style={[styles.benefitTitle, { color: textColor }]}>Enhanced Performance</Text>
+                                <Text style={[styles.benefitTitle, { color: textColor }]}>{t('premium.benefits.performance.title') || 'Enhanced Performance'}</Text>
                                 <Text style={[styles.benefitDescription, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                    Faster processing and priority access to our servers
+                                    {t('premium.benefits.performance.desc') || 'Faster processing and priority access to our servers'}
                                 </Text>
                             </View>
                         </View>
@@ -1120,9 +1122,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         <View style={styles.benefitItem}>
                             <Ionicons name="shield-checkmark" size={24} color={successColor} />
                             <View style={styles.benefitContent}>
-                                <Text style={[styles.benefitTitle, { color: textColor }]}>Advanced Security</Text>
+                                <Text style={[styles.benefitTitle, { color: textColor }]}>{t('premium.benefits.security.title') || 'Advanced Security'}</Text>
                                 <Text style={[styles.benefitDescription, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                    Enhanced encryption and security features
+                                    {t('premium.benefits.security.desc') || 'Enhanced encryption and security features'}
                                 </Text>
                             </View>
                         </View>
@@ -1130,9 +1132,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                         <View style={styles.benefitItem}>
                             <Ionicons name="headset" size={24} color={warningColor} />
                             <View style={styles.benefitContent}>
-                                <Text style={[styles.benefitTitle, { color: textColor }]}>Priority Support</Text>
+                                <Text style={[styles.benefitTitle, { color: textColor }]}>{t('premium.benefits.support.title') || 'Priority Support'}</Text>
                                 <Text style={[styles.benefitDescription, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                    Get help faster with our premium support team
+                                    {t('premium.benefits.support.desc') || 'Get help faster with our premium support team'}
                                 </Text>
                             </View>
                         </View>

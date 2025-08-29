@@ -124,7 +124,8 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                 <View style={[styles.modernInfoCard, { backgroundColor: colors.inputBackground }]}>
                     <Ionicons name="information-circle" size={20} color={colors.primary} />
                     <Text style={[styles.modernInfoText, { color: colors.text }]}>
-                        Currently signed in as <Text style={{ fontWeight: 'bold' }}>{user.username}</Text>
+                        {t('signin.currentlySignedInAs', { username: user.username }) || 'Currently signed in as '}
+                        <Text style={{ fontWeight: 'bold' }}>{user.username}</Text>
                     </Text>
                 </View>
             )}

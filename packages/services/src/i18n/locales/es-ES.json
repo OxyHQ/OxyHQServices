@@ -15,7 +15,19 @@
     "actions": {
       "continue": "Continuar",
       "back": "Atrás",
-      "signIn": "Entrar"
+      "signIn": "Entrar",
+      "verify": "Verificar"
+    },
+    "forgotPrompt": "¿Olvidaste tu contraseña?",
+    "security": { "dataSecure": "Tus datos están cifrados y seguros" },
+    "currentlySignedInAs": "Actualmente has iniciado sesión como {{username}}",
+    "totp": {
+      "title": "Código de dos factores",
+      "subtitle": "Introduce el código de 6 dígitos de tu app autenticadora para @{{username}}",
+      "invalidCode": "Código inválido. Inténtalo de nuevo.",
+      "noAccess": "¿Sin acceso a tu autenticador?",
+      "useBackupCode": "Usar código de respaldo",
+      "useRecoveryKey": "Usar clave de recuperación"
     }
   },
   "signup": {
@@ -36,6 +48,16 @@
       "subtitle": "Revisa tu información y crea tu cuenta"
     }
   },
+  "profile": {
+    "edit": "Editar perfil",
+    "noBio": "Este usuario aún no tiene biografía.",
+    "joinedOn": "Se unió el {{date}}",
+    "bornOn": "Nació el {{date}}",
+    "karma": "Karma",
+    "followers": "Seguidores",
+    "following": "Siguiendo",
+    "more": "+ {{count}} más"
+  },
   "language": {
     "title": "Idioma",
     "subtitle": "Elige tu idioma preferido",
@@ -47,7 +69,8 @@
     "title": "Recuperar cuenta",
     "username": {
       "label": "Usuario",
-      "placeholder": "Introduce tu usuario"
+      "placeholder": "Introduce tu usuario",
+      "errorRequired": "Por favor, introduce tu usuario."
     },
     "verify": {
       "title": "Verificar código",
@@ -56,7 +79,67 @@
     "enterCode": "Introduce el código de 6 dígitos de tu app de autenticación.",
     "newPassword": "Establecer nueva contraseña",
     "resetSuccess": "¡Tu contraseña ha sido restablecida! Ahora puedes iniciar sesión.",
-    "noEmail": "Ya no enviamos correos de recuperación. Si activaste la autenticación de dos factores (TOTP), inicia sesión con tu usuario y contraseña y luego introduce el código del autenticador. De lo contrario, contacta con soporte."
+    "noEmail": "Ya no enviamos correos de recuperación. Si activaste la autenticación de dos factores (TOTP), inicia sesión con tu usuario y contraseña y luego introduce el código del autenticador. De lo contrario, contacta con soporte.",
+    "password": {
+      "minLength": "La contraseña debe tener al menos 8 caracteres",
+      "mismatch": "Las contraseñas no coinciden",
+      "resetFailed": "Error al restablecer la contraseña"
+    },
+    "missingCode": "Falta el código",
+    "whatsNextTitle": "¿Qué sigue?",
+    "whatsNextBody": "Ahora puedes restablecer tu contraseña o volver para iniciar sesión con tus credenciales.",
+    "completeSecure": "La recuperación de tu cuenta se ha completado de forma segura."
+  },
+  "editProfile": {
+    "title": "Editar perfil",
+    "sections": {
+      "profilePicture": "Foto de perfil",
+      "basicInfo": "Información básica",
+      "about": "Sobre ti",
+      "quickActions": "Acciones rápidas",
+      "security": "Seguridad"
+    },
+    "items": {
+      "displayName": { "title": "Nombre para mostrar", "add": "Añade tu nombre para mostrar" },
+      "username": { "title": "Usuario", "choose": "Elige un usuario" },
+      "email": { "title": "Correo electrónico", "add": "Añade tu correo electrónico" },
+      "bio": { "title": "Biografía", "placeholder": "Cuenta algo sobre ti" },
+      "locations": {
+        "title": "Ubicaciones",
+        "add": "Añade tus ubicaciones",
+        "count": "{{count}} ubicación añadida",
+        "count_plural": "{{count}} ubicaciones añadidas"
+      },
+      "links": {
+        "title": "Enlaces",
+        "add": "Añade tus enlaces",
+        "count": "{{count}} enlace añadido",
+        "count_plural": "{{count}} enlaces añadidos"
+      },
+      "previewProfile": { "title": "Previsualizar perfil", "subtitle": "Ver cómo se ve tu perfil para otros" },
+      "privacySettings": { "title": "Ajustes de privacidad", "subtitle": "Controla quién puede ver tu perfil", "coming": "¡Los ajustes de privacidad estarán disponibles pronto!" },
+      "verifyAccount": { "title": "Verificar cuenta", "subtitle": "Obtén una insignia verificada", "coming": "¡La verificación de cuenta estará disponible pronto!" },
+      "twoFactor": { "title": "Autenticación de dos factores", "enabled": "Activada", "disabled": "Desactivada (recomendado)" }
+    },
+    "confirms": {
+      "removeAvatar": "¿Eliminar tu foto de perfil?"
+    },
+    "toasts": {
+      "profileUpdated": "Perfil actualizado correctamente",
+      "updateFailed": "Error al actualizar el perfil",
+      "avatarRemoved": "Avatar eliminado",
+      "selectImage": "Selecciona un archivo de imagen",
+      "avatarUnchanged": "El avatar no cambió",
+      "avatarSelected": "Avatar seleccionado",
+      "avatarUpdated": "Avatar actualizado",
+      "updateAvatarFailed": "Error al actualizar el avatar",
+      "noActiveSession": "No hay sesión activa",
+      "totpStartFailed": "Error al iniciar el registro TOTP",
+      "twoFactorEnabled": "Autenticación de dos factores activada",
+      "invalidCode": "Código inválido",
+      "twoFactorDisabled": "Autenticación de dos factores desactivada",
+      "disableFailed": "Error al desactivar"
+    }
   },
   "common": {
     "actions": {
@@ -125,5 +208,181 @@
     },
     "manageComing": "¡La gestión de tu cuenta Oxy estará disponible pronto!",
     "addAccountComing": "¡La función de agregar otra cuenta estará disponible pronto!"
+  }
+  ,
+  "accountCenter": {
+    "sections": {
+      "quickActions": "Acciones rápidas",
+      "accountManagement": "Gestión de la cuenta",
+      "multiAccount": "Multi‑cuenta",
+      "addAccount": "Añadir cuenta",
+      "moreOptions": "Más opciones"
+    },
+    "quickActions": {
+      "overview": "Resumen",
+      "editProfile": "Editar perfil",
+      "sessions": "Sesiones",
+      "premium": "Premium",
+      "billing": "Facturación",
+      "switch": "Cambiar"
+    },
+    "items": {
+      "accountOverview": { "title": "Resumen de la cuenta", "subtitle": "Información completa de la cuenta" },
+      "editProfile": { "title": "Editar perfil", "subtitle": "Gestiona tu perfil y preferencias" },
+      "manageSessions": { "title": "Gestionar sesiones", "subtitle": "Seguridad y dispositivos activos" },
+      "fileManagement": { "title": "Gestión de archivos", "subtitle": "Sube, descarga y gestiona tus archivos" },
+      "premium": { "title": "Suscripciones Oxy+", "manage": "Gestiona tu plan premium", "upgrade": "Mejorar a funciones premium" },
+      "billing": { "title": "Gestión de facturación", "subtitle": "Métodos de pago y facturas" },
+      "switchAccount": { "title": "Cambiar de cuenta", "subtitle": "{{count}} cuentas disponibles" },
+      "addAccount": { "title": "Añadir otra cuenta", "subtitle": "Inicia sesión con otra cuenta" },
+      "notifications": { "title": "Notificaciones", "subtitle": "Gestiona la configuración de notificaciones", "coming": "¡La función de notificaciones estará disponible pronto!" },
+      "appInfo": { "title": "Información de la app", "subtitle": "Versión y detalles del sistema" }
+    },
+    "signingOut": "Cerrando sesión...",
+    "version": "Versión {{version}}"
+  }
+  ,
+  "accountSwitcher": {
+    "title": "Conmutador de cuentas",
+    "sections": {
+      "current": "Cuenta actual",
+      "otherWithCount": "Otras cuentas ({{count}})",
+      "deviceSessions": "Sesiones de dispositivo"
+    },
+    "currentBadge": "Actual",
+    "loading": "Cargando cuentas...",
+    "toasts": {
+      "switchSuccess": "¡Cuenta cambiada correctamente!",
+      "switchFailed": "Hubo un problema al cambiar de cuenta. Inténtalo de nuevo.",
+      "removeSuccess": "¡Cuenta eliminada correctamente!",
+      "removeFailed": "Hubo un problema al eliminar la cuenta. Inténtalo de nuevo.",
+      "signOutAllSuccess": "¡Todas las cuentas cerradas correctamente!",
+      "signOutAllFailed": "Hubo un problema al cerrar sesión: {{error}}",
+      "deviceLoadFailed": "Error al cargar las sesiones de dispositivo. Inténtalo de nuevo.",
+      "remoteSignOutSuccess": "¡Sesión cerrada correctamente en {{deviceName}}!",
+      "remoteSignOutFailed": "Hubo un problema al cerrar sesión en el dispositivo. Inténtalo de nuevo.",
+      "noOtherDeviceSessions": "No se encontraron otras sesiones de dispositivo para cerrar.",
+      "signOutOthersSuccess": "¡Sesiones cerradas correctamente en los demás dispositivos!",
+      "signOutOthersFailed": "Hubo un problema al cerrar sesión en otros dispositivos. Inténtalo de nuevo."
+    },
+    "confirms": {
+      "remove": "¿Seguro que quieres eliminar a {{displayName}} de este dispositivo? Tendrás que iniciar sesión de nuevo para acceder a esta cuenta.",
+      "logoutAll": "¿Seguro que quieres cerrar sesión en todas las cuentas? Esto eliminará todas las cuentas guardadas de este dispositivo.",
+      "remoteLogout": "¿Seguro que quieres cerrar sesión en \"{{deviceName}}\"? Esto finalizará la sesión en ese dispositivo.",
+      "logoutOthers": "¿Seguro que quieres cerrar sesión en los otros {{count}} dispositivo(s)? Esto finalizará las sesiones en todos los demás dispositivos excepto en este."
+    },
+    "device": {
+      "loadingTitle": "Cargando sesiones de dispositivo...",
+      "loadingSubtitle": "Espera mientras obtenemos tus sesiones de dispositivo",
+      "noneTitle": "No se encontraron sesiones de dispositivo",
+      "noneSubtitle": "La gestión de sesiones de dispositivo no está disponible",
+      "thisDevice": "Este dispositivo",
+      "lastActive": "Última actividad: {{date}}"
+    },
+    "empty": {
+      "title": "No hay cuentas guardadas",
+      "subtitle": "Añade otra cuenta para cambiar rápidamente entre ellas"
+    }
+  }
+  ,
+  "feedback": {
+    "type": {
+      "title": "¿Qué tipo de comentario?",
+      "subtitle": "Elige la categoría que mejor describa tu comentario"
+    },
+    "category": { "label": "Categoría" },
+    "details": {
+      "title": "Cuéntanos más",
+      "subtitle": "Proporciona detalles sobre tu comentario"
+    },
+    "fields": {
+      "title": { "label": "Título", "placeholder": "Resumen breve de tu comentario" },
+      "description": { "label": "Descripción", "placeholder": "Por favor, proporciona información detallada..." },
+      "email": { "label": "Correo electrónico", "placeholder": "Introduce tu correo electrónico" }
+    },
+    "priority": { "label": "Nivel de prioridad" },
+    "contact": {
+      "title": "Información de contacto",
+      "subtitle": "Ayúdanos a ponernos en contacto contigo",
+      "includeSystemInfo": "Incluye información del sistema para ayudarnos a entender mejor tu problema"
+    },
+    "summary": {
+      "title": "Resumen",
+      "subtitle": "Por favor, revisa tu comentario antes de enviarlo",
+      "type": "Tipo:",
+      "priority": "Prioridad:",
+      "category": "Categoría:",
+      "titleLabel": "Título:",
+      "contact": "Contacto:"
+    },
+    "actions": {
+      "submit": "Enviar comentario",
+      "submitAnother": "Enviar otro"
+    },
+    "success": {
+      "thanks": "¡Gracias!",
+      "message": "Tu comentario se ha enviado correctamente. Lo revisaremos y nos pondremos en contacto contigo pronto."
+    },
+    "toasts": {
+      "fillRequired": "Por favor, completa todos los campos requeridos",
+      "thanks": "¡Gracias por tu comentario!",
+      "submitFailed": "Error al enviar el comentario",
+      "submitSuccess": "¡Comentario enviado correctamente!"
+    }
+  }
+  ,
+  "karma": {
+    "faq": {
+      "title": "Preguntas frecuentes sobre karma",
+      "subtitle": "Preguntas frecuentes sobre el sistema de karma",
+      "search": "Buscar en las FAQ...",
+      "noResults": "No se encontraron preguntas que coincidan con \"{{query}}\"",
+      "items": {
+        "what": { "q": "¿Qué es el karma?", "a": "El karma es un reconocimiento de tus acciones positivas en el ecosistema de Oxy. No se puede enviar ni recibir directamente." },
+        "earn": { "q": "¿Cómo gano karma?", "a": "Ayudando a otros, reportando errores, contribuyendo contenido y participando en eventos de la comunidad." },
+        "lose": { "q": "¿Puedo perder karma?", "a": "El karma puede reducirse por acciones negativas o por incumplir las reglas de la comunidad." },
+        "use": { "q": "¿Qué puedo hacer con el karma?", "a": "Desbloquea recompensas, insignias y funciones especiales a medida que ganas más karma." },
+        "transfer": { "q": "¿Puedo transferir karma a otros?", "a": "No, el karma no se puede enviar ni recibir. Solo se gana con tus acciones." },
+        "support": { "q": "¿Cómo obtengo soporte?", "a": "Contacta con el soporte de Oxy a través de la app o el sitio web para cualquier pregunta relacionada con el karma." }
+      }
+    }
+  }
+  ,
+  "premium": {
+    "title": "Suscripciones Oxy+",
+    "forApp": "para {{app}}",
+    "loading": "Cargando planes de suscripción...",
+    "choosePlan": "Elige tu plan",
+    "choosePlanSubtitle": "Desbloquea funciones premium y lleva tu experiencia al siguiente nivel",
+    "availablePlans": "Planes disponibles",
+    "why": "¿Por qué pasar a Premium?",
+    "benefits": {
+      "performance": { "title": "Rendimiento mejorado", "desc": "Procesamiento más rápido y acceso prioritario a nuestros servidores" },
+      "security": { "title": "Seguridad avanzada", "desc": "Cifrado y funciones de seguridad mejoradas" },
+      "support": { "title": "Soporte prioritario", "desc": "Obtén ayuda más rápido con nuestro equipo premium" }
+    },
+    "toasts": {
+      "planUnavailable": "Este plan no está disponible para la app actual ({{app}})",
+      "mentionOnly": "Mention+ solo está disponible en la app Mention",
+      "activated": "¡Suscripción activada correctamente!",
+      "paymentFailed": "Error en el pago. Inténtalo de nuevo.",
+      "willCancel": "La suscripción se cancelará al final del periodo de facturación",
+      "cancelFailed": "No se pudo cancelar la suscripción",
+      "reactivated": "Suscripción reactivada correctamente",
+      "reactivateFailed": "No se pudo reactivar la suscripción",
+      "featureSubscribed": "Te has suscrito a {{name}} correctamente",
+      "featureSubscribeFailed": "Error al suscribirse a la función. Inténtalo de nuevo.",
+      "featureUnsubscribed": "Te has dado de baja de {{name}}",
+      "featureUnsubscribeFailed": "No se pudo dar de baja de la función"
+    },
+    "confirms": {
+      "cancelSub": "¿Seguro que quieres cancelar tu suscripción? Perderás el acceso a las funciones premium al final del periodo de facturación.",
+      "unsubscribeFeature": "¿Seguro que quieres darte de baja de {{name}}?"
+    },
+    "current": {
+      "title": "Suscripción actual",
+      "renewsOn": "Se renueva el {{date}}",
+      "willCancelOn": "La suscripción se cancelará el {{date}}"
+    }
   }
 }

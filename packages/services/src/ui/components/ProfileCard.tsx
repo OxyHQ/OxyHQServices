@@ -1,6 +1,7 @@
 import type React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useI18n } from '../hooks/useI18n';
 import Avatar from './Avatar';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
@@ -27,6 +28,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
 }) => {
     const isDarkTheme = theme === 'dark';
     const { oxyServices } = useOxy();
+    const { t } = useI18n();
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
     const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#FFFFFF';
     const primaryColor = '#0066CC';
@@ -58,7 +60,9 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
                                 style={styles.editProfileButton}
                                 onPress={onEditPress}
                             >
-                                <Text style={[styles.editProfileText, { color: primaryColor }]}>Edit Profile</Text>
+                                <Text style={[styles.editProfileText, { color: primaryColor }]}>
+                                    {t('editProfile.title') || 'Edit Profile'}
+                                </Text>
                             </TouchableOpacity>
                         )}
                     </View>

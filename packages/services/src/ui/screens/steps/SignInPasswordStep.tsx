@@ -175,7 +175,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
             <View style={styles.securityNotice}>
                 <Ionicons name="shield-checkmark" size={14} color={colors.secondaryText} />
                 <Text style={[styles.securityText, { color: colors.secondaryText }]}>
-                    Your data is encrypted and secure
+                    {t('signin.security.dataSecure') || 'Your data is encrypted and secure'}
                 </Text>
             </View>
         </>

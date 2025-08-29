@@ -7,6 +7,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
+import { useI18n } from '../../hooks/useI18n';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
 
@@ -56,6 +57,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
     navigate,
 }) => {
     const inputRef = useRef<TextInput>(null);
+    const { t } = useI18n();
 
     // Animated styles - properly memoized to prevent re-renders
     const containerAnimatedStyle = useAnimatedStyle(() => {
@@ -121,7 +123,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
             <View style={styles.modernInputContainer}>
                 <TextField
                     ref={inputRef}
-                    label="Password"
+                    label={t('common.labels.password')}
                     leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
                     value={password}
                     onChangeText={handlePasswordChange}
@@ -137,26 +139,26 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     autoFocus
                 />
                 <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                    <Text style={[styles.footerText, { color: colors.text }]}>Forgot your password? </Text>
+                    <Text style={[styles.footerText, { color: colors.text }]}>{t('signin.forgotPrompt') || 'Forgot your password?'} </Text>
                     <TouchableOpacity onPress={() => navigate('RecoverAccount', {
                         returnTo: 'SignIn',
                         returnStep: 1,
                         returnData: { username, userProfile }
                     })}>
-                        <Text style={[styles.modernLinkText, { color: colors.primary }]}>Recover your account</Text>
+                        <Text style={[styles.modernLinkText, { color: colors.primary }]}>{t('common.links.recoverAccount')}</Text>
                     </TouchableOpacity>
                 </View>
             </View>
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: 'Back',
+                        text: t('common.actions.back'),
                         onPress: prevStep,
                         icon: 'arrow-back',
                         variant: 'transparent',
                     },
                     {
-                        text: 'Sign In',
+                        text: t('common.actions.signIn'),
                         onPress: handleSignIn,
                         icon: 'log-in',
                         variant: 'primary',
@@ -169,7 +171,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
             <View style={styles.securityNotice}>
                 <Ionicons name="shield-checkmark" size={14} color={colors.secondaryText} />
                 <Text style={[styles.securityText, { color: colors.secondaryText }]}>
-                    Your data is encrypted and secure
+                    {t('signin.security.dataSecure') || 'Your data is encrypted and secure'}
                 </Text>
             </View>
             <StatusBar

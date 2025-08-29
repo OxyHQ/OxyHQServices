@@ -6,7 +6,18 @@
     "addAccountSubtitle": "Sign in with another account",
     "username": { "label": "Username", "placeholder": "Enter your username" },
     "password": { "label": "Password", "placeholder": "Enter your password" },
-    "actions": { "continue": "Continue", "back": "Back", "signIn": "Sign In" }
+    "actions": { "continue": "Continue", "back": "Back", "signIn": "Sign In", "verify": "Verify" },
+    "forgotPrompt": "Forgot your password?",
+    "security": { "dataSecure": "Your data is encrypted and secure" },
+    "currentlySignedInAs": "Currently signed in as {{username}}",
+    "totp": {
+      "title": "Two‑Factor Code",
+      "subtitle": "Enter the 6‑digit code from your authenticator app for @{{username}}",
+      "invalidCode": "Invalid code. Please try again.",
+      "noAccess": "No access to your authenticator?",
+      "useBackupCode": "Use backup code",
+      "useRecoveryKey": "Use recovery key"
+    }
   },
   "signup": {
     "welcome": { "title": "Welcome to Oxy!", "subtitle": "Let's create your account in just a few steps" },
@@ -21,14 +32,255 @@
     "available": "Available Languages",
     "changed": "Language changed to {{lang}}"
   },
+  "profile": {
+    "edit": "Edit Profile",
+    "noBio": "This user has no bio yet.",
+    "joinedOn": "Joined {{date}}",
+    "bornOn": "Born {{date}}",
+    "karma": "Karma",
+    "followers": "Followers",
+    "following": "Following",
+    "more": "+ {{count}} more"
+  },
+  "feedback": {
+    "type": {
+      "title": "What type of feedback?",
+      "subtitle": "Choose the category that best describes your feedback"
+    },
+    "category": { "label": "Category" },
+    "details": {
+      "title": "Tell us more",
+      "subtitle": "Provide details about your feedback"
+    },
+    "fields": {
+      "title": { "label": "Title", "placeholder": "Brief summary of your feedback" },
+      "description": { "label": "Description", "placeholder": "Please provide detailed information..." },
+      "email": { "label": "Email Address", "placeholder": "Enter your email address" }
+    },
+    "priority": { "label": "Priority Level" },
+    "contact": {
+      "title": "Contact Information",
+      "subtitle": "Help us get back to you",
+      "includeSystemInfo": "Include system information to help us better understand your issue"
+    },
+    "summary": {
+      "title": "Summary",
+      "subtitle": "Please review your feedback before submitting",
+      "type": "Type:",
+      "priority": "Priority:",
+      "category": "Category:",
+      "titleLabel": "Title:",
+      "contact": "Contact:"
+    },
+    "actions": {
+      "submit": "Submit Feedback",
+      "submitAnother": "Submit Another"
+    },
+    "success": {
+      "thanks": "Thank You!",
+      "message": "Your feedback has been submitted successfully. We'll review it and get back to you soon."
+    },
+    "toasts": {
+      "fillRequired": "Please fill in all required fields",
+      "thanks": "Thank you for your feedback!",
+      "submitFailed": "Failed to submit feedback",
+      "submitSuccess": "Feedback submitted successfully!"
+    }
+  },
   "recover": {
     "title": "Recover Account",
-    "username": { "label": "Username", "placeholder": "Enter your username" },
+    "username": { "label": "Username", "placeholder": "Enter your username", "errorRequired": "Please enter your username." },
     "verify": { "title": "Verify Code", "action": "Verify Code" },
     "enterCode": "Enter the 6‑digit code from your authenticator app.",
     "newPassword": "Set New Password",
     "resetSuccess": "Your password has been reset! You can now sign in.",
-    "noEmail": "We no longer send recovery emails. If you enabled Two‑Factor Authentication (TOTP), sign in with your username and password, then enter your authenticator code. Otherwise, contact support to regain access."
+    "noEmail": "We no longer send recovery emails. If you enabled Two‑Factor Authentication (TOTP), sign in with your username and password, then enter your authenticator code. Otherwise, contact support to regain access.",
+    "password": {
+      "minLength": "Password must be at least 8 characters long",
+      "mismatch": "Passwords do not match",
+      "resetFailed": "Failed to reset password"
+    },
+    "missingCode": "Missing code",
+    "whatsNextTitle": "What's next?",
+    "whatsNextBody": "You can now reset your password or return to sign in with your existing credentials.",
+    "completeSecure": "Your account recovery is complete and secure."
+  },
+  "accountCenter": {
+    "sections": {
+      "quickActions": "Quick Actions",
+      "accountManagement": "Account Management",
+      "multiAccount": "Multi-Account",
+      "addAccount": "Add Account",
+      "moreOptions": "More Options"
+    },
+    "quickActions": {
+      "overview": "Overview",
+      "editProfile": "Edit Profile",
+      "sessions": "Sessions",
+      "premium": "Premium",
+      "billing": "Billing",
+      "switch": "Switch"
+    },
+    "items": {
+      "accountOverview": { "title": "Account Overview", "subtitle": "Complete account information" },
+      "editProfile": { "title": "Edit Profile", "subtitle": "Manage your profile and preferences" },
+      "manageSessions": { "title": "Manage Sessions", "subtitle": "Security and active devices" },
+      "fileManagement": { "title": "File Management", "subtitle": "Upload, download, and manage your files" },
+      "premium": { "title": "Oxy+ Subscriptions", "manage": "Manage your premium plan", "upgrade": "Upgrade to premium features" },
+      "billing": { "title": "Billing Management", "subtitle": "Payment methods and invoices" },
+      "switchAccount": { "title": "Switch Account", "subtitle": "{{count}} accounts available" },
+      "addAccount": { "title": "Add Another Account", "subtitle": "Sign in with a different account" },
+      "notifications": { "title": "Notifications", "subtitle": "Manage notification settings", "coming": "Notifications feature coming soon!" },
+      "appInfo": { "title": "App Information", "subtitle": "Version and system details" }
+    },
+    "signingOut": "Signing out...",
+    "version": "Version {{version}}"
+  },
+  "accountSwitcher": {
+    "title": "Account Switcher",
+    "sections": {
+      "current": "Current Account",
+      "otherWithCount": "Other Accounts ({{count}})",
+      "deviceSessions": "Device Sessions"
+    },
+    "currentBadge": "Current",
+    "loading": "Loading accounts...",
+    "toasts": {
+      "switchSuccess": "Account switched successfully!",
+      "switchFailed": "There was a problem switching accounts. Please try again.",
+      "removeSuccess": "Account removed successfully!",
+      "removeFailed": "There was a problem removing the account. Please try again.",
+      "signOutAllSuccess": "All accounts signed out successfully!",
+      "signOutAllFailed": "There was a problem signing out: {{error}}",
+      "deviceLoadFailed": "Failed to load device sessions. Please try again.",
+      "remoteSignOutSuccess": "Signed out from {{deviceName}} successfully!",
+      "remoteSignOutFailed": "There was a problem signing out from the device. Please try again.",
+      "noOtherDeviceSessions": "No other device sessions found to sign out from.",
+      "signOutOthersSuccess": "Signed out from all other devices successfully!",
+      "signOutOthersFailed": "There was a problem signing out from other devices. Please try again."
+    },
+    "confirms": {
+      "remove": "Are you sure you want to remove {{displayName}} from this device? You'll need to sign in again to access this account.",
+      "logoutAll": "Are you sure you want to sign out of all accounts? This will remove all saved accounts from this device.",
+      "remoteLogout": "Are you sure you want to sign out from \"{{deviceName}}\"? This will end the session on that device.",
+      "logoutOthers": "Are you sure you want to sign out from all {{count}} other device(s)? This will end sessions on all other devices except this one."
+    },
+    "device": {
+      "loadingTitle": "Loading device sessions...",
+      "loadingSubtitle": "Please wait while we fetch your device sessions",
+      "noneTitle": "No device sessions found",
+      "noneSubtitle": "Device session management not available",
+      "thisDevice": "This device",
+      "lastActive": "Last active: {{date}}"
+    },
+    "empty": {
+      "title": "No saved accounts",
+      "subtitle": "Add another account to switch between them quickly"
+    }
+  },
+  "karma": {
+    "faq": {
+      "title": "Karma FAQ",
+      "subtitle": "Frequently asked questions about karma",
+      "search": "Search FAQ...",
+      "noResults": "No FAQ items found matching \"{{query}}\"",
+      "items": {
+        "what": { "q": "What is karma?", "a": "Karma is a recognition of your positive actions in the Oxy Ecosystem. It cannot be sent or received directly." },
+        "earn": { "q": "How do I earn karma?", "a": "By helping others, reporting bugs, contributing content, and participating in community events." },
+        "lose": { "q": "Can I lose karma?", "a": "Karma may be reduced for negative actions or breaking community rules." },
+        "use": { "q": "What can I do with karma?", "a": "Unlock rewards, badges, and special features as you earn more karma." },
+        "transfer": { "q": "Can I transfer karma to others?", "a": "No, karma cannot be sent or received. It is only earned by your actions." },
+        "support": { "q": "How do I get support?", "a": "Contact Oxy support via the app or website for any karma-related questions." }
+      }
+    }
+  },
+  "premium": {
+    "title": "Oxy+ Subscriptions",
+    "forApp": "for {{app}}",
+    "loading": "Loading subscription plans...",
+    "choosePlan": "Choose Your Plan",
+    "choosePlanSubtitle": "Unlock premium features and take your experience to the next level",
+    "availablePlans": "Available Plans",
+    "why": "Why Go Premium?",
+    "benefits": {
+      "performance": { "title": "Enhanced Performance", "desc": "Faster processing and priority access to our servers" },
+      "security": { "title": "Advanced Security", "desc": "Enhanced encryption and security features" },
+      "support": { "title": "Priority Support", "desc": "Get help faster with our premium support team" }
+    },
+    "toasts": {
+      "planUnavailable": "This plan is not available for the current app ({{app}})",
+      "mentionOnly": "Mention+ is only available in the Mention app",
+      "activated": "Subscription activated successfully!",
+      "paymentFailed": "Payment failed. Please try again.",
+      "willCancel": "Subscription will be canceled at the end of the billing period",
+      "cancelFailed": "Failed to cancel subscription",
+      "reactivated": "Subscription reactivated successfully",
+      "reactivateFailed": "Failed to reactivate subscription",
+      "featureSubscribed": "Subscribed to {{name}} successfully!",
+      "featureSubscribeFailed": "Feature subscription failed. Please try again.",
+      "featureUnsubscribed": "Unsubscribed from {{name}}",
+      "featureUnsubscribeFailed": "Failed to unsubscribe from feature"
+    },
+    "confirms": {
+      "cancelSub": "Are you sure you want to cancel your subscription? You will lose access to premium features at the end of your current billing period.",
+      "unsubscribeFeature": "Are you sure you want to unsubscribe from {{name}}?"
+    },
+    "current": {
+      "title": "Current Subscription",
+      "renewsOn": "Renews on {{date}}",
+      "willCancelOn": "Subscription will cancel on {{date}}"
+    }
+  },
+  "editProfile": {
+    "title": "Edit Profile",
+    "sections": {
+      "profilePicture": "Profile Picture",
+      "basicInfo": "Basic Information",
+      "about": "About You",
+      "quickActions": "Quick Actions",
+      "security": "Security"
+    },
+    "items": {
+      "displayName": { "title": "Display Name", "add": "Add your display name" },
+      "username": { "title": "Username", "choose": "Choose a username" },
+      "email": { "title": "Email", "add": "Add your email address" },
+      "bio": { "title": "Bio", "placeholder": "Tell people about yourself" },
+      "locations": {
+        "title": "Locations",
+        "add": "Add your locations",
+        "count": "{{count}} location added",
+        "count_plural": "{{count}} locations added"
+      },
+      "links": {
+        "title": "Links",
+        "add": "Add your links",
+        "count": "{{count}} link added",
+        "count_plural": "{{count}} links added"
+      },
+      "previewProfile": { "title": "Preview Profile", "subtitle": "See how your profile looks to others" },
+      "privacySettings": { "title": "Privacy Settings", "subtitle": "Control who can see your profile", "coming": "Privacy settings coming soon!" },
+      "verifyAccount": { "title": "Verify Account", "subtitle": "Get a verified badge", "coming": "Account verification coming soon!" },
+      "twoFactor": { "title": "Two‑Factor Authentication", "enabled": "Enabled", "disabled": "Disabled (recommended)" }
+    },
+    "confirms": {
+      "removeAvatar": "Remove your profile picture?"
+    },
+    "toasts": {
+      "profileUpdated": "Profile updated successfully",
+      "updateFailed": "Failed to update profile",
+      "avatarRemoved": "Avatar removed",
+      "selectImage": "Please select an image file",
+      "avatarUnchanged": "Avatar unchanged",
+      "avatarSelected": "Avatar selected",
+      "avatarUpdated": "Avatar updated",
+      "updateAvatarFailed": "Failed to update avatar",
+      "noActiveSession": "No active session",
+      "totpStartFailed": "Failed to start TOTP enrollment",
+      "twoFactorEnabled": "Two‑Factor Authentication enabled",
+      "invalidCode": "Invalid code",
+      "twoFactorDisabled": "Two‑Factor Authentication disabled",
+      "disableFailed": "Failed to disable"
+    }
   },
   "accountOverview": {
     "title": "Account",

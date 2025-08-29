@@ -23,6 +23,7 @@ import { fontFamilies } from '../styles/fonts';
 import { confirmAction } from '../utils/confirmAction';
 import { useAuthStore } from '../stores/authStore';
 import { Header, GroupedSection } from '../components';
+import { useI18n } from '../hooks/useI18n';
 import QRCode from 'react-native-qrcode-svg';
 
 const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
@@ -32,6 +33,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     navigate,
 }) => {
     const { user, oxyServices, isLoading: authLoading, isAuthenticated, showBottomSheet, activeSessionId } = useOxy();
+    const { t } = useI18n();
     const updateUser = useAuthStore((state) => state.updateUser);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
@@ -218,7 +220,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             }
 
             await updateUser(updates, oxyServices);
-            toast.success('Profile updated successfully');
+            toast.success(t('editProfile.toasts.profileUpdated') || 'Profile updated successfully');
 
             animateSaveButton(1); // Scale back to normal
 
@@ -228,7 +230,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 goBack();
             }
         } catch (error: any) {
-            toast.error(error.message || 'Failed to update profile');
+            toast.error(error.message || t('editProfile.toasts.updateFailed') || 'Failed to update profile');
             animateSaveButton(1); // Scale back to normal on error
         } finally {
             setIsSaving(false);
@@ -236,9 +238,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     };
 
     const handleAvatarRemove = () => {
-        confirmAction('Remove your profile picture?', () => {
+        confirmAction(t('editProfile.confirms.removeAvatar') || 'Remove your profile picture?', () => {
             setAvatarFileId('');
-            toast.success('Avatar removed');
+            toast.success(t('editProfile.toasts.avatarRemoved') || 'Avatar removed');
         });
     };
 
@@ -251,16 +253,16 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 afterSelect: 'back',
                 onSelect: (file: FileMetadata) => {
                     if (!file.contentType.startsWith('image/')) {
-                        toast.error('Please select an image file');
+                        toast.error(t('editProfile.toasts.selectImage') || 'Please select an image file');
                         return;
                     }
                     // If already selected, do nothing
                     if (file.id === avatarFileId) {
-                        toast.info?.('Avatar unchanged');
+                        toast.info?.(t('editProfile.toasts.avatarUnchanged') || 'Avatar unchanged');
                         return;
                     }
                     setAvatarFileId(file.id);
-                    toast.success('Avatar selected');
+                    toast.success(t('editProfile.toasts.avatarSelected') || 'Avatar selected');
                     // Auto-save avatar immediately (does not close edit profile screen)
                     (async () => {
                         try {
@@ -269,10 +271,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                             await updateUser({ avatar: file.id }, oxyServices);
                             // Force refresh current user cache (updateUser already does a fetch with force=true internally)
                             // Extra safeguard: ensure avatarFileId reflects saved id (already set) and trigger any dependent UI.
-                            toast.success('Avatar updated');
+                            toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated');
                         } catch (e: any) {
                             console.error('[AccountSettings] Failed to auto-save avatar', e);
-                            toast.error(e.message || 'Failed to update avatar');
+                            toast.error(e.message || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
                         } finally {
                             setIsSaving(false);
                         }
@@ -491,13 +493,13 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                             style={styles.primaryButton}
                                             disabled={isTotpBusy}
                                             onPress={async () => {
-                                                if (!activeSessionId) { toast.error('No active session'); return; }
+                                                if (!activeSessionId) { toast.error(t('editProfile.toasts.noActiveSession') || 'No active session'); return; }
                                                 setIsTotpBusy(true);
                                                 try {
                                                     const { otpauthUrl } = await oxyServices.startTotpEnrollment(activeSessionId);
                                                     setTotpSetupUrl(otpauthUrl);
                                                 } catch (e: any) {
-                                                    toast.error(e?.message || 'Failed to start TOTP enrollment');
+                                                    toast.error(e?.message || (t('editProfile.toasts.totpStartFailed') || 'Failed to start TOTP enrollment'));
                                                 } finally {
                                                     setIsTotpBusy(false);
                                                 }
@@ -526,7 +528,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                                 style={styles.primaryButton}
                                                 disabled={isTotpBusy || totpCode.length !== 6}
                                                 onPress={async () => {
-                                                    if (!activeSessionId) { toast.error('No active session'); return; }
+                                                    if (!activeSessionId) { toast.error(t('editProfile.toasts.noActiveSession') || 'No active session'); return; }
                                                     setIsTotpBusy(true);
                                                     try {
                                                         const result = await oxyServices.verifyTotpEnrollment(activeSessionId, totpCode);
@@ -536,11 +538,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                                             setGeneratedRecoveryKey(result.recoveryKey || null);
                                                             setShowRecoveryModal(true);
                                                         } else {
-                                                            toast.success('Two‑Factor Authentication enabled');
+                                                            toast.success(t('editProfile.toasts.twoFactorEnabled') || 'Two‑Factor Authentication enabled');
                                                             setEditingField(null);
                                                         }
                                                     } catch (e: any) {
-                                                        toast.error(e?.message || 'Invalid code');
+                                                        toast.error(e?.message || (t('editProfile.toasts.invalidCode') || 'Invalid code'));
                                                     } finally {
                                                         setIsTotpBusy(false);
                                                     }
@@ -572,15 +574,15 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                         style={[styles.primaryButton, { backgroundColor: '#d9534f' }]}
                                         disabled={isTotpBusy || totpCode.length !== 6}
                                         onPress={async () => {
-                                            if (!activeSessionId) { toast.error('No active session'); return; }
+                                            if (!activeSessionId) { toast.error(t('editProfile.toasts.noActiveSession') || 'No active session'); return; }
                                             setIsTotpBusy(true);
                                             try {
                                                 await oxyServices.disableTotp(activeSessionId, totpCode);
                                                 await updateUser({ privacySettings: { twoFactorEnabled: false } }, oxyServices);
-                                                toast.success('Two‑Factor Authentication disabled');
+                                                toast.success(t('editProfile.toasts.twoFactorDisabled') || 'Two‑Factor Authentication disabled');
                                                 setEditingField(null);
                                             } catch (e: any) {
-                                                toast.error(e?.message || 'Failed to disable');
+                                                toast.error(e?.message || t('editProfile.toasts.disableFailed') || 'Failed to disable');
                                             } finally {
                                                 setIsTotpBusy(false);
                                             }
@@ -1016,18 +1018,18 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                             style={styles.editingBottomIcon}
                         />
                         <Text style={[styles.editingBottomTitle, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>
-                            {editingField === 'displayName' ? 'Display Name' :
-                                editingField === 'username' ? 'Username' :
-                                    editingField === 'email' ? 'Email' :
-                                        editingField === 'bio' ? 'Bio' :
-                                            editingField === 'location' ? 'Location' :
-                                                editingField === 'links' ? 'Links' : 'Field'}
+                            {editingField === 'displayName' ? (t('editProfile.items.displayName.title') || 'Display Name') :
+                                editingField === 'username' ? (t('editProfile.items.username.title') || 'Username') :
+                                    editingField === 'email' ? (t('editProfile.items.email.title') || 'Email') :
+                                        editingField === 'bio' ? (t('editProfile.items.bio.title') || 'Bio') :
+                                            editingField === 'location' ? (t('editProfile.items.locations.title') || 'Location') :
+                                                editingField === 'links' ? (t('editProfile.items.links.title') || 'Links') : 'Field'}
                         </Text>
                     </View>
                 </View>
             ) : (
                 <Header
-                    title="Edit Profile"
+                    title={t('editProfile.title') || 'Edit Profile'}
                     theme={theme}
                     onBack={goBack || onClose}
                     rightAction={{
@@ -1076,7 +1078,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                     )}
                                     <TouchableOpacity
                                         style={[styles.primaryButton, { alignSelf: 'flex-end', marginTop: 8 }]}
-                                        onPress={() => { setShowRecoveryModal(false); setEditingField(null); toast.success('Two‑Factor Authentication enabled'); }}
+                                        onPress={() => { setShowRecoveryModal(false); setEditingField(null); toast.success(t('editProfile.toasts.twoFactorEnabled') || 'Two‑Factor Authentication enabled'); }}
                                     >
                                         <Ionicons name="checkmark" size={18} color="#fff" />
                                         <Text style={styles.primaryButtonText}>I saved them</Text>
@@ -1086,7 +1088,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         )}
                         {/* Profile Picture Section */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>Profile Picture</Text>
+                            <Text style={styles.sectionTitle}>{t('editProfile.sections.profilePicture') || 'Profile Picture'}</Text>
                             <GroupedSection
                                 items={[
                                     {
@@ -1117,7 +1119,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
                         {/* Basic Information */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>Basic Information</Text>
+                            <Text style={styles.sectionTitle}>{t('editProfile.sections.basicInfo') || 'Basic Information'}</Text>
 
                             <GroupedSection
                                 items={[
@@ -1125,24 +1127,24 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                         id: 'display-name',
                                         icon: 'person',
                                         iconColor: '#007AFF',
-                                        title: 'Display Name',
-                                        subtitle: [displayName, lastName].filter(Boolean).join(' ') || 'Add your display name',
+                                        title: t('editProfile.items.displayName.title') || 'Display Name',
+                                        subtitle: [displayName, lastName].filter(Boolean).join(' ') || (t('editProfile.items.displayName.add') || 'Add your display name'),
                                         onPress: () => startEditing('displayName', ''),
                                     },
                                     {
                                         id: 'username',
                                         icon: 'at',
                                         iconColor: '#5856D6',
-                                        title: 'Username',
-                                        subtitle: username || 'Choose a username',
+                                        title: t('editProfile.items.username.title') || 'Username',
+                                        subtitle: username || (t('editProfile.items.username.choose') || 'Choose a username'),
                                         onPress: () => startEditing('username', username),
                                     },
                                     {
                                         id: 'email',
                                         icon: 'mail',
                                         iconColor: '#FF9500',
-                                        title: 'Email',
-                                        subtitle: email || 'Add your email address',
+                                        title: t('editProfile.items.email.title') || 'Email',
+                                        subtitle: email || (t('editProfile.items.email.add') || 'Add your email address'),
                                         onPress: () => startEditing('email', email),
                                     },
                                 ]}
@@ -1152,7 +1154,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
                         {/* About You */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>About You</Text>
+                            <Text style={styles.sectionTitle}>{t('editProfile.sections.about') || 'About You'}</Text>
 
                             <GroupedSection
                                 items={[
@@ -1160,16 +1162,20 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                         id: 'bio',
                                         icon: 'document-text',
                                         iconColor: '#34C759',
-                                        title: 'Bio',
-                                        subtitle: bio || 'Tell people about yourself',
+                                        title: t('editProfile.items.bio.title') || 'Bio',
+                                        subtitle: bio || (t('editProfile.items.bio.placeholder') || 'Tell people about yourself'),
                                         onPress: () => startEditing('bio', bio),
                                     },
                                     {
                                         id: 'locations',
                                         icon: 'location',
                                         iconColor: '#FF3B30',
-                                        title: 'Locations',
-                                        subtitle: tempLocations.length > 0 ? `${tempLocations.length} location${tempLocations.length !== 1 ? 's' : ''} added` : 'Add your locations',
+                                        title: t('editProfile.items.locations.title') || 'Locations',
+                                        subtitle: tempLocations.length > 0
+                                            ? (tempLocations.length === 1
+                                                ? (t('editProfile.items.locations.count', { count: tempLocations.length }) || `${tempLocations.length} location added`)
+                                                : (t('editProfile.items.locations.count_plural', { count: tempLocations.length }) || `${tempLocations.length} locations added`))
+                                            : (t('editProfile.items.locations.add') || 'Add your locations'),
                                         onPress: () => startEditing('location', ''),
                                         customContentBelow: tempLocations.length > 0 && (
                                             <View style={styles.linksPreviewContainer}>
@@ -1204,8 +1210,12 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                         id: 'links',
                                         icon: 'link',
                                         iconColor: '#32D74B',
-                                        title: 'Links',
-                                        subtitle: tempLinksWithMetadata.length > 0 ? `${tempLinksWithMetadata.length} link${tempLinksWithMetadata.length !== 1 ? 's' : ''} added` : 'Add your links',
+                                        title: t('editProfile.items.links.title') || 'Links',
+                                        subtitle: tempLinksWithMetadata.length > 0
+                                            ? (tempLinksWithMetadata.length === 1
+                                                ? (t('editProfile.items.links.count', { count: tempLinksWithMetadata.length }) || `${tempLinksWithMetadata.length} link added`)
+                                                : (t('editProfile.items.links.count_plural', { count: tempLinksWithMetadata.length }) || `${tempLinksWithMetadata.length} links added`))
+                                            : (t('editProfile.items.links.add') || 'Add your links'),
                                         onPress: () => startEditing('links', ''),
                                         multiRow: true,
                                         customContentBelow: tempLinksWithMetadata.length > 0 && (
@@ -1241,7 +1251,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
                         {/* Quick Actions */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>Quick Actions</Text>
+                            <Text style={styles.sectionTitle}>{t('editProfile.sections.quickActions') || 'Quick Actions'}</Text>
 
                             <GroupedSection
                                 items={[
@@ -1249,25 +1259,25 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                         id: 'preview-profile',
                                         icon: 'eye',
                                         iconColor: '#007AFF',
-                                        title: 'Preview Profile',
-                                        subtitle: 'See how your profile looks to others',
+                                        title: t('editProfile.items.previewProfile.title') || 'Preview Profile',
+                                        subtitle: t('editProfile.items.previewProfile.subtitle') || 'See how your profile looks to others',
                                         onPress: () => navigate?.('Profile', { userId: user?.id }),
                                     },
                                     {
                                         id: 'privacy-settings',
                                         icon: 'shield-checkmark',
                                         iconColor: '#8E8E93',
-                                        title: 'Privacy Settings',
-                                        subtitle: 'Control who can see your profile',
-                                        onPress: () => toast.info('Privacy settings coming soon!'),
+                                        title: t('editProfile.items.privacySettings.title') || 'Privacy Settings',
+                                        subtitle: t('editProfile.items.privacySettings.subtitle') || 'Control who can see your profile',
+                                        onPress: () => toast.info(t('editProfile.items.privacySettings.coming') || 'Privacy settings coming soon!'),
                                     },
                                     {
                                         id: 'verify-account',
                                         icon: 'checkmark-circle',
                                         iconColor: '#30D158',
-                                        title: 'Verify Account',
-                                        subtitle: 'Get a verified badge',
-                                        onPress: () => toast.info('Account verification coming soon!'),
+                                        title: t('editProfile.items.verifyAccount.title') || 'Verify Account',
+                                        subtitle: t('editProfile.items.verifyAccount.subtitle') || 'Get a verified badge',
+                                        onPress: () => toast.info(t('editProfile.items.verifyAccount.coming') || 'Account verification coming soon!'),
                                     },
                                 ]}
                                 theme={theme}
@@ -1276,15 +1286,17 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
                         {/* Security */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>Security</Text>
+                            <Text style={styles.sectionTitle}>{t('editProfile.sections.security') || 'Security'}</Text>
                             <GroupedSection
                                 items={[
                                     {
                                         id: 'two-factor',
                                         icon: 'shield-checkmark',
                                         iconColor: '#007AFF',
-                                        title: 'Two‑Factor Authentication',
-                                        subtitle: user?.privacySettings?.twoFactorEnabled ? 'Enabled' : 'Disabled (recommended)',
+                                        title: t('editProfile.items.twoFactor.title') || 'Two‑Factor Authentication',
+                                        subtitle: user?.privacySettings?.twoFactorEnabled
+                                            ? (t('editProfile.items.twoFactor.enabled') || 'Enabled')
+                                            : (t('editProfile.items.twoFactor.disabled') || 'Disabled (recommended)'),
                                         onPress: () => startEditing('twoFactor', ''),
                                     },
                                 ]}

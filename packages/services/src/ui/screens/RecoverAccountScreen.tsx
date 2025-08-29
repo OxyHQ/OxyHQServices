@@ -1,5 +1,6 @@
 import type React from 'react';
 import { useState, useRef, useCallback } from 'react';
+import { useI18n } from '../hooks/useI18n';
 import type { BaseScreenProps } from '../navigation/types';
 import { useThemeColors } from '../styles';
 import StepBasedScreen, { type StepConfig } from '../components/StepBasedScreen';
@@ -19,6 +20,7 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
     oxyServices,
 }) => {
     const colors = useThemeColors(theme);
+    const { t } = useI18n();
 
     // Form state
     const [identifier, setIdentifier] = useState('');
@@ -52,7 +54,7 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
             canProceed: () => verificationCode.length === PIN_LENGTH,
             onEnter: () => {
                 setIsLoading(false);
-                setSuccessMessage('Enter the 6‑digit code from your authenticator app.');
+                setSuccessMessage(t('recover.enterCode'));
             },
         },
         {
@@ -65,7 +67,7 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
             component: RecoverSuccessStep,
             canProceed: () => true,
             onEnter: () => {
-                setSuccessMessage('Your password has been reset! You can now sign in.');
+                setSuccessMessage(t('recover.resetSuccess'));
             },
         },
     ];
