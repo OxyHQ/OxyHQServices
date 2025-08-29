@@ -187,12 +187,14 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
     }, [bottomSheetRef, modalRef]);
     // Keyboard handling (unchanged)
     const [keyboardVisible, setKeyboardVisible] = useState(false);
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
     const insets = useSafeAreaInsets();
     useEffect(() => {
         const keyboardWillShowListener = Keyboard.addListener(
             Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-            () => {
+            (e: KeyboardEvent) => {
                 setKeyboardVisible(true);
+                setKeyboardHeight(e?.endCoordinates?.height ?? 0);
                 if (modalRef.current) {
                     requestAnimationFrame(() => {
                         modalRef.current?.expand?.();
@@ -204,6 +206,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
             () => {
                 setKeyboardVisible(false);
+                setKeyboardHeight(0);
             }
         );
         return () => {
@@ -317,6 +320,8 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             backgroundStyle={[
                 backgroundStyle,
                 {
+                    borderBottomLeftRadius: 0,
+                    borderBottomRightRadius: 0,
                     borderTopLeftRadius: 35,
                     borderTopRightRadius: 35,
                 }
@@ -325,6 +330,13 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 backgroundColor: customStyles.handleColor || (theme === 'light' ? '#CCCCCC' : '#444444'),
                 width: 40,
                 height: 4,
+            }}
+            handleStyle={{
+                position: 'absolute',
+                width: '100%',
+                height: 4,
+                borderTopLeftRadius: 35,
+                borderTopRightRadius: 35,
             }}
             onChange={handleSheetChanges}
             style={styles.bottomSheetContainer}
@@ -337,6 +349,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             overDragResistanceFactor={2.5}
             enableBlurKeyboardOnGesture={true}
             detached
+            bottomInset={(keyboardVisible ? keyboardHeight : 0) + (insets?.bottom ?? 0)}
             // Uncomment below to use a sticky footer
             // footerComponent={<YourFooterComponent />}
             onAnimate={(fromIndex: number, toIndex: number) => {
@@ -347,6 +360,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 style={[
                     styles.contentContainer,
                 ]}
+                contentContainerStyle={{ paddingBottom: (insets?.bottom ?? 0) + 16 }}
             >
                 <View style={styles.centeredContentWrapper}>
                     <Animated.View
