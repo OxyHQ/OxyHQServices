@@ -129,26 +129,26 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
             }
         } catch (error) {
             console.error('Logout failed:', error);
-            toast.error(t('common.errors.signOutFailed') || 'There was a problem signing you out. Please try again.');
+            toast.error(t('common.errors.signOutFailed'));
         }
     }, [logout, onClose]);
 
     const confirmLogout = useCallback(() => {
-        confirmAction(t('common.confirms.signOut') || 'Are you sure you want to sign out?', handleLogout);
+        confirmAction(t('common.confirms.signOut'), handleLogout);
     }, [handleLogout]);
 
     const handleAddAccount = useCallback(() => {
-        toast.info(t('accountOverview.addAccountComing') || 'Add another account feature coming soon!');
+        toast.info(t('accountOverview.addAccountComing'));
     }, [t]);
 
     const handleSignOutAll = useCallback(() => {
-        confirmAction(t('common.confirms.signOutAll') || 'Are you sure you want to sign out of all accounts?', handleLogout);
+        confirmAction(t('common.confirms.signOutAll'), handleLogout);
     }, [handleLogout]);
 
     if (!isAuthenticated) {
         return (
             <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
-                <Text style={[styles.message, { color: themeStyles.textColor }]}>{t('common.status.notSignedIn') || 'Not signed in'}</Text>
+                <Text style={[styles.message, { color: themeStyles.textColor }]}>{t('common.status.notSignedIn')}</Text>
             </View>
         );
     }
@@ -165,7 +165,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor: '#f2f2f2' }]}>
             {/* Header */}
             <Header
-                title={t('accountOverview.title') || 'Account'}
+                title={t('accountOverview.title')}
                 theme={theme}
                 onBack={onClose}
                 variant="minimal"
@@ -174,7 +174,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {/* User Profile Section */}
-                <Section title={t('accountOverview.sections.profile') || 'Profile'} theme={theme} isFirst={true}>
+                <Section title={t('accountOverview.sections.profile')} theme={theme} isFirst={true}>
                     <GroupedSection
                         items={[
                             {
@@ -183,7 +183,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: '#007AFF',
                                 title: user ? (typeof user.name === 'string' ? user.name : user.name?.full || user.name?.first || user.username) : (t('common.status.loading') || 'Loading...'),
                                 subtitle: user ? (user.email || user.username) : (t('common.status.loading') || 'Loading...'),
-                                onPress: () => toast.info(t('accountOverview.manageComing') || 'Manage your Oxy Account feature coming soon!'),
+                                onPress: () => toast.info(t('accountOverview.manageComing')),
                                 customContent: (
                                     <>
                                         <View style={styles.userIcon}>
@@ -196,9 +196,9 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                         </View>
                                         <TouchableOpacity
                                             style={styles.manageButton}
-                                            onPress={() => toast.info(t('accountOverview.manageComing') || 'Manage your Oxy Account feature coming soon!')}
+                                            onPress={() => toast.info(t('accountOverview.manageComing'))}
                                         >
-                                            <Text style={styles.manageButtonText}>{t('accountOverview.actions.manage') || 'Manage'}</Text>
+                                            <Text style={styles.manageButtonText}>{t('accountOverview.actions.manage')}</Text>
                                         </TouchableOpacity>
                                     </>
                                 ),
@@ -209,48 +209,48 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 {/* Account Settings */}
-                <Section title={t('accountOverview.sections.accountSettings') || 'Account Settings'} theme={theme}>
+                <Section title={t('accountOverview.sections.accountSettings')} theme={theme}>
                     <GroupedSection
                         items={[
                             {
                                 id: 'edit-profile',
                                 icon: 'person-circle',
                                 iconColor: '#007AFF',
-                                title: t('accountOverview.items.editProfile.title') || 'Edit Profile',
-                                subtitle: t('accountOverview.items.editProfile.subtitle') || 'Update your personal information',
+                                title: t('accountOverview.items.editProfile.title'),
+                                subtitle: t('accountOverview.items.editProfile.subtitle'),
                                 onPress: () => navigate?.('EditProfile', { activeTab: 'profile' }),
                             },
                             {
                                 id: 'security-privacy',
                                 icon: 'shield-checkmark',
                                 iconColor: '#30D158',
-                                title: t('accountOverview.items.security.title') || 'Security & Privacy',
-                                subtitle: t('accountOverview.items.security.subtitle') || 'Password, 2FA, and privacy settings',
+                                title: t('accountOverview.items.security.title'),
+                                subtitle: t('accountOverview.items.security.subtitle'),
                                 onPress: () => navigate?.('EditProfile', { activeTab: 'password' }),
                             },
                             {
                                 id: 'notifications',
                                 icon: 'notifications',
                                 iconColor: '#FF9500',
-                                title: t('accountOverview.items.notifications.title') || 'Notifications',
-                                subtitle: t('accountOverview.items.notifications.subtitle') || 'Manage your notification preferences',
+                                title: t('accountOverview.items.notifications.title'),
+                                subtitle: t('accountOverview.items.notifications.subtitle'),
                                 onPress: () => navigate?.('EditProfile', { activeTab: 'notifications' }),
                             },
                             {
                                 id: 'premium-subscription',
                                 icon: 'star',
                                 iconColor: '#FFD700',
-                                title: t('accountOverview.items.premium.title') || 'Oxy+ Subscriptions',
-                                subtitle: user?.isPremium ? (t('accountOverview.items.premium.manage') || 'Manage your premium plan') : (t('accountOverview.items.premium.upgrade') || 'Upgrade to premium features'),
+                                title: t('accountOverview.items.premium.title'),
+                                subtitle: user?.isPremium ? t('accountOverview.items.premium.manage') : t('accountOverview.items.premium.upgrade'),
                                 onPress: () => navigate?.('PremiumSubscription'),
                             },
                             ...(user?.isPremium ? [{
                                 id: 'billing-management',
                                 icon: 'card',
                                 iconColor: '#34C759',
-                                title: t('accountOverview.items.billing.title') || 'Billing Management',
-                                subtitle: t('accountOverview.items.billing.subtitle') || 'Payment methods and invoices',
-                                onPress: () => toast.info(t('accountOverview.items.billing.coming') || 'Billing management feature coming soon!'),
+                                title: t('accountOverview.items.billing.title'),
+                                subtitle: t('accountOverview.items.billing.subtitle'),
+                                onPress: () => toast.info(t('accountOverview.items.billing.coming')),
                             }] : []),
                         ]}
                         theme={theme}
@@ -358,7 +358,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 )}
 
                 {/* Quick Actions */}
-                <Section title={t('accountOverview.sections.quickActions') || 'Quick Actions'} theme={theme}>
+                <Section title={t('accountOverview.sections.quickActions')} theme={theme}>
                     <GroupedSection
                         items={[
                             {
@@ -366,32 +366,32 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 icon: 'people',
                                 iconColor: '#5856D6',
                                 title: showMoreAccounts
-                                    ? (t('accountOverview.items.accountSwitcher.titleHide') || 'Hide Account Switcher')
-                                    : (t('accountOverview.items.accountSwitcher.titleShow') || 'Show Account Switcher'),
+                                    ? t('accountOverview.items.accountSwitcher.titleHide')
+                                    : t('accountOverview.items.accountSwitcher.titleShow'),
                                 subtitle: showMoreAccounts
-                                    ? (t('accountOverview.items.accountSwitcher.subtitleHide') || 'Hide account switcher')
+                                    ? t('accountOverview.items.accountSwitcher.subtitleHide')
                                     : additionalAccountsData.length > 0
-                                        ? (t('accountOverview.items.accountSwitcher.subtitleSwitchBetween', { count: String(additionalAccountsData.length + 1) }) || `Switch between ${additionalAccountsData.length + 1} accounts`)
+                                        ? t('accountOverview.items.accountSwitcher.subtitleSwitchBetween', { count: String(additionalAccountsData.length + 1) })
                                         : loadingAdditionalAccounts
-                                            ? (t('accountOverview.items.accountSwitcher.subtitleLoading') || 'Loading additional accounts...')
-                                            : (t('accountOverview.items.accountSwitcher.subtitleManageMultiple') || 'Manage multiple accounts'),
+                                            ? t('accountOverview.items.accountSwitcher.subtitleLoading')
+                                            : t('accountOverview.items.accountSwitcher.subtitleManageMultiple'),
                                 onPress: () => setShowMoreAccounts(!showMoreAccounts),
                             },
                             {
                                 id: 'download-data',
                                 icon: 'download',
                                 iconColor: '#34C759',
-                                title: t('accountOverview.items.downloadData.title') || 'Download My Data',
-                                subtitle: t('accountOverview.items.downloadData.subtitle') || 'Export your account information',
-                                onPress: () => toast.info(t('accountOverview.items.downloadData.coming') || 'Download account data feature coming soon!'),
+                                title: t('accountOverview.items.downloadData.title'),
+                                subtitle: t('accountOverview.items.downloadData.subtitle'),
+                                onPress: () => toast.info(t('accountOverview.items.downloadData.coming')),
                             },
                             {
                                 id: 'delete-account',
                                 icon: 'trash',
                                 iconColor: '#FF3B30',
-                                title: t('accountOverview.items.deleteAccount.title') || 'Delete Account',
-                                subtitle: t('accountOverview.items.deleteAccount.subtitle') || 'Permanently delete your account',
-                                onPress: () => toast.info(t('accountOverview.items.deleteAccount.coming') || 'Delete account feature coming soon!'),
+                                title: t('accountOverview.items.deleteAccount.title'),
+                                subtitle: t('accountOverview.items.deleteAccount.subtitle'),
+                                onPress: () => toast.info(t('accountOverview.items.deleteAccount.coming')),
                             },
                         ]}
                         theme={theme}
@@ -399,39 +399,39 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 {/* Support & Settings */}
-                <Section title={t('accountOverview.sections.support') || 'Support & Settings'} theme={theme}>
+                <Section title={t('accountOverview.sections.support')} theme={theme}>
                     <GroupedSection
                         items={[
                             {
                                 id: 'account-preferences',
                                 icon: 'settings',
                                 iconColor: '#8E8E93',
-                                title: t('accountOverview.items.preferences.title') || 'Account Preferences',
-                                subtitle: t('accountOverview.items.preferences.subtitle') || 'Customize your account experience',
-                                onPress: () => toast.info(t('accountOverview.items.preferences.coming') || 'Account preferences coming soon!'),
+                                title: t('accountOverview.items.preferences.title'),
+                                subtitle: t('accountOverview.items.preferences.subtitle'),
+                                onPress: () => toast.info(t('accountOverview.items.preferences.coming')),
                             },
                             {
                                 id: 'help-support',
                                 icon: 'help-circle',
                                 iconColor: '#007AFF',
-                                title: t('accountOverview.items.help.title') || 'Help & Support',
-                                subtitle: t('accountOverview.items.help.subtitle') || 'Get help with your account',
-                                onPress: () => toast.info(t('accountOverview.items.help.coming') || 'Help & support feature coming soon!'),
+                                title: t('accountOverview.items.help.title'),
+                                subtitle: t('accountOverview.items.help.subtitle'),
+                                onPress: () => toast.info(t('accountOverview.items.help.coming')),
                             },
                             {
                                 id: 'connected-apps',
                                 icon: 'link',
                                 iconColor: '#32D74B',
-                                title: t('accountOverview.items.connectedApps.title') || 'Connected Apps',
-                                subtitle: t('accountOverview.items.connectedApps.subtitle') || 'Manage third-party app access',
-                                onPress: () => toast.info(t('accountOverview.items.connectedApps.coming') || 'Connected apps feature coming soon!'),
+                                title: t('accountOverview.items.connectedApps.title'),
+                                subtitle: t('accountOverview.items.connectedApps.subtitle'),
+                                onPress: () => toast.info(t('accountOverview.items.connectedApps.coming')),
                             },
                             {
                                 id: 'about',
                                 icon: 'information-circle',
                                 iconColor: '#8E8E93',
-                                title: t('accountOverview.items.about.title') || 'About',
-                                subtitle: t('accountOverview.items.about.subtitle') || 'App version and information',
+                                title: t('accountOverview.items.about.title'),
+                                subtitle: t('accountOverview.items.about.subtitle'),
                                 onPress: () => navigate?.('AppInfo'),
                             },
                         ]}
@@ -440,12 +440,12 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 {/* Sign Out */}
-                <Section title={t('accountOverview.sections.actions') || 'Account Actions'} theme={theme}>
+                <Section title={t('accountOverview.sections.actions')} theme={theme}>
                     <GroupedItem
                         icon="log-out"
                         iconColor="#FF3B30"
-                        title={t('accountOverview.items.signOut.title') || t('common.actions.signOut') || 'Sign Out'}
-                        subtitle={t('accountOverview.items.signOut.subtitle') || 'Sign out of your current account'}
+                        title={t('accountOverview.items.signOut.title')}
+                        subtitle={t('accountOverview.items.signOut.subtitle')}
                         theme={theme}
                         onPress={confirmLogout}
                         isFirst={true}
