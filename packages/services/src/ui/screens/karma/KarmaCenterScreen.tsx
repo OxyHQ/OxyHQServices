@@ -15,6 +15,7 @@ import { useOxy } from '../../context/OxyContext';
 import { fontFamilies } from '../../styles/fonts';
 import Avatar from '../../components/Avatar';
 import { Ionicons } from '@expo/vector-icons';
+import { useI18n } from '../../hooks/useI18n';
 
 const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     theme,
@@ -22,6 +23,7 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     goBack,
 }) => {
     const { user, oxyServices, isAuthenticated } = useOxy();
+    const { t } = useI18n();
     const [karmaTotal, setKarmaTotal] = useState<number | null>(null);
     const [karmaHistory, setKarmaHistory] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);
@@ -55,7 +57,7 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     if (!isAuthenticated) {
         return (
             <View style={[styles.container, { backgroundColor }]}>
-                <Text style={[styles.message, { color: textColor }]}>Not signed in</Text>
+                <Text style={[styles.message, { color: textColor }]}>{t('common.status.notSignedIn') || 'Not signed in'}</Text>
             </View>
         );
     }
@@ -79,46 +81,54 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                         theme={theme}
                         style={styles.avatar}
                     />
-                    <Text style={[styles.karmaLabel, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>Karma Balance</Text>
+                    <Text style={[styles.karmaLabel, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>
+                        {t('karma.center.balance') || 'Karma Balance'}
+                    </Text>
                     <Text style={[styles.karmaAmount, { color: primaryColor }]}>{karmaTotal ?? 0}</Text>
                     <View style={styles.actionRow}>
                         <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaLeaderboard')}>
                             <View style={[styles.actionIcon, { backgroundColor: '#E0E0E0' }]}>
                                 <Ionicons name="trophy-outline" size={28} color="#888" />
                             </View>
-                            <Text style={styles.actionLabel}>Leaderboard</Text>
+                            <Text style={styles.actionLabel}>{t('karma.center.actions.leaderboard') || 'Leaderboard'}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaRules')}>
                             <View style={[styles.actionIcon, { backgroundColor: '#E0E0E0' }]}>
                                 <Ionicons name="document-text-outline" size={28} color="#888" />
                             </View>
-                            <Text style={styles.actionLabel}>Rules</Text>
+                            <Text style={styles.actionLabel}>{t('karma.center.actions.rules') || 'Rules'}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('AboutKarma')}>
                             <View style={[styles.actionIcon, { backgroundColor: '#E0E0E0' }]}>
                                 <Ionicons name="star-outline" size={28} color="#888" />
                             </View>
-                            <Text style={styles.actionLabel}>About</Text>
+                            <Text style={styles.actionLabel}>{t('karma.center.actions.about') || 'About'}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaRewards')}>
                             <View style={[styles.actionIcon, { backgroundColor: '#E0E0E0' }]}>
                                 <Ionicons name="gift-outline" size={28} color="#888" />
                             </View>
-                            <Text style={styles.actionLabel}>Rewards</Text>
+                            <Text style={styles.actionLabel}>{t('karma.center.actions.rewards') || 'Rewards'}</Text>
                         </TouchableOpacity>
                         <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaFAQ')}>
                             <View style={[styles.actionIcon, { backgroundColor: '#E0E0E0' }]}>
                                 <Ionicons name="help-circle-outline" size={28} color="#888" />
                             </View>
-                            <Text style={styles.actionLabel}>FAQ</Text>
+                            <Text style={styles.actionLabel}>{t('karma.center.actions.faq') || 'FAQ'}</Text>
                         </TouchableOpacity>
                     </View>
-                    <Text style={styles.infoText}>Karma can only be earned by positive actions in the Oxy Ecosystem. It cannot be sent or received directly.</Text>
+                    <Text style={styles.infoText}>
+                        {t('karma.center.info') || 'Karma can only be earned by positive actions in the Oxy Ecosystem. It cannot be sent or received directly.'}
+                    </Text>
                 </View>
-                <Text style={[styles.sectionTitle, { color: textColor }]}>Karma History</Text>
+                <Text style={[styles.sectionTitle, { color: textColor }]}>
+                    {t('karma.center.history') || 'Karma History'}
+                </Text>
                 <View style={styles.historyContainer}>
                     {karmaHistory.length === 0 ? (
-                        <Text style={{ color: textColor, textAlign: 'center', marginTop: 16 }}>No karma history yet.</Text>
+                        <Text style={{ color: textColor, textAlign: 'center', marginTop: 16 }}>
+                            {t('karma.center.noHistory') || 'No karma history yet.'}
+                        </Text>
                     ) : (
                         karmaHistory.map((entry: any) => (
                             <View key={entry.id} style={[styles.historyItem, { borderColor }]}>
@@ -126,7 +136,7 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                                     {entry.points > 0 ? '+' : ''}{entry.points}
                                 </Text>
                                 <Text style={[styles.historyDesc, { color: textColor }]}>
-                                    {entry.reason || 'No description'}
+                                    {entry.reason || (t('karma.center.noDescription') || 'No description')}
                                 </Text>
                                 <Text style={[styles.historyDate, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>
                                     {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : ''}

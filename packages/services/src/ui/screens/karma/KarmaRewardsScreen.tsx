@@ -2,8 +2,10 @@ import type React from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform } from 'react-native';
 import type { BaseScreenProps } from '../../navigation/types';
 import { Header } from '../../components';
+import { useI18n } from '../../hooks/useI18n';
 
 const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
+    const { t } = useI18n();
     const isDarkTheme = theme === 'dark';
     const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
@@ -13,27 +15,43 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     return (
         <View style={[styles.container, { backgroundColor }]}>
             <Header
-                title="Karma Rewards"
-                subtitle="Unlock special features and recognition"
+                title={t('karma.rewards.title') || 'Karma Rewards'}
+                subtitle={t('karma.rewards.subtitle') || 'Unlock special features and recognition'}
                 theme={theme}
                 onBack={goBack}
                 elevation="subtle"
             />
             <ScrollView contentContainerStyle={styles.contentContainer}>
-                <Text style={[styles.paragraph, { color: textColor }]}>Unlock special features and recognition by earning karma!</Text>
+                <Text style={[styles.paragraph, { color: textColor }]}>
+                    {t('karma.rewards.intro') || 'Unlock special features and recognition by earning karma!'}
+                </Text>
                 <View style={styles.rewardBox}>
-                    <Text style={[styles.rewardTitle, { color: primaryColor }]}>🎉 Early Access</Text>
-                    <Text style={[styles.rewardDesc, { color: textColor }]}>Get early access to new features with 100+ karma.</Text>
+                    <Text style={[styles.rewardTitle, { color: primaryColor }]}>
+                        {t('karma.rewards.earlyAccess.title') || '🎉 Early Access'}
+                    </Text>
+                    <Text style={[styles.rewardDesc, { color: textColor }]}>
+                        {t('karma.rewards.earlyAccess.desc') || 'Get early access to new features with 100+ karma.'}
+                    </Text>
                 </View>
                 <View style={styles.rewardBox}>
-                    <Text style={[styles.rewardTitle, { color: primaryColor }]}>🏅 Community Badge</Text>
-                    <Text style={[styles.rewardDesc, { color: textColor }]}>Earn a special badge for 500+ karma.</Text>
+                    <Text style={[styles.rewardTitle, { color: primaryColor }]}>
+                        {t('karma.rewards.badge.title') || '🏅 Community Badge'}
+                    </Text>
+                    <Text style={[styles.rewardDesc, { color: textColor }]}>
+                        {t('karma.rewards.badge.desc') || 'Earn a special badge for 500+ karma.'}
+                    </Text>
                 </View>
                 <View style={styles.rewardBox}>
-                    <Text style={[styles.rewardTitle, { color: primaryColor }]}>🌟 Featured Member</Text>
-                    <Text style={[styles.rewardDesc, { color: textColor }]}>Be featured in the community for 1000+ karma.</Text>
+                    <Text style={[styles.rewardTitle, { color: primaryColor }]}>
+                        {t('karma.rewards.featured.title') || '🌟 Featured Member'}
+                    </Text>
+                    <Text style={[styles.rewardDesc, { color: textColor }]}>
+                        {t('karma.rewards.featured.desc') || 'Be featured in the community for 1000+ karma.'}
+                    </Text>
                 </View>
-                <Text style={[styles.paragraph, { color: textColor, marginTop: 24 }]}>More rewards coming soon!</Text>
+                <Text style={[styles.paragraph, { color: textColor, marginTop: 24 }]}>
+                    {t('karma.rewards.moreComing') || 'More rewards coming soon!'}
+                </Text>
             </ScrollView>
         </View>
     );

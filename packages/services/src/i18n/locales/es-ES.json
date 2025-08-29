@@ -19,7 +19,9 @@
       "verify": "Verificar"
     },
     "forgotPrompt": "¿Olvidaste tu contraseña?",
-    "security": { "dataSecure": "Tus datos están cifrados y seguros" },
+    "security": {
+      "dataSecure": "Tus datos están cifrados y seguros"
+    },
     "currentlySignedInAs": "Actualmente has iniciado sesión como {{username}}",
     "totp": {
       "title": "Código de dos factores",
@@ -100,10 +102,22 @@
       "security": "Seguridad"
     },
     "items": {
-      "displayName": { "title": "Nombre para mostrar", "add": "Añade tu nombre para mostrar" },
-      "username": { "title": "Usuario", "choose": "Elige un usuario" },
-      "email": { "title": "Correo electrónico", "add": "Añade tu correo electrónico" },
-      "bio": { "title": "Biografía", "placeholder": "Cuenta algo sobre ti" },
+      "displayName": {
+        "title": "Nombre para mostrar",
+        "add": "Añade tu nombre para mostrar"
+      },
+      "username": {
+        "title": "Usuario",
+        "choose": "Elige un usuario"
+      },
+      "email": {
+        "title": "Correo electrónico",
+        "add": "Añade tu correo electrónico"
+      },
+      "bio": {
+        "title": "Biografía",
+        "placeholder": "Cuenta algo sobre ti"
+      },
       "locations": {
         "title": "Ubicaciones",
         "add": "Añade tus ubicaciones",
@@ -116,10 +130,25 @@
         "count": "{{count}} enlace añadido",
         "count_plural": "{{count}} enlaces añadidos"
       },
-      "previewProfile": { "title": "Previsualizar perfil", "subtitle": "Ver cómo se ve tu perfil para otros" },
-      "privacySettings": { "title": "Ajustes de privacidad", "subtitle": "Controla quién puede ver tu perfil", "coming": "¡Los ajustes de privacidad estarán disponibles pronto!" },
-      "verifyAccount": { "title": "Verificar cuenta", "subtitle": "Obtén una insignia verificada", "coming": "¡La verificación de cuenta estará disponible pronto!" },
-      "twoFactor": { "title": "Autenticación de dos factores", "enabled": "Activada", "disabled": "Desactivada (recomendado)" }
+      "previewProfile": {
+        "title": "Previsualizar perfil",
+        "subtitle": "Ver cómo se ve tu perfil para otros"
+      },
+      "privacySettings": {
+        "title": "Ajustes de privacidad",
+        "subtitle": "Controla quién puede ver tu perfil",
+        "coming": "¡Los ajustes de privacidad estarán disponibles pronto!"
+      },
+      "verifyAccount": {
+        "title": "Verificar cuenta",
+        "subtitle": "Obtén una insignia verificada",
+        "coming": "¡La verificación de cuenta estará disponible pronto!"
+      },
+      "twoFactor": {
+        "title": "Autenticación de dos factores",
+        "enabled": "Activada",
+        "disabled": "Desactivada (recomendado)"
+      }
     },
     "confirms": {
       "removeAvatar": "¿Eliminar tu foto de perfil?"
@@ -183,13 +212,32 @@
       "support": "Soporte y ajustes",
       "actions": "Acciones de la cuenta"
     },
-    "actions": { "manage": "Gestionar" },
+    "actions": {
+      "manage": "Gestionar"
+    },
     "items": {
-      "editProfile": { "title": "Editar perfil", "subtitle": "Actualiza tu información personal" },
-      "security": { "title": "Seguridad y privacidad", "subtitle": "Contraseña, 2FA y ajustes de privacidad" },
-      "notifications": { "title": "Notificaciones", "subtitle": "Gestiona tus preferencias de notificación" },
-      "premium": { "title": "Suscripciones Oxy+", "manage": "Gestionar tu plan premium", "upgrade": "Mejorar a funciones premium" },
-      "billing": { "title": "Gestión de facturación", "subtitle": "Métodos de pago y facturas", "coming": "¡La gestión de facturación estará disponible pronto!" },
+      "editProfile": {
+        "title": "Editar perfil",
+        "subtitle": "Actualiza tu información personal"
+      },
+      "security": {
+        "title": "Seguridad y privacidad",
+        "subtitle": "Contraseña, 2FA y ajustes de privacidad"
+      },
+      "notifications": {
+        "title": "Notificaciones",
+        "subtitle": "Gestiona tus preferencias de notificación"
+      },
+      "premium": {
+        "title": "Suscripciones Oxy+",
+        "manage": "Gestionar tu plan premium",
+        "upgrade": "Mejorar a funciones premium"
+      },
+      "billing": {
+        "title": "Gestión de facturación",
+        "subtitle": "Métodos de pago y facturas",
+        "coming": "¡La gestión de facturación estará disponible pronto!"
+      },
       "accountSwitcher": {
         "titleShow": "Mostrar conmutador de cuentas",
         "titleHide": "Ocultar conmutador de cuentas",
@@ -198,18 +246,43 @@
         "subtitleLoading": "Cargando cuentas adicionales...",
         "subtitleManageMultiple": "Gestionar varias cuentas"
       },
-      "downloadData": { "title": "Descargar mis datos", "subtitle": "Exporta la información de tu cuenta", "coming": "¡La descarga de datos estará disponible pronto!" },
-      "deleteAccount": { "title": "Eliminar cuenta", "subtitle": "Elimina tu cuenta permanentemente", "coming": "¡La eliminación de cuenta estará disponible pronto!" },
-      "preferences": { "title": "Preferencias de la cuenta", "subtitle": "Personaliza tu experiencia", "coming": "¡Las preferencias de la cuenta estarán disponibles pronto!" },
-      "help": { "title": "Ayuda y soporte", "subtitle": "Obtén ayuda con tu cuenta", "coming": "¡La ayuda y soporte estarán disponibles pronto!" },
-      "connectedApps": { "title": "Aplicaciones conectadas", "subtitle": "Gestiona el acceso de terceros", "coming": "¡Las aplicaciones conectadas estarán disponibles pronto!" },
-      "about": { "title": "Acerca de", "subtitle": "Versión e información de la app" },
-      "signOut": { "title": "Cerrar sesión", "subtitle": "Cierra sesión en tu cuenta actual" }
+      "downloadData": {
+        "title": "Descargar mis datos",
+        "subtitle": "Exporta la información de tu cuenta",
+        "coming": "¡La descarga de datos estará disponible pronto!"
+      },
+      "deleteAccount": {
+        "title": "Eliminar cuenta",
+        "subtitle": "Elimina tu cuenta permanentemente",
+        "coming": "¡La eliminación de cuenta estará disponible pronto!"
+      },
+      "preferences": {
+        "title": "Preferencias de la cuenta",
+        "subtitle": "Personaliza tu experiencia",
+        "coming": "¡Las preferencias de la cuenta estarán disponibles pronto!"
+      },
+      "help": {
+        "title": "Ayuda y soporte",
+        "subtitle": "Obtén ayuda con tu cuenta",
+        "coming": "¡La ayuda y soporte estarán disponibles pronto!"
+      },
+      "connectedApps": {
+        "title": "Aplicaciones conectadas",
+        "subtitle": "Gestiona el acceso de terceros",
+        "coming": "¡Las aplicaciones conectadas estarán disponibles pronto!"
+      },
+      "about": {
+        "title": "Acerca de",
+        "subtitle": "Versión e información de la app"
+      },
+      "signOut": {
+        "title": "Cerrar sesión",
+        "subtitle": "Cierra sesión en tu cuenta actual"
+      }
     },
     "manageComing": "¡La gestión de tu cuenta Oxy estará disponible pronto!",
     "addAccountComing": "¡La función de agregar otra cuenta estará disponible pronto!"
-  }
-  ,
+  },
   "accountCenter": {
     "sections": {
       "quickActions": "Acciones rápidas",
@@ -227,21 +300,52 @@
       "switch": "Cambiar"
     },
     "items": {
-      "accountOverview": { "title": "Resumen de la cuenta", "subtitle": "Información completa de la cuenta" },
-      "editProfile": { "title": "Editar perfil", "subtitle": "Gestiona tu perfil y preferencias" },
-      "manageSessions": { "title": "Gestionar sesiones", "subtitle": "Seguridad y dispositivos activos" },
-      "fileManagement": { "title": "Gestión de archivos", "subtitle": "Sube, descarga y gestiona tus archivos" },
-      "premium": { "title": "Suscripciones Oxy+", "manage": "Gestiona tu plan premium", "upgrade": "Mejorar a funciones premium" },
-      "billing": { "title": "Gestión de facturación", "subtitle": "Métodos de pago y facturas" },
-      "switchAccount": { "title": "Cambiar de cuenta", "subtitle": "{{count}} cuentas disponibles" },
-      "addAccount": { "title": "Añadir otra cuenta", "subtitle": "Inicia sesión con otra cuenta" },
-      "notifications": { "title": "Notificaciones", "subtitle": "Gestiona la configuración de notificaciones", "coming": "¡La función de notificaciones estará disponible pronto!" },
-      "appInfo": { "title": "Información de la app", "subtitle": "Versión y detalles del sistema" }
+      "accountOverview": {
+        "title": "Resumen de la cuenta",
+        "subtitle": "Información completa de la cuenta"
+      },
+      "editProfile": {
+        "title": "Editar perfil",
+        "subtitle": "Gestiona tu perfil y preferencias"
+      },
+      "manageSessions": {
+        "title": "Gestionar sesiones",
+        "subtitle": "Seguridad y dispositivos activos"
+      },
+      "fileManagement": {
+        "title": "Gestión de archivos",
+        "subtitle": "Sube, descarga y gestiona tus archivos"
+      },
+      "premium": {
+        "title": "Suscripciones Oxy+",
+        "manage": "Gestiona tu plan premium",
+        "upgrade": "Mejorar a funciones premium"
+      },
+      "billing": {
+        "title": "Gestión de facturación",
+        "subtitle": "Métodos de pago y facturas"
+      },
+      "switchAccount": {
+        "title": "Cambiar de cuenta",
+        "subtitle": "{{count}} cuentas disponibles"
+      },
+      "addAccount": {
+        "title": "Añadir otra cuenta",
+        "subtitle": "Inicia sesión con otra cuenta"
+      },
+      "notifications": {
+        "title": "Notificaciones",
+        "subtitle": "Gestiona la configuración de notificaciones",
+        "coming": "¡La función de notificaciones estará disponible pronto!"
+      },
+      "appInfo": {
+        "title": "Información de la app",
+        "subtitle": "Versión y detalles del sistema"
+      }
     },
     "signingOut": "Cerrando sesión...",
     "version": "Versión {{version}}"
-  }
-  ,
+  },
   "accountSwitcher": {
     "title": "Conmutador de cuentas",
     "sections": {
@@ -283,24 +387,36 @@
       "title": "No hay cuentas guardadas",
       "subtitle": "Añade otra cuenta para cambiar rápidamente entre ellas"
     }
-  }
-  ,
+  },
   "feedback": {
     "type": {
       "title": "¿Qué tipo de comentario?",
       "subtitle": "Elige la categoría que mejor describa tu comentario"
     },
-    "category": { "label": "Categoría" },
+    "category": {
+      "label": "Categoría"
+    },
     "details": {
       "title": "Cuéntanos más",
       "subtitle": "Proporciona detalles sobre tu comentario"
     },
     "fields": {
-      "title": { "label": "Título", "placeholder": "Resumen breve de tu comentario" },
-      "description": { "label": "Descripción", "placeholder": "Por favor, proporciona información detallada..." },
-      "email": { "label": "Correo electrónico", "placeholder": "Introduce tu correo electrónico" }
+      "title": {
+        "label": "Título",
+        "placeholder": "Resumen breve de tu comentario"
+      },
+      "description": {
+        "label": "Descripción",
+        "placeholder": "Por favor, proporciona información detallada..."
+      },
+      "email": {
+        "label": "Correo electrónico",
+        "placeholder": "Introduce tu correo electrónico"
+      }
     },
-    "priority": { "label": "Nivel de prioridad" },
+    "priority": {
+      "label": "Nivel de prioridad"
+    },
     "contact": {
       "title": "Información de contacto",
       "subtitle": "Ayúdanos a ponernos en contacto contigo",
@@ -329,8 +445,7 @@
       "submitFailed": "Error al enviar el comentario",
       "submitSuccess": "¡Comentario enviado correctamente!"
     }
-  }
-  ,
+  },
   "karma": {
     "faq": {
       "title": "Preguntas frecuentes sobre karma",
@@ -338,15 +453,32 @@
       "search": "Buscar en las FAQ...",
       "noResults": "No se encontraron preguntas que coincidan con \"{{query}}\"",
       "items": {
-        "what": { "q": "¿Qué es el karma?", "a": "El karma es un reconocimiento de tus acciones positivas en el ecosistema de Oxy. No se puede enviar ni recibir directamente." },
-        "earn": { "q": "¿Cómo gano karma?", "a": "Ayudando a otros, reportando errores, contribuyendo contenido y participando en eventos de la comunidad." },
-        "lose": { "q": "¿Puedo perder karma?", "a": "El karma puede reducirse por acciones negativas o por incumplir las reglas de la comunidad." },
-        "use": { "q": "¿Qué puedo hacer con el karma?", "a": "Desbloquea recompensas, insignias y funciones especiales a medida que ganas más karma." },
-        "transfer": { "q": "¿Puedo transferir karma a otros?", "a": "No, el karma no se puede enviar ni recibir. Solo se gana con tus acciones." },
-        "support": { "q": "¿Cómo obtengo soporte?", "a": "Contacta con el soporte de Oxy a través de la app o el sitio web para cualquier pregunta relacionada con el karma." }
+        "what": {
+          "q": "¿Qué es el karma?",
+          "a": "El karma es un reconocimiento de tus acciones positivas en el ecosistema de Oxy. No se puede enviar ni recibir directamente."
+        },
+        "earn": {
+          "q": "¿Cómo gano karma?",
+          "a": "Ayudando a otros, reportando errores, contribuyendo contenido y participando en eventos de la comunidad."
+        },
+        "lose": {
+          "q": "¿Puedo perder karma?",
+          "a": "El karma puede reducirse por acciones negativas o por incumplir las reglas de la comunidad."
+        },
+        "use": {
+          "q": "¿Qué puedo hacer con el karma?",
+          "a": "Desbloquea recompensas, insignias y funciones especiales a medida que ganas más karma."
+        },
+        "transfer": {
+          "q": "¿Puedo transferir karma a otros?",
+          "a": "No, el karma no se puede enviar ni recibir. Solo se gana con tus acciones."
+        },
+        "support": {
+          "q": "¿Cómo obtengo soporte?",
+          "a": "Contacta con el soporte de Oxy a través de la app o el sitio web para cualquier pregunta relacionada con el karma."
+        }
       }
-    }
-    ,
+    },
     "rules": {
       "title": "Reglas de karma",
       "subtitle": "Cómo ganar puntos de karma",
@@ -356,9 +488,57 @@
       "title": "Clasificación de karma",
       "subtitle": "Mayores contribuidores de la comunidad",
       "empty": "No hay datos de clasificación."
+    },
+    "rewards": {
+      "title": "Recompensas de karma",
+      "subtitle": "Desbloquea funciones especiales y reconocimiento",
+      "intro": "¡Desbloquea funciones especiales y reconocimiento ganando karma!",
+      "earlyAccess": {
+        "title": "🎉 Acceso anticipado",
+        "desc": "Obtén acceso anticipado a nuevas funciones con 100+ de karma."
+      },
+      "badge": {
+        "title": "🏅 Insignia de la comunidad",
+        "desc": "Gana una insignia especial con 500+ de karma."
+      },
+      "featured": {
+        "title": "🌟 Miembro destacado",
+        "desc": "Destácate en la comunidad con 1000+ de karma."
+      },
+      "moreComing": "¡Más recompensas próximamente!"
+    },
+    "center": {
+      "balance": "Saldo de karma",
+      "actions": {
+        "leaderboard": "Clasificación",
+        "rules": "Reglas",
+        "about": "Acerca de",
+        "rewards": "Recompensas",
+        "faq": "FAQ"
+      },
+      "info": "El karma solo se puede ganar con acciones positivas en el ecosistema de Oxy. No se puede enviar ni recibir directamente.",
+      "history": "Historial de karma",
+      "noHistory": "Aún no hay historial de karma.",
+      "noDescription": "Sin descripción"
+    },
+    "about": {
+      "title": "Acerca del karma",
+      "subtitle": "Aprende sobre el sistema de karma",
+      "intro": "El karma es un reconocimiento de tus acciones positivas en el ecosistema de Oxy. No se puede enviar ni recibir directamente, solo se gana contribuyendo a la comunidad.",
+      "how": {
+        "title": "Cómo ganar karma",
+        "help": "Ayudando a otros usuarios",
+        "report": "Reportando errores",
+        "contribute": "Contribuyendo contenido",
+        "participate": "Participando en eventos",
+        "other": "Otras acciones positivas"
+      },
+      "why": {
+        "title": "¿Por qué el karma?",
+        "text": "El karma desbloquea funciones especiales y reconocimiento en el ecosistema de Oxy. ¡Cuanto más contribuyas, más ganarás!"
+      }
     }
-  }
-  ,
+  },
   "premium": {
     "title": "Suscripciones Oxy+",
     "forApp": "para {{app}}",
@@ -368,9 +548,18 @@
     "availablePlans": "Planes disponibles",
     "why": "¿Por qué pasar a Premium?",
     "benefits": {
-      "performance": { "title": "Rendimiento mejorado", "desc": "Procesamiento más rápido y acceso prioritario a nuestros servidores" },
-      "security": { "title": "Seguridad avanzada", "desc": "Cifrado y funciones de seguridad mejoradas" },
-      "support": { "title": "Soporte prioritario", "desc": "Obtén ayuda más rápido con nuestro equipo premium" }
+      "performance": {
+        "title": "Rendimiento mejorado",
+        "desc": "Procesamiento más rápido y acceso prioritario a nuestros servidores"
+      },
+      "security": {
+        "title": "Seguridad avanzada",
+        "desc": "Cifrado y funciones de seguridad mejoradas"
+      },
+      "support": {
+        "title": "Soporte prioritario",
+        "desc": "Obtén ayuda más rápido con nuestro equipo premium"
+      }
     },
     "toasts": {
       "planUnavailable": "Este plan no está disponible para la app actual ({{app}})",
@@ -408,14 +597,20 @@
       "yearly": "Anual",
       "saveYearly": "💰 Ahorra un 20% con la facturación anual"
     },
-    "tabs": { "plans": "Planes completos", "features": "Funciones individuales" },
+    "tabs": {
+      "plans": "Planes completos",
+      "features": "Funciones individuales"
+    },
     "plan": {
       "scope": {
         "allApps": "Funciona en todas las apps de Oxy",
         "exclusive": "Exclusivo de la app {{app}}",
         "availableIn": "Disponible en: {{apps}}"
       },
-      "badge": { "appExclusive": "Exclusivo de la app", "notAvailable": "No disponible" },
+      "badge": {
+        "appExclusive": "Exclusivo de la app",
+        "notAvailable": "No disponible"
+      },
       "perInterval": "por {{interval}}",
       "current": "Plan actual",
       "notAvailableInApp": "No disponible en la app actual"

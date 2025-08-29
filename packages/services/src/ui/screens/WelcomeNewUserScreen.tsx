@@ -8,6 +8,7 @@ import { toast } from '../../lib/sonner';
 import { useAuthStore } from '../stores/authStore';
 import { useThemeColors } from '../styles';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
+import { useI18n } from '../hooks/useI18n';
 
 /**
  * Post-signup welcome & onboarding screen.
@@ -22,6 +23,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     newUser,
 }) => {
     const { user, oxyServices } = useOxy();
+    const { t } = useI18n();
     const updateUser = useAuthStore(s => s.updateUser);
     const currentUser = user || newUser; // fallback
     const colors = useThemeColors(theme);
@@ -35,13 +37,25 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     const avatarUri = currentUser?.avatar ? oxyServices.getFileDownloadUrl(currentUser.avatar as string, 'thumb') : undefined;
 
     // Steps content
+    const welcomeTitle = currentUser?.username
+        ? (t('welcomeNew.welcome.titleWithName', { username: currentUser.username }) || `Welcome, ${currentUser.username} 👋`)
+        : (t('welcomeNew.welcome.title') || 'Welcome 👋');
     const steps: Array<{ key: string; title: string; bullets?: string[]; body?: string; showAvatar?: boolean; }> = [
-        { key: 'welcome', title: `Welcome${currentUser?.username ? `, ${currentUser.username}` : ''} 👋`, body: 'You just created an account in a calm, ethical space. A few quick things — then you\'re in.' },
-        { key: 'account', title: 'One Account. Simple.', bullets: ['One identity across everything', 'No re‑signing in all the time', 'Your preferences stay with you'] },
-        { key: 'principles', title: 'What We Stand For', bullets: ['Privacy by default', 'No manipulative feeds', 'You decide what to share', 'No selling your data'] },
-        { key: 'karma', title: 'Karma = Trust & Growth', body: 'Oxy Karma is a points system that reacts to what you do. Helpful, respectful, constructive actions earn it. Harmful or low‑effort stuff chips it away. More karma can unlock benefits; low karma can limit features. It keeps things fair and rewards real contribution.' },
-        { key: 'avatar', title: 'Make It Yours', body: 'Add an avatar so people recognize you. It will show anywhere you show up here. Skip if you want — you can add it later.', showAvatar: true },
-        { key: 'ready', title: 'You\'re Ready', body: 'Explore. Contribute. Earn karma. Stay in control.' }
+        { key: 'welcome', title: welcomeTitle, body: t('welcomeNew.welcome.body') || "You just created an account in a calm, ethical space. A few quick things — then you're in." },
+        { key: 'account', title: t('welcomeNew.account.title') || 'One Account. Simple.', bullets: [
+            t('welcomeNew.account.bullets.0') || 'One identity across everything',
+            t('welcomeNew.account.bullets.1') || 'No re‑signing in all the time',
+            t('welcomeNew.account.bullets.2') || 'Your preferences stay with you',
+        ] },
+        { key: 'principles', title: t('welcomeNew.principles.title') || 'What We Stand For', bullets: [
+            t('welcomeNew.principles.bullets.0') || 'Privacy by default',
+            t('welcomeNew.principles.bullets.1') || 'No manipulative feeds',
+            t('welcomeNew.principles.bullets.2') || 'You decide what to share',
+            t('welcomeNew.principles.bullets.3') || 'No selling your data',
+        ] },
+        { key: 'karma', title: t('welcomeNew.karma.title') || 'Karma = Trust & Growth', body: t('welcomeNew.karma.body') || 'Oxy Karma is a points system that reacts to what you do. Helpful, respectful, constructive actions earn it. Harmful or low‑effort stuff chips it away. More karma can unlock benefits; low karma can limit features. It keeps things fair and rewards real contribution.' },
+        { key: 'avatar', title: t('welcomeNew.avatar.title') || 'Make It Yours', body: t('welcomeNew.avatar.body') || 'Add an avatar so people recognize you. It will show anywhere you show up here. Skip if you want — you can add it later.', showAvatar: true },
+        { key: 'ready', title: t('welcomeNew.ready.title') || "You're Ready", body: t('welcomeNew.ready.body') || 'Explore. Contribute. Earn karma. Stay in control.' }
     ];
     const totalSteps = steps.length;
     const avatarStepIndex = steps.findIndex(s => s.showAvatar);
@@ -68,8 +82,8 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
             disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
             afterSelect: 'back',
             onSelect: async (file: any) => {
-                if (!file.contentType.startsWith('image/')) { toast.error('Please select an image file'); return; }
-                try { await updateUser({ avatar: file.id }, oxyServices); toast.success('Avatar updated'); } catch (e: any) { toast.error(e.message || 'Failed to update avatar'); }
+                if (!file.contentType.startsWith('image/')) { toast.error(t('editProfile.toasts.selectImage') || 'Please select an image file'); return; }
+                try { await updateUser({ avatar: file.id }, oxyServices); toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated'); } catch (e: any) { toast.error(e.message || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar'); }
             }
         });
     }, [navigate, updateUser, oxyServices]);
@@ -78,25 +92,25 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     const pillButtons = useMemo(() => {
         if (currentStep === totalSteps - 1) {
             return [
-                { text: 'Back', onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
-                { text: 'Enter', onPress: finish, icon: 'log-in-outline', variant: 'primary' },
+                { text: t('welcomeNew.actions.back') || 'Back', onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
+                { text: t('welcomeNew.actions.enter') || 'Enter', onPress: finish, icon: 'log-in-outline', variant: 'primary' },
             ];
         }
         if (currentStep === 0) {
             const arr: any[] = [];
-            if (avatarStepIndex > 0) arr.push({ text: 'Skip', onPress: skipToAvatar, icon: 'play-skip-forward', variant: 'transparent' });
-            arr.push({ text: 'Next', onPress: nextStep, icon: 'arrow-forward', variant: 'primary' });
+            if (avatarStepIndex > 0) arr.push({ text: t('welcomeNew.actions.skip') || 'Skip', onPress: skipToAvatar, icon: 'play-skip-forward', variant: 'transparent' });
+            arr.push({ text: t('welcomeNew.actions.next') || 'Next', onPress: nextStep, icon: 'arrow-forward', variant: 'primary' });
             return arr;
         }
         if (step.showAvatar) {
             return [
-                { text: 'Back', onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
-                { text: avatarUri ? 'Continue' : 'Skip', onPress: nextStep, icon: 'arrow-forward', variant: 'primary' },
+                { text: t('welcomeNew.actions.back') || 'Back', onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
+                { text: avatarUri ? (t('welcomeNew.actions.continue') || 'Continue') : (t('welcomeNew.actions.skip') || 'Skip'), onPress: nextStep, icon: 'arrow-forward', variant: 'primary' },
             ];
         }
         return [
-            { text: 'Back', onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
-            { text: 'Next', onPress: nextStep, icon: 'arrow-forward', variant: 'primary' },
+            { text: t('welcomeNew.actions.back') || 'Back', onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
+            { text: t('welcomeNew.actions.next') || 'Next', onPress: nextStep, icon: 'arrow-forward', variant: 'primary' },
         ];
     }, [currentStep, totalSteps, prevStep, nextStep, finish, skipToAvatar, avatarStepIndex, step.showAvatar, avatarUri]);
 
@@ -126,7 +140,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                             <Avatar size={120} name={currentUser?.username} uri={avatarUri} theme={theme} style={styles.avatar} />
                             <TouchableOpacity style={styles.changeAvatarButton} onPress={openAvatarPicker}>
                                 <Ionicons name="image-outline" size={18} color="#FFFFFF" />
-                                <Text style={styles.changeAvatarText}>{avatarUri ? 'Change Avatar' : 'Add Avatar'}</Text>
+                                <Text style={styles.changeAvatarText}>{avatarUri ? (t('welcomeNew.avatar.change') || 'Change Avatar') : (t('welcomeNew.avatar.add') || 'Add Avatar')}</Text>
                             </TouchableOpacity>
                         </View>
                     )}

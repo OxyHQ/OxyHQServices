@@ -2,8 +2,10 @@ import type React from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform } from 'react-native';
 import type { BaseScreenProps } from '../../navigation/types';
 import { Header } from '../../components';
+import { useI18n } from '../../hooks/useI18n';
 
 const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
+    const { t } = useI18n();
     const isDarkTheme = theme === 'dark';
     const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
@@ -12,22 +14,32 @@ const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     return (
         <View style={[styles.container, { backgroundColor }]}>
             <Header
-                title="About Karma"
-                subtitle="Learn about the karma system"
+                title={t('karma.about.title') || 'About Karma'}
+                subtitle={t('karma.about.subtitle') || 'Learn about the karma system'}
                 theme={theme}
                 onBack={goBack}
                 elevation="subtle"
             />
             <ScrollView contentContainerStyle={styles.contentContainer}>
-                <Text style={[styles.paragraph, { color: textColor }]}>Karma is a recognition of your positive actions in the Oxy Ecosystem. It cannot be sent or received directly, only earned by contributing to the community.</Text>
-                <Text style={[styles.section, { color: primaryColor }]}>How to Earn Karma</Text>
-                <Text style={[styles.paragraph, { color: textColor }]}>• Helping other users{'\n'}
-                    • Reporting bugs{'\n'}
-                    • Contributing content{'\n'}
-                    • Participating in events{'\n'}
-                    • Other positive actions</Text>
-                <Text style={[styles.section, { color: primaryColor }]}>Why Karma?</Text>
-                <Text style={[styles.paragraph, { color: textColor }]}>Karma unlocks special features and recognition in the Oxy Ecosystem. The more you contribute, the more you earn!</Text>
+                <Text style={[styles.paragraph, { color: textColor }]}>
+                    {t('karma.about.intro') || 'Karma is a recognition of your positive actions in the Oxy Ecosystem. It cannot be sent or received directly, only earned by contributing to the community.'}
+                </Text>
+                <Text style={[styles.section, { color: primaryColor }]}>
+                    {t('karma.about.how.title') || 'How to Earn Karma'}
+                </Text>
+                <Text style={[styles.paragraph, { color: textColor }]}>
+                    • {t('karma.about.how.help') || 'Helping other users'}{'\n'}
+                    • {t('karma.about.how.report') || 'Reporting bugs'}{'\n'}
+                    • {t('karma.about.how.contribute') || 'Contributing content'}{'\n'}
+                    • {t('karma.about.how.participate') || 'Participating in events'}{'\n'}
+                    • {t('karma.about.how.other') || 'Other positive actions'}
+                </Text>
+                <Text style={[styles.section, { color: primaryColor }]}>
+                    {t('karma.about.why.title') || 'Why Karma?'}
+                </Text>
+                <Text style={[styles.paragraph, { color: textColor }]}>
+                    {t('karma.about.why.text') || 'Karma unlocks special features and recognition in the Oxy Ecosystem. The more you contribute, the more you earn!'}
+                </Text>
             </ScrollView>
         </View>
     );

@@ -4,11 +4,24 @@
     "subtitle": "Sign in to continue your journey",
     "addAccountTitle": "Add Another Account",
     "addAccountSubtitle": "Sign in with another account",
-    "username": { "label": "Username", "placeholder": "Enter your username" },
-    "password": { "label": "Password", "placeholder": "Enter your password" },
-    "actions": { "continue": "Continue", "back": "Back", "signIn": "Sign In", "verify": "Verify" },
+    "username": {
+      "label": "Username",
+      "placeholder": "Enter your username"
+    },
+    "password": {
+      "label": "Password",
+      "placeholder": "Enter your password"
+    },
+    "actions": {
+      "continue": "Continue",
+      "back": "Back",
+      "signIn": "Sign In",
+      "verify": "Verify"
+    },
     "forgotPrompt": "Forgot your password?",
-    "security": { "dataSecure": "Your data is encrypted and secure" },
+    "security": {
+      "dataSecure": "Your data is encrypted and secure"
+    },
     "currentlySignedInAs": "Currently signed in as {{username}}",
     "totp": {
       "title": "Two‑Factor Code",
@@ -20,10 +33,67 @@
     }
   },
   "signup": {
-    "welcome": { "title": "Welcome to Oxy!", "subtitle": "Let's create your account in just a few steps" },
-    "identity": { "title": "Who are you?", "subtitle": "Choose your username and enter your email" },
-    "security": { "title": "Secure Your Account", "subtitle": "Create a strong password to protect your account" },
-    "summary": { "title": "Almost There!", "subtitle": "Review your information and create your account" }
+    "welcome": {
+      "title": "Welcome to Oxy!",
+      "subtitle": "Let's create your account in just a few steps"
+    },
+    "identity": {
+      "title": "Who are you?",
+      "subtitle": "Choose your username and enter your email"
+    },
+    "security": {
+      "title": "Secure Your Account",
+      "subtitle": "Create a strong password to protect your account"
+    },
+    "summary": {
+      "title": "Almost There!",
+      "subtitle": "Review your information and create your account"
+    }
+  },
+  "welcomeNew": {
+    "welcome": {
+      "titleWithName": "Welcome, {{username}} 👋",
+      "title": "Welcome 👋",
+      "body": "You just created an account in a calm, ethical space. A few quick things — then you're in."
+    },
+    "account": {
+      "title": "One Account. Simple.",
+      "bullets": [
+        "One identity across everything",
+        "No re-signing in all the time",
+        "Your preferences stay with you"
+      ]
+    },
+    "principles": {
+      "title": "What We Stand For",
+      "bullets": [
+        "Privacy by default",
+        "No manipulative feeds",
+        "You decide what to share",
+        "No selling your data"
+      ]
+    },
+    "karma": {
+      "title": "Karma = Trust & Growth",
+      "body": "Oxy Karma is a points system that reacts to what you do. Helpful, respectful, constructive actions earn it. Harmful or low‑effort stuff chips it away. More karma can unlock benefits; low karma can limit features. It keeps things fair and rewards real contribution."
+    },
+    "avatar": {
+      "title": "Make It Yours",
+      "body": "Add an avatar so people recognize you. It will show anywhere you show up here. Skip if you want — you can add it later.",
+      "add": "Add Avatar",
+      "change": "Change Avatar"
+    },
+    "ready": {
+      "title": "You're Ready",
+      "body": "Explore. Contribute. Earn karma. Stay in control."
+    },
+    "actions": {
+      "back": "Back",
+      "next": "Next",
+      "skip": "Skip",
+      "enter": "Enter",
+      "continue": "Continue"
+    }
   },
   "language": {
     "title": "Language",
@@ -47,17 +117,30 @@
       "title": "What type of feedback?",
       "subtitle": "Choose the category that best describes your feedback"
     },
-    "category": { "label": "Category" },
+    "category": {
+      "label": "Category"
+    },
     "details": {
       "title": "Tell us more",
       "subtitle": "Provide details about your feedback"
     },
     "fields": {
-      "title": { "label": "Title", "placeholder": "Brief summary of your feedback" },
-      "description": { "label": "Description", "placeholder": "Please provide detailed information..." },
-      "email": { "label": "Email Address", "placeholder": "Enter your email address" }
+      "title": {
+        "label": "Title",
+        "placeholder": "Brief summary of your feedback"
+      },
+      "description": {
+        "label": "Description",
+        "placeholder": "Please provide detailed information..."
+      },
+      "email": {
+        "label": "Email Address",
+        "placeholder": "Enter your email address"
+      }
     },
-    "priority": { "label": "Priority Level" },
+    "priority": {
+      "label": "Priority Level"
+    },
     "contact": {
       "title": "Contact Information",
       "subtitle": "Help us get back to you",
@@ -89,8 +172,15 @@
   },
   "recover": {
     "title": "Recover Account",
-    "username": { "label": "Username", "placeholder": "Enter your username", "errorRequired": "Please enter your username." },
-    "verify": { "title": "Verify Code", "action": "Verify Code" },
+    "username": {
+      "label": "Username",
+      "placeholder": "Enter your username",
+      "errorRequired": "Please enter your username."
+    },
+    "verify": {
+      "title": "Verify Code",
+      "action": "Verify Code"
+    },
     "enterCode": "Enter the 6‑digit code from your authenticator app.",
     "newPassword": "Set New Password",
     "resetSuccess": "Your password has been reset! You can now sign in.",
@@ -122,16 +212,48 @@
       "switch": "Switch"
     },
     "items": {
-      "accountOverview": { "title": "Account Overview", "subtitle": "Complete account information" },
-      "editProfile": { "title": "Edit Profile", "subtitle": "Manage your profile and preferences" },
-      "manageSessions": { "title": "Manage Sessions", "subtitle": "Security and active devices" },
-      "fileManagement": { "title": "File Management", "subtitle": "Upload, download, and manage your files" },
-      "premium": { "title": "Oxy+ Subscriptions", "manage": "Manage your premium plan", "upgrade": "Upgrade to premium features" },
-      "billing": { "title": "Billing Management", "subtitle": "Payment methods and invoices" },
-      "switchAccount": { "title": "Switch Account", "subtitle": "{{count}} accounts available" },
-      "addAccount": { "title": "Add Another Account", "subtitle": "Sign in with a different account" },
-      "notifications": { "title": "Notifications", "subtitle": "Manage notification settings", "coming": "Notifications feature coming soon!" },
-      "appInfo": { "title": "App Information", "subtitle": "Version and system details" }
+      "accountOverview": {
+        "title": "Account Overview",
+        "subtitle": "Complete account information"
+      },
+      "editProfile": {
+        "title": "Edit Profile",
+        "subtitle": "Manage your profile and preferences"
+      },
+      "manageSessions": {
+        "title": "Manage Sessions",
+        "subtitle": "Security and active devices"
+      },
+      "fileManagement": {
+        "title": "File Management",
+        "subtitle": "Upload, download, and manage your files"
+      },
+      "premium": {
+        "title": "Oxy+ Subscriptions",
+        "manage": "Manage your premium plan",
+        "upgrade": "Upgrade to premium features"
+      },
+      "billing": {
+        "title": "Billing Management",
+        "subtitle": "Payment methods and invoices"
+      },
+      "switchAccount": {
+        "title": "Switch Account",
+        "subtitle": "{{count}} accounts available"
+      },
+      "addAccount": {
+        "title": "Add Another Account",
+        "subtitle": "Sign in with a different account"
+      },
+      "notifications": {
+        "title": "Notifications",
+        "subtitle": "Manage notification settings",
+        "coming": "Notifications feature coming soon!"
+      },
+      "appInfo": {
+        "title": "App Information",
+        "subtitle": "Version and system details"
+      }
     },
     "signingOut": "Signing out...",
     "version": "Version {{version}}"
@@ -185,15 +307,32 @@
       "search": "Search FAQ...",
       "noResults": "No FAQ items found matching \"{{query}}\"",
       "items": {
-        "what": { "q": "What is karma?", "a": "Karma is a recognition of your positive actions in the Oxy Ecosystem. It cannot be sent or received directly." },
-        "earn": { "q": "How do I earn karma?", "a": "By helping others, reporting bugs, contributing content, and participating in community events." },
-        "lose": { "q": "Can I lose karma?", "a": "Karma may be reduced for negative actions or breaking community rules." },
-        "use": { "q": "What can I do with karma?", "a": "Unlock rewards, badges, and special features as you earn more karma." },
-        "transfer": { "q": "Can I transfer karma to others?", "a": "No, karma cannot be sent or received. It is only earned by your actions." },
-        "support": { "q": "How do I get support?", "a": "Contact Oxy support via the app or website for any karma-related questions." }
+        "what": {
+          "q": "What is karma?",
+          "a": "Karma is a recognition of your positive actions in the Oxy Ecosystem. It cannot be sent or received directly."
+        },
+        "earn": {
+          "q": "How do I earn karma?",
+          "a": "By helping others, reporting bugs, contributing content, and participating in community events."
+        },
+        "lose": {
+          "q": "Can I lose karma?",
+          "a": "Karma may be reduced for negative actions or breaking community rules."
+        },
+        "use": {
+          "q": "What can I do with karma?",
+          "a": "Unlock rewards, badges, and special features as you earn more karma."
+        },
+        "transfer": {
+          "q": "Can I transfer karma to others?",
+          "a": "No, karma cannot be sent or received. It is only earned by your actions."
+        },
+        "support": {
+          "q": "How do I get support?",
+          "a": "Contact Oxy support via the app or website for any karma-related questions."
+        }
       }
-    }
-    ,
+    },
     "rules": {
       "title": "Karma Rules",
       "subtitle": "How to earn karma points",
@@ -203,6 +342,55 @@
       "title": "Karma Leaderboard",
       "subtitle": "Top contributors in the community",
       "empty": "No leaderboard data."
+    },
+    "rewards": {
+      "title": "Karma Rewards",
+      "subtitle": "Unlock special features and recognition",
+      "intro": "Unlock special features and recognition by earning karma!",
+      "earlyAccess": {
+        "title": "🎉 Early Access",
+        "desc": "Get early access to new features with 100+ karma."
+      },
+      "badge": {
+        "title": "🏅 Community Badge",
+        "desc": "Earn a special badge for 500+ karma."
+      },
+      "featured": {
+        "title": "🌟 Featured Member",
+        "desc": "Be featured in the community for 1000+ karma."
+      },
+      "moreComing": "More rewards coming soon!"
+    },
+    "center": {
+      "balance": "Karma Balance",
+      "actions": {
+        "leaderboard": "Leaderboard",
+        "rules": "Rules",
+        "about": "About",
+        "rewards": "Rewards",
+        "faq": "FAQ"
+      },
+      "info": "Karma can only be earned by positive actions in the Oxy Ecosystem. It cannot be sent or received directly.",
+      "history": "Karma History",
+      "noHistory": "No karma history yet.",
+      "noDescription": "No description"
+    },
+    "about": {
+      "title": "About Karma",
+      "subtitle": "Learn about the karma system",
+      "intro": "Karma is a recognition of your positive actions in the Oxy Ecosystem. It cannot be sent or received directly, only earned by contributing to the community.",
+      "how": {
+        "title": "How to Earn Karma",
+        "help": "Helping other users",
+        "report": "Reporting bugs",
+        "contribute": "Contributing content",
+        "participate": "Participating in events",
+        "other": "Other positive actions"
+      },
+      "why": {
+        "title": "Why Karma?",
+        "text": "Karma unlocks special features and recognition in the Oxy Ecosystem. The more you contribute, the more you earn!"
+      }
     }
   },
   "premium": {
@@ -214,9 +402,18 @@
     "availablePlans": "Available Plans",
     "why": "Why Go Premium?",
     "benefits": {
-      "performance": { "title": "Enhanced Performance", "desc": "Faster processing and priority access to our servers" },
-      "security": { "title": "Advanced Security", "desc": "Enhanced encryption and security features" },
-      "support": { "title": "Priority Support", "desc": "Get help faster with our premium support team" }
+      "performance": {
+        "title": "Enhanced Performance",
+        "desc": "Faster processing and priority access to our servers"
+      },
+      "security": {
+        "title": "Advanced Security",
+        "desc": "Enhanced encryption and security features"
+      },
+      "support": {
+        "title": "Priority Support",
+        "desc": "Get help faster with our premium support team"
+      }
     },
     "toasts": {
       "planUnavailable": "This plan is not available for the current app ({{app}})",
@@ -254,14 +451,20 @@
       "yearly": "Yearly",
       "saveYearly": "💰 Save 20% with yearly billing"
     },
-    "tabs": { "plans": "Full Plans", "features": "Individual Features" },
+    "tabs": {
+      "plans": "Full Plans",
+      "features": "Individual Features"
+    },
     "plan": {
       "scope": {
         "allApps": "Works across all Oxy apps",
         "exclusive": "Exclusive to {{app}} app",
         "availableIn": "Available in: {{apps}}"
       },
-      "badge": { "appExclusive": "App Exclusive", "notAvailable": "Not Available" },
+      "badge": {
+        "appExclusive": "App Exclusive",
+        "notAvailable": "Not Available"
+      },
       "perInterval": "per {{interval}}",
       "current": "Current Plan",
       "notAvailableInApp": "Not Available in Current App"
@@ -285,10 +488,22 @@
       "security": "Security"
     },
     "items": {
-      "displayName": { "title": "Display Name", "add": "Add your display name" },
-      "username": { "title": "Username", "choose": "Choose a username" },
-      "email": { "title": "Email", "add": "Add your email address" },
-      "bio": { "title": "Bio", "placeholder": "Tell people about yourself" },
+      "displayName": {
+        "title": "Display Name",
+        "add": "Add your display name"
+      },
+      "username": {
+        "title": "Username",
+        "choose": "Choose a username"
+      },
+      "email": {
+        "title": "Email",
+        "add": "Add your email address"
+      },
+      "bio": {
+        "title": "Bio",
+        "placeholder": "Tell people about yourself"
+      },
       "locations": {
         "title": "Locations",
         "add": "Add your locations",
@@ -301,10 +516,25 @@
         "count": "{{count}} link added",
         "count_plural": "{{count}} links added"
       },
-      "previewProfile": { "title": "Preview Profile", "subtitle": "See how your profile looks to others" },
-      "privacySettings": { "title": "Privacy Settings", "subtitle": "Control who can see your profile", "coming": "Privacy settings coming soon!" },
-      "verifyAccount": { "title": "Verify Account", "subtitle": "Get a verified badge", "coming": "Account verification coming soon!" },
-      "twoFactor": { "title": "Two‑Factor Authentication", "enabled": "Enabled", "disabled": "Disabled (recommended)" }
+      "previewProfile": {
+        "title": "Preview Profile",
+        "subtitle": "See how your profile looks to others"
+      },
+      "privacySettings": {
+        "title": "Privacy Settings",
+        "subtitle": "Control who can see your profile",
+        "coming": "Privacy settings coming soon!"
+      },
+      "verifyAccount": {
+        "title": "Verify Account",
+        "subtitle": "Get a verified badge",
+        "coming": "Account verification coming soon!"
+      },
+      "twoFactor": {
+        "title": "Two‑Factor Authentication",
+        "enabled": "Enabled",
+        "disabled": "Disabled (recommended)"
+      }
     },
     "confirms": {
       "removeAvatar": "Remove your profile picture?"
@@ -334,21 +564,48 @@
       "support": "Support & Settings",
       "actions": "Account Actions"
     },
-    "actions": { "manage": "Manage" },
+    "actions": {
+      "manage": "Manage"
+    },
     "items": {
-      "editProfile": { "title": "Edit Profile", "subtitle": "Update your personal information" },
-      "security": { "title": "Security & Privacy", "subtitle": "Password, 2FA, and privacy settings" },
-      "notifications": { "title": "Notifications", "subtitle": "Manage your notification preferences" },
-      "premium": { "title": "Oxy+ Subscriptions", "manage": "Manage your premium plan", "upgrade": "Upgrade to premium features" },
-      "billing": { "title": "Billing Management", "subtitle": "Payment methods and invoices", "coming": "Billing management feature coming soon!" }
+      "editProfile": {
+        "title": "Edit Profile",
+        "subtitle": "Update your personal information"
+      },
+      "security": {
+        "title": "Security & Privacy",
+        "subtitle": "Password, 2FA, and privacy settings"
+      },
+      "notifications": {
+        "title": "Notifications",
+        "subtitle": "Manage your notification preferences"
+      },
+      "premium": {
+        "title": "Oxy+ Subscriptions",
+        "manage": "Manage your premium plan",
+        "upgrade": "Upgrade to premium features"
+      },
+      "billing": {
+        "title": "Billing Management",
+        "subtitle": "Payment methods and invoices",
+        "coming": "Billing management feature coming soon!"
+      }
     },
     "manageComing": "Manage your Oxy Account feature coming soon!",
     "addAccountComing": "Add another account feature coming soon!"
   },
   "common": {
-    "errors": { "signOutFailed": "There was a problem signing you out. Please try again." },
-    "confirms": { "signOut": "Are you sure you want to sign out?", "signOutAll": "Are you sure you want to sign out of all accounts?" },
-    "status": { "notSignedIn": "Not signed in", "loading": "Loading..." },
+    "errors": {
+      "signOutFailed": "There was a problem signing you out. Please try again."
+    },
+    "confirms": {
+      "signOut": "Are you sure you want to sign out?",
+      "signOutAll": "Are you sure you want to sign out of all accounts?"
+    },
+    "status": {
+      "notSignedIn": "Not signed in",
+      "loading": "Loading..."
+    },
     "actions": {
       "back": "Back",
       "continue": "Continue",
@@ -359,7 +616,15 @@
       "verify": "Verify",
       "resetPassword": "Reset Password"
     },
-    "links": { "recoverAccount": "Recover your account", "signUp": "Sign Up" },
-    "labels": { "username": "Username", "email": "Email", "password": "Password", "confirmPassword": "Confirm Password" }
+    "links": {
+      "recoverAccount": "Recover your account",
+      "signUp": "Sign Up"
+    },
+    "labels": {
+      "username": "Username",
+      "email": "Email",
+      "password": "Password",
+      "confirmPassword": "Confirm Password"
+    }
   }
 }
