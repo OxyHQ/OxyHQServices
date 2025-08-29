@@ -23,7 +23,6 @@ export const createAuthStyles = (colors: AuthThemeColors, theme: string) => Styl
     flexGrow: 1,
     paddingHorizontal: 24,
     paddingTop: 4,
-    paddingBottom: 20,
   },
   stepContainer: {
     flex: 1,

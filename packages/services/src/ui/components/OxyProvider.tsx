@@ -297,17 +297,6 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
         ),
         []
     );
-    // Memoize background style
-    const backgroundStyle = useMemo(() => {
-        const baseColor = customStyles.backgroundColor || (theme === 'light' ? '#FFFFFF' : '#121212');
-        return {
-            backgroundColor: baseColor,
-            opacity: 1,
-            ...Platform.select({
-                android: { elevation: 24 },
-            })
-        };
-    }, [customStyles.backgroundColor, theme]);
     // Handle sheet index changes (unchanged)
     const handleSheetChanges = useCallback((index: number) => { }, []);
     // Modernized BottomSheetModal usage
@@ -319,7 +308,6 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             enablePanDownToClose
             backdropComponent={renderBackdrop}
             backgroundStyle={[
-                backgroundStyle,
                 {
                     borderBottomLeftRadius: 0,
                     borderBottomRightRadius: 0,
@@ -350,12 +338,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             enableBlurKeyboardOnGesture={true}
             detached
             topInset={(insets?.top ?? 0) + (appInsets?.top ?? 0)}
-            bottomInset={(keyboardVisible ? (keyboardHeight + (insets?.bottom ?? 0)) : 0) + (appInsets?.bottom ?? 0)}
-            // Uncomment below to use a sticky footer
-            // footerComponent={<YourFooterComponent />}
-            onAnimate={(fromIndex: number, toIndex: number) => {
-                console.log(`Animating from index ${fromIndex} to ${toIndex}`);
-            }}
+            bottomInset={(keyboardVisible ? (keyboardHeight + (0)) : 0) + (appInsets?.bottom ?? 0)}
         >
             <BottomSheetScrollView
                 style={[

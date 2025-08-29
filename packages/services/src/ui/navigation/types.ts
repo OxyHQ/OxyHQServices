@@ -144,4 +144,11 @@ export interface OxyProviderProps {
    * Optional QueryClient instance for React Query. If not provided, a sensible default is created.
    */
   queryClient?: QueryClient;
+
+  appInsets?: {
+    top: number;
+    right: number;
+    bottom: number;
+    left: number;
+  };
 }

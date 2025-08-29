@@ -376,7 +376,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
 
     return (
         <KeyboardAvoidingView
-            style={[styles.container, { backgroundColor: colors.background }]}
+            style={[styles.container]}
             behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
             <StatusBar
