@@ -158,7 +158,8 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
     };
 
     const isBackButton = (button: ButtonConfig) => {
-        return button.text.toLowerCase().includes('back') ||
+        const text = typeof button.text === 'string' ? button.text.toLowerCase() : '';
+        return text.includes('back') ||
             button.icon === 'arrow-back' ||
             button.icon === 'chevron-back';
     };

@@ -155,13 +155,13 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
             <GroupedPillButtons
                 buttons={[
                     {
-                        text: t('common.actions.back'),
+                        text: t('common.actions.back') || 'Back',
                         onPress: prevStep,
                         icon: 'arrow-back',
                         variant: 'transparent',
                     },
                     {
-                        text: t('common.actions.signIn'),
+                        text: t('common.actions.signIn') || 'Sign In',
                         onPress: handleSignInSubmit,
                         icon: 'log-in',
                         variant: 'primary',

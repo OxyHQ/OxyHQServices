@@ -184,7 +184,7 @@ export class DeviceManager {
    */
   static getDefaultDeviceName(): string {
     const fingerprint = this.getDeviceFingerprint();
-    const platform = fingerprint.platform.toLowerCase();
+    const platform = (fingerprint.platform || '').toLowerCase();
     
     if (platform.includes('win')) return 'Windows Computer';
     if (platform.includes('mac')) return 'Mac Computer';
