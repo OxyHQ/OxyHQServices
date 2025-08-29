@@ -350,7 +350,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
             enableBlurKeyboardOnGesture={true}
             detached
             topInset={(insets?.top ?? 0) + (appInsets?.top ?? 0)}
-            bottomInset={(keyboardVisible ? keyboardHeight : 0) + (appInsets?.bottom ?? 0)}
+            bottomInset={(keyboardVisible ? (keyboardHeight + (insets?.bottom ?? 0)) : 0) + (appInsets?.bottom ?? 0)}
             // Uncomment below to use a sticky footer
             // footerComponent={<YourFooterComponent />}
             onAnimate={(fromIndex: number, toIndex: number) => {
@@ -361,7 +361,7 @@ const OxyBottomSheet: React.FC<OxyProviderProps> = ({
                 style={[
                     styles.contentContainer,
                 ]}
-                contentContainerStyle={{ paddingBottom: (insets?.bottom ?? 0) + (appInsets?.bottom ?? 0) + 16 }}
+                contentContainerStyle={{ paddingBottom: (insets?.bottom ?? 0) + (appInsets?.bottom ?? 0) }}
             >
                 <View style={styles.centeredContentWrapper}>
                     <Animated.View
