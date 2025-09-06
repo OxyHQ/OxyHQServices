@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useEffect } from 'react';
 import { useFollowStore } from '../stores/followStore';
 import { useOxy } from '../context/OxyContext';
 
@@ -54,6 +54,16 @@ export const useFollow = (userId?: string | string[]) => {
     if (!isSingleUser || !userId) throw new Error('setFollowingCount is only available for single user mode');
     followState.setFollowingCount(userId, count);
   }, [isSingleUser, userId, followState]);
+
+  // Auto-fetch counts when hook is used for a single user and counts are missing.
+  useEffect(() => {
+    if (!isSingleUser || !userId) return;
+
+    // If either count is not set and we're not already loading counts, trigger a fetch.
+    if ((followerCount === null || followingCount === null) && !isLoadingCounts) {
+      fetchUserCounts().catch((err: any) => console.warn('useFollow: fetchUserCounts failed', err));
+    }
+  }, [isSingleUser, userId, followerCount, followingCount, isLoadingCounts, fetchUserCounts]);
 
   // Multiple user helpers
   const followData = useMemo(() => {

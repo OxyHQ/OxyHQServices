@@ -36,9 +36,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
         followerCount,
         followingCount,
         isLoadingCounts,
-        fetchUserCounts,
-        setFollowerCount,
-        setFollowingCount,
     } = useFollow(userId);
 
     const colors = useThemeColors(theme);
@@ -113,17 +110,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                     setLinks([]);
                 }
 
-                // Set real follower counts from profile data if available
-                if (profileRes._count) {
-                    setFollowerCount?.(profileRes._count.followers || 0);
-                    setFollowingCount?.(profileRes._count.following || 0);
-                } else if (profileRes.stats) {
-                    setFollowerCount?.(profileRes.stats.followers || 0);
-                    setFollowingCount?.(profileRes.stats.following || 0);
-                } else {
-                    // Fallback: fetch counts separately
-                    fetchUserCounts?.();
-                }
+                // Follower/following counts are managed by the `useFollow` hook.
 
                 // Mock data for other stats (these would come from separate API endpoints)
                 setPostsCount(Math.floor(Math.random() * 50));
