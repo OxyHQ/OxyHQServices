@@ -1,5 +1,4 @@
-import type React from 'react';
-import { useRef } from 'react';
+import React, { useRef, forwardRef, useImperativeHandle } from 'react';
 import { View, TextInput, StyleSheet, Platform, type NativeSyntheticEvent, type TextInputKeyPressEventData } from 'react-native';
 
 interface PinInputColors {
@@ -11,7 +10,7 @@ interface PinInputColors {
     border: string;
 }
 
-interface PinInputProps {
+export interface PinInputProps {
     value: string;
     onChange: (val: string) => void;
     length?: number;
@@ -20,8 +19,18 @@ interface PinInputProps {
     colors: PinInputColors;
 }
 
-const PinInput: React.FC<PinInputProps> = ({ value, onChange, length = 6, disabled, autoFocus, colors }) => {
+export interface PinInputHandle {
+    focus: () => void;
+}
+
+const PinInput = forwardRef<PinInputHandle, PinInputProps>(({ value, onChange, length = 6, disabled, autoFocus, colors }, ref) => {
     const inputs = useRef<Array<TextInput | null>>([]);
+
+    useImperativeHandle(ref, () => ({
+        focus: () => {
+            inputs.current[0]?.focus();
+        }
+    }), []);
 
     const handleChange = (text: string, idx: number) => {
         if (!/^[0-9]*$/.test(text)) return;
@@ -74,7 +83,7 @@ const PinInput: React.FC<PinInputProps> = ({ value, onChange, length = 6, disabl
             ))}
         </View>
     );
-};
+});
 
 const styles = StyleSheet.create({
     pinContainer: {

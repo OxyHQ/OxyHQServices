@@ -177,10 +177,16 @@ export class OxyServices {
       baseURL: config.baseURL,
       timeout: 10000 // 10 second timeout
     });
-    this.cloudURL = config.cloudURL || 'https://cloud.oxyhq.com';
-    this.cloudURL = config.cloudURL || 'https://cloud.oxy.so';
+    this.cloudURL = config.cloudURL || OXY_CLOUD_URL;
     this.tokenStore = TokenStore.getInstance();
     this.setupInterceptors();
+  }
+
+  // Test-only utility to reset global tokens between jest tests
+  static __resetTokensForTests(): void {
+    try {
+      TokenStore.getInstance().clearTokens();
+    } catch {}
   }
 
   /**
@@ -453,8 +459,13 @@ export class OxyServices {
   /**
    * Centralized error handling
    */
-  protected handleError(error: any): ApiError {
-    return handleHttpError(error);
+  protected handleError(error: any): Error {
+    const api = handleHttpError(error);
+    const err = new Error(api.message) as Error & { code?: string; status?: number; details?: Record<string, unknown> };
+    err.code = api.code;
+    err.status = api.status;
+    err.details = api.details as any;
+    return err;
   }
 
   /**
@@ -488,6 +499,9 @@ export class OxyServices {
         email,
         password
       });
+      if (!res || !res.data || (typeof res.data === 'object' && Object.keys(res.data).length === 0)) {
+        throw new OxyAuthenticationError('Sign up failed', 'SIGNUP_FAILED', 400);
+      }
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -1751,14 +1765,14 @@ export class OxyServices {
         
         next();
       } catch (error) {
-        const apiError = this.handleError(error);
+        const apiError = this.handleError(error) as any;
         
         if (debug) {
           console.log(`❌ Auth: Unexpected error:`, apiError);
         }
         
         if (onError) return onError(apiError);
-        return res.status(apiError.status || 500).json(apiError);
+        return res.status((apiError && apiError.status) || 500).json(apiError);
       }
     };
   }
@@ -1767,12 +1781,12 @@ export class OxyServices {
 /**
  * Export the default Oxy Cloud URL (for backward compatibility)
  */
-export const OXY_CLOUD_URL = 'https://cloud.oxy.so';
+export const OXY_CLOUD_URL = 'https://cloud.oxyhq.com';
 
 /**
  * Export the default Oxy API URL (for documentation)
  */
-export const OXY_API_URL = 'https://api.oxy.so';
+export const OXY_API_URL = (typeof process !== 'undefined' && process.env && process.env.OXY_API_URL) || 'https://api.oxy.so';
 
 /**
  * Pre-configured client instance for easy import

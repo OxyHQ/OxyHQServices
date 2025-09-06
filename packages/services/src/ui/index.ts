@@ -7,7 +7,7 @@
 import isFrontend from './isFrontend';
 
 // Real UI exports
-let OxyProvider, OxySignInButton, OxyLogo, Avatar, FollowButton, OxyPayButton, FontLoader, setupFonts, OxyIcon, useOxy, useOxyAuth, useOxyUser, useOxyKarma, useOxyPayments, useOxyDevices, useOxyNotifications, useOxySocket, useOxyQR, useOxyIAP, OxyContextProvider, OxyContextState, OxyContextProviderProps, useFollow, ProfileScreen, OxyRouter, useAuthStore, fontFamilies, fontStyles, toast;
+let OxyProvider, OxySignInButton, OxyLogo, Avatar, FollowButton, OxyPayButton, FontLoader, setupFonts, OxyIcon, useOxy, useOxyAuth, useOxyUser, useOxyKarma, useOxyPayments, useOxyDevices, useOxyNotifications, useOxySocket, useOxyQR, OxyContextProvider, OxyContextState, OxyContextProviderProps, useFollow, ProfileScreen, OxyRouter, useAuthStore, fontFamilies, fontStyles, toast;
 
 if (isFrontend) {
   OxyProvider = require('./components/OxyProvider').default;

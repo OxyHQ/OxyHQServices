@@ -148,7 +148,7 @@ const UserSchema: Schema = new Schema(
     },
     language: {
       type: String,
-      default: 'en-US',
+      default: 'en',
       select: true,
       trim: true,
     },
@@ -287,7 +287,9 @@ UserSchema.index({ "locations.type": 1, "locations.address.city": 1 });
 UserSchema.index({ "locations.metadata.countryCode": 1, "locations.address.city": 1 });
 
 // Text index for location name search
-UserSchema.index({ "locations.name": "text", "locations.address.formattedAddress": "text" });
+UserSchema.index({ "locations.name": "text", "locations.address.formattedAddress": "text" }, { 
+  default_language: "en"
+});
 
 // Index for location timestamps
 UserSchema.index({ "locations.createdAt": -1 });

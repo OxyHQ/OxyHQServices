@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { View, Text, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
-import PinInput from '../../components/internal/PinInput';
+import PinInput, { type PinInputHandle } from '../../components/internal/PinInput';
 import { useI18n } from '../../hooks/useI18n';
 
 interface SignInTotpStepProps {
@@ -45,7 +45,7 @@ const SignInTotpStep: React.FC<SignInTotpStepProps> = ({
   isLoading,
 }) => {
   const [code, setCode] = useState('');
-  const inputRef = useRef<any>(null);
+  const inputRef = useRef<PinInputHandle | null>(null);
   const { t } = useI18n();
 
   const handleVerify = async () => {

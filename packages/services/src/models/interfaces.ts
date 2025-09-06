@@ -8,6 +8,11 @@ export interface User {
   email?: string;
   // Avatar file id (asset id)
   avatar?: string;
+  // Privacy and security settings
+  privacySettings?: {
+    twoFactorEnabled?: boolean;
+    [key: string]: unknown;
+  };
   name?: {
     first?: string;
     last?: string;

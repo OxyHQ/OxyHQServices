@@ -165,8 +165,6 @@ RATE_LIMIT_MAX_REQUESTS=100
 
 # CORS (comma-separated)
 ALLOWED_ORIGINS=https://mention.earth,https://homiio.com,https://api.oxy.so
-# Email (Nodemailer SMTP)
-# Set EMAIL_PROVIDER=console to log emails to console instead of sending.
 EMAIL_PROVIDER=smtp
 SMTP_HOST=smtp.example.com
 SMTP_PORT=587

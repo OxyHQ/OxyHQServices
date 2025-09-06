@@ -527,7 +527,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             );
 
             const feature = individualFeatures.find(f => f.id === featureId);
-            toast.success(t('premium.toasts.featureSubscribed', { name: feature?.name }) || `Subscribed to ${feature?.name} successfully!`);
+            toast.success((t('premium.toasts.featureSubscribed', { name: feature?.name ?? '' }) ?? `Subscribed to ${feature?.name} successfully!`));
 
         } catch (error) {
             console.error('Feature subscription failed:', error);
@@ -540,7 +540,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const handleFeatureUnsubscribe = async (featureId: string) => {
         const feature = individualFeatures.find(f => f.id === featureId);
         confirmAction(
-            t('premium.confirms.unsubscribeFeature', { name: feature?.name }) || `Are you sure you want to unsubscribe from ${feature?.name}?`,
+            (t('premium.confirms.unsubscribeFeature', { name: feature?.name ?? '' }) ?? `Are you sure you want to unsubscribe from ${feature?.name}?`),
             async () => {
                 try {
                     setIndividualFeatures(prev =>
@@ -550,7 +550,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                                 : f
                         )
                     );
-                    toast.success(t('premium.toasts.featureUnsubscribed', { name: feature?.name }) || `Unsubscribed from ${feature?.name}`);
+                    toast.success((t('premium.toasts.featureUnsubscribed', { name: feature?.name ?? '' }) ?? `Unsubscribed from ${feature?.name}`));
                 } catch (error) {
                     toast.error(t('premium.toasts.featureUnsubscribeFailed') || 'Failed to unsubscribe from feature');
                 }

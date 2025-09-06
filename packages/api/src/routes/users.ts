@@ -81,17 +81,38 @@ router.put('/me', authMiddleware, async (req: AuthRequest, res) => {
 // Get user's followers
 router.get('/:userId/followers', validateObjectId, async (req, res) => {
   try {
+    const { limit = 50, offset = 0 } = req.query;
+    const limitNum = Math.min(parseInt(limit as string) || 50, 100); // Max 100 per page
+    const offsetNum = parseInt(offset as string) || 0;
+
+    // Get total count
+    const total = await Follow.countDocuments({
+      followedId: req.params.userId,
+      followType: FollowType.USER
+    });
+
+    // Get paginated followers
     const follows = await Follow.find({
       followedId: req.params.userId,
       followType: FollowType.USER
-    }).populate({
+    })
+    .populate({
       path: 'followerUserId',
       model: 'User',
       select: 'name avatar -email'
-    });
+    })
+    .limit(limitNum)
+    .skip(offsetNum)
+    .sort({ createdAt: -1 }); // Most recent first
 
     const followers = follows.map(follow => follow.followerUserId);
-    res.json(followers);
+    const hasMore = offsetNum + limitNum < total;
+
+    res.json({
+      followers,
+      total,
+      hasMore
+    });
   } catch (error) {
     logger.error('Error fetching followers:', error);
     res.status(500).json({ message: 'Internal server error' });
@@ -101,17 +122,38 @@ router.get('/:userId/followers', validateObjectId, async (req, res) => {
 // Get user's following
 router.get('/:userId/following', validateObjectId, async (req, res) => {
   try {
+    const { limit = 50, offset = 0 } = req.query;
+    const limitNum = Math.min(parseInt(limit as string) || 50, 100); // Max 100 per page
+    const offsetNum = parseInt(offset as string) || 0;
+
+    // Get total count
+    const total = await Follow.countDocuments({
+      followerUserId: req.params.userId,
+      followType: FollowType.USER
+    });
+
+    // Get paginated following
     const follows = await Follow.find({
       followerUserId: req.params.userId,
       followType: FollowType.USER
-    }).populate({
+    })
+    .populate({
       path: 'followedId',
       model: 'User',
       select: 'name avatar -email'
-    });
+    })
+    .limit(limitNum)
+    .skip(offsetNum)
+    .sort({ createdAt: -1 }); // Most recent first
 
     const following = follows.map(follow => follow.followedId);
-    res.json(following);
+    const hasMore = offsetNum + limitNum < total;
+
+    res.json({
+      following,
+      total,
+      hasMore
+    });
   } catch (error) {
     logger.error('Error fetching following:', error);
     res.status(500).json({ message: 'Internal server error' });

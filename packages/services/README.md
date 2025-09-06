@@ -43,7 +43,7 @@ To avoid duplicate native modules and ensure smooth integration across apps, ins
 - react-native-safe-area-context: ^5.4.0, react-native-svg: >=13
 - Expo projects: expo, expo-font, expo-image, expo-linear-gradient
 - Navigation (if you use the provided screens): @react-navigation/native
-- Optional (only if you use IAP screens): react-native-iap
+
 
 Example for Expo:
 ```bash

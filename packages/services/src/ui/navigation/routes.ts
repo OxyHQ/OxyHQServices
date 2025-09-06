@@ -28,100 +28,126 @@ export interface RouteConfig {
   snapPoints: string[];
 }
 
-export const routes = {
+// Keep a literal list of route names for a precise union type
+export const routeNames = [
+  'SignIn',
+  'SignUp',
+  'RecoverAccount',
+  'AccountCenter',
+  'AccountSwitcher',
+  'SessionManagement',
+  'AccountOverview',
+  'EditProfile',
+  'PremiumSubscription',
+  'AppInfo',
+  'Feedback',
+  'KarmaCenter',
+  'KarmaLeaderboard',
+  'KarmaRules',
+  'AboutKarma',
+  'KarmaRewards',
+  'KarmaFAQ',
+  'Profile',
+  'UserLinks',
+  'FileManagement',
+  'PaymentGateway',
+  'WelcomeNewUser',
+  'LanguageSelector',
+] as const;
+
+export type RouteName = typeof routeNames[number];
+
+export const routes: Record<RouteName, RouteConfig> = {
   SignIn: {
-    component: SignInScreen,
+    component: SignInScreen as unknown as ComponentType<any>,
     snapPoints: ['10%', '80%'],
   },
   SignUp: {
-    component: SignUpScreen,
+    component: SignUpScreen as unknown as ComponentType<any>,
     snapPoints: ['10%', '90%'],
   },
   RecoverAccount: {
-    component: RecoverAccountScreen,
+    component: RecoverAccountScreen as unknown as ComponentType<any>,
     snapPoints: ['10%', '80%'],
   },
   AccountCenter: {
-    component: AccountCenterScreen,
+    component: AccountCenterScreen as unknown as ComponentType<any>,
     snapPoints: ['60%', '100%'],
   },
   AccountSwitcher: {
-    component: AccountSwitcherScreen,
+    component: AccountSwitcherScreen as unknown as ComponentType<any>,
     snapPoints: ['70%', '100%'],
   },
   SessionManagement: {
-    component: SessionManagementScreen,
+    component: SessionManagementScreen as unknown as ComponentType<any>,
     snapPoints: ['70%', '100%'],
   },
   AccountOverview: {
-    component: AccountOverviewScreen,
+    component: AccountOverviewScreen as unknown as ComponentType<any>,
     snapPoints: ['60%', '85%'],
   },
   EditProfile: {
-    component: AccountSettingsScreen,
+    component: AccountSettingsScreen as unknown as ComponentType<any>,
     snapPoints: ['60%', '100%'],
   },
   PremiumSubscription: {
-    component: PremiumSubscriptionScreen,
+    component: PremiumSubscriptionScreen as unknown as ComponentType<any>,
     snapPoints: ['70%', '100%'],
   },
   AppInfo: {
-    component: AppInfoScreen,
+    component: AppInfoScreen as unknown as ComponentType<any>,
     snapPoints: ['60%', '90%'],
   },
   Feedback: {
-    component: FeedbackScreen,
+    component: FeedbackScreen as unknown as ComponentType<any>,
     snapPoints: ['70%', '100%'],
   },
   KarmaCenter: {
-    component: KarmaCenterScreen,
+    component: KarmaCenterScreen as unknown as ComponentType<any>,
     snapPoints: ['60%', '100%'],
   },
   KarmaLeaderboard: {
-    component: KarmaLeaderboardScreen,
+    component: KarmaLeaderboardScreen as unknown as ComponentType<any>,
     snapPoints: ['60%', '100%'],
   },
   KarmaRules: {
-    component: KarmaRulesScreen,
+    component: KarmaRulesScreen as unknown as ComponentType<any>,
     snapPoints: ['60%', '90%'],
   },
   AboutKarma: {
-    component: KarmaAboutScreen,
+    component: KarmaAboutScreen as unknown as ComponentType<any>,
     snapPoints: ['60%', '90%'],
   },
   KarmaRewards: {
-    component: KarmaRewardsScreen,
+    component: KarmaRewardsScreen as unknown as ComponentType<any>,
     snapPoints: ['60%', '90%'],
   },
   KarmaFAQ: {
-    component: KarmaFAQScreen,
+    component: KarmaFAQScreen as unknown as ComponentType<any>,
     snapPoints: ['60%', '90%'],
   },
   Profile: {
-    component: ProfileScreen,
+    component: ProfileScreen as unknown as ComponentType<any>,
     snapPoints: ['60%', '90%'],
   },
   UserLinks: {
-    component: UserLinksScreen,
+    component: UserLinksScreen as unknown as ComponentType<any>,
     snapPoints: ['60%', '90%'],
   },
   FileManagement: {
-    component: FileManagementScreen,
+    component: FileManagementScreen as unknown as ComponentType<any>,
     snapPoints: ['70%', '100%'],
   },
   PaymentGateway: {
-    component: PaymentGatewayScreen,
+    component: PaymentGatewayScreen as unknown as ComponentType<any>,
     snapPoints: ['60%', '90%'],
   },
   WelcomeNewUser: {
-    component: WelcomeNewUserScreen,
+    component: WelcomeNewUserScreen as unknown as ComponentType<any>,
     snapPoints: ['65%', '90%'],
   },
   LanguageSelector: {
-    component: LanguageSelectorScreen,
+    component: LanguageSelectorScreen as unknown as ComponentType<any>,
     snapPoints: ['70%', '100%'],
   },
-} as const;
-
-export type RouteName = keyof typeof routes;
-
+};

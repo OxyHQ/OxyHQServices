@@ -25,7 +25,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { FAIRWalletIcon } from '../components/icon';
 import { toast } from 'sonner';
 import QRCode from 'react-native-qrcode-svg';
-import * as RNIap from 'react-native-iap';
+
 import { GroupedSection } from '../components';
 
 // Restrict payment methods to Card, Oxy Pay, and FairCoin (QR)
@@ -35,16 +35,7 @@ const PAYMENT_METHODS = [
     { key: 'faircoin', label: 'FAIRWallet', icon: 'qr-code-outline', description: 'Pay with FairCoin by scanning a QR code.' },
 ];
 
-// Add Google Play Billing to payment methods if Android
-const ANDROID_IAP_METHOD = {
-    key: 'googleplay',
-    label: 'Google Play Billing',
-    icon: 'logo-google-playstore',
-    description: 'Pay securely with your Google Play account.'
-};
-if (Platform.OS === 'android' && !PAYMENT_METHODS.find(m => m.key === 'googleplay')) {
-    PAYMENT_METHODS.push(ANDROID_IAP_METHOD);
-}
+
 
 // Add PaymentItem type
 export type PaymentItem = {
@@ -116,7 +107,6 @@ const getItemTypeIcon = (type: string, color: string) => {
     }
 };
 
-const IAP_PRODUCT_IDS = ['test_product_1', 'test_product_2']; // TODO: Replace with real product IDs
 
 // Helper to get unique item types (move to top-level, before component)
 const getUniqueItemTypes = (items: PaymentItem[]) => {
@@ -155,11 +145,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     const [isPaying, setIsPaying] = useState(false);
     const [success, setSuccess] = useState(false);
 
-    // IAP state
-    const [iapProducts, setIapProducts] = useState<RNIap.Product[]>([]);
-    const [iapError, setIapError] = useState<string | null>(null);
-    const [iapLoading, setIapLoading] = useState(false);
-    const [iapPurchase, setIapPurchase] = useState<RNIap.Purchase | null>(null);
+
 
     // Animations
     const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -335,42 +321,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         Linking.openURL(url);
     };
 
-    // IAP setup (Android only)
-    useEffect(() => {
-        if (paymentMethod !== 'googleplay' || Platform.OS !== 'android') return;
-        let purchaseUpdateSub: any, purchaseErrorSub: any;
-        setIapLoading(true);
-        RNIap.initConnection()
-            .then(() => RNIap.getProducts({ skus: IAP_PRODUCT_IDS }))
-            .then(setIapProducts)
-            .catch(e => setIapError(e.message))
-            .finally(() => setIapLoading(false));
-        purchaseUpdateSub = RNIap.purchaseUpdatedListener((purchase) => {
-            setIapPurchase(purchase);
-            setSuccess(true);
-            nextStep();
-        });
-        purchaseErrorSub = RNIap.purchaseErrorListener((err) => {
-            setIapError(err.message);
-        });
-        return () => {
-            purchaseUpdateSub && purchaseUpdateSub.remove();
-            purchaseErrorSub && purchaseErrorSub.remove();
-            RNIap.endConnection();
-        };
-    }, [paymentMethod]);
 
-    const handleIapBuy = async (sku: string) => {
-        setIapError(null);
-        setIapLoading(true);
-        try {
-            await RNIap.requestPurchase({ sku });
-        } catch (e: any) {
-            setIapError(e.message);
-        } finally {
-            setIapLoading(false);
-        }
-    };
 
     // Helper for dynamic styles
     const getStepIndicatorStyle = (active: boolean) => [
@@ -842,73 +793,13 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         </Animated.View>
     );
 
-    // Step: Google Play Billing (Android only)
-    const renderGooglePlayStep = () => (
-        <Animated.View style={[styles.stepContainer, {
-            opacity: fadeAnim,
-            transform: [
-                { translateY: slideAnim },
-                { scale: scaleAnim },
-            ]
-        }]}
-        >
-            <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Google Play Products</Text>
 
-                {iapLoading && (
-                    <View style={styles.loadingContainer}>
-                        <Text style={styles.loadingText}>Loading products...</Text>
-                    </View>
-                )}
-
-                {iapError && (
-                    <View style={styles.paymentErrorContainer}>
-                        <Text style={styles.paymentErrorText}>{iapError}</Text>
-                    </View>
-                )}
-
-                {!iapLoading && !iapError && (
-                    <GroupedSection
-                        items={iapProducts.map(product => ({
-                            id: product.productId,
-                            icon: 'pricetag',
-                            iconColor: colors.primary,
-                            title: product.title,
-                            subtitle: product.localizedPrice,
-                            onPress: () => handleIapBuy(product.productId),
-                            disabled: iapLoading,
-                        }))}
-                        theme={theme}
-                    />
-                )}
-
-                {iapPurchase && (
-                    <View style={styles.iapSuccessContainer}>
-                        <Text style={styles.iapSuccessText}>Purchase successful!</Text>
-                    </View>
-                )}
-            </View>
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: 'Back',
-                        onPress: prevStep,
-                        icon: 'arrow-back',
-                        variant: 'transparent',
-                    },
-                ]}
-                colors={colors}
-            />
-        </Animated.View>
-    );
 
     const renderCurrentStep = () => {
         switch (currentStep) {
             case 0: return renderSummaryStep();
             case 1: return renderMethodStep();
-            case 2:
-                if (paymentMethod === 'googleplay') return renderGooglePlayStep();
-                return renderDetailsStep();
+            case 2: return renderDetailsStep();
             case 3: return renderReviewStep();
             case 4: return renderSuccessStep();
             default: return renderSummaryStep();
@@ -1410,46 +1301,7 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
         marginTop: 6,
         marginBottom: 2,
     },
-    // Google Play step styles
-    loadingContainer: {
-        padding: 16,
-        alignItems: 'center',
-        backgroundColor: '#fff',
-        borderRadius: 12,
-        marginBottom: 16,
-    },
-    loadingText: {
-        color: colors.secondaryText,
-        fontSize: 16,
-        fontStyle: 'italic',
-    },
-    paymentErrorContainer: {
-        padding: 16,
-        backgroundColor: '#ffebee',
-        borderRadius: 12,
-        marginBottom: 16,
-        borderWidth: 1,
-        borderColor: '#ffcdd2',
-    },
-    paymentErrorText: {
-        color: '#d32f2f',
-        fontSize: 14,
-        textAlign: 'center',
-    },
-    iapSuccessContainer: {
-        padding: 16,
-        backgroundColor: '#e8f5e8',
-        borderRadius: 12,
-        marginTop: 16,
-        borderWidth: 1,
-        borderColor: '#c8e6c9',
-    },
-    iapSuccessText: {
-        color: colors.success || '#4BB543',
-        fontSize: 16,
-        textAlign: 'center',
-        fontWeight: '600',
-    },
+
     // Summary step styles
     summaryDescriptionContainer: {
         marginBottom: 16,

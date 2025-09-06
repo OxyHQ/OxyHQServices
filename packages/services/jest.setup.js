@@ -38,8 +38,8 @@ jest.mock('socket.io-client', () => ({
 }));
 
 // Mock axios to prevent actual network requests
-jest.mock('axios', () => ({
-  create: jest.fn(() => ({
+jest.mock('axios', () => {
+  const mockClient = {
     get: jest.fn(() => Promise.resolve({ data: {} })),
     post: jest.fn(() => Promise.resolve({ data: {} })),
     put: jest.fn(() => Promise.resolve({ data: {} })),
@@ -48,22 +48,32 @@ jest.mock('axios', () => ({
       request: { use: jest.fn() },
       response: { use: jest.fn() },
     },
-    defaults: { baseURL: 'https://test.example.com' },
-  })),
-  default: {
-    create: jest.fn(() => ({
-      get: jest.fn(() => Promise.resolve({ data: {} })),
-      post: jest.fn(() => Promise.resolve({ data: {} })),
-      put: jest.fn(() => Promise.resolve({ data: {} })),
-      delete: jest.fn(() => Promise.resolve({ data: {} })),
-      interceptors: {
-        request: { use: jest.fn() },
-        response: { use: jest.fn() },
-      },
-      defaults: { baseURL: 'https://test.example.com' },
-    })),
-  },
-}));
+    defaults: { baseURL: 'https://test.example.com', timeout: 10000 },
+  };
+  const create = jest.fn((config) => {
+    if (config && config.baseURL) {
+      mockClient.defaults.baseURL = config.baseURL;
+    }
+    if (config && config.timeout) {
+      mockClient.defaults.timeout = config.timeout;
+    }
+    return mockClient;
+  });
+  return {
+    create,
+    default: { create },
+  };
+});
 
 // Set test timeout
 jest.setTimeout(10000);
+
+// Ensure auth tokens do not leak across tests
+afterEach(() => {
+  try {
+    const { OxyServices } = require('./src/core/OxyServices');
+    if (OxyServices && typeof OxyServices.__resetTokensForTests === 'function') {
+      OxyServices.__resetTokensForTests();
+    }
+  } catch {}
+});
