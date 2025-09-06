@@ -10,6 +10,7 @@ export interface IUser extends Document {
   name?: {
     first?: string;
     last?: string;
+    full?: string; // virtual
   };
   verified?: boolean;
   privacySettings: {
@@ -115,6 +116,22 @@ export interface IUser extends Document {
   updateLocationCoordinates(locationId: string, lat: number, lon: number): Promise<IUser>;
 }
 
+const NameSchema = new Schema({
+  first: { type: String, default: "" },
+  last: { type: String, default: "" },
+});
+
+// Virtual for full name
+NameSchema.virtual('full').get(function() {
+  const first = typeof this.first === 'string' ? this.first : '';
+  const last = typeof this.last === 'string' ? this.last : '';
+  return [first, last].filter(Boolean).join(' ').trim();
+});
+
+// Ensure virtual fields are serialized
+NameSchema.set('toJSON', { virtuals: true });
+NameSchema.set('toObject', { virtuals: true });
+
 const UserSchema: Schema = new Schema(
   {
     username: {
@@ -166,10 +183,7 @@ const UserSchema: Schema = new Schema(
         default: [],
       },
     ],
-    name: {
-      first: { type: String, default: "" },
-      last: { type: String, default: "" },
-    },
+    name: NameSchema,
     privacySettings: {
       isPrivateAccount: { type: Boolean, default: false },
       hideOnlineStatus: { type: Boolean, default: false },
@@ -250,9 +264,6 @@ const UserSchema: Schema = new Schema(
 // Remove transforms and rely on select options
 UserSchema.set("toJSON", {
   virtuals: true,
-  transform: function (doc, ret) {
-    return ret;
-  },
   versionKey: false,
 });
 

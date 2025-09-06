@@ -31,6 +31,12 @@ router.get('/me', authMiddleware, async (req: AuthRequest, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
     const userObj = user.toObject({ virtuals: true });
+    // Ensure name.full exists for older records or cases where virtuals aren't present
+    if (userObj.name && typeof userObj.name === 'object') {
+      const first = (userObj.name.first as string) || '';
+      const last = (userObj.name.last as string) || '';
+      if (!userObj.name.full) userObj.name.full = [first, last].filter(Boolean).join(' ').trim();
+    }
     res.json(userObj);
   } catch (error) {
     logger.error('Error fetching current user:', error);
@@ -333,8 +339,8 @@ router.get('/:userId', validateObjectId, async (req, res) => {
   try {
     const user = await User.findById(req.params.userId)
   .select('username name avatar verified bio description links linksMetadata createdAt updatedAt')
-      .lean();
-    console.log('[DEBUG] User lookup result:', user);
+      .lean({ virtuals: true });
+  console.log('[DEBUG] User lookup result:', user);
     if (!user) {
       console.log('[DEBUG] User not found');
       return res.status(404).json({ message: 'User not found' });
@@ -353,6 +359,15 @@ router.get('/:userId', validateObjectId, async (req, res) => {
 
     // karma count not implemented - requires posts collection integration
     const karmaCount = 0;
+
+    // Ensure name.full exists on lean result (lean virtuals sometimes don't include nested virtuals)
+    if (user.name && typeof user.name === 'object') {
+      const first = (user.name.first as string) || '';
+      const last = (user.name.last as string) || '';
+      if (!('full' in user.name) || !user.name.full) {
+        user.name.full = [first, last].filter(Boolean).join(' ').trim();
+      }
+    }
 
     const response = {
       id: user._id,
