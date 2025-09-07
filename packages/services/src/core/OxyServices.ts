@@ -175,7 +175,7 @@ export class OxyServices {
   constructor(config: OxyConfig) {
     this.client = axios.create({ 
       baseURL: config.baseURL,
-      timeout: 10000 // 10 second timeout
+      timeout: 5000 // 5 second timeout
     });
     this.cloudURL = config.cloudURL || OXY_CLOUD_URL;
     this.tokenStore = TokenStore.getInstance();
@@ -1781,7 +1781,7 @@ export class OxyServices {
 /**
  * Export the default Oxy Cloud URL (for backward compatibility)
  */
-export const OXY_CLOUD_URL = 'https://cloud.oxyhq.com';
+export const OXY_CLOUD_URL = 'https://cloud.oxy.so';
 
 /**
  * Export the default Oxy API URL (for documentation)

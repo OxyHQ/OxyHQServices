@@ -284,7 +284,7 @@ packages/services/src/
 
 ```typescript
 // Automatic environment detection
-const baseURL = process.env.OXY_API_URL || OXY_CLOUD_URL;
+const baseURL = process.env.OXY_API_URL;
 const oxyClient = new OxyServices({ baseURL });
 ```
 
@@ -303,7 +303,7 @@ const oxy = new OxyServices({
 
 ```typescript
 <OxyProvider
-  baseURL="https://cloud.oxy.so"
+  baseURL="https://api.oxy.so"
   storageKeyPrefix="my_app"
   onAuthStateChange={(user) => {}}
   onError={(error) => {}}

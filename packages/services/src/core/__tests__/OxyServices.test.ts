@@ -21,7 +21,7 @@ describe('OxyServices', () => {
     });
 
     it('should have a default cloud URL constant', () => {
-      expect(OXY_CLOUD_URL).toBe('https://cloud.oxyhq.com');
+      expect(OXY_CLOUD_URL).toBe('https://cloud.oxy.so');
     });
   });
 

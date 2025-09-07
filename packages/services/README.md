@@ -71,7 +71,7 @@ import { OxyProvider, useOxy } from '@oxyhq/services';
 
 function App() {
   return (
-    <OxyProvider baseURL="https://cloud.oxy.so">
+    <OxyProvider baseURL="https://api.oxy.so">
       <YourApp />
     </OxyProvider>
   );
@@ -101,7 +101,7 @@ const app = express();
 app.use(express.json());
 
 // Optional: create your own client (e.g., different baseURL per env)
-const services = new OxyServices({ baseURL: process.env.OXY_CLOUD_URL || 'https://cloud.oxy.so' });
+const services = new OxyServices({ baseURL: process.env.OXY_CLOUD_URL || 'https://api.oxy.so' });
 
 app.post('/api/auth/login', async (req, res) => {
   try {
@@ -140,7 +140,7 @@ import { OxyProvider, useOxy } from '@oxyhq/services';
 function App() {
   return (
     <OxyProvider 
-      baseURL="https://cloud.oxy.so"
+      baseURL="https://api.oxy.so"
       onAuthStateChange={(user) => {
         console.log('Auth state changed:', user ? 'logged in' : 'logged out');
       }}
@@ -455,7 +455,7 @@ const {
 
 ```typescript
 <OxyProvider
-  baseURL="https://cloud.oxy.so"           // API base URL
+  baseURL="https://api.oxy.so"           // API base URL
   storageKeyPrefix="oxy_session"          // Storage key prefix
   onAuthStateChange={(user) => {}}        // Auth state callback
   onError={(error) => {}}                 // Error callback
@@ -606,7 +606,7 @@ import 'react-native-url-polyfill/auto';
 
 ```typescript
 <OxyProvider 
-  baseURL="https://cloud.oxy.so"
+  baseURL="https://api.oxy.so"
   storageKeyPrefix="my_app_oxy"  // Custom storage key
 >
   {children}
