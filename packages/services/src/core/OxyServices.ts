@@ -1219,7 +1219,8 @@ export class OxyServices {
       const params = new URLSearchParams();
       if (limit) params.append('limit', String(limit));
       if (offset) params.append('offset', String(offset));
-      const res = await this.client.get(`/api/assets${params.size ? `?${params.toString()}` : ''}`);
+  const qs = params.toString();
+  const res = await this.client.get(`/api/assets${qs ? `?${qs}` : ''}`);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
