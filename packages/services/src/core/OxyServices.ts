@@ -1185,13 +1185,21 @@ export class OxyServices {
    * Get file download URL (API streaming proxy, attaches token for <img src>)
    */
   getFileDownloadUrl(fileId: string, variant?: string, expiresIn?: number): string {
-    const base = this.getBaseURL();
-    const params = new URLSearchParams();
-    if (variant) params.set('variant', variant);
-    params.set('fallback', 'placeholderVisible');
-    const token = this.tokenStore.getAccessToken();
-    if (token) params.set('token', token);
-    return `${base}/api/assets/${encodeURIComponent(fileId)}/stream${params.size ? `?${params.toString()}` : ''}`;
+  const base = this.getBaseURL();
+  const params = new URLSearchParams();
+  if (variant) params.set('variant', variant);
+  if (expiresIn) params.set('expiresIn', String(expiresIn));
+  params.set('fallback', 'placeholderVisible');
+  const token = this.tokenStore.getAccessToken();
+  if (token) params.set('token', token);
+
+  // Use params.toString() to detect whether there are query params.
+  // URLSearchParams.size is not a standard property across all JS runtimes
+  // (some environments like React Native may not implement it), which
+  // caused the query string to be omitted on native. Checking the
+  // serialized string is reliable everywhere.
+  const qs = params.toString();
+  return `${base}/api/assets/${encodeURIComponent(fileId)}/stream${qs ? `?${qs}` : ''}`;
   }
 
   /**
