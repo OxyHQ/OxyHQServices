@@ -18,6 +18,7 @@ import Animated, {
     withSpring,
     runOnJS,
     interpolate,
+    type SharedValue,
 } from 'react-native-reanimated';
 import { useThemeColors, createAuthStyles } from '../styles';
 import type { BaseScreenProps } from '../navigation/types';
@@ -75,9 +76,9 @@ const ProgressIndicator: React.FC<{
 // Step container with animations
 const AnimatedStepContainer: React.FC<{
     children: React.ReactNode;
-    fadeAnim: Animated.SharedValue<number>;
-    slideAnim: Animated.SharedValue<number>;
-    scaleAnim: Animated.SharedValue<number>;
+    fadeAnim: SharedValue<number>;
+    slideAnim: SharedValue<number>;
+    scaleAnim: SharedValue<number>;
     styles: any;
     stepKey: string;
 }> = ({ children, fadeAnim, slideAnim, scaleAnim, styles, stepKey }) => {
