@@ -251,7 +251,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 selectMode: true,
                 multiSelect: false,
                 afterSelect: 'back',
-                onSelect: (file: FileMetadata) => {
+                onSelect: async (file: FileMetadata) => {
                     if (!file.contentType.startsWith('image/')) {
                         toast.error(t('editProfile.toasts.selectImage') || 'Please select an image file');
                         return;
@@ -268,6 +268,16 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         try {
                             console.log('[AccountSettings] Auto-saving avatar', file.id);
                             setIsSaving(true);
+
+                            // Update file visibility to public for avatar
+                            try {
+                                await oxyServices.assetUpdateVisibility(file.id, 'public');
+                                console.log('[AccountSettings] Avatar visibility updated to public');
+                            } catch (visError) {
+                                console.warn('[AccountSettings] Failed to update avatar visibility, continuing anyway:', visError);
+                                // Continue with avatar update even if visibility update fails
+                            }
+
                             await updateUser({ avatar: file.id }, oxyServices);
                             // Force refresh current user cache (updateUser already does a fetch with force=true internally)
                             // Extra safeguard: ensure avatarFileId reflects saved id (already set) and trigger any dependent UI.

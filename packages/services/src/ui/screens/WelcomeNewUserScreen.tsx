@@ -42,17 +42,21 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
         : (t('welcomeNew.welcome.title') || 'Welcome 👋');
     const steps: Array<{ key: string; title: string; bullets?: string[]; body?: string; showAvatar?: boolean; }> = [
         { key: 'welcome', title: welcomeTitle, body: t('welcomeNew.welcome.body') || "You just created an account in a calm, ethical space. A few quick things — then you're in." },
-        { key: 'account', title: t('welcomeNew.account.title') || 'One Account. Simple.', bullets: [
-            t('welcomeNew.account.bullets.0') || 'One identity across everything',
-            t('welcomeNew.account.bullets.1') || 'No re‑signing in all the time',
-            t('welcomeNew.account.bullets.2') || 'Your preferences stay with you',
-        ] },
-        { key: 'principles', title: t('welcomeNew.principles.title') || 'What We Stand For', bullets: [
-            t('welcomeNew.principles.bullets.0') || 'Privacy by default',
-            t('welcomeNew.principles.bullets.1') || 'No manipulative feeds',
-            t('welcomeNew.principles.bullets.2') || 'You decide what to share',
-            t('welcomeNew.principles.bullets.3') || 'No selling your data',
-        ] },
+        {
+            key: 'account', title: t('welcomeNew.account.title') || 'One Account. Simple.', bullets: [
+                t('welcomeNew.account.bullets.0') || 'One identity across everything',
+                t('welcomeNew.account.bullets.1') || 'No re‑signing in all the time',
+                t('welcomeNew.account.bullets.2') || 'Your preferences stay with you',
+            ]
+        },
+        {
+            key: 'principles', title: t('welcomeNew.principles.title') || 'What We Stand For', bullets: [
+                t('welcomeNew.principles.bullets.0') || 'Privacy by default',
+                t('welcomeNew.principles.bullets.1') || 'No manipulative feeds',
+                t('welcomeNew.principles.bullets.2') || 'You decide what to share',
+                t('welcomeNew.principles.bullets.3') || 'No selling your data',
+            ]
+        },
         { key: 'karma', title: t('welcomeNew.karma.title') || 'Karma = Trust & Growth', body: t('welcomeNew.karma.body') || 'Oxy Karma is a points system that reacts to what you do. Helpful, respectful, constructive actions earn it. Harmful or low‑effort stuff chips it away. More karma can unlock benefits; low karma can limit features. It keeps things fair and rewards real contribution.' },
         { key: 'avatar', title: t('welcomeNew.avatar.title') || 'Make It Yours', body: t('welcomeNew.avatar.body') || 'Add an avatar so people recognize you. It will show anywhere you show up here. Skip if you want — you can add it later.', showAvatar: true },
         { key: 'ready', title: t('welcomeNew.ready.title') || "You're Ready", body: t('welcomeNew.ready.body') || 'Explore. Contribute. Earn karma. Stay in control.' }
@@ -82,8 +86,24 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
             disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
             afterSelect: 'back',
             onSelect: async (file: any) => {
-                if (!file.contentType.startsWith('image/')) { toast.error(t('editProfile.toasts.selectImage') || 'Please select an image file'); return; }
-                try { await updateUser({ avatar: file.id }, oxyServices); toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated'); } catch (e: any) { toast.error(e.message || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar'); }
+                if (!file.contentType.startsWith('image/')) {
+                    toast.error(t('editProfile.toasts.selectImage') || 'Please select an image file');
+                    return;
+                }
+                try {
+                    // Update file visibility to public for avatar
+                    try {
+                        await oxyServices.assetUpdateVisibility(file.id, 'public');
+                        console.log('[WelcomeNewUser] Avatar visibility updated to public');
+                    } catch (visError) {
+                        console.warn('[WelcomeNewUser] Failed to update avatar visibility, continuing anyway:', visError);
+                    }
+
+                    await updateUser({ avatar: file.id }, oxyServices);
+                    toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated');
+                } catch (e: any) {
+                    toast.error(e.message || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
+                }
             }
         });
     }, [navigate, updateUser, oxyServices]);

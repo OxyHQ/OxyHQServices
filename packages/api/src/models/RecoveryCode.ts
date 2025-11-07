@@ -15,7 +15,7 @@ const RecoveryCodeSchema = new Schema<IRecoveryCode>({
   userId: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
   identifier: { type: String, required: true },
   codeHash: { type: String, required: true },
-  expiresAt: { type: Date, required: true, index: true },
+  expiresAt: { type: Date, required: true }, // Index defined below with TTL
   used: { type: Boolean, default: false },
   attempts: { type: Number, default: 0 },
 }, {

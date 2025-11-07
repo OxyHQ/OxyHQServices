@@ -56,6 +56,7 @@ export type {
   DeviceSessionLogoutResponse,
   UpdateDeviceNameResponse,
   // Central Asset Service types
+  FileVisibility,
   AssetLink,
   AssetVariant,
   Asset,
@@ -66,7 +67,9 @@ export type {
   AssetUnlinkRequest,
   AssetUrlResponse,
   AssetDeleteSummary,
-  AssetUploadProgress
+  AssetUploadProgress,
+  AssetUpdateVisibilityRequest,
+  AssetUpdateVisibilityResponse
 } from './models/interfaces';
 
 export type {

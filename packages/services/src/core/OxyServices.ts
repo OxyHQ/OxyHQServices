@@ -1260,9 +1260,9 @@ export class OxyServices {
   /**
    * Upload raw file data
    */
-  async uploadRawFile(file: File | Blob, metadata?: Record<string, any>): Promise<any> {
+  async uploadRawFile(file: File | Blob, visibility?: 'private' | 'public' | 'unlisted', metadata?: Record<string, any>): Promise<any> {
     // Switch to Central Asset Service upload flow
-    return this.assetUpload(file as File, metadata);
+    return this.assetUpload(file as File, visibility, metadata);
   }
 
   // ============================================================================
@@ -1298,13 +1298,14 @@ export class OxyServices {
   /**
    * Complete asset upload - commit metadata and trigger variant generation
    */
-  async assetComplete(fileId: string, originalName: string, size: number, mime: string, metadata?: Record<string, any>): Promise<any> {
+  async assetComplete(fileId: string, originalName: string, size: number, mime: string, visibility?: 'private' | 'public' | 'unlisted', metadata?: Record<string, any>): Promise<any> {
     try {
       const res = await this.client.post('/api/assets/complete', {
         fileId,
         originalName,
         size,
         mime,
+        visibility,
         metadata
       });
       return res.data;
@@ -1316,7 +1317,7 @@ export class OxyServices {
   /**
    * Upload file using Central Asset Service
    */
-  async assetUpload(file: File, metadata?: Record<string, any>, onProgress?: (progress: number) => void): Promise<any> {
+  async assetUpload(file: File, visibility?: 'private' | 'public' | 'unlisted', metadata?: Record<string, any>, onProgress?: (progress: number) => void): Promise<any> {
     try {
       // Calculate SHA256
       const sha256 = await this.calculateSHA256(file);
@@ -1342,6 +1343,7 @@ export class OxyServices {
         file.name,
         file.size,
         file.type,
+        visibility,
         metadata
       );
     } catch (error) {
@@ -1384,12 +1386,13 @@ export class OxyServices {
   /**
    * Link asset to an entity
    */
-  async assetLink(fileId: string, app: string, entityType: string, entityId: string): Promise<any> {
+  async assetLink(fileId: string, app: string, entityType: string, entityId: string, visibility?: 'private' | 'public' | 'unlisted'): Promise<any> {
     try {
       const res = await this.client.post(`/api/assets/${fileId}/links`, {
         app,
         entityType,
-        entityId
+        entityId,
+        visibility
       });
       return res.data;
     } catch (error) {
@@ -1478,6 +1481,65 @@ export class OxyServices {
     try {
       const assetData = await this.assetGet(fileId);
       return assetData.file?.variants || [];
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Update asset visibility
+   * @param fileId - The file ID
+   * @param visibility - New visibility level ('private', 'public', or 'unlisted')
+   * @returns Updated asset information
+   */
+  async assetUpdateVisibility(fileId: string, visibility: 'private' | 'public' | 'unlisted'): Promise<any> {
+    try {
+      const res = await this.client.patch(`/api/assets/${fileId}/visibility`, {
+        visibility
+      });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Helper: Upload and link avatar with automatic public visibility
+   * @param file - The avatar file
+   * @param userId - User ID to link to
+   * @param app - App name (defaults to 'profiles')
+   * @returns The uploaded and linked asset
+   */
+  async uploadAvatar(file: File, userId: string, app: string = 'profiles'): Promise<any> {
+    try {
+      // Upload as public
+      const asset = await this.assetUpload(file, 'public');
+      
+      // Link to user profile as avatar
+      await this.assetLink(asset.file.id, app, 'avatar', userId, 'public');
+      
+      return asset;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Helper: Upload and link profile banner with automatic public visibility
+   * @param file - The banner file
+   * @param userId - User ID to link to
+   * @param app - App name (defaults to 'profiles')
+   * @returns The uploaded and linked asset
+   */
+  async uploadProfileBanner(file: File, userId: string, app: string = 'profiles'): Promise<any> {
+    try {
+      // Upload as public
+      const asset = await this.assetUpload(file, 'public');
+      
+      // Link to user profile as banner
+      await this.assetLink(asset.file.id, app, 'profile-banner', userId, 'public');
+      
+      return asset;
     } catch (error) {
       throw this.handleError(error);
     }

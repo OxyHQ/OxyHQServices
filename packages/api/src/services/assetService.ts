@@ -1,5 +1,6 @@
 import crypto from 'crypto';
-import { File, IFile, IFileLink, IFileVariant } from '../models/File';
+import mongoose from 'mongoose';
+import { File, IFile, IFileLink, IFileVariant, FileVisibility } from '../models/File';
 import { S3Service } from './s3Service';
 import { VariantService } from './variantService';
 import { logger } from '../utils/logger';
@@ -16,6 +17,7 @@ export interface AssetCompleteRequest {
   originalName: string;
   size: number;
   mime: string;
+  visibility?: FileVisibility;
   metadata?: Record<string, any>;
 }
 
@@ -24,6 +26,7 @@ export interface AssetLinkRequest {
   entityType: string;
   entityId: string;
   createdBy: string;
+  visibility?: FileVisibility;
 }
 
 export interface AssetDeleteSummary {
@@ -193,6 +196,11 @@ export class AssetService {
       file.mime = request.mime;
       file.metadata = request.metadata || {};
       
+      // Set visibility if provided
+      if (request.visibility) {
+        file.visibility = request.visibility;
+      }
+      
       await file.save();
 
       // Queue variant generation (implement this later)
@@ -200,7 +208,8 @@ export class AssetService {
 
       logger.info('Asset upload completed', { 
         fileId: file._id, 
-        originalName: request.originalName 
+        originalName: request.originalName,
+        visibility: file.visibility
       });
 
       return file;
@@ -246,6 +255,17 @@ export class AssetService {
       };
 
       file.links.push(newLink);
+      
+      // Auto-set visibility based on entity type
+      if (linkRequest.visibility) {
+        file.visibility = linkRequest.visibility;
+      } else {
+        // Auto-detect public entities (avatar, profile content, etc.)
+        file.visibility = this.inferVisibilityFromEntityType(
+          linkRequest.app,
+          linkRequest.entityType
+        );
+      }
       
       // If file was in trash and now has links, restore it
       if (file.status === 'trash' && file.links.length > 0) {
@@ -313,9 +333,24 @@ export class AssetService {
 
   /**
    * Get file by ID with full metadata
+   * Also handles legacy storage keys for backward compatibility
    */
   async getFile(fileId: string): Promise<IFile | null> {
     try {
+      // Validate that fileId is a valid ObjectId
+      if (!mongoose.Types.ObjectId.isValid(fileId)) {
+        logger.warn('Invalid ObjectId provided to getFile, checking if it\'s a legacy storage key:', { fileId });
+        
+        // Try to find by storage key (for legacy data)
+        const fileByStorageKey = await File.findOne({ storageKey: fileId });
+        if (fileByStorageKey) {
+          logger.info('Found file by legacy storage key:', { fileId, actualId: fileByStorageKey._id });
+          return fileByStorageKey;
+        }
+        
+        logger.warn('File not found by ID or storage key:', { fileId });
+        return null;
+      }
       const file = await File.findById(fileId);
       return file;
     } catch (error) {
@@ -326,6 +361,7 @@ export class AssetService {
 
   /**
    * Get file URL (CDN or signed URL)
+   * Also handles legacy storage keys for backward compatibility
    */
   async getFileUrl(
     fileId: string, 
@@ -333,7 +369,8 @@ export class AssetService {
     expiresIn: number = 3600
   ): Promise<string> {
     try {
-      const file = await File.findById(fileId);
+      // Use getFile which handles both ObjectIds and legacy storage keys
+      const file = await this.getFile(fileId);
       if (!file) {
         throw new Error('File not found');
       }
@@ -342,7 +379,7 @@ export class AssetService {
 
       // If variant requested, ensure or find variant key
       if (variant) {
-        const ensured = await this.ensureVariant(fileId, variant);
+        const ensured = await this.ensureVariant(file._id.toString(), variant);
         storageKey = ensured.key;
       }
 
@@ -356,7 +393,7 @@ export class AssetService {
       // Later this will check if file is public and return CDN URL
       const url = await this.s3Service.getPresignedDownloadUrl(storageKey, expiresIn);
 
-      logger.debug('Generated file URL', { fileId, variant, storageKey });
+      logger.debug('Generated file URL', { fileId, actualId: file._id, variant, storageKey });
 
       return url;
     } catch (error) {
@@ -464,6 +501,76 @@ export class AssetService {
    */
   static calculateSHA256(buffer: Buffer): string {
     return crypto.createHash('sha256').update(buffer).digest('hex');
+  }
+
+  /**
+   * Infer file visibility based on entity type
+   * Automatically marks certain entity types as public (e.g., avatars, profile content)
+   */
+  private inferVisibilityFromEntityType(app: string, entityType: string): FileVisibility {
+    // Public entity types that should be accessible without authentication
+    const publicEntityTypes = [
+      'avatar',
+      'profile-avatar',
+      'user-avatar',
+      'profile-banner',
+      'profile-cover',
+      'public-profile-content'
+    ];
+    
+    if (publicEntityTypes.includes(entityType.toLowerCase())) {
+      return 'public';
+    }
+    
+    // Default to private for all other types
+    return 'private';
+  }
+
+  /**
+   * Update file visibility
+   */
+  async updateFileVisibility(fileId: string, visibility: FileVisibility): Promise<IFile> {
+    try {
+      const file = await File.findById(fileId);
+      if (!file) {
+        throw new Error('File not found');
+      }
+
+      file.visibility = visibility;
+      await file.save();
+
+      logger.info('File visibility updated', { 
+        fileId, 
+        visibility 
+      });
+
+      return file;
+    } catch (error) {
+      logger.error('Error updating file visibility:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if a user can access a file
+   */
+  canUserAccessFile(file: IFile, userId?: string): boolean {
+    // Public files are accessible by everyone
+    if (file.visibility === 'public') {
+      return true;
+    }
+
+    // Unlisted files are accessible with direct link
+    if (file.visibility === 'unlisted') {
+      return true;
+    }
+
+    // Private files require authentication and ownership
+    if (!userId) {
+      return false;
+    }
+
+    return file.ownerUserId === userId;
   }
 
   /**

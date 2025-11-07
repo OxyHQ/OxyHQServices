@@ -3,9 +3,11 @@ import multer from 'multer';
 import { AssetService } from '../services/assetService';
 import { createS3Service } from '../services/s3Service';
 import { authMiddleware } from '../middleware/auth';
+import { optionalAuthMiddleware, getUserId } from '../middleware/optionalAuth';
 import { mediaHeadersMiddleware } from '../middleware/mediaHeaders';
 import { logger } from '../utils/logger';
 import { z } from 'zod';
+import { FileVisibility } from '../models/File';
 
 interface AuthenticatedRequest extends express.Request {
   user?: {
@@ -44,13 +46,15 @@ const completeUploadSchema = z.object({
   originalName: z.string().min(1, 'Original name is required'),
   size: z.number().positive('Size must be positive'),
   mime: z.string().min(1, 'MIME type is required'),
+  visibility: z.enum(['private', 'public', 'unlisted']).optional(),
   metadata: z.record(z.any()).optional()
 });
 
 const linkFileSchema = z.object({
   app: z.string().min(1, 'App name is required'),
   entityType: z.string().min(1, 'Entity type is required'),
-  entityId: z.string().min(1, 'Entity ID is required')
+  entityId: z.string().min(1, 'Entity ID is required'),
+  visibility: z.enum(['private', 'public', 'unlisted']).optional()
 });
 
 const unlinkFileSchema = z.object({
@@ -497,15 +501,11 @@ router.get('/:id/exists', async (req: AuthenticatedRequest, res: express.Respons
 /**
  * @route GET /api/assets/:id/stream
  * @desc Stream file bytes with correct headers to avoid browser ORB blocking
- * @access Private
+ * @access Public (with optional authentication for private files)
  */
-router.get('/:id/stream', mediaHeadersMiddleware, async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, async (req: AuthenticatedRequest, res: express.Response) => {
   try {
-    const user = req.user;
-    if (!user?._id) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
+    const userId = getUserId(req);
     const { id: fileId } = req.params;
     const { variant } = req.query;
     const variantType = typeof variant === 'string' ? variant : undefined;
@@ -514,6 +514,12 @@ router.get('/:id/stream', mediaHeadersMiddleware, async (req: AuthenticatedReque
     const file = await assetService.getFile(fileId);
     if (!file) {
       return res.status(404).json({ error: 'File not found' });
+    }
+
+    // Check access permissions
+    if (!assetService.canUserAccessFile(file, userId)) {
+      logger.warn('Access denied to file', { fileId, userId, visibility: file.visibility });
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     const originalKey = file.storageKey;
@@ -606,17 +612,25 @@ router.get('/:id/stream', mediaHeadersMiddleware, async (req: AuthenticatedReque
 /**
  * @route GET /api/assets/:id/download
  * @desc Redirect to the signed file URL (suitable for <img src> and direct downloads)
- * @access Private
+ * @access Public (with optional authentication for private files)
  */
-router.get('/:id/download', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/:id/download', optionalAuthMiddleware, async (req: AuthenticatedRequest, res: express.Response) => {
   try {
-    const user = req.user;
-    if (!user?._id) {
-      return res.status(401).json({ error: 'Authentication required' });
-    }
-
+    const userId = getUserId(req);
     const { id: fileId } = req.params;
     const { variant, expiresIn } = req.query;
+
+    // Get file and check permissions
+    const file = await assetService.getFile(fileId);
+    if (!file) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    // Check access permissions
+    if (!assetService.canUserAccessFile(file, userId)) {
+      logger.warn('Access denied to file download', { fileId, userId, visibility: file.visibility });
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
     const variantType = typeof variant === 'string' ? variant : undefined;
     const expiry = typeof expiresIn === 'string' ? parseInt(expiresIn) : 3600;
@@ -685,6 +699,66 @@ router.post('/:id/restore', async (req: AuthenticatedRequest, res: express.Respo
 
     res.status(500).json({
       error: 'Failed to restore file',
+      message: error.message
+    });
+  }
+});
+
+/**
+ * @route PATCH /api/assets/:id/visibility
+ * @desc Update file visibility
+ * @access Private
+ */
+router.patch('/:id/visibility', async (req: AuthenticatedRequest, res: express.Response) => {
+  try {
+    const user = req.user;
+    if (!user?._id) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    const { id: fileId } = req.params;
+    const { visibility } = req.body;
+
+    // Validate visibility value
+    if (!visibility || !['private', 'public', 'unlisted'].includes(visibility)) {
+      return res.status(400).json({ 
+        error: 'Invalid visibility value',
+        message: 'Visibility must be one of: private, public, unlisted'
+      });
+    }
+
+    // Get file and verify ownership
+    const file = await assetService.getFile(fileId);
+    if (!file) {
+      return res.status(404).json({ error: 'File not found' });
+    }
+
+    if (file.ownerUserId !== user._id) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Update visibility
+    const updatedFile = await assetService.updateFileVisibility(fileId, visibility as FileVisibility);
+
+    logger.info('File visibility updated', { 
+      userId: user._id, 
+      fileId,
+      oldVisibility: file.visibility,
+      newVisibility: visibility
+    });
+
+    res.json({
+      success: true,
+      file: {
+        id: updatedFile._id,
+        visibility: updatedFile.visibility,
+        updatedAt: updatedFile.updatedAt
+      }
+    });
+  } catch (error: any) {
+    logger.error('Asset visibility update error:', error);
+    res.status(500).json({
+      error: 'Failed to update file visibility',
       message: error.message
     });
   }

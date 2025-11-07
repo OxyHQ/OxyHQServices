@@ -70,8 +70,8 @@ export const useAssets = () => {
         status: 'uploading'
       };
       
-      // Upload with progress callback
-      const result = await oxyInstance.assetUpload(file, metadata, (percentage) => {
+      // Upload with progress callback (visibility undefined, metadata, then onProgress)
+      const result = await oxyInstance.assetUpload(file, undefined, metadata, (percentage: number) => {
         if (initialProgress.fileId) {
           setUploadProgress(initialProgress.fileId, {
             ...initialProgress,
@@ -135,7 +135,12 @@ export const useAssets = () => {
       clearErrors();
       setLinking(true);
       
-      const result = await oxyInstance.assetLink(assetId, app, entityType, entityId);
+      // Auto-detect visibility for avatars and profile banners
+      const visibility = (entityType === 'avatar' || entityType === 'profile-banner') 
+        ? 'public' as const
+        : undefined;
+      
+      const result = await oxyInstance.assetLink(assetId, app, entityType, entityId, visibility);
       
       if (result.file) {
         setAsset(result.file);

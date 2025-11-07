@@ -1,5 +1,13 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
+/**
+ * File visibility levels
+ * - private: Only accessible by owner (default)
+ * - public: Accessible by anyone without authentication (e.g., avatars, public profile content)
+ * - unlisted: Accessible with direct link but not listed publicly
+ */
+export type FileVisibility = 'private' | 'public' | 'unlisted';
+
 export interface IFileLink {
   app: string;
   entityType: string;
@@ -26,6 +34,7 @@ export interface IFile extends Document {
   ext: string;
   ownerUserId: string;
   status: 'active' | 'trash' | 'deleted';
+  visibility: FileVisibility;
   createdAt: Date;
   updatedAt: Date;
   links: IFileLink[];
@@ -79,6 +88,12 @@ const FileSchema = new Schema<IFile>({
     default: 'active',
     index: true 
   },
+  visibility: {
+    type: String,
+    enum: ['private', 'public', 'unlisted'],
+    default: 'private',
+    index: true
+  },
   links: [FileLinkSchema],
   variants: [FileVariantSchema],
   storageKey: { type: String, required: true },
@@ -97,6 +112,8 @@ FileSchema.virtual('usageCount').get(function() {
 
 // Compound indexes for efficient queries
 FileSchema.index({ ownerUserId: 1, status: 1 });
+FileSchema.index({ ownerUserId: 1, visibility: 1, status: 1 });
+FileSchema.index({ visibility: 1, status: 1 }); // For public file queries
 FileSchema.index({ 'links.app': 1, 'links.entityType': 1, 'links.entityId': 1 });
 FileSchema.index({ sha256: 1, status: 1 });
 FileSchema.index({ createdAt: -1 });

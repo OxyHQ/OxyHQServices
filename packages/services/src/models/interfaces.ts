@@ -215,6 +215,15 @@ export interface FileDeleteResponse {
 /**
  * Central Asset Service interfaces
  */
+
+/**
+ * File visibility levels
+ * - private: Only accessible by owner (default)
+ * - public: Accessible by anyone without authentication (e.g., avatars, public profile content)
+ * - unlisted: Accessible with direct link but not listed publicly
+ */
+export type FileVisibility = 'private' | 'public' | 'unlisted';
+
 export interface AssetLink {
   app: string;
   entityType: string;
@@ -244,6 +253,7 @@ export interface Asset {
   originalName?: string;
   ownerUserId: string;
   status: 'active' | 'trash' | 'deleted';
+  visibility: FileVisibility;
   usageCount: number;
   createdAt: string;
   updatedAt: string;
@@ -269,6 +279,7 @@ export interface AssetCompleteRequest {
   originalName: string;
   size: number;
   mime: string;
+  visibility?: FileVisibility;
   metadata?: AssetMetadata;
 }
 
@@ -276,6 +287,7 @@ export interface AssetLinkRequest {
   app: string;
   entityType: string;
   entityId: string;
+  visibility?: FileVisibility;
 }
 
 export interface AssetUnlinkRequest {
@@ -297,6 +309,19 @@ export interface AssetDeleteSummary {
   affectedApps: string[];
   remainingLinks: number;
   variants: string[];
+}
+
+export interface AssetUpdateVisibilityRequest {
+  visibility: FileVisibility;
+}
+
+export interface AssetUpdateVisibilityResponse {
+  success: boolean;
+  file: {
+    id: string;
+    visibility: FileVisibility;
+    updatedAt: string;
+  };
 }
 
 export interface AssetUploadProgress {
