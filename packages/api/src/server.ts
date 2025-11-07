@@ -24,8 +24,20 @@ import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
 import { Response } from 'express';
 import { authMiddleware } from './middleware/auth';
+import { createCorsMiddleware, SOCKET_IO_CORS_CONFIG } from './config/cors';
+import { validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
 
+// Load environment variables
 dotenv.config();
+
+// Validate configuration early - fail fast with clear errors
+try {
+  validateRequiredEnvVars();
+  logger.info('Environment configuration validated', getSanitizedConfig());
+} catch (error) {
+  logger.error('Configuration error:', error);
+  process.exit(1);
+}
 
 const app = express();
 
@@ -33,87 +45,18 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// CORS middleware
-app.use((req, res, next) => {
-  const allowedOrigins = ["https://mention.earth", "https://homiio.com", "https://api.oxy.so", "https://authenticator.oxy.so", "https://noted.oxy.so/", "http://localhost:8081", "http://localhost:8082", "http://localhost:19006"];
-  const origin = req.headers.origin as string;
-
-  if (process.env.NODE_ENV !== 'production') {
-    // In development allow all origins
-    res.setHeader("Access-Control-Allow-Origin", origin || "*");
-  } else if (allowedOrigins.includes(origin)) {
-    res.setHeader("Access-Control-Allow-Origin", origin);
-  } else if (origin) {
-    // If origin is present but not in allowedOrigins, check if it's a subdomain we want to allow
-    const isDomainAllowed = allowedOrigins.some(allowed => 
-      (origin.endsWith('.oxy.so'))
-    );
-    if (isDomainAllowed) {
-      res.setHeader("Access-Control-Allow-Origin", origin);
-    }
-  }
-  
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, PATCH, OPTIONS");
-  res.setHeader(
-    "Access-Control-Allow-Headers",
-    [
-      'Content-Type',
-      'Authorization',
-      'X-CSRF-Token',
-      'X-Requested-With',
-      'Accept',
-      'Accept-Version',
-      'Content-Length',
-      'Content-MD5',
-      'Date',
-      'X-Api-Version',
-      'X-File-Name',
-      'Range',
-      // Custom application headers used by clients
-      'X-Session-Id',
-      'x-session-id',
-      'X-Device-Fingerprint',
-      'x-device-fingerprint',
-    ].join(', ')
-  );
-  res.setHeader(
-    "Access-Control-Expose-Headers",
-    [
-      'Content-Type',
-      'Content-Length',
-      'Content-Range',
-      'Content-Disposition',
-      'Accept-Ranges',
-      'Last-Modified',
-      'ETag',
-      'Cache-Control',
-    ].join(', ')
-  );
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-
-  // Ensure OPTIONS requests always have CORS headers
-  if (req.method === "OPTIONS") {
-    // Prevent caching issues
-    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
-    res.setHeader("Pragma", "no-cache");
-    res.setHeader("Expires", "0");
-    return res.status(204).end();
-  }
-
-  next();
-});
+// CORS middleware - centralized configuration
+app.use(createCorsMiddleware({
+  allowAllOriginsInDev: true,
+  credentials: true,
+}));
 
 // Create server for local development and testing
 const server = http.createServer(app);
 
-// Setup Socket.IO
+// Setup Socket.IO with centralized CORS config
 const io = new SocketIOServer(server, {
-  cors: {
-    origin: ["https://mention.earth", "https://homiio.com", "https://api.oxy.so", "http://localhost:8081", "http://localhost:8082", "http://localhost:19006", 
-    /\.homiio\.com$/, /\.mention\.earth$/, /\.oxy\.so$/],
-    methods: ["GET", "POST"],
-    credentials: true
-  }
+  cors: SOCKET_IO_CORS_CONFIG as any,
 });
 
 // Store io instance in app for use in controllers
@@ -180,8 +123,7 @@ export function emitSessionUpdate(userId: string, payload: any) {
 app.use("/api/files", fileRoutes);
 
 // MongoDB Connection
-console.log('MONGODB_URI from environment:', process.env.MONGODB_URI);
-mongoose.connect(process.env.MONGODB_URI || "", {
+mongoose.connect(process.env.MONGODB_URI as string, {
   autoIndex: true,
   autoCreate: true,
 })
@@ -190,7 +132,7 @@ mongoose.connect(process.env.MONGODB_URI || "", {
 })
 .catch((error) => {
   logger.error("MongoDB connection error:", error);
-  process.exit(1); // Exit on connection failure
+  process.exit(1);
 });
 
 // API Routes
@@ -247,7 +189,7 @@ app.use((req: express.Request, res: express.Response) => {
 });
 
 // Only call listen if this module is run directly
-const PORT = process.env.PORT || 3001;
+const PORT = getEnvNumber('PORT', 3001);
 if (require.main === module) {
   server.listen(PORT, () => {
     logger.info(`Server running on port ${PORT}`);

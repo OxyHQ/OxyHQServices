@@ -6,6 +6,14 @@ import path from 'path';
 import { authMiddleware } from '../middleware/auth';
 import { mediaHeadersMiddleware } from '../middleware/mediaHeaders';
 import { logger } from '../utils/logger';
+import {
+  handleFileDownload,
+  extractFileKey,
+  sendFileError,
+  FileErrors,
+  parsePaginationParams,
+  scopeKeyToUser,
+} from '../utils/fileUtils';
 
 interface AuthenticatedRequest extends express.Request {
   user?: {
@@ -350,45 +358,20 @@ router.post('/upload-multiple', upload.array('files', 10), async (req: Authentic
  * @access Private
  */
 router.get('/download/:key(*)', mediaHeadersMiddleware, async (req: AuthenticatedRequest, res: express.Response) => {
-  try {
-    const { key } = req.params;
-    const user = req.user;
-    
-    if (!key) {
-      return res.status(400).json({ error: 'File key is required' });
-    }
-
-    // Verify user has access to this file
-    if (!key.startsWith(`users/${user?._id}/`)) {
-      logger.warn('Download access denied: key not in user folder', { userId: user?._id, key });
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    // Get file metadata first
-    const metadata = await s3Service.getFileMetadata(key);
-    if (!metadata) {
-      return res.status(404).json({ error: 'File not found' });
-    }
-
-    // Download file as buffer
-    const buffer = await s3Service.downloadBuffer(key);
-    
-    // Set response headers
-    res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
-    res.setHeader('Content-Length', buffer.length);
-    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(key)}"`);
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-
-    logger.info(`File downloaded: ${key} by user ${user?._id}`);
-
-    res.send(buffer);
-  } catch (error: any) {
-    logger.error('File download error:', error);
-    res.status(500).json({
-      error: 'Failed to download file',
-      message: error.message,
-    });
+  const key = req.params.key;
+  const user = req.user;
+  
+  if (!key) {
+    return sendFileError(res, FileErrors.NO_KEY);
   }
+
+  await handleFileDownload({
+    key,
+    userId: user?._id as string,
+    s3Service,
+    res,
+    attachment: true,
+  });
 });
 
 /**
@@ -397,41 +380,20 @@ router.get('/download/:key(*)', mediaHeadersMiddleware, async (req: Authenticate
  * @access Private
  */
 router.get('/download', mediaHeadersMiddleware, async (req: AuthenticatedRequest, res: express.Response) => {
-  try {
-    const key = typeof req.query.key === 'string' ? req.query.key : undefined;
-    const user = req.user;
+  const key = extractFileKey(req.params, req.query);
+  const user = req.user;
 
-    if (!key) {
-      return res.status(400).json({ error: 'File key is required' });
-    }
-
-    if (!key.startsWith(`users/${user?._id}/`)) {
-      logger.warn('Download (query) access denied: key not in user folder', { userId: user?._id, key });
-      return res.status(403).json({ error: 'Access denied' });
-    }
-
-    const metadata = await s3Service.getFileMetadata(key);
-    if (!metadata) {
-      return res.status(404).json({ error: 'File not found' });
-    }
-
-    const buffer = await s3Service.downloadBuffer(key);
-    
-    res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
-    res.setHeader('Content-Length', buffer.length);
-    res.setHeader('Content-Disposition', `attachment; filename="${path.basename(key)}"`);
-    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-
-    logger.info(`File downloaded (query): ${key} by user ${user?._id}`);
-
-    res.send(buffer);
-  } catch (error: any) {
-    logger.error('File download (query) error:', error);
-    res.status(500).json({
-      error: 'Failed to download file',
-      message: error.message,
-    });
+  if (!key) {
+    return sendFileError(res, FileErrors.NO_KEY);
   }
+
+  await handleFileDownload({
+    key,
+    userId: user?._id as string,
+    s3Service,
+    res,
+    attachment: true,
+  });
 });
 
 /**
