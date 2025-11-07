@@ -68,11 +68,25 @@ app.use((req, res, next) => {
       'Date',
       'X-Api-Version',
       'X-File-Name',
+      'Range',
       // Custom application headers used by clients
       'X-Session-Id',
       'x-session-id',
       'X-Device-Fingerprint',
       'x-device-fingerprint',
+    ].join(', ')
+  );
+  res.setHeader(
+    "Access-Control-Expose-Headers",
+    [
+      'Content-Type',
+      'Content-Length',
+      'Content-Range',
+      'Content-Disposition',
+      'Accept-Ranges',
+      'Last-Modified',
+      'ETag',
+      'Cache-Control',
     ].join(', ')
   );
   res.setHeader("Access-Control-Allow-Credentials", "true");

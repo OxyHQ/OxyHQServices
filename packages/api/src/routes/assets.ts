@@ -3,6 +3,7 @@ import multer from 'multer';
 import { AssetService } from '../services/assetService';
 import { createS3Service } from '../services/s3Service';
 import { authMiddleware } from '../middleware/auth';
+import { mediaHeadersMiddleware } from '../middleware/mediaHeaders';
 import { logger } from '../utils/logger';
 import { z } from 'zod';
 
@@ -498,7 +499,7 @@ router.get('/:id/exists', async (req: AuthenticatedRequest, res: express.Respons
  * @desc Stream file bytes with correct headers to avoid browser ORB blocking
  * @access Private
  */
-router.get('/:id/stream', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/:id/stream', mediaHeadersMiddleware, async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const user = req.user;
     if (!user?._id) {
@@ -570,7 +571,7 @@ router.get('/:id/stream', async (req: AuthenticatedRequest, res: express.Respons
 
     // Stream from S3/Spaces
     const streamInfo = await s3Service.getObjectStream(storageKey);
-
+    
     if (streamInfo.contentType) {
       res.setHeader('Content-Type', streamInfo.contentType);
     }
@@ -580,7 +581,8 @@ router.get('/:id/stream', async (req: AuthenticatedRequest, res: express.Respons
     if (streamInfo.lastModified) {
       res.setHeader('Last-Modified', new Date(streamInfo.lastModified).toUTCString());
     }
-    res.setHeader('Cache-Control', 'private, max-age=300');
+    // Cache headers: immutable for content-addressed files
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
 
     streamInfo.body.on('error', (err: any) => {
       logger.error('Stream error', { err });

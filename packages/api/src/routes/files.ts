@@ -4,6 +4,7 @@ import { S3Service, createS3Service, UploadOptions } from '../services/s3Service
 import { AssetService } from '../services/assetService';
 import path from 'path';
 import { authMiddleware } from '../middleware/auth';
+import { mediaHeadersMiddleware } from '../middleware/mediaHeaders';
 import { logger } from '../utils/logger';
 
 interface AuthenticatedRequest extends express.Request {
@@ -348,7 +349,7 @@ router.post('/upload-multiple', upload.array('files', 10), async (req: Authentic
  * @desc Download a file from S3
  * @access Private
  */
-router.get('/download/:key(*)', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/download/:key(*)', mediaHeadersMiddleware, async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const { key } = req.params;
     const user = req.user;
@@ -371,11 +372,12 @@ router.get('/download/:key(*)', async (req: AuthenticatedRequest, res: express.R
 
     // Download file as buffer
     const buffer = await s3Service.downloadBuffer(key);
-
+    
     // Set response headers
     res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
     res.setHeader('Content-Length', buffer.length);
     res.setHeader('Content-Disposition', `attachment; filename="${path.basename(key)}"`);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
 
     logger.info(`File downloaded: ${key} by user ${user?._id}`);
 
@@ -394,7 +396,7 @@ router.get('/download/:key(*)', async (req: AuthenticatedRequest, res: express.R
  * @desc Download a file from S3 using query param to avoid path encoding issues
  * @access Private
  */
-router.get('/download', async (req: AuthenticatedRequest, res: express.Response) => {
+router.get('/download', mediaHeadersMiddleware, async (req: AuthenticatedRequest, res: express.Response) => {
   try {
     const key = typeof req.query.key === 'string' ? req.query.key : undefined;
     const user = req.user;
@@ -414,10 +416,11 @@ router.get('/download', async (req: AuthenticatedRequest, res: express.Response)
     }
 
     const buffer = await s3Service.downloadBuffer(key);
-
+    
     res.setHeader('Content-Type', metadata.contentType || 'application/octet-stream');
     res.setHeader('Content-Length', buffer.length);
     res.setHeader('Content-Disposition', `attachment; filename="${path.basename(key)}"`);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
 
     logger.info(`File downloaded (query): ${key} by user ${user?._id}`);
 
