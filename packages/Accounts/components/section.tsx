@@ -24,14 +24,14 @@ export function Section({ title, children, isFirst = false, style }: SectionProp
 
 const styles = StyleSheet.create({
     section: {
-        marginBottom: 32,
+        marginBottom: 24,
     },
     firstSection: {
         marginTop: 0,
     },
     sectionTitle: {
-        fontSize: 20,
+        fontSize: 18,
         fontWeight: '600',
-        marginBottom: 12,
+        marginBottom: 8,
     },
 });

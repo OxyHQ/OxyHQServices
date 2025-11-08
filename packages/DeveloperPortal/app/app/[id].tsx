@@ -17,6 +17,7 @@ import { Card } from '@/components/ui/card';
 import { IconButton } from '@/components/ui/icon-button';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { toast } from 'sonner-native';
 
 export default function AppDetailsScreen() {
     const { id } = useLocalSearchParams();
@@ -161,7 +162,7 @@ export default function AppDetailsScreen() {
 
     const copyToClipboard = (text: string, label: string) => {
         Clipboard.setString(text);
-        Alert.alert('Copied', `${label} copied to clipboard`);
+        toast.success(`${label} copied to clipboard`);
     };
 
     const colorScheme = useColorScheme();

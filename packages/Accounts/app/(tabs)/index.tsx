@@ -177,7 +177,7 @@ export default function HomeScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.desktopMainHeader}>
-              <UserAvatar name="Nate Isern Alvarez" size={100} />
+              <UserAvatar name="Nate Isern Alvarez" size={80} />
             </View>
             {renderContent()}
           </ScrollView>
@@ -198,9 +198,22 @@ export default function HomeScreen() {
           <ThemedText style={styles.mobileSubtitle}>Manage your account information.</ThemedText>
         </View>
         <View style={styles.mobileHeader}>
-          <UserAvatar name="Nate Isern Alvarez" size={100} />
+          <UserAvatar name="Nate Isern Alvarez" size={80} />
         </View>
         {renderContent()}
+        
+        {/* Bottom action buttons */}
+        <View style={styles.bottomActions}>
+          <TouchableOpacity style={[styles.circleButton, { backgroundColor: colors.card }]}>
+            <Ionicons name="reload-outline" size={22} color={colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.circleButton, { backgroundColor: colors.card }]}>
+            <Ionicons name="desktop-outline" size={22} color={colors.text} />
+          </TouchableOpacity>
+          <TouchableOpacity style={[styles.circleButton, { backgroundColor: colors.card }]}>
+            <Ionicons name="menu-outline" size={22} color={colors.text} />
+          </TouchableOpacity>
+        </View>
       </ScrollView>
     </View>
   );
@@ -256,40 +269,40 @@ export default function HomeScreen() {
     minHeight: '100vh' as any,
   } as const,
   desktopSidebar: {
-    width: 280,
-    padding: 24,
+    width: 260,
+    padding: 20,
     borderRightWidth: 0,
   } as const,
   desktopHeader: {
-    marginBottom: 32,
+    marginBottom: 24,
   } as const,
   logoContainer: {
     marginBottom: 24,
   } as const,
   welcomeText: {
-    fontSize: 24,
+    fontSize: 22,
     fontWeight: '600',
     marginBottom: 4,
   } as const,
   welcomeSubtext: {
-    fontSize: 14,
+    fontSize: 13,
     opacity: 0.6,
   } as const,
   menuContainer: {
-    gap: 4,
+    gap: 2,
   } as const,
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    padding: 10,
     borderRadius: 8,
-    gap: 12,
+    gap: 10,
   } as const,
   menuItemActive: {
     // backgroundColor is set dynamically
   } as const,
   menuItemText: {
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '500',
   } as const,
   desktopMain: {
@@ -297,36 +310,36 @@ export default function HomeScreen() {
     maxWidth: 720,
   } as const,
   desktopMainContent: {
-    padding: 40,
+    padding: 32,
   } as const,
   desktopMainHeader: {
     alignItems: 'center',
-    marginBottom: 40,
+    marginBottom: 32,
   } as const,
   mobileContent: {
-    padding: 20,
-    paddingBottom: 40,
+    padding: 16,
+    paddingBottom: 120,
   } as const,
   mobileHeaderSection: {
-    marginBottom: 24,
+    marginBottom: 20,
   } as const,
   mobileTitle: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '600',
-    marginBottom: 8,
+    marginBottom: 6,
   } as const,
   mobileSubtitle: {
-    fontSize: 16,
+    fontSize: 15,
     opacity: 0.6,
   } as const,
   mobileHeader: {
     alignItems: 'center',
-    marginBottom: 32,
+    marginBottom: 24,
   } as const,
   subtitle: {
-    fontSize: 15,
+    fontSize: 14,
     opacity: 0.7,
-    marginBottom: 16,
+    marginBottom: 12,
   } as const,
   accountCard: {
     marginBottom: 8,
@@ -334,34 +347,54 @@ export default function HomeScreen() {
   button: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   } as const,
   buttonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
   } as const,
   methodIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12,
   } as const,
   methodButton: {
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: 'rgba(255, 255, 255, 0.1)',
   } as const,
   methodButtonText: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
+  } as const,
+  bottomActions: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+    marginTop: 32,
+    marginBottom: 24,
+  } as const,
+  circleButton: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   } as const,
   mobileTabBar: {
     position: 'absolute',

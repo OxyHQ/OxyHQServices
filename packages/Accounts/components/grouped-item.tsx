@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
     groupedItemContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 16,
+        paddingVertical: 12,
         paddingHorizontal: 16,
         width: '100%',
     },
@@ -107,9 +107,9 @@ const styles = StyleSheet.create({
         marginRight: 12,
     },
     iconContainer: {
-        width: 40,
-        height: 40,
-        borderRadius: 20,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: 12,
@@ -118,11 +118,11 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     actionButtonText: {
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '400',
     },
     actionButtonSubtext: {
-        fontSize: 14,
+        fontSize: 13,
         marginTop: 2,
     },
 });
