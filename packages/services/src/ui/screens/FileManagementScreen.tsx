@@ -50,11 +50,16 @@ export interface FileManagementScreenProps extends BaseScreenProps {
      */
     afterSelect?: 'close' | 'back' | 'none';
     allowUploadInSelectMode?: boolean;
+    /**
+     * Default visibility for uploaded files in this screen
+     * Useful for third-party apps that want files to be public (e.g., GIF selector)
+     */
+    defaultVisibility?: 'private' | 'public' | 'unlisted';
 }
 
 // Add this helper function near the top (after imports):
-async function uploadFileRaw(file: File | Blob, userId: string, oxyServices: any) {
-    return await oxyServices.uploadRawFile(file);
+async function uploadFileRaw(file: File | Blob, userId: string, oxyServices: any, visibility?: 'private' | 'public' | 'unlisted') {
+    return await oxyServices.uploadRawFile(file, visibility);
 }
 
 const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
@@ -73,6 +78,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     disabledMimeTypes = [],
     afterSelect = 'close',
     allowUploadInSelectMode = true,
+    defaultVisibility = 'private',
 }) => {
     const { user, oxyServices } = useOxy();
 
@@ -434,7 +440,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         variants: [],
                     };
                     useFileStore.getState().addFile(optimisticFile, { prepend: true });
-                    const result = await uploadFileRaw(raw, targetUserId, oxyServices);
+                    const result = await uploadFileRaw(raw, targetUserId, oxyServices, defaultVisibility);
                     // Attempt to refresh file list incrementally – fetch single file metadata if API allows
                     if (result?.file || result?.files?.[0]) {
                         const f = result.file || result.files[0];
