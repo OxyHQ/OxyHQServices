@@ -201,7 +201,7 @@ export default function HomeScreen() {
           <UserAvatar name="Nate Isern Alvarez" size={80} />
         </View>
         {renderContent()}
-        
+
         {/* Bottom action buttons */}
         <View style={styles.bottomActions}>
           <TouchableOpacity style={[styles.circleButton, { backgroundColor: colors.card }]}>

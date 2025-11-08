@@ -5,7 +5,11 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Ionicons } from '@expo/vector-icons';
 
-export function UserAvatar() {
+interface UserAvatarProps {
+    size?: number;
+}
+
+export function UserAvatar({ size = 36 }: UserAvatarProps) {
     const { user, isAuthenticated, showBottomSheet } = useOxy();
     const colorScheme = useColorScheme() ?? 'light';
     const colors = Colors[colorScheme];
@@ -31,8 +35,17 @@ export function UserAvatar() {
     return (
         <TouchableOpacity
             style={[
-                styles.container,
                 {
+                    width: size,
+                    height: size,
+                    borderRadius: size / 2,
+                    justifyContent: 'center',
+                    alignItems: 'center',
+                    shadowColor: '#000',
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.1,
+                    shadowRadius: 2,
+                    elevation: 2,
                     backgroundColor: isAuthenticated ? colors.tint : colorScheme === 'dark' ? '#2C2C2E' : '#F2F2F7'
                 }
             ]}
@@ -40,31 +53,18 @@ export function UserAvatar() {
             activeOpacity={0.7}
         >
             {isAuthenticated && user ? (
-                <Text style={[styles.initials, { color: '#FFFFFF' }]}>
+                <Text style={[styles.initials, { color: '#FFFFFF', fontSize: size * 0.4 }]}>
                     {getInitials(user.username)}
                 </Text>
             ) : (
-                <Ionicons name="person" size={18} color={colors.icon} />
+                <Ionicons name="person" size={size * 0.5} color={colors.icon} />
             )}
         </TouchableOpacity>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        justifyContent: 'center',
-        alignItems: 'center',
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.1,
-        shadowRadius: 2,
-        elevation: 2,
-    },
     initials: {
-        fontSize: 14,
         fontWeight: '700',
     },
 });
