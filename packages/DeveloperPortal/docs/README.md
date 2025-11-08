@@ -42,6 +42,10 @@ export const myDoc: DocPage = {
   category: 'getting-started',
   icon: 'book-outline',
   iconColor: '#007AFF',
+  subItems: [ // Optional: Add sub-items for collapsible sections
+    { id: 'my-doc#section-1', title: 'Section 1', description: 'Quick jump to section' },
+    { id: 'my-doc#section-2', title: 'Section 2', description: 'Another section' },
+  ],
   content: {
     introduction: 'Introduction text...',
     sections: [
@@ -136,14 +140,33 @@ That's it! The documentation will automatically appear in the sidebar under the 
 
 ## 🎨 UI Features
 
-### Sidebar
+### Sidebar with Collapsible Sub-Items
 
-The sidebar uses the `GroupedSection` component (same as Quick Links in RightBar):
+The sidebar uses the `CollapsibleGroupedSection` component (similar to Quick Links in RightBar) with enhanced features:
 - Shows icon with custom color
 - Displays title and description
-- Shows chevron for navigation
-- Highlights selected page
+- **NEW**: Supports collapsible sub-items for quick navigation to sections
+- Highlights selected page and sub-items
+- Shows chevron (down/forward) for expandable items
 - Supports external links with external icon
+
+#### Sub-Items
+
+Documentation pages can include `subItems` for quick navigation to specific sections:
+
+```typescript
+subItems: [
+  { id: 'doc-id#section-1', title: 'Section 1', description: 'Jump to this section' },
+  { id: 'doc-id#section-2', title: 'Section 2', description: 'Jump to another section' },
+]
+```
+
+Benefits:
+- Clicking the parent item expands/collapses sub-items
+- Sub-items appear indented with a visual indicator
+- Each sub-item can navigate to a specific section (using anchor IDs)
+- Selected sub-items are highlighted
+- Great for long documentation pages with multiple sections
 
 ### Content Rendering
 

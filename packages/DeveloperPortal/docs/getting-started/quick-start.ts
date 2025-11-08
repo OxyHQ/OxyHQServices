@@ -9,6 +9,11 @@ export const quickStart: DocPage = {
   category: 'getting-started',
   icon: 'rocket-outline',
   iconColor: '#FF9500',
+  subItems: [
+    { id: 'quick-start#create-app', title: 'Create an App', description: 'Set up your application' },
+    { id: 'quick-start#get-credentials', title: 'Get Credentials', description: 'Retrieve your API keys' },
+    { id: 'quick-start#first-request', title: 'First Request', description: 'Make your first API call' },
+  ],
   content: {
     introduction: 'This quick start guide will help you make your first API request in just a few minutes.',
     sections: [

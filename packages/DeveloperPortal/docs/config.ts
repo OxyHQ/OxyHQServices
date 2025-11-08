@@ -18,6 +18,11 @@ export interface DocPage {
   category: string;
   icon?: keyof typeof Ionicons.glyphMap;
   iconColor?: string;
+  subItems?: Array<{
+    id: string;
+    title: string;
+    description?: string;
+  }>;
   content: {
     introduction: string;
     sections: DocSection[];

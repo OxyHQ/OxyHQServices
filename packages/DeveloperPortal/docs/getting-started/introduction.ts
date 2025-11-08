@@ -5,10 +5,15 @@ const baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
 export const introduction: DocPage = {
   id: 'introduction',
   title: 'Introduction',
-  description: 'Welcome to the Oxy Developer Portal',
+  description: 'Welcome to the Oxy API documentation',
   category: 'getting-started',
   icon: 'book-outline',
   iconColor: '#007AFF',
+  subItems: [
+    { id: 'introduction#overview', title: 'Overview', description: 'API overview and features' },
+    { id: 'introduction#base-url', title: 'Base URL', description: 'API endpoint information' },
+    { id: 'introduction#rate-limits', title: 'Rate Limits', description: 'Request rate limiting' },
+  ],
   content: {
     introduction: 'The Oxy ecosystem provides a comprehensive suite of APIs and services for building powerful integrations. This includes the Oxy API, OxyHQServices client library, and ecosystem apps like Mention and Homiio.',
     sections: [

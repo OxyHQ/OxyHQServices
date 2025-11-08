@@ -8,7 +8,7 @@ import { UserAvatar } from '@/components/user-avatar';
 import { useState, useMemo } from 'react';
 import { Card } from '@/components/ui/card';
 import { Section } from '@/components/section';
-import { GroupedSection } from '@/components/grouped-section';
+import { CollapsibleGroupedSection } from '@/components/collapsible-grouped-section';
 import { allDocs, externalDocs, getActiveCategories, getDocsByCategory, getDocById, DocPage } from '@/docs';
 
 export default function ExploreScreen() {
@@ -81,113 +81,137 @@ export default function ExploreScreen() {
     return Array.from(new Set(searchResults.map(r => r.page)));
   }, [searchQuery, searchResults]);  // Sidebar component
   const Sidebar = () => (
-    <View style={[
-      styles.sidebar,
-      { backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#F8F9FA' },
-      isMobile && styles.sidebarMobile
-    ]}>
+    <View style={styles.sidebar}>
       <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Search Bar */}
-        <View style={[styles.searchContainer, { backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#FFFFFF' }]}>
-          <Ionicons name="search" size={18} color={colors.icon} style={styles.searchIcon} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Search documentation..."
-            placeholderTextColor={colors.icon}
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery !== '' && (
-            <TouchableOpacity onPress={() => setSearchQuery('')}>
-              <Ionicons name="close-circle" size={18} color={colors.icon} />
-            </TouchableOpacity>
+        <View style={styles.sidebarContent}>
+          {/* Welcome Card */}
+          <Card style={styles.sidebarWelcomeCard}>
+            <View style={[styles.sidebarWelcomeIcon, { backgroundColor: colors.tint + '20' }]}>
+              <Ionicons name="book" size={24} color={colors.tint} />
+            </View>
+            <ThemedText style={styles.sidebarWelcomeTitle}>API Documentation</ThemedText>
+            <ThemedText style={styles.sidebarWelcomeText}>
+              Explore guides and references to integrate with Oxy
+            </ThemedText>
+          </Card>
+
+          {/* Search Bar */}
+          <View style={[styles.searchContainer, { backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#FFFFFF' }]}>
+            <Ionicons name="search" size={18} color={colors.icon} style={styles.searchIcon} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder="Search documentation..."
+              placeholderTextColor={colors.icon}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+            {searchQuery !== '' && (
+              <TouchableOpacity onPress={() => setSearchQuery('')}>
+                <Ionicons name="close-circle" size={18} color={colors.icon} />
+              </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Search Results */}
+          {searchQuery.trim() !== '' ? (
+            <View style={styles.searchResults}>
+              <ThemedText style={styles.searchResultsTitle}>
+                {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+              </ThemedText>
+              {searchResults.map((result, index) => (
+                <TouchableOpacity
+                  key={`${result.page.id}-${index}`}
+                  style={[
+                    styles.searchResultItem,
+                    { backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#FFFFFF' }
+                  ]}
+                  onPress={() => {
+                    setSelectedPageId(result.page.id);
+                    setShowSidebar(false);
+                    if (isMobile) setSearchQuery('');
+                  }}
+                >
+                  <View style={styles.searchResultHeader}>
+                    <ThemedText style={styles.searchResultTitle}>{result.page.title}</ThemedText>
+                    <View style={[styles.matchTypeBadge, { backgroundColor: colors.tint + '20' }]}>
+                      <ThemedText style={[styles.matchTypeText, { color: colors.tint }]}>
+                        {result.matchType}
+                      </ThemedText>
+                    </View>
+                  </View>
+                  {result.section && (
+                    <ThemedText style={[styles.searchResultSection, { color: colors.icon }]}>
+                      {result.section.title}
+                    </ThemedText>
+                  )}
+                  <ThemedText style={[styles.searchResultDescription, { color: colors.icon }]} numberOfLines={2}>
+                    {result.section?.content || result.page.description}
+                  </ThemedText>
+                </TouchableOpacity>
+              ))}
+            </View>
+          ) : (
+            /* Category Navigation */
+            <>
+              {activeCategories.map(category => {
+                const categoryDocs = getDocsByCategory(category.id);
+                const categoryExternalDocs = externalDocs.filter(d => d.category === category.id);
+
+                if (categoryDocs.length === 0 && categoryExternalDocs.length === 0) return null;
+
+                return (
+                  <View key={category.id} style={styles.sidebarCategory}>
+                    <Section title={category.title}>
+                      <CollapsibleGroupedSection
+                        items={[
+                          // Internal docs
+                          ...categoryDocs.map(doc => ({
+                            id: doc.id,
+                            icon: doc.icon,
+                            iconColor: doc.iconColor || colors.tint,
+                            title: doc.title,
+                            subtitle: doc.description,
+                            showChevron: !doc.subItems || doc.subItems.length === 0,
+                            selected: selectedPageId === doc.id,
+                            defaultExpanded: doc.subItems?.some(sub => selectedPageId?.startsWith(doc.id)) ?? false,
+                            onPress: () => {
+                              if (!doc.subItems || doc.subItems.length === 0) {
+                                setSelectedPageId(doc.id);
+                                setShowSidebar(false);
+                              }
+                            },
+                            subItems: doc.subItems?.map(subItem => ({
+                              id: subItem.id,
+                              title: subItem.title,
+                              description: subItem.description,
+                              selected: selectedPageId === subItem.id,
+                              onPress: () => {
+                                // Scroll to section with anchor
+                                setSelectedPageId(doc.id);
+                                setShowSidebar(false);
+                                // TODO: Add scroll to section logic
+                              },
+                            })),
+                          })),
+                          // External docs
+                          ...categoryExternalDocs.map(doc => ({
+                            id: doc.id,
+                            icon: doc.icon,
+                            iconColor: doc.iconColor || colors.icon,
+                            title: doc.title,
+                            subtitle: doc.description,
+                            showChevron: true,
+                            onPress: () => handleExternalDocPress(doc.url),
+                          })),
+                        ]}
+                      />
+                    </Section>
+                  </View>
+                );
+              })}
+            </>
           )}
         </View>
-
-        {/* Search Results */}
-        {searchQuery.trim() !== '' ? (
-          <View style={styles.searchResults}>
-            <ThemedText style={styles.searchResultsTitle}>
-              {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
-            </ThemedText>
-            {searchResults.map((result, index) => (
-              <TouchableOpacity
-                key={`${result.page.id}-${index}`}
-                style={[
-                  styles.searchResultItem,
-                  { backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#FFFFFF' }
-                ]}
-                onPress={() => {
-                  setSelectedPageId(result.page.id);
-                  setShowSidebar(false);
-                  if (isMobile) setSearchQuery('');
-                }}
-              >
-                <View style={styles.searchResultHeader}>
-                  <ThemedText style={styles.searchResultTitle}>{result.page.title}</ThemedText>
-                  <View style={[styles.matchTypeBadge, { backgroundColor: colors.tint + '20' }]}>
-                    <ThemedText style={[styles.matchTypeText, { color: colors.tint }]}>
-                      {result.matchType}
-                    </ThemedText>
-                  </View>
-                </View>
-                {result.section && (
-                  <ThemedText style={[styles.searchResultSection, { color: colors.icon }]}>
-                    {result.section.title}
-                  </ThemedText>
-                )}
-                <ThemedText style={[styles.searchResultDescription, { color: colors.icon }]} numberOfLines={2}>
-                  {result.section?.content || result.page.description}
-                </ThemedText>
-              </TouchableOpacity>
-            ))}
-          </View>
-        ) : (
-          /* Category Navigation */
-          <>
-            {activeCategories.map(category => {
-              const categoryDocs = getDocsByCategory(category.id);
-              const categoryExternalDocs = externalDocs.filter(d => d.category === category.id);
-
-              if (categoryDocs.length === 0 && categoryExternalDocs.length === 0) return null;
-
-              return (
-                <View key={category.id} style={styles.sidebarCategory}>
-                  <Section title={category.title}>
-                    <GroupedSection
-                      items={[
-                        // Internal docs
-                        ...categoryDocs.map(doc => ({
-                          id: doc.id,
-                          icon: doc.icon,
-                          iconColor: doc.iconColor || colors.tint,
-                          title: doc.title,
-                          subtitle: doc.description,
-                          showChevron: true,
-                          selected: selectedPageId === doc.id,
-                          onPress: () => {
-                            setSelectedPageId(doc.id);
-                            setShowSidebar(false);
-                          },
-                        })),
-                        // External docs
-                        ...categoryExternalDocs.map(doc => ({
-                          id: doc.id,
-                          icon: doc.icon,
-                          iconColor: doc.iconColor || colors.icon,
-                          title: doc.title,
-                          subtitle: doc.description,
-                          showChevron: true,
-                          onPress: () => handleExternalDocPress(doc.url),
-                        })),
-                      ]}
-                    />
-                  </Section>
-                </View>
-              );
-            })}
-          </>
-        )}
       </ScrollView>
     </View>
   );
@@ -420,10 +444,34 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   sidebar: {
-    width: 260,
+    width: 300,
+    padding: 20,
+  },
+  sidebarContent: {
+    gap: 20,
+  },
+  sidebarWelcomeCard: {
     padding: 16,
-    borderRightWidth: 1,
-    borderRightColor: '#E5E5E7',
+    alignItems: 'center',
+  },
+  sidebarWelcomeIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  sidebarWelcomeTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+    textAlign: 'center',
+  },
+  sidebarWelcomeText: {
+    fontSize: 13,
+    textAlign: 'center',
+    opacity: 0.7,
   },
   sidebarMobile: {
     position: 'absolute',
@@ -441,9 +489,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    marginBottom: 16,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,0,0,0.1)',
   },
   searchIcon: {
     marginRight: 8,
@@ -451,7 +501,7 @@ const styles = StyleSheet.create({
   searchInput: {
     flex: 1,
     fontSize: 14,
-    padding: 0,
+    paddingVertical: 4,
   },
   searchResults: {
     marginTop: 8,
@@ -520,6 +570,7 @@ const styles = StyleSheet.create({
   },
   main: {
     flex: 1,
+    alignSelf: 'stretch',
   },
   welcome: {
     padding: 40,
@@ -569,9 +620,11 @@ const styles = StyleSheet.create({
   },
   content: {
     flex: 1,
+    alignSelf: 'stretch',
   },
   contentContainer: {
     padding: 40,
+    alignSelf: 'stretch',
   },
   breadcrumb: {
     flexDirection: 'row',
