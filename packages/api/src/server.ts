@@ -7,7 +7,6 @@ import usersRouter from "./routes/users";
 import notificationsRouter from "./routes/notifications.routes";
 import sessionRouter from "./routes/session";
 import dotenv from "dotenv";
-import fileRoutes from "./routes/files";
 import { User } from "./models/User";
 import searchRoutes from "./routes/search";
 import { rateLimiter, bruteForceProtection } from "./middleware/security";
@@ -117,10 +116,6 @@ export function emitSessionUpdate(userId: string, payload: any) {
   logger.debug('Emitting session_update', { room, payload });
   io.to(room).emit('session_update', payload);
 }
-
-// Register file routes with auth middleware
-// Legacy S3-based file routes (now bridged to CAS for listing when possible)
-app.use("/api/files", fileRoutes);
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI as string, {

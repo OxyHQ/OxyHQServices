@@ -570,7 +570,8 @@ export class AssetService {
       return false;
     }
 
-    return file.ownerUserId === userId;
+    // Compare as strings (handle ObjectId vs string comparison)
+    return file.ownerUserId.toString() === userId.toString();
   }
 
   /**

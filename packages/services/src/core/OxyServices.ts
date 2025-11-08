@@ -1128,42 +1128,8 @@ export class OxyServices {
   }
 
   // ============================================================================
-  // FILE METHODS
+  // FILE METHODS (LEGACY - Using Asset Service)
   // ============================================================================
-
-  /**
-   * Upload file
-   */
-  async uploadFile(file: File | FormData, options?: any): Promise<any> {
-    try {
-      const formData = file instanceof FormData ? file : new FormData();
-      if (file instanceof File) {
-        formData.append('file', file);
-      }
-      
-      const res = await this.client.post('/api/files/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        ...options
-      });
-      return res.data;
-    } catch (error) {
-      throw this.handleError(error);
-    }
-  }
-
-  /**
-   * Get file by ID
-   */
-  async getFile(fileId: string): Promise<any> {
-    try {
-      const res = await this.client.get(`/api/files/${fileId}`);
-      return res.data;
-    } catch (error) {
-      throw this.handleError(error);
-    }
-  }
 
   /**
    * Delete file
@@ -1178,9 +1144,6 @@ export class OxyServices {
     }
   }
 
-  /**
-   * Get file download URL
-   */
   /**
    * Get file download URL (API streaming proxy, attaches token for <img src>)
    */

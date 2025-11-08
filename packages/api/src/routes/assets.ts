@@ -733,7 +733,8 @@ router.patch('/:id/visibility', async (req: AuthenticatedRequest, res: express.R
       return res.status(404).json({ error: 'File not found' });
     }
 
-    if (file.ownerUserId !== user._id) {
+    // Compare as strings (handle ObjectId vs string comparison)
+    if (file.ownerUserId.toString() !== user._id.toString()) {
       return res.status(403).json({ error: 'Access denied' });
     }
 
