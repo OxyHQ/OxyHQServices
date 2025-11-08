@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, StyleSheet, Text, Platform } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, StyleSheet, Text, Platform, ActivityIndicator } from 'react-native';
 import { ThemedView } from './themed-view';
 import { ThemedText } from './themed-text';
 import { Colors } from '@/constants/theme';
@@ -9,9 +9,58 @@ import { GroupedSection } from './grouped-section';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from './ui/card';
 
+type SystemStatus = {
+    status: 'operational' | 'degraded' | 'down' | 'loading';
+    message: string;
+    color: string;
+};
+
 export function RightBar() {
     const colorScheme = useColorScheme() ?? 'light';
     const colors = Colors[colorScheme];
+    const [systemStatus, setSystemStatus] = useState<SystemStatus>({
+        status: 'loading',
+        message: 'Checking status...',
+        color: '#8E8E93',
+    });
+
+    useEffect(() => {
+        const checkStatus = async () => {
+            try {
+                const baseURL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3001';
+                const response = await fetch(`${baseURL}/health`, {
+                    method: 'GET',
+                    signal: AbortSignal.timeout(5000), // 5 second timeout
+                });
+
+                if (response.ok) {
+                    setSystemStatus({
+                        status: 'operational',
+                        message: 'All Systems Operational',
+                        color: '#34C759',
+                    });
+                } else {
+                    setSystemStatus({
+                        status: 'degraded',
+                        message: 'Degraded Performance',
+                        color: '#FF9500',
+                    });
+                }
+            } catch (error) {
+                setSystemStatus({
+                    status: 'down',
+                    message: 'System Unavailable',
+                    color: '#FF3B30',
+                });
+            }
+        };
+
+        checkStatus();
+        // Check status every 60 seconds
+        const interval = setInterval(checkStatus, 60000);
+
+        return () => clearInterval(interval);
+    }, []);
 
     // Only show on web
     if (Platform.OS !== 'web') {
@@ -64,8 +113,12 @@ export function RightBar() {
 
                 <Card style={styles.statusCard}>
                     <View style={styles.statusRow}>
-                        <View style={[styles.statusDot, { backgroundColor: '#34C759' }]} />
-                        <ThemedText style={styles.statusText}>All Systems Operational</ThemedText>
+                        {systemStatus.status === 'loading' ? (
+                            <ActivityIndicator size="small" color={colors.tint} />
+                        ) : (
+                            <View style={[styles.statusDot, { backgroundColor: systemStatus.color }]} />
+                        )}
+                        <ThemedText style={styles.statusText}>{systemStatus.message}</ThemedText>
                     </View>
                 </Card>
             </View>

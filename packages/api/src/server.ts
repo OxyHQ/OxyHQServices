@@ -145,6 +145,35 @@ app.get("/", async (req, res) => {
   }
 });
 
+// Health check endpoint
+app.get("/health", async (req, res) => {
+  try {
+    // Check MongoDB connection
+    const isMongoConnected = mongoose.connection.readyState === 1;
+    
+    if (isMongoConnected) {
+      res.status(200).json({
+        status: "operational",
+        timestamp: new Date().toISOString(),
+        database: "connected"
+      });
+    } else {
+      res.status(503).json({
+        status: "degraded",
+        timestamp: new Date().toISOString(),
+        database: "disconnected"
+      });
+    }
+  } catch (error) {
+    logger.error("Health check error:", error);
+    res.status(503).json({
+      status: "down",
+      timestamp: new Date().toISOString(),
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
 // API Routes with /api prefix
 app.use("/api/assets", assetRoutes);
 app.use("/api/search", searchRoutes);
