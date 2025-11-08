@@ -55,6 +55,8 @@ const linkFileSchema = z.object({
   entityType: z.string().min(1, 'Entity type is required'),
   entityId: z.string().min(1, 'Entity ID is required'),
   visibility: z.enum(['private', 'public', 'unlisted']).optional()
+  ,
+  webhookUrl: z.string().url().optional()
 });
 
 const unlinkFileSchema = z.object({
@@ -261,7 +263,8 @@ router.post('/:id/links', async (req: AuthenticatedRequest, res: express.Respons
     
     const linkRequest = {
       ...validatedData,
-      createdBy: user._id
+      createdBy: user._id,
+      webhookUrl: (validatedData as any).webhookUrl
     };
 
     const file = await assetService.linkFile(fileId, linkRequest);

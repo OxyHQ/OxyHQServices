@@ -1349,14 +1349,12 @@ export class OxyServices {
   /**
    * Link asset to an entity
    */
-  async assetLink(fileId: string, app: string, entityType: string, entityId: string, visibility?: 'private' | 'public' | 'unlisted'): Promise<any> {
+  async assetLink(fileId: string, app: string, entityType: string, entityId: string, visibility?: 'private' | 'public' | 'unlisted', webhookUrl?: string): Promise<any> {
     try {
-      const res = await this.client.post(`/api/assets/${fileId}/links`, {
-        app,
-        entityType,
-        entityId,
-        visibility
-      });
+      const body: any = { app, entityType, entityId };
+      if (visibility) body.visibility = visibility;
+      if (webhookUrl) body.webhookUrl = webhookUrl;
+      const res = await this.client.post(`/api/assets/${fileId}/links`, body);
       return res.data;
     } catch (error) {
       throw this.handleError(error);
@@ -1503,6 +1501,94 @@ export class OxyServices {
       await this.assetLink(asset.file.id, app, 'profile-banner', userId, 'public');
       
       return asset;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  // ============================================================================
+  // DEVELOPER API METHODS
+  // ============================================================================
+
+  /**
+   * Get developer apps for the current user
+   */
+  async getDeveloperApps(): Promise<any[]> {
+    try {
+      const res = await this.client.get('/api/developer/apps');
+      return res.data.apps || [];
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Create a new developer app
+   */
+  async createDeveloperApp(data: {
+    name: string;
+    description?: string;
+    webhookUrl: string;
+    devWebhookUrl?: string;
+    scopes?: string[];
+  }): Promise<any> {
+    try {
+      const res = await this.client.post('/api/developer/apps', data);
+      return res.data.app;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Get a specific developer app
+   */
+  async getDeveloperApp(appId: string): Promise<any> {
+    try {
+      const res = await this.client.get(`/api/developer/apps/${appId}`);
+      return res.data.app;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Update a developer app
+   */
+  async updateDeveloperApp(appId: string, data: {
+    name?: string;
+    description?: string;
+    webhookUrl?: string;
+    devWebhookUrl?: string;
+    scopes?: string[];
+  }): Promise<any> {
+    try {
+      const res = await this.client.patch(`/api/developer/apps/${appId}`, data);
+      return res.data.app;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Regenerate API secret for a developer app
+   */
+  async regenerateDeveloperAppSecret(appId: string): Promise<any> {
+    try {
+      const res = await this.client.post(`/api/developer/apps/${appId}/regenerate-secret`);
+      return res.data.app;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Delete a developer app
+   */
+  async deleteDeveloperApp(appId: string): Promise<any> {
+    try {
+      const res = await this.client.delete(`/api/developer/apps/${appId}`);
+      return res.data;
     } catch (error) {
       throw this.handleError(error);
     }

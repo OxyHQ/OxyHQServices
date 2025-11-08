@@ -55,6 +55,16 @@ export interface FileManagementScreenProps extends BaseScreenProps {
      * Useful for third-party apps that want files to be public (e.g., GIF selector)
      */
     defaultVisibility?: 'private' | 'public' | 'unlisted';
+    /**
+     * Link context for tracking file usage by third-party apps
+     * When provided, selected files will be linked to this entity
+     */
+    linkContext?: {
+        app: string;           // App identifier (e.g., 'chat-app', 'post-composer')
+        entityType: string;    // Type of entity (e.g., 'message', 'post', 'profile')
+        entityId: string;      // Unique ID of the entity using this file
+        webhookUrl?: string;   // Optional webhook URL to receive file events
+    };
 }
 
 // Add this helper function near the top (after imports):
@@ -79,6 +89,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     afterSelect = 'close',
     allowUploadInSelectMode = true,
     defaultVisibility = 'private',
+    linkContext,
 }) => {
     const { user, oxyServices } = useOxy();
 
@@ -148,7 +159,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 return;
             }
         }
-        
+
         // Update file visibility if it differs from defaultVisibility
         const fileVisibility = (file.metadata as any)?.visibility || 'private';
         if (fileVisibility !== defaultVisibility) {
@@ -160,7 +171,25 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 // Continue anyway - selection shouldn't fail if visibility update fails
             }
         }
-        
+
+        // Link file to entity if linkContext is provided
+        if (linkContext) {
+            try {
+                await oxyServices.assetLink(
+                    file.id,
+                    linkContext.app,
+                    linkContext.entityType,
+                    linkContext.entityId,
+                    defaultVisibility,
+                    (linkContext as any).webhookUrl
+                );
+                console.log(`Linked file ${file.id} to ${linkContext.app}/${linkContext.entityType}/${linkContext.entityId}`);
+            } catch (error) {
+                console.error('Failed to link file:', error);
+                // Continue anyway - selection shouldn't fail if linking fails
+            }
+        }
+
         if (!multiSelect) {
             onSelect?.(file);
             if (afterSelect === 'back') {
@@ -184,16 +213,17 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             }
             return next;
         });
-    }, [selectMode, multiSelect, onSelect, onClose, goBack, disabledMimeTypes, maxSelection, afterSelect, defaultVisibility, oxyServices]);
+    }, [selectMode, multiSelect, onSelect, onClose, goBack, disabledMimeTypes, maxSelection, afterSelect, defaultVisibility, oxyServices, linkContext]);
 
     const confirmMultiSelection = useCallback(async () => {
         if (!selectMode || !multiSelect) return;
         const map: Record<string, FileMetadata> = {};
         files.forEach(f => { map[f.id] = f; });
         const chosen = Array.from(selectedIds).map(id => map[id]).filter(Boolean);
-        
-        // Update visibility for all selected files if needed
+
+        // Update visibility and link files if needed
         const updatePromises = chosen.map(async (file) => {
+            // Update visibility if needed
             const fileVisibility = (file.metadata as any)?.visibility || 'private';
             if (fileVisibility !== defaultVisibility) {
                 try {
@@ -203,14 +233,31 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     console.error(`Failed to update visibility for ${file.id}:`, error);
                 }
             }
+
+            // Link file to entity if linkContext provided
+            if (linkContext) {
+                try {
+                    await oxyServices.assetLink(
+                        file.id,
+                        linkContext.app,
+                        linkContext.entityType,
+                        linkContext.entityId,
+                        defaultVisibility,
+                        (linkContext as any).webhookUrl
+                    );
+                    console.log(`Linked file ${file.id} to ${linkContext.app}/${linkContext.entityType}/${linkContext.entityId}`);
+                } catch (error) {
+                    console.error(`Failed to link file ${file.id}:`, error);
+                }
+            }
         });
-        
-        // Wait for all visibility updates (but don't block on failures)
+
+        // Wait for all updates (but don't block on failures)
         await Promise.allSettled(updatePromises);
-        
+
         onConfirmSelection?.(chosen);
         onClose?.();
-    }, [selectMode, multiSelect, selectedIds, files, onConfirmSelection, onClose, defaultVisibility, oxyServices]);
+    }, [selectMode, multiSelect, selectedIds, files, onConfirmSelection, onClose, defaultVisibility, oxyServices, linkContext]);
 
     const endUpload = useCallback(() => {
         const started = uploadStartRef.current;

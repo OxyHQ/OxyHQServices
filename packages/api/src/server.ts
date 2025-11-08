@@ -19,6 +19,7 @@ import linkMetadataRoutes from './routes/linkMetadata';
 import locationSearchRoutes from './routes/locationSearch';
 import authRoutes from './routes/auth';
 import assetRoutes from './routes/assets';
+import developerRoutes from './routes/developer';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
 import { Response } from 'express';
@@ -159,6 +160,7 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/link-metadata', linkMetadataRoutes);
 app.use('/api/location-search', locationSearchRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/developer', developerRoutes);
 
 // Add a protected route for testing
 app.get('/api/protected-server-route', authMiddleware, (req: any, res: Response) => {

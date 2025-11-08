@@ -27,6 +27,7 @@ export interface AssetLinkRequest {
   entityId: string;
   createdBy: string;
   visibility?: FileVisibility;
+  webhookUrl?: string;
 }
 
 export interface AssetDeleteSummary {
@@ -251,7 +252,8 @@ export class AssetService {
         entityType: linkRequest.entityType,
         entityId: linkRequest.entityId,
         createdBy: linkRequest.createdBy,
-        createdAt: new Date()
+        createdAt: new Date(),
+        webhookUrl: linkRequest.webhookUrl
       };
 
       file.links.push(newLink);
@@ -284,6 +286,45 @@ export class AssetService {
     } catch (error) {
       logger.error('Error linking file:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Send webhook notifications to links that have webhookUrl set.
+   * Non-blocking: failures are logged but do not throw.
+   */
+  private async notifyLinks(file: IFile, event: 'visibility_changed' | 'deleted', details: Record<string, any>): Promise<void> {
+    try {
+      const axios = (await import('axios')).default;
+      const notifyPromises = file.links
+        .filter(l => (l as any).webhookUrl)
+        .map(async (link) => {
+          const url = (link as any).webhookUrl as string;
+          const payload = {
+            event,
+            fileId: file._id.toString(),
+            visibility: file.visibility,
+            status: file.status,
+            link: {
+              app: link.app,
+              entityType: link.entityType,
+              entityId: link.entityId
+            },
+            details,
+            timestamp: new Date().toISOString()
+          };
+
+          try {
+            await axios.post(url, payload, { timeout: 5000 });
+            logger.info('Webhook delivered', { url, fileId: file._id, event });
+          } catch (err) {
+            logger.warn('Failed to deliver webhook', { url, fileId: file._id, event, error: (err as any)?.message });
+          }
+        });
+
+      await Promise.allSettled(notifyPromises);
+    } catch (err) {
+      logger.error('Error in notifyLinks helper:', err);
     }
   }
 
@@ -459,6 +500,9 @@ export class AssetService {
       file.status = 'deleted';
       await file.save();
 
+      // Notify linked apps that file was deleted
+      await this.notifyLinks(file, 'deleted', { force });
+
       logger.info('File deleted permanently', { 
         fileId, 
         force, 
@@ -543,6 +587,13 @@ export class AssetService {
         fileId, 
         visibility 
       });
+
+      // Notify linked apps about visibility change
+      try {
+        await this.notifyLinks(file, 'visibility_changed', { visibility });
+      } catch (err) {
+        logger.error('Failed to notify links after visibility change', err);
+      }
 
       return file;
     } catch (error) {

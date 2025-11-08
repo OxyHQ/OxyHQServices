@@ -14,6 +14,8 @@ export interface IFileLink {
   entityId: string;
   createdBy: string;
   createdAt: Date;
+  // Optional webhook URL provided by third-party apps to receive file events
+  webhookUrl?: string;
 }
 
 export interface IFileVariant {
@@ -54,7 +56,8 @@ const FileLinkSchema = new Schema<IFileLink>({
   entityType: { type: String, required: true, index: true },
   entityId: { type: String, required: true, index: true },
   createdBy: { type: String, required: true, index: true },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  webhookUrl: { type: String }
 }, { _id: false });
 
 const FileVariantSchema = new Schema<IFileVariant>({
