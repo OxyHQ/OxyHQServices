@@ -30,7 +30,7 @@ export function ComponentShowcase() {
                     variant="primary"
                     icon="checkmark-circle"
                 />
-                
+
                 <Button
                     title="Danger Button"
                     onPress={() => console.log('Pressed')}
@@ -40,9 +40,9 @@ export function ComponentShowcase() {
                 />
 
                 <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
-                    <IconButton icon="heart" onPress={() => {}} variant="primary" />
-                    <IconButton icon="star" onPress={() => {}} variant="warning" />
-                    <IconButton icon="trash" onPress={() => {}} variant="danger" />
+                    <IconButton icon="heart" onPress={() => { }} variant="primary" />
+                    <IconButton icon="star" onPress={() => { }} variant="warning" />
+                    <IconButton icon="trash" onPress={() => { }} variant="danger" />
                 </View>
             </Card>
 
@@ -52,7 +52,7 @@ export function ComponentShowcase() {
             <Input
                 label="Email Address"
                 value=""
-                onChangeText={() => {}}
+                onChangeText={() => { }}
                 placeholder="you@example.com"
                 keyboardType="email-address"
                 helperText="We'll never share your email"
@@ -61,7 +61,7 @@ export function ComponentShowcase() {
             <Input
                 label="Password"
                 value=""
-                onChangeText={() => {}}
+                onChangeText={() => { }}
                 placeholder="Enter password"
                 secureTextEntry
                 error="Password must be at least 8 characters"
@@ -136,20 +136,20 @@ export function ComponentShowcase() {
 export const ButtonExamples = () => (
     <>
         {/* Primary with icon */}
-        <Button title="Save Changes" onPress={() => {}} icon="save" />
-        
+        <Button title="Save Changes" onPress={() => { }} icon="save" />
+
         {/* Loading state */}
-        <Button title="Loading..." onPress={() => {}} loading />
-        
+        <Button title="Loading..." onPress={() => { }} loading />
+
         {/* Disabled */}
-        <Button title="Disabled" onPress={() => {}} disabled />
-        
+        <Button title="Disabled" onPress={() => { }} disabled />
+
         {/* Full width */}
-        <Button title="Sign In" onPress={() => {}} fullWidth />
-        
+        <Button title="Sign In" onPress={() => { }} fullWidth />
+
         {/* Different variants */}
-        <Button title="Delete" onPress={() => {}} variant="danger" />
-        <Button title="Cancel" onPress={() => {}} variant="ghost" />
+        <Button title="Delete" onPress={() => { }} variant="danger" />
+        <Button title="Cancel" onPress={() => { }} variant="ghost" />
     </>
 );
 
@@ -160,12 +160,12 @@ export const CardExamples = () => (
         <Card>
             <View>Content here</View>
         </Card>
-        
+
         {/* Elevated card */}
         <Card variant="elevated">
             <View>Important content</View>
         </Card>
-        
+
         {/* Interactive card */}
         <Card onPress={() => console.log('Tapped')}>
             <View>Tap me!</View>
@@ -180,32 +180,32 @@ export const InputExamples = () => (
         <Input
             label="Name"
             value=""
-            onChangeText={() => {}}
+            onChangeText={() => { }}
             placeholder="John Doe"
         />
-        
+
         {/* With validation */}
         <Input
             label="Email"
             value="invalid-email"
-            onChangeText={() => {}}
+            onChangeText={() => { }}
             error="Please enter a valid email"
         />
-        
+
         {/* Multiline */}
         <Input
             label="Description"
             value=""
-            onChangeText={() => {}}
+            onChangeText={() => { }}
             multiline
             numberOfLines={4}
         />
-        
+
         {/* URL input */}
         <Input
             label="Website"
             value=""
-            onChangeText={() => {}}
+            onChangeText={() => { }}
             keyboardType="url"
             autoCapitalize="none"
             helperText="Enter your website URL"

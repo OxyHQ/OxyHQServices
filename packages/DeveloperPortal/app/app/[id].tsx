@@ -96,7 +96,7 @@ export default function AppDetailsScreen() {
                     console.log('Regenerating secret for app:', id);
                     const result = await oxyServices.regenerateDeveloperAppSecret(id as string);
                     console.log('Regenerate result:', result);
-                    
+
                     if (result && result.apiSecret) {
                         // Show the secret in the UI instead of an alert
                         setNewApiSecret(result.apiSecret);

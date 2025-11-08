@@ -75,7 +75,7 @@ export function Button({
 
 function getIconColor(variant: ButtonVariant, disabled: boolean): string {
     if (disabled) return '#999999';
-    
+
     switch (variant) {
         case 'primary':
         case 'danger':
