@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, TextInput, TouchableOpacity, View, Text, ScrollView, Alert, Clipboard } from 'react-native';
+import { StyleSheet, TextInput, TouchableOpacity, View, Text, ScrollView, Clipboard } from 'react-native';
 import { useOxy } from '@oxyhq/services';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAppStore } from '@/store/useAppStore';
+import { Alert } from '@/utils/alert';
 
 export default function AppDetailsScreen() {
     const { id } = useLocalSearchParams();
@@ -15,6 +16,7 @@ export default function AppDetailsScreen() {
     const [description, setDescription] = useState('');
     const [webhookUrl, setWebhookUrl] = useState('');
     const [devWebhookUrl, setDevWebhookUrl] = useState('');
+    const [newApiSecret, setNewApiSecret] = useState<string | null>(null);
     const router = useRouter();
     const { oxyServices } = useOxy();
 
@@ -81,56 +83,68 @@ export default function AppDetailsScreen() {
     };
 
     const handleRegenerateSecret = () => {
-        if (!oxyServices) return;
+        if (!oxyServices) {
+            Alert.alert('Error', 'OxyServices not initialized');
+            return;
+        }
 
-        Alert.alert(
+        Alert.confirm(
             'Regenerate API Secret',
             'This will invalidate the current API secret. Any applications using the old secret will stop working. Continue?',
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Regenerate',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            const result = await oxyServices.regenerateDeveloperAppSecret(id as string);
-                            Alert.alert(
-                                'New API Secret',
-                                `Save this secret now!\n\n${result.apiSecret}\n\nYou won't be able to see it again.`,
-                                [{ text: 'OK' }]
-                            );
-                        } catch (error: any) {
-                            Alert.alert('Error', error.message || 'Failed to regenerate secret');
-                        }
-                    },
-                },
-            ]
+            async () => {
+                try {
+                    console.log('Regenerating secret for app:', id);
+                    const result = await oxyServices.regenerateDeveloperAppSecret(id as string);
+                    console.log('Regenerate result:', result);
+                    
+                    if (result && result.apiSecret) {
+                        // Show the secret in the UI instead of an alert
+                        setNewApiSecret(result.apiSecret);
+                    } else {
+                        Alert.alert('Error', 'No API secret returned');
+                    }
+                } catch (error: any) {
+                    console.error('Regenerate error:', error);
+                    Alert.alert('Error', error.message || 'Failed to regenerate secret');
+                }
+            },
+            undefined,
+            'Regenerate',
+            'Cancel'
         );
     };
 
     const handleDelete = () => {
-        if (!oxyServices) return;
+        if (!oxyServices) {
+            Alert.alert('Error', 'OxyServices not initialized');
+            return;
+        }
 
-        Alert.alert(
+        if (!app) {
+            Alert.alert('Error', 'App data not loaded');
+            return;
+        }
+
+        Alert.confirm(
             'Delete App',
             `Are you sure you want to delete "${app.name}"? This action cannot be undone.`,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: async () => {
-                        try {
-                            await oxyServices.deleteDeveloperApp(id as string);
-                            removeApp(id as string); // Update Zustand store
-                            Alert.alert('Success', 'App deleted successfully');
-                            router.back();
-                        } catch (error: any) {
-                            Alert.alert('Error', error.message || 'Failed to delete app');
-                        }
-                    },
-                },
-            ]
+            async () => {
+                try {
+                    console.log('Deleting app:', id);
+                    await oxyServices.deleteDeveloperApp(id as string);
+                    console.log('Delete successful');
+                    removeApp(id as string); // Update Zustand store
+                    Alert.alert('Success', 'App deleted successfully', [
+                        { text: 'OK', onPress: () => router.back() }
+                    ]);
+                } catch (error: any) {
+                    console.error('Delete error:', error);
+                    Alert.alert('Error', error.message || 'Failed to delete app');
+                }
+            },
+            undefined,
+            'Delete',
+            'Cancel'
         );
     };
 
@@ -164,6 +178,32 @@ export default function AppDetailsScreen() {
                         <Text style={styles.statusText}>{app.status}</Text>
                     </View>
                 </View>
+
+                {newApiSecret && (
+                    <View style={styles.secretCard}>
+                        <ThemedText style={styles.warningText}>
+                            ⚠️ Save your new API Secret now! You won't be able to see it again.
+                        </ThemedText>
+                        <View style={styles.secretContainer}>
+                            <ThemedText style={styles.label}>New API Secret:</ThemedText>
+                            <View style={styles.secretValueContainer}>
+                                <Text style={styles.secretText} selectable>{newApiSecret}</Text>
+                                <TouchableOpacity
+                                    style={styles.copyIconButton}
+                                    onPress={() => copyToClipboard(newApiSecret, 'API Secret')}
+                                >
+                                    <Text style={styles.copyIconText}>📋</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                        <TouchableOpacity
+                            style={styles.dismissButton}
+                            onPress={() => setNewApiSecret(null)}
+                        >
+                            <Text style={styles.dismissButtonText}>I've Saved It</Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
 
                 {editing ? (
                     <>
@@ -488,4 +528,57 @@ const styles = StyleSheet.create({
         color: '#007AFF',
         fontSize: 16,
     },
+    secretCard: {
+        backgroundColor: '#FFF9E6',
+        borderWidth: 2,
+        borderColor: '#FFB800',
+        borderRadius: 12,
+        padding: 20,
+        marginBottom: 24,
+    },
+    warningText: {
+        color: '#FF9500',
+        fontSize: 14,
+        fontWeight: '600',
+        marginBottom: 16,
+        textAlign: 'center',
+    },
+    secretContainer: {
+        marginBottom: 16,
+    },
+    secretValueContainer: {
+        backgroundColor: '#FFFFFF',
+        borderRadius: 8,
+        padding: 12,
+        borderWidth: 1,
+        borderColor: '#E0E0E0',
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
+    secretText: {
+        fontFamily: 'monospace',
+        fontSize: 13,
+        color: '#007AFF',
+        flex: 1,
+    },
+    copyIconButton: {
+        padding: 8,
+        marginLeft: 8,
+    },
+    copyIconText: {
+        fontSize: 20,
+    },
+    dismissButton: {
+        backgroundColor: '#007AFF',
+        paddingVertical: 12,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    dismissButtonText: {
+        color: '#FFFFFF',
+        fontSize: 14,
+        fontWeight: '600',
+    },
 });
+

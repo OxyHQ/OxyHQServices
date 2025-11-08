@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { StyleSheet, TextInput, TouchableOpacity, View, Text, ScrollView, Alert } from 'react-native';
+import { StyleSheet, TouchableOpacity, View, Text, ScrollView } from 'react-native';
 import { useOxy } from '@oxyhq/services';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useRouter } from 'expo-router';
 import { useAppStore } from '@/store/useAppStore';
+import { Alert } from '@/utils/alert';
+import { Button, Input, Card } from '@/components';
 
 export default function CreateAppScreen() {
     const [name, setName] = useState('');
@@ -71,17 +73,17 @@ export default function CreateAppScreen() {
                         ⚠️ Save your API Secret now! You won't be able to see it again.
                     </ThemedText>
 
-                    <View style={styles.secretCard}>
+                    <Card style={styles.secretCard}>
                         <ThemedText style={styles.label}>API Secret:</ThemedText>
                         <Text style={styles.secretText} selectable>{apiSecret}</Text>
-                    </View>
+                    </Card>
 
-                    <TouchableOpacity
-                        style={styles.doneButton}
+                    <Button
+                        title="Done"
                         onPress={() => router.back()}
-                    >
-                        <Text style={styles.doneButtonText}>Done</Text>
-                    </TouchableOpacity>
+                        icon="checkmark-circle"
+                        fullWidth
+                    />
                 </View>
             </ThemedView>
         );
@@ -92,105 +94,85 @@ export default function CreateAppScreen() {
             <ScrollView>
                 <ThemedText type="title" style={styles.title}>Create Developer App</ThemedText>
 
-                <View style={styles.formGroup}>
-                    <ThemedText style={styles.label}>App Name *</ThemedText>
-                    <TextInput
-                        style={styles.input}
-                        value={name}
-                        onChangeText={setName}
-                        placeholder="My Awesome App"
-                        placeholderTextColor="#999"
-                    />
-                </View>
+                <Input
+                    label="App Name *"
+                    value={name}
+                    onChangeText={setName}
+                    placeholder="My Awesome App"
+                />
 
-                <View style={styles.formGroup}>
-                    <ThemedText style={styles.label}>Description</ThemedText>
-                    <TextInput
-                        style={[styles.input, styles.textArea]}
-                        value={description}
-                        onChangeText={setDescription}
-                        placeholder="What does your app do?"
-                        placeholderTextColor="#999"
-                        multiline
-                        numberOfLines={4}
-                    />
-                </View>
+                <Input
+                    label="Description"
+                    value={description}
+                    onChangeText={setDescription}
+                    placeholder="What does your app do?"
+                    multiline
+                    numberOfLines={4}
+                />
 
-                <View style={styles.formGroup}>
-                    <ThemedText style={styles.label}>Production Webhook URL *</ThemedText>
-                    <TextInput
-                        style={styles.input}
-                        value={webhookUrl}
-                        onChangeText={setWebhookUrl}
-                        placeholder="https://yourapp.com/api/webhooks/oxy"
-                        placeholderTextColor="#999"
-                        keyboardType="url"
-                        autoCapitalize="none"
-                    />
-                    <ThemedText style={styles.helperText}>
-                        Your production server endpoint for webhook notifications
-                    </ThemedText>
-                </View>
+                <Input
+                    label="Production Webhook URL *"
+                    value={webhookUrl}
+                    onChangeText={setWebhookUrl}
+                    placeholder="https://yourapp.com/api/webhooks/oxy"
+                    keyboardType="url"
+                    autoCapitalize="none"
+                    helperText="Your production server endpoint for webhook notifications"
+                />
 
-                <View style={styles.formGroup}>
-                    <ThemedText style={styles.label}>Development Webhook URL (optional)</ThemedText>
-                    <TextInput
-                        style={styles.input}
-                        value={devWebhookUrl}
-                        onChangeText={setDevWebhookUrl}
-                        placeholder="http://localhost:4000/webhook"
-                        placeholderTextColor="#999"
-                        keyboardType="url"
-                        autoCapitalize="none"
-                    />
-                    <ThemedText style={styles.helperText}>
-                        Local development endpoint for testing webhooks
-                    </ThemedText>
+                <Input
+                    label="Development Webhook URL (optional)"
+                    value={devWebhookUrl}
+                    onChangeText={setDevWebhookUrl}
+                    placeholder="http://localhost:4000/webhook"
+                    keyboardType="url"
+                    autoCapitalize="none"
+                    helperText="Local development endpoint for testing webhooks"
+                />
 
-                    <View style={styles.quickFillContainer}>
-                        <ThemedText style={styles.quickFillLabel}>Quick Fill:</ThemedText>
-                        <View style={styles.quickFillButtons}>
-                            <TouchableOpacity
-                                style={styles.quickFillButton}
-                                onPress={() => setDevWebhookUrl('http://localhost:4000/webhook')}
-                            >
-                                <Text style={styles.quickFillButtonText}>:4000</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.quickFillButton}
-                                onPress={() => setDevWebhookUrl('http://localhost:3000/webhook')}
-                            >
-                                <Text style={styles.quickFillButtonText}>:3000</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={styles.quickFillButton}
-                                onPress={() => setDevWebhookUrl('http://localhost:5000/webhook')}
-                            >
-                                <Text style={styles.quickFillButtonText}>:5000</Text>
-                            </TouchableOpacity>
-                        </View>
-                        <ThemedText style={styles.devNote}>
-                            💡 Run <Text style={styles.codeText}>node webhook-dev-server.js</Text> to test locally
-                        </ThemedText>
+                <View style={styles.quickFillContainer}>
+                    <ThemedText style={styles.quickFillLabel}>Quick Fill:</ThemedText>
+                    <View style={styles.quickFillButtons}>
+                        <TouchableOpacity
+                            style={styles.quickFillButton}
+                            onPress={() => setDevWebhookUrl('http://localhost:4000/webhook')}
+                        >
+                            <Text style={styles.quickFillButtonText}>:4000</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.quickFillButton}
+                            onPress={() => setDevWebhookUrl('http://localhost:3000/webhook')}
+                        >
+                            <Text style={styles.quickFillButtonText}>:3000</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.quickFillButton}
+                            onPress={() => setDevWebhookUrl('http://localhost:5000/webhook')}
+                        >
+                            <Text style={styles.quickFillButtonText}>:5000</Text>
+                        </TouchableOpacity>
                     </View>
+                    <ThemedText style={styles.devNote}>
+                        💡 Run <Text style={styles.codeText}>node webhook-dev-server.js</Text> to test locally
+                    </ThemedText>
                 </View>
 
-                <TouchableOpacity
-                    style={[styles.createButton, loading && styles.buttonDisabled]}
+                <Button
+                    title={loading ? 'Creating...' : 'Create App'}
                     onPress={handleCreate}
                     disabled={loading}
-                >
-                    <Text style={styles.createButtonText}>
-                        {loading ? 'Creating...' : 'Create App'}
-                    </Text>
-                </TouchableOpacity>
+                    loading={loading}
+                    icon="add-circle"
+                    fullWidth
+                />
 
-                <TouchableOpacity
-                    style={styles.cancelButton}
+                <Button
+                    title="Cancel"
                     onPress={() => router.back()}
-                >
-                    <Text style={styles.cancelButtonText}>Cancel</Text>
-                </TouchableOpacity>
+                    variant="ghost"
+                    fullWidth
+                    style={{ marginTop: 8 }}
+                />
             </ScrollView>
         </ThemedView>
     );

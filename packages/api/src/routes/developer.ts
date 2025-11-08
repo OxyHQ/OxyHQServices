@@ -38,7 +38,7 @@ const updateAppSchema = z.object({
  * Generate API key and secret
  */
 function generateCredentials() {
-  const apiKey = 'dk_' + crypto.randomBytes(24).toString('hex'); // dk_ prefix for developer key
+  const apiKey = 'oxy_dk_' + crypto.randomBytes(24).toString('hex'); // oxy_dk_ prefix for developer key
   const apiSecret = crypto.randomBytes(32).toString('hex');
   const webhookSecret = crypto.randomBytes(24).toString('hex');
   return { apiKey, apiSecret, webhookSecret };

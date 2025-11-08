@@ -1,5 +1,5 @@
 import React from 'react';
-import { StyleSheet, FlatList, TouchableOpacity, View, Text, Alert, Clipboard } from 'react-native';
+import { StyleSheet, FlatList, TouchableOpacity, View, Text, Clipboard } from 'react-native';
 import { useOxy } from '@oxyhq/services';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -10,6 +10,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { UserAvatar } from '@/components/user-avatar';
 import { useAppStore, DeveloperApp } from '@/store/useAppStore';
 import { useLoadApps } from '@/hooks/useLoadApps';
+import { Alert } from '@/utils/alert';
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -29,26 +30,22 @@ export default function HomeScreen() {
   };
 
   const handleDeleteApp = (appId: string, appName: string) => {
-    Alert.alert(
+    Alert.confirm(
       'Delete App',
       `Are you sure you want to delete "${appName}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            if (!oxyServices) return;
-            try {
-              await oxyServices.deleteDeveloperApp(appId);
-              removeApp(appId); // Update Zustand store
-              Alert.alert('Success', 'App deleted successfully');
-            } catch (error: any) {
-              Alert.alert('Error', error.message || 'Failed to delete app');
-            }
-          },
-        },
-      ]
+      async () => {
+        if (!oxyServices) return;
+        try {
+          await oxyServices.deleteDeveloperApp(appId);
+          removeApp(appId); // Update Zustand store
+          Alert.alert('Success', 'App deleted successfully');
+        } catch (error: any) {
+          Alert.alert('Error', error.message || 'Failed to delete app');
+        }
+      },
+      undefined,
+      'Delete',
+      'Cancel'
     );
   };
 

@@ -1,47 +1,29 @@
 /**
  * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * Matched with the OxyHQ Services theme for consistency.
+ * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
  */
 
 import { Platform } from 'react-native';
 
-// Primary brand color matching services package
-const primaryColor = '#d169e5';
-const tintColorLight = primaryColor;
+const tintColorLight = '#0a7ea4';
 const tintColorDark = '#fff';
 
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#FFFFFF',
+    text: '#11181C',
+    background: '#fff',
     tint: tintColorLight,
-    icon: '#666666',
-    tabIconDefault: '#999999',
+    icon: '#687076',
+    tabIconDefault: '#687076',
     tabIconSelected: tintColorLight,
-    border: '#E0E0E0',
-    inputBackground: '#F5F5F5',
-    placeholder: '#999999',
-    secondaryText: '#666666',
-    error: '#D32F2F',
-    success: '#2E7D32',
-    warning: '#F57C00',
-    card: '#FFFFFF',
   },
   dark: {
-    text: '#FFFFFF',
-    background: '#121212',
+    text: '#ECEDEE',
+    background: '#151718',
     tint: tintColorDark,
-    icon: '#BBBBBB',
-    tabIconDefault: '#AAAAAA',
+    icon: '#9BA1A6',
+    tabIconDefault: '#9BA1A6',
     tabIconSelected: tintColorDark,
-    border: '#444444',
-    inputBackground: '#333333',
-    placeholder: '#AAAAAA',
-    secondaryText: '#BBBBBB',
-    error: '#EF5350',
-    success: '#81C784',
-    warning: '#FFB74D',
-    card: '#1C1C1E',
   },
 };
 
