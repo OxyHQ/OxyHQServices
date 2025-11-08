@@ -175,6 +175,8 @@ router.post('/complete', async (req: AuthenticatedRequest, res: express.Response
 
     res.json({
       success: true,
+      assetId: file._id.toString(), // For compatibility
+      fileId: file._id.toString(),  // For compatibility
       file: {
         id: file._id,
         sha256: file.sha256,
@@ -273,6 +275,8 @@ router.post('/:id/links', async (req: AuthenticatedRequest, res: express.Respons
 
     res.json({
       success: true,
+      assetId: file._id.toString(), // For compatibility
+      fileId: file._id.toString(),  // For compatibility
       file: {
         id: file._id,
         usageCount: file.usageCount,
@@ -385,6 +389,8 @@ router.get('/:id', async (req: AuthenticatedRequest, res: express.Response) => {
 
     res.json({
       success: true,
+      assetId: file._id.toString(), // For compatibility
+      fileId: file._id.toString(),  // For compatibility
       file: {
         id: file._id,
         sha256: file.sha256,
