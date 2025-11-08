@@ -69,7 +69,7 @@ export default function ExploreScreen() {
         <UserAvatar />
       </View>
 
-      <ScrollView 
+      <ScrollView
         style={styles.content}
         contentContainerStyle={styles.contentContainer}
         showsVerticalScrollIndicator={false}

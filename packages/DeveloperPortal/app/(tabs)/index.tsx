@@ -19,7 +19,7 @@ export default function HomeScreen() {
 
   // Zustand store
   const { apps, loading, removeApp } = useAppStore();
-  
+
   // Load apps hook
   useLoadApps();
 
@@ -53,17 +53,17 @@ export default function HomeScreen() {
   };
 
   const renderApp = ({ item }: { item: DeveloperApp }) => (
-    <TouchableOpacity 
+    <TouchableOpacity
       style={[styles.appCard, { backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#FFFFFF' }]}
       onPress={() => router.push(`/app/${item.id}`)}
       activeOpacity={0.7}
     >
       <View style={styles.cardHeader}>
         <View style={styles.cardTitleRow}>
-          <Ionicons 
-            name="cube-outline" 
-            size={24} 
-            color={colors.tint} 
+          <Ionicons
+            name="cube-outline"
+            size={24}
+            color={colors.tint}
             style={styles.cardIcon}
           />
           <View style={styles.cardTitleContainer}>
@@ -86,7 +86,7 @@ export default function HomeScreen() {
             <Ionicons name="key-outline" size={14} color={colors.icon} />
             <ThemedText style={[styles.label, { color: colors.icon }]}>API Key</ThemedText>
           </View>
-          <TouchableOpacity 
+          <TouchableOpacity
             onPress={() => copyToClipboard(item.apiKey, 'API Key')}
             style={styles.copyButton}
           >

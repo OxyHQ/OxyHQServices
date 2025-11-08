@@ -63,7 +63,7 @@ export default function AppDetailsScreen() {
             if (devWebhookUrl !== app.devWebhookUrl) data.devWebhookUrl = devWebhookUrl;
 
             await oxyServices.updateDeveloperApp(id as string, data);
-            
+
             // Update Zustand store
             updateApp(id as string, {
                 name,
