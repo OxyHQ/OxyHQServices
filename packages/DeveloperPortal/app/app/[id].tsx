@@ -4,6 +4,7 @@ import { useOxy } from '@oxyhq/services';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useAppStore } from '@/store/useAppStore';
 
 export default function AppDetailsScreen() {
     const { id } = useLocalSearchParams();
@@ -16,6 +17,9 @@ export default function AppDetailsScreen() {
     const [devWebhookUrl, setDevWebhookUrl] = useState('');
     const router = useRouter();
     const { oxyServices } = useOxy();
+
+    // Zustand store
+    const { currentApp, setCurrentApp, updateApp, removeApp } = useAppStore();
 
     useEffect(() => {
         if (id && oxyServices) {
@@ -30,6 +34,7 @@ export default function AppDetailsScreen() {
             setLoading(true);
             const data = await oxyServices.getDeveloperApp(id as string);
             setApp(data);
+            setCurrentApp(data); // Update Zustand store
             setName(data.name);
             setDescription(data.description || '');
             setWebhookUrl(data.webhookUrl || '');
@@ -58,6 +63,15 @@ export default function AppDetailsScreen() {
             if (devWebhookUrl !== app.devWebhookUrl) data.devWebhookUrl = devWebhookUrl;
 
             await oxyServices.updateDeveloperApp(id as string, data);
+            
+            // Update Zustand store
+            updateApp(id as string, {
+                name,
+                description,
+                webhookUrl,
+                devWebhookUrl,
+            });
+
             Alert.alert('Success', 'App updated successfully');
             setEditing(false);
             loadApp();
@@ -87,6 +101,32 @@ export default function AppDetailsScreen() {
                             );
                         } catch (error: any) {
                             Alert.alert('Error', error.message || 'Failed to regenerate secret');
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
+    const handleDelete = () => {
+        if (!oxyServices) return;
+
+        Alert.alert(
+            'Delete App',
+            `Are you sure you want to delete "${app.name}"? This action cannot be undone.`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await oxyServices.deleteDeveloperApp(id as string);
+                            removeApp(id as string); // Update Zustand store
+                            Alert.alert('Success', 'App deleted successfully');
+                            router.back();
+                        } catch (error: any) {
+                            Alert.alert('Error', error.message || 'Failed to delete app');
                         }
                     },
                 },
@@ -263,6 +303,10 @@ export default function AppDetailsScreen() {
                         <TouchableOpacity style={styles.regenerateButton} onPress={handleRegenerateSecret}>
                             <Text style={styles.regenerateButtonText}>Regenerate API Secret</Text>
                         </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
+                            <Text style={styles.deleteButtonText}>Delete App</Text>
+                        </TouchableOpacity>
                     </>
                 )}
             </ScrollView>
@@ -406,6 +450,19 @@ const styles = StyleSheet.create({
         marginTop: 8,
     },
     regenerateButtonText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '600',
+    },
+    deleteButton: {
+        backgroundColor: '#FF3B30',
+        paddingVertical: 16,
+        borderRadius: 8,
+        alignItems: 'center',
+        marginTop: 8,
+        marginBottom: 24,
+    },
+    deleteButtonText: {
         color: '#FFFFFF',
         fontSize: 16,
         fontWeight: '600',

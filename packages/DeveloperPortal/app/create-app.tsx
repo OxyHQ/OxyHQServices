@@ -4,6 +4,7 @@ import { useOxy } from '@oxyhq/services';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useRouter } from 'expo-router';
+import { useAppStore } from '@/store/useAppStore';
 
 export default function CreateAppScreen() {
     const [name, setName] = useState('');
@@ -14,6 +15,9 @@ export default function CreateAppScreen() {
     const [apiSecret, setApiSecret] = useState<string | null>(null);
     const router = useRouter();
     const { oxyServices } = useOxy();
+
+    // Zustand store
+    const { addApp } = useAppStore();
 
     const handleCreate = async () => {
         if (!name.trim()) {
@@ -33,7 +37,7 @@ export default function CreateAppScreen() {
 
         try {
             setLoading(true);
-            const data: any = { 
+            const data: any = {
                 name,
                 webhookUrl: webhookUrl.trim()
             };
@@ -41,6 +45,9 @@ export default function CreateAppScreen() {
             if (devWebhookUrl.trim()) data.devWebhookUrl = devWebhookUrl.trim();
 
             const result = await oxyServices.createDeveloperApp(data);
+
+            // Add to Zustand store
+            addApp(result);
 
             // Show the API secret (only shown once!)
             if (result.apiSecret) {
@@ -139,7 +146,7 @@ export default function CreateAppScreen() {
                     <ThemedText style={styles.helperText}>
                         Local development endpoint for testing webhooks
                     </ThemedText>
-                    
+
                     <View style={styles.quickFillContainer}>
                         <ThemedText style={styles.quickFillLabel}>Quick Fill:</ThemedText>
                         <View style={styles.quickFillButtons}>

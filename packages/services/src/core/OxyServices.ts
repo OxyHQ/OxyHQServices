@@ -1576,7 +1576,7 @@ export class OxyServices {
   async regenerateDeveloperAppSecret(appId: string): Promise<any> {
     try {
       const res = await this.client.post(`/api/developer/apps/${appId}/regenerate-secret`);
-      return res.data.app;
+      return res.data;
     } catch (error) {
       throw this.handleError(error);
     }

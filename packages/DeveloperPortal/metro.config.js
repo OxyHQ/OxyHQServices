@@ -15,9 +15,12 @@ config.resolver.nodeModulesPaths = [
   path.resolve(workspaceRoot, 'node_modules'),
 ];
 
-// Support for @oxyhq/services package
+// Support for @oxyhq/services package - resolve to source for react-native
 config.resolver.extraNodeModules = {
-  '@oxyhq/services': path.resolve(workspaceRoot, 'packages/services'),
+  '@oxyhq/services': path.resolve(workspaceRoot, 'packages/services/src'),
 };
+
+// Ensure source extensions are properly prioritized
+config.resolver.sourceExts = [...config.resolver.sourceExts, 'ts', 'tsx'];
 
 module.exports = config;
