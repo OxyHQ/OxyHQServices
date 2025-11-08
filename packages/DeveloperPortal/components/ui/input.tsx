@@ -48,8 +48,8 @@ export function Input({
                 style={[
                     styles.input,
                     {
-                        backgroundColor: isDark ? '#2C2C2E' : '#F5F5F5',
-                        borderColor: error ? '#FF3B30' : (isDark ? '#3A3A3C' : '#E0E0E0'),
+                        backgroundColor: colors.inputBackground,
+                        borderColor: error ? colors.error : colors.border,
                         color: colors.text,
                     },
                     multiline && styles.multiline,
@@ -58,7 +58,7 @@ export function Input({
                 value={value}
                 onChangeText={onChangeText}
                 placeholder={placeholder}
-                placeholderTextColor={isDark ? '#8E8E93' : '#999999'}
+                placeholderTextColor={colors.placeholder}
                 multiline={multiline}
                 numberOfLines={multiline ? numberOfLines : 1}
                 keyboardType={keyboardType}

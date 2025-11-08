@@ -13,7 +13,7 @@ const tintColorDark = '#fff';
 export const Colors = {
   light: {
     text: '#000000',
-    background: '#FFFFFF',
+    background: '#f2f2f7', // Light gray background like iOS Settings
     tint: tintColorLight,
     icon: '#666666',
     tabIconDefault: '#999999',
@@ -29,13 +29,13 @@ export const Colors = {
   },
   dark: {
     text: '#FFFFFF',
-    background: '#121212',
+    background: '#000000', // Pure black for dark mode
     tint: tintColorDark,
     icon: '#BBBBBB',
     tabIconDefault: '#AAAAAA',
     tabIconSelected: tintColorDark,
     border: '#444444',
-    inputBackground: '#333333',
+    inputBackground: '#1C1C1E',
     placeholder: '#AAAAAA',
     secondaryText: '#BBBBBB',
     error: '#EF5350',

@@ -1,11 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { StyleSheet, TextInput, TouchableOpacity, View, Text, ScrollView, Clipboard } from 'react-native';
+import { StyleSheet, View, Text, ScrollView, Clipboard, Platform } from 'react-native';
 import { useOxy } from '@oxyhq/services';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useAppStore } from '@/store/useAppStore';
 import { Alert } from '@/utils/alert';
+import { Section } from '@/components/section';
+import { GroupedSection } from '@/components/grouped-section';
+import { GroupedItem } from '@/components/grouped-item';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Loading } from '@/components/ui/loading';
+import { Card } from '@/components/ui/card';
+import { IconButton } from '@/components/ui/icon-button';
+import { Colors } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 export default function AppDetailsScreen() {
     const { id } = useLocalSearchParams();
@@ -153,10 +164,13 @@ export default function AppDetailsScreen() {
         Alert.alert('Copied', `${label} copied to clipboard`);
     };
 
+    const colorScheme = useColorScheme();
+    const colors = Colors[colorScheme ?? 'light'];
+
     if (loading) {
         return (
             <ThemedView style={styles.container}>
-                <ThemedText style={styles.centerText}>Loading...</ThemedText>
+                <Loading message="Loading app details..." />
             </ThemedView>
         );
     }
@@ -164,189 +178,238 @@ export default function AppDetailsScreen() {
     if (!app) {
         return (
             <ThemedView style={styles.container}>
-                <ThemedText style={styles.centerText}>App not found</ThemedText>
+                <View style={styles.errorContainer}>
+                    <ThemedText style={styles.errorText}>App not found</ThemedText>
+                    <Button
+                        title="Go Back"
+                        onPress={() => router.back()}
+                        style={styles.backButton}
+                    />
+                </View>
             </ThemedView>
         );
     }
 
     return (
         <ThemedView style={styles.container}>
-            <ScrollView>
-                <View style={styles.header}>
-                    <ThemedText type="title">{app.name}</ThemedText>
-                    <View style={styles.statusBadge}>
-                        <Text style={styles.statusText}>{app.status}</Text>
-                    </View>
-                </View>
-
+            <ScrollView contentContainerStyle={styles.scrollContent}>
+                {/* New API Secret Banner */}
                 {newApiSecret && (
-                    <View style={styles.secretCard}>
-                        <ThemedText style={styles.warningText}>
-                            ⚠️ Save your new API Secret now! You won't be able to see it again.
-                        </ThemedText>
-                        <View style={styles.secretContainer}>
-                            <ThemedText style={styles.label}>New API Secret:</ThemedText>
-                            <View style={styles.secretValueContainer}>
-                                <Text style={styles.secretText} selectable>{newApiSecret}</Text>
-                                <TouchableOpacity
-                                    style={styles.copyIconButton}
-                                    onPress={() => copyToClipboard(newApiSecret, 'API Secret')}
-                                >
-                                    <Text style={styles.copyIconText}>📋</Text>
-                                </TouchableOpacity>
+                    <Card style={[styles.secretBanner, { backgroundColor: '#FFF9E6', borderColor: '#FFB800' }]}>
+                        <View style={styles.secretBannerContent}>
+                            <Text style={styles.warningIcon}>⚠️</Text>
+                            <View style={styles.secretBannerText}>
+                                <ThemedText style={styles.secretBannerTitle}>
+                                    Save your new API Secret
+                                </ThemedText>
+                                <ThemedText style={styles.secretBannerDesc}>
+                                    You won't be able to see it again
+                                </ThemedText>
                             </View>
                         </View>
-                        <TouchableOpacity
-                            style={styles.dismissButton}
+                        <Card style={[styles.secretValueCard, { backgroundColor: colors.background }]}>
+                            <Text style={styles.secretValue} selectable>{newApiSecret}</Text>
+                            <IconButton
+                                icon="clipboard"
+                                onPress={() => copyToClipboard(newApiSecret, 'API Secret')}
+                                size="small"
+                            />
+                        </Card>
+                        <Button
+                            title="I've Saved It"
                             onPress={() => setNewApiSecret(null)}
-                        >
-                            <Text style={styles.dismissButtonText}>I've Saved It</Text>
-                        </TouchableOpacity>
-                    </View>
+                            variant="primary"
+                        />
+                    </Card>
                 )}
 
                 {editing ? (
+                    // Edit Mode
                     <>
-                        <View style={styles.formGroup}>
-                            <ThemedText style={styles.label}>App Name</ThemedText>
-                            <TextInput
-                                style={styles.input}
-                                value={name}
-                                onChangeText={setName}
-                                placeholder="My Awesome App"
-                            />
-                        </View>
+                        <Section title="App Details">
+                            <Card>
+                                <Input
+                                    label="App Name"
+                                    value={name}
+                                    onChangeText={setName}
+                                    placeholder="My Awesome App"
+                                />
+                                <Input
+                                    label="Description"
+                                    value={description}
+                                    onChangeText={setDescription}
+                                    placeholder="What does your app do?"
+                                    multiline
+                                    numberOfLines={4}
+                                    style={styles.textArea}
+                                />
+                            </Card>
+                        </Section>
 
-                        <View style={styles.formGroup}>
-                            <ThemedText style={styles.label}>Description</ThemedText>
-                            <TextInput
-                                style={[styles.input, styles.textArea]}
-                                value={description}
-                                onChangeText={setDescription}
-                                placeholder="What does your app do?"
-                                multiline
-                                numberOfLines={4}
-                            />
-                        </View>
-
-                        <View style={styles.formGroup}>
-                            <ThemedText style={styles.label}>Production Webhook URL *</ThemedText>
-                            <TextInput
-                                style={styles.input}
-                                value={webhookUrl}
-                                onChangeText={setWebhookUrl}
-                                placeholder="https://yourapp.com/api/webhooks/oxy"
-                                keyboardType="url"
-                                autoCapitalize="none"
-                            />
-                        </View>
-
-                        <View style={styles.formGroup}>
-                            <ThemedText style={styles.label}>Development Webhook URL (optional)</ThemedText>
-                            <TextInput
-                                style={styles.input}
-                                value={devWebhookUrl}
-                                onChangeText={setDevWebhookUrl}
-                                placeholder="http://localhost:4000/webhook"
-                                keyboardType="url"
-                                autoCapitalize="none"
-                            />
-                            <View style={styles.quickFillContainer}>
-                                <ThemedText style={styles.quickFillLabel}>Quick Fill:</ThemedText>
-                                <View style={styles.quickFillButtons}>
-                                    <TouchableOpacity
-                                        style={styles.quickFillButton}
+                        <Section title="Webhook Configuration">
+                            <Card>
+                                <Input
+                                    label="Production Webhook URL *"
+                                    value={webhookUrl}
+                                    onChangeText={setWebhookUrl}
+                                    placeholder="https://yourapp.com/api/webhooks/oxy"
+                                    keyboardType="url"
+                                    autoCapitalize="none"
+                                />
+                                <Input
+                                    label="Development Webhook URL (optional)"
+                                    value={devWebhookUrl}
+                                    onChangeText={setDevWebhookUrl}
+                                    placeholder="http://localhost:4000/webhook"
+                                    keyboardType="url"
+                                    autoCapitalize="none"
+                                    helperText="💡 Run node webhook-dev-server.js to test locally"
+                                />
+                                <View style={styles.quickFillRow}>
+                                    <Button
+                                        title=":4000"
                                         onPress={() => setDevWebhookUrl('http://localhost:4000/webhook')}
-                                    >
-                                        <Text style={styles.quickFillButtonText}>:4000</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
+                                        variant="secondary"
+                                        size="small"
                                         style={styles.quickFillButton}
+                                    />
+                                    <Button
+                                        title=":3000"
                                         onPress={() => setDevWebhookUrl('http://localhost:3000/webhook')}
-                                    >
-                                        <Text style={styles.quickFillButtonText}>:3000</Text>
-                                    </TouchableOpacity>
-                                    <TouchableOpacity
+                                        variant="secondary"
+                                        size="small"
                                         style={styles.quickFillButton}
+                                    />
+                                    <Button
+                                        title=":5000"
                                         onPress={() => setDevWebhookUrl('http://localhost:5000/webhook')}
-                                    >
-                                        <Text style={styles.quickFillButtonText}>:5000</Text>
-                                    </TouchableOpacity>
+                                        variant="secondary"
+                                        size="small"
+                                        style={styles.quickFillButton}
+                                    />
                                 </View>
-                                <ThemedText style={styles.devNote}>
-                                    💡 Run <Text style={styles.devCodeText}>node webhook-dev-server.js</Text> to test
-                                </ThemedText>
-                            </View>
-                        </View>
+                            </Card>
+                        </Section>
 
-                        <TouchableOpacity style={styles.saveButton} onPress={handleUpdate}>
-                            <Text style={styles.saveButtonText}>Save Changes</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.cancelButton} onPress={() => setEditing(false)}>
-                            <Text style={styles.cancelButtonText}>Cancel</Text>
-                        </TouchableOpacity>
+                        <View style={styles.actionButtons}>
+                            <Button
+                                title="Save Changes"
+                                onPress={handleUpdate}
+                                variant="primary"
+                                style={styles.saveButton}
+                            />
+                            <Button
+                                title="Cancel"
+                                onPress={() => {
+                                    setEditing(false);
+                                    // Reset values
+                                    setName(app.name);
+                                    setDescription(app.description || '');
+                                    setWebhookUrl(app.webhookUrl || '');
+                                    setDevWebhookUrl(app.devWebhookUrl || '');
+                                }}
+                                variant="ghost"
+                            />
+                        </View>
                     </>
                 ) : (
+                    // View Mode
                     <>
+                        <View style={styles.header}>
+                            <ThemedText type="title">{app.name}</ThemedText>
+                            <Badge label={app.status} variant="success" />
+                        </View>
+
                         {app.description && (
-                            <View style={styles.section}>
-                                <ThemedText style={styles.sectionLabel}>Description</ThemedText>
-                                <ThemedText style={styles.sectionText}>{app.description}</ThemedText>
-                            </View>
+                            <Section title="Description">
+                                <Card>
+                                    <ThemedText>{app.description}</ThemedText>
+                                </Card>
+                            </Section>
                         )}
 
-                        <View style={styles.section}>
-                            <ThemedText style={styles.sectionLabel}>API Key</ThemedText>
-                            <TouchableOpacity onPress={() => copyToClipboard(app.apiKey, 'API Key')}>
-                                <Text style={styles.codeText}>{app.apiKey}</Text>
-                            </TouchableOpacity>
-                        </View>
+                        <Section title="API Credentials">
+                            <GroupedSection items={[
+                                {
+                                    id: 'apiKey',
+                                    icon: 'key' as any,
+                                    title: 'API Key',
+                                    subtitle: app.apiKey,
+                                    onPress: () => copyToClipboard(app.apiKey, 'API Key'),
+                                    showChevron: true,
+                                },
+                                ...(app.webhookSecret ? [{
+                                    id: 'webhookSecret',
+                                    icon: 'lock-closed' as any,
+                                    title: 'Webhook Secret',
+                                    subtitle: app.webhookSecret?.substring(0, 20) + '...',
+                                    onPress: () => copyToClipboard(app.webhookSecret, 'Webhook Secret'),
+                                    showChevron: true,
+                                }] : [])
+                            ]} />
+                        </Section>
 
-                        <View style={styles.section}>
-                            <ThemedText style={styles.sectionLabel}>Production Webhook URL</ThemedText>
-                            <ThemedText style={styles.sectionText}>{app.webhookUrl}</ThemedText>
-                        </View>
+                        <Section title="Webhooks">
+                            <GroupedSection items={[
+                                {
+                                    id: 'prodWebhook',
+                                    icon: 'globe' as any,
+                                    title: 'Production URL',
+                                    subtitle: app.webhookUrl,
+                                    multiRow: true,
+                                },
+                                ...(app.devWebhookUrl ? [{
+                                    id: 'devWebhook',
+                                    icon: 'code' as any,
+                                    title: 'Development URL',
+                                    subtitle: app.devWebhookUrl,
+                                    multiRow: true,
+                                }] : [])
+                            ]} />
+                        </Section>
 
-                        {app.devWebhookUrl && (
-                            <View style={styles.section}>
-                                <ThemedText style={styles.sectionLabel}>Development Webhook URL</ThemedText>
-                                <ThemedText style={styles.sectionText}>{app.devWebhookUrl}</ThemedText>
-                                <ThemedText style={styles.helperText}>
-                                    Used for local testing and development
-                                </ThemedText>
-                            </View>
-                        )}
+                        <Section title="Information">
+                            <GroupedSection items={[
+                                {
+                                    id: 'created',
+                                    icon: 'calendar' as any,
+                                    title: 'Created',
+                                    subtitle: new Date(app.createdAt).toLocaleString(),
+                                },
+                                {
+                                    id: 'updated',
+                                    icon: 'time' as any,
+                                    title: 'Last Updated',
+                                    subtitle: new Date(app.updatedAt || app.createdAt).toLocaleString(),
+                                }
+                            ]} />
+                        </Section>
 
-                        {app.webhookSecret && (
-                            <View style={styles.section}>
-                                <ThemedText style={styles.sectionLabel}>Webhook Secret</ThemedText>
-                                <TouchableOpacity onPress={() => copyToClipboard(app.webhookSecret, 'Webhook Secret')}>
-                                    <Text style={styles.codeText}>{app.webhookSecret}</Text>
-                                </TouchableOpacity>
-                                <ThemedText style={styles.helperText}>
-                                    Use this to verify webhook signatures
-                                </ThemedText>
-                            </View>
-                        )}
-
-                        <View style={styles.section}>
-                            <ThemedText style={styles.sectionLabel}>Created</ThemedText>
-                            <ThemedText style={styles.sectionText}>
-                                {new Date(app.createdAt).toLocaleString()}
-                            </ThemedText>
-                        </View>
-
-                        <TouchableOpacity style={styles.editButton} onPress={() => setEditing(true)}>
-                            <Text style={styles.editButtonText}>Edit App</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={styles.regenerateButton} onPress={handleRegenerateSecret}>
-                            <Text style={styles.regenerateButtonText}>Regenerate API Secret</Text>
-                        </TouchableOpacity>
-
-                        <TouchableOpacity style={styles.deleteButton} onPress={handleDelete}>
-                            <Text style={styles.deleteButtonText}>Delete App</Text>
-                        </TouchableOpacity>
+                        <Section title="Actions">
+                            <GroupedSection items={[
+                                {
+                                    id: 'edit',
+                                    icon: 'create' as any,
+                                    title: 'Edit App',
+                                    onPress: () => setEditing(true),
+                                    showChevron: true,
+                                },
+                                {
+                                    id: 'regenerate',
+                                    icon: 'refresh' as any,
+                                    title: 'Regenerate API Secret',
+                                    onPress: handleRegenerateSecret,
+                                    showChevron: true,
+                                },
+                                {
+                                    id: 'delete',
+                                    icon: 'trash' as any,
+                                    title: 'Delete App',
+                                    onPress: handleDelete,
+                                    showChevron: true,
+                                }
+                            ]} />
+                        </Section>
                     </>
                 )}
             </ScrollView>
@@ -357,228 +420,85 @@ export default function AppDetailsScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
+    },
+    scrollContent: {
         padding: 16,
     },
-    centerText: {
-        textAlign: 'center',
-        marginTop: 20,
+    errorContainer: {
+        flex: 1,
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    errorText: {
+        fontSize: 16,
+        marginBottom: 16,
+    },
+    backButton: {
+        marginTop: 16,
     },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
+        marginBottom: 16,
+    },
+    secretBanner: {
         marginBottom: 24,
-    },
-    statusBadge: {
-        backgroundColor: '#4CAF50',
-        paddingHorizontal: 8,
-        paddingVertical: 4,
-        borderRadius: 4,
-    },
-    statusText: {
-        color: '#FFFFFF',
-        fontSize: 12,
-        fontWeight: '600',
-    },
-    section: {
-        marginBottom: 24,
-    },
-    sectionLabel: {
-        fontSize: 12,
-        fontWeight: '600',
-        marginBottom: 8,
-        opacity: 0.7,
-        textTransform: 'uppercase',
-    },
-    sectionText: {
-        fontSize: 16,
-    },
-    codeText: {
-        fontFamily: 'monospace',
-        fontSize: 14,
-        color: '#007AFF',
-    },
-    helperText: {
-        fontSize: 12,
-        opacity: 0.6,
-        marginTop: 4,
-    },
-    formGroup: {
-        marginBottom: 20,
-    },
-    label: {
-        fontSize: 14,
-        fontWeight: '600',
-        marginBottom: 8,
-    },
-    input: {
-        backgroundColor: '#F5F5F5',
-        borderRadius: 8,
-        padding: 12,
-        fontSize: 16,
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-    },
-    textArea: {
-        height: 100,
-        textAlignVertical: 'top',
-    },
-    quickFillContainer: {
-        marginTop: 12,
-        padding: 12,
-        backgroundColor: '#F8F9FA',
-        borderRadius: 8,
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-    },
-    quickFillLabel: {
-        fontSize: 12,
-        fontWeight: '600',
-        marginBottom: 8,
-        opacity: 0.7,
-    },
-    quickFillButtons: {
-        flexDirection: 'row',
-        gap: 8,
-        marginBottom: 8,
-    },
-    quickFillButton: {
-        flex: 1,
-        backgroundColor: '#E3F2FD',
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 6,
-        borderWidth: 1,
-        borderColor: '#90CAF9',
-    },
-    quickFillButtonText: {
-        color: '#1976D2',
-        fontSize: 12,
-        fontWeight: '600',
-        textAlign: 'center',
-    },
-    devNote: {
-        fontSize: 11,
-        opacity: 0.7,
-        fontStyle: 'italic',
-    },
-    devCodeText: {
-        fontFamily: 'monospace',
-        backgroundColor: '#F0F0F0',
-        paddingHorizontal: 4,
-        paddingVertical: 2,
-        borderRadius: 3,
-        fontSize: 11,
-    },
-    editButton: {
-        backgroundColor: '#007AFF',
-        paddingVertical: 16,
-        borderRadius: 8,
-        alignItems: 'center',
-        marginTop: 8,
-    },
-    editButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    regenerateButton: {
-        backgroundColor: '#FF9500',
-        paddingVertical: 16,
-        borderRadius: 8,
-        alignItems: 'center',
-        marginTop: 8,
-    },
-    regenerateButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    deleteButton: {
-        backgroundColor: '#FF3B30',
-        paddingVertical: 16,
-        borderRadius: 8,
-        alignItems: 'center',
-        marginTop: 8,
-        marginBottom: 24,
-    },
-    deleteButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    saveButton: {
-        backgroundColor: '#007AFF',
-        paddingVertical: 16,
-        borderRadius: 8,
-        alignItems: 'center',
-        marginTop: 8,
-    },
-    saveButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    cancelButton: {
-        paddingVertical: 16,
-        alignItems: 'center',
-        marginTop: 8,
-    },
-    cancelButtonText: {
-        color: '#007AFF',
-        fontSize: 16,
-    },
-    secretCard: {
-        backgroundColor: '#FFF9E6',
+        padding: 16,
         borderWidth: 2,
-        borderColor: '#FFB800',
-        borderRadius: 12,
-        padding: 20,
-        marginBottom: 24,
     },
-    warningText: {
-        color: '#FF9500',
+    secretBannerContent: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    warningIcon: {
+        fontSize: 24,
+        marginRight: 12,
+    },
+    secretBannerText: {
+        flex: 1,
+    },
+    secretBannerTitle: {
+        fontSize: 16,
+        fontWeight: '700',
+        marginBottom: 4,
+    },
+    secretBannerDesc: {
         fontSize: 14,
-        fontWeight: '600',
-        marginBottom: 16,
-        textAlign: 'center',
+        opacity: 0.7,
     },
-    secretContainer: {
-        marginBottom: 16,
-    },
-    secretValueContainer: {
-        backgroundColor: '#FFFFFF',
-        borderRadius: 8,
-        padding: 12,
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
+    secretValueCard: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
+        padding: 12,
+        marginBottom: 12,
     },
-    secretText: {
-        fontFamily: 'monospace',
+    secretValue: {
+        flex: 1,
+        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
         fontSize: 13,
         color: '#007AFF',
+    },
+    textArea: {
+        marginTop: 12,
+    },
+    quickFillRow: {
+        flexDirection: 'row',
+        gap: 8,
+        marginTop: 12,
+    },
+    quickFillButton: {
         flex: 1,
     },
-    copyIconButton: {
-        padding: 8,
-        marginLeft: 8,
+    actionButtons: {
+        marginTop: 24,
+        gap: 12,
     },
-    copyIconText: {
-        fontSize: 20,
-    },
-    dismissButton: {
-        backgroundColor: '#007AFF',
-        paddingVertical: 12,
-        borderRadius: 8,
-        alignItems: 'center',
-    },
-    dismissButtonText: {
-        color: '#FFFFFF',
-        fontSize: 14,
-        fontWeight: '600',
+    saveButton: {
+        marginBottom: 8,
     },
 });
 

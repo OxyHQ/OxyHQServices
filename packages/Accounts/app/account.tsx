@@ -8,7 +8,7 @@ import { GroupedSection } from '@/components/grouped-section';
 import { UserAvatar } from '@/components/user-avatar';
 import { Ionicons } from '@expo/vector-icons';
 
-export default function HomeScreen() {
+export default function AccountScreen() {
     const colorScheme = useColorScheme() ?? 'light';
     const colors = Colors[colorScheme];
     const { width } = useWindowDimensions();

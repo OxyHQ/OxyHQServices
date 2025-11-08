@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleSheet, TouchableOpacity } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Colors } from '@/constants/theme';
 
 interface CardProps {
     children: React.ReactNode;
@@ -11,21 +12,21 @@ interface CardProps {
 
 export function Card({ children, onPress, style, variant = 'default' }: CardProps) {
     const colorScheme = useColorScheme() ?? 'light';
-    const isDark = colorScheme === 'dark';
+    const colors = Colors[colorScheme];
 
     const cardStyle = [
         styles.base,
         variant === 'default' && {
-            backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+            backgroundColor: colors.card,
             ...styles.elevated,
         },
         variant === 'outlined' && {
-            backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+            backgroundColor: colors.card,
             borderWidth: 1,
-            borderColor: isDark ? '#2C2C2E' : '#E5E5EA',
+            borderColor: colors.border,
         },
         variant === 'elevated' && {
-            backgroundColor: isDark ? '#1C1C1E' : '#FFFFFF',
+            backgroundColor: colors.card,
             ...styles.highElevation,
         },
         style,

@@ -16,14 +16,20 @@ export const Colors = {
     icon: '#687076',
     tabIconDefault: '#687076',
     tabIconSelected: tintColorLight,
+    card: '#F2F2F7',
+    border: '#E5E5EA',
+    secondaryText: '#8E8E93',
   },
   dark: {
     text: '#ECEDEE',
-    background: '#151718',
+    background: '#000000',
     tint: tintColorDark,
     icon: '#9BA1A6',
     tabIconDefault: '#9BA1A6',
     tabIconSelected: tintColorDark,
+    card: '#1C1C1E',
+    border: '#2C2C2E',
+    secondaryText: '#8E8E93',
   },
 };
 

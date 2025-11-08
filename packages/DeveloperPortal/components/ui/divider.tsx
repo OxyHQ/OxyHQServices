@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, StyleSheet } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Colors } from '@/constants/theme';
 
 interface DividerProps {
     spacing?: 'small' | 'medium' | 'large';
@@ -9,11 +10,11 @@ interface DividerProps {
 
 export function Divider({ spacing = 'medium', style }: DividerProps) {
     const colorScheme = useColorScheme() ?? 'light';
-    const isDark = colorScheme === 'dark';
+    const colors = Colors[colorScheme];
 
     return (
         <View style={[styles.container, styles[spacing], style]}>
-            <View style={[styles.line, { backgroundColor: isDark ? '#2C2C2E' : '#E5E5EA' }]} />
+            <View style={[styles.line, { backgroundColor: colors.border }]} />
         </View>
     );
 }
