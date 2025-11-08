@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { View, StyleSheet, Text, Platform, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, Text, Platform, ActivityIndicator, Linking } from 'react-native';
 import { ThemedView } from './themed-view';
 import { ThemedText } from './themed-text';
 import { Colors } from '@/constants/theme';
@@ -8,6 +8,7 @@ import { Section } from './section';
 import { GroupedSection } from './grouped-section';
 import { Ionicons } from '@expo/vector-icons';
 import { Card } from './ui/card';
+import { router } from 'expo-router';
 
 type SystemStatus = {
     status: 'operational' | 'degraded' | 'down' | 'loading';
@@ -80,6 +81,9 @@ export function RightBar() {
                                 title: 'API Documentation',
                                 subtitle: 'View full API reference',
                                 showChevron: true,
+                                onPress: () => {
+                                    router.push('/(tabs)/explore');
+                                },
                             },
                             {
                                 id: 'webhook',
@@ -88,6 +92,9 @@ export function RightBar() {
                                 title: 'Webhook Guide',
                                 subtitle: 'Setup webhook endpoints',
                                 showChevron: true,
+                                onPress: () => {
+                                    router.push('/(tabs)/explore?section=webhooks');
+                                },
                             },
                             {
                                 id: 'examples',
@@ -96,6 +103,9 @@ export function RightBar() {
                                 title: 'Code Examples',
                                 subtitle: 'Sample implementations',
                                 showChevron: true,
+                                onPress: () => {
+                                    Linking.openURL('https://github.com/OxyHQ/examples');
+                                },
                             },
                         ]}
                     />
