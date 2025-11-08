@@ -139,7 +139,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
     }, [initialSelectedIds]);
 
-    const toggleSelect = useCallback((file: FileMetadata) => {
+    const toggleSelect = useCallback(async (file: FileMetadata) => {
         if (!selectMode) return;
         if (disabledMimeTypes.length) {
             const blocked = disabledMimeTypes.some(mt => file.contentType === mt || file.contentType.startsWith(mt.endsWith('/') ? mt : mt + '/'));
@@ -148,6 +148,19 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 return;
             }
         }
+        
+        // Update file visibility if it differs from defaultVisibility
+        const fileVisibility = (file.metadata as any)?.visibility || 'private';
+        if (fileVisibility !== defaultVisibility) {
+            try {
+                await oxyServices.assetUpdateVisibility(file.id, defaultVisibility);
+                console.log(`Updated file ${file.id} visibility from ${fileVisibility} to ${defaultVisibility}`);
+            } catch (error) {
+                console.error('Failed to update file visibility:', error);
+                // Continue anyway - selection shouldn't fail if visibility update fails
+            }
+        }
+        
         if (!multiSelect) {
             onSelect?.(file);
             if (afterSelect === 'back') {
@@ -171,16 +184,33 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             }
             return next;
         });
-    }, [selectMode, multiSelect, onSelect, onClose, goBack, disabledMimeTypes, maxSelection, afterSelect]);
+    }, [selectMode, multiSelect, onSelect, onClose, goBack, disabledMimeTypes, maxSelection, afterSelect, defaultVisibility, oxyServices]);
 
-    const confirmMultiSelection = useCallback(() => {
+    const confirmMultiSelection = useCallback(async () => {
         if (!selectMode || !multiSelect) return;
         const map: Record<string, FileMetadata> = {};
         files.forEach(f => { map[f.id] = f; });
         const chosen = Array.from(selectedIds).map(id => map[id]).filter(Boolean);
+        
+        // Update visibility for all selected files if needed
+        const updatePromises = chosen.map(async (file) => {
+            const fileVisibility = (file.metadata as any)?.visibility || 'private';
+            if (fileVisibility !== defaultVisibility) {
+                try {
+                    await oxyServices.assetUpdateVisibility(file.id, defaultVisibility);
+                    console.log(`Updated file ${file.id} visibility from ${fileVisibility} to ${defaultVisibility}`);
+                } catch (error) {
+                    console.error(`Failed to update visibility for ${file.id}:`, error);
+                }
+            }
+        });
+        
+        // Wait for all visibility updates (but don't block on failures)
+        await Promise.allSettled(updatePromises);
+        
         onConfirmSelection?.(chosen);
         onClose?.();
-    }, [selectMode, multiSelect, selectedIds, files, onConfirmSelection, onClose]);
+    }, [selectMode, multiSelect, selectedIds, files, onConfirmSelection, onClose, defaultVisibility, oxyServices]);
 
     const endUpload = useCallback(() => {
         const started = uploadStartRef.current;
