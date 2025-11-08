@@ -106,16 +106,16 @@ export default function HomeScreen() {
                   },
                   ...(app.description
                     ? [
-                        {
-                          id: `${app.id}-description`,
-                          icon: 'document-text' as keyof typeof Ionicons.glyphMap,
-                          iconColor: '#8E8E93',
-                          title: 'Description',
-                          subtitle: app.description,
-                          showChevron: false,
-                          multiRow: true,
-                        },
-                      ]
+                      {
+                        id: `${app.id}-description`,
+                        icon: 'document-text' as keyof typeof Ionicons.glyphMap,
+                        iconColor: '#8E8E93',
+                        title: 'Description',
+                        subtitle: app.description,
+                        showChevron: false,
+                        multiRow: true,
+                      },
+                    ]
                     : []),
                   {
                     id: `${app.id}-apikey`,
@@ -140,16 +140,16 @@ export default function HomeScreen() {
                   },
                   ...(app.devWebhookUrl
                     ? [
-                        {
-                          id: `${app.id}-dev-webhook`,
-                          icon: 'code-working' as keyof typeof Ionicons.glyphMap,
-                          iconColor: '#FF9500',
-                          title: 'Dev Webhook URL',
-                          subtitle: app.devWebhookUrl,
-                          showChevron: false,
-                          multiRow: true,
-                        },
-                      ]
+                      {
+                        id: `${app.id}-dev-webhook`,
+                        icon: 'code-working' as keyof typeof Ionicons.glyphMap,
+                        iconColor: '#FF9500',
+                        title: 'Dev Webhook URL',
+                        subtitle: app.devWebhookUrl,
+                        showChevron: false,
+                        multiRow: true,
+                      },
+                    ]
                     : []),
                   {
                     id: `${app.id}-created`,

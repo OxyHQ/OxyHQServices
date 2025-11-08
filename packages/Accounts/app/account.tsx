@@ -12,7 +12,7 @@ export default function AccountScreen() {
     const colorScheme = useColorScheme() ?? 'light';
     const colors = Colors[colorScheme];
     const { width } = useWindowDimensions();
-    
+
     // Determine if we're on desktop (web with large screen)
     const isDesktop = Platform.OS === 'web' && width >= 768;
 
@@ -113,7 +113,7 @@ export default function AccountScreen() {
             </Section>
 
             <Section title="Sign-in methods">
-                <ThemedText style={styles.subtitle}>Manage your ways of logging into xAI & Grok.</ThemedText>
+                <ThemedText style={styles.subtitle}>Manage your ways of logging into Oxy.</ThemedText>
                 <View style={styles.accountCard}>
                     <GroupedSection items={signInMethods} />
                 </View>
@@ -124,7 +124,7 @@ export default function AccountScreen() {
     if (isDesktop) {
         return (
             <View style={[styles.container, { backgroundColor: colors.background }]}>
-                <ScrollView 
+                <ScrollView
                     style={styles.scrollView}
                     contentContainerStyle={styles.desktopContent}
                     showsVerticalScrollIndicator={false}
@@ -137,7 +137,7 @@ export default function AccountScreen() {
                             <ThemedText style={styles.welcomeText}>Welcome, Nate.</ThemedText>
                             <ThemedText style={styles.welcomeSubtext}>Manage your xAI account.</ThemedText>
                         </View>
-                        
+
                         <View style={styles.menuContainer}>
                             <TouchableOpacity style={[styles.menuItem, styles.menuItemActive, { backgroundColor: colors.card }]}>
                                 <Ionicons name="person-outline" size={20} color={colors.text} />
@@ -171,7 +171,7 @@ export default function AccountScreen() {
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
-            <ScrollView 
+            <ScrollView
                 style={styles.scrollView}
                 contentContainerStyle={styles.mobileContent}
                 showsVerticalScrollIndicator={false}
@@ -181,7 +181,7 @@ export default function AccountScreen() {
                 </View>
                 {renderContent()}
             </ScrollView>
-            
+
             <View style={[styles.mobileTabBar, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
                 <TouchableOpacity style={styles.tabItem}>
                     <Ionicons name="person" size={24} color={colors.text} />
