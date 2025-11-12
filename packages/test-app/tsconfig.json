@@ -1,10 +1,29 @@
 {
-  "extends": "expo/tsconfig.base",
   "compilerOptions": {
+    "baseUrl": ".",
     "strict": true,
+    "jsx": "react-jsx",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
     "paths": {
       "@/*": [
         "./*"
+      ],
+      "@oxyhq/services": [
+        "../services/src"
+      ],
+      "@oxyhq/services/*": [
+        "../services/src/*"
+      ],
+      "@oxyhq/services/core": [
+        "../services/src/core"
+      ],
+      "@oxyhq/services/full": [
+        "../services/src"
+      ],
+      "@oxyhq/services/ui": [
+        "../services/src/ui"
       ]
     }
   },
@@ -12,6 +31,9 @@
     "**/*.ts",
     "**/*.tsx",
     ".expo/types/**/*.ts",
-    "expo-env.d.ts"
-  ]
+    "expo-env.d.ts",
+    "../services/src/**/*.ts",
+    "../services/src/**/*.tsx"
+  ],
+  "extends": "expo/tsconfig.base"
 }

@@ -20,6 +20,10 @@ The Metro config automatically watches the monorepo root and resolves `@oxyhq/se
 
 You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
 
+### Web bundler quirk
+
+Metro expects web bundle requests to include a bundle path (for example `/index.bundle?platform=web`). Some tooling issues in Expo SDK 54 send `/?platform=web`, which causes Metro to throw an error about JSC-safe URLs. Our `metro.config.js` now rewrites those requests so you can run `npm run web` without tweaks.
+
 ## Develop `@oxyhq/services` locally
 
 - Edit code in `packages/services/src/**`

@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState, useEffect, useMemo, forwardRef, useImperativeHandle } from 'react';
+import { useCallback, useRef, useState, useEffect, useMemo, forwardRef, useImperativeHandle, type FC } from 'react';
 import { View, Text, StyleSheet, Platform, Animated, StatusBar, Keyboard, KeyboardEvent, AppState } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -23,7 +23,7 @@ setupFonts();
  * 1. As a context provider for authentication and session management across the app
  * 2. As a UI component for authentication and account management using a bottom sheet
  */
-const OxyProvider: React.FC<OxyProviderProps> = (props) => {
+const OxyProvider: FC<OxyProviderProps> = (props) => {
     const {
         oxyServices,
         children,
