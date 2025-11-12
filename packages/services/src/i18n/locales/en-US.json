@@ -35,7 +35,9 @@
   "signup": {
     "welcome": {
       "title": "Welcome to Oxy!",
-      "subtitle": "Let's create your account in just a few steps"
+      "subtitle": "Let's create your account in just a few steps",
+      "haveAccount": "Already have an account?",
+      "signInCta": "Sign in"
     },
     "identity": {
       "title": "Who are you?",
