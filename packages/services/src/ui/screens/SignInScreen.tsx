@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { useThemeColors } from '../styles';
@@ -29,9 +29,6 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>(
         initialUserProfile ? 'valid' : 'idle'
     );
-
-    // Cache for validation results to prevent repeated API calls
-    const validationCache = useRef<Map<string, { profile: any }>>(new Map());
 
     const { login, completeMfaLogin, isLoading, user, isAuthenticated, sessions, oxyServices } = useOxy();
 
@@ -68,14 +65,13 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             return false;
         }
 
-        // Check cache first
-        const cached = validationCache.current.get(usernameToValidate);
-        if (cached) {
-            if (__DEV__) console.log('✅ Username found in cache:', cached.profile);
-            setUserProfile(cached.profile);
-            setValidationStatus('valid');
-            setErrorMessage('');
-            return true;
+        const offlineDetected = typeof navigator !== 'undefined' && navigator.onLine === false;
+
+        if (offlineDetected) {
+            if (__DEV__) console.log('⚠️ Offline detected, skipping username validation');
+            setValidationStatus('invalid');
+            setErrorMessage('No connection. Check your internet connection and try again.');
+            return false;
         }
 
         if (__DEV__) console.log('🔄 Validating username with API...');
@@ -100,11 +96,6 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                 setValidationStatus('valid');
                 setErrorMessage('');
 
-                // Cache the result
-                validationCache.current.set(usernameToValidate, {
-                    profile: profileData
-                });
-
                 return true;
             } else {
                 if (__DEV__) console.log('❌ Username not found');
@@ -116,25 +107,29 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             if (__DEV__) console.log('🚨 Validation error:', error);
 
             // If user not found (404), username doesn't exist
-            if (error.status === 404 || error.code === 'USER_NOT_FOUND') {
+            if (error?.status === 404 || error?.code === 'USER_NOT_FOUND') {
                 console.log('❌ Username not found (404)');
                 setValidationStatus('invalid');
                 setErrorMessage('Username not found.');
                 return false;
             }
 
-            // For development/testing: if API fails, allow any 3+ character username
-            if (__DEV__) {
-                if (__DEV__) console.log('⚠️ Development mode: allowing username due to API error');
-                setValidationStatus('valid');
-                setErrorMessage('');
-                return true;
-            }
+            const isNetworkError =
+                error?.status === 0 ||
+                error?.code === 'ECONNABORTED' ||
+                error?.code === 'ERR_NETWORK' ||
+                error?.message?.toLowerCase?.().includes('network request failed') ||
+                error?.message?.toLowerCase?.().includes('network error') ||
+                error?.name === 'AbortError' ||
+                error?.type === 'network';
 
-            // For other errors, show generic message
             console.error('Username validation error:', error);
             setValidationStatus('invalid');
-            setErrorMessage('Unable to validate username. Please try again.');
+            setErrorMessage(
+                isNetworkError
+                    ? 'No connection. Check your internet connection and try again.'
+                    : 'Unable to validate username. Please try again.'
+            );
             return false;
         } finally {
             setIsValidating(false);
@@ -200,13 +195,6 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             setErrorMessage(error.message || 'Login failed');
         }
     }, [username, password, login, onAuthenticated, userProfile]);
-
-    // Simple cleanup on unmount - that's all we need for username validation
-    useEffect(() => {
-        return () => {
-            validationCache.current.clear();
-        };
-    }, []);
 
     // Step configurations
     const steps: StepConfig[] = useMemo(() => {
