@@ -10,7 +10,7 @@ import { Toaster } from '../../lib/sonner';
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 
 // Import bottom sheet components directly - no longer a peer dependency
-import { BottomSheetModal, BottomSheetBackdrop, type BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView, BottomSheetScrollView } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop, type BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView } from '@gorhom/bottom-sheet';
 import type { BottomSheetModalMethods as BottomSheetModalRef } from '@gorhom/bottom-sheet/lib/typescript/types';
 
 // Initialize fonts automatically
@@ -335,18 +335,19 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
             onChange={(index) => { isOpenRef.current = index !== -1; }}
             onDismiss={() => { isOpenRef.current = false; }}
         >
-            <BottomSheetScrollView
-                style={[styles.contentContainer]}
-                keyboardShouldPersistTaps="handled"
-                contentContainerStyle={{ paddingBottom: (insets?.bottom ?? 0) + (appInsets?.bottom ?? 0) }}
-            >
-                <View style={styles.centeredContentWrapper}>
+            <BottomSheetView style={[styles.contentContainer]}>
+                <View
+                    style={[
+                        styles.centeredContentWrapper,
+                        { paddingBottom: (insets?.bottom ?? 0) + (appInsets?.bottom ?? 0) }
+                    ]}
+                >
                     <Animated.View
                         style={[
                             styles.animatedContent,
-                            Platform.OS === 'android' ?
-                                { opacity: 1 } :
-                                { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
+                            Platform.OS === 'android'
+                                ? { opacity: 1 }
+                                : { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
                         ]}
                     >
                         {oxyServices ? (
@@ -366,7 +367,7 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
                         )}
                     </Animated.View>
                 </View>
-            </BottomSheetScrollView>
+            </BottomSheetView>
             {showInternalToaster && (
                 <View style={styles.toasterContainer}>
                     <Toaster position="top-center" swipeToDismissDirection="left" />

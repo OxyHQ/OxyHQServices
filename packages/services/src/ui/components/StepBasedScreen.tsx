@@ -13,11 +13,7 @@ import Animated, {
     useSharedValue,
     useAnimatedStyle,
     withTiming,
-    withSequence,
-    withDelay,
-    withSpring,
     runOnJS,
-    interpolate,
     type SharedValue,
 } from 'react-native-reanimated';
 import { useThemeColors, createAuthStyles } from '../styles';
@@ -231,13 +227,6 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
 
         setState(prev => ({ ...prev, isTransitioning: true }));
 
-        // Scale down current content
-        scaleAnim.value = withSequence(
-            withTiming(0.95, { duration: 150 }),
-            withTiming(0.95, { duration: 50 })
-        );
-
-        // Define a JS function for runOnJS to avoid inline closures
         const applyStepChange = (targetStep: number, totalSteps: number) => {
             setState(prev => ({
                 ...prev,
@@ -245,33 +234,24 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
                 isTransitioning: false,
             }));
             onStepChangeRef.current?.(targetStep, totalSteps);
+
+            // Prepare next step animation
+            fadeAnim.value = 0;
+            scaleAnim.value = 0.98;
+            slideAnim.value = 0;
+
+            fadeAnim.value = withTiming(1, { duration: 220 });
+            scaleAnim.value = withTiming(1, { duration: 220 });
         };
 
-        fadeAnim.value = withSequence(
-            withTiming(0, { duration: 200 }),
-            withTiming(0, { duration: 50 }, (finished) => {
-                if (finished) {
-                    // Call back to JS thread correctly
-                    runOnJS(applyStepChange)(nextStep, steps.length);
-
-                    // Reset animations with proper timing
-                    slideAnim.value = withDelay(16, withTiming(-50, { duration: 0 }));
-                    scaleAnim.value = withDelay(16, withTiming(0.95, { duration: 0 }));
-
-                    // Animate in new content
-                    fadeAnim.value = withDelay(16, withTiming(1, { duration: 300 }));
-                    slideAnim.value = withDelay(16, withSpring(0, {
-                        damping: 15,
-                        stiffness: 200,
-                    }));
-                    scaleAnim.value = withDelay(16, withSpring(1, {
-                        damping: 15,
-                        stiffness: 200,
-                    }));
-                }
-            })
-        );
-    }, [enableAnimations, steps.length]);
+        // Animate current step out
+        scaleAnim.value = withTiming(0.98, { duration: 180 });
+        fadeAnim.value = withTiming(0, { duration: 180 }, (finished) => {
+            if (finished) {
+                runOnJS(applyStepChange)(nextStep, steps.length);
+            }
+        });
+    }, [enableAnimations, steps.length, fadeAnim, scaleAnim, slideAnim]);
 
     // Navigation functions
     const nextStep = useCallback(() => {
