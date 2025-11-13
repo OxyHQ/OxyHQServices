@@ -1,71 +1,26 @@
 import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
-import mongoose from 'mongoose';
 import { User } from '../models/User';
-import { ISession } from '../models/Session';
-import Session from '../models/Session'; // Import the default export
+import Session from '../models/Session';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { SessionAuthResponse, ClientSession } from '../types/session';
 import { 
-  extractDeviceInfo, 
-  generateDeviceFingerprint, 
-  registerDevice,
   getDeviceActiveSessions,
-  logoutAllDeviceSessions,
-  DeviceFingerprint 
+  logoutAllDeviceSessions
 } from '../utils/deviceUtils';
 import { emitSessionUpdate } from '../server';
-import Notification from '../models/Notification'; // Added import for Notification
+import Notification from '../models/Notification';
 import RecoveryCode from '../models/RecoveryCode';
 import Totp from '../models/Totp';
 import RecoveryFactors from '../models/RecoveryFactors';
 import { authenticator } from 'otplib';
 import sessionService from '../services/session.service';
+import sessionCache from '../utils/sessionCache';
 import { logger } from '../utils/logger';
 
-const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET!;
-const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET!;
-const ACCESS_TOKEN_EXPIRES_IN = '1h';
-const REFRESH_TOKEN_EXPIRES_IN = '7d';
 const MFA_TOKEN_SECRET: import('jsonwebtoken').Secret = (process.env.MFA_TOKEN_SECRET || process.env.REFRESH_TOKEN_SECRET!) as import('jsonwebtoken').Secret;
 const MFA_TOKEN_TTL_SECONDS: number = Number(process.env.MFA_TOKEN_TTL_SECONDS || 300); // default 5 minutes
-
-// Generate device ID
-const generateDeviceId = (): string => {
-  return crypto.randomBytes(32).toString('hex');
-};
-
-// Generate session tokens
-const generateTokens = (userId: string, sessionId: string) => {
-  // Include both 'id' and 'userId' for compatibility
-  // 'id' is expected by auth.ts routes
-  // 'userId' is expected by OxyHQServices library
-  const accessPayload = { 
-    id: userId,
-    userId: userId,  // For OxyHQServices compatibility
-    sessionId
-  };
-  
-  const refreshPayload = {
-    id: userId,
-    userId: userId,  // For OxyHQServices compatibility
-    sessionId,
-    type: 'refresh'
-  };
-  
-  const accessToken = jwt.sign(accessPayload, ACCESS_TOKEN_SECRET, { 
-    expiresIn: ACCESS_TOKEN_EXPIRES_IN 
-  });
-  
-  const refreshToken = jwt.sign(
-    refreshPayload, 
-    REFRESH_TOKEN_SECRET, 
-    { expiresIn: REFRESH_TOKEN_EXPIRES_IN }
-  );
-  
-  return { accessToken, refreshToken };
-};
 
 export class SessionController {
   
@@ -330,10 +285,13 @@ export class SessionController {
       const sessionId = req.header('x-session-id') || req.body?.sessionId;
       if (!sessionId) return res.status(400).json({ error: 'Session ID required' });
 
-      // Lookup session and user
-      const session = await Session.findOne({ sessionId, isActive: true }).populate('userId', '+password');
-      if (!session) return res.status(401).json({ error: 'Invalid session' });
-      const user = session.userId as any;
+      // Validate session using service
+      const result = await sessionService.validateSessionById(sessionId, false);
+      if (!result || !result.session) return res.status(401).json({ error: 'Invalid session' });
+      
+      // Fetch user with password field for TOTP operations
+      const user = await User.findById(result.session.userId).select('+password');
+      if (!user) return res.status(401).json({ error: 'User not found' });
 
       // Generate secret
       const secret = authenticator.generateSecret();
@@ -362,9 +320,13 @@ export class SessionController {
       const { code } = req.body || {};
       if (!sessionId || !code) return res.status(400).json({ error: 'Session ID and code are required' });
 
-      const session = await Session.findOne({ sessionId, isActive: true }).populate('userId', '+password');
-      if (!session) return res.status(401).json({ error: 'Invalid session' });
-      const user = session.userId as any;
+      // Validate session using service
+      const result = await sessionService.validateSessionById(sessionId, false);
+      if (!result || !result.session) return res.status(401).json({ error: 'Invalid session' });
+      
+      // Fetch user with password field for TOTP operations
+      const user = await User.findById(result.session.userId).select('+password');
+      if (!user) return res.status(401).json({ error: 'User not found' });
 
       const totp = await Totp.findOne({ userId: user._id }).select('+secret');
       if (!totp || !totp.secret) return res.status(400).json({ error: 'TOTP not initialized' });
@@ -415,9 +377,13 @@ export class SessionController {
       const { code } = req.body || {};
       if (!sessionId || !code) return res.status(400).json({ error: 'Session ID and code are required' });
 
-      const session = await Session.findOne({ sessionId, isActive: true }).populate('userId', '+password');
-      if (!session) return res.status(401).json({ error: 'Invalid session' });
-      const user = session.userId as any;
+      // Validate session using service
+      const result = await sessionService.validateSessionById(sessionId, false);
+      if (!result || !result.session) return res.status(401).json({ error: 'Invalid session' });
+      
+      // Fetch user with password field for TOTP operations
+      const user = await User.findById(result.session.userId).select('+password');
+      if (!user) return res.status(401).json({ error: 'User not found' });
 
       const totp = await Totp.findOne({ userId: user._id }).select('+secret');
       if (!totp || !totp.secret) return res.status(400).json({ error: 'TOTP not configured' });
@@ -703,18 +669,14 @@ export class SessionController {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Find current session to get device ID
-      const currentSession = await Session.findOne({
-        sessionId: sessionId,
-        isActive: true
-      });
-
-      if (!currentSession) {
+      // Get current session using service
+      const currentSessionResult = await sessionService.validateSessionById(sessionId, false);
+      if (!currentSessionResult || !currentSessionResult.session) {
         return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
       }
 
       // Get all sessions for this device
-      const deviceSessions = await getDeviceActiveSessions(currentSession.deviceId);
+      const deviceSessions = await getDeviceActiveSessions(currentSessionResult.session.deviceId);
 
       res.json(deviceSessions);
     } catch (error) {
@@ -732,18 +694,14 @@ export class SessionController {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Find current session to get device ID
-      const currentSession = await Session.findOne({
-        sessionId: sessionId,
-        isActive: true
-      });
-
-      if (!currentSession) {
+      // Get current session using service
+      const currentSessionResult = await sessionService.validateSessionById(sessionId, false);
+      if (!currentSessionResult || !currentSessionResult.session) {
         return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
       }
 
       // Logout all sessions for this device
-      const result = await logoutAllDeviceSessions(currentSession.deviceId);
+      const result = await logoutAllDeviceSessions(currentSessionResult.session.deviceId);
 
       res.json(result);
     } catch (error) {
@@ -766,18 +724,25 @@ export class SessionController {
         return res.status(400).json({ error: 'Device name is required' });
       }
 
-      // Find and update session
-      const session = await Session.findOne({
-        sessionId: sessionId,
-        isActive: true
-      });
-
-      if (!session) {
+      // Get session using service
+      const result = await sessionService.validateSessionById(sessionId, false);
+      if (!result || !result.session) {
         return res.status(404).json({ error: 'Session not found' });
       }
 
-      session.deviceInfo.deviceName = deviceName;
-      await session.save();
+      // Update device name in database
+      await Session.updateOne(
+        { sessionId },
+        { 
+          $set: { 
+            'deviceInfo.deviceName': deviceName,
+            updatedAt: new Date()
+          } 
+        }
+      );
+
+      // Invalidate cache so next lookup gets fresh data
+      sessionCache.invalidate(sessionId);
 
       res.json({ 
         success: true, 
