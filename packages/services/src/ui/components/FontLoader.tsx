@@ -22,7 +22,7 @@ const getPhuduFonts = () => {
         };
     } catch (error) {
         if (__DEV__) {
-            console.warn('Failed to load Phudu fonts:', error);
+        console.warn('Failed to load Phudu fonts:', error);
         }
         return null;
     }
@@ -56,7 +56,7 @@ export const FontLoader = ({
                 setFontState('loaded');
             } catch (error) {
                 if (__DEV__) {
-                    console.error('Error loading fonts:', error);
+                console.error('Error loading fonts:', error);
                 }
                 setFontState('error');
             }
@@ -143,7 +143,7 @@ export const setupFonts = async () => {
                 style.textContent = fontFaceRules;
                 document.head.appendChild(style);
                 if (__DEV__) {
-                    console.info('All Phudu web fonts have been dynamically loaded');
+                console.info('All Phudu web fonts have been dynamically loaded');
                 }
             }
         } else {
@@ -154,8 +154,8 @@ export const setupFonts = async () => {
         return true;
     } catch (error: unknown) {
         if (__DEV__) {
-            const errorMessage = error instanceof Error ? error.message : String(error);
-            console.warn('Error setting up fonts:', errorMessage);
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.warn('Error setting up fonts:', errorMessage);
         }
         return false;
     }

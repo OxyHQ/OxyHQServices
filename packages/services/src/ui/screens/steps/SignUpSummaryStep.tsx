@@ -1,10 +1,10 @@
 import type React from 'react';
 import type { RouteName } from '../../navigation/routes';
-import { View, Text, StyleSheet, Platform } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { View, Text } from 'react-native';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
+import { Section, GroupedSection } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
-import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
+import { stepStyles } from '../../styles/spacing';
 
 interface SignUpSummaryStepProps {
     // Common props from StepBasedScreen
@@ -29,6 +29,7 @@ interface SignUpSummaryStepProps {
 const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
     colors,
     styles,
+    theme,
     nextStep,
     prevStep,
     allStepData,
@@ -36,7 +37,6 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
 }) => {
     const { t } = useI18n();
     const baseStyles = stepStyles;
-    const webShadowReset = Platform.OS === 'web' ? ({ boxShadow: 'none' } as any) : null;
     // Extract data from previous steps
     const identityData = allStepData[1] || {}; // Step 2 (index 1)
     const securityData = allStepData[2] || {}; // Step 3 (index 2)
@@ -47,77 +47,84 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
     // Check if all required data is available
     const hasValidData = username && email && password;
 
-
-
     return (
         <>
             <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
-                <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('signup.summary.title')}</Text>
-                <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>{t('signup.summary.subtitle')}</Text>
+                <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>
+                    {t('signup.summary.title')}
+                </Text>
+                <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>
+                    {t('signup.summary.subtitle')}
+                </Text>
             </View>
 
             <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
-                <View
-                    style={[
-                        stylesheet.summaryCard,
-                        { backgroundColor: colors.inputBackground || colors.card || 'rgba(0,0,0,0.04)', borderColor: colors.border },
-                        webShadowReset,
-                    ]}
+                <Section
+                    title={t('signup.summary.sections.account') || t('signup.summary.sectionTitle') || 'Account Information'}
+                    theme={theme as 'light' | 'dark'}
+                    isFirst={true}
                 >
-                    <View style={stylesheet.summaryRow}>
-                        <Ionicons name="person-outline" size={20} color={colors.secondaryText} style={stylesheet.summaryIcon} />
-                        <View style={stylesheet.summaryContent}>
-                            <Text style={[styles.footerText, stylesheet.summaryLabel, { color: colors.secondaryText }]}>
-                                {t('signup.summary.fields.username')}
-                            </Text>
-                            <Text style={[styles.modernInput, stylesheet.summaryValue, { color: colors.text }]}>
-                                @{username || t('signup.summary.notSet')}
-                            </Text>
-                        </View>
-                    </View>
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'username',
+                                icon: 'person-outline',
+                                iconColor: colors.primary,
+                                title: t('signup.summary.fields.username'),
+                                subtitle: `@${username || t('signup.summary.notSet')}`,
+                                showChevron: false,
+                            },
+                            {
+                                id: 'email',
+                                icon: 'mail-outline',
+                                iconColor: colors.primary,
+                                title: t('signup.summary.fields.email'),
+                                subtitle: email || t('signup.summary.notSet'),
+                                showChevron: false,
+                            },
+                            {
+                                id: 'password',
+                                icon: 'lock-closed-outline',
+                                iconColor: colors.primary,
+                                title: t('signup.summary.fields.password') || 'Password',
+                                subtitle: password ? '••••••••' : t('signup.summary.notSet'),
+                                showChevron: false,
+                            },
+                        ]}
+                        theme={theme as 'light' | 'dark'}
+                    />
+                </Section>
 
-                    <View style={stylesheet.summaryRow}>
-                        <Ionicons name="mail-outline" size={20} color={colors.secondaryText} style={stylesheet.summaryIcon} />
-                        <View style={stylesheet.summaryContent}>
-                            <Text style={[styles.footerText, stylesheet.summaryLabel, { color: colors.secondaryText }]}>
-                                {t('signup.summary.fields.email')}
-                            </Text>
-                            <Text style={[styles.modernInput, stylesheet.summaryValue, { color: colors.text }]}>
-                                {email || t('signup.summary.notSet')}
-                            </Text>
-                        </View>
-                    </View>
-                </View>
-
-                <View
-                    style={[
-                        stylesheet.infoBanner,
-                        {
-                            backgroundColor: `${colors.warning}10`,
-                            borderColor: `${colors.warning}30`,
-                        },
-                    ]}
+                <Section
+                    title={t('signup.summary.sections.next') || 'Next Steps'}
+                    theme={theme as 'light' | 'dark'}
                 >
-                    <Ionicons name="shield-checkmark" size={20} color={colors.warning} style={stylesheet.bannerIcon} />
-                    <Text style={[styles.footerText, stylesheet.bannerText, { color: colors.warning }]}>
-                        {t('signup.summary.securityTip')}
-                    </Text>
-                </View>
-
-                <View
-                    style={[
-                        stylesheet.infoBanner,
-                        {
-                            backgroundColor: `${colors.success}10`,
-                            borderColor: `${colors.success}30`,
-                        },
-                    ]}
-                >
-                    <Ionicons name="checkmark-circle" size={20} color={colors.success} style={stylesheet.bannerIcon} />
-                    <Text style={[styles.footerText, stylesheet.bannerText, { color: colors.success }]}>
-                        {t('signup.summary.legalReminder')}
-                    </Text>
-                </View>
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'security-tip',
+                                icon: 'shield-checkmark',
+                                iconColor: colors.warning,
+                                title: t('signup.summary.next.securityTitle') || 'Keep your account secure',
+                                subtitle: t('signup.summary.securityTip'),
+                                showChevron: false,
+                                multiRow: true,
+                                dense: true,
+                            },
+                            {
+                                id: 'legal-reminder',
+                                icon: 'checkmark-circle',
+                                iconColor: colors.success,
+                                title: t('signup.summary.next.legalTitle') || 'You’re all set',
+                                subtitle: t('signup.summary.legalReminder'),
+                                showChevron: false,
+                                multiRow: true,
+                                dense: true,
+                            },
+                        ]}
+                        theme={theme as 'light' | 'dark'}
+                    />
+                </Section>
             </View>
 
             <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
@@ -146,51 +153,3 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
 };
 
 export default SignUpSummaryStep;
-
-const stylesheet = StyleSheet.create({
-    summaryCard: {
-        width: '100%',
-        maxWidth: 420,
-        borderRadius: 28,
-        paddingHorizontal: 20,
-        paddingVertical: 18,
-        borderWidth: 1,
-        gap: STEP_INNER_GAP,
-        alignItems: 'stretch',
-        shadowColor: 'transparent',
-    },
-    summaryRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: STEP_INNER_GAP,
-    },
-    summaryIcon: {
-        marginRight: 0,
-    },
-    summaryContent: {
-        flex: 1,
-        gap: STEP_INNER_GAP,
-    },
-    summaryLabel: {
-        fontSize: 12,
-    },
-    summaryValue: {
-        fontSize: 16,
-    },
-    infoBanner: {
-        flexDirection: 'row',
-        alignItems: 'flex-start',
-        gap: STEP_INNER_GAP,
-        padding: STEP_INNER_GAP,
-        borderRadius: 16,
-        borderWidth: 1,
-        marginTop: STEP_GAP,
-    },
-    bannerIcon: {
-        marginTop: 0,
-    },
-    bannerText: {
-        flex: 1,
-        fontSize: 14,
-    },
-});

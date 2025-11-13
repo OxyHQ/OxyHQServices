@@ -34,7 +34,7 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
     // Use cached data if available and not forcing refresh
     if (!forceRefresh && state.user && cacheValid) {
       if (__DEV__) {
-        console.log('AuthStore: Using cached user data (age:', cacheAge, 'ms)');
+      console.log('AuthStore: Using cached user data (age:', cacheAge, 'ms)');
       }
       return;
     }
@@ -46,7 +46,7 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch user';
       if (__DEV__) {
-        console.error('AuthStore: Error fetching user:', error);
+      console.error('AuthStore: Error fetching user:', error);
       }
       set({ error: errorMessage, isLoading: false });
     }
@@ -60,7 +60,7 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to update user';
       if (__DEV__) {
-        console.error('AuthStore: Error updating user:', error);
+      console.error('AuthStore: Error updating user:', error);
       }
       set({ error: errorMessage, isLoading: false });
     }

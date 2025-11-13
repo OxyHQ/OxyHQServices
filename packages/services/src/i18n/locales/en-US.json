@@ -73,13 +73,23 @@
     "summary": {
       "title": "Almost There!",
       "subtitle": "Review your information and create your account",
+      "sectionTitle": "Account Information",
       "fields": {
         "username": "Username",
-        "email": "Email"
+        "email": "Email",
+        "password": "Password"
       },
       "notSet": "Not set",
       "securityTip": "For stronger security, enable Two‑Factor Authentication (TOTP) from Account Settings after you create your account.",
-      "legalReminder": "By creating an account, you agree to our Terms of Service and Privacy Policy."
+      "legalReminder": "By creating an account, you agree to our Terms of Service and Privacy Policy.",
+      "sections": {
+        "account": "Account Information",
+        "next": "Next Steps"
+      },
+      "next": {
+        "securityTitle": "Keep your account secure",
+        "legalTitle": "You're all set"
+      }
     }
   },
   "welcomeNew": {
@@ -603,13 +613,25 @@
     "actions": {
       "manage": "Manage"
     },
-    "loadingAdditional": { "title": "Loading accounts...", "subtitle": "Please wait while we load your additional accounts" },
+    "loadingAdditional": {
+      "title": "Loading accounts...",
+      "subtitle": "Please wait while we load your additional accounts"
+    },
     "additional": {
-      "noAccounts": { "title": "No other accounts", "subtitle": "Add another account to switch between them" }
+      "noAccounts": {
+        "title": "No other accounts",
+        "subtitle": "Add another account to switch between them"
+      }
     },
     "items": {
-      "addAccount": { "title": "Add Another Account", "subtitle": "Sign in with a different account" },
-      "signOutAll": { "title": "Sign out of all accounts", "subtitle": "Remove all accounts from this device" },
+      "addAccount": {
+        "title": "Add Another Account",
+        "subtitle": "Sign in with a different account"
+      },
+      "signOutAll": {
+        "title": "Sign out of all accounts",
+        "subtitle": "Remove all accounts from this device"
+      },
       "accountSwitcher": {
         "switchPrompt": "Switch to {{username}}?",
         "titleShow": "Show Account Switcher",
