@@ -27,7 +27,7 @@
     "security": {
       "dataSecure": "Your data is encrypted and secure"
     },
-    "currentlySignedInAs": "Currently signed in as {{username}}",
+    "currentlySignedInAs": "Currently signed in as",
     "totp": {
       "title": "Two‑Factor Code",
       "subtitle": "Enter the 6‑digit code from your authenticator app for @{{username}}",
