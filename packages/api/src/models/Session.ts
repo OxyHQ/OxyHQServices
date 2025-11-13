@@ -79,13 +79,15 @@ const SessionSchema: Schema = new Schema(
   }
 );
 
-// Indexes for efficient queries
+// Indexes for efficient queries - optimized for performance
+SessionSchema.index({ sessionId: 1 }, { unique: true }); // Primary lookup by sessionId (most common query)
+SessionSchema.index({ sessionId: 1, isActive: 1, expiresAt: 1 }); // Optimized for validation queries
 SessionSchema.index({ userId: 1, deviceId: 1 }); // Sessions by user and device
-SessionSchema.index({ deviceId: 1 }); // All sessions on a device
-SessionSchema.index({ accessToken: 1 }, { unique: true }); // Token-based lookups (unique)
-SessionSchema.index({ refreshToken: 1 }, { unique: true }); // Refresh token lookups (unique)
-SessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // Auto-cleanup expired sessions
 SessionSchema.index({ userId: 1, isActive: 1, expiresAt: 1 }); // Active sessions by user
+SessionSchema.index({ deviceId: 1, isActive: 1 }); // All active sessions on a device
+SessionSchema.index({ accessToken: 1 }, { unique: true, sparse: true }); // Token-based lookups (sparse for performance)
+SessionSchema.index({ refreshToken: 1 }, { unique: true, sparse: true }); // Refresh token lookups (sparse for performance)
+SessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // Auto-cleanup expired sessions
 
 // Update lastActive timestamp on session access
 SessionSchema.methods.updateLastActive = async function() {

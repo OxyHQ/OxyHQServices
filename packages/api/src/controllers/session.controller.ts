@@ -21,6 +21,8 @@ import RecoveryCode from '../models/RecoveryCode';
 import Totp from '../models/Totp';
 import RecoveryFactors from '../models/RecoveryFactors';
 import { authenticator } from 'otplib';
+import sessionService from '../services/session.service';
+import { logger } from '../utils/logger';
 
 const ACCESS_TOKEN_SECRET = process.env.ACCESS_TOKEN_SECRET!;
 const REFRESH_TOKEN_SECRET = process.env.REFRESH_TOKEN_SECRET!;
@@ -137,7 +139,7 @@ export class SessionController {
         }
       });
     } catch (error) {
-      console.error('Registration error:', error);
+      logger.error('Registration error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -165,7 +167,7 @@ export class SessionController {
       }
 
       if (!user.password) {
-        console.error('User found but no password field:', user.username);
+        logger.error('User found but no password field:', user.username);
         return res.status(500).json({ error: 'Server configuration error' });
       }
 
@@ -221,76 +223,12 @@ export class SessionController {
         }
       }
 
-      // Extract device info with potential fingerprint reuse
-      let deviceInfo = extractDeviceInfo(req, undefined, deviceName);
-      
-      // Handle device fingerprinting for device ID reuse
-      if (deviceFingerprint) {
-        const fingerprint = generateDeviceFingerprint(deviceFingerprint);
-        deviceInfo = await registerDevice(deviceInfo, fingerprint);
-      }
-
-      // Check for existing active session for this user on this device
-      const existingSession = await Session.findOne({
-        userId: user._id,
-        deviceId: deviceInfo.deviceId,
-        isActive: true,
-        expiresAt: { $gt: new Date() } // Still valid
-      });
-
-      let session: any;
-
-      if (existingSession) {
-        // Reuse existing session - update activity and extend expiration
-        existingSession.deviceInfo.lastActive = new Date();
-        existingSession.expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // Extend 7 days
-        
-        // Update device name if provided
-        if (deviceName) {
-          existingSession.deviceInfo.deviceName = deviceName;
-        }
-        
-        // Update IP address and user agent
-        existingSession.deviceInfo.ipAddress = deviceInfo.ipAddress;
-        existingSession.deviceInfo.userAgent = deviceInfo.userAgent;
-        
-        await existingSession.save();
-        session = existingSession;
-        
-        console.log(`Reusing existing session for user ${user.username} on device ${deviceInfo.deviceId}`);
-      } else {
-        // Generate session ID for new session
-        const sessionId = crypto.randomUUID();
-        
-        // Generate tokens first
-        const { accessToken, refreshToken } = generateTokens(user._id.toString(), sessionId);
-        
-        // Create new session
-        session = new Session({
-          sessionId, // Store the UUID in the sessionId field
-          userId: user._id,
-          deviceId: deviceInfo.deviceId,
-          deviceInfo: {
-            deviceName: deviceInfo.deviceName,
-            deviceType: deviceInfo.deviceType,
-            platform: deviceInfo.platform,
-            browser: deviceInfo.browser,
-            os: deviceInfo.os,
-            ipAddress: deviceInfo.ipAddress,
-            userAgent: deviceInfo.userAgent,
-            location: deviceInfo.location,
-            fingerprint: deviceInfo.fingerprint,
-            lastActive: new Date()
-          },
-          isActive: true,
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-          accessToken,
-          refreshToken
-        });
-        
-        await session.save();
-        console.log(`Created new session for user ${user.username} on device ${deviceInfo.deviceId}`);
-      }
+      // Use session service to create or reuse session (handles device fingerprinting and caching)
+      const session = await sessionService.createSession(
+        user._id.toString(),
+        req,
+        { deviceName, deviceFingerprint }
+      );
 
       // Emit session update for real-time updates
       emitSessionUpdate(user._id.toString(), {
@@ -313,7 +251,7 @@ export class SessionController {
 
       res.json(response);
     } catch (error) {
-      console.error('Login error:', error);
+      logger.error('Login error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -353,38 +291,15 @@ export class SessionController {
         return res.status(401).json({ error: 'Invalid TOTP code' });
       }
 
-      // Extract device info (fallbacks from mfa payload)
-      let deviceInfo = extractDeviceInfo(req, undefined, payload.deviceName || undefined);
-      if (payload.deviceFingerprint) {
-        const fingerprint = generateDeviceFingerprint(payload.deviceFingerprint);
-        deviceInfo = await registerDevice(deviceInfo, fingerprint);
-      }
-
-      // Create session as in signIn
-      const sessionId = crypto.randomUUID();
-      const { accessToken, refreshToken } = generateTokens(user._id.toString(), sessionId);
-      const session = new Session({
-        sessionId,
-        userId: user._id,
-        deviceId: deviceInfo.deviceId,
-        deviceInfo: {
-          deviceName: deviceInfo.deviceName,
-          deviceType: deviceInfo.deviceType,
-          platform: deviceInfo.platform,
-          browser: deviceInfo.browser,
-          os: deviceInfo.os,
-          ipAddress: deviceInfo.ipAddress,
-          userAgent: deviceInfo.userAgent,
-          location: deviceInfo.location,
-          fingerprint: deviceInfo.fingerprint,
-          lastActive: new Date()
-        },
-        isActive: true,
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        accessToken,
-        refreshToken
-      });
-      await session.save();
+      // Use session service to create session (handles device fingerprinting and caching)
+      const session = await sessionService.createSession(
+        user._id.toString(),
+        req,
+        { 
+          deviceName: payload.deviceName || undefined,
+          deviceFingerprint: payload.deviceFingerprint || undefined
+        }
+      );
 
       emitSessionUpdate(user._id.toString(), {
         type: 'session_created',
@@ -404,7 +319,7 @@ export class SessionController {
       };
       return res.json(response);
     } catch (error) {
-      console.error('Verify TOTP for login error:', error);
+      logger.error('Verify TOTP for login error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -435,7 +350,7 @@ export class SessionController {
 
       return res.json({ secret, otpauthUrl: otpauth, issuer, label });
     } catch (error) {
-      console.error('Start TOTP enrollment error:', error);
+      logger.error('Start TOTP enrollment error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -488,7 +403,7 @@ export class SessionController {
 
       return res.json({ enabled: true, backupCodes: codes, recoveryKey: rkRaw });
     } catch (error) {
-      console.error('Verify TOTP enrollment error:', error);
+      logger.error('Verify TOTP enrollment error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -516,7 +431,7 @@ export class SessionController {
 
       return res.json({ disabled: true });
     } catch (error) {
-      console.error('Disable TOTP error:', error);
+      logger.error('Disable TOTP error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -530,31 +445,25 @@ export class SessionController {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Find active session using sessionId field and populate user data
-      const session = await Session.findOne({
-        sessionId: sessionId,
-        isActive: true,
-        expiresAt: { $gt: new Date() }
-      }).populate('userId', '-password'); // Exclude password field
+      // Use session service for optimized lookup with caching
+      const result = await sessionService.validateSessionById(sessionId, true);
 
-      if (!session) {
+      if (!result || !result.session || !result.user) {
         return res.status(401).json({ 
           error: 'Invalid or expired session',
           sessionId: sessionId.substring(0, 8) + '...'
         });
       }
 
-      // Update last activity
-      session.deviceInfo.lastActive = new Date();
-      await session.save();
-
       // Transform user data to include id field for frontend compatibility
-      const userData = (session.userId as any).toObject();
-      userData.id = (session.userId as any)._id.toString();
+      const userData = (result.user as any).toObject ? (result.user as any).toObject() : result.user;
+      if (userData._id) {
+        userData.id = userData._id.toString();
+      }
 
       res.json(userData);
     } catch (error) {
-      console.error('Get user by session error:', error);
+      logger.error('Get user by session error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -568,54 +477,22 @@ export class SessionController {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Find active session using sessionId field
-      const session = await Session.findOne({
-        sessionId: sessionId,
-        isActive: true,
-        expiresAt: { $gt: new Date() }
-      });
+      // Use session service which handles auto-refresh
+      const result = await sessionService.getAccessToken(sessionId);
 
-      if (!session) {
+      if (!result) {
         return res.status(401).json({ 
           error: 'Invalid or expired session',
           sessionId: sessionId.substring(0, 8) + '...'
         });
       }
 
-      // Check if access token is expired
-      try {
-        const decoded = jwt.verify(session.accessToken, ACCESS_TOKEN_SECRET) as any;
-        const currentTime = Math.floor(Date.now() / 1000);
-        
-        if (decoded.exp && decoded.exp < currentTime) {
-          // Token is expired, generate new tokens
-          const { accessToken, refreshToken } = generateTokens(session.userId.toString(), session.sessionId);
-          
-          session.accessToken = accessToken;
-          session.refreshToken = refreshToken;
-          session.deviceInfo.lastActive = new Date();
-          await session.save();
-          
-          console.log(`Refreshed tokens for session ${sessionId.substring(0, 8)}...`);
-        }
-      } catch (tokenError) {
-        // Token is invalid, generate new tokens
-        const { accessToken, refreshToken } = generateTokens(session.userId.toString(), session.sessionId);
-        
-        session.accessToken = accessToken;
-        session.refreshToken = refreshToken;
-        session.deviceInfo.lastActive = new Date();
-        await session.save();
-        
-        console.log(`Regenerated tokens for session ${sessionId.substring(0, 8)}...`);
-      }
-
       res.json({
-        accessToken: session.accessToken,
-        expiresAt: session.expiresAt.toISOString()
+        accessToken: result.accessToken,
+        expiresAt: result.expiresAt.toISOString()
       });
     } catch (error) {
-      console.error('Get token by session error:', error);
+      logger.error('Get token by session error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -629,35 +506,30 @@ export class SessionController {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Find current session to get user ID using sessionId field
-      const currentSession = await Session.findOne({
-        sessionId: sessionId,
-        isActive: true
-      });
+      // Find current session to get user ID
+      const currentSessionResult = await sessionService.validateSessionById(sessionId, false);
 
-      if (!currentSession) {
+      if (!currentSessionResult || !currentSessionResult.session) {
         return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
       }
 
-      // Get all active sessions for this user
-      const sessions = await Session.find({
-        userId: currentSession.userId,
-        isActive: true,
-        expiresAt: { $gt: new Date() }
-      }).sort({ 'deviceInfo.lastActive': -1 });
+      // Get all active sessions for this user using service
+      const sessions = await sessionService.getUserActiveSessions(
+        currentSessionResult.session.userId.toString()
+      );
 
       // Transform sessions for client
       const clientSessions: ClientSession[] = sessions.map(session => ({
         sessionId: session.sessionId,
         deviceId: session.deviceId,
-        deviceName: session.deviceInfo.deviceName,
+        deviceName: session.deviceInfo?.deviceName,
         isActive: session.isActive,
         userId: session.userId.toString()
       }));
 
       res.json(clientSessions);
     } catch (error) {
-      console.error('Get user sessions error:', error);
+      logger.error('Get user sessions error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -675,23 +547,17 @@ export class SessionController {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Find and deactivate session using sessionId field
-      const session = await Session.findOne({
-        sessionId: sessionIdToLogout,
-        isActive: true
-      });
+      // Use session service to deactivate
+      const success = await sessionService.deactivateSession(sessionIdToLogout);
 
-      if (!session) {
+      if (!success) {
         return res.status(404).json({ error: 'Session not found' });
       }
 
-      session.isActive = false;
-      await session.save();
-
-      console.log(`Logged out session: ${sessionIdToLogout}`);
+      logger.info(`Logged out session: ${sessionIdToLogout.substring(0, 8)}...`);
       res.json({ success: true, message: 'Session logged out successfully' });
     } catch (error) {
-      console.error('Logout session error:', error);
+      logger.error('Logout session error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -705,35 +571,28 @@ export class SessionController {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Find current session to get user ID using sessionId field
-      const currentSession = await Session.findOne({
-        sessionId: sessionId,
-        isActive: true
-      });
+      // Find current session to get user ID
+      const currentSessionResult = await sessionService.validateSessionById(sessionId, false);
 
-      if (!currentSession) {
+      if (!currentSessionResult || !currentSessionResult.session) {
         return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
       }
 
       // Deactivate all sessions for this user except the current one
-      const result = await Session.updateMany(
-        { 
-          userId: currentSession.userId, 
-          isActive: true,
-          sessionId: { $ne: sessionId } // Exclude current session
-        },
-        { isActive: false }
+      const count = await sessionService.deactivateAllUserSessions(
+        currentSessionResult.session.userId.toString(),
+        sessionId
       );
 
-      console.log(`Logged out ${result.modifiedCount} sessions for user ${currentSession.userId}`);
+      logger.info(`Logged out ${count} sessions for user ${currentSessionResult.session.userId}`);
       
       res.json({ 
         success: true, 
-        message: `Logged out ${result.modifiedCount} sessions`,
-        sessionsLoggedOut: result.modifiedCount
+        message: `Logged out ${count} sessions`,
+        sessionsLoggedOut: count
       });
     } catch (error) {
-      console.error('Logout all sessions error:', error);
+      logger.error('Logout all sessions error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -751,43 +610,36 @@ export class SessionController {
         });
       }
 
-      // Find active session using sessionId field and populate user data
-      const session = await Session.findOne({
-        sessionId: sessionId,
-        isActive: true,
-        expiresAt: { $gt: new Date() }
-      }).populate('userId', '-password'); // Exclude password field
+      // Use session service for optimized validation with caching
+      const result = await sessionService.validateSessionById(sessionId, true);
 
-      if (!session) {
+      if (!result || !result.session || !result.user) {
         return res.status(401).json({ 
           error: 'Invalid or expired session',
           sessionId: sessionId.substring(0, 8) + '...'
         });
       }
 
-      // Update last activity
-      session.deviceInfo.lastActive = new Date();
-      
       // Optional: Log device fingerprint if provided
       const deviceFingerprint = req.header('x-device-fingerprint');
       if (deviceFingerprint) {
-        console.log(`Session ${sessionId.substring(0, 8)}... validated with device fingerprint: ${deviceFingerprint.substring(0, 16)}...`);
+        logger.debug(`Session ${sessionId.substring(0, 8)}... validated with device fingerprint: ${deviceFingerprint.substring(0, 16)}...`);
       }
-      
-      await session.save();
 
       // Transform user data to include id field for frontend compatibility
-      const userData = (session.userId as any).toObject();
-      userData.id = (session.userId as any)._id.toString();
+      const userData = (result.user as any).toObject ? (result.user as any).toObject() : result.user;
+      if (userData._id) {
+        userData.id = userData._id.toString();
+      }
 
       res.json({ 
         valid: true,
-        expiresAt: session.expiresAt.toISOString(),
-        lastActivity: session.deviceInfo.lastActive.toISOString(),
+        expiresAt: result.session.expiresAt.toISOString(),
+        lastActivity: result.session.deviceInfo.lastActive.toISOString(),
         user: userData
       });
     } catch (error) {
-      console.error('Validate session error:', error);
+      logger.error('Validate session error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -804,14 +656,10 @@ export class SessionController {
         });
       }
 
-      // Find active session using sessionId field and populate user data
-      const session = await Session.findOne({
-        sessionId: sessionId,
-        isActive: true,
-        expiresAt: { $gt: new Date() }
-      }).populate('userId', '-password'); // Exclude password field
+      // Use session service for optimized validation with caching
+      const result = await sessionService.validateSessionById(sessionId, true);
 
-      if (!session) {
+      if (!result || !result.session || !result.user) {
         return res.status(401).json({ 
           error: 'Invalid or expired session',
           sessionId: sessionId.substring(0, 8) + '...'
@@ -820,30 +668,28 @@ export class SessionController {
 
       // Optional device fingerprint validation
       const deviceFingerprint = req.header('x-device-fingerprint');
-      if (deviceFingerprint && session.deviceInfo.fingerprint) {
-        if (deviceFingerprint !== session.deviceInfo.fingerprint) {
-          console.log(`Device fingerprint mismatch for session ${sessionId.substring(0, 8)}...`);
+      if (deviceFingerprint && result.session.deviceInfo?.fingerprint) {
+        if (deviceFingerprint !== result.session.deviceInfo.fingerprint) {
+          logger.debug(`Device fingerprint mismatch for session ${sessionId.substring(0, 8)}...`);
           // Don't reject the request, just log the mismatch
         }
       }
 
-      // Update last activity
-      session.deviceInfo.lastActive = new Date();
-      await session.save();
-
       // Transform user data to include id field for frontend compatibility
-      const userData = (session.userId as any).toObject();
-      userData.id = (session.userId as any)._id.toString();
+      const userData = (result.user as any).toObject ? (result.user as any).toObject() : result.user;
+      if (userData._id) {
+        userData.id = userData._id.toString();
+      }
 
       res.json({ 
         valid: true,
-        expiresAt: session.expiresAt.toISOString(),
-        lastActivity: session.deviceInfo.lastActive.toISOString(),
+        expiresAt: result.session.expiresAt.toISOString(),
+        lastActivity: result.session.deviceInfo.lastActive.toISOString(),
         user: userData,
-        sessionId: session.sessionId
+        sessionId: result.session.sessionId
       });
     } catch (error) {
-      console.error('Validate session from header error:', error);
+      logger.error('Validate session from header error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -872,7 +718,7 @@ export class SessionController {
 
       res.json(deviceSessions);
     } catch (error) {
-      console.error('Get device sessions error:', error);
+      logger.error('Get device sessions error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -901,7 +747,7 @@ export class SessionController {
 
       res.json(result);
     } catch (error) {
-      console.error('Logout all device sessions error:', error);
+      logger.error('Logout all device sessions error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -939,7 +785,7 @@ export class SessionController {
         deviceName: deviceName
       });
     } catch (error) {
-      console.error('Update device name error:', error);
+      logger.error('Update device name error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -986,11 +832,11 @@ export class SessionController {
         return '***';
       };
       const destination = user.email ? mask(user.email) : 'on-file';
-      console.log(`[Recovery] Code for ${user.username}: ${code} (expires in 15m)`);
+      logger.info(`[Recovery] Code for ${user.username}: ${code} (expires in 15m)`);
 
       return res.json({ success: true, delivery: 'email', destination });
     } catch (error) {
-      console.error('Request recovery error:', error);
+      logger.error('Request recovery error:', error);
       return res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -1033,7 +879,7 @@ export class SessionController {
 
       return res.json({ verified: true });
     } catch (error) {
-      console.error('Verify recovery code error:', error);
+      logger.error('Verify recovery code error:', error);
       return res.status(500).json({ verified: false, error: 'Internal server error' });
     }
   }
@@ -1081,12 +927,12 @@ export class SessionController {
       await rec.save();
 
       // Invalidate all active sessions for this user
-      await Session.updateMany({ userId: user._id, isActive: true }, { isActive: false });
+      await sessionService.deactivateAllUserSessions(user._id.toString());
 
-      console.log(`Password reset for user ${user.username}. Active sessions invalidated.`);
+      logger.info(`Password reset for user ${user.username}. Active sessions invalidated.`);
       return res.json({ success: true });
     } catch (error) {
-      console.error('Reset password error:', error);
+      logger.error('Reset password error:', error);
       return res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }
@@ -1123,11 +969,11 @@ export class SessionController {
       await user.save();
 
       // Invalidate all active sessions
-      await Session.updateMany({ userId: user._id, isActive: true }, { isActive: false });
+      await sessionService.deactivateAllUserSessions(user._id.toString());
 
       return res.json({ success: true });
     } catch (error) {
-      console.error('Reset password with TOTP error:', error);
+      logger.error('Reset password with TOTP error:', error);
       return res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }
@@ -1159,7 +1005,7 @@ export class SessionController {
       await user.save();
 
       await rf.save();
-      await Session.updateMany({ userId: user._id, isActive: true }, { isActive: false });
+      await sessionService.deactivateAllUserSessions(user._id.toString());
 
       // Force disabling TOTP to require re-enrollment later
       user.privacySettings.twoFactorEnabled = false;
@@ -1168,7 +1014,7 @@ export class SessionController {
 
       return res.json({ success: true });
     } catch (error) {
-      console.error('Reset password with backup code error:', error);
+      logger.error('Reset password with backup code error:', error);
       return res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }
@@ -1198,7 +1044,7 @@ export class SessionController {
       rf.lastRotatedAt = new Date();
       await rf.save();
 
-      await Session.updateMany({ userId: user._id, isActive: true }, { isActive: false });
+      await sessionService.deactivateAllUserSessions(user._id.toString());
 
       // Force disabling TOTP to require re-enrollment later
       user.privacySettings.twoFactorEnabled = false;
@@ -1207,7 +1053,7 @@ export class SessionController {
 
       return res.json({ success: true, nextRecoveryKey: rkRaw });
     } catch (error) {
-      console.error('Reset password with recovery key error:', error);
+      logger.error('Reset password with recovery key error:', error);
       return res.status(500).json({ success: false, error: 'Internal server error' });
     }
   }

@@ -1,10 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import User, { IUser } from '../models/User';
-import Session from '../models/Session';
 import dotenv from 'dotenv';
 import { logger } from '../utils/logger';
 import { Document } from 'mongoose';
+import sessionService from '../services/session.service';
 
 // Ensure environment variables are loaded
 dotenv.config();
@@ -85,42 +85,37 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
       });
       
       if (decoded.sessionId) {
-        // Session-based token - validate session
+        // Session-based token - validate session using service layer
         logger.debug('Validating session-based token for sessionId:', decoded.sessionId);
         
-        let session;
         try {
-          session = await Session.findOne({
-            sessionId: decoded.sessionId,
-            isActive: true,
-            expiresAt: { $gt: new Date() }
-          }).populate('userId');
+          // Use session service for optimized validation with caching
+          const validationResult = await sessionService.validateSession(token);
 
-          logger.debug('Session lookup result:', { 
-            found: !!session, 
-            sessionId: session?.sessionId,
-            isActive: session?.isActive,
-            expiresAt: session?.expiresAt 
-          });
-
-          if (!session) {
-            // Log additional debugging info for production troubleshooting
-            const allSessions = await Session.find({ sessionId: decoded.sessionId });
-            logger.warn('Session not found or expired for sessionId:', decoded.sessionId, {
-              totalSessionsWithId: allSessions.length,
-              sessions: allSessions.map(s => ({
-                sessionId: s.sessionId,
-                isActive: s.isActive,
-                expiresAt: s.expiresAt,
-                userId: s.userId
-              }))
-            });
-            
+          if (!validationResult) {
+            logger.debug('Session validation failed for sessionId:', decoded.sessionId);
             return res.status(401).json({
               error: 'Invalid session',
               message: 'Session not found or expired'
             });
           }
+
+          const { user } = validationResult;
+
+          if (!user) {
+            return res.status(401).json({
+              error: 'Invalid session',
+              message: 'User not found'
+            });
+          }
+
+          // Ensure id field is set consistently
+          if (user._id) {
+            user.id = user._id.toString();
+          }
+          req.user = user;
+          
+          next();
         } catch (dbError) {
           logger.error('Database error during session lookup:', dbError);
           return res.status(500).json({
@@ -128,33 +123,6 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
             message: 'Error validating session'
           });
         }
-
-        // Update session activity
-        session.deviceInfo.lastActive = new Date();
-        await session.save();
-
-        // Get user data - handle both populated and unpopulated cases
-        let user;
-        if (session.userId && typeof session.userId === 'object' && '_id' in session.userId) {
-          // userId is populated
-          user = session.userId as any;
-        } else {
-          // userId is not populated, fetch user separately
-          user = await User.findById(session.userId).select('-password');
-        }
-        
-        if (!user) {
-          return res.status(401).json({
-            error: 'Invalid session',
-            message: 'User not found'
-          });
-        }
-
-        // Ensure id field is set consistently
-        user.id = user._id.toString();
-        req.user = user;
-        
-        next();
       } else {
         // Old token format - use existing logic
         const userId = extractUserIdFromToken(token);
@@ -239,26 +207,19 @@ export const simpleAuthMiddleware = async (req: SimpleAuthRequest, res: Response
       const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as any;
       
       if (decoded.sessionId) {
-        // Session-based token - validate session
-        const session = await Session.findOne({
-          sessionId: decoded.sessionId,
-          isActive: true,
-          expiresAt: { $gt: new Date() }
-        });
+        // Session-based token - validate session using service layer
+        const validationResult = await sessionService.validateSession(token);
 
-        if (!session) {
+        if (!validationResult) {
           return res.status(401).json({
             error: 'Invalid session',
             message: 'Session not found or expired'
           });
         }
 
-        // Update session activity
-        session.deviceInfo.lastActive = new Date();
-        await session.save();
-
         // Set user ID
-        req.user = { id: session.userId.toString() };
+        const userId = validationResult.user?._id?.toString() || validationResult.session.userId.toString();
+        req.user = { id: userId };
         next();
       } else {
         // Old token format - use existing logic
