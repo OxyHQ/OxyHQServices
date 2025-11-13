@@ -42,6 +42,8 @@ interface SignInPasswordStepProps {
     // Sign-in function
     handleSignIn: () => Promise<void>;
     mfaToken?: string | null;
+    existingSession?: any;
+    handleContinueWithExistingAccount?: () => Promise<void>;
 }
 
 const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
@@ -62,6 +64,8 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
     username,
     handleSignIn,
     mfaToken,
+    existingSession,
+    handleContinueWithExistingAccount,
 }) => {
     const inputRef = useRef<any>(null);
     const { t } = useI18n();
@@ -104,6 +108,80 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
             nextStep();
         }
     }, [mfaToken, nextStep]);
+
+    // If account is already signed in, show "continue" UI instead of password
+    if (existingSession && handleContinueWithExistingAccount) {
+        return (
+            <>
+                <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.userProfileContainer]}>
+                    <View style={stylesheet.avatarContainer}>
+                        <Avatar
+                            name={userProfile?.displayName || userProfile?.name || username}
+                            size={100}
+                            theme={theme as 'light' | 'dark'}
+                            style={styles.modernUserAvatar}
+                            backgroundColor={colors.primary + '20'}
+                        />
+                        <View style={[styles.statusIndicator, { backgroundColor: colors.primary }]} />
+                    </View>
+                    <Text style={[styles.modernUserDisplayName, stylesheet.displayName, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>
+                        {userProfile?.displayName || userProfile?.name || username}
+                    </Text>
+                    <Text style={[styles.modernUsernameSubtext, stylesheet.usernameSubtext, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>
+                        @{username}
+                    </Text>
+                </View>
+
+                <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.alreadySignedInContainer]}>
+                    <View style={[stylesheet.alreadySignedInCard, { backgroundColor: `${colors.primary}08`, borderColor: `${colors.primary}25` }]}>
+                        <View style={stylesheet.alreadySignedInContent}>
+                            <View style={[stylesheet.alreadySignedInIconWrapper, { backgroundColor: `${colors.primary}20` }]}>
+                                <Ionicons name="checkmark-circle" size={28} color={colors.primary} />
+                            </View>
+                            <View style={stylesheet.alreadySignedInTextWrapper}>
+                                <Text style={[stylesheet.alreadySignedInTitle, { color: colors.text }]}>
+                                    {t('signin.alreadySignedIn') || 'Already signed in'}
+                                </Text>
+                                <Text style={[stylesheet.alreadySignedInMessage, { color: colors.secondaryText }]}>
+                                    {t('signin.alreadySignedInMessage') || 'This account is already signed in. Tap continue to use it.'}
+                                </Text>
+                            </View>
+                        </View>
+                    </View>
+                </View>
+
+                {errorMessage && (
+                    <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
+                        <Text style={[stylesheet.errorText, { color: colors.error }]}>
+                            {errorMessage}
+                        </Text>
+                    </View>
+                )}
+
+                <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+                    <GroupedPillButtons
+                        buttons={[
+                            {
+                                text: t('common.actions.back') || 'Back',
+                                onPress: prevStep,
+                                icon: 'arrow-back',
+                                variant: 'transparent',
+                            },
+                            {
+                                text: t('signin.continueWithAccount') || 'Continue',
+                                onPress: handleContinueWithExistingAccount,
+                                icon: 'log-in',
+                                variant: 'primary',
+                                loading: isLoading,
+                                testID: 'continue-button',
+                            },
+                        ]}
+                        colors={colors}
+                    />
+                </View>
+            </>
+        );
+    }
 
     return (
         <>
@@ -223,5 +301,47 @@ const stylesheet = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         gap: STEP_INNER_GAP,
+    },
+    alreadySignedInContainer: {
+        width: '100%',
+    },
+    alreadySignedInCard: {
+        borderRadius: 20,
+        borderWidth: 1.5,
+        padding: 20,
+        width: '100%',
+    },
+    alreadySignedInContent: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: 16,
+    },
+    alreadySignedInIconWrapper: {
+        width: 52,
+        height: 52,
+        borderRadius: 26,
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+    },
+    alreadySignedInTextWrapper: {
+        flex: 1,
+        gap: 8,
+        paddingTop: 2,
+    },
+    alreadySignedInTitle: {
+        fontSize: 18,
+        fontWeight: '600',
+        lineHeight: 24,
+        letterSpacing: -0.2,
+    },
+    alreadySignedInMessage: {
+        fontSize: 15,
+        lineHeight: 22,
+        letterSpacing: -0.1,
+    },
+    errorText: {
+        fontSize: 14,
+        textAlign: 'center',
     },
 });

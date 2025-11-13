@@ -29,8 +29,9 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>(
         initialUserProfile ? 'valid' : 'idle'
     );
+    const [existingSession, setExistingSession] = useState<any>(null);
 
-    const { login, completeMfaLogin, isLoading, user, isAuthenticated, sessions, oxyServices } = useOxy();
+    const { login, completeMfaLogin, isLoading, user, isAuthenticated, sessions, oxyServices, switchSession } = useOxy();
 
     // Only log props in development mode to reduce console noise
     if (__DEV__) {
@@ -93,6 +94,21 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
                 if (__DEV__) console.log('✅ Username is valid:', profileData);
                 setUserProfile(profileData);
+                
+                // Check if this account is already signed in
+                const profileUserId = profile.id?.toString();
+                const existing = sessions?.find(s => {
+                    const sessionUserId = s.userId?.toString();
+                    return sessionUserId === profileUserId;
+                });
+                
+                if (existing) {
+                    setExistingSession(existing);
+                    if (__DEV__) console.log('✅ Account already signed in:', existing);
+                } else {
+                    setExistingSession(null);
+                }
+                
                 setValidationStatus('valid');
                 setErrorMessage('');
 
@@ -172,6 +188,22 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
     const [mfaToken, setMfaToken] = useState<string | null>(null);
 
+    const handleContinueWithExistingAccount = useCallback(async () => {
+        if (!existingSession) return;
+        
+        try {
+            setErrorMessage('');
+            await switchSession(existingSession.sessionId);
+            // Get the user for the authenticated callback
+            const currentUser = await oxyServices.getUserBySession(existingSession.sessionId);
+            if (onAuthenticated) {
+                onAuthenticated(currentUser);
+            }
+        } catch (error: any) {
+            setErrorMessage(error.message || 'Failed to switch account');
+        }
+    }, [existingSession, switchSession, oxyServices, onAuthenticated]);
+
     const handleSignIn = useCallback(async () => {
         if (!password) {
             setErrorMessage('Please enter your password.');
@@ -181,6 +213,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             setErrorMessage('Please enter a valid username first.');
             return;
         }
+        
         try {
             setErrorMessage('');
             const user = await login(username, password);
@@ -247,6 +280,8 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             handleInputBlur,
             handleSignIn, // Add sign-in function for password step
             mfaToken,
+            existingSession,
+            handleContinueWithExistingAccount,
         },
         ...(mfaToken ? [{
             username,
@@ -260,7 +295,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
         username, password, errorMessage, validationStatus, userProfile, mfaToken,
         isValidating, isInputFocused, isAddAccountMode, user, showPassword,
         isLoading, handleUsernameChange, handlePasswordChange, handleInputFocus, handleInputBlur,
-        validateUsername, handleSignIn, completeMfaLogin
+        validateUsername, handleSignIn, completeMfaLogin, existingSession, handleContinueWithExistingAccount
     ]);
 
     return (

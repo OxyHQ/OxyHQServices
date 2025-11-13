@@ -21,13 +21,31 @@
       "continue": "Continue",
       "back": "Back",
       "signIn": "Sign In",
-      "verify": "Verify"
+      "verify": "Verify",
+      "openAccountSwitcher": "Switch to another account",
+      "openAccountSwitcherSubtitle": "{{count}} other accounts available",
+      "openAccountSwitcherSubtitle_singular": "1 other account available",
+      "openAccountSwitcherSubtitle_zero": "Review your saved accounts",
+      "manageAccounts": "Manage saved accounts",
+      "manageAccountsSubtitle": "Review sessions, remove or sign out",
+      "loadingOtherAccounts": "Loading other accounts…",
+      "switchAccountFailed": "We couldn’t switch accounts. Please try again."
     },
     "forgotPrompt": "Forgot your password?",
     "security": {
       "dataSecure": "Your data is encrypted and secure"
     },
     "currentlySignedInAs": "Currently signed in as",
+    "alreadySignedInWith": "Already signed in with",
+    "alreadySignedIn": "Already signed in",
+    "alreadySignedInMessage": "This account is already signed in. Continue with this account?",
+    "continueWithAccount": "Continue",
+    "currentAccount": "Current",
+    "or": "or",
+    "viewAllAccounts": "View {{count}} more",
+    "status": {
+      "accountSwitched": "Now using {{name}}"
+    },
     "totp": {
       "title": "Two‑Factor Code",
       "subtitle": "Enter the 6‑digit code from your authenticator app for @{{username}}",
