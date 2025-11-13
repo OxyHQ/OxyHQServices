@@ -17,6 +17,7 @@ import { stepStyles } from '../../styles/spacing';
 import Avatar from '../../components/Avatar';
 import { useOxy } from '../../context/OxyContext';
 import { toast } from '../../../lib/sonner';
+import { TTLCache, registerCacheForCleanup } from '../../../utils/cache';
 
 interface SignInUsernameStepProps {
     // Common props from StepBasedScreen
@@ -67,10 +68,10 @@ const getThemeMode = (theme: string | undefined): 'light' | 'dark' =>
 
 /**
  * Profile cache to avoid re-fetching user profiles on every account switch
- * Cache persists across component re-renders using module-level storage
+ * Uses centralized TTLCache for consistent caching behavior
  */
-const profileCache = new Map<string, { profile: QuickAccount; timestamp: number }>();
-const CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
+const profileCache = new TTLCache<QuickAccount>(5 * 60 * 1000); // 5 minutes cache
+registerCacheForCleanup(profileCache); // Register for automatic cleanup
 
 /**
  * Batch fetch profiles using optimized backend endpoint
@@ -80,15 +81,14 @@ async function batchGetProfiles(
     sessionIds: string[],
     oxyServices: any
 ): Promise<Map<string, QuickAccount>> {
-    const now = Date.now();
     const results = new Map<string, QuickAccount>();
     const toFetch: string[] = [];
 
     // Check cache first
     for (const sessionId of sessionIds) {
         const cached = profileCache.get(sessionId);
-        if (cached && (now - cached.timestamp) < CACHE_TTL) {
-            results.set(sessionId, cached.profile);
+        if (cached) {
+            results.set(sessionId, cached);
         } else {
             toFetch.push(sessionId);
         }
@@ -114,7 +114,7 @@ async function batchGetProfiles(
                         avatar: user?.avatar,
                     };
 
-                    profileCache.set(sessionId, { profile: quickAccount, timestamp: now });
+                    profileCache.set(sessionId, quickAccount);
                     results.set(sessionId, quickAccount);
                 }
             }

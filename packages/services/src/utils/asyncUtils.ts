@@ -196,36 +196,22 @@ export async function withTimeout<T>(
 
 /**
  * Cache async operation results
+ * @deprecated Use TTLCache from '../utils/cache' instead
+ * This function is kept for backward compatibility but will be removed in a future version
  */
 export function createAsyncCache<T>(
   ttl: number = 5 * 60 * 1000 // 5 minutes default
 ) {
-  const cache = new Map<string, { data: T; timestamp: number }>();
+  // Re-export from centralized cache utility
+  const { TTLCache, registerCacheForCleanup } = require('./cache');
+  const cache = new TTLCache<T>(ttl);
+  registerCacheForCleanup(cache);
   
   return {
-    get: (key: string): T | null => {
-      const item = cache.get(key);
-      if (!item) return null;
-      
-      if (Date.now() - item.timestamp > ttl) {
-        cache.delete(key);
-        return null;
-      }
-      
-      return item.data;
-    },
-    
-    set: (key: string, data: T): void => {
-      cache.set(key, { data, timestamp: Date.now() });
-    },
-    
-    clear: (): void => {
-      cache.clear();
-    },
-    
-    delete: (key: string): boolean => {
-      return cache.delete(key);
-    }
+    get: (key: string): T | null => cache.get(key),
+    set: (key: string, data: T): void => cache.set(key, data),
+    clear: (): void => cache.clear(),
+    delete: (key: string): boolean => cache.delete(key),
   };
 }
 

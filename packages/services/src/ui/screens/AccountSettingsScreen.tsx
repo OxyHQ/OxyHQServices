@@ -25,6 +25,13 @@ import { useAuthStore } from '../stores/authStore';
 import { Header, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import QRCode from 'react-native-qrcode-svg';
+import { TTLCache, registerCacheForCleanup } from '../../utils/cache';
+
+// Caches for link metadata and location searches
+const linkMetadataCache = new TTLCache<any>(30 * 60 * 1000); // 30 minutes cache for link metadata
+const locationSearchCache = new TTLCache<any[]>(60 * 60 * 1000); // 1 hour cache for location searches
+registerCacheForCleanup(linkMetadataCache);
+registerCacheForCleanup(locationSearchCache);
 
 const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -369,6 +376,13 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
 
     const fetchLinkMetadata = async (url: string) => {
+        // Check cache first
+        const cacheKey = url.toLowerCase().trim();
+        const cached = linkMetadataCache.get(cacheKey);
+        if (cached) {
+            return cached;
+        }
+
         try {
             setIsFetchingMetadata(true);
             console.log('Fetching metadata for URL:', url);
@@ -377,20 +391,27 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             const metadata = await oxyServices.fetchLinkMetadata(url);
             console.log('Received metadata:', metadata);
 
-            return {
+            const result = {
                 ...metadata,
                 id: Date.now().toString()
             };
+
+            // Cache the result
+            linkMetadataCache.set(cacheKey, result);
+            return result;
         } catch (error) {
             console.error('Error fetching metadata:', error);
             // Fallback to basic metadata
-            return {
+            const fallback = {
                 url: url.startsWith('http') ? url : 'https://' + url,
                 title: url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
                 description: 'Link',
                 image: undefined,
                 id: Date.now().toString()
             };
+            // Cache fallback too (shorter TTL)
+            linkMetadataCache.set(cacheKey, fallback, 5 * 60 * 1000); // 5 minutes for fallbacks
+            return fallback;
         } finally {
             setIsFetchingMetadata(false);
         }
@@ -402,12 +423,23 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             return;
         }
 
+        // Check cache first
+        const cacheKey = query.toLowerCase().trim();
+        const cached = locationSearchCache.get(cacheKey);
+        if (cached) {
+            setLocationSearchResults(cached);
+            return;
+        }
+
         try {
             setIsSearchingLocations(true);
             const response = await fetch(
                 `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`
             );
             const data = await response.json();
+            
+            // Cache the results
+            locationSearchCache.set(cacheKey, data);
             setLocationSearchResults(data);
         } catch (error) {
             console.error('Error searching locations:', error);

@@ -78,6 +78,7 @@ export interface OxyConfig extends OxyConfigBase {
 import type { SessionLoginResponse } from '../models/session';
 import { handleHttpError } from '../utils/errorUtils';
 import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
+import { TTLCache, registerCacheForCleanup } from '../utils/cache';
 
 interface JwtPayload {
   exp?: number;
@@ -110,6 +111,149 @@ export class OxyAuthenticationTimeoutError extends OxyAuthenticationError {
       408
     );
     this.name = 'OxyAuthenticationTimeoutError';
+  }
+}
+
+// Use centralized TTLCache instead of local implementation
+
+/**
+ * Request deduplication - prevents duplicate concurrent requests
+ */
+class RequestDeduplicator {
+  private pendingRequests = new Map<string, Promise<any>>();
+
+  async deduplicate<T>(
+    key: string,
+    requestFn: () => Promise<T>
+  ): Promise<T> {
+    const existing = this.pendingRequests.get(key);
+    if (existing) {
+      return existing;
+    }
+
+    const promise = requestFn()
+      .finally(() => {
+        this.pendingRequests.delete(key);
+      });
+
+    this.pendingRequests.set(key, promise);
+    return promise;
+  }
+
+  clear(): void {
+    this.pendingRequests.clear();
+  }
+
+  size(): number {
+    return this.pendingRequests.size;
+  }
+}
+
+/**
+ * Request queue with concurrency control
+ */
+class RequestQueue {
+  private queue: Array<() => Promise<any>> = [];
+  private running = 0;
+  private maxConcurrent: number;
+  private maxQueueSize: number;
+
+  constructor(maxConcurrent: number = 10, maxQueueSize: number = 100) {
+    this.maxConcurrent = maxConcurrent;
+    this.maxQueueSize = maxQueueSize;
+  }
+
+  async enqueue<T>(requestFn: () => Promise<T>): Promise<T> {
+    if (this.queue.length >= this.maxQueueSize) {
+      throw new Error('Request queue is full');
+    }
+
+    return new Promise<T>((resolve, reject) => {
+      this.queue.push(async () => {
+        try {
+          const result = await requestFn();
+          resolve(result);
+        } catch (error) {
+          reject(error);
+        }
+      });
+
+      this.process();
+    });
+  }
+
+  private async process(): Promise<void> {
+    if (this.running >= this.maxConcurrent || this.queue.length === 0) {
+      return;
+    }
+
+    this.running++;
+    const requestFn = this.queue.shift();
+    if (requestFn) {
+      try {
+        await requestFn();
+      } finally {
+        this.running--;
+        this.process();
+      }
+    } else {
+      this.running--;
+    }
+  }
+
+  clear(): void {
+    this.queue = [];
+  }
+
+  size(): number {
+    return this.queue.length;
+  }
+
+  runningCount(): number {
+    return this.running;
+  }
+}
+
+/**
+ * Logger utility with levels
+ */
+class Logger {
+  private enabled: boolean;
+  private level: 'none' | 'error' | 'warn' | 'info' | 'debug';
+
+  constructor(enabled: boolean = false, level: string = 'error') {
+    this.enabled = enabled;
+    this.level = level as any;
+  }
+
+  private shouldLog(level: string): boolean {
+    if (!this.enabled || this.level === 'none') return false;
+    const levels = ['none', 'error', 'warn', 'info', 'debug'];
+    return levels.indexOf(level) <= levels.indexOf(this.level);
+  }
+
+  error(...args: any[]): void {
+    if (this.shouldLog('error')) {
+      console.error('[OxyServices]', ...args);
+    }
+  }
+
+  warn(...args: any[]): void {
+    if (this.shouldLog('warn')) {
+      console.warn('[OxyServices]', ...args);
+    }
+  }
+
+  info(...args: any[]): void {
+    if (this.shouldLog('info')) {
+      console.info('[OxyServices]', ...args);
+    }
+  }
+
+  debug(...args: any[]): void {
+    if (this.shouldLog('debug')) {
+      console.log('[OxyServices]', ...args);
+    }
   }
 }
 
@@ -161,11 +305,24 @@ export class OxyServices {
   protected client: AxiosInstance;
   private tokenStore: TokenStore;
   private cloudURL: string;
+  private config: OxyConfig;
+  
+  // Performance infrastructure
+  private cache: TTLCache<any>;
+  private deduplicator: RequestDeduplicator;
+  private requestQueue: RequestQueue;
+  private logger: Logger;
+  
+  // Performance monitoring
+  private requestMetrics = {
+    totalRequests: 0,
+    successfulRequests: 0,
+    failedRequests: 0,
+    cacheHits: 0,
+    cacheMisses: 0,
+    averageResponseTime: 0,
+  };
 
-  /**
-   * Creates a new instance of the OxyServices client
-   * @param config - Configuration for the client
-   */
   /**
    * Creates a new instance of the OxyServices client
    * @param config - Configuration for the client
@@ -173,10 +330,39 @@ export class OxyServices {
    *   config.cloudURL: Oxy Cloud URL (e.g., https://cloud.oxy.so)
    */
   constructor(config: OxyConfig) {
+    this.config = config;
+    const timeout = config.requestTimeout || 5000;
+    const enableCache = config.enableCache !== false; // Default true
+    const enableDedup = config.enableRequestDeduplication !== false; // Default true
+    const enableRetry = config.enableRetry !== false; // Default true
+    const maxConcurrent = config.maxConcurrentRequests || 10;
+    const maxQueueSize = config.requestQueueSize || 100;
+    const enableLogging = config.enableLogging || false;
+    const logLevel = config.logLevel || 'error';
+
+    // Initialize performance infrastructure
+    this.cache = new TTLCache<any>(config.cacheTTL || 5 * 60 * 1000);
+    registerCacheForCleanup(this.cache); // Register for automatic cleanup
+    this.deduplicator = new RequestDeduplicator();
+    this.requestQueue = new RequestQueue(maxConcurrent, maxQueueSize);
+    this.logger = new Logger(enableLogging, logLevel);
+
+    // Setup Axios client with optimized configuration
     this.client = axios.create({ 
       baseURL: config.baseURL,
-      timeout: 5000 // 5 second timeout
+      timeout,
+      // Production optimizations
+      headers: {
+        'Accept': 'application/json',
+        'Accept-Encoding': 'gzip, deflate, br',
+      },
+      // Enable HTTP keep-alive for connection reuse (Node.js only)
+      ...(typeof process !== 'undefined' && process.env && typeof window === 'undefined' && typeof require !== 'undefined' ? {
+        httpAgent: new (require('http').Agent)({ keepAlive: true, keepAliveMsecs: 1000, maxSockets: 50 }),
+        httpsAgent: new (require('https').Agent)({ keepAlive: true, keepAliveMsecs: 1000, maxSockets: 50 }),
+      } : {}),
     });
+
     this.cloudURL = config.cloudURL || OXY_CLOUD_URL;
     this.tokenStore = TokenStore.getInstance();
     this.setupInterceptors();
@@ -196,18 +382,19 @@ export class OxyServices {
     // Request interceptor for adding auth header and handling token refresh
     this.client.interceptors.request.use(
       async (req: InternalAxiosRequestConfig) => {
-        console.log('🔍 Interceptor - URL:', req.url);
-        console.log('🔍 Interceptor - Has token:', this.tokenStore.hasAccessToken());
+        const startTime = Date.now();
+        (req as any).__startTime = startTime;
+        
+        this.logger.debug('Request:', req.method?.toUpperCase(), req.url);
+        this.config.onRequestStart?.(req.url || '', req.method || 'GET');
         
         const accessToken = this.tokenStore.getAccessToken();
         if (!accessToken) {
-          console.log('❌ Interceptor - No token available');
+          this.logger.debug('No token available');
           return req;
         }
         
         try {
-          console.log('✅ Interceptor - Adding Authorization header');
-          
           const decoded = jwtDecode<JwtPayload>(accessToken);
           const currentTime = Math.floor(Date.now() / 1000);
         
@@ -224,48 +411,199 @@ export class OxyServices {
                 const res = await refreshClient.get(`/api/session/token/${decoded.sessionId}`);
                 this.tokenStore.setTokens(res.data.accessToken);
                 req.headers.Authorization = `Bearer ${res.data.accessToken}`;
-                console.log('✅ Interceptor - Token refreshed and Authorization header set');
+                this.logger.debug('Token refreshed');
               } catch (refreshError) {
                 // If refresh fails, use current token anyway
                 req.headers.Authorization = `Bearer ${accessToken}`;
-                console.log('❌ Interceptor - Token refresh failed, using current token');
+                this.logger.warn('Token refresh failed, using current token');
               }
             } else {
-              // No session ID, use current token
               req.headers.Authorization = `Bearer ${accessToken}`;
-              console.log('✅ Interceptor - No session ID, using current token');
             }
           } else {
-            // Add authorization header with current token
             req.headers.Authorization = `Bearer ${accessToken}`;
-            console.log('✅ Interceptor - Authorization header set with current token');
           }
         } catch (error) {
-          console.log('❌ Interceptor - Error processing token:', error);
+          this.logger.error('Error processing token:', error);
           // Even if there's an error, still try to use the token
           req.headers.Authorization = `Bearer ${accessToken}`;
-          console.log('⚠️ Interceptor - Using token despite error');
         }
         
         return req;
       },
       (error) => {
-        console.log('❌ Interceptor - Request error:', error);
+        this.logger.error('Request interceptor error:', error);
         return Promise.reject(error);
       }
     );
 
-    // Response interceptor for handling auth errors
+    // Response interceptor for handling auth errors and metrics
     this.client.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        const startTime = (response.config as any).__startTime;
+        if (startTime) {
+          const duration = Date.now() - startTime;
+          this.updateMetrics(true, duration);
+          this.config.onRequestEnd?.(response.config.url || '', response.config.method || 'GET', duration, true);
+        }
+        return response;
+      },
       (error) => {
+        const startTime = (error.config as any)?.__startTime;
+        if (startTime) {
+          const duration = Date.now() - startTime;
+          this.updateMetrics(false, duration);
+          this.config.onRequestEnd?.(error.config?.url || '', error.config?.method || 'GET', duration, false);
+          this.config.onRequestError?.(error.config?.url || '', error.config?.method || 'GET', error);
+        }
+        
         if (error.response?.status === 401) {
-          console.log('❌ Response interceptor - 401 Unauthorized, clearing tokens');
+          this.logger.warn('401 Unauthorized, clearing tokens');
           this.clearTokens();
         }
         return Promise.reject(error);
       }
     );
+  }
+
+  /**
+   * Update request metrics
+   */
+  private updateMetrics(success: boolean, duration: number): void {
+    this.requestMetrics.totalRequests++;
+    if (success) {
+      this.requestMetrics.successfulRequests++;
+    } else {
+      this.requestMetrics.failedRequests++;
+    }
+    
+    // Update average response time (exponential moving average)
+    const alpha = 0.1; // Smoothing factor
+    this.requestMetrics.averageResponseTime = 
+      this.requestMetrics.averageResponseTime * (1 - alpha) + duration * alpha;
+  }
+
+  /**
+   * Exponential backoff retry logic
+   */
+  private async retryWithBackoff<T>(
+    fn: () => Promise<T>,
+    maxRetries: number = 3,
+    baseDelay: number = 1000
+  ): Promise<T> {
+    let lastError: any;
+    
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        return await fn();
+      } catch (error: any) {
+        lastError = error;
+        
+        // Don't retry on 4xx errors (client errors)
+        if (error.response?.status >= 400 && error.response?.status < 500) {
+          throw error;
+        }
+        
+        // Don't retry on last attempt
+        if (attempt === maxRetries) {
+          break;
+        }
+        
+        // Calculate delay with exponential backoff and jitter
+        const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+        this.logger.debug(`Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    throw lastError;
+  }
+
+  /**
+   * Make a request with caching, deduplication, retry, and queue support
+   */
+  private async makeRequest<T>(
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    url: string,
+    data?: any,
+    options: {
+      cache?: boolean;
+      cacheTTL?: number;
+      deduplicate?: boolean;
+      retry?: boolean;
+      maxRetries?: number;
+      timeout?: number;
+      signal?: AbortSignal;
+    } = {}
+  ): Promise<T> {
+    const {
+      cache = method === 'GET', // Cache GET requests by default
+      cacheTTL,
+      deduplicate = true,
+      retry = this.config.enableRetry !== false,
+      maxRetries = this.config.maxRetries || 3,
+      timeout,
+      signal,
+    } = options;
+
+    // Generate cache key
+    const cacheKey = cache ? `${method}:${url}:${JSON.stringify(data || {})}` : null;
+    
+    // Check cache first
+    if (cache && cacheKey) {
+      const cached = this.cache.get(cacheKey) as T | null;
+      if (cached !== null) {
+        this.requestMetrics.cacheHits++;
+        this.logger.debug('Cache hit:', url);
+        return cached;
+      }
+      this.requestMetrics.cacheMisses++;
+    }
+
+    // Request function
+    const requestFn = async (): Promise<T> => {
+      const requestConfig: any = {
+        method,
+        url,
+        timeout: timeout || this.config.requestTimeout || 5000,
+      };
+
+      if (data) {
+        if (method === 'GET') {
+          requestConfig.params = data;
+        } else {
+          requestConfig.data = data;
+        }
+      }
+
+      if (signal) {
+        requestConfig.signal = signal;
+      }
+
+      const response = await this.client.request<T>(requestConfig);
+      return response.data;
+    };
+
+    // Wrap with retry if enabled
+    const requestWithRetry = retry
+      ? () => this.retryWithBackoff(requestFn, maxRetries)
+      : requestFn;
+
+    // Wrap with deduplication if enabled
+    const dedupeKey = deduplicate ? `${method}:${url}:${JSON.stringify(data || {})}` : null;
+    const finalRequest = dedupeKey
+      ? () => this.deduplicator.deduplicate(dedupeKey, requestWithRetry)
+      : requestWithRetry;
+
+    // Execute request (with queue if needed)
+    const result = await this.requestQueue.enqueue(finalRequest);
+
+    // Cache the result if caching is enabled
+    if (cache && cacheKey && result) {
+      this.cache.set(cacheKey, result, cacheTTL);
+    }
+
+    return result;
   }
 
   // ============================================================================
@@ -277,6 +615,42 @@ export class OxyServices {
    */
   public getBaseURL(): string {
     return this.client.defaults.baseURL || '';
+  }
+
+  /**
+   * Get performance metrics
+   */
+  public getMetrics(): typeof this.requestMetrics {
+    return { ...this.requestMetrics };
+  }
+
+  /**
+   * Clear request cache
+   */
+  public clearCache(): void {
+    this.cache.clear();
+    this.logger.debug('Cache cleared');
+  }
+
+  /**
+   * Clear specific cache entry
+   */
+  public clearCacheEntry(key: string): void {
+    this.cache.delete(key);
+  }
+
+  /**
+   * Get cache statistics
+   */
+  public getCacheStats(): { size: number; hits: number; misses: number; hitRate: number } {
+    const cacheStats = this.cache.getStats();
+    const total = this.requestMetrics.cacheHits + this.requestMetrics.cacheMisses;
+    return {
+      size: cacheStats.size,
+      hits: this.requestMetrics.cacheHits,
+      misses: this.requestMetrics.cacheMisses,
+      hitRate: total > 0 ? this.requestMetrics.cacheHits / total : 0,
+    };
   }
 
   /**
@@ -388,14 +762,14 @@ export class OxyServices {
         if (!this.tokenStore.hasAccessToken()) {
           if (attempt === 0) {
             // On first attempt, wait briefly for authentication to complete
-            console.log(`🔄 ${operationName} - Waiting for authentication...`);
+            this.logger.debug(`${operationName} - Waiting for authentication...`);
             const authReady = await this.waitForAuthentication(authTimeoutMs);
             
             if (!authReady) {
               throw new OxyAuthenticationTimeoutError(operationName, authTimeoutMs);
             }
             
-            console.log(`✅ ${operationName} - Authentication ready, proceeding...`);
+            this.logger.debug(`${operationName} - Authentication ready, proceeding...`);
           } else {
             // On retry attempts, fail immediately if no token
             throw new OxyAuthenticationError(
@@ -416,7 +790,7 @@ export class OxyServices {
                            error instanceof OxyAuthenticationError;
 
         if (isAuthError && !isLastAttempt && !(error instanceof OxyAuthenticationTimeoutError)) {
-          console.log(`🔄 ${operationName} - Auth error on attempt ${attempt + 1}, retrying in ${retryDelay}ms...`);
+          this.logger.debug(`${operationName} - Auth error on attempt ${attempt + 1}, retrying in ${retryDelay}ms...`);
           await new Promise(resolve => setTimeout(resolve, retryDelay));
           continue;
         }
@@ -613,8 +987,10 @@ export class OxyServices {
    */
   async getUserBySession(sessionId: string): Promise<User> {
     try {
-      const res = await this.client.get(`/api/session/user/${sessionId}`);
-      return res.data;
+      return await this.makeRequest<User>('GET', `/api/session/user/${sessionId}`, undefined, {
+        cache: true,
+        cacheTTL: 2 * 60 * 1000, // 2 minutes cache for user data
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -629,8 +1005,16 @@ export class OxyServices {
       if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
         return [];
       }
-      const res = await this.client.post('/api/session/users/batch', { sessionIds });
-      return res.data;
+      return await this.makeRequest<Array<{ sessionId: string; user: User | null }>>(
+        'POST',
+        '/api/session/users/batch',
+        { sessionIds },
+        {
+          cache: true,
+          cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+          deduplicate: true, // Important for batch requests
+        }
+      );
     } catch (error) {
       throw this.handleError(error);
     }
@@ -641,19 +1025,19 @@ export class OxyServices {
    */
   async getTokenBySession(sessionId: string): Promise<{ accessToken: string; expiresAt: string }> {
     try {
-      console.log('🔑 getTokenBySession - Fetching token for session:', sessionId);
+      this.logger.debug('Fetching token for session:', sessionId);
       const res = await this.client.get(`/api/session/token/${sessionId}`);
       const { accessToken } = res.data;
       
-      console.log('🔑 getTokenBySession - Token received:', !!accessToken);
+      this.logger.debug('Token received');
       
       // Set the token in the centralized token store
       this.setTokens(accessToken);
-      console.log('🔑 getTokenBySession - Token set in store');
+      this.logger.debug('Token set in store');
       
       return res.data;
     } catch (error) {
-      console.log('❌ getTokenBySession - Error:', error);
+      this.logger.error('getTokenBySession error:', error);
       throw this.handleError(error);
     }
   }
@@ -763,8 +1147,10 @@ export class OxyServices {
    */
   async getProfileByUsername(username: string): Promise<User> {
     try {
-      const res = await this.client.get(`/api/profiles/username/${username}`);
-      return res.data;
+      return await this.makeRequest<User>('GET', `/api/profiles/username/${username}`, undefined, {
+        cache: true,
+        cacheTTL: 5 * 60 * 1000, // 5 minutes cache for profiles
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -856,8 +1242,10 @@ export class OxyServices {
    */
   async getCurrentUser(): Promise<User> {
     return this.withAuthRetry(async () => {
-      const res = await this.client.get('/api/users/me');
-      return res.data;
+      return await this.makeRequest<User>('GET', '/api/users/me', undefined, {
+        cache: true,
+        cacheTTL: 1 * 60 * 1000, // 1 minute cache for current user
+      });
     }, 'getCurrentUser');
   }
 
@@ -1769,8 +2157,15 @@ export class OxyServices {
     image?: string;
   }> {
     try {
-      const res = await this.client.get(`/api/link-metadata?url=${encodeURIComponent(url)}`);
-      return res.data;
+      return await this.makeRequest<{
+        url: string;
+        title: string;
+        description: string;
+        image?: string;
+      }>('GET', '/api/link-metadata', { url }, {
+        cache: true,
+        cacheTTL: 30 * 60 * 1000, // 30 minutes cache for link metadata
+      });
     } catch (error) {
       throw this.handleError(error);
     }

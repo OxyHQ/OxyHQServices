@@ -1,5 +1,24 @@
 export interface OxyConfig {
   baseURL: string;
+  cloudURL?: string;
+  // Performance & caching options
+  enableCache?: boolean;
+  cacheTTL?: number; // Cache TTL in milliseconds (default: 5 minutes)
+  enableRequestDeduplication?: boolean;
+  enableRetry?: boolean;
+  maxRetries?: number;
+  retryDelay?: number;
+  requestTimeout?: number; // Default timeout in milliseconds (default: 5000)
+  // Rate limiting
+  maxConcurrentRequests?: number;
+  requestQueueSize?: number;
+  // Logging
+  enableLogging?: boolean;
+  logLevel?: 'none' | 'error' | 'warn' | 'info' | 'debug';
+  // Performance monitoring
+  onRequestStart?: (url: string, method: string) => void;
+  onRequestEnd?: (url: string, method: string, duration: number, success: boolean) => void;
+  onRequestError?: (url: string, method: string, error: Error) => void;
 }
 
 export interface User {

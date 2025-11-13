@@ -9,6 +9,7 @@ import SignUpWelcomeStep from './steps/SignUpWelcomeStep';
 import SignUpIdentityStep from './steps/SignUpIdentityStep';
 import SignUpSecurityStep from './steps/SignUpSecurityStep';
 import SignUpSummaryStep from './steps/SignUpSummaryStep';
+import { TTLCache, registerCacheForCleanup } from '../../utils/cache';
 
 // Types for better type safety
 interface ValidationState {
@@ -51,8 +52,16 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
     // Error message state
     const [errorMessage, setErrorMessage] = useState('');
 
-    // Username validation with caching
-    const usernameCache = useRef<Map<string, { available: boolean; timestamp: number }>>(new Map());
+    // Username validation with caching - uses centralized cache
+    const usernameCache = useRef(new TTLCache<boolean>(5 * 60 * 1000)); // 5 minutes cache
+    
+    // Register cache for cleanup on mount
+    useEffect(() => {
+        registerCacheForCleanup(usernameCache.current);
+        return () => {
+            usernameCache.current.clear();
+        };
+    }, []);
 
     const validateUsername = useCallback(async (usernameToValidate: string): Promise<boolean> => {
         if (!usernameToValidate || usernameToValidate.length < USERNAME_MIN_LENGTH) {
@@ -62,9 +71,8 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
 
         // Check cache first
         const cached = usernameCache.current.get(usernameToValidate);
-        const now = Date.now();
-        if (cached && (now - cached.timestamp) < 5 * 60 * 1000) {
-            const isValid = cached.available;
+        if (cached !== null) {
+            const isValid = cached;
             setValidationState({
                 status: isValid ? 'valid' : 'invalid',
                 message: isValid ? '' : 'Username is already taken'
@@ -79,10 +87,7 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
             const isValid = result.available;
 
             // Cache the result
-            usernameCache.current.set(usernameToValidate, {
-                available: isValid,
-                timestamp: now
-            });
+            usernameCache.current.set(usernameToValidate, isValid);
 
             setValidationState({
                 status: isValid ? 'valid' : 'invalid',
@@ -146,12 +151,6 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
         }
     }, [username, email, password, confirmPassword, validateEmail, validatePassword, signUp, navigate]);
 
-    // Cleanup cache on unmount
-    useEffect(() => {
-        return () => {
-            usernameCache.current.clear();
-        };
-    }, []);
 
     // Step configurations
     const steps: StepConfig[] = useMemo(() => [
