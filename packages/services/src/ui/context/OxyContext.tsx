@@ -375,6 +375,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       await applyLanguagePreference(fullUser);
       
       // Refresh all device sessions after switching
+      // Preserve existing sessions from other users to avoid losing accounts
       try {
         const deviceSessions = await oxyServices.getDeviceSessions(sessionId);
         const allDeviceSessions = deviceSessions.map((ds: any) => ({
@@ -384,14 +385,31 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           lastActive: ds.lastActive || new Date().toISOString(),
           userId: ds.user?.id || ds.userId || fullUser.id,
         }));
-        setSessions(allDeviceSessions);
+        // Merge with existing sessions to preserve other accounts
+        setSessions((prevSessions) => {
+          const existingSessionIds = new Set(prevSessions.map(s => s.sessionId));
+          const newSessions = allDeviceSessions.filter(s => !existingSessionIds.has(s.sessionId));
+          // Combine existing sessions with new ones, prioritizing new data for existing sessions
+          const sessionMap = new Map(prevSessions.map(s => [s.sessionId, s]));
+          allDeviceSessions.forEach(s => sessionMap.set(s.sessionId, s));
+          return Array.from(sessionMap.values());
+        });
       } catch (error) {
-        // Fallback to user sessions
+        // Fallback to user sessions - merge with existing to preserve other accounts
         if (__DEV__) {
           console.warn('Failed to get device sessions after switch, falling back to user sessions:', error);
         }
         const serverSessions = await oxyServices.getSessionsBySessionId(sessionId);
-        setSessions(mapServerSessionsToClient(serverSessions, fullUser.id));
+        const userSessions = mapServerSessionsToClient(serverSessions, fullUser.id);
+        // Merge with existing sessions to preserve other accounts
+        setSessions((prevSessions) => {
+          const existingSessionIds = new Set(prevSessions.map(s => s.sessionId));
+          const newSessions = userSessions.filter(s => !existingSessionIds.has(s.sessionId));
+          // Combine existing sessions with new ones, prioritizing new data for existing sessions
+          const sessionMap = new Map(prevSessions.map(s => [s.sessionId, s]));
+          userSessions.forEach(s => sessionMap.set(s.sessionId, s));
+          return Array.from(sessionMap.values());
+        });
       }
       
       onAuthStateChange?.(fullUser);
@@ -693,12 +711,22 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       setSessions(allDeviceSessions);
     } catch (error) {
       // Fallback to user sessions if device sessions fail
+      // Merge with existing sessions to preserve other accounts
       if (__DEV__) {
         console.warn('Failed to refresh device sessions, falling back to user sessions:', error);
       }
     try {
       const serverSessions = await oxyServices.getSessionsBySessionId(activeSessionId);
-      setSessions(mapServerSessionsToClient(serverSessions, user?.id));
+      const userSessions = mapServerSessionsToClient(serverSessions, user?.id);
+      // Merge with existing sessions to preserve other accounts
+      setSessions((prevSessions) => {
+        const existingSessionIds = new Set(prevSessions.map(s => s.sessionId));
+        const newSessions = userSessions.filter(s => !existingSessionIds.has(s.sessionId));
+        // Combine existing sessions with new ones, prioritizing new data for existing sessions
+        const sessionMap = new Map(prevSessions.map(s => [s.sessionId, s]));
+        userSessions.forEach(s => sessionMap.set(s.sessionId, s));
+        return Array.from(sessionMap.values());
+      });
       } catch (fallbackError) {
       if (__DEV__) {
           console.error('Refresh sessions error:', fallbackError);
