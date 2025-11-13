@@ -1,7 +1,7 @@
 import type React from 'react';
 import type { RouteName } from '../../navigation/routes';
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { View, Text, StyleSheet, Platform } from 'react-native';
+import { View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
@@ -57,7 +57,6 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
 }) => {
     const usernameRef = useRef<any>(null);
     const baseStyles = stepStyles;
-    const webShadowReset = Platform.OS === 'web' ? ({ boxShadow: 'none' } as any) : null;
     const { t } = useI18n();
     const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -84,7 +83,9 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
     }, []);
 
     const handleUsernameChange = (text: string) => {
-        setUsername(text);
+        // Text is already filtered by formatValue prop, but ensure it's clean
+        const filteredText = text.replace(/[^a-zA-Z0-9]/g, '');
+        setUsername(filteredText);
         setErrorMessage('');
         // Reset validation state when user types
         if (validationState.status !== 'idle') {
@@ -92,7 +93,7 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
         }
 
         // Trigger debounced validation
-        debouncedValidateUsername(text);
+        debouncedValidateUsername(filteredText);
     };
 
     const handleEmailChange = (text: string) => {
@@ -142,47 +143,41 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
                 <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>{t('signup.identity.subtitle')}</Text>
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
-                <View
-                    style={[
-                        stylesheet.formCard,
-                        { backgroundColor: colors.inputBackground || colors.card || 'rgba(0,0,0,0.04)' },
-                        webShadowReset,
-                    ]}
-                >
-                    <TextField
-                        ref={usernameRef}
-                        label={t('common.labels.username')}
-                        leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
-                        value={username}
-                        onChangeText={handleUsernameChange}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        testID="signup-username-input"
-                        variant="filled"
-                        error={validationState.status === 'invalid' ? validationState.message : undefined}
-                        loading={validationState.status === 'validating'}
-                        success={validationState.status === 'valid'}
-                        onSubmitEditing={handleNext}
-                        autoFocus
-                        style={{ marginBottom: 0 }}
-                    />
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, { gap: STEP_INNER_GAP }]}>
+                <TextField
+                    ref={usernameRef}
+                    label={t('common.labels.username')}
+                    leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
+                    value={username}
+                    onChangeText={handleUsernameChange}
+                    formatValue={(text) => text.replace(/[^a-zA-Z0-9]/g, '')}
+                    maxLength={30}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    testID="signup-username-input"
+                    variant="filled"
+                    error={validationState.status === 'invalid' ? validationState.message : undefined}
+                    loading={validationState.status === 'validating'}
+                    success={validationState.status === 'valid'}
+                    onSubmitEditing={handleNext}
+                    autoFocus
+                    style={{ marginBottom: 0 }}
+                />
 
-                    <TextField
-                        label={t('common.labels.email')}
-                        leading={<Ionicons name="mail-outline" size={24} color={colors.secondaryText} />}
-                        value={email}
-                        onChangeText={handleEmailChange}
-                        keyboardType="email-address"
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        testID="signup-email-input"
-                        variant="filled"
-                        error={emailError}
-                        onSubmitEditing={handleNext}
-                        style={{ marginBottom: 0 }}
-                    />
-                </View>
+                <TextField
+                    label={t('common.labels.email')}
+                    leading={<Ionicons name="mail-outline" size={24} color={colors.secondaryText} />}
+                    value={email}
+                    onChangeText={handleEmailChange}
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    testID="signup-email-input"
+                    variant="filled"
+                    error={emailError}
+                    onSubmitEditing={handleNext}
+                    style={{ marginBottom: 0 }}
+                />
             </View>
 
             <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
@@ -216,16 +211,3 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
 };
 
 export default SignUpIdentityStep;
-
-const stylesheet = StyleSheet.create({
-    formCard: {
-        width: '100%',
-        maxWidth: 420,
-        borderRadius: 28,
-        paddingHorizontal: 20,
-        paddingVertical: 18,
-        gap: STEP_INNER_GAP,
-        alignItems: 'stretch',
-        shadowColor: 'transparent',
-    },
-});

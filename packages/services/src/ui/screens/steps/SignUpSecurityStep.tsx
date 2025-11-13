@@ -1,7 +1,7 @@
 import type React from 'react';
 import type { RouteName } from '../../navigation/routes';
 import { useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
@@ -59,7 +59,6 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
     const passwordRef = useRef<any>(null);
     const { t } = useI18n();
     const baseStyles = stepStyles;
-    const webShadowReset = Platform.OS === 'web' ? ({ boxShadow: 'none' } as any) : null;
 
     const handlePasswordChange = (text: string) => {
         setPassword(text);
@@ -106,74 +105,66 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
                 <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>{t('signup.security.subtitle')}</Text>
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
-                <View
-                    style={[
-                        stylesheet.formCard,
-                        { backgroundColor: colors.inputBackground || colors.card || 'rgba(0,0,0,0.04)' },
-                        webShadowReset,
-                    ]}
-                >
-                    <TextField
-                        ref={passwordRef}
-                        label={t('common.labels.password')}
-                        leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
-                        trailing={
-                            <TouchableOpacity
-                                onPress={() => setShowPassword(!showPassword)}
-                                style={stylesheet.iconButton}
-                            >
-                                <Ionicons
-                                    name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                                    size={20}
-                                    color={colors.secondaryText}
-                                />
-                            </TouchableOpacity>
-                        }
-                        value={password}
-                        onChangeText={handlePasswordChange}
-                        secureTextEntry={!showPassword}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        testID="signup-password-input"
-                        variant="filled"
-                        error={passwordError}
-                        onSubmitEditing={handleNext}
-                        autoFocus
-                        style={{ marginBottom: 0 }}
-                    />
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, { gap: STEP_INNER_GAP }]}>
+                <TextField
+                    ref={passwordRef}
+                    label={t('common.labels.password')}
+                    leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
+                    trailing={
+                        <TouchableOpacity
+                            onPress={() => setShowPassword(!showPassword)}
+                            style={stylesheet.iconButton}
+                        >
+                            <Ionicons
+                                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                                size={20}
+                                color={colors.secondaryText}
+                            />
+                        </TouchableOpacity>
+                    }
+                    value={password}
+                    onChangeText={handlePasswordChange}
+                    secureTextEntry={!showPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    testID="signup-password-input"
+                    variant="filled"
+                    error={passwordError}
+                    onSubmitEditing={handleNext}
+                    autoFocus
+                    style={{ marginBottom: 0 }}
+                />
 
-                    <TextField
-                        label={t('common.labels.confirmPassword')}
-                        leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
-                        trailing={
-                            <TouchableOpacity
-                                onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                                style={stylesheet.iconButton}
-                            >
-                                <Ionicons
-                                    name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                                    size={20}
-                                    color={colors.secondaryText}
-                                />
-                            </TouchableOpacity>
-                        }
-                        value={confirmPassword}
-                        onChangeText={handleConfirmPasswordChange}
-                        secureTextEntry={!showConfirmPassword}
-                        autoCapitalize="none"
-                        autoCorrect={false}
-                        testID="signup-confirm-password-input"
-                        variant="filled"
-                        error={confirmPasswordError}
-                        onSubmitEditing={handleNext}
-                        style={{ marginBottom: 0 }}
-                    />
+                <TextField
+                    label={t('common.labels.confirmPassword')}
+                    leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
+                    trailing={
+                        <TouchableOpacity
+                            onPress={() => setShowConfirmPassword(!showConfirmPassword)}
+                            style={stylesheet.iconButton}
+                        >
+                            <Ionicons
+                                name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+                                size={20}
+                                color={colors.secondaryText}
+                            />
+                        </TouchableOpacity>
+                    }
+                    value={confirmPassword}
+                    onChangeText={handleConfirmPasswordChange}
+                    secureTextEntry={!showConfirmPassword}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    testID="signup-confirm-password-input"
+                    variant="filled"
+                    error={confirmPasswordError}
+                    onSubmitEditing={handleNext}
+                    style={{ marginBottom: 0 }}
+                />
 
-                    <Text style={[styles.footerText, stylesheet.helperText, { color: colors.secondaryText }]}>
-                        Password must be at least 8 characters long
-                    </Text>
-                </View>
+                <Text style={[styles.footerText, stylesheet.helperText, { color: colors.secondaryText }]}>
+                    Password must be at least 8 characters long
+                </Text>
             </View>
 
             <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
@@ -203,16 +194,6 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
 export default SignUpSecurityStep;
 
 const stylesheet = StyleSheet.create({
-    formCard: {
-        width: '100%',
-        maxWidth: 420,
-        borderRadius: 28,
-        paddingHorizontal: 20,
-        paddingVertical: 18,
-        gap: STEP_INNER_GAP,
-        alignItems: 'stretch',
-        shadowColor: 'transparent',
-    },
     iconButton: {
         padding: 4,
     },

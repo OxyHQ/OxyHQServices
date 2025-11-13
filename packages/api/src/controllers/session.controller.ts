@@ -70,10 +70,22 @@ export class SessionController {
   // Register a new user account
   static async register(req: Request, res: Response) {
     try {
-      const { username, email, password } = req.body;
+      let { username, email, password } = req.body;
 
       if (!username || !email || !password) {
         return res.status(400).json({ error: 'Username, email, and password are required' });
+      }
+
+      // Sanitize username: only allow alphanumeric characters
+      username = username.replace(/[^a-zA-Z0-9]/g, '');
+
+      // Validate username format (alphanumeric only, 3-30 chars)
+      if (!username || username.length < 3 || username.length > 30) {
+        return res.status(400).json({ error: 'Username must be between 3 and 30 characters long' });
+      }
+
+      if (!/^[a-zA-Z0-9]{3,30}$/.test(username)) {
+        return res.status(400).json({ error: 'Username can only contain letters and numbers' });
       }
 
       // Check if user already exists
@@ -133,15 +145,19 @@ export class SessionController {
   // Sign in that returns only session data
   static async signIn(req: Request, res: Response) {
     try {
-      const { username, password, deviceName, deviceFingerprint, backupCode } = req.body;
+      let { username, password, deviceName, deviceFingerprint, backupCode } = req.body;
 
       if (!username || !password) {
         return res.status(400).json({ error: 'Username and password are required' });
       }
 
+      // Sanitize username for username lookup (remove special characters)
+      // Keep original for email lookup since email can contain special characters
+      const sanitizedUsername = username.replace(/[^a-zA-Z0-9]/g, '');
+
       // Find user by username or email
       const user = await User.findOne({
-        $or: [{ username }, { email: username }]
+        $or: [{ username: sanitizedUsername }, { email: username }]
       }).select('+password'); // Explicitly select password field since it's set to select: false
 
       if (!user) {

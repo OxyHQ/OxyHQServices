@@ -42,12 +42,23 @@ router.get('/validate', (req, res) => {
 // Username and email availability check endpoints
 router.get('/check-username/:username', async (req, res) => {
   try {
-    const { username } = req.params;
+    let { username } = req.params;
+    
+    // Sanitize username: only allow alphanumeric characters
+    username = username.replace(/[^a-zA-Z0-9]/g, '');
     
     if (!username || username.length < 3) {
       return res.status(400).json({ 
         available: false, 
-        message: 'Username must be at least 3 characters long' 
+        message: 'Username must be at least 3 characters long and contain only letters and numbers' 
+      });
+    }
+
+    // Validate username format (alphanumeric only)
+    if (!/^[a-zA-Z0-9]{3,30}$/.test(username)) {
+      return res.status(400).json({ 
+        available: false, 
+        message: 'Username can only contain letters and numbers' 
       });
     }
 

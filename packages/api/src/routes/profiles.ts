@@ -17,7 +17,14 @@ const router = Router();
 // Get profile by username
 router.get('/username/:username', async (req: Request, res: Response) => {
   try {
-    const user = await User.findOne({ username: req.params.username })
+    // Sanitize username: only allow alphanumeric characters
+    const username = req.params.username.replace(/[^a-zA-Z0-9]/g, '');
+    
+    if (!username || username.length < 3) {
+      return res.status(400).json({ message: 'Invalid username' });
+    }
+
+    const user = await User.findOne({ username })
       .select('-password -refreshToken');
 
     if (!user) {

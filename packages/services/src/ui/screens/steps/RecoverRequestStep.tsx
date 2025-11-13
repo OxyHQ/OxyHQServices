@@ -127,7 +127,7 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
                             icon: 'information-circle-outline',
                             variant: 'primary',
                             loading: isLoading,
-                            disabled: isLoading,
+                            disabled: isLoading || !identifier || identifier.length < 3,
                         },
                     ]}
                     colors={colors}

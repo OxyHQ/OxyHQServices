@@ -33,17 +33,6 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
             minWidth: 70,
             borderWidth: 1,
             flexShrink: 0,
-            ...Platform.select({
-                web: {
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                },
-                default: {
-                    shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.1,
-                    shadowRadius: 4,
-                    elevation: 2,
-                }
-            }),
         };
 
         // Determine border radius based on position
@@ -85,28 +74,21 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
         // Determine colors based on variant
         let backgroundColor = 'transparent';
         let borderColor = colors.border;
-        let shadowColor = colors.border;
-        let textColor = colors.text;
+        const isDisabled = button.disabled || button.loading;
 
         switch (button.variant) {
             case 'primary':
-                backgroundColor = colors.primary;
-                borderColor = colors.primary;
-                shadowColor = colors.primary;
-                textColor = '#FFFFFF';
+                backgroundColor = isDisabled ? '#CCCCCC' : colors.primary;
+                borderColor = isDisabled ? '#CCCCCC' : colors.primary;
                 break;
             case 'secondary':
-                backgroundColor = colors.secondary || colors.primary;
-                borderColor = colors.secondary || colors.primary;
-                shadowColor = colors.secondary || colors.primary;
-                textColor = '#FFFFFF';
+                backgroundColor = isDisabled ? '#CCCCCC' : (colors.secondary || colors.primary);
+                borderColor = isDisabled ? '#CCCCCC' : (colors.secondary || colors.primary);
                 break;
             case 'transparent':
             default:
                 backgroundColor = 'transparent';
-                borderColor = colors.border;
-                shadowColor = colors.border;
-                textColor = colors.text;
+                borderColor = isDisabled ? '#CCCCCC' : colors.border;
                 break;
         }
 
@@ -115,7 +97,7 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
             ...borderRadius,
             backgroundColor,
             borderColor,
-            shadowColor,
+            opacity: isDisabled ? 0.6 : 1,
         };
     };
 
@@ -127,15 +109,17 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
             flexShrink: 1,
         };
 
+        const isDisabled = button.disabled || button.loading;
         let textColor = colors.text;
+        
         switch (button.variant) {
             case 'primary':
             case 'secondary':
-                textColor = '#FFFFFF';
+                textColor = isDisabled ? '#999999' : '#FFFFFF';
                 break;
             case 'transparent':
             default:
-                textColor = colors.text;
+                textColor = isDisabled ? '#999999' : colors.text;
                 break;
         }
 
@@ -147,13 +131,15 @@ const GroupedPillButtons: React.FC<GroupedPillButtonsProps> = ({
     };
 
     const getIconColor = (button: ButtonConfig, colors: any) => {
+        const isDisabled = button.disabled || button.loading;
+        
         switch (button.variant) {
             case 'primary':
             case 'secondary':
-                return '#FFFFFF';
+                return isDisabled ? '#999999' : '#FFFFFF';
             case 'transparent':
             default:
-                return colors.text;
+                return isDisabled ? '#999999' : colors.text;
         }
     };
 

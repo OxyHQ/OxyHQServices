@@ -130,7 +130,14 @@ const RecoverResetPasswordStep: React.FC<RecoverResetPasswordStepProps> = ({
         <GroupedPillButtons
           buttons={[
             { text: t('common.actions.back'), onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
-            { text: t('common.actions.resetPassword'), onPress: handleReset, icon: 'key-outline', variant: 'primary', loading: isLoading, disabled: isLoading },
+            { 
+              text: t('common.actions.resetPassword'), 
+              onPress: handleReset, 
+              icon: 'key-outline', 
+              variant: 'primary', 
+              loading: isLoading, 
+              disabled: isLoading || !password || password.length < 8 || password !== confirmPassword 
+            },
           ]}
           colors={colors}
         />
