@@ -76,9 +76,10 @@ export interface OxyConfig extends OxyConfigBase {
   cloudURL?: string;
 }
 import type { SessionLoginResponse } from '../models/session';
-import { handleHttpError } from '../utils/errorUtils';
+import { handleHttpError, retryWithBackoff } from '../utils/errorUtils';
 import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
 import { TTLCache, registerCacheForCleanup } from '../utils/cache';
+import { RequestDeduplicator, RequestQueue, SimpleLogger } from '../utils/requestUtils';
 
 interface JwtPayload {
   exp?: number;
@@ -114,148 +115,7 @@ export class OxyAuthenticationTimeoutError extends OxyAuthenticationError {
   }
 }
 
-// Use centralized TTLCache instead of local implementation
-
-/**
- * Request deduplication - prevents duplicate concurrent requests
- */
-class RequestDeduplicator {
-  private pendingRequests = new Map<string, Promise<any>>();
-
-  async deduplicate<T>(
-    key: string,
-    requestFn: () => Promise<T>
-  ): Promise<T> {
-    const existing = this.pendingRequests.get(key);
-    if (existing) {
-      return existing;
-    }
-
-    const promise = requestFn()
-      .finally(() => {
-        this.pendingRequests.delete(key);
-      });
-
-    this.pendingRequests.set(key, promise);
-    return promise;
-  }
-
-  clear(): void {
-    this.pendingRequests.clear();
-  }
-
-  size(): number {
-    return this.pendingRequests.size;
-  }
-}
-
-/**
- * Request queue with concurrency control
- */
-class RequestQueue {
-  private queue: Array<() => Promise<any>> = [];
-  private running = 0;
-  private maxConcurrent: number;
-  private maxQueueSize: number;
-
-  constructor(maxConcurrent: number = 10, maxQueueSize: number = 100) {
-    this.maxConcurrent = maxConcurrent;
-    this.maxQueueSize = maxQueueSize;
-  }
-
-  async enqueue<T>(requestFn: () => Promise<T>): Promise<T> {
-    if (this.queue.length >= this.maxQueueSize) {
-      throw new Error('Request queue is full');
-    }
-
-    return new Promise<T>((resolve, reject) => {
-      this.queue.push(async () => {
-        try {
-          const result = await requestFn();
-          resolve(result);
-        } catch (error) {
-          reject(error);
-        }
-      });
-
-      this.process();
-    });
-  }
-
-  private async process(): Promise<void> {
-    if (this.running >= this.maxConcurrent || this.queue.length === 0) {
-      return;
-    }
-
-    this.running++;
-    const requestFn = this.queue.shift();
-    if (requestFn) {
-      try {
-        await requestFn();
-      } finally {
-        this.running--;
-        this.process();
-      }
-    } else {
-      this.running--;
-    }
-  }
-
-  clear(): void {
-    this.queue = [];
-  }
-
-  size(): number {
-    return this.queue.length;
-  }
-
-  runningCount(): number {
-    return this.running;
-  }
-}
-
-/**
- * Logger utility with levels
- */
-class Logger {
-  private enabled: boolean;
-  private level: 'none' | 'error' | 'warn' | 'info' | 'debug';
-
-  constructor(enabled: boolean = false, level: string = 'error') {
-    this.enabled = enabled;
-    this.level = level as any;
-  }
-
-  private shouldLog(level: string): boolean {
-    if (!this.enabled || this.level === 'none') return false;
-    const levels = ['none', 'error', 'warn', 'info', 'debug'];
-    return levels.indexOf(level) <= levels.indexOf(this.level);
-  }
-
-  error(...args: any[]): void {
-    if (this.shouldLog('error')) {
-      console.error('[OxyServices]', ...args);
-    }
-  }
-
-  warn(...args: any[]): void {
-    if (this.shouldLog('warn')) {
-      console.warn('[OxyServices]', ...args);
-    }
-  }
-
-  info(...args: any[]): void {
-    if (this.shouldLog('info')) {
-      console.info('[OxyServices]', ...args);
-    }
-  }
-
-  debug(...args: any[]): void {
-    if (this.shouldLog('debug')) {
-      console.log('[OxyServices]', ...args);
-    }
-  }
-}
+// Use centralized utilities from requestUtils
 
 /**
  * OxyServices - Unified client library for interacting with the Oxy API
@@ -311,7 +171,7 @@ export class OxyServices {
   private cache: TTLCache<any>;
   private deduplicator: RequestDeduplicator;
   private requestQueue: RequestQueue;
-  private logger: Logger;
+  private logger: SimpleLogger;
   
   // Performance monitoring
   private requestMetrics = {
@@ -345,7 +205,7 @@ export class OxyServices {
     registerCacheForCleanup(this.cache); // Register for automatic cleanup
     this.deduplicator = new RequestDeduplicator();
     this.requestQueue = new RequestQueue(maxConcurrent, maxQueueSize);
-    this.logger = new Logger(enableLogging, logLevel);
+    this.logger = new SimpleLogger(enableLogging, logLevel, 'OxyServices');
 
     // Setup Axios client with optimized configuration
     this.client = axios.create({ 
@@ -354,7 +214,8 @@ export class OxyServices {
       // Production optimizations
       headers: {
         'Accept': 'application/json',
-        'Accept-Encoding': 'gzip, deflate, br',
+        // Note: Accept-Encoding is automatically handled by the browser
+        // and cannot be set manually (forbidden header)
       },
       // Enable HTTP keep-alive for connection reuse (Node.js only)
       ...(typeof process !== 'undefined' && process.env && typeof window === 'undefined' && typeof require !== 'undefined' ? {
@@ -484,7 +345,7 @@ export class OxyServices {
   }
 
   /**
-   * Exponential backoff retry logic
+   * Exponential backoff retry logic with 4xx error handling
    */
   private async retryWithBackoff<T>(
     fn: () => Promise<T>,
@@ -509,7 +370,7 @@ export class OxyServices {
           break;
         }
         
-        // Calculate delay with exponential backoff and jitter
+        // Use centralized retryWithBackoff with jitter
         const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
         this.logger.debug(`Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms`);
         await new Promise(resolve => setTimeout(resolve, delay));

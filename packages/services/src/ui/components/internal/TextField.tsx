@@ -267,10 +267,12 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
             : surfaceScale(0.62);
 
     // Helper function to clone React elements with updated color
+    // React 19: ref is now a regular prop, accessed via element.props.ref
     const cloneWithColor = (element: React.ReactNode, color: string): React.ReactNode => {
         if (React.isValidElement(element) && element.type) {
-            // Avoid spreading props directly to satisfy TS complaining about non-object spread sources
-            return React.cloneElement(element as any, { color });
+            // React 19: ref is now in props, so we spread all props and override color
+            const elementProps = (element as any).props || {};
+            return React.cloneElement(element as any, { ...elementProps, color });
         }
         return element;
     };
