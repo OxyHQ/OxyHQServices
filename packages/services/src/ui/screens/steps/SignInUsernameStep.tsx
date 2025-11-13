@@ -4,20 +4,17 @@ import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
 import {
     View,
     Text,
-    Platform,
     StyleSheet,
-    type ViewStyle,
-    type TextStyle,
     ActivityIndicator,
+    TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import HighFive from '../../../assets/illustrations/HighFive';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
 import { useI18n } from '../../hooks/useI18n';
-import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
+import { stepStyles } from '../../styles/spacing';
 import Avatar from '../../components/Avatar';
-import { TouchableOpacity } from 'react-native';
 import { useOxy } from '../../context/OxyContext';
 import { toast } from '../../../lib/sonner';
 
@@ -68,6 +65,69 @@ const MAX_QUICK_ACCOUNTS = 3;
 const getThemeMode = (theme: string | undefined): 'light' | 'dark' =>
     theme === 'dark' ? 'dark' : 'light';
 
+/**
+ * Profile cache to avoid re-fetching user profiles on every account switch
+ * Cache persists across component re-renders using module-level storage
+ */
+const profileCache = new Map<string, { profile: QuickAccount; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes cache
+
+/**
+ * Batch fetch profiles using optimized backend endpoint
+ * Only fetches profiles that aren't cached or are expired
+ */
+async function batchGetProfiles(
+    sessionIds: string[],
+    oxyServices: any
+): Promise<Map<string, QuickAccount>> {
+    const now = Date.now();
+    const results = new Map<string, QuickAccount>();
+    const toFetch: string[] = [];
+
+    // Check cache first
+    for (const sessionId of sessionIds) {
+        const cached = profileCache.get(sessionId);
+        if (cached && (now - cached.timestamp) < CACHE_TTL) {
+            results.set(sessionId, cached.profile);
+        } else {
+            toFetch.push(sessionId);
+        }
+    }
+
+    // Batch fetch only uncached profiles
+    if (toFetch.length > 0 && oxyServices?.getUsersBySessions) {
+        try {
+            const batchResults = await oxyServices.getUsersBySessions(toFetch);
+
+            for (const { sessionId, user } of batchResults) {
+                if (user) {
+                    const displayName =
+                        user?.name?.full ||
+                        user?.name?.first ||
+                        user?.username ||
+                        'Account';
+
+                    const quickAccount: QuickAccount = {
+                        sessionId,
+                        username: user.username || '',
+                        displayName,
+                        avatar: user?.avatar,
+                    };
+
+                    profileCache.set(sessionId, { profile: quickAccount, timestamp: now });
+                    results.set(sessionId, quickAccount);
+                }
+            }
+        } catch (error) {
+            if (__DEV__) {
+                console.error('Failed to batch load profiles:', error);
+            }
+        }
+    }
+
+    return results;
+};
+
 const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
     colors,
     styles,
@@ -89,108 +149,74 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
     const { t } = useI18n();
     const { sessions, activeSessionId, switchSession, oxyServices } = useOxy();
     const baseStyles = stepStyles;
-    const webShadowReset = Platform.OS === 'web' ? ({ boxShadow: 'none' } as any) : null;
     const themeMode = getThemeMode(theme);
     const [quickAccounts, setQuickAccounts] = useState<QuickAccount[]>([]);
     const [loadingAccounts, setLoadingAccounts] = useState(false);
     const [switchingSessionId, setSwitchingSessionId] = useState<string | null>(null);
     const [showAccounts, setShowAccounts] = useState(false);
 
+    const previousSessionIdsRef = useRef<string>('');
+    const loadingRef = useRef(false);
+
     const otherSessions = useMemo(
         () => (sessions ?? []).filter((session) => session.sessionId !== activeSessionId),
         [sessions, activeSessionId]
     );
 
-    // Show accounts if we have any sessions (either in add account mode or just have saved sessions)
-    const hasSessions = (sessions ?? []).length > 0;
+    const hasSessions = useMemo(() => (sessions ?? []).length > 0, [sessions?.length]);
 
-    // Use other sessions if in add account mode, otherwise show all sessions
-    const sessionsToShow = isAddAccountMode ? otherSessions : (sessions ?? []);
+    const sessionsToShow = useMemo(
+        () => isAddAccountMode ? otherSessions : (sessions ?? []),
+        [isAddAccountMode, otherSessions, sessions]
+    );
 
-    // Debug logging
-    if (__DEV__) {
-        console.log('SignInUsernameStep - Debug:', {
-            isAddAccountMode,
-            hasSessions,
-            sessionsCount: sessions?.length ?? 0,
-            otherSessionsCount: otherSessions.length,
-            sessionsToShowCount: sessionsToShow.length,
-            activeSessionId,
-            quickAccountsCount: quickAccounts.length,
-            loadingAccounts,
-        });
-    }
+    const sessionsToShowIds = useMemo(
+        () => sessionsToShow.map(s => s.sessionId).sort().join(','),
+        [sessionsToShow]
+    );
 
     useEffect(() => {
+        if (loadingRef.current || previousSessionIdsRef.current === sessionsToShowIds) {
+            return;
+        }
+
+        if (!hasSessions || !oxyServices || sessionsToShow.length === 0) {
+            setQuickAccounts([]);
+            setLoadingAccounts(false);
+            previousSessionIdsRef.current = sessionsToShowIds;
+            return;
+        }
+
         let cancelled = false;
+        loadingRef.current = true;
 
         const loadQuickAccounts = async () => {
-            // Show accounts if we have sessions and services available
-            // In add account mode, show other sessions; otherwise show all sessions
-            if (!hasSessions || !oxyServices) {
-                if (!cancelled) {
-                    setQuickAccounts([]);
-                    setLoadingAccounts(false);
-                }
-                return;
-            }
-
-            // If in add account mode and no other sessions, don't show anything
-            if (isAddAccountMode && sessionsToShow.length === 0) {
-                if (!cancelled) {
-                    setQuickAccounts([]);
-                    setLoadingAccounts(false);
-                }
-                return;
-            }
-
-            // If not in add account mode and no sessions, don't show anything
-            if (!isAddAccountMode && sessionsToShow.length === 0) {
-                if (!cancelled) {
-                    setQuickAccounts([]);
-                    setLoadingAccounts(false);
-                }
-                return;
-            }
-
             setLoadingAccounts(true);
             const targetSessions = sessionsToShow.slice(0, MAX_QUICK_ACCOUNTS);
+            const sessionIds = targetSessions.map(s => s.sessionId);
 
             try {
-                const results = await Promise.all(
-                    targetSessions.map(async (session): Promise<QuickAccount | null> => {
-                        try {
-                            const profile = await oxyServices.getUserBySession(session.sessionId);
-                            const displayName =
-                                profile?.name?.full ||
-                                profile?.name?.first ||
-                                profile?.username ||
-                                'Account';
-
-                            return {
-                                sessionId: session.sessionId,
-                                username: profile?.username ?? 'account',
-                                displayName,
-                                avatar: profile?.avatar,
-                            };
-                        } catch (error) {
-                            if (__DEV__) {
-                                console.error(
-                                    `Failed to load profile for session ${session.sessionId}`,
-                                    error
-                                );
-                            }
-                            return null;
-                        }
-                    })
-                );
+                const profilesMap = await batchGetProfiles(sessionIds, oxyServices);
 
                 if (!cancelled) {
-                    setQuickAccounts(results.filter((item): item is QuickAccount => Boolean(item)));
+                    const validAccounts = targetSessions
+                        .map(session => profilesMap.get(session.sessionId))
+                        .filter((item): item is QuickAccount => Boolean(item));
+
+                    setQuickAccounts(validAccounts);
+                    previousSessionIdsRef.current = sessionsToShowIds;
+                }
+            } catch (error) {
+                if (__DEV__) {
+                    console.error('Failed to load quick accounts:', error);
+                }
+                if (!cancelled) {
+                    setQuickAccounts([]);
                 }
             } finally {
                 if (!cancelled) {
                     setLoadingAccounts(false);
+                    loadingRef.current = false;
                 }
             }
         };
@@ -199,16 +225,31 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
 
         return () => {
             cancelled = true;
+            loadingRef.current = false;
         };
-    }, [hasSessions, sessionsToShow, oxyServices, isAddAccountMode]);
+    }, [sessionsToShowIds, hasSessions, oxyServices, sessionsToShow.length]);
 
     const handleSwitchAccount = useCallback(
         async (sessionId: string) => {
+            if (switchingSessionId) return;
+
             setSwitchingSessionId(sessionId);
             try {
+                // Clear cache for the switched session to force fresh data
+                profileCache.delete(sessionId);
+
                 await switchSession(sessionId);
-                const switchedAccount =
-                    quickAccounts.find((account) => account.sessionId === sessionId) ?? null;
+
+                // Reload accounts after switching to get fresh data
+                const targetSessions = sessionsToShow.slice(0, MAX_QUICK_ACCOUNTS);
+                const sessionIds = targetSessions.map(s => s.sessionId);
+                const profilesMap = await batchGetProfiles(sessionIds, oxyServices);
+                const validAccounts = targetSessions
+                    .map(session => profilesMap.get(session.sessionId))
+                    .filter((item): item is QuickAccount => Boolean(item));
+                setQuickAccounts(validAccounts);
+
+                const switchedAccount = profilesMap.get(sessionId);
                 const successMessage =
                     t('signin.status.accountSwitched', {
                         name: switchedAccount?.displayName ?? t('signin.actions.openAccountSwitcher'),
@@ -225,12 +266,11 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                 setSwitchingSessionId(null);
             }
         },
-        [quickAccounts, switchSession, t]
+        [quickAccounts, switchSession, t, switchingSessionId, sessionsToShow, oxyServices]
     );
 
     const otherAccountsCount = sessionsToShow.length;
 
-    // Get all accounts for avatar display (current user + quick accounts)
     const allAccountsForAvatars = useMemo(() => {
         const accounts: Array<{
             sessionId: string;
@@ -239,40 +279,44 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
             avatar?: string;
             isCurrent?: boolean;
         }> = [];
+        const seenSessionIds = new Set<string>();
 
-        // Add current user if in add account mode
-        if (isAddAccountMode && user) {
-            accounts.push({
-                sessionId: activeSessionId || '',
-                displayName: user.name?.full || user.username || 'Account',
-                username: user.username,
-                avatar: user.avatar,
-                isCurrent: true,
-            });
+        if (isAddAccountMode && user && activeSessionId) {
+            if (!seenSessionIds.has(activeSessionId)) {
+                accounts.push({
+                    sessionId: activeSessionId,
+                    displayName: user.name?.full || user.username || 'Account',
+                    username: user.username,
+                    avatar: user.avatar,
+                    isCurrent: true,
+                });
+                seenSessionIds.add(activeSessionId);
+            }
         }
 
-        // Add quick accounts
         quickAccounts.forEach((account) => {
-            accounts.push({
-                sessionId: account.sessionId,
-                displayName: account.displayName,
-                username: account.username,
-                avatar: account.avatar,
-                isCurrent: account.sessionId === activeSessionId,
-            });
+            if (!seenSessionIds.has(account.sessionId)) {
+                accounts.push({
+                    sessionId: account.sessionId,
+                    displayName: account.displayName,
+                    username: account.username,
+                    avatar: account.avatar,
+                    isCurrent: account.sessionId === activeSessionId,
+                });
+                seenSessionIds.add(account.sessionId);
+            }
         });
 
         return accounts;
     }, [isAddAccountMode, user, quickAccounts, activeSessionId]);
 
-    const handleUsernameChange = (text: string) => {
-        // Text is already filtered by formatValue prop, but ensure it's clean
+    const handleUsernameChange = useCallback((text: string) => {
         const filteredText = text.replace(/[^a-zA-Z0-9]/g, '');
         setUsername(filteredText);
         if (errorMessage) setErrorMessage('');
-    };
+    }, [setUsername, setErrorMessage, errorMessage]);
 
-    const handleContinue = async () => {
+    const handleContinue = useCallback(async () => {
         const trimmedUsername = username?.trim() || '';
 
         if (!trimmedUsername) {
@@ -287,9 +331,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
         }
 
         try {
-            // Validate the username before proceeding
             const isValid = await validateUsername(trimmedUsername);
-
             if (isValid) {
                 nextStep();
             }
@@ -297,7 +339,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
             if (__DEV__) console.error('Error during username validation:', error);
             setErrorMessage('Unable to validate username. Please try again.');
         }
-    };
+    }, [username, validateUsername, nextStep, setErrorMessage, t]);
 
     return (
         <>
@@ -345,7 +387,6 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                 />
             </View>
 
-            {/* "Or" divider */}
             {((isAddAccountMode && user) || (hasSessions && sessionsToShow.length > 0)) && (
                 <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.dividerContainer]}>
                     <View style={[stylesheet.dividerLine, { backgroundColor: colors.border }]} />
@@ -381,7 +422,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                 <View style={stylesheet.avatarsContainer}>
                                     {allAccountsForAvatars.slice(0, 5).map((account, index) => (
                                         <View
-                                            key={account.sessionId}
+                                            key={`avatar-${account.sessionId}-${index}`}
                                             style={[
                                                 stylesheet.avatarWrapper,
                                                 account.isCurrent && stylesheet.currentAvatarWrapper,
@@ -392,7 +433,6 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                         >
                                             <Avatar
                                                 name={account.displayName}
-                                                text={account.displayName.charAt(0).toUpperCase()}
                                                 size={28}
                                                 theme={themeMode}
                                                 backgroundColor={colors.primary}
@@ -420,7 +460,6 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                 </View>
                             ) : (
                                 <>
-                                    {/* Show current account when in add account mode */}
                                     {isAddAccountMode && user && (
                                         <View
                                             style={[
@@ -433,9 +472,6 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                             <View style={[stylesheet.accountItemAvatarWrapper, { borderColor: colors.inputBackground || colors.background || '#FFFFFF' }]}>
                                                 <Avatar
                                                     name={user.name?.full || user.username}
-                                                    text={(user.name?.full || user.username || 'U')
-                                                        .slice(0, 1)
-                                                        .toUpperCase()}
                                                     size={36}
                                                     theme={themeMode}
                                                     backgroundColor={colors.primary}
@@ -468,9 +504,9 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                             </View>
                                         </View>
                                     )}
-                                    {quickAccounts.map((account) => (
+                                    {quickAccounts.map((account, accountIndex) => (
                                         <TouchableOpacity
-                                            key={account.sessionId}
+                                            key={`account-${account.sessionId}-${accountIndex}`}
                                             style={[
                                                 stylesheet.accountItem,
                                                 {
@@ -489,7 +525,6 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                                     <View style={[stylesheet.accountItemAvatarWrapper, { borderColor: colors.inputBackground || colors.background || '#FFFFFF' }]}>
                                                         <Avatar
                                                             name={account.displayName}
-                                                            text={account.displayName.charAt(0).toUpperCase()}
                                                             size={36}
                                                             theme={themeMode}
                                                             backgroundColor={colors.primary}
@@ -677,17 +712,6 @@ const stylesheet = StyleSheet.create({
     },
     currentAvatarWrapper: {
         borderWidth: 3,
-    },
-    currentBadge: {
-        position: 'absolute',
-        bottom: -2,
-        right: -2,
-        width: 14,
-        height: 14,
-        borderRadius: 7,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 0,
     },
     accountItemAvatarWrapper: {
         borderRadius: 20,

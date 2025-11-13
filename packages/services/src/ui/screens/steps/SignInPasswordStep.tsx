@@ -6,6 +6,7 @@ import Avatar from '../../components/Avatar';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
 import { useI18n } from '../../hooks/useI18n';
+import { useOxy } from '../../context/OxyContext';
 import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
 interface SignInPasswordStepProps {
@@ -69,6 +70,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
 }) => {
     const inputRef = useRef<any>(null);
     const { t } = useI18n();
+    const { oxyServices } = useOxy();
     const baseStyles = stepStyles;
     const webShadowReset = Platform.OS === 'web' ? ({ boxShadow: 'none' } as any) : null;
 
@@ -114,16 +116,13 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
         return (
             <>
                 <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.userProfileContainer]}>
-                    <View style={stylesheet.avatarContainer}>
-                        <Avatar
-                            name={userProfile?.displayName || userProfile?.name || username}
-                            size={100}
-                            theme={theme as 'light' | 'dark'}
-                            style={styles.modernUserAvatar}
-                            backgroundColor={colors.primary + '20'}
-                        />
-                        <View style={[styles.statusIndicator, { backgroundColor: colors.primary }]} />
-                    </View>
+                    <Avatar
+                        name={userProfile?.displayName || userProfile?.name || username}
+                        size={100}
+                        theme={theme as 'light' | 'dark'}
+                        backgroundColor={colors.primary + '20'}
+                        uri={userProfile?.avatar && oxyServices ? oxyServices.getFileDownloadUrl(userProfile.avatar, 'thumb') : undefined}
+                    />
                     <Text style={[styles.modernUserDisplayName, stylesheet.displayName, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>
                         {userProfile?.displayName || userProfile?.name || username}
                     </Text>
@@ -186,16 +185,13 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
     return (
         <>
             <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.userProfileContainer]}>
-                <View style={stylesheet.avatarContainer}>
-                    <Avatar
-                        name={userProfile?.displayName || userProfile?.name || username}
-                        size={100}
-                        theme={theme as 'light' | 'dark'}
-                        style={styles.modernUserAvatar}
-                        backgroundColor={colors.primary + '20'}
-                    />
-                    <View style={[styles.statusIndicator, { backgroundColor: colors.primary }]} />
-                </View>
+                <Avatar
+                    name={userProfile?.displayName || userProfile?.name || username}
+                    size={100}
+                    theme={theme as 'light' | 'dark'}
+                    backgroundColor={colors.primary + '20'}
+                    uri={userProfile?.avatar && oxyServices ? oxyServices.getFileDownloadUrl(userProfile.avatar, 'thumb') : undefined}
+                />
                 <Text style={[styles.modernUserDisplayName, stylesheet.displayName, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>
                     {userProfile?.displayName || userProfile?.name || username}
                 </Text>

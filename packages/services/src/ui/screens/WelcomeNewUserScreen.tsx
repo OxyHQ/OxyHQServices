@@ -69,8 +69,19 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     const fadeAnim = useRef(new Animated.Value(1)).current;
     const slideAnim = useRef(new Animated.Value(0)).current;
     const [currentStep, setCurrentStep] = useState(0);
+    // Track avatar separately to ensure it updates immediately after selection
+    const [selectedAvatarId, setSelectedAvatarId] = useState<string | undefined>(currentUser?.avatar);
 
-    const avatarUri = currentUser?.avatar ? oxyServices.getFileDownloadUrl(currentUser.avatar as string, 'thumb') : undefined;
+    // Update selectedAvatarId when user changes
+    useEffect(() => {
+        if (user?.avatar) {
+            setSelectedAvatarId(user.avatar);
+        } else if (newUser?.avatar) {
+            setSelectedAvatarId(newUser.avatar);
+        }
+    }, [user?.avatar, newUser?.avatar]);
+
+    const avatarUri = selectedAvatarId ? oxyServices.getFileDownloadUrl(selectedAvatarId, 'thumb') : undefined;
 
     // Steps content
     const welcomeTitle = currentUser?.username
@@ -100,7 +111,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     const totalSteps = steps.length;
     const avatarStepIndex = steps.findIndex(s => s.showAvatar);
 
-    const animateToStep = (next: number) => {
+    const animateToStepCallback = useCallback((next: number) => {
         Animated.timing(fadeAnim, { toValue: 0, duration: 180, useNativeDriver: Platform.OS !== 'web' }).start(() => {
             setCurrentStep(next);
             slideAnim.setValue(-40);
@@ -109,18 +120,23 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                 Animated.spring(slideAnim, { toValue: 0, useNativeDriver: Platform.OS !== 'web', friction: 9 })
             ]).start();
         });
-    };
+    }, [fadeAnim, slideAnim]);
 
-    const nextStep = useCallback(() => { if (currentStep < totalSteps - 1) animateToStep(currentStep + 1); }, [currentStep, totalSteps]);
-    const prevStep = useCallback(() => { if (currentStep > 0) animateToStep(currentStep - 1); }, [currentStep]);
-    const skipToAvatar = useCallback(() => { if (avatarStepIndex >= 0) animateToStep(avatarStepIndex); }, [avatarStepIndex]);
+    const nextStep = useCallback(() => { if (currentStep < totalSteps - 1) animateToStepCallback(currentStep + 1); }, [currentStep, totalSteps, animateToStepCallback]);
+    const prevStep = useCallback(() => { if (currentStep > 0) animateToStepCallback(currentStep - 1); }, [currentStep, animateToStepCallback]);
+    const skipToAvatar = useCallback(() => { if (avatarStepIndex >= 0) animateToStepCallback(avatarStepIndex); }, [avatarStepIndex, animateToStepCallback]);
     const finish = useCallback(() => { if (onAuthenticated && currentUser) onAuthenticated(currentUser); }, [onAuthenticated, currentUser]);
     const openAvatarPicker = useCallback(() => {
+        // Ensure we're on the avatar step before opening picker
+        if (avatarStepIndex >= 0 && currentStep !== avatarStepIndex) {
+            animateToStepCallback(avatarStepIndex);
+        }
+
         navigate('FileManagement', {
             selectMode: true,
             multiSelect: false,
             disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
-            afterSelect: 'back',
+            afterSelect: 'none', // Don't navigate away - stay on current screen
             onSelect: async (file: any) => {
                 if (!file.contentType.startsWith('image/')) {
                     toast.error(t('editProfile.toasts.selectImage') || 'Please select an image file');
@@ -135,14 +151,23 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                         console.warn('[WelcomeNewUser] Failed to update avatar visibility, continuing anyway:', visError);
                     }
 
+                    // Update the avatar immediately in local state
+                    setSelectedAvatarId(file.id);
+                    
+                    // Update user in store
                     await updateUser({ avatar: file.id }, oxyServices);
                     toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated');
+                    
+                    // Ensure we stay on the avatar step
+                    if (avatarStepIndex >= 0 && currentStep !== avatarStepIndex) {
+                        animateToStepCallback(avatarStepIndex);
+                    }
                 } catch (e: any) {
                     toast.error(e.message || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
                 }
             }
         });
-    }, [navigate, updateUser, oxyServices]);
+    }, [navigate, updateUser, oxyServices, currentStep, avatarStepIndex, animateToStepCallback, t]);
 
     const step = steps[currentStep];
     const pillButtons = useMemo(() => {
@@ -201,7 +226,14 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                         )}
                         {step.showAvatar && (
                             <View style={[styles.avatarSection, styles.sectionSpacing]}>
-                                <Avatar size={120} name={currentUser?.username} uri={avatarUri} theme={theme} style={styles.avatar} />
+                                <Avatar 
+                                    size={120} 
+                                    name={currentUser?.name?.full || currentUser?.name?.first || currentUser?.username} 
+                                    uri={avatarUri} 
+                                    theme={theme} 
+                                    backgroundColor={colors.primary + '20'}
+                                    style={styles.avatar} 
+                                />
                                 <TouchableOpacity style={[styles.changeAvatarButton, { backgroundColor: colors.primary }]} onPress={openAvatarPicker}>
                                     <Ionicons name="image-outline" size={18} color="#FFFFFF" />
                                     <Text style={styles.changeAvatarText}>{avatarUri ? (t('welcomeNew.avatar.change') || 'Change Avatar') : (t('welcomeNew.avatar.add') || 'Add Avatar')}</Text>

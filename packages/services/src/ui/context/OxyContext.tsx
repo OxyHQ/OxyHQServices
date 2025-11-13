@@ -393,11 +393,20 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           lastActive: ds.lastActive || new Date().toISOString(),
           userId: ds.user?.id || ds.userId || fullUser.id,
         }));
-        // Merge with existing sessions to preserve other accounts
+        // Only update if sessions actually changed (prevent unnecessary re-renders)
         setSessions((prevSessions) => {
-          const existingSessionIds = new Set(prevSessions.map(s => s.sessionId));
-          const newSessions = allDeviceSessions.filter(s => !existingSessionIds.has(s.sessionId));
-          // Combine existing sessions with new ones, prioritizing new data for existing sessions
+          const prevIds = new Set(prevSessions.map(s => s.sessionId));
+          const newIds = new Set(allDeviceSessions.map(s => s.sessionId));
+          
+          // Check if sets are equal (same sessions) - if so, don't update to prevent re-renders
+          if (prevIds.size === newIds.size && 
+              Array.from(prevIds).every(id => newIds.has(id)) &&
+              Array.from(newIds).every(id => prevIds.has(id))) {
+            // Sessions haven't changed, return same reference to prevent re-render
+            return prevSessions;
+          }
+          
+          // Sessions changed, merge intelligently
           const sessionMap = new Map(prevSessions.map(s => [s.sessionId, s]));
           allDeviceSessions.forEach(s => sessionMap.set(s.sessionId, s));
           return Array.from(sessionMap.values());
@@ -409,11 +418,22 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         }
         const serverSessions = await oxyServices.getSessionsBySessionId(sessionId);
         const userSessions = mapServerSessionsToClient(serverSessions, fullUser.id);
-        // Merge with existing sessions to preserve other accounts
+        // Only update if sessions actually changed (prevent unnecessary re-renders)
         setSessions((prevSessions) => {
           const existingSessionIds = new Set(prevSessions.map(s => s.sessionId));
           const newSessions = userSessions.filter(s => !existingSessionIds.has(s.sessionId));
-          // Combine existing sessions with new ones, prioritizing new data for existing sessions
+          
+          // If no new sessions, return same reference to prevent re-render
+          if (newSessions.length === 0) {
+            const prevIds = new Set(prevSessions.map(s => s.sessionId));
+            const newIds = new Set(userSessions.map(s => s.sessionId));
+            if (prevIds.size === newIds.size && 
+                Array.from(prevIds).every(id => newIds.has(id))) {
+              return prevSessions;
+            }
+          }
+          
+          // Merge sessions
           const sessionMap = new Map(prevSessions.map(s => [s.sessionId, s]));
           userSessions.forEach(s => sessionMap.set(s.sessionId, s));
           return Array.from(sessionMap.values());

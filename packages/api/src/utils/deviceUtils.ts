@@ -146,20 +146,63 @@ export const registerDevice = async (deviceInfo: DeviceInfo, fingerprint?: strin
  */
 export const getDeviceActiveSessions = async (deviceId: string) => {
   try {
+    const now = new Date();
+    // Use lean() for better performance - returns plain JS objects instead of Mongoose documents
+    // Query optimized to use compound index: { deviceId: 1, isActive: 1, expiresAt: 1 }
     const sessions = await Session.find({
       deviceId,
       isActive: true,
-      expiresAt: { $gt: new Date() }
+      expiresAt: { $gt: now }
     })
-    .populate('userId', 'username email avatar')
-    .sort({ 'deviceInfo.lastActive': -1 });
+    .populate('userId', 'username email avatar name')
+    .lean()
+    .sort({ 'deviceInfo.lastActive': -1 })
+    .limit(50) // Limit results to prevent excessive data transfer
+    .exec();
 
-    return sessions.map(session => ({
-      sessionId: session.sessionId, // Use sessionId field instead of MongoDB _id
-      user: session.userId,
-      lastActive: session.deviceInfo.lastActive,
-      createdAt: session.createdAt
-    }));
+    return sessions.map(session => {
+      const user = session.userId as any;
+      let userData = null;
+      
+      if (user && typeof user === 'object') {
+        // Ensure name.full exists (virtuals may not be included with lean)
+        let name = user.name;
+        if (name && typeof name === 'object') {
+          const first = (name.first as string) || '';
+          const last = (name.last as string) || '';
+          if (!name.full) {
+            name = {
+              ...name,
+              full: [first, last].filter(Boolean).join(' ').trim()
+            };
+          }
+        }
+        
+        userData = {
+          id: user._id?.toString() || user.id,
+          username: user.username,
+          email: user.email,
+          avatar: user.avatar,
+          ...user,
+          // Ensure name.full is set (override spread if needed)
+          name: name
+        };
+
+        // Remove MongoDB _id if we have id
+        if (userData._id && userData.id) {
+          delete userData._id;
+        }
+      }
+
+      return {
+        sessionId: session.sessionId,
+        user: userData,
+        lastActive: session.deviceInfo?.lastActive,
+        createdAt: session.createdAt,
+        deviceId: session.deviceId,
+        expiresAt: session.expiresAt
+      };
+    });
   } catch (error) {
     logger.error('[DeviceUtils] Error getting device sessions:', error);
     return [];

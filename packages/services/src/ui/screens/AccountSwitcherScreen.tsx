@@ -106,15 +106,20 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         const loadUserProfiles = async () => {
             if (!sessions.length || !oxyServices) return;
 
-            const updatedSessions: SessionWithUser[] = sessions.map(session => ({
+            // Filter out duplicate sessions by sessionId to prevent duplicate keys
+            const uniqueSessions = sessions.filter((session, index, self) =>
+                index === self.findIndex(s => s.sessionId === session.sessionId)
+            );
+
+            const updatedSessions: SessionWithUser[] = uniqueSessions.map(session => ({
                 ...session,
                 isLoadingProfile: true,
             }));
             setSessionsWithUsers(updatedSessions);
 
             // Load profiles for each session
-            for (let i = 0; i < sessions.length; i++) {
-                const session = sessions[i];
+            for (let i = 0; i < uniqueSessions.length; i++) {
+                const session = uniqueSessions[i];
                 try {
                     // Try to get user profile using the session
                     const userProfile = await oxyServices.getUserBySession(session.sessionId);
@@ -346,7 +351,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
                                         return (
                                             <View
-                                                key={sessionWithUser.sessionId}
+                                                key={`session-${sessionWithUser.sessionId}-${index}`}
                                                 style={[
                                                     styles.settingItem,
                                                     isFirst && styles.firstSettingItem,

@@ -9,6 +9,7 @@ import Animated, {
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
 import { useI18n } from '../../hooks/useI18n';
+import { useOxy } from '../../context/OxyContext';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
 
@@ -59,6 +60,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
 }) => {
     const inputRef = useRef<TextInput>(null);
     const { t } = useI18n();
+    const { oxyServices } = useOxy();
 
     // Animated styles - properly memoized to prevent re-renders
     const containerAnimatedStyle = useAnimatedStyle(() => {
@@ -101,18 +103,14 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
             containerAnimatedStyle
         ]}>
             <View style={styles.modernUserProfileContainer}>
-                <Animated.View style={[
-                    styles.avatarContainer,
-                    logoAnimatedStyle
-                ]}>
+                <Animated.View style={logoAnimatedStyle}>
                     <Avatar
                         name={userProfile?.displayName || userProfile?.name || username}
                         size={100}
                         theme={theme as 'light' | 'dark'}
-                        style={styles.modernUserAvatar}
                         backgroundColor={colors.primary + '20'}
+                        uri={userProfile?.avatar && oxyServices ? oxyServices.getFileDownloadUrl(userProfile.avatar, 'thumb') : undefined}
                     />
-                    <View style={[styles.statusIndicator, { backgroundColor: colors.primary }]} />
                 </Animated.View>
                 <Text style={[styles.modernUserDisplayName, { color: colors.text }]}>
                     {userProfile?.displayName || userProfile?.name || username}

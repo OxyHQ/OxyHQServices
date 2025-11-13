@@ -24,4 +24,7 @@ router.get('/device/sessions/:sessionId', SessionController.getDeviceSessions);
 router.post('/device/logout-all/:sessionId', SessionController.logoutAllDeviceSessions);
 router.put('/device/name/:sessionId', SessionController.updateDeviceName);
 
+// Batch operations
+router.post('/users/batch', SessionController.getUsersBySessions);
+
 export default router; 

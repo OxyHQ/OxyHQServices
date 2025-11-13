@@ -621,6 +621,22 @@ export class OxyServices {
   }
 
   /**
+   * Batch get multiple user profiles by session IDs (optimized for account switching)
+   * Returns array of { sessionId, user } objects
+   */
+  async getUsersBySessions(sessionIds: string[]): Promise<Array<{ sessionId: string; user: User | null }>> {
+    try {
+      if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+        return [];
+      }
+      const res = await this.client.post('/api/session/users/batch', { sessionIds });
+      return res.data;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
    * Get access token by session ID and set it in the token store
    */
   async getTokenBySession(sessionId: string): Promise<{ accessToken: string; expiresAt: string }> {

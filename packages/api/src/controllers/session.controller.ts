@@ -669,18 +669,94 @@ export class SessionController {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Get current session using service
+      // Get current session using service (no user population needed here)
       const currentSessionResult = await sessionService.validateSessionById(sessionId, false);
       if (!currentSessionResult || !currentSessionResult.session) {
         return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
       }
 
-      // Get all sessions for this device
+      // Get all sessions for this device with user data populated in a single optimized query
       const deviceSessions = await getDeviceActiveSessions(currentSessionResult.session.deviceId);
 
+      // Return sessions with user data already included (from populate)
       res.json(deviceSessions);
     } catch (error) {
       logger.error('Get device sessions error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Batch endpoint to get multiple user profiles by session IDs
+  static async getUsersBySessions(req: Request, res: Response) {
+    try {
+      const { sessionIds } = req.body;
+
+      if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
+        return res.status(400).json({ error: 'sessionIds array is required' });
+      }
+
+      // Limit batch size to prevent abuse
+      const MAX_BATCH_SIZE = 20;
+      const limitedSessionIds = sessionIds.slice(0, MAX_BATCH_SIZE);
+
+      // Use optimized batch query to get all sessions with users in one database call
+      // Uses compound index: { sessionId: 1, isActive: 1, expiresAt: 1 }
+      const now = new Date();
+      const sessions = await Session.find({
+        sessionId: { $in: limitedSessionIds },
+        isActive: true,
+        expiresAt: { $gt: now }
+      })
+      .populate('userId', 'username email avatar name')
+      .lean()
+      .exec();
+
+      // Transform to user data format matching getUserBySession
+      const usersMap = new Map<string, any>();
+      
+      for (const session of sessions) {
+        if (session.userId && typeof session.userId === 'object') {
+          const user = session.userId as any;
+          
+          // Ensure name.full exists (virtuals may not be included with lean)
+          let name = user.name;
+          if (name && typeof name === 'object') {
+            const first = (name.first as string) || '';
+            const last = (name.last as string) || '';
+            if (!name.full) {
+              name = {
+                ...name,
+                full: [first, last].filter(Boolean).join(' ').trim()
+              };
+            }
+          }
+          
+          const userData = {
+            id: user._id?.toString() || user.id,
+            username: user.username,
+            email: user.email,
+            avatar: user.avatar,
+            ...user,
+            // Ensure name.full is set (override spread if needed)
+            name: name
+          };
+          // Remove MongoDB _id if we have id
+          if (userData._id && userData.id) {
+            delete userData._id;
+          }
+          usersMap.set(session.sessionId, userData);
+        }
+      }
+
+      // Return array matching input order, with null for missing sessions
+      const result = limitedSessionIds.map(sessionId => ({
+        sessionId,
+        user: usersMap.get(sessionId) || null
+      }));
+
+      res.json(result);
+    } catch (error) {
+      logger.error('Get users by sessions batch error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
