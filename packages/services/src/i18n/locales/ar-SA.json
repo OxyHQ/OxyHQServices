@@ -1,0 +1,128 @@
+{
+  "signin": {
+    "title": "تسجيل الدخول",
+    "subtitle": "سجل الدخول للمتابعة",
+    "addAccountTitle": "إضافة حساب آخر",
+    "addAccountSubtitle": "تسجيل الدخول بحساب آخر",
+    "username": {
+      "label": "اسم المستخدم",
+      "placeholder": "أدخل اسم المستخدم",
+      "helper": "3-30 حرفًا، أحرف وأرقام فقط",
+      "required": "يرجى إدخال اسم المستخدم.",
+      "minLength": "يجب أن يكون اسم المستخدم 3 أحرف على الأقل."
+    },
+    "password": {
+      "label": "كلمة المرور",
+      "placeholder": "أدخل كلمة المرور",
+      "required": "يرجى إدخال كلمة المرور.",
+      "hint": "أدخل كلمة المرور لتسجيل الدخول"
+    },
+    "actions": {
+      "continue": "متابعة",
+      "back": "رجوع",
+      "signIn": "تسجيل الدخول",
+      "verify": "التحقق",
+      "openAccountSwitcher": "التبديل إلى حساب آخر",
+      "openAccountSwitcherSubtitle": "{{count}} حسابات أخرى متاحة",
+      "openAccountSwitcherSubtitle_singular": "حساب آخر واحد متاح",
+      "openAccountSwitcherSubtitle_zero": "راجع حساباتك المحفوظة",
+      "manageAccounts": "إدارة الحسابات المحفوظة",
+      "manageAccountsSubtitle": "مراجعة الجلسات أو إزالتها أو تسجيل الخروج",
+      "loadingOtherAccounts": "جاري تحميل الحسابات الأخرى…",
+      "switchAccountFailed": "لم نتمكن من التبديل بين الحسابات. يرجى المحاولة مرة أخرى."
+    },
+    "forgotPrompt": "نسيت كلمة المرور؟",
+    "security": {
+      "dataSecure": "بياناتك مشفرة وآمنة"
+    },
+    "currentlySignedInAs": "مسجل الدخول حاليًا كـ",
+    "alreadySignedInWith": "مسجل الدخول بالفعل بـ",
+    "alreadySignedIn": "مسجل الدخول بالفعل",
+    "alreadySignedInMessage": "هذا الحساب مسجل الدخول بالفعل. المتابعة بهذا الحساب؟",
+    "continueWithAccount": "متابعة",
+    "currentAccount": "الحالي",
+    "or": "أو",
+    "viewAllAccounts": "عرض {{count}} المزيد",
+    "status": {
+      "accountSwitched": "استخدام {{name}} الآن"
+    },
+    "totp": {
+      "title": "رمز المصادقة الثنائية",
+      "subtitle": "أدخل الرمز المكون من 6 أرقام من تطبيق المصادقة الخاص بك لـ @{{username}}",
+      "invalidCode": "رمز غير صالح. يرجى المحاولة مرة أخرى.",
+      "noAccess": "لا يمكن الوصول إلى تطبيق المصادقة؟",
+      "useBackupCode": "استخدام رمز النسخ الاحتياطي",
+      "useRecoveryKey": "استخدام مفتاح الاسترداد"
+    }
+  },
+  "signup": {
+    "welcome": {
+      "title": "مرحبًا بك في Oxy!",
+      "subtitle": "أنشئ حسابك في خطوات قليلة",
+      "haveAccount": "لديك حساب بالفعل؟",
+      "signInCta": "تسجيل الدخول"
+    },
+    "identity": {
+      "title": "من أنت؟",
+      "subtitle": "اختر اسم المستخدم وأدخل بريدك الإلكتروني"
+    },
+    "username": {
+      "helper": "3-30 حرفًا، أحرف وأرقام فقط",
+      "required": "يرجى إدخال اسم مستخدم",
+      "minLength": "يجب أن يكون اسم المستخدم 3 أحرف على الأقل"
+    },
+    "email": {
+      "required": "يرجى إدخال عنوان بريد إلكتروني",
+      "invalid": "يرجى إدخال عنوان بريد إلكتروني صالح",
+      "helper": "لن نشارك بريدك الإلكتروني أبدًا"
+    },
+    "security": {
+      "title": "أمّن حسابك",
+      "subtitle": "أنشئ كلمة مرور قوية لحماية حسابك"
+    },
+    "password": {
+      "helper": "8 أحرف على الأقل",
+      "required": "يرجى إدخال كلمة مرور",
+      "minLength": "يجب أن تكون كلمة المرور 8 أحرف على الأقل",
+      "confirmRequired": "يرجى تأكيد كلمة المرور",
+      "mismatch": "كلمات المرور غير متطابقة",
+      "confirmHint": "أعد إدخال كلمة المرور للتأكيد"
+    },
+    "summary": {
+      "title": "أوشكت على الانتهاء!",
+      "subtitle": "راجع معلوماتك وأنشئ حسابك",
+      "sectionTitle": "معلومات الحساب",
+      "fields": {
+        "username": "اسم المستخدم",
+        "email": "البريد الإلكتروني",
+        "password": "كلمة المرور"
+      },
+      "notSet": "غير محدد",
+      "securityTip": "لمزيد من الأمان، قم بتمكين المصادقة الثنائية (TOTP) من إعدادات الحساب بعد إنشاء حسابك.",
+      "legalReminder": "بإنشاء حساب، فإنك توافق على شروط الخدمة وسياسة الخصوصية الخاصة بنا."
+    }
+  },
+  "common": {
+    "actions": {
+      "back": "رجوع",
+      "continue": "متابعة",
+      "next": "التالي",
+      "getStarted": "ابدأ",
+      "createAccount": "إنشاء حساب",
+      "signIn": "تسجيل الدخول",
+      "verify": "التحقق",
+      "resetPassword": "إعادة تعيين كلمة المرور"
+    },
+    "links": {
+      "recoverAccount": "استعادة حسابك",
+      "signUp": "التسجيل"
+    },
+    "labels": {
+      "username": "اسم المستخدم",
+      "email": "البريد الإلكتروني",
+      "password": "كلمة المرور",
+      "confirmPassword": "تأكيد كلمة المرور"
+    }
+  }
+}
+

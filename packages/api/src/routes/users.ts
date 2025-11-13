@@ -67,11 +67,14 @@ router.put('/me', authMiddleware, async (req: AuthRequest, res) => {
 
     logger.debug('PUT /users/me filtered updates', { updates });
 
-    const user = await User.findByIdAndUpdate(
-      req.user?.id,
-      { $set: updates },
-      { new: true }
-    ).select('-password -refreshToken');
+    // Use updateOne to avoid MongoDB language override conflict with findByIdAndUpdate
+    await User.updateOne(
+      { _id: req.user?.id },
+      { $set: updates }
+    );
+
+    // Fetch the updated user
+    const user = await User.findById(req.user?.id).select('-password -refreshToken');
 
     if (!user) {
       return res.status(404).json({ message: 'User not found' });

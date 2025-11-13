@@ -1,0 +1,128 @@
+{
+  "signin": {
+    "title": "Iniciar sessió",
+    "subtitle": "Inicia sessió per continuar",
+    "addAccountTitle": "Afegir un altre compte",
+    "addAccountSubtitle": "Inicia sessió amb un altre compte",
+    "username": {
+      "label": "Nom d'usuari",
+      "placeholder": "Introdueix el teu nom d'usuari",
+      "helper": "3-30 caràcters, només lletres i números",
+      "required": "Si us plau, introdueix el teu nom d'usuari.",
+      "minLength": "El nom d'usuari ha de tenir almenys 3 caràcters."
+    },
+    "password": {
+      "label": "Contrasenya",
+      "placeholder": "Introdueix la teva contrasenya",
+      "required": "Si us plau, introdueix la teva contrasenya.",
+      "hint": "Introdueix la teva contrasenya per iniciar sessió"
+    },
+    "actions": {
+      "continue": "Continuar",
+      "back": "Enrere",
+      "signIn": "Iniciar sessió",
+      "verify": "Verificar",
+      "openAccountSwitcher": "Canviar a un altre compte",
+      "openAccountSwitcherSubtitle": "{{count}} altres comptes disponibles",
+      "openAccountSwitcherSubtitle_singular": "1 altre compte disponible",
+      "openAccountSwitcherSubtitle_zero": "Revisa els teus comptes guardats",
+      "manageAccounts": "Gestionar comptes guardats",
+      "manageAccountsSubtitle": "Revisar sessions, eliminar o tancar sessió",
+      "loadingOtherAccounts": "Carregant altres comptes…",
+      "switchAccountFailed": "No hem pogut canviar de compte. Torna-ho a intentar."
+    },
+    "forgotPrompt": "Has oblidat la teva contrasenya?",
+    "security": {
+      "dataSecure": "Les teves dades estan xifrades i segures"
+    },
+    "currentlySignedInAs": "Actualment has iniciat sessió com",
+    "alreadySignedInWith": "Ja has iniciat sessió amb",
+    "alreadySignedIn": "Ja has iniciat sessió",
+    "alreadySignedInMessage": "Aquest compte ja ha iniciat sessió. Continuar amb aquest compte?",
+    "continueWithAccount": "Continuar",
+    "currentAccount": "Actual",
+    "or": "o",
+    "viewAllAccounts": "Veure {{count}} més",
+    "status": {
+      "accountSwitched": "Ara utilitzant {{name}}"
+    },
+    "totp": {
+      "title": "Codi de dos factors",
+      "subtitle": "Introdueix el codi de 6 dígits de la teva app autenticadora per @{{username}}",
+      "invalidCode": "Codi invàlid. Torna-ho a intentar.",
+      "noAccess": "Sense accés al teu autenticador?",
+      "useBackupCode": "Utilitzar codi de còpia de seguretat",
+      "useRecoveryKey": "Utilitzar clau de recuperació"
+    }
+  },
+  "signup": {
+    "welcome": {
+      "title": "Benvingut a Oxy!",
+      "subtitle": "Crea el teu compte en pocs passos",
+      "haveAccount": "Ja tens un compte?",
+      "signInCta": "Inicia sessió"
+    },
+    "identity": {
+      "title": "Qui ets?",
+      "subtitle": "Tria el teu nom d'usuari i introdueix el teu correu"
+    },
+    "username": {
+      "helper": "3-30 caràcters, només lletres i números",
+      "required": "Si us plau, introdueix un nom d'usuari",
+      "minLength": "El nom d'usuari ha de tenir almenys 3 caràcters"
+    },
+    "email": {
+      "required": "Si us plau, introdueix una adreça de correu electrònic",
+      "invalid": "Si us plau, introdueix una adreça de correu electrònic vàlida",
+      "helper": "Mai compartirem el teu correu"
+    },
+    "security": {
+      "title": "Protegeix el teu compte",
+      "subtitle": "Crea una contrasenya forta per protegir el teu compte"
+    },
+    "password": {
+      "helper": "Almenys 8 caràcters",
+      "required": "Si us plau, introdueix una contrasenya",
+      "minLength": "La contrasenya ha de tenir almenys 8 caràcters",
+      "confirmRequired": "Si us plau, confirma la teva contrasenya",
+      "mismatch": "Les contrasenyes no coincideixen",
+      "confirmHint": "Torna a introduir la teva contrasenya per confirmar"
+    },
+    "summary": {
+      "title": "Gairebé allà!",
+      "subtitle": "Revisa la teva informació i crea el teu compte",
+      "sectionTitle": "Informació del compte",
+      "fields": {
+        "username": "Nom d'usuari",
+        "email": "Correu electrònic",
+        "password": "Contrasenya"
+      },
+      "notSet": "No definit",
+      "securityTip": "Per a una major seguretat, habilita l'Autenticació de Dos Factors (TOTP) des de Configuració del compte després de crear el teu compte.",
+      "legalReminder": "En crear un compte, acceptes els nostres Termes de servei i Política de privacitat."
+    }
+  },
+  "common": {
+    "actions": {
+      "back": "Enrere",
+      "continue": "Continuar",
+      "next": "Següent",
+      "getStarted": "Començar",
+      "createAccount": "Crear compte",
+      "signIn": "Iniciar sessió",
+      "verify": "Verificar",
+      "resetPassword": "Restablir contrasenya"
+    },
+    "links": {
+      "recoverAccount": "Recuperar el teu compte",
+      "signUp": "Registrar-se"
+    },
+    "labels": {
+      "username": "Nom d'usuari",
+      "email": "Correu electrònic",
+      "password": "Contrasenya",
+      "confirmPassword": "Confirmar contrasenya"
+    }
+  }
+}
+

@@ -301,17 +301,60 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
 
     return (
         <>
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, { alignItems: 'flex-start' }]}>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, { alignItems: 'flex-start', position: 'relative' }]}>
                 <HighFive width={100} height={100} />
+                <TouchableOpacity
+                    style={[stylesheet.languageButton, { backgroundColor: colors.inputBackground }]}
+                    onPress={() => navigate('LanguageSelector')}
+                    activeOpacity={0.7}
+                >
+                    <Ionicons name="globe-outline" size={20} color={colors.primary} />
+                </TouchableOpacity>
             </View>
             <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
                 <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>
-                    {isAddAccountMode ? t('signin.addAccountTitle') : t('signin.title')}
+                    {t('signin.title')}
                 </Text>
                 <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>
-                    {isAddAccountMode ? t('signin.addAccountSubtitle') : t('signin.subtitle')}
+                    {t('signin.subtitle')}
                 </Text>
             </View>
+
+            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
+                <TextField
+                    ref={inputRef}
+                    label={t('common.labels.username')}
+                    leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
+                    value={username}
+                    onChangeText={handleUsernameChange}
+                    formatValue={(text) => text.replace(/[^a-zA-Z0-9]/g, '')}
+                    maxLength={30}
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    testID="username-input"
+                    variant="filled"
+                    error={validationStatus === 'invalid' ? errorMessage : undefined}
+                    loading={validationStatus === 'validating'}
+                    success={validationStatus === 'valid'}
+                    helperText={t('signin.username.helper') || '3-30 characters, letters and numbers only'}
+                    onSubmitEditing={() => handleContinue()}
+                    autoFocus
+                    accessibilityLabel={t('common.labels.username')}
+                    accessibilityHint={t('signin.username.helper') || 'Enter your username, 3-30 characters, letters and numbers only'}
+                    style={{ marginBottom: 0 }}
+                />
+            </View>
+
+            {/* "Or" divider */}
+            {((isAddAccountMode && user) || (hasSessions && sessionsToShow.length > 0)) && (
+                <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.dividerContainer]}>
+                    <View style={[stylesheet.dividerLine, { backgroundColor: colors.border }]} />
+                    <Text style={[stylesheet.dividerText, { color: colors.secondaryText }]}>
+                        {t('signin.or') || 'or'}
+                    </Text>
+                    <View style={[stylesheet.dividerLine, { backgroundColor: colors.border }]} />
+                </View>
+            )}
 
             {(isAddAccountMode && user) || (hasSessions && sessionsToShow.length > 0) ? (
                 <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
@@ -387,15 +430,18 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                                 },
                                             ]}
                                         >
-                                            <Avatar
-                                                name={user.name?.full || user.username}
-                                                text={(user.name?.full || user.username || 'U')
-                                                    .slice(0, 1)
-                                                    .toUpperCase()}
-                                                size={36}
-                                                theme={themeMode}
-                                                backgroundColor={`${colors.primary}25`}
-                                            />
+                                            <View style={[stylesheet.accountItemAvatarWrapper, { borderColor: colors.inputBackground || colors.background || '#FFFFFF' }]}>
+                                                <Avatar
+                                                    name={user.name?.full || user.username}
+                                                    text={(user.name?.full || user.username || 'U')
+                                                        .slice(0, 1)
+                                                        .toUpperCase()}
+                                                    size={36}
+                                                    theme={themeMode}
+                                                    backgroundColor={colors.primary}
+                                                    uri={user.avatar && oxyServices ? oxyServices.getFileDownloadUrl(user.avatar, 'thumb') : undefined}
+                                                />
+                                            </View>
                                             <View style={stylesheet.accountItemText}>
                                                 <Text
                                                     style={[stylesheet.accountItemName, { color: colors.text }]}
@@ -440,13 +486,16 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                                 <ActivityIndicator color={colors.primary} size="small" />
                                             ) : (
                                                 <>
-                                                    <Avatar
-                                                        name={account.displayName}
-                                                        text={account.displayName.charAt(0).toUpperCase()}
-                                                        size={36}
-                                                        theme={themeMode}
-                                                        backgroundColor={`${colors.primary}25`}
-                                                    />
+                                                    <View style={[stylesheet.accountItemAvatarWrapper, { borderColor: colors.inputBackground || colors.background || '#FFFFFF' }]}>
+                                                        <Avatar
+                                                            name={account.displayName}
+                                                            text={account.displayName.charAt(0).toUpperCase()}
+                                                            size={36}
+                                                            theme={themeMode}
+                                                            backgroundColor={colors.primary}
+                                                            uri={account.avatar && oxyServices ? oxyServices.getFileDownloadUrl(account.avatar, 'thumb') : undefined}
+                                                        />
+                                                    </View>
                                                     <View style={stylesheet.accountItemText}>
                                                         <Text
                                                             style={[stylesheet.accountItemName, { color: colors.text }]}
@@ -496,42 +545,6 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                     )}
                 </View>
             ) : null}
-
-            {/* "Or" divider */}
-            {((isAddAccountMode && user) || (hasSessions && sessionsToShow.length > 0)) && (
-                <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.dividerContainer]}>
-                    <View style={[stylesheet.dividerLine, { backgroundColor: colors.border }]} />
-                    <Text style={[stylesheet.dividerText, { color: colors.secondaryText }]}>
-                        {t('signin.or') || 'or'}
-                    </Text>
-                    <View style={[stylesheet.dividerLine, { backgroundColor: colors.border }]} />
-                </View>
-            )}
-
-            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
-                <TextField
-                    ref={inputRef}
-                    label={t('common.labels.username')}
-                    leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
-                    value={username}
-                    onChangeText={handleUsernameChange}
-                    formatValue={(text) => text.replace(/[^a-zA-Z0-9]/g, '')}
-                    maxLength={30}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    testID="username-input"
-                    variant="filled"
-                    error={validationStatus === 'invalid' ? errorMessage : undefined}
-                    loading={validationStatus === 'validating'}
-                    success={validationStatus === 'valid'}
-                    helperText={t('signin.username.helper') || '3-30 characters, letters and numbers only'}
-                    onSubmitEditing={() => handleContinue()}
-                    autoFocus
-                    accessibilityLabel={t('common.labels.username')}
-                    accessibilityHint={t('signin.username.helper') || 'Enter your username, 3-30 characters, letters and numbers only'}
-                    style={{ marginBottom: 0 }}
-                />
-            </View>
 
             <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
                 <GroupedPillButtons
@@ -675,5 +688,19 @@ const stylesheet = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         borderWidth: 0,
+    },
+    accountItemAvatarWrapper: {
+        borderRadius: 20,
+        borderWidth: 3,
+    },
+    languageButton: {
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 });

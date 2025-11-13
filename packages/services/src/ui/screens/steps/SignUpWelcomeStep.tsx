@@ -1,6 +1,7 @@
 import type React from 'react';
 import type { RouteName } from '../../navigation/routes';
 import { View, Text, TouchableOpacity, Platform, StyleSheet, type ViewStyle, type TextStyle } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import HighFive from '../../../assets/illustrations/HighFive';
 import { useI18n } from '../../hooks/useI18n';
 import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
@@ -31,8 +32,15 @@ const SignUpWelcomeStep: React.FC<SignUpWelcomeStepProps> = ({
 
     return (
         <>
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, { alignItems: 'flex-start' }]}>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, { alignItems: 'flex-start', position: 'relative' }]}>
                 <HighFive width={100} height={100} />
+                <TouchableOpacity
+                    style={[localStyles.languageButton, { backgroundColor: colors.inputBackground }]}
+                    onPress={() => navigate('LanguageSelector')}
+                    activeOpacity={0.7}
+                >
+                    <Ionicons name="globe-outline" size={20} color={colors.primary} />
+                </TouchableOpacity>
             </View>
             <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
                 <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('signup.welcome.title')}</Text>
@@ -105,5 +113,15 @@ const stylesheet = StyleSheet.create({
     },
     footerLink: {
         alignSelf: 'center',
+    },
+    languageButton: {
+        position: 'absolute',
+        top: 0,
+        right: 0,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
 });

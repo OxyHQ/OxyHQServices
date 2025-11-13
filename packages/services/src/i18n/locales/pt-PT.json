@@ -1,0 +1,128 @@
+{
+  "signin": {
+    "title": "Iniciar sessão",
+    "subtitle": "Inicie sessão para continuar",
+    "addAccountTitle": "Adicionar outra conta",
+    "addAccountSubtitle": "Iniciar sessão com outra conta",
+    "username": {
+      "label": "Nome de utilizador",
+      "placeholder": "Introduza o seu nome de utilizador",
+      "helper": "3-30 caracteres, apenas letras e números",
+      "required": "Por favor, introduza o seu nome de utilizador.",
+      "minLength": "O nome de utilizador deve ter pelo menos 3 caracteres."
+    },
+    "password": {
+      "label": "Palavra-passe",
+      "placeholder": "Introduza a sua palavra-passe",
+      "required": "Por favor, introduza a sua palavra-passe.",
+      "hint": "Introduza a sua palavra-passe para iniciar sessão"
+    },
+    "actions": {
+      "continue": "Continuar",
+      "back": "Voltar",
+      "signIn": "Iniciar sessão",
+      "verify": "Verificar",
+      "openAccountSwitcher": "Mudar para outra conta",
+      "openAccountSwitcherSubtitle": "{{count}} outras contas disponíveis",
+      "openAccountSwitcherSubtitle_singular": "1 outra conta disponível",
+      "openAccountSwitcherSubtitle_zero": "Revise as suas contas guardadas",
+      "manageAccounts": "Gerir contas guardadas",
+      "manageAccountsSubtitle": "Rever sessões, remover ou terminar sessão",
+      "loadingOtherAccounts": "A carregar outras contas…",
+      "switchAccountFailed": "Não foi possível mudar de conta. Por favor, tente novamente."
+    },
+    "forgotPrompt": "Esqueceu-se da palavra-passe?",
+    "security": {
+      "dataSecure": "Os seus dados estão encriptados e seguros"
+    },
+    "currentlySignedInAs": "Atualmente com sessão iniciada como",
+    "alreadySignedInWith": "Já tem sessão iniciada com",
+    "alreadySignedIn": "Já tem sessão iniciada",
+    "alreadySignedInMessage": "Esta conta já tem sessão iniciada. Continuar com esta conta?",
+    "continueWithAccount": "Continuar",
+    "currentAccount": "Atual",
+    "or": "ou",
+    "viewAllAccounts": "Ver mais {{count}}",
+    "status": {
+      "accountSwitched": "Agora a usar {{name}}"
+    },
+    "totp": {
+      "title": "Código de dois fatores",
+      "subtitle": "Introduza o código de 6 dígitos da sua app autenticadora para @{{username}}",
+      "invalidCode": "Código inválido. Por favor, tente novamente.",
+      "noAccess": "Sem acesso ao seu autenticador?",
+      "useBackupCode": "Usar código de backup",
+      "useRecoveryKey": "Usar chave de recuperação"
+    }
+  },
+  "signup": {
+    "welcome": {
+      "title": "Bem-vindo ao Oxy!",
+      "subtitle": "Crie a sua conta em poucos passos",
+      "haveAccount": "Já tem uma conta?",
+      "signInCta": "Iniciar sessão"
+    },
+    "identity": {
+      "title": "Quem é?",
+      "subtitle": "Escolha o seu nome de utilizador e introduza o seu email"
+    },
+    "username": {
+      "helper": "3-30 caracteres, apenas letras e números",
+      "required": "Por favor, introduza um nome de utilizador",
+      "minLength": "O nome de utilizador deve ter pelo menos 3 caracteres"
+    },
+    "email": {
+      "required": "Por favor, introduza um endereço de email",
+      "invalid": "Por favor, introduza um endereço de email válido",
+      "helper": "Nunca partilharemos o seu email"
+    },
+    "security": {
+      "title": "Proteja a sua conta",
+      "subtitle": "Crie uma palavra-passe forte para proteger a sua conta"
+    },
+    "password": {
+      "helper": "Pelo menos 8 caracteres",
+      "required": "Por favor, introduza uma palavra-passe",
+      "minLength": "A palavra-passe deve ter pelo menos 8 caracteres",
+      "confirmRequired": "Por favor, confirme a sua palavra-passe",
+      "mismatch": "As palavras-passe não coincidem",
+      "confirmHint": "Reintroduza a sua palavra-passe para confirmar"
+    },
+    "summary": {
+      "title": "Quase lá!",
+      "subtitle": "Revise as suas informações e crie a sua conta",
+      "sectionTitle": "Informações da conta",
+      "fields": {
+        "username": "Nome de utilizador",
+        "email": "Email",
+        "password": "Palavra-passe"
+      },
+      "notSet": "Não definido",
+      "securityTip": "Para maior segurança, ative a Autenticação de Dois Fatores (TOTP) nas Definições da conta após criar a sua conta.",
+      "legalReminder": "Ao criar uma conta, concorda com os nossos Termos de Serviço e Política de Privacidade."
+    }
+  },
+  "common": {
+    "actions": {
+      "back": "Voltar",
+      "continue": "Continuar",
+      "next": "Seguinte",
+      "getStarted": "Começar",
+      "createAccount": "Criar conta",
+      "signIn": "Iniciar sessão",
+      "verify": "Verificar",
+      "resetPassword": "Repor palavra-passe"
+    },
+    "links": {
+      "recoverAccount": "Recuperar a sua conta",
+      "signUp": "Registar-se"
+    },
+    "labels": {
+      "username": "Nome de utilizador",
+      "email": "Email",
+      "password": "Palavra-passe",
+      "confirmPassword": "Confirmar palavra-passe"
+    }
+  }
+}
+

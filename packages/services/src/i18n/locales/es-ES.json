@@ -6,23 +6,46 @@
     "addAccountSubtitle": "Inicia sesión con otra cuenta",
     "username": {
       "label": "Usuario",
-      "placeholder": "Introduce tu usuario"
+      "placeholder": "Introduce tu usuario",
+      "helper": "3-30 caracteres, solo letras y números",
+      "required": "Por favor, introduce tu usuario.",
+      "minLength": "El usuario debe tener al menos 3 caracteres."
     },
     "password": {
       "label": "Contraseña",
-      "placeholder": "Introduce tu contraseña"
+      "placeholder": "Introduce tu contraseña",
+      "required": "Por favor, introduce tu contraseña.",
+      "hint": "Introduce tu contraseña para iniciar sesión"
     },
     "actions": {
       "continue": "Continuar",
       "back": "Atrás",
       "signIn": "Entrar",
-      "verify": "Verificar"
+      "verify": "Verificar",
+      "openAccountSwitcher": "Cambiar a otra cuenta",
+      "openAccountSwitcherSubtitle": "{{count}} otras cuentas disponibles",
+      "openAccountSwitcherSubtitle_singular": "1 otra cuenta disponible",
+      "openAccountSwitcherSubtitle_zero": "Revisa tus cuentas guardadas",
+      "manageAccounts": "Gestionar cuentas guardadas",
+      "manageAccountsSubtitle": "Revisar sesiones, eliminar o cerrar sesión",
+      "loadingOtherAccounts": "Cargando otras cuentas…",
+      "switchAccountFailed": "No pudimos cambiar de cuenta. Inténtalo de nuevo."
     },
     "forgotPrompt": "¿Olvidaste tu contraseña?",
     "security": {
       "dataSecure": "Tus datos están cifrados y seguros"
     },
-    "currentlySignedInAs": "Actualmente has iniciado sesión como {{username}}",
+    "currentlySignedInAs": "Actualmente has iniciado sesión como",
+    "alreadySignedInWith": "Ya has iniciado sesión con",
+    "alreadySignedIn": "Ya has iniciado sesión",
+    "alreadySignedInMessage": "Esta cuenta ya ha iniciado sesión. ¿Continuar con esta cuenta?",
+    "continueWithAccount": "Continuar",
+    "currentAccount": "Actual",
+    "or": "o",
+    "viewAllAccounts": "Ver {{count}} más",
+    "status": {
+      "accountSwitched": "Ahora usando {{name}}"
+    },
     "totp": {
       "title": "Código de dos factores",
       "subtitle": "Introduce el código de 6 dígitos de tu app autenticadora para @{{username}}",
@@ -43,16 +66,36 @@
       "title": "¿Quién eres?",
       "subtitle": "Elige tu usuario e introduce tu correo"
     },
+    "username": {
+      "helper": "3-30 caracteres, solo letras y números",
+      "required": "Por favor, introduce un usuario",
+      "minLength": "El usuario debe tener al menos 3 caracteres"
+    },
+    "email": {
+      "required": "Por favor, introduce una dirección de correo electrónico",
+      "invalid": "Por favor, introduce una dirección de correo electrónico válida",
+      "helper": "Nunca compartiremos tu correo"
+    },
     "security": {
       "title": "Protege tu cuenta",
       "subtitle": "Crea una contraseña fuerte para proteger tu cuenta"
     },
+    "password": {
+      "helper": "Al menos 8 caracteres",
+      "required": "Por favor, introduce una contraseña",
+      "minLength": "La contraseña debe tener al menos 8 caracteres",
+      "confirmRequired": "Por favor, confirma tu contraseña",
+      "mismatch": "Las contraseñas no coinciden",
+      "confirmHint": "Vuelve a introducir tu contraseña para confirmar"
+    },
     "summary": {
       "title": "¡Ya casi!",
       "subtitle": "Revisa tu información y crea tu cuenta",
+      "sectionTitle": "Información de la cuenta",
       "fields": {
         "username": "Usuario",
-        "email": "Correo electrónico"
+        "email": "Correo electrónico",
+        "password": "Contraseña"
       },
       "notSet": "Sin definir",
       "securityTip": "Para mayor seguridad, habilita la Autenticación de Dos Factores (TOTP) en Configuración de la cuenta después de crear tu cuenta.",

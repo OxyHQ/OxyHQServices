@@ -1,0 +1,128 @@
+{
+  "signin": {
+    "title": "登录",
+    "subtitle": "登录以继续",
+    "addAccountTitle": "添加另一个账户",
+    "addAccountSubtitle": "使用另一个账户登录",
+    "username": {
+      "label": "用户名",
+      "placeholder": "输入您的用户名",
+      "helper": "3-30个字符，仅字母和数字",
+      "required": "请输入您的用户名。",
+      "minLength": "用户名必须至少包含3个字符。"
+    },
+    "password": {
+      "label": "密码",
+      "placeholder": "输入您的密码",
+      "required": "请输入您的密码。",
+      "hint": "输入您的密码以登录"
+    },
+    "actions": {
+      "continue": "继续",
+      "back": "返回",
+      "signIn": "登录",
+      "verify": "验证",
+      "openAccountSwitcher": "切换到另一个账户",
+      "openAccountSwitcherSubtitle": "{{count}}个其他账户可用",
+      "openAccountSwitcherSubtitle_singular": "1个其他账户可用",
+      "openAccountSwitcherSubtitle_zero": "查看您保存的账户",
+      "manageAccounts": "管理保存的账户",
+      "manageAccountsSubtitle": "查看会话、删除或登出",
+      "loadingOtherAccounts": "加载其他账户中…",
+      "switchAccountFailed": "无法切换账户。请重试。"
+    },
+    "forgotPrompt": "忘记密码？",
+    "security": {
+      "dataSecure": "您的数据已加密且安全"
+    },
+    "currentlySignedInAs": "当前登录为",
+    "alreadySignedInWith": "已登录",
+    "alreadySignedIn": "已登录",
+    "alreadySignedInMessage": "此账户已登录。继续使用此账户？",
+    "continueWithAccount": "继续",
+    "currentAccount": "当前",
+    "or": "或",
+    "viewAllAccounts": "查看更多{{count}}个",
+    "status": {
+      "accountSwitched": "正在使用{{name}}"
+    },
+    "totp": {
+      "title": "双因素验证码",
+      "subtitle": "输入@{{username}}的验证器应用中的6位数字代码",
+      "invalidCode": "无效的代码。请重试。",
+      "noAccess": "无法访问您的验证器？",
+      "useBackupCode": "使用备份代码",
+      "useRecoveryKey": "使用恢复密钥"
+    }
+  },
+  "signup": {
+    "welcome": {
+      "title": "欢迎使用Oxy！",
+      "subtitle": "只需几步即可创建您的账户",
+      "haveAccount": "已有账户？",
+      "signInCta": "登录"
+    },
+    "identity": {
+      "title": "您是谁？",
+      "subtitle": "选择您的用户名并输入您的电子邮件"
+    },
+    "username": {
+      "helper": "3-30个字符，仅字母和数字",
+      "required": "请输入用户名",
+      "minLength": "用户名必须至少包含3个字符"
+    },
+    "email": {
+      "required": "请输入电子邮件地址",
+      "invalid": "请输入有效的电子邮件地址",
+      "helper": "我们绝不会分享您的电子邮件"
+    },
+    "security": {
+      "title": "保护您的账户",
+      "subtitle": "创建强密码以保护您的账户"
+    },
+    "password": {
+      "helper": "至少8个字符",
+      "required": "请输入密码",
+      "minLength": "密码必须至少包含8个字符",
+      "confirmRequired": "请确认您的密码",
+      "mismatch": "密码不匹配",
+      "confirmHint": "重新输入您的密码以确认"
+    },
+    "summary": {
+      "title": "快完成了！",
+      "subtitle": "查看您的信息并创建账户",
+      "sectionTitle": "账户信息",
+      "fields": {
+        "username": "用户名",
+        "email": "电子邮件",
+        "password": "密码"
+      },
+      "notSet": "未设置",
+      "securityTip": "为了更强的安全性，创建账户后，请在账户设置中启用双因素身份验证（TOTP）。",
+      "legalReminder": "创建账户即表示您同意我们的服务条款和隐私政策。"
+    }
+  },
+  "common": {
+    "actions": {
+      "back": "返回",
+      "continue": "继续",
+      "next": "下一步",
+      "getStarted": "开始",
+      "createAccount": "创建账户",
+      "signIn": "登录",
+      "verify": "验证",
+      "resetPassword": "重置密码"
+    },
+    "links": {
+      "recoverAccount": "恢复您的账户",
+      "signUp": "注册"
+    },
+    "labels": {
+      "username": "用户名",
+      "email": "电子邮件",
+      "password": "密码",
+      "confirmPassword": "确认密码"
+    }
+  }
+}
+

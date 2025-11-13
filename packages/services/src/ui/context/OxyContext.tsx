@@ -356,12 +356,20 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const switchToSession = useCallback(async (sessionId: string): Promise<void> => {
     try {
       // Don't set isLoading - session switches should happen silently in background
+      // Validate session first before attempting to switch
+      const validation = await oxyServices.validateSession(sessionId, { useHeaderValidation: true });
+      if (!validation.valid) {
+        // Session is invalid, remove it from the sessions list
+        setSessions((prevSessions) => prevSessions.filter(s => s.sessionId !== sessionId));
+        throw new Error('Session is invalid or expired');
+      }
+
       // Get access token for this session
       await oxyServices.getTokenBySession(sessionId);
       setTokenReady(true);
 
-      // Load full user data
-      const fullUser = await oxyServices.getUserBySession(sessionId);
+      // Load full user data - use user from validation if available, otherwise fetch
+      const fullUser = validation.user || await oxyServices.getUserBySession(sessionId);
 
       setActiveSessionId(sessionId);
       loginSuccess(fullUser);
@@ -413,16 +421,44 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       }
       
       onAuthStateChange?.(fullUser);
-    } catch (error) {
+    } catch (error: any) {
+      // Check if the error is due to invalid/expired session
+      const isInvalidSession = error?.response?.status === 401 || 
+                               error?.message?.includes('Invalid or expired session') ||
+                               error?.message?.includes('Session is invalid');
+      
+      if (isInvalidSession) {
+        // Remove invalid session from the sessions list
+        setSessions((prevSessions) => prevSessions.filter(s => s.sessionId !== sessionId));
+        
+        // If this was the active session, try to switch to another valid session
+        if (sessionId === activeSessionId && sessions.length > 1) {
+          const otherSessions = sessions.filter(s => s.sessionId !== sessionId);
+          for (const otherSession of otherSessions) {
+            try {
+              const otherValidation = await oxyServices.validateSession(otherSession.sessionId, { useHeaderValidation: true });
+              if (otherValidation.valid) {
+                await switchToSession(otherSession.sessionId);
+                return;
+              }
+            } catch {
+              // Continue to next session
+              continue;
+            }
+          }
+        }
+      }
+      
       const errorMessage = error instanceof Error ? error.message : 'Failed to switch session';
       if (__DEV__) {
         console.error('Switch session error:', error);
       }
       useAuthStore.setState({ error: errorMessage });
-      onError?.({ message: errorMessage, code: 'SESSION_SWITCH_ERROR', status: 500 });
+      onError?.({ message: errorMessage, code: isInvalidSession ? 'INVALID_SESSION' : 'SESSION_SWITCH_ERROR', status: isInvalidSession ? 401 : 500 });
       setTokenReady(false);
+      throw error; // Re-throw so calling code can handle it
     }
-  }, [oxyServices, onAuthStateChange, loginSuccess, saveActiveSessionId, applyLanguagePreference, mapServerSessionsToClient, onError]);
+  }, [oxyServices, onAuthStateChange, loginSuccess, saveActiveSessionId, applyLanguagePreference, mapServerSessionsToClient, onError, activeSessionId, sessions]);
 
   // Login method - only store session ID, retrieve data from backend
   const login = useCallback(async (username: string, password: string, deviceName?: string): Promise<User> => {

@@ -1,0 +1,128 @@
+{
+  "signin": {
+    "title": "로그인",
+    "subtitle": "계속하려면 로그인하세요",
+    "addAccountTitle": "다른 계정 추가",
+    "addAccountSubtitle": "다른 계정으로 로그인",
+    "username": {
+      "label": "사용자 이름",
+      "placeholder": "사용자 이름을 입력하세요",
+      "helper": "3-30자, 영문과 숫자만",
+      "required": "사용자 이름을 입력해주세요.",
+      "minLength": "사용자 이름은 최소 3자 이상이어야 합니다."
+    },
+    "password": {
+      "label": "비밀번호",
+      "placeholder": "비밀번호를 입력하세요",
+      "required": "비밀번호를 입력해주세요.",
+      "hint": "로그인하려면 비밀번호를 입력하세요"
+    },
+    "actions": {
+      "continue": "계속",
+      "back": "뒤로",
+      "signIn": "로그인",
+      "verify": "확인",
+      "openAccountSwitcher": "다른 계정으로 전환",
+      "openAccountSwitcherSubtitle": "{{count}}개의 다른 계정 사용 가능",
+      "openAccountSwitcherSubtitle_singular": "1개의 다른 계정 사용 가능",
+      "openAccountSwitcherSubtitle_zero": "저장된 계정 검토",
+      "manageAccounts": "저장된 계정 관리",
+      "manageAccountsSubtitle": "세션 검토, 제거 또는 로그아웃",
+      "loadingOtherAccounts": "다른 계정 로드 중…",
+      "switchAccountFailed": "계정을 전환할 수 없습니다. 다시 시도해주세요."
+    },
+    "forgotPrompt": "비밀번호를 잊으셨나요?",
+    "security": {
+      "dataSecure": "데이터가 암호화되어 안전합니다"
+    },
+    "currentlySignedInAs": "현재 로그인 중:",
+    "alreadySignedInWith": "이미 로그인 중:",
+    "alreadySignedIn": "이미 로그인됨",
+    "alreadySignedInMessage": "이 계정은 이미 로그인되어 있습니다. 이 계정으로 계속하시겠습니까?",
+    "continueWithAccount": "계속",
+    "currentAccount": "현재",
+    "or": "또는",
+    "viewAllAccounts": "{{count}}개 더 보기",
+    "status": {
+      "accountSwitched": "{{name}} 사용 중"
+    },
+    "totp": {
+      "title": "2단계 인증 코드",
+      "subtitle": "@{{username}}의 인증 앱에서 6자리 코드를 입력하세요",
+      "invalidCode": "잘못된 코드입니다. 다시 시도해주세요.",
+      "noAccess": "인증 앱에 액세스할 수 없나요?",
+      "useBackupCode": "백업 코드 사용",
+      "useRecoveryKey": "복구 키 사용"
+    }
+  },
+  "signup": {
+    "welcome": {
+      "title": "Oxy에 오신 것을 환영합니다!",
+      "subtitle": "몇 단계만으로 계정을 만드세요",
+      "haveAccount": "이미 계정이 있으신가요?",
+      "signInCta": "로그인"
+    },
+    "identity": {
+      "title": "당신은 누구인가요?",
+      "subtitle": "사용자 이름을 선택하고 이메일을 입력하세요"
+    },
+    "username": {
+      "helper": "3-30자, 영문과 숫자만",
+      "required": "사용자 이름을 입력해주세요",
+      "minLength": "사용자 이름은 최소 3자 이상이어야 합니다"
+    },
+    "email": {
+      "required": "이메일 주소를 입력해주세요",
+      "invalid": "유효한 이메일 주소를 입력해주세요",
+      "helper": "이메일을 공유하지 않습니다"
+    },
+    "security": {
+      "title": "계정 보호",
+      "subtitle": "계정을 보호하기 위한 강력한 비밀번호를 만드세요"
+    },
+    "password": {
+      "helper": "최소 8자",
+      "required": "비밀번호를 입력해주세요",
+      "minLength": "비밀번호는 최소 8자 이상이어야 합니다",
+      "confirmRequired": "비밀번호를 확인해주세요",
+      "mismatch": "비밀번호가 일치하지 않습니다",
+      "confirmHint": "확인을 위해 비밀번호를 다시 입력하세요"
+    },
+    "summary": {
+      "title": "거의 완료되었습니다!",
+      "subtitle": "정보를 검토하고 계정을 만드세요",
+      "sectionTitle": "계정 정보",
+      "fields": {
+        "username": "사용자 이름",
+        "email": "이메일",
+        "password": "비밀번호"
+      },
+      "notSet": "설정되지 않음",
+      "securityTip": "더 강력한 보안을 위해 계정을 만든 후 계정 설정에서 2단계 인증(TOTP)을 활성화하세요.",
+      "legalReminder": "계정을 만들면 서비스 약관 및 개인정보 보호정책에 동의하는 것입니다."
+    }
+  },
+  "common": {
+    "actions": {
+      "back": "뒤로",
+      "continue": "계속",
+      "next": "다음",
+      "getStarted": "시작하기",
+      "createAccount": "계정 만들기",
+      "signIn": "로그인",
+      "verify": "확인",
+      "resetPassword": "비밀번호 재설정"
+    },
+    "links": {
+      "recoverAccount": "계정 복구",
+      "signUp": "가입하기"
+    },
+    "labels": {
+      "username": "사용자 이름",
+      "email": "이메일",
+      "password": "비밀번호",
+      "confirmPassword": "비밀번호 확인"
+    }
+  }
+}
+

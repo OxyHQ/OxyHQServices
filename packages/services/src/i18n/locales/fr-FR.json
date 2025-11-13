@@ -1,0 +1,128 @@
+{
+  "signin": {
+    "title": "Se connecter",
+    "subtitle": "Connectez-vous pour continuer",
+    "addAccountTitle": "Ajouter un autre compte",
+    "addAccountSubtitle": "Se connecter avec un autre compte",
+    "username": {
+      "label": "Nom d'utilisateur",
+      "placeholder": "Entrez votre nom d'utilisateur",
+      "helper": "3-30 caractères, lettres et chiffres uniquement",
+      "required": "Veuillez entrer votre nom d'utilisateur.",
+      "minLength": "Le nom d'utilisateur doit contenir au moins 3 caractères."
+    },
+    "password": {
+      "label": "Mot de passe",
+      "placeholder": "Entrez votre mot de passe",
+      "required": "Veuillez entrer votre mot de passe.",
+      "hint": "Entrez votre mot de passe pour vous connecter"
+    },
+    "actions": {
+      "continue": "Continuer",
+      "back": "Retour",
+      "signIn": "Se connecter",
+      "verify": "Vérifier",
+      "openAccountSwitcher": "Changer de compte",
+      "openAccountSwitcherSubtitle": "{{count}} autres comptes disponibles",
+      "openAccountSwitcherSubtitle_singular": "1 autre compte disponible",
+      "openAccountSwitcherSubtitle_zero": "Consultez vos comptes enregistrés",
+      "manageAccounts": "Gérer les comptes enregistrés",
+      "manageAccountsSubtitle": "Consulter les sessions, supprimer ou se déconnecter",
+      "loadingOtherAccounts": "Chargement des autres comptes…",
+      "switchAccountFailed": "Nous n'avons pas pu changer de compte. Veuillez réessayer."
+    },
+    "forgotPrompt": "Mot de passe oublié ?",
+    "security": {
+      "dataSecure": "Vos données sont cryptées et sécurisées"
+    },
+    "currentlySignedInAs": "Actuellement connecté en tant que",
+    "alreadySignedInWith": "Déjà connecté avec",
+    "alreadySignedIn": "Déjà connecté",
+    "alreadySignedInMessage": "Ce compte est déjà connecté. Continuer avec ce compte ?",
+    "continueWithAccount": "Continuer",
+    "currentAccount": "Actuel",
+    "or": "ou",
+    "viewAllAccounts": "Voir {{count}} de plus",
+    "status": {
+      "accountSwitched": "Utilisation de {{name}}"
+    },
+    "totp": {
+      "title": "Code à deux facteurs",
+      "subtitle": "Entrez le code à 6 chiffres de votre application d'authentification pour @{{username}}",
+      "invalidCode": "Code invalide. Veuillez réessayer.",
+      "noAccess": "Pas d'accès à votre authentificateur ?",
+      "useBackupCode": "Utiliser le code de sauvegarde",
+      "useRecoveryKey": "Utiliser la clé de récupération"
+    }
+  },
+  "signup": {
+    "welcome": {
+      "title": "Bienvenue sur Oxy !",
+      "subtitle": "Créez votre compte en quelques étapes",
+      "haveAccount": "Vous avez déjà un compte ?",
+      "signInCta": "Se connecter"
+    },
+    "identity": {
+      "title": "Qui êtes-vous ?",
+      "subtitle": "Choisissez votre nom d'utilisateur et entrez votre email"
+    },
+    "username": {
+      "helper": "3-30 caractères, lettres et chiffres uniquement",
+      "required": "Veuillez entrer un nom d'utilisateur",
+      "minLength": "Le nom d'utilisateur doit contenir au moins 3 caractères"
+    },
+    "email": {
+      "required": "Veuillez entrer une adresse email",
+      "invalid": "Veuillez entrer une adresse email valide",
+      "helper": "Nous ne partagerons jamais votre email"
+    },
+    "security": {
+      "title": "Sécurisez votre compte",
+      "subtitle": "Créez un mot de passe fort pour protéger votre compte"
+    },
+    "password": {
+      "helper": "Au moins 8 caractères",
+      "required": "Veuillez entrer un mot de passe",
+      "minLength": "Le mot de passe doit contenir au moins 8 caractères",
+      "confirmRequired": "Veuillez confirmer votre mot de passe",
+      "mismatch": "Les mots de passe ne correspondent pas",
+      "confirmHint": "Ré-entrez votre mot de passe pour confirmer"
+    },
+    "summary": {
+      "title": "Presque terminé !",
+      "subtitle": "Vérifiez vos informations et créez votre compte",
+      "sectionTitle": "Informations du compte",
+      "fields": {
+        "username": "Nom d'utilisateur",
+        "email": "Email",
+        "password": "Mot de passe"
+      },
+      "notSet": "Non défini",
+      "securityTip": "Pour une sécurité renforcée, activez l'authentification à deux facteurs (TOTP) dans les paramètres du compte après avoir créé votre compte.",
+      "legalReminder": "En créant un compte, vous acceptez nos Conditions d'utilisation et notre Politique de confidentialité."
+    }
+  },
+  "common": {
+    "actions": {
+      "back": "Retour",
+      "continue": "Continuer",
+      "next": "Suivant",
+      "getStarted": "Commencer",
+      "createAccount": "Créer un compte",
+      "signIn": "Se connecter",
+      "verify": "Vérifier",
+      "resetPassword": "Réinitialiser le mot de passe"
+    },
+    "links": {
+      "recoverAccount": "Récupérer votre compte",
+      "signUp": "S'inscrire"
+    },
+    "labels": {
+      "username": "Nom d'utilisateur",
+      "email": "Email",
+      "password": "Mot de passe",
+      "confirmPassword": "Confirmer le mot de passe"
+    }
+  }
+}
+
