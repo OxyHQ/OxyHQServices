@@ -72,31 +72,31 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
 
     const handleNext = () => {
         if (!password) {
-            setErrorMessage('Please enter a password');
+            setErrorMessage(t('signup.password.required') || 'Please enter a password');
             setTimeout(() => passwordRef.current?.focus(), 0);
             return;
         }
 
         if (!validatePassword(password)) {
-            setErrorMessage('Password must be at least 8 characters long');
+            setErrorMessage(t('signup.password.minLength') || 'Password must be at least 8 characters long');
             return;
         }
 
         if (!confirmPassword) {
-            setErrorMessage('Please confirm your password');
+            setErrorMessage(t('signup.password.confirmRequired') || 'Please confirm your password');
             return;
         }
 
         if (password !== confirmPassword) {
-            setErrorMessage('Passwords do not match');
+            setErrorMessage(t('signup.password.mismatch') || 'Passwords do not match');
             return;
         }
 
         nextStep();
     };
 
-    const passwordError = password && !validatePassword(password) ? 'Password must be at least 8 characters long' : undefined;
-    const confirmPasswordError = confirmPassword && password !== confirmPassword ? 'Passwords do not match' : undefined;
+    const passwordError = password && !validatePassword(password) ? (t('signup.password.minLength') || 'Password must be at least 8 characters long') : undefined;
+    const confirmPasswordError = confirmPassword && password !== confirmPassword ? (t('signup.password.mismatch') || 'Passwords do not match') : undefined;
 
     return (
         <>
@@ -125,13 +125,17 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
                     value={password}
                     onChangeText={handlePasswordChange}
                     secureTextEntry={!showPassword}
+                    passwordStrength={true}
                     autoCapitalize="none"
                     autoCorrect={false}
                     testID="signup-password-input"
                     variant="filled"
                     error={passwordError}
+                    helperText={t('signup.password.helper') || 'At least 8 characters'}
                     onSubmitEditing={handleNext}
                     autoFocus
+                    accessibilityLabel={t('common.labels.password')}
+                    accessibilityHint={t('signup.password.helper') || 'Enter a password, at least 8 characters long'}
                     style={{ marginBottom: 0 }}
                 />
 
@@ -158,13 +162,12 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
                     testID="signup-confirm-password-input"
                     variant="filled"
                     error={confirmPasswordError}
+                    helperText={confirmPassword && password !== confirmPassword ? (t('signup.password.mismatch') || 'Passwords do not match') : undefined}
                     onSubmitEditing={handleNext}
+                    accessibilityLabel={t('common.labels.confirmPassword')}
+                    accessibilityHint={t('signup.password.confirmHint') || 'Re-enter your password to confirm'}
                     style={{ marginBottom: 0 }}
                 />
-
-                <Text style={[styles.footerText, stylesheet.helperText, { color: colors.secondaryText }]}>
-                    Password must be at least 8 characters long
-                </Text>
             </View>
 
             <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>

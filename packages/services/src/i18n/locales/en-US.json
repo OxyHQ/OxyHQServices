@@ -6,11 +6,16 @@
     "addAccountSubtitle": "Sign in with another account",
     "username": {
       "label": "Username",
-      "placeholder": "Enter your username"
+      "placeholder": "Enter your username",
+      "helper": "3-30 characters, letters and numbers only",
+      "required": "Please enter your username.",
+      "minLength": "Username must be at least 3 characters."
     },
     "password": {
       "label": "Password",
-      "placeholder": "Enter your password"
+      "placeholder": "Enter your password",
+      "required": "Please enter your password.",
+      "hint": "Enter your password to sign in"
     },
     "actions": {
       "continue": "Continue",
@@ -43,9 +48,27 @@
       "title": "Who are you?",
       "subtitle": "Choose your username and enter your email"
     },
+    "username": {
+      "helper": "3-30 characters, letters and numbers only",
+      "required": "Please enter a username",
+      "minLength": "Username must be at least 3 characters"
+    },
+    "email": {
+      "required": "Please enter an email address",
+      "invalid": "Please enter a valid email address",
+      "helper": "We'll never share your email"
+    },
     "security": {
       "title": "Secure Your Account",
       "subtitle": "Create a strong password to protect your account"
+    },
+    "password": {
+      "helper": "At least 8 characters",
+      "required": "Please enter a password",
+      "minLength": "Password must be at least 8 characters long",
+      "confirmRequired": "Please confirm your password",
+      "mismatch": "Passwords do not match",
+      "confirmHint": "Re-enter your password to confirm"
     },
     "summary": {
       "title": "Almost There!",
@@ -184,7 +207,8 @@
     "username": {
       "label": "Username",
       "placeholder": "Enter your username",
-      "errorRequired": "Please enter your username."
+      "errorRequired": "Please enter your username.",
+      "helper": "Enter your username or email"
     },
     "verify": {
       "title": "Verify Code",

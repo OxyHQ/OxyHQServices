@@ -103,24 +103,24 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
 
     const handleNext = async () => {
         if (!username.trim()) {
-            setErrorMessage('Please enter a username');
+            setErrorMessage(t('signup.username.required') || 'Please enter a username');
             setTimeout(() => usernameRef.current?.focus(), 0);
             return;
         }
 
         if (username.trim().length < 3) {
-            setErrorMessage('Username must be at least 3 characters');
+            setErrorMessage(t('signup.username.minLength') || 'Username must be at least 3 characters');
             setTimeout(() => usernameRef.current?.focus(), 0);
             return;
         }
 
         if (!email.trim()) {
-            setErrorMessage('Please enter an email address');
+            setErrorMessage(t('signup.email.required') || 'Please enter an email address');
             return;
         }
 
         if (!validateEmail(email)) {
-            setErrorMessage('Please enter a valid email address');
+            setErrorMessage(t('signup.email.invalid') || 'Please enter a valid email address');
             return;
         }
 
@@ -134,7 +134,7 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
         nextStep();
     };
 
-    const emailError = email && !validateEmail(email) ? 'Please enter a valid email address' : undefined;
+    const emailError = email && !validateEmail(email) ? (t('signup.email.invalid') || 'Please enter a valid email address') : undefined;
 
     return (
         <>
@@ -159,6 +159,7 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
                     error={validationState.status === 'invalid' ? validationState.message : undefined}
                     loading={validationState.status === 'validating'}
                     success={validationState.status === 'valid'}
+                    helperText={t('signup.username.helper') || '3-30 characters, letters and numbers only'}
                     onSubmitEditing={handleNext}
                     autoFocus
                     style={{ marginBottom: 0 }}
@@ -175,7 +176,10 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
                     testID="signup-email-input"
                     variant="filled"
                     error={emailError}
+                    helperText={t('signup.email.helper') || 'We\'ll never share your email'}
                     onSubmitEditing={handleNext}
+                    accessibilityLabel={t('common.labels.email')}
+                    accessibilityHint={t('signup.email.helper') || 'Enter your email address'}
                     style={{ marginBottom: 0 }}
                 />
             </View>

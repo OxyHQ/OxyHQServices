@@ -105,9 +105,12 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
                     testID="recover-identifier-input"
                     variant="filled"
                     error={errorMessage || undefined}
+                    helperText={t('recover.username.helper') || 'Enter your username or email'}
                     editable={!isLoading}
                     onSubmitEditing={handleRequestWithFocus}
                     autoFocus
+                    accessibilityLabel={t('recover.username.label')}
+                    accessibilityHint={t('recover.username.helper') || 'Enter your username or email to recover your account'}
                     style={{ marginBottom: 0 }}
                 />
             </View>

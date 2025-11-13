@@ -1,6 +1,6 @@
 import type React from 'react';
 import type { RouteName } from '../../navigation/routes';
-import { useRef, useEffect } from 'react';
+import { useRef } from 'react';
 import { View, Text, Platform, StyleSheet, type ViewStyle, type TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import HighFive from '../../../assets/illustrations/HighFive';
@@ -65,49 +65,36 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
     const baseStyles = stepStyles;
     const webShadowReset = Platform.OS === 'web' ? ({ boxShadow: 'none' } as any) : null;
 
-    // Monitor username prop changes
-    useEffect(() => {
-        console.log('👀 SignInUsernameStep username prop changed:', username);
-    }, [username]);
-
     const handleUsernameChange = (text: string) => {
-        console.log('📝 Username input changed:', text);
-        setUsername(text);
+        // Text is already filtered by formatValue prop, but ensure it's clean
+        const filteredText = text.replace(/[^a-zA-Z0-9]/g, '');
+        setUsername(filteredText);
         if (errorMessage) setErrorMessage('');
     };
 
     const handleContinue = async () => {
-        console.log('🚀 Continue button pressed, username:', username);
-
         const trimmedUsername = username?.trim() || '';
 
         if (!trimmedUsername) {
-            console.log('❌ Username is empty');
-            setErrorMessage('Please enter your username.');
+            setErrorMessage(t('signin.username.required') || 'Please enter your username.');
             setTimeout(() => inputRef.current?.focus(), 0);
             return;
         }
 
-        if (trimmedUsername.length < 2) {
-            console.log('❌ Username too short');
-            setErrorMessage('Username must be at least 3 characters.');
+        if (trimmedUsername.length < 3) {
+            setErrorMessage(t('signin.username.minLength') || 'Username must be at least 3 characters.');
             return;
         }
 
-        console.log('🔍 Starting username validation...');
         try {
             // Validate the username before proceeding
             const isValid = await validateUsername(trimmedUsername);
-            console.log('📊 Validation result:', isValid);
 
             if (isValid) {
-                console.log('✅ Validation passed, proceeding to next step');
                 nextStep();
-            } else {
-                console.log('❌ Validation failed, staying on current step');
             }
         } catch (error) {
-            console.error('🚨 Error during validation:', error);
+            if (__DEV__) console.error('Error during username validation:', error);
             setErrorMessage('Unable to validate username. Please try again.');
         }
     };
@@ -143,6 +130,8 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                     leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
                     value={username}
                     onChangeText={handleUsernameChange}
+                    formatValue={(text) => text.replace(/[^a-zA-Z0-9]/g, '')}
+                    maxLength={30}
                     autoCapitalize="none"
                     autoCorrect={false}
                     testID="username-input"
@@ -150,8 +139,11 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                     error={validationStatus === 'invalid' ? errorMessage : undefined}
                     loading={validationStatus === 'validating'}
                     success={validationStatus === 'valid'}
+                    helperText={t('signin.username.helper') || '3-30 characters, letters and numbers only'}
                     onSubmitEditing={() => handleContinue()}
                     autoFocus
+                    accessibilityLabel={t('common.labels.username')}
+                    accessibilityHint={t('signin.username.helper') || 'Enter your username, 3-30 characters, letters and numbers only'}
                     style={{ marginBottom: 0 }}
                 />
             </View>
@@ -171,7 +163,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                             icon: 'arrow-forward',
                             variant: 'primary',
                             loading: isValidating,
-                            disabled: !username || username.trim().length < 2 || isValidating,
+                            disabled: !username || username.trim().length < 3 || isValidating,
                             testID: 'username-next-button',
                         },
                     ]}

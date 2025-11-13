@@ -75,7 +75,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
 
     const handleSignInSubmit = async () => {
         if (!password) {
-            setErrorMessage('Please enter your password.');
+            setErrorMessage(t('signin.password.required') || 'Please enter your password.');
             setTimeout(() => inputRef.current?.focus(), 0);
             return;
         }
@@ -141,6 +141,8 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     error={errorMessage || undefined}
                     onSubmitEditing={handleSignInSubmit}
                     autoFocus
+                    accessibilityLabel={t('common.labels.password')}
+                    accessibilityHint={t('signin.password.hint') || 'Enter your password to sign in'}
                     style={{ marginBottom: 0 }}
                 />
 
