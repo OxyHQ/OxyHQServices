@@ -8,9 +8,9 @@
 export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
- * Username validation regex (alphanumeric only, 3-30 chars)
+ * Username validation regex (alphanumeric, underscores, and hyphens, 3-30 chars)
  */
-export const USERNAME_REGEX = /^[a-zA-Z0-9]{3,30}$/;
+export const USERNAME_REGEX = /^[a-zA-Z0-9_-]{3,30}$/;
 
 /**
  * Password validation regex (at least 8 chars, 1 uppercase, 1 lowercase, 1 number)
