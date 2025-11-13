@@ -1,11 +1,12 @@
 import type React from 'react';
 import { useRef, useEffect } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, Platform, StyleSheet, type ViewStyle, type TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
 import { useI18n } from '../../hooks/useI18n';
+import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
 interface SignInPasswordStepProps {
     // Common props from StepBasedScreen
@@ -64,6 +65,8 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
 }) => {
     const inputRef = useRef<any>(null);
     const { t } = useI18n();
+    const baseStyles = stepStyles;
+    const webShadowReset = Platform.OS === 'web' ? ({ boxShadow: 'none' } as any) : null;
 
     const handlePasswordChange = (text: string) => {
         setPassword(text);
@@ -104,8 +107,8 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
 
     return (
         <>
-            <View style={styles.modernUserProfileContainer}>
-                <View style={styles.avatarContainer}>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.userProfileContainer]}>
+                <View style={stylesheet.avatarContainer}>
                     <Avatar
                         name={userProfile?.displayName || userProfile?.name || username}
                         size={100}
@@ -115,15 +118,15 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     />
                     <View style={[styles.statusIndicator, { backgroundColor: colors.primary }]} />
                 </View>
-                <Text style={[styles.modernUserDisplayName, { color: colors.text }]}>
+                <Text style={[styles.modernUserDisplayName, stylesheet.displayName, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>
                     {userProfile?.displayName || userProfile?.name || username}
                 </Text>
-                <Text style={[styles.modernUsernameSubtext, { color: colors.secondaryText }]}>
+                <Text style={[styles.modernUsernameSubtext, stylesheet.usernameSubtext, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>
                     @{username}
                 </Text>
             </View>
 
-            <View style={styles.modernInputContainer}>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.inputSection]}>
                 <TextField
                     ref={inputRef}
                     label={t('common.labels.password')}
@@ -138,9 +141,10 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     error={errorMessage || undefined}
                     onSubmitEditing={handleSignInSubmit}
                     autoFocus
+                    style={{ marginBottom: 0 }}
                 />
 
-                <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
+                <View style={[stylesheet.forgotPasswordContainer]}>
                     <Text style={[styles.footerText, { color: colors.text }]}>{t('signin.forgotPrompt') || 'Forgot your password?'} </Text>
                     <TouchableOpacity onPress={() => navigate('RecoverAccount', {
                         returnTo: 'SignIn',
@@ -152,27 +156,29 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                 </View>
             </View>
 
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: t('common.actions.back') || 'Back',
-                        onPress: prevStep,
-                        icon: 'arrow-back',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: t('common.actions.signIn') || 'Sign In',
-                        onPress: handleSignInSubmit,
-                        icon: 'log-in',
-                        variant: 'primary',
-                        loading: isLoading,
-                        testID: 'login-button',
-                    },
-                ]}
-                colors={colors}
-            />
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+                <GroupedPillButtons
+                    buttons={[
+                        {
+                            text: t('common.actions.back') || 'Back',
+                            onPress: prevStep,
+                            icon: 'arrow-back',
+                            variant: 'transparent',
+                        },
+                        {
+                            text: t('common.actions.signIn') || 'Sign In',
+                            onPress: handleSignInSubmit,
+                            icon: 'log-in',
+                            variant: 'primary',
+                            loading: isLoading,
+                            testID: 'login-button',
+                        },
+                    ]}
+                    colors={colors}
+                />
+            </View>
 
-            <View style={styles.securityNotice}>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.securityNotice, { marginTop: 0 }]}>
                 <Ionicons name="shield-checkmark" size={14} color={colors.secondaryText} />
                 <Text style={[styles.securityText, { color: colors.secondaryText }]}>
                     {t('signin.security.dataSecure') || 'Your data is encrypted and secure'}
@@ -183,3 +189,37 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
 };
 
 export default SignInPasswordStep;
+
+const stylesheet = StyleSheet.create({
+    userProfileContainer: {
+        alignItems: 'flex-start',
+        paddingVertical: 0,
+        gap: STEP_INNER_GAP,
+    },
+    avatarContainer: {
+        position: 'relative',
+        marginBottom: 0,
+        marginTop: 0,
+    },
+    displayName: {
+        marginBottom: 0,
+        marginTop: 0,
+    },
+    usernameSubtext: {
+        marginBottom: 0,
+        marginTop: 0,
+    },
+    inputSection: {
+        gap: STEP_INNER_GAP,
+    },
+    forgotPasswordContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 0,
+    },
+    securityNotice: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: STEP_INNER_GAP,
+    },
+});

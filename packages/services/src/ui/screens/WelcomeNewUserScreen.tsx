@@ -1,5 +1,6 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated, ScrollView } from 'react-native';
+import AnimatedReanimated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import Avatar from '../components/Avatar';
@@ -9,6 +10,41 @@ import { useAuthStore } from '../stores/authStore';
 import { useThemeColors } from '../styles';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
 import { useI18n } from '../hooks/useI18n';
+
+const GAP = 12;
+const INNER_GAP = 8;
+
+// Individual animated progress dot
+const AnimatedProgressDot: React.FC<{
+    isActive: boolean;
+    colors: any;
+    styles: any;
+}> = ({ isActive, colors, styles }) => {
+    const width = useSharedValue(isActive ? 12 : 6);
+    const backgroundColor = useSharedValue(isActive ? colors.primary : colors.border);
+
+    useEffect(() => {
+        width.value = withTiming(isActive ? 12 : 6, { duration: 300 });
+        backgroundColor.value = withTiming(
+            isActive ? colors.primary : colors.border,
+            { duration: 300 }
+        );
+    }, [isActive, colors.primary, colors.border, width, backgroundColor]);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        width: width.value,
+        backgroundColor: backgroundColor.value,
+    }));
+
+    return (
+        <AnimatedReanimated.View
+            style={[
+                styles.progressDot,
+                animatedStyle,
+            ]}
+        />
+    );
+};
 
 /**
  * Post-signup welcome & onboarding screen.
@@ -138,33 +174,44 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
         <View style={styles.container}>
             <View style={styles.progressContainer}>
                 {steps.map((s, i) => (
-                    <View key={s.key} style={[styles.progressDot, i === currentStep ? { backgroundColor: colors.primary, width: 22 } : { backgroundColor: colors.border }]} />
+                    <AnimatedProgressDot
+                        key={s.key}
+                        isActive={i === currentStep}
+                        colors={colors}
+                        styles={styles}
+                    />
                 ))}
             </View>
             <Animated.View style={{ opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
                 <ScrollView contentContainerStyle={styles.scrollInner} showsVerticalScrollIndicator={false}>
-                    <Text style={styles.title}>{step.title}</Text>
-                    {step.body && <Text style={styles.body}>{step.body}</Text>}
-                    {Array.isArray(step.bullets) && step.bullets.length > 0 && (
-                        <View style={styles.bulletContainer}>
-                            {step.bullets.map(b => (
-                                <View key={b} style={styles.bulletRow}>
-                                    <Ionicons name="ellipse" size={8} color={colors.primary} style={{ marginTop: 6 }} />
-                                    <Text style={styles.bulletText}>{b}</Text>
-                                </View>
-                            ))}
+                    <View style={styles.contentContainer}>
+                        <View style={[styles.header, styles.sectionSpacing]}>
+                            <Text style={[styles.title, { color: colors.text }]}>{step.title}</Text>
+                            {step.body && <Text style={[styles.body, { color: colors.secondaryText }]}>{step.body}</Text>}
                         </View>
-                    )}
-                    {step.showAvatar && (
-                        <View style={styles.avatarSection}>
-                            <Avatar size={120} name={currentUser?.username} uri={avatarUri} theme={theme} style={styles.avatar} />
-                            <TouchableOpacity style={styles.changeAvatarButton} onPress={openAvatarPicker}>
-                                <Ionicons name="image-outline" size={18} color="#FFFFFF" />
-                                <Text style={styles.changeAvatarText}>{avatarUri ? (t('welcomeNew.avatar.change') || 'Change Avatar') : (t('welcomeNew.avatar.add') || 'Add Avatar')}</Text>
-                            </TouchableOpacity>
+                        {Array.isArray(step.bullets) && step.bullets.length > 0 && (
+                            <View style={[styles.bulletContainer, styles.sectionSpacing]}>
+                                {step.bullets.map(b => (
+                                    <View key={b} style={styles.bulletRow}>
+                                        <Ionicons name="ellipse" size={8} color={colors.primary} style={{ marginTop: 6 }} />
+                                        <Text style={[styles.bulletText, { color: colors.secondaryText }]}>{b}</Text>
+                                    </View>
+                                ))}
+                            </View>
+                        )}
+                        {step.showAvatar && (
+                            <View style={[styles.avatarSection, styles.sectionSpacing]}>
+                                <Avatar size={120} name={currentUser?.username} uri={avatarUri} theme={theme} style={styles.avatar} />
+                                <TouchableOpacity style={[styles.changeAvatarButton, { backgroundColor: colors.primary }]} onPress={openAvatarPicker}>
+                                    <Ionicons name="image-outline" size={18} color="#FFFFFF" />
+                                    <Text style={styles.changeAvatarText}>{avatarUri ? (t('welcomeNew.avatar.change') || 'Change Avatar') : (t('welcomeNew.avatar.add') || 'Add Avatar')}</Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+                        <View style={styles.sectionSpacing}>
+                            <GroupedPillButtons buttons={pillButtons} colors={colors} />
                         </View>
-                    )}
-                    <GroupedPillButtons buttons={pillButtons} colors={colors} />
+                    </View>
                 </ScrollView>
             </Animated.View>
         </View>
@@ -174,11 +221,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
 
 const createStyles = (theme: string) => {
     const isDark = theme === 'dark';
-    const textColor = isDark ? '#FFFFFF' : '#000000';
-    const secondary = isDark ? '#CCCCCC' : '#555555';
-    const cardBg = isDark ? '#1E1E1E' : '#FFFFFF';
     const border = isDark ? '#333333' : '#E0E0E0';
-    const primary = '#007AFF';
     return StyleSheet.create({
         container: {
             width: '100%',
@@ -186,25 +229,38 @@ const createStyles = (theme: string) => {
         },
         scrollInner: {
             paddingBottom: 12,
+            paddingTop: 0,
+        },
+        contentContainer: {
+            width: '100%',
+            maxWidth: 420,
+            alignSelf: 'center',
+        },
+        sectionSpacing: {
+            marginBottom: GAP,
+        },
+        header: {
+            alignItems: 'flex-start',
+            width: '100%',
+            gap: INNER_GAP / 2,
         },
         title: {
             fontSize: 42,
             fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
             fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
             letterSpacing: -1,
-            color: textColor,
-            marginBottom: 12,
+            textAlign: 'left',
         },
         body: {
             fontSize: 16,
             lineHeight: 22,
-            color: secondary,
-            marginBottom: 28,
-            maxWidth: 620,
+            textAlign: 'left',
+            maxWidth: 320,
+            alignSelf: 'flex-start',
         },
         bulletContainer: {
-            gap: 10,
-            marginBottom: 32,
+            gap: INNER_GAP,
+            width: '100%',
         },
         bulletRow: {
             flexDirection: 'row',
@@ -215,26 +271,26 @@ const createStyles = (theme: string) => {
             flex: 1,
             fontSize: 15,
             lineHeight: 20,
-            color: secondary,
         },
         avatarSection: {
             width: '100%',
             alignItems: 'center',
-            marginBottom: 40,
         },
         avatar: {
-            marginBottom: 16,
-            borderWidth: 4,
-            borderColor: primary + '40',
+            marginBottom: INNER_GAP,
         },
         changeAvatarButton: {
             flexDirection: 'row',
             alignItems: 'center',
-            backgroundColor: primary,
             paddingHorizontal: 18,
             paddingVertical: 10,
-            borderRadius: 35,
+            borderRadius: 28,
             gap: 8,
+            shadowOpacity: 0,
+            shadowRadius: 0,
+            shadowOffset: { width: 0, height: 0 },
+            elevation: 0,
+            ...(Platform.OS === 'web' ? { boxShadow: 'none' } : null),
         },
         changeAvatarText: {
             color: '#FFFFFF',
@@ -245,60 +301,15 @@ const createStyles = (theme: string) => {
             flexDirection: 'row',
             width: '100%',
             justifyContent: 'center',
-            marginBottom: 24,
-            marginTop: 4,
+            marginTop: 24, // Space for bottom sheet handle (~20px) + small buffer
+            marginBottom: 24, // Equal spacing below dots
         },
         progressDot: {
-            height: 10,
-            width: 10,
-            borderRadius: 5,
-            marginHorizontal: 6,
+            height: 6,
+            width: 6,
+            borderRadius: 3,
+            marginHorizontal: 3,
             backgroundColor: border,
-        },
-        navBar: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            width: '100%',
-            gap: 12,
-            marginTop: 8,
-        },
-        navButton: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 6,
-            paddingHorizontal: 14,
-            paddingVertical: 10,
-            borderRadius: 12,
-        },
-        backButton: {
-            backgroundColor: cardBg,
-            borderWidth: 1,
-            borderColor: border,
-        },
-        skipButton: {
-            marginLeft: 'auto',
-            backgroundColor: 'transparent',
-            paddingHorizontal: 4,
-        },
-        navText: {
-            fontSize: 14,
-            fontWeight: '500',
-        },
-        primaryButton: {
-            flexDirection: 'row',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            backgroundColor: primary,
-            paddingVertical: 18,
-            borderRadius: 16,
-            width: '100%',
-        },
-        primaryButtonText: {
-            color: '#FFFFFF',
-            fontSize: 16,
-            fontWeight: '600',
-            letterSpacing: 0.5,
         },
     });
 };

@@ -7,12 +7,11 @@ interface AuthState {
   isLoading: boolean;
   error: string | null;
   lastUserFetch: number | null; // Timestamp of last user fetch for caching
-  loginStart: () => void;
   loginSuccess: (user: User) => void;
   loginFailure: (error: string) => void;
   logout: () => void;
-  fetchUser: (oxyServices: any, forceRefresh?: boolean) => Promise<void>;
-  updateUser: (updates: Partial<User>, oxyServices: any) => Promise<void>;
+  fetchUser: (oxyServices: { getCurrentUser: () => Promise<User> }, forceRefresh?: boolean) => Promise<void>;
+  updateUser: (updates: Partial<User>, oxyServices: { updateProfile: (updates: Partial<User>) => Promise<void> }) => Promise<void>;
   setUser: (user: User) => void; // Direct user setter for caching
 }
 
@@ -22,7 +21,6 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
   isLoading: false,
   error: null,
   lastUserFetch: null,
-  loginStart: () => set({ isLoading: true, error: null }),
   loginSuccess: (user: User) => set({ isLoading: false, isAuthenticated: true, user, lastUserFetch: Date.now() }),
   loginFailure: (error: string) => set({ isLoading: false, error }),
   logout: () => set({ user: null, isAuthenticated: false, lastUserFetch: null }),
@@ -35,38 +33,36 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
 
     // Use cached data if available and not forcing refresh
     if (!forceRefresh && state.user && cacheValid) {
-      console.log('AuthStore: Using cached user data (age:', cacheAge, 'ms)');
+      if (__DEV__) {
+        console.log('AuthStore: Using cached user data (age:', cacheAge, 'ms)');
+      }
       return;
     }
 
     set({ isLoading: true, error: null });
     try {
-      console.log('AuthStore: Fetching user data...');
       const user = await oxyServices.getCurrentUser();
-      console.log('AuthStore: Received user data:', {
-        hasUser: !!user,
-        userLinksMetadata: user?.linksMetadata,
-        userLinks: user?.links,
-        userWebsite: user?.website
-      });
       set({ user, isLoading: false, isAuthenticated: true, lastUserFetch: now });
-    } catch (error: any) {
-      console.error('AuthStore: Error fetching user:', error);
-      set({ error: error.message || 'Failed to fetch user', isLoading: false });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to fetch user';
+      if (__DEV__) {
+        console.error('AuthStore: Error fetching user:', error);
+      }
+      set({ error: errorMessage, isLoading: false });
     }
   },
   updateUser: async (updates, oxyServices) => {
     set({ isLoading: true, error: null });
     try {
-      console.log('AuthStore: Updating user with:', updates);
       await oxyServices.updateProfile(updates);
-      console.log('AuthStore: Profile updated successfully');
       // Immediately fetch the latest user data after update
-      await useAuthStore.getState().fetchUser(oxyServices, true); // Force refresh
-      console.log('AuthStore: User data refreshed');
-    } catch (error: any) {
-      console.error('AuthStore: Error updating user:', error);
-      set({ error: error.message || 'Failed to update user', isLoading: false });
+      await useAuthStore.getState().fetchUser(oxyServices, true);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update user';
+      if (__DEV__) {
+        console.error('AuthStore: Error updating user:', error);
+      }
+      set({ error: errorMessage, isLoading: false });
     }
   },
 })); 

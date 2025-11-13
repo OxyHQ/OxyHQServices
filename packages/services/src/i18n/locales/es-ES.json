@@ -49,7 +49,14 @@
     },
     "summary": {
       "title": "¡Ya casi!",
-      "subtitle": "Revisa tu información y crea tu cuenta"
+      "subtitle": "Revisa tu información y crea tu cuenta",
+      "fields": {
+        "username": "Usuario",
+        "email": "Correo electrónico"
+      },
+      "notSet": "Sin definir",
+      "securityTip": "Para mayor seguridad, habilita la Autenticación de Dos Factores (TOTP) en Configuración de la cuenta después de crear tu cuenta.",
+      "legalReminder": "Al crear una cuenta, aceptas nuestros Términos de servicio y Política de privacidad."
     }
   },
   "profile": {

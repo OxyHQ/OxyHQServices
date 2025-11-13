@@ -1,11 +1,12 @@
 import type React from 'react';
 import type { RouteName } from '../../navigation/routes';
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
 import { useI18n } from '../../hooks/useI18n';
+import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
 interface SignUpIdentityStepProps {
     // Common props from StepBasedScreen
@@ -55,6 +56,8 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
     validateUsername,
 }) => {
     const usernameRef = useRef<any>(null);
+    const baseStyles = stepStyles;
+    const webShadowReset = Platform.OS === 'web' ? ({ boxShadow: 'none' } as any) : null;
     const { t } = useI18n();
     const validationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -134,70 +137,95 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
 
     return (
         <>
-            <View style={styles.modernHeader}>
-                <Text style={[styles.modernTitle, { color: colors.text }]}>{t('signup.identity.title')}</Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>{t('signup.identity.subtitle')}</Text>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+                <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('signup.identity.title')}</Text>
+                <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>{t('signup.identity.subtitle')}</Text>
             </View>
 
-            <View style={styles.modernInputContainer}>
-                <TextField
-                    ref={usernameRef}
-                    label={t('common.labels.username')}
-                    leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
-                    value={username}
-                    onChangeText={handleUsernameChange}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    testID="signup-username-input"
-                    variant="filled"
-                    error={validationState.status === 'invalid' ? validationState.message : undefined}
-                    loading={validationState.status === 'validating'}
-                    success={validationState.status === 'valid'}
-                    onSubmitEditing={handleNext}
-                    autoFocus
-                />
+            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
+                <View
+                    style={[
+                        stylesheet.formCard,
+                        { backgroundColor: colors.inputBackground || colors.card || 'rgba(0,0,0,0.04)' },
+                        webShadowReset,
+                    ]}
+                >
+                    <TextField
+                        ref={usernameRef}
+                        label={t('common.labels.username')}
+                        leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
+                        value={username}
+                        onChangeText={handleUsernameChange}
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        testID="signup-username-input"
+                        variant="filled"
+                        error={validationState.status === 'invalid' ? validationState.message : undefined}
+                        loading={validationState.status === 'validating'}
+                        success={validationState.status === 'valid'}
+                        onSubmitEditing={handleNext}
+                        autoFocus
+                        style={{ marginBottom: 0 }}
+                    />
 
-                <TextField
-                    label={t('common.labels.email')}
-                    leading={<Ionicons name="mail-outline" size={24} color={colors.secondaryText} />}
-                    value={email}
-                    onChangeText={handleEmailChange}
-                    keyboardType="email-address"
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    testID="signup-email-input"
-                    variant="filled"
-                    error={emailError}
-                    onSubmitEditing={handleNext}
-                />
+                    <TextField
+                        label={t('common.labels.email')}
+                        leading={<Ionicons name="mail-outline" size={24} color={colors.secondaryText} />}
+                        value={email}
+                        onChangeText={handleEmailChange}
+                        keyboardType="email-address"
+                        autoCapitalize="none"
+                        autoCorrect={false}
+                        testID="signup-email-input"
+                        variant="filled"
+                        error={emailError}
+                        onSubmitEditing={handleNext}
+                        style={{ marginBottom: 0 }}
+                    />
+                </View>
             </View>
 
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: t('common.actions.back'),
-                        onPress: prevStep,
-                        icon: 'arrow-back',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: t('common.actions.next'),
-                        onPress: handleNext,
-                        icon: 'arrow-forward',
-                        variant: 'primary',
-                        loading: validationState.status === 'validating',
-                        disabled: !username.trim() ||
-                            username.trim().length < 3 ||
-                            !email.trim() ||
-                            !validateEmail(email) ||
-                            validationState.status === 'validating' ||
-                            validationState.status === 'invalid',
-                    },
-                ]}
-                colors={colors}
-            />
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+                <GroupedPillButtons
+                    buttons={[
+                        {
+                            text: t('common.actions.back'),
+                            onPress: prevStep,
+                            icon: 'arrow-back',
+                            variant: 'transparent',
+                        },
+                        {
+                            text: t('common.actions.next'),
+                            onPress: handleNext,
+                            icon: 'arrow-forward',
+                            variant: 'primary',
+                            loading: validationState.status === 'validating',
+                            disabled: !username.trim() ||
+                                username.trim().length < 3 ||
+                                !email.trim() ||
+                                !validateEmail(email) ||
+                                validationState.status === 'validating' ||
+                                validationState.status === 'invalid',
+                        },
+                    ]}
+                    colors={colors}
+                />
+            </View>
         </>
     );
 };
 
 export default SignUpIdentityStep;
+
+const stylesheet = StyleSheet.create({
+    formCard: {
+        width: '100%',
+        maxWidth: 420,
+        borderRadius: 28,
+        paddingHorizontal: 20,
+        paddingVertical: 18,
+        gap: STEP_INNER_GAP,
+        alignItems: 'stretch',
+        shadowColor: 'transparent',
+    },
+});

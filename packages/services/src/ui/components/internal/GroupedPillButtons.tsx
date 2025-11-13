@@ -252,8 +252,6 @@ const styles = StyleSheet.create({
     container: {
         flexDirection: 'row',
         justifyContent: 'flex-end',
-        marginTop: 16,
-        marginBottom: 8,
         width: '100%',
     },
 });

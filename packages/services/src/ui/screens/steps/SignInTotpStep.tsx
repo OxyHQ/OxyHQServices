@@ -1,11 +1,12 @@
 import type React from 'react';
 import type { RouteName } from '../../navigation/routes';
 import { useRef, useState } from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text, TouchableOpacity, Platform, StyleSheet, type ViewStyle, type TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import PinInput, { type PinInputHandle } from '../../components/internal/PinInput';
 import { useI18n } from '../../hooks/useI18n';
+import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
 interface SignInTotpStepProps {
   // Common props
@@ -47,6 +48,8 @@ const SignInTotpStep: React.FC<SignInTotpStepProps> = ({
   const [code, setCode] = useState('');
   const inputRef = useRef<PinInputHandle | null>(null);
   const { t } = useI18n();
+  const baseStyles = stepStyles;
+  const webShadowReset = Platform.OS === 'web' ? ({ boxShadow: 'none' } as any) : null;
 
   const handleVerify = async () => {
     if (!code || code.length !== 6) {
@@ -65,36 +68,36 @@ const SignInTotpStep: React.FC<SignInTotpStepProps> = ({
 
   return (
     <>
-      <View style={styles.modernHeader}>
-        <Text style={[styles.modernTitle, { color: colors.text }]}>{t('signin.totp.title') || 'Two‑Factor Code'}</Text>
-        <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}> 
+      <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+        <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('signin.totp.title') || 'Two‑Factor Code'}</Text>
+        <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}> 
           {t('signin.totp.subtitle', { username }) || `Enter the 6‑digit code from your authenticator app for @${username}`}
         </Text>
       </View>
 
-      <View style={styles.modernInputContainer}>
-        <PinInput
-          ref={inputRef}
-          value={code}
-          onChange={setCode}
-          length={6}
-          disabled={isLoading}
-          autoFocus
-          colors={colors}
-        />
+      <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.inputSection]}>
+        <View style={stylesheet.pinInputWrapper}>
+          <PinInput
+            ref={inputRef}
+            value={code}
+            onChange={setCode}
+            length={6}
+            disabled={isLoading}
+            autoFocus
+            colors={colors}
+          />
+        </View>
 
         {errorMessage ? (
-          <View style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            marginTop: 16,
-            padding: 12,
-            backgroundColor: colors.error + '10',
-            borderRadius: 8,
-            borderWidth: 1,
-            borderColor: colors.error + '30',
-          }}>
-            <Ionicons name="alert-circle" size={20} color={colors.error} style={{ marginRight: 8 }} />
+          <View style={[
+            stylesheet.errorContainer,
+            {
+              backgroundColor: colors.error + '10',
+              borderColor: colors.error + '30',
+            },
+            webShadowReset,
+          ]}>
+            <Ionicons name="alert-circle" size={20} color={colors.error} />
             <Text style={[styles.footerText, { color: colors.error, fontSize: 14 }]}>
               {errorMessage}
             </Text>
@@ -102,17 +105,19 @@ const SignInTotpStep: React.FC<SignInTotpStepProps> = ({
         ) : null}
       </View>
 
-      <GroupedPillButtons
-        buttons={[
-          { text: t('common.actions.back'), onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
-          { text: t('signin.actions.verify'), onPress: handleVerify, icon: 'shield-checkmark', variant: 'primary', loading: isLoading, disabled: isLoading || code.length !== 6 },
-        ]}
-        colors={colors}
-      />
+      <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+        <GroupedPillButtons
+          buttons={[
+            { text: t('common.actions.back'), onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
+            { text: t('signin.actions.verify'), onPress: handleVerify, icon: 'shield-checkmark', variant: 'primary', loading: isLoading, disabled: isLoading || code.length !== 6 },
+          ]}
+          colors={colors}
+        />
+      </View>
 
-      <View style={{ marginTop: 12, alignItems: 'center' }}>
+      <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.footerContainer]}>
         <Text style={[styles.footerText, { color: colors.secondaryText }]}>{t('signin.totp.noAccess') || 'No access to your authenticator?'}</Text>
-        <View style={{ flexDirection: 'row', gap: 12, marginTop: 6 }}>
+        <View style={stylesheet.footerLinks}>
           <TouchableOpacity onPress={() => navigate('RecoverAccount', { prefillUsername: username })}>
             <Text style={[styles.linkText, { color: colors.primary }]}>{t('signin.totp.useBackupCode') || 'Use backup code'}</Text>
           </TouchableOpacity>
@@ -127,3 +132,32 @@ const SignInTotpStep: React.FC<SignInTotpStepProps> = ({
 };
 
 export default SignInTotpStep;
+
+const stylesheet = StyleSheet.create({
+    inputSection: {
+        gap: STEP_INNER_GAP,
+    },
+    pinInputWrapper: {
+        marginBottom: 0,
+        marginTop: 0,
+    },
+    errorContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 0,
+        padding: STEP_INNER_GAP,
+        borderRadius: 8,
+        borderWidth: 1,
+        shadowColor: 'transparent',
+        gap: STEP_INNER_GAP,
+    },
+    footerContainer: {
+        alignItems: 'center',
+        gap: STEP_INNER_GAP,
+    },
+    footerLinks: {
+        flexDirection: 'row',
+        gap: STEP_INNER_GAP,
+        marginTop: 0,
+    },
+});

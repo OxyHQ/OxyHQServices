@@ -1,10 +1,11 @@
 import type React from 'react';
 import type { RouteName } from '../../navigation/routes';
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
 import { useI18n } from '../../hooks/useI18n';
+import { STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
 interface RecoverResetPasswordStepProps {
   // Common props
@@ -53,6 +54,8 @@ const RecoverResetPasswordStep: React.FC<RecoverResetPasswordStepProps> = ({
   oxyServices,
 }) => {
   const { t } = useI18n();
+  const baseStyles = stepStyles;
+  const webShadowReset = Platform.OS === 'web' ? ({ boxShadow: 'none' } as any) : null;
   const handleReset = async () => {
     if (!password || password.length < 8) {
       setErrorMessage(t('recover.password.minLength') || 'Password must be at least 8 characters long');
@@ -86,48 +89,67 @@ const RecoverResetPasswordStep: React.FC<RecoverResetPasswordStepProps> = ({
 
   return (
     <>
-      <View style={styles.modernHeader}>
-        <Text style={[styles.modernTitle, { color: colors.text }]}>{t('recover.newPassword')}</Text>
-        <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>{t('recover.title')} @{identifier}</Text>
+      <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+        <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('recover.newPassword')}</Text>
+        <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>{t('recover.title')} @{identifier}</Text>
       </View>
 
-      <View style={styles.modernInputContainer}>
-        <TextField
-          label={t('common.labels.password')}
-          leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
-          value={password}
-          onChangeText={setPassword}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          variant="filled"
-          error={errorMessage || undefined}
-          onSubmitEditing={handleReset}
-          autoFocus
-        />
+      <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
+        <View style={[stylesheet.formCard, { backgroundColor: colors.inputBackground || colors.card || 'rgba(0,0,0,0.04)' }, webShadowReset]}>
+          <TextField
+            label={t('common.labels.password')}
+            leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
+            value={password}
+            onChangeText={setPassword}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            variant="filled"
+            error={errorMessage || undefined}
+            onSubmitEditing={handleReset}
+            autoFocus
+            style={{ marginBottom: 0 }}
+          />
 
-        <TextField
-          label={t('common.labels.confirmPassword')}
-          leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
-          value={confirmPassword}
-          onChangeText={setConfirmPassword}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          variant="filled"
-          onSubmitEditing={handleReset}
-        />
+          <TextField
+            label={t('common.labels.confirmPassword')}
+            leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
+            value={confirmPassword}
+            onChangeText={setConfirmPassword}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            variant="filled"
+            onSubmitEditing={handleReset}
+            style={{ marginBottom: 0 }}
+          />
+        </View>
       </View>
 
-      <GroupedPillButtons
-        buttons={[
-          { text: t('common.actions.back'), onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
-          { text: t('common.actions.resetPassword'), onPress: handleReset, icon: 'key-outline', variant: 'primary', loading: isLoading, disabled: isLoading },
-        ]}
-        colors={colors}
-      />
+      <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+        <GroupedPillButtons
+          buttons={[
+            { text: t('common.actions.back'), onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
+            { text: t('common.actions.resetPassword'), onPress: handleReset, icon: 'key-outline', variant: 'primary', loading: isLoading, disabled: isLoading },
+          ]}
+          colors={colors}
+        />
+      </View>
     </>
   );
 };
 
 export default RecoverResetPasswordStep;
+
+const stylesheet = StyleSheet.create({
+  formCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 28,
+    paddingHorizontal: 20,
+    paddingVertical: 18,
+    gap: STEP_INNER_GAP,
+    alignItems: 'stretch',
+    shadowColor: 'transparent',
+  },
+});

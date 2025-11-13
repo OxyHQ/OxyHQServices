@@ -47,6 +47,38 @@ interface StepBasedScreenState {
     isTransitioning: boolean;
 }
 
+// Individual animated progress dot
+const AnimatedProgressDot: React.FC<{
+    isActive: boolean;
+    colors: any;
+    styles: any;
+}> = ({ isActive, colors, styles }) => {
+    const width = useSharedValue(isActive ? 12 : 6);
+    const backgroundColor = useSharedValue(isActive ? colors.primary : colors.border);
+
+    useEffect(() => {
+        width.value = withTiming(isActive ? 12 : 6, { duration: 300 });
+        backgroundColor.value = withTiming(
+            isActive ? colors.primary : colors.border,
+            { duration: 300 }
+        );
+    }, [isActive, colors.primary, colors.border, width, backgroundColor]);
+
+    const animatedStyle = useAnimatedStyle(() => ({
+        width: width.value,
+        backgroundColor: backgroundColor.value,
+    }));
+
+    return (
+        <Animated.View
+            style={[
+                styles.progressDot,
+                animatedStyle,
+            ]}
+        />
+    );
+};
+
 // Progress indicator component
 const ProgressIndicator: React.FC<{
     currentStep: number;
@@ -56,14 +88,11 @@ const ProgressIndicator: React.FC<{
 }> = ({ currentStep, totalSteps, colors, styles }) => (
     <View style={styles.progressContainer}>
         {Array.from({ length: totalSteps }, (_, index) => (
-            <View
+            <AnimatedProgressDot
                 key={index}
-                style={[
-                    styles.progressDot,
-                    currentStep === index
-                        ? { backgroundColor: colors.primary, width: 24 }
-                        : { backgroundColor: colors.border }
-                ]}
+                isActive={currentStep === index}
+                colors={colors}
+                styles={styles}
             />
         ))}
     </View>
@@ -178,6 +207,20 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
             lineHeight: 20,
             fontWeight: '600' as const,
             textDecorationLine: 'underline' as const,
+        },
+        progressContainer: {
+            flexDirection: 'row' as const,
+            width: '100%',
+            justifyContent: 'center' as const,
+            marginTop: 24, // Space for bottom sheet handle (~20px) + small buffer
+            marginBottom: 24, // Equal spacing below dots
+        },
+        progressDot: {
+            height: 6,
+            width: 6,
+            borderRadius: 3,
+            marginHorizontal: 3,
+            backgroundColor: colors.border,
         },
     }), [colors, theme]);
 

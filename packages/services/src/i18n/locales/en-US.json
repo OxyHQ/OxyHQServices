@@ -49,7 +49,14 @@
     },
     "summary": {
       "title": "Almost There!",
-      "subtitle": "Review your information and create your account"
+      "subtitle": "Review your information and create your account",
+      "fields": {
+        "username": "Username",
+        "email": "Email"
+      },
+      "notSet": "Not set",
+      "securityTip": "For stronger security, enable Two‑Factor Authentication (TOTP) from Account Settings after you create your account.",
+      "legalReminder": "By creating an account, you agree to our Terms of Service and Privacy Policy."
     }
   },
   "welcomeNew": {

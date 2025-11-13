@@ -90,8 +90,8 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         justifyContent: 'center',
         gap: 12,
-        marginBottom: 24,
-        marginTop: 8,
+        marginBottom: 0,
+        marginTop: 0,
     },
     pinInput: {
         width: 44,

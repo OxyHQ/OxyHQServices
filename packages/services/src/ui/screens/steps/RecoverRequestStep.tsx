@@ -9,6 +9,7 @@ import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import { toast } from '../../../lib/sonner';
 import type { OxyServices } from '../../../core';
 import { useI18n } from '../../hooks/useI18n';
+import { stepStyles } from '../../styles/spacing';
 
 interface RecoverRequestStepProps {
     // Common props from StepBasedScreen
@@ -51,6 +52,7 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
 }) => {
     const inputRef = useRef<any>(null);
     const { t } = useI18n();
+    const baseStyles = stepStyles;
 
     const handleIdentifierChange = (text: string) => {
         setIdentifier(text);
@@ -83,13 +85,15 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
 
     return (
         <>
-            <HighFive width={100} height={100} />
-            <View style={styles.modernHeader}>
-                <Text style={[styles.modernTitle, { color: colors.text }]}>{t('recover.title')}</Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>{t('recover.noEmail')}</Text>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, { alignItems: 'flex-start' }]}>
+                <HighFive width={100} height={100} />
+            </View>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+                <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('recover.title')}</Text>
+                <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>{t('recover.noEmail')}</Text>
             </View>
 
-            <View style={styles.modernInputContainer}>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
                 <TextField
                     ref={inputRef}
                     label={t('recover.username.label')}
@@ -104,28 +108,31 @@ const RecoverRequestStep: React.FC<RecoverRequestStepProps> = ({
                     editable={!isLoading}
                     onSubmitEditing={handleRequestWithFocus}
                     autoFocus
+                    style={{ marginBottom: 0 }}
                 />
             </View>
 
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: t('common.actions.back'),
-                        onPress: () => navigate('SignIn'),
-                        icon: 'arrow-back',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: t('common.actions.continue'),
-                        onPress: handleRequest,
-                        icon: 'information-circle-outline',
-                        variant: 'primary',
-                        loading: isLoading,
-                        disabled: isLoading,
-                    },
-                ]}
-                colors={colors}
-            />
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+                <GroupedPillButtons
+                    buttons={[
+                        {
+                            text: t('common.actions.back'),
+                            onPress: () => navigate('SignIn'),
+                            icon: 'arrow-back',
+                            variant: 'transparent',
+                        },
+                        {
+                            text: t('common.actions.continue'),
+                            onPress: handleRequest,
+                            icon: 'information-circle-outline',
+                            variant: 'primary',
+                            loading: isLoading,
+                            disabled: isLoading,
+                        },
+                    ]}
+                    colors={colors}
+                />
+            </View>
         </>
     );
 };

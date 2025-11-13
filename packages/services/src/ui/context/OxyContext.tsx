@@ -1,7 +1,6 @@
 import type React from 'react';
 import { createContext, useContext, useEffect, useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
 import type { UseFollowHook } from '../hooks/useFollow.types';
-import { View, Text } from 'react-native';
 import { OxyServices } from '../../core';
 import type { User, ApiError } from '../../models/interfaces';
 import type { SessionLoginResponse, ClientSession, MinimalUserData } from '../../models/session';
@@ -24,6 +23,7 @@ export interface OxyContextState {
   activeSessionId: string | null;
   isAuthenticated: boolean; // Single source of truth for authentication - use this instead of service methods
   isLoading: boolean;
+  isTokenReady: boolean; // Whether the token has been loaded/restored and is ready for use
   error: string | null;
 
   // Language state
@@ -63,6 +63,26 @@ export interface OxyContextState {
    */
   useFollow: UseFollowHook; // Back-compat; prefer direct import
 }
+
+// Empty follow hook fallback
+const createEmptyFollowHook = (): UseFollowHook => {
+  const emptyResult = {
+    isFollowing: false,
+    isLoading: false,
+    error: null,
+    toggleFollow: async () => { },
+    setFollowStatus: () => { },
+    fetchStatus: async () => { },
+    clearError: () => { },
+    followerCount: null,
+    followingCount: null,
+    isLoadingCounts: false,
+    fetchUserCounts: async () => { },
+    setFollowerCount: () => { },
+    setFollowingCount: () => { },
+  };
+  return () => emptyResult;
+};
 
 // Create the context with default values
 const OxyContext = createContext<OxyContextState | null>(null);
@@ -177,6 +197,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const [storage, setStorage] = useState<StorageInterface | null>(null);
   const [currentLanguage, setCurrentLanguage] = useState<string>('en-US');
 
+  // Storage keys (memoized to prevent infinite loops) - declared early for use in helpers
+  const keys = useMemo(() => getStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
+
   // Normalize language codes to BCP-47 (e.g., en-US)
   const normalizeLanguageCode = useCallback((lang?: string | null): string | null => {
     if (!lang) return null;
@@ -187,21 +210,55 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     };
     return map[lang] || lang;
   }, []);
-  // Add a new state to track token restoration
-  const [tokenReady, setTokenReady] = useState(false);
 
-  // Storage keys (memoized to prevent infinite loops)
-  const keys = useMemo(() => getStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
+  // Helper to apply language preference from user/server
+  const applyLanguagePreference = useCallback(async (user: User): Promise<void> => {
+    const userLanguage = (user as Record<string, unknown>)?.language as string | undefined;
+    if (!userLanguage || !storage) return;
 
-  // Clear all storage - defined before initAuth to avoid dependency issues
+    try {
+      const serverLang = normalizeLanguageCode(userLanguage) || userLanguage;
+      await storage.setItem(keys.language, serverLang);
+      setCurrentLanguage(serverLang);
+    } catch (e) {
+      if (__DEV__) {
+        console.warn('Failed to apply server language preference', e);
+      }
+    }
+  }, [storage, keys.language, normalizeLanguageCode]);
+
+  // Helper to map server sessions to client sessions
+  const mapServerSessionsToClient = useCallback((serverSessions: Array<{
+    sessionId: string;
+    deviceId: string;
+    expiresAt?: string;
+    lastActive?: string;
+    userId?: string;
+  }>, fallbackUserId?: string): ClientSession[] => {
+    return serverSessions.map(s => ({
+      sessionId: s.sessionId,
+      deviceId: s.deviceId,
+      expiresAt: s.expiresAt || new Date().toISOString(),
+      lastActive: s.lastActive || new Date().toISOString(),
+      userId: s.userId || fallbackUserId
+    }));
+  }, []);
+
+  // Token ready state - start optimistically so children render immediately
+  const [tokenReady, setTokenReady] = useState(true);
+
+  // Clear all storage
   const clearAllStorage = useCallback(async (): Promise<void> => {
     if (!storage) return;
     try {
       await storage.removeItem(keys.activeSessionId);
     } catch (err) {
-      console.error('Clear storage error:', err);
+      if (__DEV__) {
+        console.error('Clear storage error:', err);
+      }
+      onError?.({ message: 'Failed to clear storage', code: 'STORAGE_ERROR', status: 500 });
     }
-  }, [storage, keys]);
+  }, [storage, keys, onError]);
 
   // Initialize storage
   useEffect(() => {
@@ -210,21 +267,22 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         const platformStorage = await getStorage();
         setStorage(platformStorage);
       } catch (error) {
-        console.error('Init storage failed', error);
-        useAuthStore.setState({ error: 'Failed to initialize storage' });
+        const errorMessage = error instanceof Error ? error.message : 'Failed to initialize storage';
+        useAuthStore.setState({ error: errorMessage });
+        onError?.({ message: errorMessage, code: 'STORAGE_INIT_ERROR', status: 500 });
       }
     };
     initStorage();
-  }, []);
+  }, [onError]);
 
   // Initialize authentication state
+  // Note: We don't set isLoading during initialization to avoid showing spinners
+  // Children render immediately and can check isTokenReady/isAuthenticated themselves
   useEffect(() => {
     const initAuth = async () => {
       if (!storage) return;
-      useAuthStore.setState({ isLoading: true });
+      // Don't set isLoading during initialization - let it happen in background
       try {
-        setTokenReady(false);
-
         // Load saved language preference
         const savedLanguageRaw = await storage.getItem(keys.language);
         const savedLanguage = normalizeLanguageCode(savedLanguageRaw) || savedLanguageRaw;
@@ -243,68 +301,33 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               const fullUser = await oxyServices.getUserBySession(storedActiveSessionId);
               loginSuccess(fullUser);
               setMinimalUser({ id: fullUser.id, username: fullUser.username, avatar: fullUser.avatar });
-              // Apply server language if present
-              if ((fullUser as any)?.language) {
-                try {
-                  const serverLang = normalizeLanguageCode((fullUser as any).language) || (fullUser as any).language;
-                  await storage.setItem(keys.language, serverLang);
-                  setCurrentLanguage(serverLang);
-                } catch (e) {
-                  console.warn('Failed to apply server language preference', e);
-                }
-              }
+
+              await applyLanguagePreference(fullUser);
+
               const serverSessions = await oxyServices.getSessionsBySessionId(storedActiveSessionId);
-              const clientSessions: ClientSession[] = serverSessions.map(s => ({
-                sessionId: s.sessionId,
-                deviceId: s.deviceId,
-                expiresAt: s.expiresAt || new Date().toISOString(),
-                lastActive: s.lastActive || new Date().toISOString(),
-                userId: s.userId || fullUser.id
-              }));
-              setSessions(clientSessions);
+              setSessions(mapServerSessionsToClient(serverSessions, fullUser.id));
               onAuthStateChange?.(fullUser);
             } else {
               await clearAllStorage();
             }
           } catch (e) {
-            console.error('Session validation error', e);
+            if (__DEV__) {
+              console.error('Session validation error', e);
+            }
             await clearAllStorage();
           }
         }
         setTokenReady(true);
       } catch (e) {
-        console.error('Auth init error', e);
+        if (__DEV__) {
+          console.error('Auth init error', e);
+        }
         await clearAllStorage();
-      } finally {
-        useAuthStore.setState({ isLoading: false });
+        setTokenReady(true);
       }
     };
     initAuth();
-  }, [storage, oxyServices, keys, onAuthStateChange, loginSuccess, clearAllStorage]);
-
-
-
-  // Remove invalid session - refresh sessions from backend
-  const removeInvalidSession = useCallback(async (sessionId: string): Promise<void> => {
-    // Remove from local state
-    const filteredSessions = sessions.filter(s => s.sessionId !== sessionId);
-    setSessions(filteredSessions);
-
-    // If there are other sessions, switch to the first one
-    if (filteredSessions.length > 0) {
-      await switchToSession(filteredSessions[0].sessionId);
-    } else {
-      // No valid sessions left
-      setActiveSessionId(null);
-      logoutStore();
-      setMinimalUser(null);
-      await storage?.removeItem(keys.activeSessionId);
-
-      if (onAuthStateChange) {
-        onAuthStateChange(null);
-      }
-    }
-  }, [sessions, storage, keys, onAuthStateChange, logoutStore]);
+  }, [storage, oxyServices, keys, onAuthStateChange, loginSuccess, clearAllStorage, applyLanguagePreference, mapServerSessionsToClient]);
 
   // Save active session ID to storage (only session ID, no user data)
   const saveActiveSessionId = useCallback(async (sessionId: string): Promise<void> => {
@@ -315,10 +338,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // Switch to a different session
   const switchToSession = useCallback(async (sessionId: string): Promise<void> => {
     try {
-      useAuthStore.setState({ isLoading: true });
-
+      // Don't set isLoading - session switches should happen silently in background
       // Get access token for this session
       await oxyServices.getTokenBySession(sessionId);
+      setTokenReady(true);
 
       // Load full user data
       const fullUser = await oxyServices.getUserBySession(sessionId);
@@ -332,27 +355,18 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       });
 
       await saveActiveSessionId(sessionId);
-      // Apply server language if present
-      if ((fullUser as any)?.language) {
-        try {
-          const serverLang = normalizeLanguageCode((fullUser as any).language) || (fullUser as any).language;
-          await storage?.setItem(keys.language, serverLang);
-          setCurrentLanguage(serverLang);
-        } catch (e) {
-          console.warn('Failed to apply server language after switch', e);
-        }
-      }
-
-      if (onAuthStateChange) {
-        onAuthStateChange(fullUser);
-      }
+      await applyLanguagePreference(fullUser);
+      onAuthStateChange?.(fullUser);
     } catch (error) {
-      console.error('Switch session error:', error);
-      useAuthStore.setState({ error: 'Failed to switch session' });
-    } finally {
-      useAuthStore.setState({ isLoading: false });
+      const errorMessage = error instanceof Error ? error.message : 'Failed to switch session';
+      if (__DEV__) {
+        console.error('Switch session error:', error);
+      }
+      useAuthStore.setState({ error: errorMessage });
+      onError?.({ message: errorMessage, code: 'SESSION_SWITCH_ERROR', status: 500 });
+      setTokenReady(false);
     }
-  }, [oxyServices, onAuthStateChange, loginSuccess, saveActiveSessionId]);
+  }, [oxyServices, onAuthStateChange, loginSuccess, saveActiveSessionId, applyLanguagePreference, onError]);
 
   // Login method - only store session ID, retrieve data from backend
   const login = useCallback(async (username: string, password: string, deviceName?: string): Promise<User> => {
@@ -360,16 +374,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     useAuthStore.setState({ isLoading: true, error: null });
 
     try {
-      // Get device fingerprint for enhanced device identification
       const deviceFingerprint = DeviceManager.getDeviceFingerprint();
-
-      // Get or generate persistent device info
       const deviceInfo = await DeviceManager.getDeviceInfo();
 
-      console.log('Auth - Using device fingerprint:', deviceFingerprint);
-      console.log('Auth - Using device ID:', deviceInfo.deviceId);
-
-      const response: any = await oxyServices.signIn(
+      const response = await oxyServices.signIn(
         username,
         password,
         deviceName || deviceInfo.deviceName || DeviceManager.getDefaultDeviceName(),
@@ -377,49 +385,42 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       );
 
       // Handle MFA requirement
-      if (response && response.mfaRequired) {
-        const err: any = new Error('Multi-factor authentication required');
-        err.code = 'MFA_REQUIRED';
-        err.mfaToken = response.mfaToken;
-        err.expiresAt = response.expiresAt;
-        throw err;
+      if (response && 'mfaRequired' in response && response.mfaRequired) {
+        const mfaError = new Error('Multi-factor authentication required') as Error & {
+          code: string;
+          mfaToken?: string;
+          expiresAt?: string;
+        };
+        mfaError.code = 'MFA_REQUIRED';
+        mfaError.mfaToken = (response as { mfaToken?: string }).mfaToken;
+        mfaError.expiresAt = (response as { expiresAt?: string }).expiresAt;
+        throw mfaError;
       }
 
-      // Set as active session (only store session ID)
-      setActiveSessionId((response as SessionLoginResponse).sessionId);
-      await saveActiveSessionId((response as SessionLoginResponse).sessionId);
+      const sessionResponse = response as SessionLoginResponse;
+      setActiveSessionId(sessionResponse.sessionId);
+      await saveActiveSessionId(sessionResponse.sessionId);
 
-      // Get access token for API calls
-      await oxyServices.getTokenBySession(response.sessionId);
+      await oxyServices.getTokenBySession(sessionResponse.sessionId);
+      const fullUser = await oxyServices.getUserBySession(sessionResponse.sessionId);
 
-      // Load full user data from backend
-      const fullUser = await oxyServices.getUserBySession((response as SessionLoginResponse).sessionId);
       loginSuccess(fullUser);
-      setMinimalUser(response.user);
+      setMinimalUser(sessionResponse.user);
 
-      // Load sessions from backend
-      const serverSessions = await oxyServices.getSessionsBySessionId((response as SessionLoginResponse).sessionId);
-      const clientSessions: ClientSession[] = serverSessions.map(serverSession => ({
-        sessionId: serverSession.sessionId,
-        deviceId: serverSession.deviceId,
-        expiresAt: serverSession.expiresAt || new Date().toISOString(),
-        lastActive: serverSession.lastActive || new Date().toISOString(),
-        userId: serverSession.userId || fullUser.id
-      }));
-      setSessions(clientSessions);
+      const serverSessions = await oxyServices.getSessionsBySessionId(sessionResponse.sessionId);
+      setSessions(mapServerSessionsToClient(serverSessions, fullUser.id));
 
-      if (onAuthStateChange) {
-        onAuthStateChange(fullUser);
-      }
-
+      onAuthStateChange?.(fullUser);
       return fullUser;
-    } catch (error: any) {
-      loginFailure(error.message || 'Login failed');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Login failed';
+      loginFailure(errorMessage);
+      onError?.({ message: errorMessage, code: 'LOGIN_ERROR', status: 401 });
       throw error;
     } finally {
       useAuthStore.setState({ isLoading: false });
     }
-  }, [storage, oxyServices, saveActiveSessionId, loginSuccess, setMinimalUser, onAuthStateChange, loginFailure]);
+  }, [storage, oxyServices, saveActiveSessionId, loginSuccess, onAuthStateChange, loginFailure, mapServerSessionsToClient, onError]);
 
   // Logout method
   const logout = useCallback(async (targetSessionId?: string): Promise<void> => {
@@ -451,70 +452,43 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         }
       }
     } catch (error) {
-      console.error('Logout error:', error);
-      useAuthStore.setState({ error: 'Logout failed' });
+      const errorMessage = error instanceof Error ? error.message : 'Logout failed';
+      if (__DEV__) {
+        console.error('Logout error:', error);
+      }
+      useAuthStore.setState({ error: errorMessage });
+      onError?.({ message: errorMessage, code: 'LOGOUT_ERROR', status: 500 });
     }
-  }, [activeSessionId, oxyServices, sessions, switchToSession, logoutStore, setMinimalUser, storage, keys.activeSessionId, onAuthStateChange]);
+  }, [activeSessionId, oxyServices, sessions, switchToSession, logoutStore, storage, keys.activeSessionId, onAuthStateChange, onError]);
 
   // Logout all sessions
   const logoutAll = useCallback(async (): Promise<void> => {
-    console.log('logoutAll called with activeSessionId:', activeSessionId);
-
     if (!activeSessionId) {
-      console.error('No active session ID found, cannot logout all');
-      useAuthStore.setState({ error: 'No active session found' });
-      throw new Error('No active session found');
-    }
-
-    if (!oxyServices) {
-      console.error('OxyServices not initialized');
-      useAuthStore.setState({ error: 'Service not available' });
-      throw new Error('Service not available');
+      const error = new Error('No active session found');
+      useAuthStore.setState({ error: error.message });
+      onError?.({ message: error.message, code: 'NO_SESSION_ERROR', status: 404 });
+      throw error;
     }
 
     try {
-      console.log('Calling oxyServices.logoutAllSessions with sessionId:', activeSessionId);
       await oxyServices.logoutAllSessions(activeSessionId);
-      console.log('logoutAllSessions completed successfully');
 
-      // Clear all local data
       setSessions([]);
       setActiveSessionId(null);
       logoutStore();
       setMinimalUser(null);
       await clearAllStorage();
-      console.log('Local storage cleared');
-
-      if (onAuthStateChange) {
-        onAuthStateChange(null);
-        console.log('Auth state change callback called');
-      }
+      onAuthStateChange?.(null);
     } catch (error) {
-      console.error('Logout all error:', error);
-      useAuthStore.setState({ error: `Logout all failed: ${error instanceof Error ? error.message : 'Unknown error'}` });
+      const errorMessage = error instanceof Error ? error.message : 'Logout all failed';
+      useAuthStore.setState({ error: errorMessage });
+      onError?.({ message: errorMessage, code: 'LOGOUT_ALL_ERROR', status: 500 });
       throw error;
     }
-  }, [activeSessionId, oxyServices, logoutStore, setMinimalUser, clearAllStorage, onAuthStateChange]);
+  }, [activeSessionId, oxyServices, logoutStore, clearAllStorage, onAuthStateChange, onError]);
 
-  // Effect to restore token on app load or session switch
-  useEffect(() => {
-    const restoreToken = async () => {
-      if (activeSessionId && oxyServices) {
-        try {
-          await oxyServices.getTokenBySession(activeSessionId);
-          setTokenReady(true);
-        } catch (err) {
-          // If token restoration fails, force logout
-          await logout();
-          setTokenReady(false);
-        }
-      } else {
-        setTokenReady(true); // No session, so token is not needed
-      }
-    };
-    restoreToken();
-    // Only run when activeSessionId or oxyServices changes
-  }, [activeSessionId, oxyServices, logout]);
+  // Token restoration is handled in initAuth and switchToSession
+  // No separate effect needed - children render immediately with isTokenReady available
 
   // Sign up method
   const signUp = useCallback(async (username: string, email: string, password: string): Promise<User> => {
@@ -523,23 +497,18 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     useAuthStore.setState({ isLoading: true, error: null });
 
     try {
-      // Create new account using the OxyServices signUp method
-      const response = await oxyServices.signUp(username, email, password);
-
-      console.log('SignUp successful:', response);
-
-      // Now log the user in to create a session
-      // This will handle the session creation and device registration
+      await oxyServices.signUp(username, email, password);
       const user = await login(username, password);
-
       return user;
-    } catch (error: any) {
-      loginFailure(error.message || 'Sign up failed');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Sign up failed';
+      loginFailure(errorMessage);
+      onError?.({ message: errorMessage, code: 'SIGNUP_ERROR', status: 400 });
       throw error;
     } finally {
       useAuthStore.setState({ isLoading: false });
     }
-  }, [storage, oxyServices, login, loginFailure]);
+  }, [storage, oxyServices, login, loginFailure, onError]);
 
   // Complete MFA login by verifying TOTP
   const completeMfaLogin = useCallback(async (mfaToken: string, code: string): Promise<User> => {
@@ -555,190 +524,139 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // Fetch access token and user data
       await oxyServices.getTokenBySession(response.sessionId);
       const fullUser = await oxyServices.getUserBySession(response.sessionId);
+
       loginSuccess(fullUser);
       setMinimalUser({ id: fullUser.id, username: fullUser.username, avatar: fullUser.avatar });
-      // Apply server language if present
-      if ((fullUser as any)?.language) {
-        try {
-          const serverLang = normalizeLanguageCode((fullUser as any).language) || (fullUser as any).language;
-          await storage.setItem(keys.language, serverLang);
-          setCurrentLanguage(serverLang);
-        } catch (e) {
-          console.warn('Failed to apply server language on MFA login', e);
-        }
-      }
+      await applyLanguagePreference(fullUser);
 
-      // Load sessions list
       const serverSessions = await oxyServices.getSessionsBySessionId(response.sessionId);
-      const clientSessions: ClientSession[] = serverSessions.map(s => ({
-        sessionId: s.sessionId,
-        deviceId: s.deviceId,
-        expiresAt: s.expiresAt || new Date().toISOString(),
-        lastActive: s.lastActive || new Date().toISOString(),
-        userId: s.userId || fullUser.id
-      }));
-      setSessions(clientSessions);
-      // Apply server language if present
-      if ((fullUser as any)?.language) {
-        try {
-          await storage.setItem(keys.language, (fullUser as any).language);
-          setCurrentLanguage((fullUser as any).language);
-        } catch (e) {
-          console.warn('Failed to apply server language on MFA login', e);
-        }
-      }
+      setSessions(mapServerSessionsToClient(serverSessions, fullUser.id));
 
-      if (onAuthStateChange) onAuthStateChange(fullUser);
+      onAuthStateChange?.(fullUser);
       return fullUser;
-    } catch (error: any) {
-      loginFailure(error.message || 'MFA verification failed');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'MFA verification failed';
+      loginFailure(errorMessage);
+      onError?.({ message: errorMessage, code: 'MFA_ERROR', status: 401 });
       throw error;
     } finally {
       useAuthStore.setState({ isLoading: false });
     }
-  }, [storage, oxyServices, loginSuccess, loginFailure, saveActiveSessionId, onAuthStateChange]);
+  }, [storage, oxyServices, loginSuccess, loginFailure, saveActiveSessionId, onAuthStateChange, applyLanguagePreference, mapServerSessionsToClient, onError]);
 
-  // Switch session method
+  // Switch session method (wrapper for consistency)
   const switchSession = useCallback(async (sessionId: string): Promise<void> => {
     await switchToSession(sessionId);
   }, [switchToSession]);
 
-  // Remove session method
+  // Remove session method (wrapper for consistency)
   const removeSession = useCallback(async (sessionId: string): Promise<void> => {
     await logout(sessionId);
   }, [logout]);
 
   // Refresh sessions method
   const refreshSessions = useCallback(async (): Promise<void> => {
-    console.log('refreshSessions called with activeSessionId:', activeSessionId);
-
-    if (!activeSessionId) {
-      console.log('refreshSessions: No activeSessionId, returning');
-      return;
-    }
+    if (!activeSessionId) return;
 
     try {
-      console.log('refreshSessions: Calling getSessionsBySessionId...');
       const serverSessions = await oxyServices.getSessionsBySessionId(activeSessionId);
-      console.log('refreshSessions: Server sessions received:', serverSessions);
-
-      // Update local sessions with server data
-      const updatedSessions: ClientSession[] = serverSessions.map(serverSession => ({
-        sessionId: serverSession.sessionId,
-        deviceId: serverSession.deviceId,
-        expiresAt: serverSession.expiresAt || new Date().toISOString(),
-        lastActive: serverSession.lastActive || new Date().toISOString(),
-        userId: serverSession.userId || user?.id
-      }));
-
-      console.log('refreshSessions: Updated sessions:', updatedSessions);
-      setSessions(updatedSessions);
-      console.log('refreshSessions: Sessions updated in state');
+      setSessions(mapServerSessionsToClient(serverSessions, user?.id));
     } catch (error) {
-      console.error('Refresh sessions error:', error);
+      if (__DEV__) {
+        console.error('Refresh sessions error:', error);
+      }
 
       // If the current session is invalid, try to find another valid session
       if (sessions.length > 1) {
-        console.log('Current session invalid, trying to switch to another session...');
         const otherSessions = sessions.filter(s => s.sessionId !== activeSessionId);
 
         for (const session of otherSessions) {
           try {
-            // Try to validate this session
-            await oxyServices.validateSession(session.sessionId, {
+            const validation = await oxyServices.validateSession(session.sessionId, {
               useHeaderValidation: true
             });
-            console.log('Found valid session, switching to:', session.sessionId);
-            await switchToSession(session.sessionId);
-            return; // Successfully switched to another session
-          } catch (sessionError) {
-            console.log('Session validation failed for:', session.sessionId, sessionError);
-            continue; // Try next session
+            if (validation.valid) {
+              await switchToSession(session.sessionId);
+              return;
+            }
+          } catch {
+            continue;
           }
         }
       }
 
-      // If no valid sessions found, clear all sessions
-      console.log('No valid sessions found, clearing all sessions');
+      // No valid sessions found, clear all
       setSessions([]);
       setActiveSessionId(null);
       logoutStore();
       setMinimalUser(null);
       await clearAllStorage();
-
-      if (onAuthStateChange) {
-        onAuthStateChange(null);
-      }
+      onAuthStateChange?.(null);
     }
-  }, [activeSessionId, oxyServices, user?.id, sessions, switchToSession, logoutStore, setMinimalUser, clearAllStorage, onAuthStateChange]);
+  }, [activeSessionId, oxyServices, user?.id, sessions, switchToSession, logoutStore, clearAllStorage, onAuthStateChange, mapServerSessionsToClient]);
 
   // Device management methods
-  const getDeviceSessions = useCallback(async (): Promise<any[]> => {
+  const getDeviceSessions = useCallback(async (): Promise<Array<{
+    sessionId: string;
+    deviceId: string;
+    deviceName?: string;
+    lastActive?: string;
+    expiresAt?: string;
+  }>> => {
     if (!activeSessionId) throw new Error('No active session');
-
     try {
       return await oxyServices.getDeviceSessions(activeSessionId);
     } catch (error) {
-      console.error('Get device sessions error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to get device sessions';
+      onError?.({ message: errorMessage, code: 'GET_DEVICE_SESSIONS_ERROR', status: 500 });
       throw error;
     }
-  }, [activeSessionId, oxyServices]);
+  }, [activeSessionId, oxyServices, onError]);
 
   const logoutAllDeviceSessions = useCallback(async (): Promise<void> => {
     if (!activeSessionId) throw new Error('No active session');
 
     try {
       await oxyServices.logoutAllDeviceSessions(activeSessionId);
-
-      // Clear all local sessions since we logged out from all devices
       setSessions([]);
       setActiveSessionId(null);
       logoutStore();
       setMinimalUser(null);
       await clearAllStorage();
-
-      if (onAuthStateChange) {
-        onAuthStateChange(null);
-      }
+      onAuthStateChange?.(null);
     } catch (error) {
-      console.error('Logout all device sessions error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to logout all device sessions';
+      onError?.({ message: errorMessage, code: 'LOGOUT_ALL_DEVICES_ERROR', status: 500 });
       throw error;
     }
-  }, [activeSessionId, oxyServices, logoutStore, setMinimalUser, clearAllStorage, onAuthStateChange]);
+  }, [activeSessionId, oxyServices, logoutStore, clearAllStorage, onAuthStateChange, onError]);
 
   const updateDeviceName = useCallback(async (deviceName: string): Promise<void> => {
     if (!activeSessionId) throw new Error('No active session');
 
     try {
       await oxyServices.updateDeviceName(activeSessionId, deviceName);
-
-      // Update local device info
       await DeviceManager.updateDeviceName(deviceName);
     } catch (error) {
-      console.error('Update device name error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to update device name';
+      onError?.({ message: errorMessage, code: 'UPDATE_DEVICE_NAME_ERROR', status: 500 });
       throw error;
     }
-  }, [activeSessionId, oxyServices]);
+  }, [activeSessionId, oxyServices, onError]);
 
   // Language management method
   const setLanguage = useCallback(async (languageId: string): Promise<void> => {
     if (!storage) throw new Error('Storage not initialized');
 
     try {
-      // Save language preference
       await storage.setItem(keys.language, languageId);
       setCurrentLanguage(languageId);
-
-      console.log(`Language changed to ${languageId}`);
-
-      // TODO: Here you can add any additional logic needed for app-wide language updates
-      // such as updating i18n configuration, refreshing translations, etc.
-
     } catch (error) {
-      console.error('Error saving language preference:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save language preference';
+      onError?.({ message: errorMessage, code: 'LANGUAGE_SAVE_ERROR', status: 500 });
       throw error;
     }
-  }, [storage, keys.language]);
+  }, [storage, keys.language, onError]);
 
   // Bottom sheet control methods
   const showBottomSheet = useCallback((screenOrConfig?: RouteName | string | { screen: RouteName | string; props?: Record<string, any> }) => {
@@ -754,9 +672,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       } else if (bottomSheetRef.current.present) {
         if (__DEV__) console.log('Presenting bottom sheet');
         bottomSheetRef.current.present();
-      } else {
+      } else if (__DEV__) {
         console.warn('No expand or present method available on bottomSheetRef');
-        if (__DEV__) console.log('Available methods on bottomSheetRef.current:', Object.keys(bottomSheetRef.current as any));
       }
 
       // Then navigate to the specified screen if provided
@@ -774,10 +691,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           }
         }, 100);
       }
-    } else {
-      console.warn('bottomSheetRef is not available');
-      console.warn('To fix this, ensure you pass a bottomSheetRef to OxyProvider:');
-      console.warn('<OxyProvider baseURL="..." bottomSheetRef={yourBottomSheetRef}>');
+    } else if (__DEV__) {
+      console.warn('bottomSheetRef is not available. Pass a bottomSheetRef to OxyProvider.');
     }
   }, [bottomSheetRef]);
 
@@ -811,11 +726,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       if (mod && typeof mod.useFollow === 'function') {
         return mod.useFollow(userId);
       }
-      console.warn('useFollow module did not export a function as expected');
-      return { isFollowing: false, isLoading: false, error: null, toggleFollow: async () => { }, setFollowStatus: () => { }, fetchStatus: async () => { }, clearError: () => { }, followerCount: null, followingCount: null, isLoadingCounts: false, fetchUserCounts: async () => { }, setFollowerCount: () => { }, setFollowingCount: () => { } } as any;
+      if (__DEV__) {
+        console.warn('useFollow module did not export a function as expected');
+      }
+      return createEmptyFollowHook()(userId);
     } catch (e) {
-      console.warn('Failed to dynamically load useFollow hook:', e);
-      return { isFollowing: false, isLoading: false, error: null, toggleFollow: async () => { }, setFollowStatus: () => { }, fetchStatus: async () => { }, clearError: () => { }, followerCount: null, followingCount: null, isLoadingCounts: false, fetchUserCounts: async () => { }, setFollowerCount: () => { }, setFollowingCount: () => { } } as any;
+      if (__DEV__) {
+        console.warn('Failed to dynamically load useFollow hook:', e);
+      }
+      return createEmptyFollowHook()(userId);
     }
   };
 
@@ -826,6 +745,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     activeSessionId,
     isAuthenticated,
     isLoading,
+    isTokenReady: tokenReady,
     error,
     currentLanguage,
     login,
@@ -852,6 +772,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     activeSessionId,
     isAuthenticated,
     isLoading,
+    tokenReady,
     error,
     currentLanguage,
     login,
@@ -872,13 +793,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     hideBottomSheet,
   ]);
 
-  // Wrap children rendering to block until token is ready
-  if (!tokenReady) {
-    return <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
-      <Text>Loading authentication...</Text>
-    </View>;
-  }
-
+  // Always render children - let the consuming app decide how to handle token loading state
   return (
     <OxyContext.Provider value={contextValue}>
       {children}
@@ -899,3 +814,4 @@ export const useOxy = (): OxyContextState => {
 };
 
 export default OxyContext;
+

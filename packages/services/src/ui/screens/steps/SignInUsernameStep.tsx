@@ -1,12 +1,13 @@
 import type React from 'react';
 import type { RouteName } from '../../navigation/routes';
 import { useRef, useEffect } from 'react';
-import { View, Text } from 'react-native';
+import { View, Text, Platform, StyleSheet, type ViewStyle, type TextStyle } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import HighFive from '../../../assets/illustrations/HighFive';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
 import { useI18n } from '../../hooks/useI18n';
+import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
 interface SignInUsernameStepProps {
     // Common props from StepBasedScreen
@@ -61,6 +62,8 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
 }) => {
     const inputRef = useRef<any>(null);
     const { t } = useI18n();
+    const baseStyles = stepStyles;
+    const webShadowReset = Platform.OS === 'web' ? ({ boxShadow: 'none' } as any) : null;
 
     // Monitor username prop changes
     useEffect(() => {
@@ -111,18 +114,20 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
 
     return (
         <>
-            <HighFive width={100} height={100} />
-            <View style={styles.modernHeader}>
-                <Text style={[styles.modernTitle, { color: colors.text }]}>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, { alignItems: 'flex-start' }]}>
+                <HighFive width={100} height={100} />
+            </View>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+                <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>
                     {isAddAccountMode ? t('signin.addAccountTitle') : t('signin.title')}
                 </Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>
+                <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>
                     {isAddAccountMode ? t('signin.addAccountSubtitle') : t('signin.subtitle')}
                 </Text>
             </View>
 
             {isAddAccountMode && user && (
-                <View style={[styles.modernInfoCard, { backgroundColor: colors.inputBackground }]}>
+                <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.infoCard, { backgroundColor: colors.inputBackground }, webShadowReset]}>
                     <Ionicons name="information-circle" size={20} color={colors.primary} />
                     <Text style={[styles.modernInfoText, { color: colors.text }]}>
                         {t('signin.currentlySignedInAs', { username: user.username }) || 'Currently signed in as '}
@@ -131,7 +136,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                 </View>
             )}
 
-            <View style={styles.modernInputContainer}>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
                 <TextField
                     ref={inputRef}
                     label={t('common.labels.username')}
@@ -147,31 +152,44 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                     success={validationStatus === 'valid'}
                     onSubmitEditing={() => handleContinue()}
                     autoFocus
+                    style={{ marginBottom: 0 }}
                 />
             </View>
 
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: t('common.links.signUp'),
-                        onPress: () => navigate('SignUp'),
-                        icon: 'person-add',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: t('common.actions.continue'),
-                        onPress: handleContinue,
-                        icon: 'arrow-forward',
-                        variant: 'primary',
-                        loading: isValidating,
-                        disabled: !username || username.trim().length < 2 || isValidating,
-                        testID: 'username-next-button',
-                    },
-                ]}
-                colors={colors}
-            />
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+                <GroupedPillButtons
+                    buttons={[
+                        {
+                            text: t('common.links.signUp'),
+                            onPress: () => navigate('SignUp'),
+                            icon: 'person-add',
+                            variant: 'transparent',
+                        },
+                        {
+                            text: t('common.actions.continue'),
+                            onPress: handleContinue,
+                            icon: 'arrow-forward',
+                            variant: 'primary',
+                            loading: isValidating,
+                            disabled: !username || username.trim().length < 2 || isValidating,
+                            testID: 'username-next-button',
+                        },
+                    ]}
+                    colors={colors}
+                />
+            </View>
         </>
     );
 };
 
 export default SignInUsernameStep;
+
+const stylesheet = StyleSheet.create({
+    infoCard: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: STEP_INNER_GAP,
+        borderRadius: 16,
+        gap: STEP_INNER_GAP,
+    },
+});

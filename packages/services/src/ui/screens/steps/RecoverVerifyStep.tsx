@@ -1,11 +1,12 @@
 import type React from 'react';
 import type { RouteName } from '../../navigation/routes';
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import PinInput from '../../components/internal/PinInput';
 import { toast } from '../../../lib/sonner';
 import { useI18n } from '../../hooks/useI18n';
+import { STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
 interface RecoverVerifyStepProps {
     // Common props from StepBasedScreen
@@ -52,6 +53,7 @@ const RecoverVerifyStep: React.FC<RecoverVerifyStepProps> = ({
     identifier,
 }) => {
     const { t } = useI18n();
+    const baseStyles = stepStyles;
     const handleVerifyCode = async () => {
         setErrorMessage('');
         setSuccessMessage('');
@@ -66,33 +68,29 @@ const RecoverVerifyStep: React.FC<RecoverVerifyStepProps> = ({
 
     return (
         <>
-            <View style={styles.modernHeader}>
-                <Text style={[styles.modernTitle, { color: colors.text }]}>{t('recover.verify.title')}</Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>{t('recover.enterCode')}</Text>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+                <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('recover.verify.title')}</Text>
+                <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>{t('recover.enterCode')}</Text>
             </View>
 
-            <View style={styles.modernInputContainer}>
-                <PinInput
-                    value={verificationCode}
-                    onChange={setVerificationCode}
-                    length={6}
-                    disabled={isLoading}
-                    autoFocus
-                    colors={colors}
-                />
+            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
+                <View style={stylesheet.pinInputWrapper}>
+                    <PinInput
+                        value={verificationCode}
+                        onChange={setVerificationCode}
+                        length={6}
+                        disabled={isLoading}
+                        autoFocus
+                        colors={colors}
+                    />
+                </View>
 
                 {successMessage && (
-                    <View style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        marginTop: 16,
-                        padding: 12,
+                    <View style={[stylesheet.messageContainer, {
                         backgroundColor: colors.success + '10',
-                        borderRadius: 8,
-                        borderWidth: 1,
                         borderColor: colors.success + '30',
-                    }}>
-                        <Ionicons name="checkmark-circle" size={20} color={colors.success} style={{ marginRight: 8 }} />
+                    }]}>
+                        <Ionicons name="checkmark-circle" size={20} color={colors.success} />
                         <Text style={[styles.footerText, { color: colors.success, fontSize: 14 }]}>
                             {successMessage}
                         </Text>
@@ -100,17 +98,11 @@ const RecoverVerifyStep: React.FC<RecoverVerifyStepProps> = ({
                 )}
 
                 {errorMessage && (
-                    <View style={{
-                        flexDirection: 'row',
-                        alignItems: 'center',
-                        marginTop: 16,
-                        padding: 12,
+                    <View style={[stylesheet.messageContainer, {
                         backgroundColor: colors.error + '10',
-                        borderRadius: 8,
-                        borderWidth: 1,
                         borderColor: colors.error + '30',
-                    }}>
-                        <Ionicons name="alert-circle" size={20} color={colors.error} style={{ marginRight: 8 }} />
+                    }]}>
+                        <Ionicons name="alert-circle" size={20} color={colors.error} />
                         <Text style={[styles.footerText, { color: colors.error, fontSize: 14 }]}>
                             {errorMessage}
                         </Text>
@@ -118,27 +110,45 @@ const RecoverVerifyStep: React.FC<RecoverVerifyStepProps> = ({
                 )}
             </View>
 
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: t('common.actions.back'),
-                        onPress: prevStep,
-                        icon: 'arrow-back',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: t('recover.verify.action'),
-                        onPress: handleVerifyCode,
-                        icon: 'checkmark-circle-outline',
-                        variant: 'primary',
-                        loading: isLoading,
-                        disabled: isLoading || verificationCode.length !== 6,
-                    },
-                ]}
-                colors={colors}
-            />
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+                <GroupedPillButtons
+                    buttons={[
+                        {
+                            text: t('common.actions.back'),
+                            onPress: prevStep,
+                            icon: 'arrow-back',
+                            variant: 'transparent',
+                        },
+                        {
+                            text: t('recover.verify.action'),
+                            onPress: handleVerifyCode,
+                            icon: 'checkmark-circle-outline',
+                            variant: 'primary',
+                            loading: isLoading,
+                            disabled: isLoading || verificationCode.length !== 6,
+                        },
+                    ]}
+                    colors={colors}
+                />
+            </View>
         </>
     );
 };
 
 export default RecoverVerifyStep;
+
+const stylesheet = StyleSheet.create({
+    pinInputWrapper: {
+        marginBottom: 0,
+        marginTop: 0,
+    },
+    messageContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: STEP_INNER_GAP,
+        padding: STEP_INNER_GAP,
+        borderRadius: 8,
+        borderWidth: 1,
+        gap: STEP_INNER_GAP,
+    },
+});

@@ -1,9 +1,10 @@
 import type React from 'react';
 import type { RouteName } from '../../navigation/routes';
-import { View, Text } from 'react-native';
+import { View, Text, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import { useI18n } from '../../hooks/useI18n';
+import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
 interface SignUpSummaryStepProps {
     // Common props from StepBasedScreen
@@ -34,6 +35,8 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
     isLoading,
 }) => {
     const { t } = useI18n();
+    const baseStyles = stepStyles;
+    const webShadowReset = Platform.OS === 'web' ? ({ boxShadow: 'none' } as any) : null;
     // Extract data from previous steps
     const identityData = allStepData[1] || {}; // Step 2 (index 1)
     const securityData = allStepData[2] || {}; // Step 3 (index 2)
@@ -48,98 +51,146 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
 
     return (
         <>
-            <View style={styles.modernHeader}>
-                <Text style={[styles.modernTitle, { color: colors.text }]}>{t('signup.summary.title')}</Text>
-                <Text style={[styles.modernSubtitle, { color: colors.secondaryText }]}>{t('signup.summary.subtitle')}</Text>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+                <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('signup.summary.title')}</Text>
+                <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>{t('signup.summary.subtitle')}</Text>
             </View>
 
-            <View style={[styles.modernInputContainer, { marginBottom: 32 }]}>
-                <View style={{
-                    backgroundColor: colors.inputBackground,
-                    borderRadius: 16,
-                    padding: 20,
-                    borderWidth: 1,
-                    borderColor: colors.border,
-                }}>
-                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 16 }}>
-                        <Ionicons name="person-outline" size={20} color={colors.secondaryText} style={{ marginRight: 12 }} />
-                        <View style={{ flex: 1 }}>
-                            <Text style={[styles.footerText, { color: colors.secondaryText, fontSize: 12, marginBottom: 4 }]}>
-                                Username
+            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
+                <View
+                    style={[
+                        stylesheet.summaryCard,
+                        { backgroundColor: colors.inputBackground || colors.card || 'rgba(0,0,0,0.04)', borderColor: colors.border },
+                        webShadowReset,
+                    ]}
+                >
+                    <View style={stylesheet.summaryRow}>
+                        <Ionicons name="person-outline" size={20} color={colors.secondaryText} style={stylesheet.summaryIcon} />
+                        <View style={stylesheet.summaryContent}>
+                            <Text style={[styles.footerText, stylesheet.summaryLabel, { color: colors.secondaryText }]}>
+                                {t('signup.summary.fields.username')}
                             </Text>
-                            <Text style={[styles.modernInput, { color: colors.text, fontSize: 16 }]}>
-                                @{username || 'Not set'}
+                            <Text style={[styles.modernInput, stylesheet.summaryValue, { color: colors.text }]}>
+                                @{username || t('signup.summary.notSet')}
                             </Text>
                         </View>
                     </View>
 
-                    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                        <Ionicons name="mail-outline" size={20} color={colors.secondaryText} style={{ marginRight: 12 }} />
-                        <View style={{ flex: 1 }}>
-                            <Text style={[styles.footerText, { color: colors.secondaryText, fontSize: 12, marginBottom: 4 }]}>
-                                Email
+                    <View style={stylesheet.summaryRow}>
+                        <Ionicons name="mail-outline" size={20} color={colors.secondaryText} style={stylesheet.summaryIcon} />
+                        <View style={stylesheet.summaryContent}>
+                            <Text style={[styles.footerText, stylesheet.summaryLabel, { color: colors.secondaryText }]}>
+                                {t('signup.summary.fields.email')}
                             </Text>
-                            <Text style={[styles.modernInput, { color: colors.text, fontSize: 16 }]}>
-                                {email || 'Not set'}
+                            <Text style={[styles.modernInput, stylesheet.summaryValue, { color: colors.text }]}>
+                                {email || t('signup.summary.notSet')}
                             </Text>
                         </View>
                     </View>
                 </View>
 
-                <View style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    marginTop: 16,
-                    padding: 12,
-                    backgroundColor: colors.warning + '10',
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: colors.warning + '30',
-                }}>
-                    <Ionicons name="shield-checkmark" size={20} color={colors.warning} style={{ marginRight: 8 }} />
-                    <Text style={[styles.footerText, { color: colors.warning, fontSize: 14, flex: 1 }]}>
-                        For stronger security, we recommend enabling Two‑Factor Authentication (TOTP) from Account Settings after you create your account.
+                <View
+                    style={[
+                        stylesheet.infoBanner,
+                        {
+                            backgroundColor: `${colors.warning}10`,
+                            borderColor: `${colors.warning}30`,
+                        },
+                    ]}
+                >
+                    <Ionicons name="shield-checkmark" size={20} color={colors.warning} style={stylesheet.bannerIcon} />
+                    <Text style={[styles.footerText, stylesheet.bannerText, { color: colors.warning }]}>
+                        {t('signup.summary.securityTip')}
                     </Text>
                 </View>
 
-                <View style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    marginTop: 16,
-                    padding: 12,
-                    backgroundColor: colors.success + '10',
-                    borderRadius: 8,
-                    borderWidth: 1,
-                    borderColor: colors.success + '30',
-                }}>
-                    <Ionicons name="checkmark-circle" size={20} color={colors.success} style={{ marginRight: 8 }} />
-                    <Text style={[styles.footerText, { color: colors.success, fontSize: 14, flex: 1 }]}>
-                        By creating an account, you agree to our Terms of Service and Privacy Policy
+                <View
+                    style={[
+                        stylesheet.infoBanner,
+                        {
+                            backgroundColor: `${colors.success}10`,
+                            borderColor: `${colors.success}30`,
+                        },
+                    ]}
+                >
+                    <Ionicons name="checkmark-circle" size={20} color={colors.success} style={stylesheet.bannerIcon} />
+                    <Text style={[styles.footerText, stylesheet.bannerText, { color: colors.success }]}>
+                        {t('signup.summary.legalReminder')}
                     </Text>
                 </View>
             </View>
 
-            <GroupedPillButtons
-                buttons={[
-                    {
-                        text: t('common.actions.back'),
-                        onPress: prevStep,
-                        icon: 'arrow-back',
-                        variant: 'transparent',
-                    },
-                    {
-                        text: t('common.actions.createAccount'),
-                        onPress: nextStep,
-                        icon: 'checkmark-circle',
-                        variant: 'primary',
-                        loading: isLoading,
-                        disabled: !hasValidData,
-                    },
-                ]}
-                colors={colors}
-            />
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+                <GroupedPillButtons
+                    buttons={[
+                        {
+                            text: t('common.actions.back'),
+                            onPress: prevStep,
+                            icon: 'arrow-back',
+                            variant: 'transparent',
+                        },
+                        {
+                            text: t('common.actions.createAccount'),
+                            onPress: nextStep,
+                            icon: 'checkmark-circle',
+                            variant: 'primary',
+                            loading: isLoading,
+                            disabled: !hasValidData,
+                        },
+                    ]}
+                    colors={colors}
+                />
+            </View>
         </>
     );
 };
 
 export default SignUpSummaryStep;
+
+const stylesheet = StyleSheet.create({
+    summaryCard: {
+        width: '100%',
+        maxWidth: 420,
+        borderRadius: 28,
+        paddingHorizontal: 20,
+        paddingVertical: 18,
+        borderWidth: 1,
+        gap: STEP_INNER_GAP,
+        alignItems: 'stretch',
+        shadowColor: 'transparent',
+    },
+    summaryRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: STEP_INNER_GAP,
+    },
+    summaryIcon: {
+        marginRight: 0,
+    },
+    summaryContent: {
+        flex: 1,
+        gap: STEP_INNER_GAP,
+    },
+    summaryLabel: {
+        fontSize: 12,
+    },
+    summaryValue: {
+        fontSize: 16,
+    },
+    infoBanner: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
+        gap: STEP_INNER_GAP,
+        padding: STEP_INNER_GAP,
+        borderRadius: 16,
+        borderWidth: 1,
+        marginTop: STEP_GAP,
+    },
+    bannerIcon: {
+        marginTop: 0,
+    },
+    bannerText: {
+        flex: 1,
+        fontSize: 14,
+    },
+});

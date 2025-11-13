@@ -3,6 +3,7 @@ import type { RouteName } from '../../navigation/routes';
 import { View, Text, TouchableOpacity, Platform, StyleSheet, type ViewStyle, type TextStyle } from 'react-native';
 import HighFive from '../../../assets/illustrations/HighFive';
 import { useI18n } from '../../hooks/useI18n';
+import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
 interface SignUpWelcomeStepProps {
     // Common props from StepBasedScreen
@@ -25,19 +26,20 @@ const SignUpWelcomeStep: React.FC<SignUpWelcomeStepProps> = ({
 }) => {
     const { t } = useI18n();
     const localStyles = stylesheet;
+    const baseStyles = stepStyles;
     const webShadowReset = Platform.OS === 'web' ? ({ boxShadow: 'none' } as any) : null;
 
     return (
         <>
-            <View style={[localStyles.container, localStyles.sectionSpacing, { alignItems: 'flex-start' }]}>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, { alignItems: 'flex-start' }]}>
                 <HighFive width={100} height={100} />
             </View>
-            <View style={[styles.modernHeader, localStyles.container, localStyles.sectionSpacing, localStyles.header]}>
-                <Text style={[styles.modernTitle, localStyles.title, { color: colors.text }]}>{t('signup.welcome.title')}</Text>
-                <Text style={[styles.modernSubtitle, localStyles.subtitle, { color: colors.secondaryText }]}>{t('signup.welcome.subtitle')}</Text>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+                <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('signup.welcome.title')}</Text>
+                <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>{t('signup.welcome.subtitle')}</Text>
             </View>
 
-            <View style={[styles.modernInputContainer, localStyles.container, localStyles.sectionSpacing]}>
+            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
                 <View
                     style={[
                         localStyles.actionCard,
@@ -59,7 +61,7 @@ const SignUpWelcomeStep: React.FC<SignUpWelcomeStepProps> = ({
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                        style={[styles.footerTextContainer, localStyles.footerLink]}
+                        style={[styles.footerTextContainer, localStyles.footerLink, { marginTop: 0 }]}
                         onPress={() => navigate('SignIn')}
                     >
                         <Text style={[styles.footerText, { color: colors.secondaryText }]}>
@@ -75,38 +77,14 @@ const SignUpWelcomeStep: React.FC<SignUpWelcomeStepProps> = ({
 
 export default SignUpWelcomeStep;
 
-const GAP = 12;
-const INNER_GAP = 12;
-
 const stylesheet = StyleSheet.create({
-    container: {
-        width: '100%',
-        maxWidth: 420,
-        alignSelf: 'center',
-    },
-    sectionSpacing: {
-        marginBottom: GAP,
-    },
-    header: {
-        alignItems: 'flex-start',
-        width: '100%',
-        gap: INNER_GAP,
-    },
-    title: {
-        textAlign: 'left',
-    },
-    subtitle: {
-        textAlign: 'left',
-        maxWidth: 320,
-        alignSelf: 'flex-start',
-    },
     actionCard: {
         width: '100%',
         maxWidth: 420,
         borderRadius: 28,
         paddingHorizontal: 20,
         paddingVertical: 18,
-        gap: INNER_GAP,
+        gap: STEP_INNER_GAP,
         alignItems: 'stretch',
         shadowColor: 'transparent',
     },
