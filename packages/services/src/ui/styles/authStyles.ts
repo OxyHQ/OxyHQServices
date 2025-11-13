@@ -191,13 +191,20 @@ export const createAuthStyles = (colors: AuthThemeColors, theme: string) => Styl
     paddingHorizontal: 32,
     borderRadius: 16,
     marginVertical: 8,
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
+    ...Platform.select({
+      web: {
+        boxShadow: '0 4px 8px rgba(0,0,0,0.3)',
+      },
+      default: {
+        shadowOffset: {
+          width: 0,
+          height: 4,
+        },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+        elevation: 6,
+      }
+    }),
     gap: 8,
     width: '100%',
   },
