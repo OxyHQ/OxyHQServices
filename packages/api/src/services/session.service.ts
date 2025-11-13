@@ -416,7 +416,10 @@ class SessionService {
         isActive: true,
         expiresAt: { $gt: new Date() }
       })
-      .sort({ 'deviceInfo.lastActive': -1 })
+      .sort({ 
+        'deviceInfo.lastActive': -1, // Most recent first
+        'sessionId': 1 // Secondary sort by sessionId for stability
+      })
       .lean();
 
       return sessions as ISession[];

@@ -4,6 +4,7 @@ import type { UseFollowHook } from '../hooks/useFollow.types';
 import { OxyServices } from '../../core';
 import type { User, ApiError } from '../../models/interfaces';
 import type { SessionLoginResponse, ClientSession, MinimalUserData } from '../../models/session';
+import { normalizeAndSortSessions, mergeSessions, sessionsArraysEqual } from '../../utils/sessionUtils';
 import { DeviceManager } from '../../utils/deviceManager';
 import { useSessionSocket } from '../hooks/useSessionSocket';
 import { toast } from '../../lib/sonner';
@@ -194,6 +195,27 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const [minimalUser, setMinimalUser] = useState<MinimalUserData | null>(null);
   const [sessions, setSessions] = useState<ClientSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  
+  // Track in-flight refresh to prevent duplicate calls
+  const refreshInFlightRef = useRef<Promise<void> | null>(null);
+
+  // Centralized session update function - ensures consistent ordering and deduplication
+  // Production-ready: deduplicates by userId to prevent duplicate accounts, optimizes re-renders
+  const updateSessions = useCallback((newSessions: ClientSession[], mergeWithExisting = false) => {
+    setSessions((prevSessions) => {
+      // Always deduplicate by userId to prevent showing same user multiple times
+      const sessionsToProcess = mergeWithExisting
+        ? mergeSessions(prevSessions, newSessions, activeSessionId, true)
+        : normalizeAndSortSessions(newSessions, activeSessionId, true);
+
+      // Only update if sessions actually changed (prevent unnecessary re-renders)
+      if (sessionsArraysEqual(prevSessions, sessionsToProcess)) {
+        return prevSessions;
+      }
+
+      return sessionsToProcess;
+    });
+  }, [activeSessionId]);
   const [storage, setStorage] = useState<StorageInterface | null>(null);
   const [currentLanguage, setCurrentLanguage] = useState<string>('en-US');
 
@@ -314,14 +336,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
                   lastActive: ds.lastActive || new Date().toISOString(),
                   userId: ds.user?.id || ds.userId || fullUser.id,
                 }));
-                setSessions(allDeviceSessions);
+                // Always merge to preserve existing sessions from other users
+      // Deduplication by userId happens automatically in updateSessions
+      updateSessions(allDeviceSessions, true);
               } catch (e) {
                 // Fallback to user sessions
                 if (__DEV__) {
                   console.warn('Failed to get device sessions on init, falling back to user sessions:', e);
                 }
-              const serverSessions = await oxyServices.getSessionsBySessionId(storedActiveSessionId);
-              setSessions(mapServerSessionsToClient(serverSessions, fullUser.id));
+                const serverSessions = await oxyServices.getSessionsBySessionId(storedActiveSessionId);
+                updateSessions(mapServerSessionsToClient(serverSessions, fullUser.id), false);
               }
               onAuthStateChange?.(fullUser);
             } else {
@@ -353,23 +377,28 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }, [storage, keys.activeSessionId]);
 
   // Switch to a different session
+  // Production-ready: Optimized to minimize API calls and prevent duplicates
   const switchToSession = useCallback(async (sessionId: string): Promise<void> => {
     try {
       // Don't set isLoading - session switches should happen silently in background
-      // Validate session first before attempting to switch
+      // Validate session first - this already returns user data, so no need for separate getUserBySession call
       const validation = await oxyServices.validateSession(sessionId, { useHeaderValidation: true });
       if (!validation.valid) {
         // Session is invalid, remove it from the sessions list
-        setSessions((prevSessions) => prevSessions.filter(s => s.sessionId !== sessionId));
+        updateSessions(sessions.filter(s => s.sessionId !== sessionId), false);
         throw new Error('Session is invalid or expired');
       }
 
-      // Get access token for this session
+      // Validation already returns user, no need for redundant getUserBySession call
+      if (!validation.user) {
+        throw new Error('User data not available from session validation');
+      }
+
+      const fullUser = validation.user;
+
+      // Get access token for this session (required for subsequent API calls)
       await oxyServices.getTokenBySession(sessionId);
       setTokenReady(true);
-
-      // Load full user data - use user from validation if available, otherwise fetch
-      const fullUser = validation.user || await oxyServices.getUserBySession(sessionId);
 
       setActiveSessionId(sessionId);
       loginSuccess(fullUser);
@@ -381,11 +410,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
       await saveActiveSessionId(sessionId);
       await applyLanguagePreference(fullUser);
-      
-      // Refresh all device sessions after switching
-      // Preserve existing sessions from other users to avoid losing accounts
-      try {
-        const deviceSessions = await oxyServices.getDeviceSessions(sessionId);
+
+      // Defer device sessions refresh - don't block the switch, let it happen in background
+      // This prevents blocking the UI and reduces perceived latency
+      // Sessions will be refreshed lazily when needed or via refreshSessions
+      oxyServices.getDeviceSessions(sessionId).then((deviceSessions) => {
         const allDeviceSessions = deviceSessions.map((ds: any) => ({
           sessionId: ds.sessionId,
           deviceId: ds.deviceId,
@@ -393,64 +422,26 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           lastActive: ds.lastActive || new Date().toISOString(),
           userId: ds.user?.id || ds.userId || fullUser.id,
         }));
-        // Only update if sessions actually changed (prevent unnecessary re-renders)
-        setSessions((prevSessions) => {
-          const prevIds = new Set(prevSessions.map(s => s.sessionId));
-          const newIds = new Set(allDeviceSessions.map(s => s.sessionId));
-          
-          // Check if sets are equal (same sessions) - if so, don't update to prevent re-renders
-          if (prevIds.size === newIds.size && 
-              Array.from(prevIds).every(id => newIds.has(id)) &&
-              Array.from(newIds).every(id => prevIds.has(id))) {
-            // Sessions haven't changed, return same reference to prevent re-render
-            return prevSessions;
-          }
-          
-          // Sessions changed, merge intelligently
-          const sessionMap = new Map(prevSessions.map(s => [s.sessionId, s]));
-          allDeviceSessions.forEach(s => sessionMap.set(s.sessionId, s));
-          return Array.from(sessionMap.values());
-        });
-      } catch (error) {
-        // Fallback to user sessions - merge with existing to preserve other accounts
+        // Merge with existing to preserve other accounts - deduplication happens in updateSessions
+        updateSessions(allDeviceSessions, true);
+      }).catch((error) => {
+        // Silently fail - sessions will be refreshed on next refreshSessions call
         if (__DEV__) {
-          console.warn('Failed to get device sessions after switch, falling back to user sessions:', error);
+          console.warn('Failed to get device sessions after switch (non-blocking):', error);
         }
-        const serverSessions = await oxyServices.getSessionsBySessionId(sessionId);
-        const userSessions = mapServerSessionsToClient(serverSessions, fullUser.id);
-        // Only update if sessions actually changed (prevent unnecessary re-renders)
-        setSessions((prevSessions) => {
-          const existingSessionIds = new Set(prevSessions.map(s => s.sessionId));
-          const newSessions = userSessions.filter(s => !existingSessionIds.has(s.sessionId));
-          
-          // If no new sessions, return same reference to prevent re-render
-          if (newSessions.length === 0) {
-            const prevIds = new Set(prevSessions.map(s => s.sessionId));
-            const newIds = new Set(userSessions.map(s => s.sessionId));
-            if (prevIds.size === newIds.size && 
-                Array.from(prevIds).every(id => newIds.has(id))) {
-              return prevSessions;
-            }
-          }
-          
-          // Merge sessions
-          const sessionMap = new Map(prevSessions.map(s => [s.sessionId, s]));
-          userSessions.forEach(s => sessionMap.set(s.sessionId, s));
-          return Array.from(sessionMap.values());
-        });
-      }
-      
+      });
+
       onAuthStateChange?.(fullUser);
     } catch (error: any) {
       // Check if the error is due to invalid/expired session
-      const isInvalidSession = error?.response?.status === 401 || 
-                               error?.message?.includes('Invalid or expired session') ||
-                               error?.message?.includes('Session is invalid');
-      
+      const isInvalidSession = error?.response?.status === 401 ||
+        error?.message?.includes('Invalid or expired session') ||
+        error?.message?.includes('Session is invalid');
+
       if (isInvalidSession) {
         // Remove invalid session from the sessions list
-        setSessions((prevSessions) => prevSessions.filter(s => s.sessionId !== sessionId));
-        
+        updateSessions(sessions.filter(s => s.sessionId !== sessionId), false);
+
         // If this was the active session, try to switch to another valid session
         if (sessionId === activeSessionId && sessions.length > 1) {
           const otherSessions = sessions.filter(s => s.sessionId !== sessionId);
@@ -468,7 +459,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           }
         }
       }
-      
+
       const errorMessage = error instanceof Error ? error.message : 'Failed to switch session';
       if (__DEV__) {
         console.error('Switch session error:', error);
@@ -519,7 +510,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       let allDeviceSessions: ClientSession[] = [];
       try {
         const deviceSessions = await oxyServices.getDeviceSessions(sessionResponse.sessionId);
-        
+
         // Map device sessions to client format
         // Device sessions include user info, so we can map them directly
         allDeviceSessions = deviceSessions.map((ds: any) => ({
@@ -536,7 +527,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         }
         const serverSessions = await oxyServices.getSessionsBySessionId(sessionResponse.sessionId);
         const userSessions = mapServerSessionsToClient(serverSessions, fullUser.id);
-        
+
         // Merge with existing sessions to preserve other accounts
         const existingSessionIds = new Set((sessions || []).map(s => s.sessionId));
         const newSessions = userSessions.filter(s => !existingSessionIds.has(s.sessionId));
@@ -549,7 +540,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       const existingSession = allDeviceSessions.find(
         s => s.userId?.toString() === userUserId && s.sessionId !== sessionResponse.sessionId
       );
-      
+
       if (existingSession) {
         // User is already signed in on this device, switch to existing session instead
         // Logout the newly created session to clean it up
@@ -560,15 +551,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             console.warn('Failed to logout duplicate session:', logoutError);
           }
         }
-        
+
         // Switch to the existing session
         await switchToSession(existingSession.sessionId);
-      loginSuccess(fullUser);
-      setMinimalUser(sessionResponse.user);
+        loginSuccess(fullUser);
+        setMinimalUser(sessionResponse.user);
 
         // Update sessions list (excluding the duplicate we just created)
-        setSessions(allDeviceSessions.filter(s => s.sessionId !== sessionResponse.sessionId));
-        
+        updateSessions(allDeviceSessions.filter(s => s.sessionId !== sessionResponse.sessionId), false);
+
         onAuthStateChange?.(fullUser);
         return fullUser;
       }
@@ -579,8 +570,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
       loginSuccess(fullUser);
       setMinimalUser(sessionResponse.user);
-      
-      setSessions(allDeviceSessions);
+
+      // Always merge to preserve existing sessions from other users
+      // Deduplication by userId happens automatically in updateSessions
+      updateSessions(allDeviceSessions, true);
 
       onAuthStateChange?.(fullUser);
       return fullUser;
@@ -604,7 +597,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
       // Remove session from local state
       const filteredSessions = sessions.filter(s => s.sessionId !== sessionToLogout);
-      setSessions(filteredSessions);
+      updateSessions(filteredSessions, false);
 
       // If logging out active session
       if (sessionToLogout === activeSessionId) {
@@ -645,7 +638,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     try {
       await oxyServices.logoutAllSessions(activeSessionId);
 
-      setSessions([]);
+      updateSessions([], false);
       setActiveSessionId(null);
       logoutStore();
       setMinimalUser(null);
@@ -711,21 +704,19 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           lastActive: ds.lastActive || new Date().toISOString(),
           userId: ds.user?.id || ds.userId || fullUser.id,
         }));
-        setSessions(allDeviceSessions);
+        // Always merge to preserve existing sessions from other users
+      // Deduplication by userId happens automatically in updateSessions
+      updateSessions(allDeviceSessions, true);
       } catch (error) {
         // Fallback to user sessions if device sessions fail
         if (__DEV__) {
           console.warn('Failed to get device sessions for MFA, falling back to user sessions:', error);
         }
-      const serverSessions = await oxyServices.getSessionsBySessionId(response.sessionId);
+        const serverSessions = await oxyServices.getSessionsBySessionId(response.sessionId);
         const userSessions = mapServerSessionsToClient(serverSessions, fullUser.id);
-        
+
         // Merge with existing sessions to preserve other accounts
-        setSessions((prevSessions) => {
-          const existingSessionIds = new Set(prevSessions.map(s => s.sessionId));
-          const newSessions = userSessions.filter(s => !existingSessionIds.has(s.sessionId));
-          return [...prevSessions, ...newSessions];
-        });
+        updateSessions(userSessions, true);
       }
 
       onAuthStateChange?.(fullUser);
@@ -751,72 +742,82 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }, [logout]);
 
   // Refresh sessions method
+  // Production-ready: Debounced to prevent duplicate calls, always merges to preserve other accounts
   const refreshSessions = useCallback(async (): Promise<void> => {
     if (!activeSessionId) return;
 
-    try {
-      // Get all device sessions to support multiple accounts
-      const deviceSessions = await oxyServices.getDeviceSessions(activeSessionId);
-      const allDeviceSessions = deviceSessions.map((ds: any) => ({
-        sessionId: ds.sessionId,
-        deviceId: ds.deviceId,
-        expiresAt: ds.expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        lastActive: ds.lastActive || new Date().toISOString(),
-        userId: ds.user?.id || ds.userId || user?.id,
-      }));
-      setSessions(allDeviceSessions);
-    } catch (error) {
-      // Fallback to user sessions if device sessions fail
-      // Merge with existing sessions to preserve other accounts
-      if (__DEV__) {
-        console.warn('Failed to refresh device sessions, falling back to user sessions:', error);
-      }
-    try {
-      const serverSessions = await oxyServices.getSessionsBySessionId(activeSessionId);
-      const userSessions = mapServerSessionsToClient(serverSessions, user?.id);
-      // Merge with existing sessions to preserve other accounts
-      setSessions((prevSessions) => {
-        const existingSessionIds = new Set(prevSessions.map(s => s.sessionId));
-        const newSessions = userSessions.filter(s => !existingSessionIds.has(s.sessionId));
-        // Combine existing sessions with new ones, prioritizing new data for existing sessions
-        const sessionMap = new Map(prevSessions.map(s => [s.sessionId, s]));
-        userSessions.forEach(s => sessionMap.set(s.sessionId, s));
-        return Array.from(sessionMap.values());
-      });
-      } catch (fallbackError) {
-      if (__DEV__) {
-          console.error('Refresh sessions error:', fallbackError);
-      }
-
-      // If the current session is invalid, try to find another valid session
-      if (sessions.length > 1) {
-        const otherSessions = sessions.filter(s => s.sessionId !== activeSessionId);
-
-        for (const session of otherSessions) {
-          try {
-            const validation = await oxyServices.validateSession(session.sessionId, {
-              useHeaderValidation: true
-            });
-            if (validation.valid) {
-              await switchToSession(session.sessionId);
-              return;
-            }
-          } catch {
-            continue;
-          }
-        }
-      }
-
-      // No valid sessions found, clear all
-      setSessions([]);
-      setActiveSessionId(null);
-      logoutStore();
-      setMinimalUser(null);
-      await clearAllStorage();
-      onAuthStateChange?.(null);
-      }
+    // If a refresh is already in progress, return the existing promise
+    if (refreshInFlightRef.current) {
+      return refreshInFlightRef.current;
     }
-  }, [activeSessionId, oxyServices, user?.id, sessions, switchToSession, logoutStore, clearAllStorage, onAuthStateChange, mapServerSessionsToClient]);
+
+    // Create the refresh promise
+    const refreshPromise = (async () => {
+      try {
+        // Get all device sessions to support multiple accounts
+        const deviceSessions = await oxyServices.getDeviceSessions(activeSessionId);
+        const allDeviceSessions = deviceSessions.map((ds: any) => ({
+          sessionId: ds.sessionId,
+          deviceId: ds.deviceId,
+          expiresAt: ds.expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          lastActive: ds.lastActive || new Date().toISOString(),
+          userId: ds.user?.id || ds.userId || user?.id,
+        }));
+        // Always merge to preserve existing sessions from other users
+        // Deduplication by userId happens automatically in updateSessions
+        updateSessions(allDeviceSessions, true);
+      } catch (error) {
+        // Fallback to user sessions if device sessions fail
+        // Merge with existing sessions to preserve other accounts
+        if (__DEV__) {
+          console.warn('Failed to refresh device sessions, falling back to user sessions:', error);
+        }
+        try {
+          const serverSessions = await oxyServices.getSessionsBySessionId(activeSessionId);
+          const userSessions = mapServerSessionsToClient(serverSessions, user?.id);
+          // Merge with existing sessions to preserve other accounts
+          updateSessions(userSessions, true);
+        } catch (fallbackError) {
+          if (__DEV__) {
+            console.error('Refresh sessions error:', fallbackError);
+          }
+
+          // If the current session is invalid, try to find another valid session
+          if (sessions.length > 1) {
+            const otherSessions = sessions.filter(s => s.sessionId !== activeSessionId);
+
+            for (const session of otherSessions) {
+              try {
+                const validation = await oxyServices.validateSession(session.sessionId, {
+                  useHeaderValidation: true
+                });
+                if (validation.valid) {
+                  await switchToSession(session.sessionId);
+                  return;
+                }
+              } catch {
+                continue;
+              }
+            }
+          }
+
+          // No valid sessions found, clear all
+          updateSessions([], false);
+          setActiveSessionId(null);
+          logoutStore();
+          setMinimalUser(null);
+          await clearAllStorage();
+          onAuthStateChange?.(null);
+        }
+      } finally {
+        // Clear the in-flight ref when done
+        refreshInFlightRef.current = null;
+      }
+    })();
+
+    refreshInFlightRef.current = refreshPromise;
+    return refreshPromise;
+  }, [activeSessionId, oxyServices, user?.id, updateSessions, sessions, switchToSession, logoutStore, clearAllStorage, onAuthStateChange, mapServerSessionsToClient]);
 
   // Device management methods
   const getDeviceSessions = useCallback(async (): Promise<Array<{
@@ -841,7 +842,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
     try {
       await oxyServices.logoutAllDeviceSessions(activeSessionId);
-      setSessions([]);
+      updateSessions([], false);
       setActiveSessionId(null);
       logoutStore();
       setMinimalUser(null);

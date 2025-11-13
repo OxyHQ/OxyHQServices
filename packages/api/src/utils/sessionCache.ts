@@ -57,7 +57,8 @@ class SessionCache {
       return null;
     }
 
-    logger.debug(`Cache hit for session: ${sessionId.substring(0, 8)}...`);
+    // Cache hit - no need to log (this is the expected/normal case)
+    // Only log cache misses for debugging
     return cached.session;
   }
 

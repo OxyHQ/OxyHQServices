@@ -56,7 +56,6 @@
  *
  * See method JSDoc for more details and options.
  */
-import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios';
 import { jwtDecode } from 'jwt-decode';
 import type { 
   OxyConfig as OxyConfigBase, 
@@ -76,10 +75,10 @@ export interface OxyConfig extends OxyConfigBase {
   cloudURL?: string;
 }
 import type { SessionLoginResponse } from '../models/session';
-import { handleHttpError, retryWithBackoff } from '../utils/errorUtils';
+import { handleHttpError } from '../utils/errorUtils';
 import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../utils/apiUtils';
-import { TTLCache, registerCacheForCleanup } from '../utils/cache';
-import { RequestDeduplicator, RequestQueue, SimpleLogger } from '../utils/requestUtils';
+import { HttpClient } from './HttpClient';
+import { RequestManager, type RequestOptions } from './RequestManager';
 
 interface JwtPayload {
   exp?: number;
@@ -115,73 +114,21 @@ export class OxyAuthenticationTimeoutError extends OxyAuthenticationError {
   }
 }
 
-// Use centralized utilities from requestUtils
-
 /**
  * OxyServices - Unified client library for interacting with the Oxy API
  * 
  * This class provides all API functionality in one simple, easy-to-use interface.
- * No need to manage multiple service instances - everything is available directly.
+ * Architecture:
+ * - HttpClient: Handles HTTP communication and authentication
+ * - RequestManager: Handles caching, deduplication, queuing, and retry
+ * - OxyServices: Provides high-level API methods
  */
-// Centralized token store
-class TokenStore {
-  private static instance: TokenStore;
-  private accessToken: string | null = null;
-  private refreshToken: string | null = null;
-
-  private constructor() {}
-
-  static getInstance(): TokenStore {
-    if (!TokenStore.instance) {
-      TokenStore.instance = new TokenStore();
-    }
-    return TokenStore.instance;
-  }
-
-  setTokens(accessToken: string, refreshToken = ''): void {
-    this.accessToken = accessToken;
-    this.refreshToken = refreshToken;
-  }
-
-  getAccessToken(): string | null {
-    return this.accessToken;
-  }
-
-  getRefreshToken(): string | null {
-    return this.refreshToken;
-  }
-
-  clearTokens(): void {
-    this.accessToken = null;
-    this.refreshToken = null;
-  }
-
-  hasAccessToken(): boolean {
-    return !!this.accessToken;
-  }
-}
-
 export class OxyServices {
-  protected client: AxiosInstance;
-  private tokenStore: TokenStore;
+  private httpClient: HttpClient;
+  private requestManager: RequestManager;
   private cloudURL: string;
   private config: OxyConfig;
   
-  // Performance infrastructure
-  private cache: TTLCache<any>;
-  private deduplicator: RequestDeduplicator;
-  private requestQueue: RequestQueue;
-  private logger: SimpleLogger;
-  
-  // Performance monitoring
-  private requestMetrics = {
-    totalRequests: 0,
-    successfulRequests: 0,
-    failedRequests: 0,
-    cacheHits: 0,
-    cacheMisses: 0,
-    averageResponseTime: 0,
-  };
 
   /**
    * Creates a new instance of the OxyServices client
@@ -191,280 +138,32 @@ export class OxyServices {
    */
   constructor(config: OxyConfig) {
     this.config = config;
-    const timeout = config.requestTimeout || 5000;
-    const enableCache = config.enableCache !== false; // Default true
-    const enableDedup = config.enableRequestDeduplication !== false; // Default true
-    const enableRetry = config.enableRetry !== false; // Default true
-    const maxConcurrent = config.maxConcurrentRequests || 10;
-    const maxQueueSize = config.requestQueueSize || 100;
-    const enableLogging = config.enableLogging || false;
-    const logLevel = config.logLevel || 'error';
-
-    // Initialize performance infrastructure
-    this.cache = new TTLCache<any>(config.cacheTTL || 5 * 60 * 1000);
-    registerCacheForCleanup(this.cache); // Register for automatic cleanup
-    this.deduplicator = new RequestDeduplicator();
-    this.requestQueue = new RequestQueue(maxConcurrent, maxQueueSize);
-    this.logger = new SimpleLogger(enableLogging, logLevel, 'OxyServices');
-
-    // Setup Axios client with optimized configuration
-    this.client = axios.create({ 
-      baseURL: config.baseURL,
-      timeout,
-      // Production optimizations
-      headers: {
-        'Accept': 'application/json',
-        // Note: Accept-Encoding is automatically handled by the browser
-        // and cannot be set manually (forbidden header)
-      },
-      // Enable HTTP keep-alive for connection reuse (Node.js only)
-      ...(typeof process !== 'undefined' && process.env && typeof window === 'undefined' && typeof require !== 'undefined' ? {
-        httpAgent: new (require('http').Agent)({ keepAlive: true, keepAliveMsecs: 1000, maxSockets: 50 }),
-        httpsAgent: new (require('https').Agent)({ keepAlive: true, keepAliveMsecs: 1000, maxSockets: 50 }),
-      } : {}),
-    });
-
     this.cloudURL = config.cloudURL || OXY_CLOUD_URL;
-    this.tokenStore = TokenStore.getInstance();
-    this.setupInterceptors();
+
+    // Initialize HTTP client (handles authentication and interceptors)
+    this.httpClient = new HttpClient(config);
+
+    // Initialize request manager (handles caching, deduplication, queuing, retry)
+    this.requestManager = new RequestManager(this.httpClient, config);
   }
 
   // Test-only utility to reset global tokens between jest tests
   static __resetTokensForTests(): void {
-    try {
-      TokenStore.getInstance().clearTokens();
-    } catch {}
+    HttpClient.__resetTokensForTests();
   }
 
-  /**
-   * Setup axios interceptors for authentication and error handling
-   */
-  private setupInterceptors(): void {
-    // Request interceptor for adding auth header and handling token refresh
-    this.client.interceptors.request.use(
-      async (req: InternalAxiosRequestConfig) => {
-        const startTime = Date.now();
-        (req as any).__startTime = startTime;
-        
-        this.logger.debug('Request:', req.method?.toUpperCase(), req.url);
-        this.config.onRequestStart?.(req.url || '', req.method || 'GET');
-        
-        const accessToken = this.tokenStore.getAccessToken();
-        if (!accessToken) {
-          this.logger.debug('No token available');
-          return req;
-        }
-        
-        try {
-          const decoded = jwtDecode<JwtPayload>(accessToken);
-          const currentTime = Math.floor(Date.now() / 1000);
-        
-          // If token expires in less than 60 seconds, refresh it
-          if (decoded.exp && decoded.exp - currentTime < 60) {
-            // For session-based tokens, get a new token from the session
-            if (decoded.sessionId) {
-              try {
-                // Create a new axios instance to avoid interceptor recursion
-                const refreshClient = axios.create({ 
-                  baseURL: this.client.defaults.baseURL,
-                  timeout: this.client.defaults.timeout
-                });
-                const res = await refreshClient.get(`/api/session/token/${decoded.sessionId}`);
-                this.tokenStore.setTokens(res.data.accessToken);
-                req.headers.Authorization = `Bearer ${res.data.accessToken}`;
-                this.logger.debug('Token refreshed');
-              } catch (refreshError) {
-                // If refresh fails, use current token anyway
-                req.headers.Authorization = `Bearer ${accessToken}`;
-                this.logger.warn('Token refresh failed, using current token');
-              }
-            } else {
-              req.headers.Authorization = `Bearer ${accessToken}`;
-            }
-          } else {
-            req.headers.Authorization = `Bearer ${accessToken}`;
-          }
-        } catch (error) {
-          this.logger.error('Error processing token:', error);
-          // Even if there's an error, still try to use the token
-          req.headers.Authorization = `Bearer ${accessToken}`;
-        }
-        
-        return req;
-      },
-      (error) => {
-        this.logger.error('Request interceptor error:', error);
-        return Promise.reject(error);
-      }
-    );
-
-    // Response interceptor for handling auth errors and metrics
-    this.client.interceptors.response.use(
-      (response) => {
-        const startTime = (response.config as any).__startTime;
-        if (startTime) {
-          const duration = Date.now() - startTime;
-          this.updateMetrics(true, duration);
-          this.config.onRequestEnd?.(response.config.url || '', response.config.method || 'GET', duration, true);
-        }
-        return response;
-      },
-      (error) => {
-        const startTime = (error.config as any)?.__startTime;
-        if (startTime) {
-          const duration = Date.now() - startTime;
-          this.updateMetrics(false, duration);
-          this.config.onRequestEnd?.(error.config?.url || '', error.config?.method || 'GET', duration, false);
-          this.config.onRequestError?.(error.config?.url || '', error.config?.method || 'GET', error);
-        }
-        
-        if (error.response?.status === 401) {
-          this.logger.warn('401 Unauthorized, clearing tokens');
-          this.clearTokens();
-        }
-        return Promise.reject(error);
-      }
-    );
-  }
 
   /**
-   * Update request metrics
-   */
-  private updateMetrics(success: boolean, duration: number): void {
-    this.requestMetrics.totalRequests++;
-    if (success) {
-      this.requestMetrics.successfulRequests++;
-    } else {
-      this.requestMetrics.failedRequests++;
-    }
-    
-    // Update average response time (exponential moving average)
-    const alpha = 0.1; // Smoothing factor
-    this.requestMetrics.averageResponseTime = 
-      this.requestMetrics.averageResponseTime * (1 - alpha) + duration * alpha;
-  }
-
-  /**
-   * Exponential backoff retry logic with 4xx error handling
-   */
-  private async retryWithBackoff<T>(
-    fn: () => Promise<T>,
-    maxRetries: number = 3,
-    baseDelay: number = 1000
-  ): Promise<T> {
-    let lastError: any;
-    
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        return await fn();
-      } catch (error: any) {
-        lastError = error;
-        
-        // Don't retry on 4xx errors (client errors)
-        if (error.response?.status >= 400 && error.response?.status < 500) {
-          throw error;
-        }
-        
-        // Don't retry on last attempt
-        if (attempt === maxRetries) {
-          break;
-        }
-        
-        // Use centralized retryWithBackoff with jitter
-        const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
-        this.logger.debug(`Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-    
-    throw lastError;
-  }
-
-  /**
-   * Make a request with caching, deduplication, retry, and queue support
+   * Make a request with all performance optimizations
+   * This is the main method for all API calls - ensures authentication and performance features
    */
   private async makeRequest<T>(
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     url: string,
     data?: any,
-    options: {
-      cache?: boolean;
-      cacheTTL?: number;
-      deduplicate?: boolean;
-      retry?: boolean;
-      maxRetries?: number;
-      timeout?: number;
-      signal?: AbortSignal;
-    } = {}
+    options: RequestOptions = {}
   ): Promise<T> {
-    const {
-      cache = method === 'GET', // Cache GET requests by default
-      cacheTTL,
-      deduplicate = true,
-      retry = this.config.enableRetry !== false,
-      maxRetries = this.config.maxRetries || 3,
-      timeout,
-      signal,
-    } = options;
-
-    // Generate cache key
-    const cacheKey = cache ? `${method}:${url}:${JSON.stringify(data || {})}` : null;
-    
-    // Check cache first
-    if (cache && cacheKey) {
-      const cached = this.cache.get(cacheKey) as T | null;
-      if (cached !== null) {
-        this.requestMetrics.cacheHits++;
-        this.logger.debug('Cache hit:', url);
-        return cached;
-      }
-      this.requestMetrics.cacheMisses++;
-    }
-
-    // Request function
-    const requestFn = async (): Promise<T> => {
-      const requestConfig: any = {
-        method,
-        url,
-        timeout: timeout || this.config.requestTimeout || 5000,
-      };
-
-      if (data) {
-        if (method === 'GET') {
-          requestConfig.params = data;
-        } else {
-          requestConfig.data = data;
-        }
-      }
-
-      if (signal) {
-        requestConfig.signal = signal;
-      }
-
-      const response = await this.client.request<T>(requestConfig);
-      return response.data;
-    };
-
-    // Wrap with retry if enabled
-    const requestWithRetry = retry
-      ? () => this.retryWithBackoff(requestFn, maxRetries)
-      : requestFn;
-
-    // Wrap with deduplication if enabled
-    const dedupeKey = deduplicate ? `${method}:${url}:${JSON.stringify(data || {})}` : null;
-    const finalRequest = dedupeKey
-      ? () => this.deduplicator.deduplicate(dedupeKey, requestWithRetry)
-      : requestWithRetry;
-
-    // Execute request (with queue if needed)
-    const result = await this.requestQueue.enqueue(finalRequest);
-
-    // Cache the result if caching is enabled
-    if (cache && cacheKey && result) {
-      this.cache.set(cacheKey, result, cacheTTL);
-    }
-
-    return result;
+    return this.requestManager.request<T>(method, url, data, options);
   }
 
   // ============================================================================
@@ -475,43 +174,35 @@ export class OxyServices {
    * Get the configured Oxy API base URL
    */
   public getBaseURL(): string {
-    return this.client.defaults.baseURL || '';
+    return this.httpClient.getBaseURL();
   }
 
   /**
    * Get performance metrics
    */
-  public getMetrics(): typeof this.requestMetrics {
-    return { ...this.requestMetrics };
+  public getMetrics() {
+    return this.requestManager.getMetrics();
   }
 
   /**
    * Clear request cache
    */
   public clearCache(): void {
-    this.cache.clear();
-    this.logger.debug('Cache cleared');
+    this.requestManager.clearCache();
   }
 
   /**
    * Clear specific cache entry
    */
   public clearCacheEntry(key: string): void {
-    this.cache.delete(key);
+    this.requestManager.clearCacheEntry(key);
   }
 
   /**
    * Get cache statistics
    */
-  public getCacheStats(): { size: number; hits: number; misses: number; hitRate: number } {
-    const cacheStats = this.cache.getStats();
-    const total = this.requestMetrics.cacheHits + this.requestMetrics.cacheMisses;
-    return {
-      size: cacheStats.size,
-      hits: this.requestMetrics.cacheHits,
-      misses: this.requestMetrics.cacheMisses,
-      hitRate: total > 0 ? this.requestMetrics.cacheHits / total : 0,
-    };
+  public getCacheStats() {
+    return this.requestManager.getCacheStats();
   }
 
   /**
@@ -525,21 +216,21 @@ export class OxyServices {
    * Set authentication tokens
    */
   public setTokens(accessToken: string, refreshToken = ''): void {
-    this.tokenStore.setTokens(accessToken, refreshToken);
+    this.httpClient.setTokens(accessToken, refreshToken);
   }
 
   /**
    * Clear stored authentication tokens
    */
   public clearTokens(): void {
-    this.tokenStore.clearTokens();
+    this.httpClient.clearTokens();
   }
 
   /**
    * Get the current user ID from the access token
    */
   public getCurrentUserId(): string | null {
-    const accessToken = this.tokenStore.getAccessToken();
+    const accessToken = this.httpClient.getAccessToken();
     if (!accessToken) {
       return null;
     }
@@ -556,21 +247,21 @@ export class OxyServices {
    * Check if the client has a valid access token
    */
   private hasAccessToken(): boolean {
-    return this.tokenStore.hasAccessToken();
+    return this.httpClient.hasAccessToken();
   }
 
   /**
    * Check if the client has a valid access token (public method)
    */
   public hasValidToken(): boolean {
-    return this.tokenStore.hasAccessToken();
+    return this.httpClient.hasAccessToken();
   }
 
   /**
    * Get the raw access token (for constructing anchor URLs when needed)
    */
   public getAccessToken(): string | null {
-    return this.tokenStore.getAccessToken();
+    return this.httpClient.getAccessToken();
   }
 
   /**
@@ -589,7 +280,7 @@ export class OxyServices {
     const checkInterval = 100; // Check every 100ms
 
     while (Date.now() - startTime < timeoutMs) {
-      if (this.tokenStore.hasAccessToken()) {
+      if (this.httpClient.hasAccessToken()) {
         return true;
       }
       await new Promise(resolve => setTimeout(resolve, checkInterval));
@@ -620,17 +311,14 @@ export class OxyServices {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         // First attempt: check if we have a token
-        if (!this.tokenStore.hasAccessToken()) {
+        if (!this.httpClient.hasAccessToken()) {
           if (attempt === 0) {
             // On first attempt, wait briefly for authentication to complete
-            this.logger.debug(`${operationName} - Waiting for authentication...`);
             const authReady = await this.waitForAuthentication(authTimeoutMs);
             
             if (!authReady) {
               throw new OxyAuthenticationTimeoutError(operationName, authTimeoutMs);
             }
-            
-            this.logger.debug(`${operationName} - Authentication ready, proceeding...`);
           } else {
             // On retry attempts, fail immediately if no token
             throw new OxyAuthenticationError(
@@ -651,7 +339,6 @@ export class OxyServices {
                            error instanceof OxyAuthenticationError;
 
         if (isAuthError && !isLastAttempt && !(error instanceof OxyAuthenticationTimeoutError)) {
-          this.logger.debug(`${operationName} - Auth error on attempt ${attempt + 1}, retrying in ${retryDelay}ms...`);
           await new Promise(resolve => setTimeout(resolve, retryDelay));
           continue;
         }
@@ -677,19 +364,16 @@ export class OxyServices {
     }
 
     try {
-      const res = await this.client.get('/api/auth/validate');
-      return res.data.valid === true;
+      const res = await this.makeRequest<{ valid: boolean }>('GET', '/api/auth/validate', undefined, {
+        cache: false,
+        retry: false,
+      });
+      return res.valid === true;
     } catch (error) {
       return false;
     }
   }
 
-  /**
-   * Get the HTTP client instance (public for external use)
-   */
-  public getClient(): AxiosInstance {
-    return this.client;
-  }
 
   /**
    * Centralized error handling
@@ -713,8 +397,7 @@ export class OxyServices {
     [key: string]: any 
   }> {
     try {
-      const res = await this.client.get('/health');
-      return res.data;
+      return await this.makeRequest('GET', '/health', undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -729,15 +412,15 @@ export class OxyServices {
    */
   async signUp(username: string, email: string, password: string): Promise<{ message: string; token: string; user: User }> {
     try {
-      const res = await this.client.post('/api/auth/signup', {
+      const res = await this.makeRequest<{ message: string; token: string; user: User }>('POST', '/api/auth/signup', {
         username,
         email,
         password
-      });
-      if (!res || !res.data || (typeof res.data === 'object' && Object.keys(res.data).length === 0)) {
+      }, { cache: false });
+      if (!res || (typeof res === 'object' && Object.keys(res).length === 0)) {
         throw new OxyAuthenticationError('Sign up failed', 'SIGNUP_FAILED', 400);
       }
-      return res.data;
+      return res;
     } catch (error) {
       throw this.handleError(error);
     }
@@ -748,8 +431,7 @@ export class OxyServices {
    */
   async requestRecovery(identifier: string): Promise<{ delivery?: string; destination?: string }> {
     try {
-      const res = await this.client.post('/api/auth/recover/request', { identifier });
-      return res.data;
+      return await this.makeRequest('POST', '/api/auth/recover/request', { identifier }, { cache: false });
     } catch (error: any) {
       throw this.handleError(error);
     }
@@ -760,8 +442,7 @@ export class OxyServices {
    */
   async verifyRecoveryCode(identifier: string, code: string): Promise<{ verified: boolean }> {
     try {
-      const res = await this.client.post('/api/auth/recover/verify', { identifier, code });
-      return res.data;
+      return await this.makeRequest('POST', '/api/auth/recover/verify', { identifier, code }, { cache: false });
     } catch (error: any) {
       throw this.handleError(error);
     }
@@ -772,8 +453,7 @@ export class OxyServices {
    */
   async resetPassword(identifier: string, code: string, newPassword: string): Promise<{ success: boolean }> {
     try {
-      const res = await this.client.post('/api/auth/recover/reset', { identifier, code, newPassword });
-      return res.data;
+      return await this.makeRequest('POST', '/api/auth/recover/reset', { identifier, code, newPassword }, { cache: false });
     } catch (error: any) {
       throw this.handleError(error);
     }
@@ -784,8 +464,7 @@ export class OxyServices {
    */
   async resetPasswordWithTotp(identifier: string, code: string, newPassword: string): Promise<{ success: boolean }> {
     try {
-      const res = await this.client.post('/api/auth/recover/totp/reset', { identifier, code, newPassword });
-      return res.data;
+      return await this.makeRequest('POST', '/api/auth/recover/totp/reset', { identifier, code, newPassword }, { cache: false });
     } catch (error: any) {
       throw this.handleError(error);
     }
@@ -793,8 +472,7 @@ export class OxyServices {
 
   async resetPasswordWithBackupCode(identifier: string, backupCode: string, newPassword: string): Promise<{ success: boolean }> {
     try {
-      const res = await this.client.post('/api/auth/recover/backup/reset', { identifier, backupCode, newPassword });
-      return res.data;
+      return await this.makeRequest('POST', '/api/auth/recover/backup/reset', { identifier, backupCode, newPassword }, { cache: false });
     } catch (error: any) {
       throw this.handleError(error);
     }
@@ -802,8 +480,7 @@ export class OxyServices {
 
   async resetPasswordWithRecoveryKey(identifier: string, recoveryKey: string, newPassword: string): Promise<{ success: boolean; nextRecoveryKey?: string }> {
     try {
-      const res = await this.client.post('/api/auth/recover/recovery-key/reset', { identifier, recoveryKey, newPassword });
-      return res.data;
+      return await this.makeRequest('POST', '/api/auth/recover/recovery-key/reset', { identifier, recoveryKey, newPassword }, { cache: false });
     } catch (error: any) {
       throw this.handleError(error);
     }
@@ -819,13 +496,12 @@ export class OxyServices {
     deviceFingerprint?: any
   ): Promise<SessionLoginResponse | { mfaRequired: true; mfaToken: string; expiresAt: string }> {
     try {
-      const res = await this.client.post('/api/auth/login', {
+      return await this.makeRequest<SessionLoginResponse | { mfaRequired: true; mfaToken: string; expiresAt: string }>('POST', '/api/auth/login', {
         username,
         password,
         deviceName,
         deviceFingerprint
-      });
-      return res.data;
+      }, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -836,8 +512,7 @@ export class OxyServices {
    */
   async verifyTotpLogin(mfaToken: string, code: string): Promise<SessionLoginResponse> {
     try {
-      const res = await this.client.post('/api/auth/totp/verify-login', { mfaToken, code });
-      return res.data;
+      return await this.makeRequest<SessionLoginResponse>('POST', '/api/auth/totp/verify-login', { mfaToken, code }, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -886,19 +561,16 @@ export class OxyServices {
    */
   async getTokenBySession(sessionId: string): Promise<{ accessToken: string; expiresAt: string }> {
     try {
-      this.logger.debug('Fetching token for session:', sessionId);
-      const res = await this.client.get(`/api/session/token/${sessionId}`);
-      const { accessToken } = res.data;
-      
-      this.logger.debug('Token received');
+      const res = await this.makeRequest<{ accessToken: string; expiresAt: string }>('GET', `/api/session/token/${sessionId}`, undefined, {
+        cache: false,
+        retry: false,
+      });
       
       // Set the token in the centralized token store
-      this.setTokens(accessToken);
-      this.logger.debug('Token set in store');
+      this.setTokens(res.accessToken);
       
-      return res.data;
+      return res;
     } catch (error) {
-      this.logger.error('getTokenBySession error:', error);
       throw this.handleError(error);
     }
   }
@@ -908,8 +580,9 @@ export class OxyServices {
    */
   async getSessionsBySessionId(sessionId: string): Promise<any[]> {
     try {
-      const res = await this.client.get(`/api/session/sessions/${sessionId}`);
-      return res.data;
+      return await this.makeRequest('GET', `/api/session/sessions/${sessionId}`, undefined, {
+        cache: false,
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -924,7 +597,7 @@ export class OxyServices {
         ? `/api/session/logout/${sessionId}/${targetSessionId}`
         : `/api/session/logout/${sessionId}`;
       
-      await this.client.post(url);
+      await this.makeRequest('POST', url, undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -935,7 +608,7 @@ export class OxyServices {
    */
   async logoutAllSessions(sessionId: string): Promise<void> {
     try {
-      await this.client.post(`/api/session/logout-all/${sessionId}`);
+      await this.makeRequest('POST', `/api/session/logout-all/${sessionId}`, undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -967,9 +640,11 @@ export class OxyServices {
         params.append('useHeaderValidation', 'true');
       }
 
-      const url = `/api/session/validate/${sessionId}?${params.toString()}`;
-      const res = await this.client.get(url);
-      return res.data;
+      const url = `/api/session/validate/${sessionId}`;
+      const urlParams: any = {};
+      if (options.deviceFingerprint) urlParams.deviceFingerprint = options.deviceFingerprint;
+      if (options.useHeaderValidation) urlParams.useHeaderValidation = 'true';
+      return await this.makeRequest('GET', url, urlParams, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -980,8 +655,7 @@ export class OxyServices {
    */
   async checkUsernameAvailability(username: string): Promise<{ available: boolean; message: string }> {
     try {
-      const res = await this.client.get(`/api/auth/check-username/${username}`);
-      return res.data;
+      return await this.makeRequest('GET', `/api/auth/check-username/${username}`, undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -992,8 +666,7 @@ export class OxyServices {
    */
   async checkEmailAvailability(email: string): Promise<{ available: boolean; message: string }> {
     try {
-      const res = await this.client.get(`/api/auth/check-email/${email}`);
-      return res.data;
+      return await this.makeRequest('GET', `/api/auth/check-email/${email}`, undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1023,10 +696,8 @@ export class OxyServices {
 
   async startTotpEnrollment(sessionId: string): Promise<{ secret: string; otpauthUrl: string; issuer: string; label: string }> {
     try {
-      const res = await this.client.post('/api/auth/totp/enroll/start', { sessionId }, {
-        headers: { 'x-session-id': sessionId }
-      });
-      return res.data;
+      // Note: x-session-id header is handled by HttpClient interceptors if needed
+      return await this.makeRequest('POST', '/api/auth/totp/enroll/start', { sessionId }, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1034,10 +705,7 @@ export class OxyServices {
 
   async verifyTotpEnrollment(sessionId: string, code: string): Promise<{ enabled: boolean; backupCodes?: string[]; recoveryKey?: string }> {
     try {
-      const res = await this.client.post('/api/auth/totp/enroll/verify', { sessionId, code }, {
-        headers: { 'x-session-id': sessionId }
-      });
-      return res.data;
+      return await this.makeRequest('POST', '/api/auth/totp/enroll/verify', { sessionId, code }, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1045,10 +713,7 @@ export class OxyServices {
 
   async disableTotp(sessionId: string, code: string): Promise<{ disabled: boolean }> {
     try {
-      const res = await this.client.post('/api/auth/totp/disable', { sessionId, code }, {
-        headers: { 'x-session-id': sessionId }
-      });
-      return res.data;
+      return await this.makeRequest('POST', '/api/auth/totp/disable', { sessionId, code }, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1061,9 +726,14 @@ export class OxyServices {
     try {
       const params = { query, ...pagination };
       const searchParams = buildSearchParams(params);
-      
-      const res = await this.client.get(`/api/profiles/search?${searchParams.toString()}`);
-      return res.data;
+      const paramsObj: any = {};
+      searchParams.forEach((value, key) => {
+        paramsObj[key] = value;
+      });
+      return await this.makeRequest<User[]>('GET', '/api/profiles/search', paramsObj, {
+        cache: true,
+        cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1081,8 +751,7 @@ export class OxyServices {
     [key: string]: any;
   }>> {
     return this.withAuthRetry(async () => {
-      const res = await this.client.get('/api/profiles/recommendations');
-      return res.data;
+      return await this.makeRequest('GET', '/api/profiles/recommendations', undefined, { cache: true });
     }, 'getProfileRecommendations');
   }
 
@@ -1091,8 +760,10 @@ export class OxyServices {
    */
   async getUserById(userId: string): Promise<User> {
     try {
-      const res = await this.client.get(`/api/users/${userId}`);
-      return res.data;
+      return await this.makeRequest<User>('GET', `/api/users/${userId}`, undefined, {
+        cache: true,
+        cacheTTL: 5 * 60 * 1000, // 5 minutes cache
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1115,8 +786,7 @@ export class OxyServices {
    */
   async updateProfile(updates: Record<string, any>): Promise<User> {
     try {
-      const res = await this.client.put('/api/users/me', updates);
-      return res.data;
+      return await this.makeRequest<User>('PUT', '/api/users/me', updates, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1127,8 +797,7 @@ export class OxyServices {
    */
   async updateUser(userId: string, updates: Record<string, any>): Promise<User> {
     try {
-      const res = await this.client.put(`/api/users/${userId}`, updates);
-      return res.data;
+      return await this.makeRequest<User>('PUT', `/api/users/${userId}`, updates, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1139,8 +808,7 @@ export class OxyServices {
    */
   async followUser(userId: string): Promise<{ success: boolean; message: string }> {
     try {
-      const res = await this.client.post(`/api/users/${userId}/follow`);
-      return res.data;
+      return await this.makeRequest('POST', `/api/users/${userId}/follow`, undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1151,8 +819,7 @@ export class OxyServices {
    */
   async unfollowUser(userId: string): Promise<{ success: boolean; message: string }> {
     try {
-      const res = await this.client.delete(`/api/users/${userId}/follow`);
-      return res.data;
+      return await this.makeRequest('DELETE', `/api/users/${userId}/follow`, undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1163,8 +830,10 @@ export class OxyServices {
    */
   async getFollowStatus(userId: string): Promise<{ isFollowing: boolean }> {
     try {
-      const res = await this.client.get(`/api/users/${userId}/follow-status`);
-      return res.data;
+      return await this.makeRequest('GET', `/api/users/${userId}/follow-status`, undefined, {
+        cache: true,
+        cacheTTL: 1 * 60 * 1000, // 1 minute cache
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1179,8 +848,10 @@ export class OxyServices {
   ): Promise<{ followers: User[]; total: number; hasMore: boolean }> {
     try {
       const params = buildPaginationParams(pagination || {});
-      const res = await this.client.get(`/api/users/${userId}/followers?${params.toString()}`);
-      return res.data;
+      return await this.makeRequest('GET', `/api/users/${userId}/followers`, params, {
+        cache: true,
+        cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1195,8 +866,10 @@ export class OxyServices {
   ): Promise<{ following: User[]; total: number; hasMore: boolean }> {
     try {
       const params = buildPaginationParams(pagination || {});
-      const res = await this.client.get(`/api/users/${userId}/following?${params.toString()}`);
-      return res.data;
+      return await this.makeRequest('GET', `/api/users/${userId}/following`, params, {
+        cache: true,
+        cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1207,8 +880,9 @@ export class OxyServices {
    */
   async getNotifications(): Promise<Notification[]> {
     return this.withAuthRetry(async () => {
-      const res = await this.client.get('/api/notifications');
-      return res.data;
+      return await this.makeRequest<Notification[]>('GET', '/api/notifications', undefined, {
+        cache: false, // Don't cache notifications - always get fresh data
+      });
     }, 'getNotifications');
   }
 
@@ -1217,8 +891,10 @@ export class OxyServices {
    */
   async getUnreadCount(): Promise<number> {
     try {
-      const res = await this.client.get('/api/notifications/unread-count');
-      return res.data.count;
+      const res = await this.makeRequest<{ count: number }>('GET', '/api/notifications/unread-count', undefined, {
+        cache: false, // Don't cache unread count - always get fresh data
+      });
+      return res.count;
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1229,8 +905,7 @@ export class OxyServices {
    */
   async createNotification(data: Partial<Notification>): Promise<Notification> {
     try {
-      const res = await this.client.post('/api/notifications', data);
-      return res.data;
+      return await this.makeRequest<Notification>('POST', '/api/notifications', data, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1241,7 +916,7 @@ export class OxyServices {
    */
   async markNotificationAsRead(notificationId: string): Promise<void> {
     try {
-      await this.client.put(`/api/notifications/${notificationId}/read`);
+      await this.makeRequest('PUT', `/api/notifications/${notificationId}/read`, undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1252,7 +927,7 @@ export class OxyServices {
    */
   async markAllNotificationsAsRead(): Promise<void> {
     try {
-      await this.client.put('/api/notifications/read-all');
+      await this.makeRequest('PUT', '/api/notifications/read-all', undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1263,7 +938,7 @@ export class OxyServices {
    */
   async deleteNotification(notificationId: string): Promise<void> {
     try {
-      await this.client.delete(`/api/notifications/${notificationId}`);
+      await this.makeRequest('DELETE', `/api/notifications/${notificationId}`, undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1278,8 +953,7 @@ export class OxyServices {
    */
   async createPayment(data: any): Promise<any> {
     try {
-      const res = await this.client.post('/api/payments', data);
-      return res.data;
+      return await this.makeRequest('POST', '/api/payments', data, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1290,8 +964,10 @@ export class OxyServices {
    */
   async getPayment(paymentId: string): Promise<any> {
     try {
-      const res = await this.client.get(`/api/payments/${paymentId}`);
-      return res.data;
+      return await this.makeRequest('GET', `/api/payments/${paymentId}`, undefined, {
+        cache: true,
+        cacheTTL: 5 * 60 * 1000, // 5 minutes cache
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1302,8 +978,9 @@ export class OxyServices {
    */
   async getUserPayments(): Promise<any[]> {
     try {
-      const res = await this.client.get('/api/payments/user');
-      return res.data;
+      return await this.makeRequest('GET', '/api/payments/user', undefined, {
+        cache: false, // Don't cache user payments - always get fresh data
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1318,8 +995,10 @@ export class OxyServices {
    */
   async getUserKarma(userId: string): Promise<any> {
     try {
-      const res = await this.client.get(`/api/karma/${userId}`);
-      return res.data;
+      return await this.makeRequest('GET', `/api/karma/${userId}`, undefined, {
+        cache: true,
+        cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1330,11 +1009,10 @@ export class OxyServices {
    */
   async giveKarma(userId: string, amount: number, reason?: string): Promise<any> {
     try {
-      const res = await this.client.post(`/api/karma/${userId}/give`, {
+      return await this.makeRequest('POST', `/api/karma/${userId}/give`, {
         amount,
         reason
-      });
-      return res.data;
+      }, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1345,8 +1023,10 @@ export class OxyServices {
    */
   async getUserKarmaTotal(userId: string): Promise<any> {
     try {
-      const res = await this.client.get(`/api/karma/${userId}/total`);
-      return res.data;
+      return await this.makeRequest('GET', `/api/karma/${userId}/total`, undefined, {
+        cache: true,
+        cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1357,12 +1037,14 @@ export class OxyServices {
    */
   async getUserKarmaHistory(userId: string, limit?: number, offset?: number): Promise<any> {
     try {
-      const params = new URLSearchParams();
-      if (limit) params.append('limit', limit.toString());
-      if (offset) params.append('offset', offset.toString());
+      const params: any = {};
+      if (limit) params.limit = limit;
+      if (offset) params.offset = offset;
       
-      const res = await this.client.get(`/api/karma/${userId}/history?${params.toString()}`);
-      return res.data;
+      return await this.makeRequest('GET', `/api/karma/${userId}/history`, params, {
+        cache: true,
+        cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1373,8 +1055,10 @@ export class OxyServices {
    */
   async getKarmaLeaderboard(): Promise<any> {
     try {
-      const res = await this.client.get('/api/karma/leaderboard');
-      return res.data;
+      return await this.makeRequest('GET', '/api/karma/leaderboard', undefined, {
+        cache: true,
+        cacheTTL: 5 * 60 * 1000, // 5 minutes cache
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1385,8 +1069,10 @@ export class OxyServices {
    */
   async getKarmaRules(): Promise<any> {
     try {
-      const res = await this.client.get('/api/karma/rules');
-      return res.data;
+      return await this.makeRequest('GET', '/api/karma/rules', undefined, {
+        cache: true,
+        cacheTTL: 30 * 60 * 1000, // 30 minutes cache (rules don't change often)
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1402,8 +1088,7 @@ export class OxyServices {
   async deleteFile(fileId: string): Promise<any> {
     try {
       // Central Asset Service delete with force=true behavior controlled by caller via assetDelete
-      const res = await this.client.delete(`/api/assets/${encodeURIComponent(fileId)}`);
-      return res.data;
+      return await this.makeRequest('DELETE', `/api/assets/${encodeURIComponent(fileId)}`, undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1418,7 +1103,7 @@ export class OxyServices {
   if (variant) params.set('variant', variant);
   if (expiresIn) params.set('expiresIn', String(expiresIn));
   params.set('fallback', 'placeholderVisible');
-  const token = this.tokenStore.getAccessToken();
+  const token = this.httpClient.getAccessToken();
   if (token) params.set('token', token);
 
   // Use params.toString() to detect whether there are query params.
@@ -1444,12 +1129,12 @@ export class OxyServices {
    */
   async listUserFiles(limit?: number, offset?: number): Promise<{ files: any[]; total: number; hasMore: boolean }> {
     try {
-      const params = new URLSearchParams();
-      if (limit) params.append('limit', String(limit));
-      if (offset) params.append('offset', String(offset));
-  const qs = params.toString();
-  const res = await this.client.get(`/api/assets${qs ? `?${qs}` : ''}`);
-      return res.data;
+      const paramsObj: any = {};
+      if (limit) paramsObj.limit = limit;
+      if (offset) paramsObj.offset = offset;
+      return await this.makeRequest('GET', '/api/assets', paramsObj, {
+        cache: false, // Don't cache file lists - always get fresh data
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1462,8 +1147,12 @@ export class OxyServices {
    */
   async getFileContentAsText(fileId: string, variant?: string): Promise<string> {
     try {
-      const urlRes = await this.client.get(`/api/assets/${encodeURIComponent(fileId)}/url${variant ? `?variant=${encodeURIComponent(variant)}` : ''}`);
-      const downloadUrl = urlRes.data?.url;
+      const params: any = variant ? { variant } : undefined;
+      const urlRes = await this.makeRequest<{ url: string }>('GET', `/api/assets/${encodeURIComponent(fileId)}/url`, params, {
+        cache: true,
+        cacheTTL: 10 * 60 * 1000, // 10 minutes cache for URLs
+      });
+      const downloadUrl = urlRes?.url;
       const response = await fetch(downloadUrl);
       return await response.text();
     } catch (error) {
@@ -1476,8 +1165,12 @@ export class OxyServices {
    */
   async getFileContentAsBlob(fileId: string, variant?: string): Promise<Blob> {
     try {
-      const urlRes = await this.client.get(`/api/assets/${encodeURIComponent(fileId)}/url${variant ? `?variant=${encodeURIComponent(variant)}` : ''}`);
-      const downloadUrl = urlRes.data?.url;
+      const params: any = variant ? { variant } : undefined;
+      const urlRes = await this.makeRequest<{ url: string }>('GET', `/api/assets/${encodeURIComponent(fileId)}/url`, params, {
+        cache: true,
+        cacheTTL: 10 * 60 * 1000, // 10 minutes cache for URLs
+      });
+      const downloadUrl = urlRes?.url;
       const response = await fetch(downloadUrl);
       return await response.blob();
     } catch (error) {
@@ -1512,12 +1205,11 @@ export class OxyServices {
    */
   async assetInit(sha256: string, size: number, mime: string): Promise<AssetInitResponse> {
     try {
-      const res = await this.client.post('/api/assets/init', {
+      return await this.makeRequest<AssetInitResponse>('POST', '/api/assets/init', {
         sha256,
         size,
         mime
-      });
-      return res.data;
+      }, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1528,15 +1220,14 @@ export class OxyServices {
    */
   async assetComplete(fileId: string, originalName: string, size: number, mime: string, visibility?: 'private' | 'public' | 'unlisted', metadata?: Record<string, any>): Promise<any> {
     try {
-      const res = await this.client.post('/api/assets/complete', {
+      return await this.makeRequest('POST', '/api/assets/complete', {
         fileId,
         originalName,
         size,
         mime,
         visibility,
         metadata
-      });
-      return res.data;
+      }, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1560,8 +1251,11 @@ export class OxyServices {
         // Fallback: direct upload via API to avoid CORS issues
         const fd = new FormData();
         fd.append('file', file);
-        await this.client.post(`/api/assets/${encodeURIComponent(initResponse.fileId)}/upload-direct`, fd, {
-          headers: { 'Content-Type': 'multipart/form-data' }
+        // Use httpClient directly for FormData uploads (bypasses RequestManager for special handling)
+        await this.httpClient.request({
+          method: 'POST',
+          url: `/api/assets/${encodeURIComponent(initResponse.fileId)}/upload-direct`,
+          data: fd,
         });
       }
 
@@ -1619,8 +1313,7 @@ export class OxyServices {
       const body: any = { app, entityType, entityId };
       if (visibility) body.visibility = visibility;
       if (webhookUrl) body.webhookUrl = webhookUrl;
-      const res = await this.client.post(`/api/assets/${fileId}/links`, body);
-      return res.data;
+      return await this.makeRequest('POST', `/api/assets/${fileId}/links`, body, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1631,14 +1324,11 @@ export class OxyServices {
    */
   async assetUnlink(fileId: string, app: string, entityType: string, entityId: string): Promise<any> {
     try {
-      const res = await this.client.delete(`/api/assets/${fileId}/links`, {
-        data: {
-          app,
-          entityType,
-          entityId
-        }
-      });
-      return res.data;
+      return await this.makeRequest('DELETE', `/api/assets/${fileId}/links`, {
+        app,
+        entityType,
+        entityId
+      }, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1649,8 +1339,10 @@ export class OxyServices {
    */
   async assetGet(fileId: string): Promise<any> {
     try {
-      const res = await this.client.get(`/api/assets/${fileId}`);
-      return res.data;
+      return await this.makeRequest('GET', `/api/assets/${fileId}`, undefined, {
+        cache: true,
+        cacheTTL: 5 * 60 * 1000, // 5 minutes cache
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1661,15 +1353,14 @@ export class OxyServices {
    */
   async assetGetUrl(fileId: string, variant?: string, expiresIn?: number): Promise<AssetUrlResponse> {
     try {
-      const params = new URLSearchParams();
-      if (variant) params.set('variant', variant);
-      if (expiresIn) params.set('expiresIn', expiresIn.toString());
+      const params: any = {};
+      if (variant) params.variant = variant;
+      if (expiresIn) params.expiresIn = expiresIn;
       
-      const queryString = params.toString();
-      const url = `/api/assets/${fileId}/url${queryString ? `?${queryString}` : ''}`;
-      
-      const res = await this.client.get(url);
-      return res.data;
+      return await this.makeRequest<AssetUrlResponse>('GET', `/api/assets/${fileId}/url`, params, {
+        cache: true,
+        cacheTTL: 10 * 60 * 1000, // 10 minutes cache for URLs
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1680,8 +1371,7 @@ export class OxyServices {
    */
   async assetRestore(fileId: string): Promise<any> {
     try {
-      const res = await this.client.post(`/api/assets/${fileId}/restore`);
-      return res.data;
+      return await this.makeRequest('POST', `/api/assets/${fileId}/restore`, undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1692,9 +1382,8 @@ export class OxyServices {
    */
   async assetDelete(fileId: string, force: boolean = false): Promise<any> {
     try {
-      const params = force ? '?force=true' : '';
-      const res = await this.client.delete(`/api/assets/${fileId}${params}`);
-      return res.data;
+      const params: any = force ? { force: 'true' } : undefined;
+      return await this.makeRequest('DELETE', `/api/assets/${fileId}`, params, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1720,10 +1409,9 @@ export class OxyServices {
    */
   async assetUpdateVisibility(fileId: string, visibility: 'private' | 'public' | 'unlisted'): Promise<any> {
     try {
-      const res = await this.client.patch(`/api/assets/${fileId}/visibility`, {
+      return await this.makeRequest('PATCH', `/api/assets/${fileId}/visibility`, {
         visibility
-      });
-      return res.data;
+      }, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1780,8 +1468,11 @@ export class OxyServices {
    */
   async getDeveloperApps(): Promise<any[]> {
     try {
-      const res = await this.client.get('/api/developer/apps');
-      return res.data.apps || [];
+      const res = await this.makeRequest<{ apps?: any[] }>('GET', '/api/developer/apps', undefined, {
+        cache: true,
+        cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+      });
+      return res.apps || [];
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1798,8 +1489,8 @@ export class OxyServices {
     scopes?: string[];
   }): Promise<any> {
     try {
-      const res = await this.client.post('/api/developer/apps', data);
-      return res.data.app;
+      const res = await this.makeRequest<{ app: any }>('POST', '/api/developer/apps', data, { cache: false });
+      return res.app;
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1810,8 +1501,11 @@ export class OxyServices {
    */
   async getDeveloperApp(appId: string): Promise<any> {
     try {
-      const res = await this.client.get(`/api/developer/apps/${appId}`);
-      return res.data.app;
+      const res = await this.makeRequest<{ app: any }>('GET', `/api/developer/apps/${appId}`, undefined, {
+        cache: true,
+        cacheTTL: 5 * 60 * 1000, // 5 minutes cache
+      });
+      return res.app;
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1828,8 +1522,8 @@ export class OxyServices {
     scopes?: string[];
   }): Promise<any> {
     try {
-      const res = await this.client.patch(`/api/developer/apps/${appId}`, data);
-      return res.data.app;
+      const res = await this.makeRequest<{ app: any }>('PATCH', `/api/developer/apps/${appId}`, data, { cache: false });
+      return res.app;
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1840,8 +1534,7 @@ export class OxyServices {
    */
   async regenerateDeveloperAppSecret(appId: string): Promise<any> {
     try {
-      const res = await this.client.post(`/api/developer/apps/${appId}/regenerate-secret`);
-      return res.data;
+      return await this.makeRequest('POST', `/api/developer/apps/${appId}/regenerate-secret`, undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1852,8 +1545,7 @@ export class OxyServices {
    */
   async deleteDeveloperApp(appId: string): Promise<any> {
     try {
-      const res = await this.client.delete(`/api/developer/apps/${appId}`);
-      return res.data;
+      return await this.makeRequest('DELETE', `/api/developer/apps/${appId}`, undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1868,11 +1560,10 @@ export class OxyServices {
    */
   async updateLocation(latitude: number, longitude: number): Promise<any> {
     try {
-      const res = await this.client.post('/api/location', {
+      return await this.makeRequest('POST', '/api/location', {
         latitude,
         longitude
-      });
-      return res.data;
+      }, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1883,9 +1574,10 @@ export class OxyServices {
    */
   async getNearbyUsers(radius?: number): Promise<any[]> {
     try {
-      const params = radius ? `?radius=${radius}` : '';
-      const res = await this.client.get(`/api/location/nearby${params}`);
-      return res.data;
+      const params: any = radius ? { radius } : undefined;
+      return await this.makeRequest('GET', '/api/location/nearby', params, {
+        cache: false, // Don't cache location data - always get fresh data
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1900,10 +1592,10 @@ export class OxyServices {
    */
   async trackEvent(eventName: string, properties?: Record<string, any>): Promise<void> {
     try {
-      await this.client.post('/api/analytics/events', {
+      await this.makeRequest('POST', '/api/analytics/events', {
         event: eventName,
         properties
-      });
+      }, { cache: false, retry: false }); // Don't retry analytics events
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1914,12 +1606,14 @@ export class OxyServices {
    */
   async getAnalytics(startDate?: string, endDate?: string): Promise<any> {
     try {
-      const params = new URLSearchParams();
-      if (startDate) params.append('startDate', startDate);
-      if (endDate) params.append('endDate', endDate);
+      const params: any = {};
+      if (startDate) params.startDate = startDate;
+      if (endDate) params.endDate = endDate;
       
-      const res = await this.client.get(`/api/analytics?${params.toString()}`);
-      return res.data;
+      return await this.makeRequest('GET', '/api/analytics', params, {
+        cache: true,
+        cacheTTL: 5 * 60 * 1000, // 5 minutes cache
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1934,8 +1628,7 @@ export class OxyServices {
    */
   async registerDevice(deviceData: any): Promise<any> {
     try {
-      const res = await this.client.post('/api/devices', deviceData);
-      return res.data;
+      return await this.makeRequest('POST', '/api/devices', deviceData, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1946,8 +1639,9 @@ export class OxyServices {
    */
   async getUserDevices(): Promise<any[]> {
     try {
-      const res = await this.client.get('/api/devices');
-      return res.data;
+      return await this.makeRequest('GET', '/api/devices', undefined, {
+        cache: false, // Don't cache device list - always get fresh data
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1958,7 +1652,7 @@ export class OxyServices {
    */
   async removeDevice(deviceId: string): Promise<void> {
     try {
-      await this.client.delete(`/api/devices/${deviceId}`);
+      await this.makeRequest('DELETE', `/api/devices/${deviceId}`, undefined, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1966,11 +1660,16 @@ export class OxyServices {
 
   /**
    * Get device sessions
+   * Note: Not cached by default to ensure fresh data, but can be cached via makeRequest if needed
    */
   async getDeviceSessions(sessionId: string): Promise<any[]> {
     try {
-      const res = await this.client.get(`/api/session/device/sessions/${sessionId}`);
-      return res.data;
+      // Use makeRequest for consistent error handling and optional caching
+      // Cache disabled by default to ensure fresh session data
+      return await this.makeRequest<any[]>('GET', `/api/session/device/sessions/${sessionId}`, undefined, {
+        cache: false, // Don't cache sessions - always get fresh data
+        deduplicate: true, // Deduplicate concurrent requests for same sessionId
+      });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1985,8 +1684,11 @@ export class OxyServices {
       if (deviceId) params.append('deviceId', deviceId);
       if (excludeCurrent) params.append('excludeCurrent', 'true');
       
-      const res = await this.client.post(`/api/session/device/logout-all/${sessionId}?${params.toString()}`);
-      return res.data;
+      const urlParams: any = {};
+      params.forEach((value, key) => {
+        urlParams[key] = value;
+      });
+      return await this.makeRequest('POST', `/api/session/device/logout-all/${sessionId}`, urlParams, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }
@@ -1997,8 +1699,7 @@ export class OxyServices {
    */
   async updateDeviceName(sessionId: string, deviceName: string): Promise<any> {
     try {
-      const res = await this.client.put(`/api/session/device/name/${sessionId}`, { deviceName });
-      return res.data;
+      return await this.makeRequest('PUT', `/api/session/device/name/${sessionId}`, { deviceName }, { cache: false });
     } catch (error) {
       throw this.handleError(error);
     }

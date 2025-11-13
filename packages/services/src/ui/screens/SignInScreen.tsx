@@ -32,13 +32,6 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     const [existingSession, setExistingSession] = useState<any>(null);
 
     const { login, completeMfaLogin, isLoading, user, isAuthenticated, sessions, oxyServices, switchSession } = useOxy();
-
-    // Only log props in development mode to reduce console noise
-    if (__DEV__) {
-        console.log('SignInScreen props:', { initialStep, initialUsername, initialUserProfile });
-        console.log('🔧 oxyServices available:', !!oxyServices);
-        console.log('🔧 getProfileByUsername available:', typeof oxyServices?.getProfileByUsername);
-    }
     const colors = useThemeColors(theme);
 
     // Check if this should be treated as "Add Account" mode

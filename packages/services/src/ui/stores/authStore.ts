@@ -56,7 +56,8 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
     try {
       await oxyServices.updateProfile(updates);
       // Immediately fetch the latest user data after update
-      await useAuthStore.getState().fetchUser({ getCurrentUser: oxyServices.getCurrentUser }, true);
+      // Use arrow function to preserve 'this' context
+      await useAuthStore.getState().fetchUser({ getCurrentUser: () => oxyServices.getCurrentUser() }, true);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to update user';
       if (__DEV__) {

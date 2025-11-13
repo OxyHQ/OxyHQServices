@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
@@ -74,8 +74,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     const isDarkTheme = theme === 'dark';
     const { t } = useI18n();
 
-    // Modern color scheme
-    const colors = {
+    // Modern color scheme - memoized for performance
+    const colors = useMemo(() => ({
         background: isDarkTheme ? '#000000' : '#FFFFFF',
         surface: isDarkTheme ? '#1C1C1E' : '#F2F2F7',
         card: isDarkTheme ? '#2C2C2E' : '#FFFFFF',
@@ -87,7 +87,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         border: isDarkTheme ? '#38383A' : '#C6C6C8',
         activeCard: isDarkTheme ? '#0A84FF20' : '#007AFF15',
         shadow: isDarkTheme ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.1)',
-    };
+    }), [isDarkTheme]);
 
     // Refresh sessions when screen loads
     useEffect(() => {
@@ -96,59 +96,72 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
         }
     }, [isAuthenticated, activeSessionId]);
 
+    // Memoize session IDs to prevent unnecessary re-renders
+    const sessionIds = useMemo(() => sessions.map(s => s.sessionId).join(','), [sessions]);
+
     // Load user profiles for sessions
+    // Production-ready: Optimized with batching, memoization, and error handling
     useEffect(() => {
-        console.log('AccountSwitcherScreen - sessions changed:', sessions);
-        console.log('AccountSwitcherScreen - sessions length:', sessions.length);
-        console.log('AccountSwitcherScreen - activeSessionId:', activeSessionId);
-        console.log('AccountSwitcherScreen - isAuthenticated:', isAuthenticated);
+        let cancelled = false;
 
         const loadUserProfiles = async () => {
-            if (!sessions.length || !oxyServices) return;
+            if (!sessions.length || !oxyServices || cancelled) return;
 
-            // Filter out duplicate sessions by sessionId to prevent duplicate keys
-            const uniqueSessions = sessions.filter((session, index, self) =>
-                index === self.findIndex(s => s.sessionId === session.sessionId)
-            );
+            // Sessions are already deduplicated by userId at the core level (OxyContext)
+            const uniqueSessions = sessions;
 
-            const updatedSessions: SessionWithUser[] = uniqueSessions.map(session => ({
+            // Initialize loading state
+            setSessionsWithUsers(uniqueSessions.map(session => ({
                 ...session,
                 isLoadingProfile: true,
-            }));
-            setSessionsWithUsers(updatedSessions);
+            })));
 
-            // Load profiles for each session
-            for (let i = 0; i < uniqueSessions.length; i++) {
-                const session = uniqueSessions[i];
-                try {
-                    // Try to get user profile using the session
-                    const userProfile = await oxyServices.getUserBySession(session.sessionId);
+            // Batch load profiles for better performance using batch endpoint
+            try {
+                const sessionIds = uniqueSessions.map(s => s.sessionId);
+                const batchResults = await oxyServices.getUsersBySessions(sessionIds);
+                
+                // Create a map for O(1) lookup
+                const userProfileMap = new Map<string, User | null>();
+                batchResults.forEach(({ sessionId, user }) => {
+                    userProfileMap.set(sessionId, user);
+                });
 
+                if (cancelled) return;
+
+                // Update sessions with loaded profiles - optimized with Map for O(1) lookup
+                setSessionsWithUsers(prev => {
+                    return prev.map(session => {
+                        const userProfile = userProfileMap.get(session.sessionId);
+                        return {
+                            ...session,
+                            userProfile: userProfile || undefined,
+                            isLoadingProfile: false,
+                        };
+                    });
+                });
+            } catch (error) {
+                if (!cancelled && __DEV__) {
+                    console.error('Failed to load user profiles:', error);
+                }
+                if (!cancelled) {
                     setSessionsWithUsers(prev =>
-                        prev.map(s =>
-                            s.sessionId === session.sessionId
-                                ? { ...s, userProfile, isLoadingProfile: false }
-                                : s
-                        )
-                    );
-                } catch (error) {
-                    console.error(`Failed to load profile for session ${session.sessionId}:`, error);
-                    setSessionsWithUsers(prev =>
-                        prev.map(s =>
-                            s.sessionId === session.sessionId
-                                ? { ...s, isLoadingProfile: false }
-                                : s
-                        )
+                        prev.map(s => ({ ...s, isLoadingProfile: false }))
                     );
                 }
             }
         };
 
         loadUserProfiles();
-    }, [sessions, oxyServices]);
 
-    const handleSwitchSession = async (sessionId: string) => {
-        if (sessionId === user?.sessionId) return; // Already active session
+        return () => {
+            cancelled = true;
+        };
+    }, [sessionIds, oxyServices, sessions]);
+
+    const handleSwitchSession = useCallback(async (sessionId: string) => {
+        if (sessionId === activeSessionId) return; // Already active session
+        if (switchingToUserId) return; // Already switching
 
         setSwitchingToUserId(sessionId);
         try {
@@ -158,14 +171,18 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                 onClose();
             }
         } catch (error) {
-            console.error('Switch session failed:', error);
+            if (__DEV__) {
+                console.error('Switch session failed:', error);
+            }
             toast.error(t('accountSwitcher.toasts.switchFailed') || 'There was a problem switching accounts. Please try again.');
         } finally {
             setSwitchingToUserId(null);
         }
-    };
+    }, [activeSessionId, switchSession, onClose, t, switchingToUserId]);
 
-    const handleRemoveSession = async (sessionId: string, displayName: string) => {
+    const handleRemoveSession = useCallback(async (sessionId: string, displayName: string) => {
+        if (removingUserId) return; // Already removing
+
         confirmAction(
             t('accountSwitcher.confirms.remove', { displayName }) || `Are you sure you want to remove ${displayName} from this device? You'll need to sign in again to access this account.`,
             async () => {
@@ -174,16 +191,18 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                     await removeSession(sessionId);
                     toast.success(t('accountSwitcher.toasts.removeSuccess') || 'Account removed successfully!');
                 } catch (error) {
-                    console.error('Remove session failed:', error);
+                    if (__DEV__) {
+                        console.error('Remove session failed:', error);
+                    }
                     toast.error(t('accountSwitcher.toasts.removeFailed') || 'There was a problem removing the account. Please try again.');
                 } finally {
                     setRemovingUserId(null);
                 }
             }
         );
-    };
+    }, [removeSession, t, removingUserId]);
 
-    const handleLogoutAll = async () => {
+    const handleLogoutAll = useCallback(() => {
         confirmAction(
             t('accountSwitcher.confirms.logoutAll') || 'Are you sure you want to sign out of all accounts? This will remove all saved accounts from this device.',
             async () => {
@@ -194,52 +213,58 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                         onClose();
                     }
                 } catch (error) {
-                    console.error('Logout all failed:', error);
+                    if (__DEV__) {
+                        console.error('Logout all failed:', error);
+                    }
                     const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred';
                     toast.error(t('accountSwitcher.toasts.signOutAllFailed', { error: errorMessage }) || `There was a problem signing out: ${errorMessage}`);
                 }
             }
         );
-    };
+    }, [logoutAll, onClose, t]);
 
-    // Device session management functions
-    const loadAllDeviceSessions = async () => {
+    // Device session management functions - optimized with useCallback
+    const loadAllDeviceSessions = useCallback(async () => {
         if (!oxyServices || !activeSessionId) return;
 
         setLoadingDeviceSessions(true);
         try {
-            // This would call the API to get all device sessions for the current user
             const allSessions = await oxyServices.getDeviceSessions(activeSessionId);
             setDeviceSessions(allSessions || []);
         } catch (error) {
-            console.error('Failed to load device sessions:', error);
+            if (__DEV__) {
+                console.error('Failed to load device sessions:', error);
+            }
             toast.error(t('accountSwitcher.toasts.deviceLoadFailed') || 'Failed to load device sessions. Please try again.');
         } finally {
             setLoadingDeviceSessions(false);
         }
-    };
+    }, [oxyServices, activeSessionId, t]);
 
-    const handleRemoteSessionLogout = async (sessionId: string, deviceName: string) => {
+    const handleRemoteSessionLogout = useCallback((sessionId: string, deviceName: string) => {
+        if (remotingLogoutSessionId) return; // Already processing
+
         confirmAction(
             t('accountSwitcher.confirms.remoteLogout', { deviceName }) || `Are you sure you want to sign out from "${deviceName}"? This will end the session on that device.`,
             async () => {
                 setRemoteLogoutSessionId(sessionId);
                 try {
                     await oxyServices?.logoutSession(activeSessionId || '', sessionId);
-                    // Refresh device sessions list
                     await loadAllDeviceSessions();
                     toast.success(t('accountSwitcher.toasts.remoteSignOutSuccess', { deviceName }) || `Signed out from ${deviceName} successfully!`);
                 } catch (error) {
-                    console.error('Remote logout failed:', error);
+                    if (__DEV__) {
+                        console.error('Remote logout failed:', error);
+                    }
                     toast.error(t('accountSwitcher.toasts.remoteSignOutFailed') || 'There was a problem signing out from the device. Please try again.');
                 } finally {
                     setRemoteLogoutSessionId(null);
                 }
             }
         );
-    };
+    }, [activeSessionId, oxyServices, loadAllDeviceSessions, t, remotingLogoutSessionId]);
 
-    const handleLogoutAllDevices = async () => {
+    const handleLogoutAllDevices = useCallback(() => {
         const otherDevicesCount = deviceSessions.filter(session => !session.isCurrent).length;
 
         if (otherDevicesCount === 0) {
@@ -247,24 +272,33 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             return;
         }
 
+        if (loggingOutAllDevices) return; // Already processing
+
         confirmAction(
             t('accountSwitcher.confirms.logoutOthers', { count: otherDevicesCount }) || `Are you sure you want to sign out from all ${otherDevicesCount} other device(s)? This will end sessions on all other devices except this one.`,
             async () => {
                 setLoggingOutAllDevices(true);
                 try {
                     await oxyServices?.logoutAllDeviceSessions(activeSessionId || '');
-                    // Refresh device sessions list
                     await loadAllDeviceSessions();
                     toast.success(t('accountSwitcher.toasts.signOutOthersSuccess') || 'Signed out from all other devices successfully!');
                 } catch (error) {
-                    console.error('Logout all devices failed:', error);
+                    if (__DEV__) {
+                        console.error('Logout all devices failed:', error);
+                    }
                     toast.error(t('accountSwitcher.toasts.signOutOthersFailed') || 'There was a problem signing out from other devices. Please try again.');
                 } finally {
                     setLoggingOutAllDevices(false);
                 }
             }
         );
-    };
+    }, [deviceSessions, activeSessionId, oxyServices, loadAllDeviceSessions, t, loggingOutAllDevices]);
+
+    // Memoize filtered sessions for performance
+    const otherSessions = useMemo(
+        () => sessionsWithUsers.filter(s => s.sessionId !== activeSessionId),
+        [sessionsWithUsers, activeSessionId]
+    );
 
     return (
         <View style={[styles.container, { backgroundColor: '#f2f2f2' }]}>
@@ -279,10 +313,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                 elevation="subtle"
                 rightAction={{
                     icon: "refresh",
-                    onPress: () => {
-                        console.log('Manual refresh triggered');
-                        refreshSessions();
-                    }
+                    onPress: refreshSessions
                 }}
             />
 
@@ -330,15 +361,13 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                         )}
 
                         {/* Other Accounts */}
-                        {sessionsWithUsers.filter(s => s.sessionId !== activeSessionId).length > 0 && (
+                        {otherSessions.length > 0 && (
                             <View style={styles.section}>
                                 <Text style={styles.sectionTitle}>
-                                    {t('accountSwitcher.sections.otherWithCount', { count: sessionsWithUsers.filter(s => s.sessionId !== activeSessionId).length }) || `Other Accounts (${sessionsWithUsers.filter(s => s.sessionId !== activeSessionId).length})`}
+                                    {t('accountSwitcher.sections.otherWithCount', { count: otherSessions.length }) || `Other Accounts (${otherSessions.length})`}
                                 </Text>
 
-                                {sessionsWithUsers
-                                    .filter(s => s.sessionId !== activeSessionId)
-                                    .map((sessionWithUser, index, filteredArray) => {
+                                {otherSessions.map((sessionWithUser, index, filteredArray) => {
                                         const isFirst = index === 0;
                                         const isLast = index === filteredArray.length - 1;
                                         const isSwitching = switchingToUserId === sessionWithUser.sessionId;

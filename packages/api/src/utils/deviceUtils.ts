@@ -156,7 +156,10 @@ export const getDeviceActiveSessions = async (deviceId: string) => {
     })
     .populate('userId', 'username email avatar name')
     .lean()
-    .sort({ 'deviceInfo.lastActive': -1 })
+    .sort({ 
+      'deviceInfo.lastActive': -1, // Most recent first
+      'sessionId': 1 // Secondary sort by sessionId for stability
+    })
     .limit(50) // Limit results to prevent excessive data transfer
     .exec();
 
@@ -197,7 +200,7 @@ export const getDeviceActiveSessions = async (deviceId: string) => {
       return {
         sessionId: session.sessionId,
         user: userData,
-        lastActive: session.deviceInfo?.lastActive,
+        lastActive: session.deviceInfo?.lastActive || session.createdAt || new Date().toISOString(),
         createdAt: session.createdAt,
         deviceId: session.deviceId,
         expiresAt: session.expiresAt

@@ -143,12 +143,17 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                     return;
                 }
                 try {
-                    // Update file visibility to public for avatar
-                    try {
-                        await oxyServices.assetUpdateVisibility(file.id, 'public');
-                        console.log('[WelcomeNewUser] Avatar visibility updated to public');
-                    } catch (visError) {
-                        console.warn('[WelcomeNewUser] Failed to update avatar visibility, continuing anyway:', visError);
+                    // Update file visibility to public for avatar (skip if temporary asset ID)
+                    if (file.id && !file.id.startsWith('temp-')) {
+                        try {
+                            await oxyServices.assetUpdateVisibility(file.id, 'public');
+                            console.log('[WelcomeNewUser] Avatar visibility updated to public');
+                        } catch (visError: any) {
+                            // Only log non-404 errors (404 means asset doesn't exist yet, which is OK)
+                            if (visError?.response?.status !== 404) {
+                                console.warn('[WelcomeNewUser] Failed to update avatar visibility, continuing anyway:', visError);
+                            }
+                        }
                     }
 
                     // Update the avatar immediately in local state

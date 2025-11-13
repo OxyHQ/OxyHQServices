@@ -116,13 +116,13 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
         return (
             <>
                 <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.userProfileContainer]}>
-                    <Avatar
-                        name={userProfile?.displayName || userProfile?.name || username}
-                        size={100}
-                        theme={theme as 'light' | 'dark'}
-                        backgroundColor={colors.primary + '20'}
+                        <Avatar
+                            name={userProfile?.displayName || userProfile?.name || username}
+                            size={100}
+                            theme={theme as 'light' | 'dark'}
+                            backgroundColor={colors.primary + '20'}
                         uri={userProfile?.avatar && oxyServices ? oxyServices.getFileDownloadUrl(userProfile.avatar, 'thumb') : undefined}
-                    />
+                        />
                     <Text style={[styles.modernUserDisplayName, stylesheet.displayName, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>
                         {userProfile?.displayName || userProfile?.name || username}
                     </Text>
@@ -185,13 +185,13 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
     return (
         <>
             <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.userProfileContainer]}>
-                <Avatar
-                    name={userProfile?.displayName || userProfile?.name || username}
-                    size={100}
-                    theme={theme as 'light' | 'dark'}
-                    backgroundColor={colors.primary + '20'}
+                    <Avatar
+                        name={userProfile?.displayName || userProfile?.name || username}
+                        size={100}
+                        theme={theme as 'light' | 'dark'}
+                        backgroundColor={colors.primary + '20'}
                     uri={userProfile?.avatar && oxyServices ? oxyServices.getFileDownloadUrl(userProfile.avatar, 'thumb') : undefined}
-                />
+                    />
                 <Text style={[styles.modernUserDisplayName, stylesheet.displayName, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>
                     {userProfile?.displayName || userProfile?.name || username}
                 </Text>
