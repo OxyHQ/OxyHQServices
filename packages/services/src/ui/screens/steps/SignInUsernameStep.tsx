@@ -320,7 +320,6 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                             stylesheet.toggleButton,
                             {
                                 backgroundColor: colors.inputBackground,
-                                borderColor: colors.border,
                             },
                         ]}
                         onPress={() => setShowAccounts(!showAccounts)}
@@ -329,7 +328,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                         <View style={stylesheet.toggleButtonContent}>
                             <Ionicons
                                 name={showAccounts ? 'chevron-down' : 'chevron-forward'}
-                                size={20}
+                                size={18}
                                 color={colors.primary}
                             />
                             <Text style={[stylesheet.toggleButtonText, { color: colors.text }]}>
@@ -337,29 +336,25 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                             </Text>
                             {allAccountsForAvatars.length > 0 && (
                                 <View style={stylesheet.avatarsContainer}>
-                                    {allAccountsForAvatars.map((account) => (
+                                    {allAccountsForAvatars.slice(0, 5).map((account, index) => (
                                         <View
                                             key={account.sessionId}
                                             style={[
                                                 stylesheet.avatarWrapper,
                                                 account.isCurrent && stylesheet.currentAvatarWrapper,
-                                                account.isCurrent && { borderColor: colors.primary },
-                                                !account.isCurrent && { borderColor: colors.border },
+                                                index > 0 && { marginLeft: -12 },
+                                                { zIndex: Math.min(allAccountsForAvatars.length, 5) - index },
+                                                { borderColor: colors.inputBackground || colors.background || '#FFFFFF' },
                                             ]}
                                         >
                                             <Avatar
                                                 name={account.displayName}
                                                 text={account.displayName.charAt(0).toUpperCase()}
-                                                size={32}
+                                                size={28}
                                                 theme={themeMode}
-                                                backgroundColor={`${colors.primary}25`}
+                                                backgroundColor={colors.primary}
                                                 uri={account.avatar && oxyServices ? oxyServices.getFileDownloadUrl(account.avatar, 'thumb') : undefined}
                                             />
-                                            {account.isCurrent && (
-                                                <View style={[stylesheet.currentBadge, { backgroundColor: colors.primary, borderColor: colors.inputBackground }]}>
-                                                    <Ionicons name="checkmark" size={10} color="#FFFFFF" />
-                                                </View>
-                                            )}
                                         </View>
                                     ))}
                                 </View>
@@ -389,7 +384,6 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                                 stylesheet.accountItem,
                                                 {
                                                     backgroundColor: colors.inputBackground,
-                                                    borderColor: colors.border,
                                                 },
                                             ]}
                                         >
@@ -398,7 +392,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                                 text={(user.name?.full || user.username || 'U')
                                                     .slice(0, 1)
                                                     .toUpperCase()}
-                                                size={40}
+                                                size={36}
                                                 theme={themeMode}
                                                 backgroundColor={`${colors.primary}25`}
                                             />
@@ -435,7 +429,6 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                                 stylesheet.accountItem,
                                                 {
                                                     backgroundColor: colors.inputBackground,
-                                                    borderColor: colors.border,
                                                 },
                                                 switchingSessionId === account.sessionId && stylesheet.accountItemLoading,
                                             ]}
@@ -450,7 +443,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                                     <Avatar
                                                         name={account.displayName}
                                                         text={account.displayName.charAt(0).toUpperCase()}
-                                                        size={40}
+                                                        size={36}
                                                         theme={themeMode}
                                                         backgroundColor={`${colors.primary}25`}
                                                     />
@@ -484,13 +477,12 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                                 stylesheet.viewAllItem,
                                                 {
                                                     backgroundColor: colors.inputBackground,
-                                                    borderColor: colors.border,
                                                 },
                                             ]}
                                             onPress={() => navigate('AccountSwitcher')}
                                             activeOpacity={0.7}
                                         >
-                                            <Ionicons name="chevron-forward" size={20} color={colors.primary} />
+                                            <Ionicons name="chevron-forward" size={18} color={colors.primary} />
                                             <Text style={[stylesheet.viewAllText, { color: colors.primary }]}>
                                                 {t('signin.viewAllAccounts', {
                                                     count: otherAccountsCount - MAX_QUICK_ACCOUNTS,
@@ -571,77 +563,77 @@ export default SignInUsernameStep;
 
 const stylesheet = StyleSheet.create({
     toggleButton: {
-        borderRadius: 16,
-        borderWidth: 1,
+        borderRadius: 24,
+        borderWidth: 0,
     },
     toggleButtonContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 14,
-        minHeight: 56,
-        gap: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        minHeight: 48,
+        gap: 10,
     },
     toggleButtonText: {
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: '500',
     },
     accountCountBadge: {
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 12,
-        minWidth: 24,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 16,
+        minWidth: 22,
         alignItems: 'center',
     },
     accountCountText: {
-        fontSize: 12,
+        fontSize: 11,
         fontWeight: '600',
     },
     accountsList: {
-        gap: 8,
-        marginTop: 8,
+        gap: 6,
+        marginTop: 6,
     },
     accountItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 14,
-        borderRadius: 16,
-        borderWidth: 1,
-        gap: 14,
-        minHeight: 64,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 24,
+        borderWidth: 0,
+        gap: 12,
+        minHeight: 56,
     },
     accountItemLoading: {
         justifyContent: 'center',
-        paddingHorizontal: 20,
+        paddingHorizontal: 16,
     },
     accountItemText: {
         flex: 1,
     },
     accountItemName: {
-        fontSize: 16,
+        fontSize: 15,
         fontWeight: '500',
-        marginBottom: 3,
+        marginBottom: 2,
     },
     accountItemUsername: {
-        fontSize: 13,
+        fontSize: 12,
     },
     viewAllItem: {
         justifyContent: 'center',
-        paddingVertical: 14,
+        paddingVertical: 10,
     },
     viewAllText: {
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: '500',
         marginLeft: 4,
     },
     currentAccountBadgeContainer: {
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 20,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 16,
     },
     currentAccountBadge: {
-        fontSize: 11,
+        fontSize: 10,
         fontWeight: '600',
         letterSpacing: 0.3,
     },
@@ -663,26 +655,25 @@ const stylesheet = StyleSheet.create({
     avatarsContainer: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
         marginLeft: 'auto',
     },
     avatarWrapper: {
         position: 'relative',
-        borderRadius: 18,
-        borderWidth: 2,
+        borderRadius: 20,
+        borderWidth: 3,
     },
     currentAvatarWrapper: {
-        borderWidth: 2.5,
+        borderWidth: 3,
     },
     currentBadge: {
         position: 'absolute',
         bottom: -2,
         right: -2,
-        width: 16,
-        height: 16,
-        borderRadius: 8,
+        width: 14,
+        height: 14,
+        borderRadius: 7,
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: 2,
+        borderWidth: 0,
     },
 });
