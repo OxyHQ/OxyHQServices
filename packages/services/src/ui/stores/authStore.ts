@@ -11,7 +11,7 @@ interface AuthState {
   loginFailure: (error: string) => void;
   logout: () => void;
   fetchUser: (oxyServices: { getCurrentUser: () => Promise<User> }, forceRefresh?: boolean) => Promise<void>;
-  updateUser: (updates: Partial<User>, oxyServices: { updateProfile: (updates: Partial<User>) => Promise<void> }) => Promise<void>;
+  updateUser: (updates: Partial<User>, oxyServices: { updateProfile: (updates: Partial<User>) => Promise<User>; getCurrentUser: () => Promise<User> }) => Promise<void>;
   setUser: (user: User) => void; // Direct user setter for caching
 }
 
@@ -56,7 +56,7 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
     try {
       await oxyServices.updateProfile(updates);
       // Immediately fetch the latest user data after update
-      await useAuthStore.getState().fetchUser(oxyServices, true);
+      await useAuthStore.getState().fetchUser({ getCurrentUser: oxyServices.getCurrentUser }, true);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to update user';
       if (__DEV__) {
