@@ -9,7 +9,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
 export default function HomeScreen() {
-  const { isAuthenticated, user, logout } = useOxy();
+  const { isAuthenticated, user, logout, showBottomSheet } = useOxy();
   const displayName = useMemo(() => {
     if (!user) return 'Unknown user';
 
@@ -27,6 +27,15 @@ export default function HomeScreen() {
       Alert.alert('Logout failed', 'Check the console for details.');
     }
   }, [logout]);
+
+  const handleOpenAccountSettings = useCallback(() => {
+    if (!showBottomSheet) {
+      Alert.alert('Unavailable', 'Account settings are not available right now.');
+      return;
+    }
+
+    showBottomSheet('EditProfile');
+  }, [showBottomSheet]);
 
   return (
     <ParallaxScrollView
@@ -49,6 +58,12 @@ export default function HomeScreen() {
           <ThemedView style={styles.authenticatedState}>
             <ThemedText type="subtitle">Signed in as</ThemedText>
             <ThemedText type="defaultSemiBold">{displayName}</ThemedText>
+
+            <Pressable style={styles.settingsButton} onPress={handleOpenAccountSettings}>
+              <ThemedText type="defaultSemiBold" style={styles.settingsLabel}>
+                Account settings
+              </ThemedText>
+            </Pressable>
 
             <Pressable style={styles.logoutButton} onPress={handleLogout}>
               <ThemedText type="defaultSemiBold" style={styles.logoutLabel}>
@@ -75,6 +90,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#3b82f6',
     backgroundColor: 'rgba(59, 130, 246, 0.08)',
+  },
+  settingsButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#2563eb',
+  },
+  settingsLabel: {
+    color: '#ffffff',
   },
   logoutButton: {
     alignSelf: 'flex-start',
