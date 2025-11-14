@@ -739,11 +739,11 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
                 {/* Underline for filled/standard variants */}
                 {(variant === 'filled' || variant === 'standard') && (
                     <>
-                        <View style={[styles.underline, { pointerEvents: 'none' as any }]} />
+                        <View style={[styles.underline, { pointerEvents: 'none' }]} />
                         <Animated.View
                             style={[
                                 styles.underlineFocused,
-                                { transform: [{ scaleX: focusAnimation }], pointerEvents: 'none' as any }
+                                { transform: [{ scaleX: focusAnimation }], pointerEvents: 'none' }
                             ]}
                         />
                     </>
@@ -751,7 +751,7 @@ const TextField = forwardRef<TextInput, TextFieldProps>(({
 
                 {/* Label */}
                 {label && (
-                    <View style={[styles.labelContainer, { pointerEvents: 'none' as any }]}>
+                    <View style={[styles.labelContainer, { pointerEvents: 'none' }]}>
                         <Animated.Text
                             style={[
                                 styles.label,

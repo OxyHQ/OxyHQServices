@@ -1974,7 +1974,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {/* Uploading banner overlay */}
             {!selectMode && uploading && (
-                <View style={[styles.uploadBannerContainer, { pointerEvents: 'none' as any }]}>
+                <View style={[styles.uploadBannerContainer, { pointerEvents: 'none' }]}>
                     <View style={[styles.uploadBanner, { backgroundColor: themeStyles.isDarkTheme ? '#222831EE' : '#FFFFFFEE', borderColor: themeStyles.borderColor }]}>
                         <Ionicons name="cloud-upload" size={18} color={themeStyles.primaryColor} />
                         <Text style={[styles.uploadBannerText, { color: themeStyles.textColor }]}>Uploading{uploadProgress ? ` ${uploadProgress.current}/${uploadProgress.total}` : '...'}</Text>
