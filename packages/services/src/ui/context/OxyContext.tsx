@@ -11,6 +11,8 @@ import { toast } from '../../lib/sonner';
 import { useAuthStore } from '../stores/authStore';
 import type { BottomSheetController } from '../navigation/types';
 import type { RouteName } from '../navigation/routes';
+import { getLanguageMetadata, getLanguageName, getNativeLanguageName, normalizeLanguageCode } from '../../utils/languageUtils';
+import type { LanguageMetadata } from '../../utils/languageUtils';
 
 // Define the context shape
 // NOTE: We intentionally avoid importing useFollow here to prevent a require cycle.
@@ -29,6 +31,9 @@ export interface OxyContextState {
 
   // Language state
   currentLanguage: string;
+  currentLanguageMetadata: LanguageMetadata | null; // Full language metadata (name, nativeName, etc.)
+  currentLanguageName: string; // Language name (e.g., 'English')
+  currentNativeLanguageName: string; // Native language name (e.g., 'Español')
 
   // Auth methods
   login: (username: string, password: string, deviceName?: string) => Promise<User>;
@@ -213,24 +218,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // Storage keys (memoized to prevent infinite loops) - declared early for use in helpers
   const keys = useMemo(() => getStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
 
-  // Normalize language codes to BCP-47 (e.g., en-US)
-  const normalizeLanguageCode = useCallback((lang?: string | null): string | null => {
-    if (!lang) return null;
-    if (lang.includes('-')) return lang;
-    const map: Record<string, string> = {
-      en: 'en-US', es: 'es-ES', ca: 'ca-ES', fr: 'fr-FR', de: 'de-DE', it: 'it-IT', pt: 'pt-PT',
-      ja: 'ja-JP', ko: 'ko-KR', zh: 'zh-CN', ar: 'ar-SA'
-    };
-    return map[lang] || lang;
-  }, []);
-
   // Helper to apply language preference from user/server
   const applyLanguagePreference = useCallback(async (user: User): Promise<void> => {
     const userLanguage = (user as Record<string, unknown>)?.language as string | undefined;
     if (!userLanguage || !storage) return;
 
     try {
-      const serverLang = normalizeLanguageCode(userLanguage) || userLanguage;
+      const serverLang = normalizeLanguageCode(userLanguage);
       await storage.setItem(keys.language, serverLang);
       setCurrentLanguage(serverLang);
     } catch (e) {
@@ -238,7 +232,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         console.warn('Failed to apply server language preference', e);
       }
     }
-  }, [storage, keys.language, normalizeLanguageCode]);
+  }, [storage, keys.language]);
 
   const mapSessionsToClient = useCallback((sessions: Array<{
     sessionId: string;
@@ -861,6 +855,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
   };
 
+  // Compute language metadata from currentLanguage
+  const languageMetadata = useMemo(() => getLanguageMetadata(currentLanguage), [currentLanguage]);
+  const languageName = useMemo(() => getLanguageName(currentLanguage), [currentLanguage]);
+  const nativeLanguageName = useMemo(() => getNativeLanguageName(currentLanguage), [currentLanguage]);
+
   const contextValue: OxyContextState = useMemo(() => ({
     user,
     minimalUser,
@@ -871,6 +870,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     isTokenReady: tokenReady,
     error,
     currentLanguage,
+    currentLanguageMetadata: languageMetadata,
+    currentLanguageName: languageName,
+    currentNativeLanguageName: nativeLanguageName,
     login,
     logout,
     logoutAll,
@@ -898,6 +900,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     tokenReady,
     error,
     currentLanguage,
+    languageMetadata,
+    languageName,
+    nativeLanguageName,
     login,
     logout,
     logoutAll,

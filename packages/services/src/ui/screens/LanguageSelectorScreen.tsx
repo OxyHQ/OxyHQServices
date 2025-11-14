@@ -1,5 +1,4 @@
-import type React from 'react';
-import { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import {
     View,
     Text,
@@ -15,101 +14,18 @@ import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { Header, Section, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
-
-// Supported languages with their metadata
-const SUPPORTED_LANGUAGES = [
-    {
-        id: 'en-US',
-        name: 'English',
-        nativeName: 'English',
-        flag: '🇺🇸',
-        icon: 'language-outline',
-        color: '#007AFF',
-    },
-    {
-        id: 'es-ES',
-        name: 'Spanish',
-        nativeName: 'Español',
-        flag: '🇪🇸',
-        icon: 'language-outline',
-        color: '#FF3B30',
-    },
-    {
-        id: 'ca-ES',
-        name: 'Catalan',
-        nativeName: 'Català',
-        flag: '🇪🇸',
-        icon: 'language-outline',
-        color: '#0CA678',
-    },
-    {
-        id: 'fr-FR',
-        name: 'French',
-        nativeName: 'Français',
-        flag: '🇫🇷',
-        icon: 'language-outline',
-        color: '#5856D6',
-    },
-    {
-        id: 'de-DE',
-        name: 'German',
-        nativeName: 'Deutsch',
-        flag: '🇩🇪',
-        icon: 'language-outline',
-        color: '#FF9500',
-    },
-    {
-        id: 'it-IT',
-        name: 'Italian',
-        nativeName: 'Italiano',
-        flag: '🇮🇹',
-        icon: 'language-outline',
-        color: '#34C759',
-    },
-    {
-        id: 'pt-PT',
-        name: 'Portuguese',
-        nativeName: 'Português',
-        flag: '🇵🇹',
-        icon: 'language-outline',
-        color: '#AF52DE',
-    },
-    {
-        id: 'ja-JP',
-        name: 'Japanese',
-        nativeName: '日本語',
-        flag: '🇯🇵',
-        icon: 'language-outline',
-        color: '#FF2D92',
-    },
-    {
-        id: 'ko-KR',
-        name: 'Korean',
-        nativeName: '한국어',
-        flag: '🇰🇷',
-        icon: 'language-outline',
-        color: '#32D74B',
-    },
-    {
-        id: 'zh-CN',
-        name: 'Chinese',
-        nativeName: '中文',
-        flag: '🇨🇳',
-        icon: 'language-outline',
-        color: '#FF9F0A',
-    },
-    {
-        id: 'ar-SA',
-        name: 'Arabic',
-        nativeName: 'العربية',
-        flag: '🇸🇦',
-        icon: 'language-outline',
-        color: '#30B0C7',
-    },
-];
+import { SUPPORTED_LANGUAGES } from '../../utils/languageUtils';
 
 interface LanguageSelectorScreenProps extends BaseScreenProps { }
 
+/**
+ * LanguageSelectorScreen - Optimized for performance
+ * 
+ * Performance optimizations:
+ * - useMemo for language items to prevent recreation on every render
+ * - useCallback for handlers to prevent unnecessary re-renders
+ * - Memoized current language section
+ */
 const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     goBack,
     onClose,
@@ -121,20 +37,27 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     const colors = useThemeColors(theme);
     const [isLoading, setIsLoading] = useState(false);
 
-    const handleLanguageSelect = async (languageId: string) => {
-        if (languageId === currentLanguage) {
-            return; // Already selected
+    // Memoize the language select handler to prevent recreation on every render
+    const handleLanguageSelect = useCallback(async (languageId: string) => {
+        if (languageId === currentLanguage || isLoading) {
+            return; // Already selected or loading
         }
 
         setIsLoading(true);
 
         try {
+            let serverSyncFailed = false;
+            
             // If signed in, persist preference to backend user settings
             if (isAuthenticated && user?.id) {
                 try {
                     await oxyServices.updateProfile({ language: languageId });
                 } catch (e: any) {
-                    console.warn('Failed to update language on server, falling back to local storage', e);
+                    // Server sync failed, but we'll save locally anyway
+                    serverSyncFailed = true;
+                    if (__DEV__) {
+                        console.warn('Failed to sync language to server (will save locally only):', e?.message || e);
+                    }
                 }
             }
 
@@ -142,34 +65,71 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
             await setLanguage(languageId);
 
             const selectedLang = SUPPORTED_LANGUAGES.find(lang => lang.id === languageId);
+            
+            // Show success message (language is saved locally regardless of server sync)
             toast.success(t('language.changed', { lang: selectedLang?.name || languageId }));
+            
+            // Log server sync failure only in dev mode (user experience is still good - saved locally)
+            if (serverSyncFailed && __DEV__) {
+                console.warn('Language saved locally but server sync failed');
+            }
 
             setIsLoading(false);
             // Close the bottom sheet if possible; otherwise, go back
             if (onClose) onClose(); else goBack();
 
         } catch (error) {
+            // Only show error if local storage also failed
             console.error('Error saving language preference:', error);
             toast.error('Failed to save language preference');
             setIsLoading(false);
         }
-    };
+    }, [currentLanguage, isLoading, isAuthenticated, user?.id, oxyServices, setLanguage, t, onClose, goBack]);
 
-    // Create grouped items for the language list
-    const languageItems = SUPPORTED_LANGUAGES.map(language => ({
-        id: language.id,
-        title: language.name,
-        subtitle: language.nativeName,
-        customIcon: (
-            <View style={[styles.languageFlag, { backgroundColor: `${language.color}20` }]}>
-                <Text style={styles.flagEmoji}>{language.flag}</Text>
-            </View>
-        ),
-        iconColor: language.color,
-        selected: currentLanguage === language.id,
-        onPress: () => handleLanguageSelect(language.id),
-        dense: true,
-    }));
+    // Memoize language items to prevent recreation on every render
+    const languageItems = useMemo(() => 
+        SUPPORTED_LANGUAGES.map(language => ({
+            id: language.id,
+            title: language.name,
+            subtitle: language.nativeName,
+            customIcon: (
+                <View style={[styles.languageFlag, { backgroundColor: `${language.color}20` }]}>
+                    <Text style={styles.flagEmoji}>{language.flag}</Text>
+                </View>
+            ),
+            iconColor: language.color,
+            selected: currentLanguage === language.id,
+            onPress: () => handleLanguageSelect(language.id),
+            dense: true,
+        })), 
+        [currentLanguage, handleLanguageSelect]
+    );
+
+    // Memoize current language data to prevent recalculation
+    const currentLanguageData = useMemo(() => {
+        if (!currentLanguage) return null;
+        return SUPPORTED_LANGUAGES.find(lang => lang.id === currentLanguage);
+    }, [currentLanguage]);
+
+    // Memoize current language section items
+    const currentLanguageItems = useMemo(() => {
+        if (!currentLanguageData) return [];
+        return [{
+            id: `current-${currentLanguageData.id}`,
+            title: currentLanguageData.name,
+            subtitle: currentLanguageData.nativeName,
+            customIcon: (
+                <View style={[styles.languageFlag, { backgroundColor: `${currentLanguageData.color}20` }]}>
+                    <Text style={styles.flagEmoji}>{currentLanguageData.flag}</Text>
+                </View>
+            ),
+            iconColor: currentLanguageData.color,
+            selected: false,
+            showChevron: false,
+            dense: true,
+            disabled: true,
+        }];
+    }, [currentLanguageData]);
 
     return (
         <View style={[styles.container, { backgroundColor: '#f2f2f2' }]}>
@@ -182,36 +142,18 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                 elevation="subtle"
             />
 
-            <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            <ScrollView 
+                style={styles.content} 
+                showsVerticalScrollIndicator={false}
+                removeClippedSubviews={true}
+            >
                 {/* Current selection */}
-                {currentLanguage && (
+                {currentLanguage && currentLanguageItems.length > 0 && (
                     <Section title={t('language.current')} theme={theme} isFirst={true}>
-                        {(() => {
-                            const current = SUPPORTED_LANGUAGES.find(lang => lang.id === currentLanguage);
-                            if (!current) return null;
-                            return (
-                                <GroupedSection
-                                    items={[
-                                        {
-                                            id: `current-${current.id}`,
-                                            title: current.name,
-                                            subtitle: current.nativeName,
-                                            customIcon: (
-                                                <View style={[styles.languageFlag, { backgroundColor: `${current.color}20` }]}>
-                                                    <Text style={styles.flagEmoji}>{current.flag}</Text>
-                                                </View>
-                                            ),
-                                            iconColor: current.color,
-                                            selected: false,
-                                            showChevron: false,
-                                            dense: true,
-                                            disabled: true,
-                                        },
-                                    ]}
-                                    theme={theme}
-                                />
-                            );
-                        })()}
+                        <GroupedSection
+                            items={currentLanguageItems}
+                            theme={theme}
+                        />
                     </Section>
                 )}
 
@@ -348,4 +290,5 @@ const styles = StyleSheet.create({
     },
 });
 
-export default LanguageSelectorScreen;
+// Export memoized component to prevent unnecessary re-renders
+export default React.memo(LanguageSelectorScreen);

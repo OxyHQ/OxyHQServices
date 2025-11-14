@@ -1,512 +1,550 @@
+/**
+ * User Routes
+ * 
+ * RESTful API routes for user management, following enterprise-grade patterns:
+ * - Separation of concerns (routes -> service -> model)
+ * - Consistent error handling
+ * - Standardized response formats
+ * - Comprehensive validation
+ * - Proper logging
+ */
+
 import { Router, Request, Response, NextFunction } from 'express';
-import User, { IUser } from '../models/User';
-import Follow, { FollowType } from '../models/Follow';
+import { Types } from 'mongoose';
+import User from '../models/User';
 import { authMiddleware } from '../middleware/auth';
 import { logger } from '../utils/logger';
-import { Types } from 'mongoose';
+import { asyncHandler, sendSuccess, sendPaginated } from '../utils/asyncHandler';
+import {
+  NotFoundError,
+  UnauthorizedError,
+  ForbiddenError,
+  ConflictError,
+  BadRequestError,
+  ApiError,
+} from '../utils/error';
+import { userService } from '../services/user.service';
 import { UsersController } from '../controllers/users.controller';
 
+// Types
 interface AuthRequest extends Request {
   user?: {
     id: string;
   };
 }
 
+interface PaginationQuery {
+  limit?: string;
+  offset?: string;
+}
+
+// Constants
+const MAX_PAGINATION_LIMIT = 100;
+const DEFAULT_PAGINATION_LIMIT = 50;
+
+// Initialize router and controller
 const router = Router();
 const usersController = new UsersController();
 
-// Middleware to validate ObjectId
-const validateObjectId = (req: Request, res: Response, next: NextFunction) => {
-  if (!Types.ObjectId.isValid(req.params.userId)) {
-    return res.status(400).json({ message: 'Invalid user ID' });
+// ============================================================================
+// Middleware
+// ============================================================================
+
+/**
+ * Validates MongoDB ObjectId parameter
+ * Returns 400 if invalid
+ */
+const validateObjectId = (req: Request, res: Response, next: NextFunction): void => {
+  const { userId } = req.params;
+  
+  if (!userId || !Types.ObjectId.isValid(userId)) {
+    res.status(400).json({
+      error: 'BAD_REQUEST',
+      message: 'Invalid user ID format',
+    });
+    return;
   }
+  
   next();
 };
 
-// Get current authenticated user
-router.get('/me', authMiddleware, async (req: AuthRequest, res) => {
-  try {
-    const user = await User.findById(req.user?.id).select('-password -refreshToken');
+/**
+ * Validates pagination query parameters
+ */
+const validatePagination = (req: Request, res: Response, next: NextFunction): void => {
+  const query = req.query as PaginationQuery;
+  const limit = query.limit ? parseInt(query.limit, 10) : undefined;
+  const offset = query.offset ? parseInt(query.offset, 10) : undefined;
+
+  if (limit !== undefined && (isNaN(limit) || limit < 0)) {
+    res.status(400).json({
+      error: 'BAD_REQUEST',
+      message: 'Invalid limit parameter',
+    });
+    return;
+  }
+
+  if (offset !== undefined && (isNaN(offset) || offset < 0)) {
+    res.status(400).json({
+      error: 'BAD_REQUEST',
+      message: 'Invalid offset parameter',
+    });
+    return;
+  }
+
+  next();
+};
+
+/**
+ * Ensures authenticated user owns the resource or is authorized
+ */
+const requireOwnership = (req: AuthRequest, res: Response, next: NextFunction): void => {
+  const userId = req.params.userId;
+  const currentUserId = req.user?.id;
+
+  if (!currentUserId) {
+    throw new UnauthorizedError('Authentication required');
+  }
+
+  if (userId !== currentUserId) {
+    throw new ForbiddenError('Not authorized to access this resource');
+  }
+
+  next();
+};
+
+// ============================================================================
+// Routes
+// ============================================================================
+
+/**
+ * GET /users/me
+ * 
+ * Get current authenticated user profile
+ * 
+ * @returns {User} Current user object
+ */
+router.get(
+  '/me',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (!req.user?.id) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const user = await userService.getCurrentUser(req.user.id);
+
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-    const userObj = user.toObject({ virtuals: true });
-    // Ensure name.full exists for older records or cases where virtuals aren't present
-    if (userObj.name && typeof userObj.name === 'object') {
-      const first = (userObj.name.first as string) || '';
-      const last = (userObj.name.last as string) || '';
-      if (!userObj.name.full) userObj.name.full = [first, last].filter(Boolean).join(' ').trim();
-    }
-    res.json(userObj);
-  } catch (error) {
-    logger.error('Error fetching current user:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// Update current authenticated user
-router.put('/me', authMiddleware, async (req: AuthRequest, res) => {
-  try {
-  logger.debug('PUT /users/me called', { body: req.body });
-  const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description', 'links', 'linksMetadata', 'locations', 'language'] as const;
-    type AllowedUpdate = typeof allowedUpdates[number];
-
-    const updates = Object.entries(req.body)
-      .filter(([key]) => allowedUpdates.includes(key as AllowedUpdate))
-      .reduce((obj, [key, value]) => {
-        if (key === 'avatar') {
-          // Expect a string file id; ignore objects
-            if (typeof value === 'string') return { ...obj, avatar: value };
-            if (value && typeof value === 'object' && 'id' in (value as any)) {
-              return { ...obj, avatar: (value as any).id || '' };
-            }
-            return obj;
-        }
-        return { ...obj, [key]: value };
-      }, {} as any);
-
-    logger.debug('PUT /users/me filtered updates', { updates });
-
-    // Use updateOne to avoid MongoDB language override conflict with findByIdAndUpdate
-    await User.updateOne(
-      { _id: req.user?.id },
-      { $set: updates }
-    );
-
-    // Fetch the updated user
-    const user = await User.findById(req.user?.id).select('-password -refreshToken');
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      throw new NotFoundError('User not found');
     }
 
-    res.json(user);
-  } catch (error) {
-    logger.error('Error updating current user:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
+    logger.debug('GET /users/me', { userId: req.user.id });
+    sendSuccess(res, user);
+  })
+);
 
-// Get user's followers
-router.get('/:userId/followers', validateObjectId, async (req, res) => {
-  try {
-    const { limit = 50, offset = 0 } = req.query;
-    const limitNum = Math.min(parseInt(limit as string) || 50, 100); // Max 100 per page
-    const offsetNum = parseInt(offset as string) || 0;
+/**
+ * PUT /users/me
+ * 
+ * Update current authenticated user profile
+ * 
+ * @body {UpdateUserProfileParams} Profile updates
+ * @returns {User} Updated user object
+ */
+router.put(
+  '/me',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (!req.user?.id) {
+      throw new UnauthorizedError('Authentication required');
+    }
 
-    // Get total count
-    const total = await Follow.countDocuments({
-      followedId: req.params.userId,
-      followType: FollowType.USER
+    // Validate request body
+    if (!req.body || typeof req.body !== 'object') {
+      throw new BadRequestError('Invalid request body');
+    }
+
+    logger.debug('PUT /users/me', {
+      userId: req.user.id,
+      updateFields: Object.keys(req.body),
     });
 
-    // Get paginated followers
-    const follows = await Follow.find({
-      followedId: req.params.userId,
-      followType: FollowType.USER
-    })
-    .populate({
-      path: 'followerUserId',
-      model: 'User',
-      select: 'name avatar -email'
-    })
-    .limit(limitNum)
-    .skip(offsetNum)
-    .sort({ createdAt: -1 }); // Most recent first
+    try {
+      const updatedUser = await userService.updateUserProfile(
+        req.user.id,
+        req.body
+      );
 
-    const followers = follows.map(follow => follow.followerUserId);
-    const hasMore = offsetNum + limitNum < total;
-
-    res.json({
-      followers,
-      total,
-      hasMore
-    });
-  } catch (error) {
-    logger.error('Error fetching followers:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// Get user's following
-router.get('/:userId/following', validateObjectId, async (req, res) => {
-  try {
-    const { limit = 50, offset = 0 } = req.query;
-    const limitNum = Math.min(parseInt(limit as string) || 50, 100); // Max 100 per page
-    const offsetNum = parseInt(offset as string) || 0;
-
-    // Get total count
-    const total = await Follow.countDocuments({
-      followerUserId: req.params.userId,
-      followType: FollowType.USER
-    });
-
-    // Get paginated following
-    const follows = await Follow.find({
-      followerUserId: req.params.userId,
-      followType: FollowType.USER
-    })
-    .populate({
-      path: 'followedId',
-      model: 'User',
-      select: 'name avatar -email'
-    })
-    .limit(limitNum)
-    .skip(offsetNum)
-    .sort({ createdAt: -1 }); // Most recent first
-
-    const following = follows.map(follow => follow.followedId);
-    const hasMore = offsetNum + limitNum < total;
-
-    res.json({
-      following,
-      total,
-      hasMore
-    });
-  } catch (error) {
-    logger.error('Error fetching following:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// Follow a user
-router.post('/:userId/follow', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
-  try {
-    const targetUserId = req.params.userId;
-    const currentUserId = req.user?.id;
-
-    if (!currentUserId) {
-      return res.status(401).json({ message: 'Authentication required' });
-    }
-
-    if (targetUserId === currentUserId) {
-      return res.status(400).json({ message: 'Cannot follow yourself' });
-    }
-
-    const [targetUser, currentUser] = await Promise.all([
-      User.findById(targetUserId),
-      User.findById(currentUserId)
-    ]);
-
-    if (!targetUser || !currentUser) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    // Check if already following
-    const existingFollow = await Follow.findOne({
-      followerUserId: currentUserId,
-      followType: FollowType.USER,
-      followedId: targetUserId
-    });
-
-    if (existingFollow) {
-      // Unfollow
-      await Promise.all([
-        Follow.deleteOne({ _id: existingFollow._id }),
-        User.findByIdAndUpdate(targetUserId, { $inc: { '_count.followers': -1 } }),
-        User.findByIdAndUpdate(currentUserId, { $inc: { '_count.following': -1 } })
-      ]);
-
-      const [updatedTarget, updatedCurrent] = await Promise.all([
-        User.findById(targetUserId).select('_count'),
-        User.findById(currentUserId).select('_count')
-      ]);
-
-      return res.json({
-        message: 'Successfully unfollowed user',
-        action: 'unfollow',
-        counts: {
-          followers: updatedTarget?._count?.followers || 0,
-          following: updatedCurrent?._count?.following || 0
-        }
+      logger.info('User profile updated', {
+        userId: req.user.id,
+        updatedFields: Object.keys(req.body),
       });
+
+      sendSuccess(res, updatedUser);
+    } catch (error) {
+      // Handle known errors from service layer
+      if (error instanceof Error) {
+        if (error.message === 'Email already exists') {
+          throw new ConflictError('Email already exists', {
+            field: 'email',
+            value: req.body.email,
+          });
+        }
+        if (error.message === 'Username already exists') {
+          throw new ConflictError('Username already exists', {
+            field: 'username',
+            value: req.body.username,
+          });
+        }
+        if (error.message === 'User not found') {
+          throw new NotFoundError('User not found');
+        }
+      }
+      throw error;
+    }
+  })
+);
+
+/**
+ * GET /users/:userId
+ * 
+ * Get user profile by ID
+ * 
+ * @param {string} userId - User ID
+ * @returns {User} User profile with statistics
+ */
+router.get(
+  '/:userId',
+  validateObjectId,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params;
+
+    const user = await userService.getUserById(userId);
+
+    if (!user) {
+      throw new NotFoundError('User not found');
     }
 
-    // Follow
-    await Promise.all([
-      Follow.create({
-        followerUserId: currentUserId,
-        followType: FollowType.USER,
-        followedId: targetUserId
-      }),
-      User.findByIdAndUpdate(targetUserId, { $inc: { '_count.followers': 1 } }),
-      User.findByIdAndUpdate(currentUserId, { $inc: { '_count.following': 1 } })
-    ]);
+    // Get user statistics
+    const stats = await userService.getUserStats(userId);
 
-    const [updatedTarget, updatedCurrent] = await Promise.all([
-      User.findById(targetUserId).select('_count'),
-      User.findById(currentUserId).select('_count')
-    ]);
+    // Format response with stats
+    const response = userService.formatUserResponse(user, stats);
 
-    res.json({
-      message: 'Successfully followed user',
-      action: 'follow',
-      counts: {
-        followers: updatedTarget?._count?.followers || 0,
-        following: updatedCurrent?._count?.following || 0
-      }
+    logger.debug('GET /users/:userId', { userId });
+    sendSuccess(res, response);
+  })
+);
+
+/**
+ * GET /users/:userId/followers
+ * 
+ * Get user's followers with pagination
+ * 
+ * @param {string} userId - User ID
+ * @query {number} limit - Number of results (max 100, default 50)
+ * @query {number} offset - Pagination offset (default 0)
+ * @returns {PaginatedResult<User>} Paginated list of followers
+ */
+router.get(
+  '/:userId/followers',
+  validateObjectId,
+  validatePagination,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params;
+    const { limit, offset } = req.query as PaginationQuery;
+
+    const parsedLimit = limit
+      ? Math.min(parseInt(limit, 10), MAX_PAGINATION_LIMIT)
+      : DEFAULT_PAGINATION_LIMIT;
+    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+
+    const result = await userService.getUserFollowers(userId, {
+      limit: parsedLimit,
+      offset: parsedOffset,
     });
-  } catch (error) {
-    logger.error('Error following user:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
 
-// Unfollow a user
-router.delete('/:userId/follow', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
-  try {
-    const targetUserId = req.params.userId;
+    logger.debug('GET /users/:userId/followers', {
+      userId,
+      limit: parsedLimit,
+      offset: parsedOffset,
+      total: result.total,
+    });
+
+    sendPaginated(res, result.data, result.total, result.limit, result.offset);
+  })
+);
+
+/**
+ * GET /users/:userId/following
+ * 
+ * Get users that this user is following with pagination
+ * 
+ * @param {string} userId - User ID
+ * @query {number} limit - Number of results (max 100, default 50)
+ * @query {number} offset - Pagination offset (default 0)
+ * @returns {PaginatedResult<User>} Paginated list of following
+ */
+router.get(
+  '/:userId/following',
+  validateObjectId,
+  validatePagination,
+  asyncHandler(async (req: Request, res: Response) => {
+    const { userId } = req.params;
+    const { limit, offset } = req.query as PaginationQuery;
+
+    const parsedLimit = limit
+      ? Math.min(parseInt(limit, 10), MAX_PAGINATION_LIMIT)
+      : DEFAULT_PAGINATION_LIMIT;
+    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+
+    const result = await userService.getUserFollowing(userId, {
+      limit: parsedLimit,
+      offset: parsedOffset,
+    });
+
+    logger.debug('GET /users/:userId/following', {
+      userId,
+      limit: parsedLimit,
+      offset: parsedOffset,
+      total: result.total,
+    });
+
+    sendPaginated(res, result.data, result.total, result.limit, result.offset);
+  })
+);
+
+/**
+ * GET /users/:userId/follow-status
+ * 
+ * Check if current user is following target user
+ * 
+ * @param {string} userId - Target user ID
+ * @returns {boolean} Following status
+ */
+router.get(
+  '/:userId/follow-status',
+  authMiddleware,
+  validateObjectId,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { userId: targetUserId } = req.params;
     const currentUserId = req.user?.id;
 
     if (!currentUserId) {
-      return res.status(401).json({ message: 'Authentication required' });
+      throw new UnauthorizedError('Authentication required');
     }
 
-    if (targetUserId === currentUserId) {
-      return res.status(400).json({ message: 'Cannot unfollow yourself' });
-    }
+    const isFollowing = await userService.isFollowing(currentUserId, targetUserId);
 
-    const [targetUser, currentUser] = await Promise.all([
-      User.findById(targetUserId),
-      User.findById(currentUserId)
-    ]);
-
-    if (!targetUser || !currentUser) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    // Check if following using the Follow collection (consistent with other endpoints)
-    const existingFollow = await Follow.findOne({
-      followerUserId: currentUserId,
-      followType: FollowType.USER,
-      followedId: targetUserId
+    logger.debug('GET /users/:userId/follow-status', {
+      currentUserId,
+      targetUserId,
+      isFollowing,
     });
 
-    if (!existingFollow) {
-      return res.status(400).json({ message: 'Not following this user' });
+    sendSuccess(res, { isFollowing });
+  })
+);
+
+/**
+ * POST /users/:userId/follow
+ * 
+ * Toggle follow relationship (follow if not following, unfollow if following)
+ * 
+ * @param {string} userId - Target user ID to follow/unfollow
+ * @returns {object} Action result with updated counts
+ */
+router.post(
+  '/:userId/follow',
+  authMiddleware,
+  validateObjectId,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { userId: targetUserId } = req.params;
+    const currentUserId = req.user?.id;
+
+    if (!currentUserId) {
+      throw new UnauthorizedError('Authentication required');
     }
 
-    // Remove the follow relationship and update counts
-    await Promise.all([
-      Follow.deleteOne({ _id: existingFollow._id }),
-      User.findByIdAndUpdate(targetUserId, { $inc: { '_count.followers': -1 } }),
-      User.findByIdAndUpdate(currentUserId, { $inc: { '_count.following': -1 } })
-    ]);
+    try {
+      const result = await userService.toggleFollow(currentUserId, targetUserId);
 
-    const [updatedTarget, updatedCurrent] = await Promise.all([
-      User.findById(targetUserId).select('_count'),
-      User.findById(currentUserId).select('_count')
-    ]);
+      logger.info('User follow toggled', {
+        currentUserId,
+        targetUserId,
+        action: result.action,
+      });
 
-    res.json({
+      sendSuccess(res, {
+        message: `Successfully ${result.action === 'follow' ? 'followed' : 'unfollowed'} user`,
+        action: result.action,
+        counts: result.counts,
+      });
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === 'Cannot follow yourself') {
+          throw new BadRequestError('Cannot follow yourself');
+        }
+        if (error.message === 'User not found') {
+          throw new NotFoundError('User not found');
+        }
+      }
+      throw error;
+    }
+  })
+);
+
+/**
+ * DELETE /users/:userId/follow
+ * 
+ * Unfollow a user
+ * 
+ * @param {string} userId - Target user ID to unfollow
+ * @returns {object} Action result with updated counts
+ */
+router.delete(
+  '/:userId/follow',
+  authMiddleware,
+  validateObjectId,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { userId: targetUserId } = req.params;
+    const currentUserId = req.user?.id;
+
+    if (!currentUserId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    // Check if currently following
+    const isFollowing = await userService.isFollowing(currentUserId, targetUserId);
+
+    if (!isFollowing) {
+      throw new BadRequestError('Not following this user');
+    }
+
+    // Toggle will unfollow since we know they're following
+    const result = await userService.toggleFollow(currentUserId, targetUserId);
+
+    logger.info('User unfollowed', {
+      currentUserId,
+      targetUserId,
+    });
+
+    sendSuccess(res, {
       message: 'Successfully unfollowed user',
-      action: 'unfollow',
-      success: true,
-      counts: {
-        followers: updatedTarget?._count?.followers || 0,
-        following: updatedCurrent?._count?.following || 0
-      }
+      action: result.action,
+      counts: result.counts,
     });
-  } catch (error) {
-    logger.error('Error unfollowing user:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
+  })
+);
 
-// Get following status
-router.get('/:userId/follow-status', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
-  try {
-    const targetUserId = req.params.userId;
-    const currentUserId = req.user?.id;
+/**
+ * PUT /users/:userId
+ * 
+ * Update user profile by ID (requires ownership)
+ * 
+ * @param {string} userId - User ID
+ * @body {UpdateUserProfileParams} Profile updates
+ * @returns {User} Updated user object
+ * 
+ * @deprecated Use PUT /users/me instead
+ */
+router.put(
+  '/:userId',
+  authMiddleware,
+  validateObjectId,
+  requireOwnership,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { userId } = req.params;
 
-    if (!currentUserId) {
-      return res.status(401).json({ message: 'Authentication required' });
+    if (!req.body || typeof req.body !== 'object') {
+      throw new BadRequestError('Invalid request body');
     }
 
-    const follow = await Follow.findOne({
-      followerUserId: currentUserId,
-      followType: FollowType.USER,
-      followedId: targetUserId
+    logger.warn('PUT /users/:userId used (deprecated)', {
+      userId,
+      suggestion: 'Use PUT /users/me instead',
     });
 
-    res.json({ isFollowing: !!follow });
-  } catch (error) {
-    logger.error('Error checking following status:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
+    try {
+      const updatedUser = await userService.updateUserProfile(userId, req.body);
 
-// Get user by ID
-router.get('/:userId', validateObjectId, async (req, res) => {
-  console.log('[DEBUG] GET /:userId called', { userId: req.params.userId, headers: req.headers });
-  try {
-    const user = await User.findById(req.params.userId)
-  .select('username name avatar verified bio description links linksMetadata createdAt updatedAt')
-      .lean({ virtuals: true });
-  console.log('[DEBUG] User lookup result:', user);
-    if (!user) {
-      console.log('[DEBUG] User not found');
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    // Followers: people who follow this user
-    const followersCount = await Follow.countDocuments({
-      followedId: user._id,
-      followType: 'user'
-    });
-    // Following: people this user follows
-    const followingCount = await Follow.countDocuments({
-      followerUserId: user._id,
-      followType: 'user'
-    });
-
-    // karma count not implemented - requires posts collection integration
-    const karmaCount = 0;
-
-    // Ensure name.full exists on lean result (lean virtuals sometimes don't include nested virtuals)
-    if (user.name && typeof user.name === 'object') {
-      const first = (user.name.first as string) || '';
-      const last = (user.name.last as string) || '';
-      if (!('full' in user.name) || !user.name.full) {
-        user.name.full = [first, last].filter(Boolean).join(' ').trim();
-      }
-    }
-
-    const response = {
-      id: user._id,
-      username: user.username,
-      name: user.name,
-      avatar: user.avatar,
-      verified: user.verified,
-      bio: user.bio,
-      description: user.description,
-      links: user.links,
-      linksMetadata: user.linksMetadata,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
-      stats: {
-        followers: followersCount,
-        following: followingCount,
-        karma: karmaCount
-      },
-      _count: {
-        followers: followersCount,
-        following: followingCount,
-        karma: karmaCount
-      }
-    };
-    console.log('[DEBUG] Sending response:', response);
-    res.json(response);
-  } catch (error) {
-    logger.error('Error fetching user:', error);
-    console.log('[DEBUG] Error in GET /:userId:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// Update user profile
-router.put('/:userId', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
-  try {
-    // Only allow users to update their own profile
-    if (req.params.userId !== req.user?.id) {
-      return res.status(403).json({ message: 'Not authorized to update this profile' });
-    }
-
-  const allowedUpdates = ['name', 'email', 'username', 'avatar', 'bio', 'description'] as const;
-    type AllowedUpdate = typeof allowedUpdates[number];
-    
-    const updates = Object.entries(req.body)
-      .filter(([key]) => allowedUpdates.includes(key as AllowedUpdate))
-      .reduce((obj, [key, value]) => {
-        if (key === 'avatar') {
-          if (typeof value === 'string') return { ...obj, avatar: value };
-          if (value && typeof value === 'object' && 'id' in (value as any)) {
-            return { ...obj, avatar: (value as any).id || '' };
-          }
-          return obj;
+      sendSuccess(res, updatedUser);
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === 'Email already exists') {
+          throw new ConflictError('Email already exists');
         }
-        return { ...obj, [key]: value };
-      }, {} as any);
-
-    logger.debug('Profile update request:', {
-      requestBody: req.body,
-      filteredUpdates: updates
-    });
-
-    // Check for email uniqueness if email is being updated
-    if (updates.email) {
-      const existingEmailUser = await User.findOne({ 
-        email: updates.email, 
-        _id: { $ne: req.params.userId } 
-      });
-      if (existingEmailUser) {
-        return res.status(400).json({ message: 'Email already exists' });
+        if (error.message === 'Username already exists') {
+          throw new ConflictError('Username already exists');
+        }
+        if (error.message === 'User not found') {
+          throw new NotFoundError('User not found');
+        }
       }
+      throw error;
+    }
+  })
+);
+
+/**
+ * PUT /users/:userId/privacy
+ * 
+ * Update user privacy settings (requires ownership)
+ * 
+ * @param {string} userId - User ID
+ * @body {object} privacySettings - Privacy settings object
+ * @returns {User} Updated user object
+ */
+router.put(
+  '/:userId/privacy',
+  authMiddleware,
+  validateObjectId,
+  requireOwnership,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { userId } = req.params;
+
+    if (!req.body?.privacySettings || typeof req.body.privacySettings !== 'object') {
+      throw new BadRequestError('Invalid privacy settings');
     }
 
-    // Check for username uniqueness if username is being updated
-    if (updates.username) {
-      const existingUsernameUser = await User.findOne({ 
-        username: updates.username, 
-        _id: { $ne: req.params.userId } 
-      });
-      if (existingUsernameUser) {
-        return res.status(400).json({ message: 'Username already exists' });
-      }
-    }
-
-    const user = await User.findByIdAndUpdate(
-      req.params.userId,
-      { $set: updates },
-      { new: true }
-    ).select('-password -refreshToken');
+    const user = await userService.getUserById(userId);
 
     if (!user) {
-      return res.status(404).json({ message: 'User not found' });
+      throw new NotFoundError('User not found');
     }
 
-    res.json(user);
-  } catch (error) {
-    logger.error('Error updating user:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
+    // Update privacy settings
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      { $set: { privacySettings: req.body.privacySettings } },
+      { new: true, runValidators: true }
+    )
+      .select('-password -refreshToken')
+      .lean({ virtuals: true });
 
-// Update user privacy settings
-router.put('/:userId/privacy', authMiddleware, validateObjectId, async (req: AuthRequest, res) => {
-  try {
-    // Only allow users to update their own privacy settings
-    if (req.params.userId !== req.user?.id) {
-      return res.status(403).json({ message: 'Not authorized to update this profile' });
+    if (!updatedUser) {
+      throw new NotFoundError('User not found');
     }
 
-    const allowedUpdates = ['privacySettings'] as const;
-    type AllowedUpdate = typeof allowedUpdates[number];
-    
-    const updates = Object.entries(req.body)
-      .filter(([key]) => allowedUpdates.includes(key as AllowedUpdate))
-      .reduce((obj, [key, value]) => {
-        return { ...obj, [key]: value };
-      }, {} as Partial<Pick<IUser, AllowedUpdate>>);
+    logger.info('User privacy settings updated', { userId });
 
-    const user = await User.findByIdAndUpdate(
-      req.params.userId,
-      { $set: updates },
-      { new: true }
-    ).select('-password -refreshToken');
+    sendSuccess(res, updatedUser);
+  })
+);
 
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
+/**
+ * POST /users/search
+ * 
+ * Search for users by username or name
+ * 
+ * @body {string} query - Search query
+ * @returns {User[]} Array of matching users
+ */
+router.post(
+  '/search',
+  asyncHandler(async (req: Request, res: Response) => {
+    await usersController.searchUsers(req, res, () => {});
+  })
+);
 
-    res.json(user);
-  } catch (error) {
-    logger.error('Error updating privacy settings:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
-
-// Search users
-router.post('/search', usersController.searchUsers.bind(usersController));
-
-export default router; 
+export default router;

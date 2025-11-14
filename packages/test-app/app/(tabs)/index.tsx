@@ -9,7 +9,16 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 
 export default function HomeScreen() {
-  const { isAuthenticated, user, logout, showBottomSheet } = useOxy();
+  const { 
+    isAuthenticated, 
+    user, 
+    logout, 
+    showBottomSheet,
+    currentLanguage,
+    currentLanguageName,
+    currentNativeLanguageName,
+    currentLanguageMetadata
+  } = useOxy();
   const displayName = useMemo(() => {
     if (!user) return 'Unknown user';
 
@@ -53,6 +62,35 @@ export default function HomeScreen() {
         </ThemedText>
 
         <OxySignInButton />
+
+        {/* Current Language Display */}
+        <ThemedView style={styles.languageInfo}>
+          <ThemedText type="subtitle">Current Language</ThemedText>
+          <ThemedText type="default">
+            Code: <ThemedText type="defaultSemiBold">{currentLanguage}</ThemedText>
+          </ThemedText>
+          <ThemedText type="default">
+            Name: <ThemedText type="defaultSemiBold">{currentLanguageName}</ThemedText>
+          </ThemedText>
+          {currentNativeLanguageName && (
+            <ThemedText type="default">
+              Native: <ThemedText type="defaultSemiBold">{currentNativeLanguageName}</ThemedText>
+            </ThemedText>
+          )}
+          {currentLanguageMetadata?.flag && (
+            <ThemedText type="default" style={styles.flag}>
+              {currentLanguageMetadata.flag}
+            </ThemedText>
+          )}
+          <Pressable 
+            style={styles.languageButton} 
+            onPress={() => showBottomSheet?.('LanguageSelector')}
+          >
+            <ThemedText type="defaultSemiBold" style={styles.languageButtonLabel}>
+              Change Language
+            </ThemedText>
+          </Pressable>
+        </ThemedView>
 
         {isAuthenticated && (
           <ThemedView style={styles.authenticatedState}>
@@ -109,6 +147,31 @@ const styles = StyleSheet.create({
     backgroundColor: '#1d4ed8',
   },
   logoutLabel: {
+    color: '#ffffff',
+  },
+  languageInfo: {
+    gap: 8,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#10b981',
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+  },
+  flag: {
+    fontSize: 32,
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  languageButton: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
+    backgroundColor: '#10b981',
+  },
+  languageButtonLabel: {
     color: '#ffffff',
   },
   reactLogo: {

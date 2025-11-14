@@ -17,6 +17,16 @@ export * from '../models/session';
 export { DeviceManager } from '../utils/deviceManager';
 export type { DeviceFingerprint, StoredDeviceInfo } from '../utils/deviceManager';
 
+// Export language utilities
+export { 
+  SUPPORTED_LANGUAGES,
+  getLanguageMetadata,
+  getLanguageName,
+  getNativeLanguageName,
+  normalizeLanguageCode
+} from '../utils/languageUtils';
+export type { LanguageMetadata } from '../utils/languageUtils';
+
 // Import for default export
 import { OxyServices } from './OxyServices';
 

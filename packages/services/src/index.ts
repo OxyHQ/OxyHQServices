@@ -23,6 +23,16 @@ export { default as OxyProvider } from './ui/components/OxyProvider';
 export { DeviceManager } from './utils/deviceManager';
 export type { DeviceFingerprint, StoredDeviceInfo } from './utils/deviceManager';
 
+// Language utilities
+export { 
+  SUPPORTED_LANGUAGES,
+  getLanguageMetadata,
+  getLanguageName,
+  getNativeLanguageName,
+  normalizeLanguageCode
+} from './utils/languageUtils';
+export type { LanguageMetadata } from './utils/languageUtils';
+
 // Type exports
 export type {
   OxyConfig,

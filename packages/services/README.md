@@ -15,6 +15,7 @@ A comprehensive TypeScript client library for the Oxy API providing authenticati
 - [Configuration](#configuration)
 - [Authentication](#authentication)
 - [UI Components](#ui-components)
+- [Internationalization (i18n)](#internationalization-i18n)
 - [Troubleshooting](#troubleshooting)
 - [Requirements](#requirements)
 
@@ -567,6 +568,76 @@ function MyComponent() {
     </View>
   );
 }
+```
+
+## 🌍 Internationalization (i18n)
+
+OxyHQ Services includes built-in language selection and storage. The selected language can be accessed and synced with your app's i18n system.
+
+### Getting Current Language
+
+```typescript
+import { useOxy } from '@oxyhq/services';
+
+function MyComponent() {
+  const { 
+    currentLanguage,           // 'en-US'
+    currentLanguageName,       // 'English'
+    currentNativeLanguageName, // 'Español' (if Spanish is selected)
+    currentLanguageMetadata    // Full metadata object
+  } = useOxy();
+  
+  return <Text>Current language: {currentLanguageName}</Text>;
+}
+```
+
+### Syncing with Your i18n Library
+
+To integrate with react-i18next, i18n-js, next-intl, or other i18n libraries, see the comprehensive guide:
+
+📖 **[Complete i18n Integration Guide](./I18N_INTEGRATION.md)**
+
+This guide includes:
+- Step-by-step integration with popular i18n libraries
+- Bidirectional sync between services and your i18n system
+- Language code format conversion utilities
+- Complete working examples
+
+### Using OxyServices (Non-React)
+
+```typescript
+import { OxyServices } from '@oxyhq/services/core';
+
+const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+
+// Get current language code
+const languageCode = await oxy.getCurrentLanguage();
+
+// Get language name
+const languageName = await oxy.getCurrentLanguageName();
+
+// Get full metadata
+const metadata = await oxy.getCurrentLanguageMetadata();
+```
+
+### Language Utilities
+
+```typescript
+import { 
+  SUPPORTED_LANGUAGES,
+  getLanguageName,
+  getLanguageMetadata 
+} from '@oxyhq/services';
+
+// Get all supported languages
+const languages = SUPPORTED_LANGUAGES;
+
+// Get language name from code
+const name = getLanguageName('es-ES'); // 'Spanish'
+
+// Get full metadata
+const metadata = getLanguageMetadata('es-ES');
+// { id: 'es-ES', name: 'Spanish', nativeName: 'Español', flag: '🇪🇸', ... }
 ```
 
 ## 🛠️ Troubleshooting

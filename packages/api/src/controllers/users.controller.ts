@@ -1,44 +1,69 @@
+/**
+ * Users Controller
+ * 
+ * Controller for user-related operations that require more complex logic
+ * or don't fit into the standard service pattern.
+ */
+
 import { Request, Response, NextFunction } from 'express';
 import User from '../models/User';
-import { createError } from '../utils/error';
+import { logger } from '../utils/logger';
+import { BadRequestError, InternalServerError } from '../utils/error';
+import { sendSuccess } from '../utils/asyncHandler';
 
 export class UsersController {
-    async searchUsers(req: Request, res: Response, next: NextFunction) {
-        try {
-            const { query } = req.body;
+  /**
+   * POST /users/search
+   * 
+   * Search for users by username or name
+   * 
+   * @body {string} query - Search query string
+   * @returns {User[]} Array of matching users (max 5)
+   */
+  async searchUsers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    try {
+      const { query } = req.body;
 
-            if (!query || typeof query !== 'string') {
-                return res.status(400).json({
-                    error: 'Invalid request',
-                    message: 'Search query is required'
-                });
-            }
+      if (!query || typeof query !== 'string' || query.trim().length === 0) {
+        throw new BadRequestError('Search query is required and must be a non-empty string');
+      }
 
-            // Search for users where username or name matches the query
-            const users = await User.find({
-                $or: [
-                    { username: { $regex: query, $options: 'i' } },
-                    { 'name.first': { $regex: query, $options: 'i' } },
-                    { 'name.last': { $regex: query, $options: 'i' } }
-                ]
-            })
-            .select('username name avatar email description')
-            .limit(5);
+      // Sanitize search query (basic injection prevention)
+      const sanitizedQuery = query.trim().substring(0, 100); // Limit length
 
-            return res.json({
-                data: users
-            });
-        } catch (error: any) {
-            console.error('Error in searchUsers:', {
-                error: error.message,
-                stack: error.stack
-            });
-            return res.status(500).json({
-                error: 'Server error',
-                message: `Error searching users: ${error.message}`
-            });
-        }
+      // Search for users where username or name matches the query
+      const users = await User.find({
+        $or: [
+          { username: { $regex: sanitizedQuery, $options: 'i' } },
+          { 'name.first': { $regex: sanitizedQuery, $options: 'i' } },
+          { 'name.last': { $regex: sanitizedQuery, $options: 'i' } },
+        ],
+      })
+        .select('username name avatar email description')
+        .limit(5)
+        .lean();
+
+      logger.debug('User search performed', {
+        query: sanitizedQuery,
+        resultsCount: users.length,
+      });
+
+      sendSuccess(res, users);
+    } catch (error) {
+      // Re-throw known errors
+      if (error instanceof BadRequestError || error instanceof InternalServerError) {
+        throw error;
+      }
+
+      // Log and wrap unexpected errors
+      logger.error('Error in searchUsers:', {
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+
+      throw new InternalServerError('Failed to search users');
     }
+  }
 }
 
 export default new UsersController(); 

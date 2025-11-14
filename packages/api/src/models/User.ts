@@ -13,6 +13,7 @@ export interface IUser extends Document {
     full?: string; // virtual
   };
   verified?: boolean;
+  language?: string;
   privacySettings: {
     isPrivateAccount: boolean;
     hideOnlineStatus: boolean;
