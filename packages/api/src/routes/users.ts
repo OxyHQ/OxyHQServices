@@ -25,6 +25,7 @@ import {
 } from '../utils/error';
 import { userService } from '../services/user.service';
 import { UsersController } from '../controllers/users.controller';
+import { PaginationParams, UserStatistics } from '../types/user.types';
 
 // Types
 interface AuthRequest extends Request {
@@ -148,7 +149,7 @@ router.get(
  * 
  * Update current authenticated user profile
  * 
- * @body {UpdateUserProfileParams} Profile updates
+ * @body {ProfileUpdateInput} Profile updates
  * @returns {User} Updated user object
  */
 router.put(
@@ -244,7 +245,7 @@ router.get(
  * @param {string} userId - User ID
  * @query {number} limit - Number of results (max 100, default 50)
  * @query {number} offset - Pagination offset (default 0)
- * @returns {PaginatedResult<User>} Paginated list of followers
+ * @returns {PaginatedResponse<UserProfile>} Paginated list of followers
  */
 router.get(
   '/:userId/followers',
@@ -283,7 +284,7 @@ router.get(
  * @param {string} userId - User ID
  * @query {number} limit - Number of results (max 100, default 50)
  * @query {number} offset - Pagination offset (default 0)
- * @returns {PaginatedResult<User>} Paginated list of following
+ * @returns {PaginatedResponse<UserProfile>} Paginated list of following
  */
 router.get(
   '/:userId/following',
@@ -443,7 +444,7 @@ router.delete(
  * Update user profile by ID (requires ownership)
  * 
  * @param {string} userId - User ID
- * @body {UpdateUserProfileParams} Profile updates
+ * @body {ProfileUpdateInput} Profile updates
  * @returns {User} Updated user object
  * 
  * @deprecated Use PUT /users/me instead

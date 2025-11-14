@@ -9,43 +9,18 @@ import User, { IUser } from '../models/User';
 import Follow, { FollowType } from '../models/Follow';
 import { logger } from '../utils/logger';
 import { Types } from 'mongoose';
+import {
+  PaginationParams,
+  PaginatedResponse,
+  ProfileUpdateInput,
+  UserProfile,
+  UserStatistics,
+  FollowActionResult,
+} from '../types/user.types';
 
 // Constants
 const MAX_PAGINATION_LIMIT = 100;
 const DEFAULT_PAGINATION_LIMIT = 50;
-
-// Types
-export interface PaginationParams {
-  limit?: number;
-  offset?: number;
-}
-
-export interface PaginatedResult<T> {
-  data: T[];
-  total: number;
-  hasMore: boolean;
-  limit: number;
-  offset: number;
-}
-
-export interface UpdateUserProfileParams {
-  name?: { first?: string; last?: string; full?: string };
-  email?: string;
-  username?: string;
-  avatar?: string;
-  bio?: string;
-  description?: string;
-  links?: string[];
-  linksMetadata?: Array<{ url: string; title: string; description: string; image?: string }>;
-  locations?: Array<any>;
-  language?: string;
-}
-
-export interface UserStats {
-  followers: number;
-  following: number;
-  karma: number;
-}
 
 export class UserService {
   /**
@@ -83,7 +58,7 @@ export class UserService {
    */
   async updateUserProfile(
     userId: string,
-    updates: UpdateUserProfileParams
+    updates: ProfileUpdateInput
   ): Promise<IUser> {
     // Allowed fields for updates
     const allowedFields = [
@@ -100,21 +75,24 @@ export class UserService {
     ] as const;
 
     // Filter and validate updates
-    const filteredUpdates = Object.entries(updates)
-      .filter(([key]) => allowedFields.includes(key as any))
-      .reduce((acc, [key, value]) => {
-        // Handle avatar field - can be string ID or object with id
-        if (key === 'avatar') {
-          if (typeof value === 'string') {
-            acc[key] = value;
-          } else if (value && typeof value === 'object' && 'id' in (value as any)) {
-            acc[key] = (value as any).id || '';
-          }
-          return acc;
+    const filteredUpdates: Partial<ProfileUpdateInput> = {};
+    
+    for (const [key, value] of Object.entries(updates)) {
+      if (!allowedFields.includes(key as any)) continue;
+      
+      // Handle avatar field - can be string ID or object with id
+      if (key === 'avatar') {
+        if (typeof value === 'string') {
+          filteredUpdates.avatar = value;
+        } else if (value && typeof value === 'object' && 'id' in value) {
+          filteredUpdates.avatar = (value as { id?: string }).id || '';
         }
-        acc[key as keyof UpdateUserProfileParams] = value;
-        return acc;
-      }, {} as Partial<UpdateUserProfileParams>);
+        continue;
+      }
+      
+      // Assign other fields
+      (filteredUpdates as any)[key] = value;
+    }
 
     // Validate uniqueness constraints
     await this.validateUniqueFields(userId, filteredUpdates);
@@ -168,7 +146,7 @@ export class UserService {
    */
   private async validateUniqueFields(
     userId: string,
-    updates: Partial<UpdateUserProfileParams>
+    updates: Partial<ProfileUpdateInput>
   ): Promise<void> {
     if (updates.email) {
       const existing = await User.findOne({
@@ -197,7 +175,7 @@ export class UserService {
   async getUserFollowers(
     userId: string,
     params: PaginationParams = {}
-  ): Promise<PaginatedResult<IUser>> {
+  ): Promise<PaginatedResponse<UserProfile>> {
     const limit = Math.min(
       params.limit || DEFAULT_PAGINATION_LIMIT,
       MAX_PAGINATION_LIMIT
@@ -209,25 +187,41 @@ export class UserService {
       followType: FollowType.USER,
     });
 
+    // Get follow relationships
     const follows = await Follow.find({
       followedId: userId,
       followType: FollowType.USER,
     })
-      .populate({
-        path: 'followerUserId',
-        model: 'User',
-        select: 'name avatar -email',
-      })
+      .select('followerUserId')
       .limit(limit)
       .skip(offset)
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    const followers = follows
+    // Extract user IDs
+    const followerIds = follows
       .map((follow) => follow.followerUserId)
-      .filter(Boolean) as IUser[];
+      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
+      .map((id) => id.toString());
+
+    // Fetch users directly (returns plain objects, not Mongoose documents)
+    const followers = await User.find({
+      _id: { $in: followerIds },
+    })
+      .select('username name avatar -email')
+      .lean()
+      .exec() as UserProfile[];
+
+    // Maintain order from original follow relationships
+    const followersMap = new Map(
+      followers.map((user) => [user._id.toString(), user])
+    );
+    const orderedFollowers: UserProfile[] = followerIds
+      .map((id) => followersMap.get(id))
+      .filter((user): user is UserProfile => user !== undefined);
 
     return {
-      data: followers,
+      data: orderedFollowers,
       total,
       hasMore: offset + limit < total,
       limit,
@@ -241,7 +235,7 @@ export class UserService {
   async getUserFollowing(
     userId: string,
     params: PaginationParams = {}
-  ): Promise<PaginatedResult<IUser>> {
+  ): Promise<PaginatedResponse<UserProfile>> {
     const limit = Math.min(
       params.limit || DEFAULT_PAGINATION_LIMIT,
       MAX_PAGINATION_LIMIT
@@ -253,25 +247,41 @@ export class UserService {
       followType: FollowType.USER,
     });
 
+    // Get follow relationships
     const follows = await Follow.find({
       followerUserId: userId,
       followType: FollowType.USER,
     })
-      .populate({
-        path: 'followedId',
-        model: 'User',
-        select: 'name avatar -email',
-      })
+      .select('followedId')
       .limit(limit)
       .skip(offset)
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
-    const following = follows
+    // Extract user IDs
+    const followingIds = follows
       .map((follow) => follow.followedId)
-      .filter(Boolean) as IUser[];
+      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId)
+      .map((id) => id.toString());
+
+    // Fetch users directly (returns plain objects, not Mongoose documents)
+    const following = await User.find({
+      _id: { $in: followingIds },
+    })
+      .select('username name avatar -email')
+      .lean()
+      .exec() as UserProfile[];
+
+    // Maintain order from original follow relationships
+    const followingMap = new Map(
+      following.map((user) => [user._id.toString(), user])
+    );
+    const orderedFollowing: UserProfile[] = followingIds
+      .map((id) => followingMap.get(id))
+      .filter((user): user is UserProfile => user !== undefined);
 
     return {
-      data: following,
+      data: orderedFollowing,
       total,
       hasMore: offset + limit < total,
       limit,
@@ -285,7 +295,7 @@ export class UserService {
   async toggleFollow(
     currentUserId: string,
     targetUserId: string
-  ): Promise<{ action: 'follow' | 'unfollow'; counts: { followers: number; following: number } }> {
+  ): Promise<FollowActionResult> {
     if (currentUserId === targetUserId) {
       throw new Error('Cannot follow yourself');
     }
@@ -320,11 +330,21 @@ export class UserService {
         User.findById(currentUserId).select('_count').lean(),
       ]);
 
+      interface UserWithCount {
+        _count?: {
+          followers?: number;
+          following?: number;
+        };
+      }
+
+      const targetCounts = (updatedTarget as UserWithCount)?._count;
+      const currentCounts = (updatedCurrent as UserWithCount)?._count;
+
       return {
         action: 'unfollow',
         counts: {
-          followers: (updatedTarget as any)?._count?.followers || 0,
-          following: (updatedCurrent as any)?._count?.following || 0,
+          followers: targetCounts?.followers ?? 0,
+          following: currentCounts?.following ?? 0,
         },
       };
     }
@@ -345,11 +365,21 @@ export class UserService {
       User.findById(currentUserId).select('_count').lean(),
     ]);
 
+    interface UserWithCount {
+      _count?: {
+        followers?: number;
+        following?: number;
+      };
+    }
+
+    const targetCounts = (updatedTarget as UserWithCount)?._count;
+    const currentCounts = (updatedCurrent as UserWithCount)?._count;
+
     return {
       action: 'follow',
       counts: {
-        followers: (updatedTarget as any)?._count?.followers || 0,
-        following: (updatedCurrent as any)?._count?.following || 0,
+        followers: targetCounts?.followers ?? 0,
+        following: currentCounts?.following ?? 0,
       },
     };
   }
@@ -373,7 +403,7 @@ export class UserService {
   /**
    * Get user statistics (followers, following, karma)
    */
-  async getUserStats(userId: string): Promise<UserStats> {
+  async getUserStats(userId: string): Promise<UserStatistics> {
     const [followersCount, followingCount] = await Promise.all([
       Follow.countDocuments({
         followedId: userId,
@@ -398,19 +428,23 @@ export class UserService {
   /**
    * Format user response with stats
    */
-  formatUserResponse(user: IUser, stats?: UserStats): any {
-    const response: any = {
-      id: user._id || user.id,
+  formatUserResponse(user: IUser | UserProfile, stats?: UserStatistics): Record<string, unknown> {
+    // Handle both IUser (Mongoose document) and UserData (plain object)
+    const userId = user._id;
+    const userAny = user as unknown as Record<string, unknown>;
+    
+    const response: Record<string, unknown> = {
+      id: userId,
       username: user.username,
       name: user.name,
       avatar: user.avatar,
-      verified: user.verified,
-      bio: user.bio,
-      description: user.description,
-      links: user.links,
-      linksMetadata: user.linksMetadata,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
+      verified: userAny.verified as boolean | undefined,
+      bio: userAny.bio as string | undefined,
+      description: userAny.description as string | undefined,
+      links: userAny.links as string[] | undefined,
+      linksMetadata: userAny.linksMetadata as unknown,
+      createdAt: userAny.createdAt as Date | undefined,
+      updatedAt: userAny.updatedAt as Date | undefined,
     };
 
     if (stats) {
@@ -419,11 +453,12 @@ export class UserService {
     }
 
     // Ensure name.full exists
-    if (response.name && typeof response.name === 'object') {
-      const first = (response.name.first as string) || '';
-      const last = (response.name.last as string) || '';
-      if (!response.name.full) {
-        response.name.full = [first, last].filter(Boolean).join(' ').trim();
+    if (response.name && typeof response.name === 'object' && response.name !== null) {
+      const name = response.name as { first?: string; last?: string; full?: string };
+      const first = name.first ?? '';
+      const last = name.last ?? '';
+      if (!name.full) {
+        name.full = [first, last].filter(Boolean).join(' ').trim();
       }
     }
 
