@@ -1,7 +1,6 @@
 import type React from 'react';
 import type { RouteName } from '../../navigation/routes';
 import { useRef, useEffect, useMemo, useState, useCallback } from 'react';
-import { useDebounce } from '../../../utils/hookUtils';
 import {
     View,
     Text,
@@ -18,7 +17,6 @@ import { stepStyles } from '../../styles/spacing';
 import Avatar from '../../components/Avatar';
 import { useOxy } from '../../context/OxyContext';
 import { toast } from '../../../lib/sonner';
-import { TTLCache, registerCacheForCleanup } from '../../../utils/cache';
 
 interface SignInUsernameStepProps {
     // Common props from StepBasedScreen
@@ -60,74 +58,13 @@ interface QuickAccount {
     username: string;
     displayName: string;
     avatar?: string;
+    avatarUrl?: string; // Cached avatar URL to prevent recalculation
 }
 
 const MAX_QUICK_ACCOUNTS = 3;
 
 const getThemeMode = (theme: string | undefined): 'light' | 'dark' =>
     theme === 'dark' ? 'dark' : 'light';
-
-/**
- * Profile cache to avoid re-fetching user profiles on every account switch
- * Uses centralized TTLCache for consistent caching behavior
- */
-const profileCache = new TTLCache<QuickAccount>(5 * 60 * 1000); // 5 minutes cache
-registerCacheForCleanup(profileCache); // Register for automatic cleanup
-
-/**
- * Batch fetch profiles using optimized backend endpoint
- * Only fetches profiles that aren't cached or are expired
- */
-async function batchGetProfiles(
-    sessionIds: string[],
-    oxyServices: any
-): Promise<Map<string, QuickAccount>> {
-    const results = new Map<string, QuickAccount>();
-    const toFetch: string[] = [];
-
-    // Check cache first
-    for (const sessionId of sessionIds) {
-        const cached = profileCache.get(sessionId);
-        if (cached) {
-            results.set(sessionId, cached);
-        } else {
-            toFetch.push(sessionId);
-        }
-    }
-
-    // Batch fetch only uncached profiles
-    if (toFetch.length > 0 && oxyServices?.getUsersBySessions) {
-        try {
-            const batchResults = await oxyServices.getUsersBySessions(toFetch);
-
-            for (const { sessionId, user } of batchResults) {
-                if (user) {
-                    const displayName =
-                        user?.name?.full ||
-                        user?.name?.first ||
-                        user?.username ||
-                        'Account';
-
-                    const quickAccount: QuickAccount = {
-                        sessionId,
-                        username: user.username || '',
-                        displayName,
-                        avatar: user?.avatar,
-                    };
-
-                    profileCache.set(sessionId, quickAccount);
-                    results.set(sessionId, quickAccount);
-                }
-            }
-        } catch (error) {
-            if (__DEV__) {
-                console.error('Failed to batch load profiles:', error);
-            }
-        }
-    }
-
-    return results;
-};
 
 const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
     colors,
@@ -155,31 +92,34 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
     const [loadingAccounts, setLoadingAccounts] = useState(false);
     const [switchingSessionId, setSwitchingSessionId] = useState<string | null>(null);
     const [showAccounts, setShowAccounts] = useState(false);
-
     const previousSessionIdsRef = useRef<string>('');
     const loadingRef = useRef(false);
 
-    // Debounce sessions to prevent showing intermediate states during rapid updates
-    const stableSessions = useDebounce(sessions || [], 200);
+    // Compute sessions to show - deduplicate by sessionId to prevent duplicates
+    const sessionsToShow = useMemo(() => {
+        const allSessions = sessions || [];
+        const filtered = allSessions.filter(s => s.sessionId !== activeSessionId);
+        const sessionsList = isAddAccountMode ? filtered : allSessions;
 
-    // Sessions to display - filtered and computed inline
-    const sessionsToShow = useMemo(
-        () => {
-            const filtered = stableSessions.filter(s => s.sessionId !== activeSessionId);
-            return isAddAccountMode ? filtered : stableSessions;
-        },
-        [stableSessions, activeSessionId, isAddAccountMode]
-    );
+        // Deduplicate by sessionId - use Map to preserve last occurrence
+        const seen = new Map<string, typeof sessionsList[0]>();
+        for (const session of sessionsList) {
+            seen.set(session.sessionId, session);
+        }
 
+        return Array.from(seen.values());
+    }, [sessions, activeSessionId, isAddAccountMode]);
+
+    // Create stable session IDs string for comparison
     const sessionsToShowIds = useMemo(
         () => sessionsToShow.map(s => s.sessionId).sort().join(','),
         [sessionsToShow]
     );
 
-    // Production-ready: Optimized to prevent unnecessary reloads and duplicate accounts
+    // Load account profiles - with avatar URL caching and race condition protection
     useEffect(() => {
-        // Skip if already loading or session IDs haven't changed
-        if (loadingRef.current || previousSessionIdsRef.current === sessionsToShowIds) {
+        // Skip if session IDs haven't changed or already loading
+        if (previousSessionIdsRef.current === sessionsToShowIds || loadingRef.current) {
             return;
         }
 
@@ -190,43 +130,103 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
             return;
         }
 
-        let cancelled = false;
+        // Mark as loading immediately to prevent duplicate calls
         loadingRef.current = true;
+        previousSessionIdsRef.current = sessionsToShowIds;
 
-        const loadQuickAccounts = async () => {
-            // Don't show loading state if we already have accounts (prevents flicker)
-            const hasExistingAccounts = quickAccounts.length > 0;
-            if (!hasExistingAccounts) {
+        let cancelled = false;
+        const targetSessions = sessionsToShow.slice(0, MAX_QUICK_ACCOUNTS);
+
+        // Deduplicate session IDs - use Set to ensure uniqueness
+        const uniqueSessionIds = Array.from(new Set(targetSessions.map(s => s.sessionId)));
+
+        if (uniqueSessionIds.length === 0) {
+            setQuickAccounts([]);
+            setLoadingAccounts(false);
+            loadingRef.current = false;
+            return;
+        }
+
+        // Don't show loading if we already have accounts (prevents flicker)
+        setQuickAccounts(prev => {
+            if (prev.length === 0) {
                 setLoadingAccounts(true);
             }
+            return prev;
+        });
 
-            const targetSessions = sessionsToShow.slice(0, MAX_QUICK_ACCOUNTS);
-            const sessionIds = targetSessions.map(s => s.sessionId);
-
+        const loadAccounts = async () => {
             try {
-                const profilesMap = await batchGetProfiles(sessionIds, oxyServices);
+                const batchResults = await oxyServices.getUsersBySessions(uniqueSessionIds);
 
-                if (!cancelled) {
-                    // Deduplicate by sessionId
-                    const seen = new Set<string>();
-                    const validAccounts = targetSessions
-                        .map(session => profilesMap.get(session.sessionId))
-                        .filter((account): account is QuickAccount => {
-                            if (!account || seen.has(account.sessionId)) return false;
-                            seen.add(account.sessionId);
-                            return true;
-                        });
+                if (cancelled) return;
 
-                    setQuickAccounts(validAccounts);
-                    previousSessionIdsRef.current = sessionsToShowIds;
+                // Deduplicate by sessionId using Map and cache avatar URLs
+                const accountMap = new Map<string, QuickAccount>();
+
+                for (const { sessionId, user: userData } of batchResults) {
+                    if (!userData || accountMap.has(sessionId)) continue;
+
+                    const displayName = userData.name?.full ||
+                        userData.name?.first ||
+                        userData.username ||
+                        'Account';
+
+                    // Pre-calculate avatar URL to prevent recalculation on every render
+                    const avatarUrl = userData.avatar
+                        ? oxyServices.getFileDownloadUrl(userData.avatar, 'thumb')
+                        : undefined;
+
+                    accountMap.set(sessionId, {
+                        sessionId,
+                        username: userData.username || '',
+                        displayName,
+                        avatar: userData.avatar,
+                        avatarUrl, // Cache the URL
+                    });
                 }
+
+                if (cancelled) return;
+
+                // Preserve order from targetSessions and merge with existing to keep avatar URLs
+                // Deduplicate final result to prevent any duplicates
+                setQuickAccounts(prev => {
+                    const existingMap = new Map(prev.map(a => [a.sessionId, a]));
+                    const seen = new Set<string>();
+                    const orderedAccounts: QuickAccount[] = [];
+
+                    for (const session of targetSessions) {
+                        const sessionId = session.sessionId;
+                        if (seen.has(sessionId)) continue; // Skip duplicates
+                        seen.add(sessionId);
+
+                        const newAccount = accountMap.get(sessionId);
+                        if (!newAccount) {
+                            // Keep existing account if available
+                            const existing = existingMap.get(sessionId);
+                            if (existing) {
+                                orderedAccounts.push(existing);
+                            }
+                            continue;
+                        }
+
+                        // Preserve existing avatarUrl if account data hasn't changed
+                        const existing = existingMap.get(sessionId);
+                        if (existing && existing.avatar === newAccount.avatar && existing.avatarUrl) {
+                            orderedAccounts.push({ ...newAccount, avatarUrl: existing.avatarUrl });
+                        } else {
+                            orderedAccounts.push(newAccount);
+                        }
+                    }
+
+                    return orderedAccounts;
+                });
             } catch (error) {
                 if (__DEV__) {
-                    console.error('Failed to load quick accounts:', error);
+                    console.error('Failed to load accounts:', error);
                 }
-                // Don't clear existing accounts on error - keep what we have
-                if (!cancelled && !hasExistingAccounts) {
-                    setQuickAccounts([]);
+                if (!cancelled) {
+                    setQuickAccounts(prev => prev.length === 0 ? [] : prev);
                 }
             } finally {
                 if (!cancelled) {
@@ -236,73 +236,91 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
             }
         };
 
-        void loadQuickAccounts();
+        void loadAccounts();
 
         return () => {
             cancelled = true;
             loadingRef.current = false;
         };
-    }, [sessionsToShowIds, oxyServices, sessionsToShow.length]);
+    }, [sessionsToShowIds, oxyServices]);
 
+    // Instant account switching - fire and forget for speed
     const handleSwitchAccount = useCallback(
         async (sessionId: string) => {
-            if (switchingSessionId) return;
+            if (switchingSessionId || sessionId === activeSessionId) return;
 
+            // Instant UI update - don't wait for anything
             setSwitchingSessionId(sessionId);
-            try {
-                // Clear cache for the switched session to force fresh data
-                profileCache.delete(sessionId);
 
-                await switchSession(sessionId);
+            // Optimistically update accounts list immediately
+            setQuickAccounts(prev => {
+                const accountToSwitch = prev.find(a => a.sessionId === sessionId);
+                if (!accountToSwitch) return prev;
 
-                // Don't reload accounts immediately - let the sessions update naturally
-                // This prevents redundant API calls. The accounts will update when sessions change.
-                // The switchSession call already triggers session refresh in the background.
+                // Move switched account to top instantly
+                const filtered = prev.filter(a => a.sessionId !== sessionId);
+                return [accountToSwitch, ...filtered];
+            });
 
-                toast.success(
-                    t('signin.status.accountSwitched', {
-                        name: t('signin.actions.openAccountSwitcher'),
-                    }) || 'Account switched'
-                );
-            } catch (error) {
+            // Switch in background - don't block UI
+            switchSession(sessionId).catch((error) => {
                 if (__DEV__) {
                     console.error('Failed to switch account:', error);
                 }
+                // Revert on error
+                setQuickAccounts(prev => {
+                    const accountToSwitch = prev.find(a => a.sessionId === sessionId);
+                    if (!accountToSwitch) return prev;
+                    const filtered = prev.filter(a => a.sessionId !== sessionId);
+                    return [...filtered, accountToSwitch];
+                });
                 toast.error(
                     t('signin.actions.switchAccountFailed') || 'Unable to switch accounts. Please try again.'
                 );
-            } finally {
+            }).finally(() => {
                 setSwitchingSessionId(null);
-            }
+            });
         },
-        [switchSession, t, switchingSessionId]
+        [switchSession, switchingSessionId, activeSessionId, t]
     );
 
-    // Accounts for avatar display - combines current user and quick accounts
+    // Memoize current user avatar URL to prevent recalculation
+    const currentUserAvatarUrl = useMemo(() => {
+        if (!isAddAccountMode || !user?.avatar || !oxyServices) return undefined;
+        return oxyServices.getFileDownloadUrl(user.avatar, 'thumb');
+    }, [isAddAccountMode, user?.avatar, oxyServices]);
+
+    // Accounts for avatar display - deduplicated with cached URLs
     const accountsForAvatars = useMemo(() => {
         const seen = new Set<string>();
-        const accounts = [
-            ...(isAddAccountMode && user && activeSessionId ? [{
+        const accounts: Array<QuickAccount & { isCurrent?: boolean; avatarUrl?: string }> = [];
+
+        // Add current user if in add account mode
+        if (isAddAccountMode && user && activeSessionId) {
+            accounts.push({
                 sessionId: activeSessionId,
                 displayName: user.name?.full || user.username || 'Account',
-                username: user.username,
+                username: user.username || '',
                 avatar: user.avatar,
+                avatarUrl: currentUserAvatarUrl, // Use memoized URL
                 isCurrent: true,
-            }] : []),
-            ...quickAccounts.map(account => ({
-                sessionId: account.sessionId,
-                displayName: account.displayName,
-                username: account.username,
-                avatar: account.avatar,
-                isCurrent: account.sessionId === activeSessionId,
-            }))
-        ];
-        return accounts.filter(account => {
-            if (seen.has(account.sessionId)) return false;
-            seen.add(account.sessionId);
-            return true;
-        });
-    }, [isAddAccountMode, user, quickAccounts, activeSessionId]);
+            });
+            seen.add(activeSessionId);
+        }
+
+        // Add quick accounts (excluding duplicates) - already have cached avatarUrl
+        for (const account of quickAccounts) {
+            if (!seen.has(account.sessionId)) {
+                accounts.push({
+                    ...account,
+                    isCurrent: account.sessionId === activeSessionId,
+                });
+                seen.add(account.sessionId);
+            }
+        }
+
+        return accounts;
+    }, [isAddAccountMode, user, quickAccounts, activeSessionId, currentUserAvatarUrl]);
 
     const handleUsernameChange = useCallback((text: string) => {
         const filteredText = text.replace(/[^a-zA-Z0-9]/g, '');
@@ -414,33 +432,26 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                             </Text>
                             {accountsForAvatars.length > 0 && (
                                 <View style={stylesheet.avatarsContainer}>
-                                    {accountsForAvatars.slice(0, 5).map((account, index) => {
-                                        // Memoize avatar URL to prevent unnecessary re-renders
-                                        const avatarUri = account.avatar && oxyServices
-                                            ? oxyServices.getFileDownloadUrl(account.avatar, 'thumb')
-                                            : undefined;
-
-                                        return (
-                                            <View
-                                                key={`avatar-${account.sessionId}`}
-                                                style={[
-                                                    stylesheet.avatarWrapper,
-                                                    account.isCurrent && stylesheet.currentAvatarWrapper,
-                                                    index > 0 && { marginLeft: -12 },
-                                                    { zIndex: Math.min(accountsForAvatars.length, 5) - index },
-                                                    { borderColor: colors.inputBackground || colors.background || '#FFFFFF' },
-                                                ]}
-                                            >
-                                                <Avatar
-                                                    name={account.displayName}
-                                                    size={28}
-                                                    theme={themeMode}
-                                                    backgroundColor={colors.primary}
-                                                    uri={avatarUri}
-                                                />
-                                            </View>
-                                        );
-                                    })}
+                                    {accountsForAvatars.slice(0, 5).map((account, index) => (
+                                        <View
+                                            key={`avatar-${account.sessionId}`}
+                                            style={[
+                                                stylesheet.avatarWrapper,
+                                                account.isCurrent && stylesheet.currentAvatarWrapper,
+                                                index > 0 && { marginLeft: -12 },
+                                                { zIndex: Math.min(accountsForAvatars.length, 5) - index },
+                                                { borderColor: colors.inputBackground || colors.background || '#FFFFFF' },
+                                            ]}
+                                        >
+                                            <Avatar
+                                                name={account.displayName}
+                                                size={28}
+                                                theme={themeMode}
+                                                backgroundColor={colors.primary}
+                                                uri={account.avatarUrl}
+                                            />
+                                        </View>
+                                    ))}
                                 </View>
                             )}
                             {!showAccounts && (quickAccounts.length > 0 || sessionsToShow.length > 0) && accountsForAvatars.length === 0 && (
@@ -476,7 +487,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                                     size={36}
                                                     theme={themeMode}
                                                     backgroundColor={colors.primary}
-                                                    uri={user.avatar && oxyServices ? oxyServices.getFileDownloadUrl(user.avatar, 'thumb') : undefined}
+                                                    uri={currentUserAvatarUrl}
                                                 />
                                             </View>
                                             <View style={stylesheet.accountItemText}>
@@ -529,7 +540,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                                             size={36}
                                                             theme={themeMode}
                                                             backgroundColor={colors.primary}
-                                                            uri={account.avatar && oxyServices ? oxyServices.getFileDownloadUrl(account.avatar, 'thumb') : undefined}
+                                                            uri={account.avatarUrl}
                                                         />
                                                     </View>
                                                     <View style={stylesheet.accountItemText}>
