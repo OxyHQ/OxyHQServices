@@ -30,7 +30,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
         dataRetention: 'https://oxy.so/company/transparency/policies/data-retention',
         contentModeration: 'https://oxy.so/company/transparency/policies/content-moderation',
         childSafety: 'https://oxy.so/company/transparency/policies/child-safety',
-        cookie: 'https://oxy.so/company/transparency/policies/cookie',
+        cookie: 'https://oxy.so/company/transparency/policies/cookies',
     };
 
     // Determine which document to show based on initialStep
