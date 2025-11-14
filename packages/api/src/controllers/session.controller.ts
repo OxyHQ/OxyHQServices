@@ -669,16 +669,12 @@ export class SessionController {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
-      // Get current session using service (no user population needed here)
       const currentSessionResult = await sessionService.validateSessionById(sessionId, false);
       if (!currentSessionResult || !currentSessionResult.session) {
         return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
       }
 
-      // Get all sessions for this device with user data populated in a single optimized query
-      const deviceSessions = await getDeviceActiveSessions(currentSessionResult.session.deviceId);
-
-      // Return sessions with user data already included (from populate)
+      const deviceSessions = await getDeviceActiveSessions(currentSessionResult.session.deviceId, sessionId);
       res.json(deviceSessions);
     } catch (error) {
       logger.error('Get device sessions error:', error);
@@ -686,7 +682,7 @@ export class SessionController {
     }
   }
 
-  // Batch endpoint to get multiple user profiles by session IDs
+  // Batch endpoint to get multiple user profiles by session IDs - optimized for speed
   static async getUsersBySessions(req: Request, res: Response) {
     try {
       const { sessionIds } = req.body;
@@ -695,9 +691,12 @@ export class SessionController {
         return res.status(400).json({ error: 'sessionIds array is required' });
       }
 
+      // Deduplicate sessionIds before processing
+      const uniqueSessionIds = Array.from(new Set(sessionIds));
+      
       // Limit batch size to prevent abuse
       const MAX_BATCH_SIZE = 20;
-      const limitedSessionIds = sessionIds.slice(0, MAX_BATCH_SIZE);
+      const limitedSessionIds = uniqueSessionIds.slice(0, MAX_BATCH_SIZE);
 
       // Use optimized batch query to get all sessions with users in one database call
       // Uses compound index: { sessionId: 1, isActive: 1, expiresAt: 1 }
@@ -711,41 +710,37 @@ export class SessionController {
       .lean()
       .exec();
 
-      // Transform to user data format matching getUserBySession
+      // Transform to user data format matching getUserBySession - optimized loop
       const usersMap = new Map<string, any>();
       
       for (const session of sessions) {
-        if (session.userId && typeof session.userId === 'object') {
-          const user = session.userId as any;
-          
-          // Ensure name.full exists (virtuals may not be included with lean)
-          let name = user.name;
-          if (name && typeof name === 'object') {
-            const first = (name.first as string) || '';
-            const last = (name.last as string) || '';
-            if (!name.full) {
-              name = {
-                ...name,
-                full: [first, last].filter(Boolean).join(' ').trim()
-              };
-            }
+        if (!session.userId || typeof session.userId !== 'object') continue;
+        
+        const user = session.userId as any;
+        
+        // Ensure name.full exists (virtuals may not be included with lean)
+        let name = user.name;
+        if (name && typeof name === 'object') {
+          const first = (name.first as string) || '';
+          const last = (name.last as string) || '';
+          if (!name.full) {
+            name = {
+              ...name,
+              full: [first, last].filter(Boolean).join(' ').trim()
+            };
           }
-          
-          const userData = {
-            id: user._id?.toString() || user.id,
-            username: user.username,
-            email: user.email,
-            avatar: user.avatar,
-            ...user,
-            // Ensure name.full is set (override spread if needed)
-            name: name
-          };
-          // Remove MongoDB _id if we have id
-          if (userData._id && userData.id) {
-            delete userData._id;
-          }
-          usersMap.set(session.sessionId, userData);
         }
+        
+        // Build userData efficiently - only include needed fields
+        const userData: any = {
+          id: user._id?.toString() || user.id,
+          username: user.username,
+          email: user.email,
+          avatar: user.avatar,
+          name: name,
+        };
+        
+        usersMap.set(session.sessionId, userData);
       }
 
       // Return array matching input order, with null for missing sessions

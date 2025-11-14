@@ -143,8 +143,10 @@ export const registerDevice = async (deviceInfo: DeviceInfo, fingerprint?: strin
 
 /**
  * Get all active sessions for a specific device
+ * Deduplicates by userId - returns only one session per user (most recent)
+ * Marks current session with isCurrent flag
  */
-export const getDeviceActiveSessions = async (deviceId: string) => {
+export const getDeviceActiveSessions = async (deviceId: string, currentSessionId?: string) => {
   try {
     const now = new Date();
     // Use lean() for better performance - returns plain JS objects instead of Mongoose documents
@@ -163,49 +165,66 @@ export const getDeviceActiveSessions = async (deviceId: string) => {
     .limit(50) // Limit results to prevent excessive data transfer
     .exec();
 
-    return sessions.map(session => {
+    // Map sessions and deduplicate by userId - keep only most recent session per user
+    const userSessionMap = new Map<string, any>();
+    
+    for (const session of sessions) {
       const user = session.userId as any;
-      let userData = null;
+      if (!user || typeof user !== 'object') continue;
       
-      if (user && typeof user === 'object') {
-        // Ensure name.full exists (virtuals may not be included with lean)
-        let name = user.name;
-        if (name && typeof name === 'object') {
-          const first = (name.first as string) || '';
-          const last = (name.last as string) || '';
-          if (!name.full) {
-            name = {
-              ...name,
-              full: [first, last].filter(Boolean).join(' ').trim()
-            };
-          }
-        }
-        
-        userData = {
-          id: user._id?.toString() || user.id,
-          username: user.username,
-          email: user.email,
-          avatar: user.avatar,
-          ...user,
-          // Ensure name.full is set (override spread if needed)
-          name: name
-        };
-
-        // Remove MongoDB _id if we have id
-        if (userData._id && userData.id) {
-          delete userData._id;
+      const userId = user._id?.toString() || user.id;
+      if (!userId) continue;
+      
+      // If we already have a session for this user, keep the one with more recent lastActive
+      const existing = userSessionMap.get(userId);
+      if (existing) {
+        const existingTime = new Date(existing.lastActive || existing.createdAt || 0).getTime();
+        const currentTime = new Date(session.deviceInfo?.lastActive || session.createdAt || 0).getTime();
+        if (currentTime <= existingTime) {
+          continue; // Keep existing (more recent)
         }
       }
+      
+      // Ensure name.full exists (virtuals may not be included with lean)
+      let name = user.name;
+      if (name && typeof name === 'object') {
+        const first = (name.first as string) || '';
+        const last = (name.last as string) || '';
+        if (!name.full) {
+          name = {
+            ...name,
+            full: [first, last].filter(Boolean).join(' ').trim()
+          };
+        }
+      }
+      
+      const userData = {
+        id: userId,
+        username: user.username,
+        email: user.email,
+        avatar: user.avatar,
+        ...user,
+        // Ensure name.full is set (override spread if needed)
+        name: name
+      };
 
-      return {
+      // Remove MongoDB _id if we have id
+      if (userData._id && userData.id) {
+        delete userData._id;
+      }
+
+      userSessionMap.set(userId, {
         sessionId: session.sessionId,
         user: userData,
         lastActive: session.deviceInfo?.lastActive || session.createdAt || new Date().toISOString(),
         createdAt: session.createdAt,
         deviceId: session.deviceId,
-        expiresAt: session.expiresAt
-      };
-    });
+        expiresAt: session.expiresAt,
+        isCurrent: currentSessionId ? session.sessionId === currentSessionId : false
+      });
+    }
+
+    return Array.from(userSessionMap.values());
   } catch (error) {
     logger.error('[DeviceUtils] Error getting device sessions:', error);
     return [];

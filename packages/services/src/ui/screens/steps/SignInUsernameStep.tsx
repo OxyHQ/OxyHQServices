@@ -17,6 +17,8 @@ import { stepStyles } from '../../styles/spacing';
 import Avatar from '../../components/Avatar';
 import { useOxy } from '../../context/OxyContext';
 import { toast } from '../../../lib/sonner';
+import { useAccountStore, useAccounts, useAccountLoading, useAccountLoadingSession, type QuickAccount } from '../../stores/accountStore';
+import { fontFamilies } from '../../styles/fonts';
 
 interface SignInUsernameStepProps {
     // Common props from StepBasedScreen
@@ -53,14 +55,6 @@ interface SignInUsernameStepProps {
     validateUsername: (username: string) => Promise<boolean>;
 }
 
-interface QuickAccount {
-    sessionId: string;
-    username: string;
-    displayName: string;
-    avatar?: string;
-    avatarUrl?: string; // Cached avatar URL to prevent recalculation
-}
-
 const MAX_QUICK_ACCOUNTS = 3;
 
 const getThemeMode = (theme: string | undefined): 'light' | 'dark' =>
@@ -88,195 +82,75 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
     const { sessions, activeSessionId, switchSession, oxyServices } = useOxy();
     const baseStyles = stepStyles;
     const themeMode = getThemeMode(theme);
-    const [quickAccounts, setQuickAccounts] = useState<QuickAccount[]>([]);
-    const [loadingAccounts, setLoadingAccounts] = useState(false);
     const [switchingSessionId, setSwitchingSessionId] = useState<string | null>(null);
     const [showAccounts, setShowAccounts] = useState(false);
     const previousSessionIdsRef = useRef<string>('');
-    const loadingRef = useRef(false);
 
-    // Compute sessions to show - deduplicate by sessionId to prevent duplicates
-    const sessionsToShow = useMemo(() => {
+    // Zustand store - use stable selectors
+    const quickAccounts = useAccounts();
+    const loadingAccounts = useAccountLoading();
+    const isLoading = useAccountStore(state => state.loading);
+
+    // Store actions are stable - get them once
+    const loadAccountsRef = useRef(useAccountStore.getState().loadAccounts);
+    const setAccountsRef = useRef(useAccountStore.getState().setAccounts);
+    const moveAccountToTopRef = useRef(useAccountStore.getState().moveAccountToTop);
+
+    // Update refs if store changes (shouldn't happen, but safe)
+    useEffect(() => {
+        loadAccountsRef.current = useAccountStore.getState().loadAccounts;
+        setAccountsRef.current = useAccountStore.getState().setAccounts;
+        moveAccountToTopRef.current = useAccountStore.getState().moveAccountToTop;
+    }, []);
+
+    const sessionsToLoad = useMemo(() => {
         const allSessions = sessions || [];
-        const filtered = allSessions.filter(s => s.sessionId !== activeSessionId);
-        const sessionsList = isAddAccountMode ? filtered : allSessions;
+        return allSessions.slice(0, MAX_QUICK_ACCOUNTS);
+    }, [sessions]);
 
-        // Deduplicate by sessionId - use Map to preserve last occurrence
-        const seen = new Map<string, typeof sessionsList[0]>();
-        for (const session of sessionsList) {
-            seen.set(session.sessionId, session);
-        }
-
-        return Array.from(seen.values());
-    }, [sessions, activeSessionId, isAddAccountMode]);
-
-    // Create stable session IDs string for comparison
-    const sessionsToShowIds = useMemo(
-        () => sessionsToShow.map(s => s.sessionId).sort().join(','),
-        [sessionsToShow]
+    const sessionsToLoadIds = useMemo(
+        () => sessionsToLoad.map(s => s.sessionId).sort().join(','),
+        [sessionsToLoad]
     );
 
-    // Load account profiles - with avatar URL caching and race condition protection
     useEffect(() => {
-        // Skip if session IDs haven't changed or already loading
-        if (previousSessionIdsRef.current === sessionsToShowIds || loadingRef.current) {
+        if (previousSessionIdsRef.current === sessionsToLoadIds || isLoading) return;
+        if (!sessionsToLoad.length || !oxyServices) {
+            setAccountsRef.current([]);
+            previousSessionIdsRef.current = sessionsToLoadIds;
             return;
         }
 
-        if (!sessionsToShow.length || !oxyServices) {
-            setQuickAccounts([]);
-            setLoadingAccounts(false);
-            previousSessionIdsRef.current = sessionsToShowIds;
-            return;
-        }
+        previousSessionIdsRef.current = sessionsToLoadIds;
 
-        // Mark as loading immediately to prevent duplicate calls
-        loadingRef.current = true;
-        previousSessionIdsRef.current = sessionsToShowIds;
-
-        let cancelled = false;
-        const targetSessions = sessionsToShow.slice(0, MAX_QUICK_ACCOUNTS);
-
-        // Deduplicate session IDs - use Set to ensure uniqueness
-        const uniqueSessionIds = Array.from(new Set(targetSessions.map(s => s.sessionId)));
-
+        const uniqueSessionIds = Array.from(new Set(sessionsToLoad.map(s => s.sessionId)));
         if (uniqueSessionIds.length === 0) {
-            setQuickAccounts([]);
-            setLoadingAccounts(false);
-            loadingRef.current = false;
+            setAccountsRef.current([]);
             return;
         }
 
-        // Don't show loading if we already have accounts (prevents flicker)
-        setQuickAccounts(prev => {
-            if (prev.length === 0) {
-                setLoadingAccounts(true);
-            }
-            return prev;
-        });
+        const currentAccounts = useAccountStore.getState().accounts;
+        const accountsArray = Object.values(currentAccounts);
 
-        const loadAccounts = async () => {
-            try {
-                const batchResults = await oxyServices.getUsersBySessions(uniqueSessionIds);
+        void loadAccountsRef.current(uniqueSessionIds, oxyServices, accountsArray);
+    }, [sessionsToLoadIds, oxyServices, isLoading]);
 
-                if (cancelled) return;
-
-                // Deduplicate by sessionId using Map and cache avatar URLs
-                const accountMap = new Map<string, QuickAccount>();
-
-                for (const { sessionId, user: userData } of batchResults) {
-                    if (!userData || accountMap.has(sessionId)) continue;
-
-                    const displayName = userData.name?.full ||
-                        userData.name?.first ||
-                        userData.username ||
-                        'Account';
-
-                    // Pre-calculate avatar URL to prevent recalculation on every render
-                    const avatarUrl = userData.avatar
-                        ? oxyServices.getFileDownloadUrl(userData.avatar, 'thumb')
-                        : undefined;
-
-                    accountMap.set(sessionId, {
-                        sessionId,
-                        username: userData.username || '',
-                        displayName,
-                        avatar: userData.avatar,
-                        avatarUrl, // Cache the URL
-                    });
-                }
-
-                if (cancelled) return;
-
-                // Preserve order from targetSessions and merge with existing to keep avatar URLs
-                // Deduplicate final result to prevent any duplicates
-                setQuickAccounts(prev => {
-                    const existingMap = new Map(prev.map(a => [a.sessionId, a]));
-                    const seen = new Set<string>();
-                    const orderedAccounts: QuickAccount[] = [];
-
-                    for (const session of targetSessions) {
-                        const sessionId = session.sessionId;
-                        if (seen.has(sessionId)) continue; // Skip duplicates
-                        seen.add(sessionId);
-
-                        const newAccount = accountMap.get(sessionId);
-                        if (!newAccount) {
-                            // Keep existing account if available
-                            const existing = existingMap.get(sessionId);
-                            if (existing) {
-                                orderedAccounts.push(existing);
-                            }
-                            continue;
-                        }
-
-                        // Preserve existing avatarUrl if account data hasn't changed
-                        const existing = existingMap.get(sessionId);
-                        if (existing && existing.avatar === newAccount.avatar && existing.avatarUrl) {
-                            orderedAccounts.push({ ...newAccount, avatarUrl: existing.avatarUrl });
-                        } else {
-                            orderedAccounts.push(newAccount);
-                        }
-                    }
-
-                    return orderedAccounts;
-                });
-            } catch (error) {
-                if (__DEV__) {
-                    console.error('Failed to load accounts:', error);
-                }
-                if (!cancelled) {
-                    setQuickAccounts(prev => prev.length === 0 ? [] : prev);
-                }
-            } finally {
-                if (!cancelled) {
-                    setLoadingAccounts(false);
-                    loadingRef.current = false;
-                }
-            }
-        };
-
-        void loadAccounts();
-
-        return () => {
-            cancelled = true;
-            loadingRef.current = false;
-        };
-    }, [sessionsToShowIds, oxyServices]);
-
-    // Instant account switching - fire and forget for speed
     const handleSwitchAccount = useCallback(
         async (sessionId: string) => {
             if (switchingSessionId || sessionId === activeSessionId) return;
 
-            // Instant UI update - don't wait for anything
             setSwitchingSessionId(sessionId);
+            moveAccountToTopRef.current(sessionId);
 
-            // Optimistically update accounts list immediately
-            setQuickAccounts(prev => {
-                const accountToSwitch = prev.find(a => a.sessionId === sessionId);
-                if (!accountToSwitch) return prev;
-
-                // Move switched account to top instantly
-                const filtered = prev.filter(a => a.sessionId !== sessionId);
-                return [accountToSwitch, ...filtered];
-            });
-
-            // Switch in background - don't block UI
             switchSession(sessionId).catch((error) => {
-                if (__DEV__) {
-                    console.error('Failed to switch account:', error);
+                if (__DEV__) console.error('Failed to switch account:', error);
+                const state = useAccountStore.getState();
+                const account = state.accounts[sessionId];
+                if (account) {
+                    const filtered = Object.values(state.accounts).filter(a => a.sessionId !== sessionId);
+                    setAccountsRef.current([...filtered, account]);
                 }
-                // Revert on error
-                setQuickAccounts(prev => {
-                    const accountToSwitch = prev.find(a => a.sessionId === sessionId);
-                    if (!accountToSwitch) return prev;
-                    const filtered = prev.filter(a => a.sessionId !== sessionId);
-                    return [...filtered, accountToSwitch];
-                });
-                toast.error(
-                    t('signin.actions.switchAccountFailed') || 'Unable to switch accounts. Please try again.'
-                );
+                toast.error(t('signin.actions.switchAccountFailed') || 'Unable to switch accounts. Please try again.');
             }).finally(() => {
                 setSwitchingSessionId(null);
             });
@@ -284,43 +158,18 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
         [switchSession, switchingSessionId, activeSessionId, t]
     );
 
-    // Memoize current user avatar URL to prevent recalculation
-    const currentUserAvatarUrl = useMemo(() => {
-        if (!isAddAccountMode || !user?.avatar || !oxyServices) return undefined;
-        return oxyServices.getFileDownloadUrl(user.avatar, 'thumb');
-    }, [isAddAccountMode, user?.avatar, oxyServices]);
 
-    // Accounts for avatar display - deduplicated with cached URLs
-    const accountsForAvatars = useMemo(() => {
-        const seen = new Set<string>();
-        const accounts: Array<QuickAccount & { isCurrent?: boolean; avatarUrl?: string }> = [];
-
-        // Add current user if in add account mode
-        if (isAddAccountMode && user && activeSessionId) {
-            accounts.push({
-                sessionId: activeSessionId,
-                displayName: user.name?.full || user.username || 'Account',
-                username: user.username || '',
-                avatar: user.avatar,
-                avatarUrl: currentUserAvatarUrl, // Use memoized URL
-                isCurrent: true,
-            });
-            seen.add(activeSessionId);
-        }
-
-        // Add quick accounts (excluding duplicates) - already have cached avatarUrl
-        for (const account of quickAccounts) {
-            if (!seen.has(account.sessionId)) {
-                accounts.push({
-                    ...account,
-                    isCurrent: account.sessionId === activeSessionId,
-                });
-                seen.add(account.sessionId);
-            }
-        }
-
-        return accounts;
-    }, [isAddAccountMode, user, quickAccounts, activeSessionId, currentUserAvatarUrl]);
+    const accountsForDisplay = useMemo(() => {
+        const sessionMap = new Map(sessions?.map(s => [s.sessionId, s]) || []);
+        return quickAccounts.map(account => {
+            const session = sessionMap.get(account.sessionId);
+            const isCurrent = session?.isCurrent === true || account.sessionId === activeSessionId;
+            return {
+                ...account,
+                isCurrent,
+            };
+        });
+    }, [quickAccounts, sessions, activeSessionId]);
 
     const handleUsernameChange = useCallback((text: string) => {
         const filteredText = text.replace(/[^a-zA-Z0-9]/g, '');
@@ -399,7 +248,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                 />
             </View>
 
-            {((isAddAccountMode && user) || sessionsToShow.length > 0) && (
+            {accountsForDisplay.length > 0 && (
                 <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.dividerContainer]}>
                     <View style={[stylesheet.dividerLine, { backgroundColor: colors.border }]} />
                     <Text style={[stylesheet.dividerText, { color: colors.secondaryText }]}>
@@ -409,7 +258,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                 </View>
             )}
 
-            {(isAddAccountMode && user) || sessionsToShow.length > 0 ? (
+            {accountsForDisplay.length > 0 ? (
                 <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
                     <TouchableOpacity
                         style={[
@@ -430,16 +279,16 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                             <Text style={[stylesheet.toggleButtonText, { color: colors.text }]}>
                                 {t('signin.alreadySignedInWith') || 'Already signed in with'}
                             </Text>
-                            {accountsForAvatars.length > 0 && (
+                            {accountsForDisplay.length > 0 && (
                                 <View style={stylesheet.avatarsContainer}>
-                                    {accountsForAvatars.slice(0, 5).map((account, index) => (
+                                    {accountsForDisplay.slice(0, 5).map((account, index) => (
                                         <View
                                             key={`avatar-${account.sessionId}`}
                                             style={[
                                                 stylesheet.avatarWrapper,
                                                 account.isCurrent && stylesheet.currentAvatarWrapper,
                                                 index > 0 && { marginLeft: -12 },
-                                                { zIndex: Math.min(accountsForAvatars.length, 5) - index },
+                                                { zIndex: Math.min(accountsForDisplay.length, 5) - index },
                                                 { borderColor: colors.inputBackground || colors.background || '#FFFFFF' },
                                             ]}
                                         >
@@ -454,10 +303,10 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                     ))}
                                 </View>
                             )}
-                            {!showAccounts && (quickAccounts.length > 0 || sessionsToShow.length > 0) && accountsForAvatars.length === 0 && (
+                            {!showAccounts && accountsForDisplay.length === 0 && quickAccounts.length > 0 && (
                                 <View style={[stylesheet.accountCountBadge, { backgroundColor: `${colors.primary}15` }]}>
                                     <Text style={[stylesheet.accountCountText, { color: colors.primary }]}>
-                                        {sessionsToShow.length + (isAddAccountMode && user ? 1 : 0)}
+                                        {quickAccounts.length}
                                     </Text>
                                 </View>
                             )}
@@ -466,57 +315,13 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
 
                     {showAccounts && (
                         <View style={stylesheet.accountsList}>
-                            {loadingAccounts && quickAccounts.length === 0 && !isAddAccountMode ? (
+                            {loadingAccounts && accountsForDisplay.length === 0 ? (
                                 <View style={stylesheet.accountItem}>
                                     <ActivityIndicator color={colors.primary} size="small" />
                                 </View>
                             ) : (
                                 <>
-                                    {isAddAccountMode && user && (
-                                        <View
-                                            style={[
-                                                stylesheet.accountItem,
-                                                {
-                                                    backgroundColor: colors.inputBackground,
-                                                },
-                                            ]}
-                                        >
-                                            <View style={[stylesheet.accountItemAvatarWrapper, { borderColor: colors.inputBackground || colors.background || '#FFFFFF' }]}>
-                                                <Avatar
-                                                    name={user.name?.full || user.username}
-                                                    size={36}
-                                                    theme={themeMode}
-                                                    backgroundColor={colors.primary}
-                                                    uri={currentUserAvatarUrl}
-                                                />
-                                            </View>
-                                            <View style={stylesheet.accountItemText}>
-                                                <Text
-                                                    style={[stylesheet.accountItemName, { color: colors.text }]}
-                                                    numberOfLines={1}
-                                                >
-                                                    {user.name?.full || user.username}
-                                                </Text>
-                                                {user.username && (
-                                                    <Text
-                                                        style={[
-                                                            stylesheet.accountItemUsername,
-                                                            { color: colors.secondaryText },
-                                                        ]}
-                                                        numberOfLines={1}
-                                                    >
-                                                        @{user.username}
-                                                    </Text>
-                                                )}
-                                            </View>
-                                            <View style={[stylesheet.currentAccountBadgeContainer, { backgroundColor: `${colors.primary}15` }]}>
-                                                <Text style={[stylesheet.currentAccountBadge, { color: colors.primary }]}>
-                                                    {t('signin.currentAccount') || 'Current'}
-                                                </Text>
-                                            </View>
-                                        </View>
-                                    )}
-                                    {quickAccounts.map((account) => (
+                                    {accountsForDisplay.map((account) => (
                                         <TouchableOpacity
                                             key={`account-${account.sessionId}`}
                                             style={[
@@ -527,7 +332,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                                 switchingSessionId === account.sessionId && stylesheet.accountItemLoading,
                                             ]}
                                             onPress={() => handleSwitchAccount(account.sessionId)}
-                                            disabled={switchingSessionId === account.sessionId}
+                                            disabled={switchingSessionId === account.sessionId || account.isCurrent}
                                             activeOpacity={0.7}
                                         >
                                             {switchingSessionId === account.sessionId ? (
@@ -562,11 +367,18 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                                             </Text>
                                                         )}
                                                     </View>
+                                                    {account.isCurrent ? (
+                                                        <View style={[stylesheet.currentAccountBadgeContainer, { backgroundColor: `${colors.primary}20` }]}>
+                                                            <Text style={[stylesheet.currentAccountBadge, { color: colors.primary }]}>
+                                                                {t('signin.currentAccount') || 'Current'}
+                                                            </Text>
+                                                        </View>
+                                                    ) : null}
                                                 </>
                                             )}
                                         </TouchableOpacity>
                                     ))}
-                                    {sessionsToShow.length > MAX_QUICK_ACCOUNTS && (
+                                    {sessions && sessions.length > MAX_QUICK_ACCOUNTS && (
                                         <TouchableOpacity
                                             style={[
                                                 stylesheet.accountItem,
@@ -581,8 +393,8 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                                             <Ionicons name="chevron-forward" size={18} color={colors.primary} />
                                             <Text style={[stylesheet.viewAllText, { color: colors.primary }]}>
                                                 {t('signin.viewAllAccounts', {
-                                                    count: sessionsToShow.length - MAX_QUICK_ACCOUNTS,
-                                                }) || `View ${sessionsToShow.length - MAX_QUICK_ACCOUNTS} more`}
+                                                    count: sessions.length - MAX_QUICK_ACCOUNTS,
+                                                }) || `View ${sessions.length - MAX_QUICK_ACCOUNTS} more`}
                                             </Text>
                                         </TouchableOpacity>
                                     )}
@@ -662,6 +474,7 @@ const stylesheet = StyleSheet.create({
         borderWidth: 0,
         gap: 12,
         minHeight: 56,
+        justifyContent: 'space-between',
     },
     accountItemLoading: {
         justifyContent: 'center',
@@ -688,14 +501,19 @@ const stylesheet = StyleSheet.create({
         marginLeft: 4,
     },
     currentAccountBadgeContainer: {
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 16,
+        paddingHorizontal: 12,
+        paddingVertical: 5,
+        borderRadius: 12,
+        marginLeft: 'auto',
+        minWidth: 60,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     currentAccountBadge: {
-        fontSize: 10,
-        fontWeight: '600',
-        letterSpacing: 0.3,
+        fontSize: 11,
+        fontFamily: fontFamilies.phuduExtraBold,
+        letterSpacing: 0.5,
+        textTransform: 'uppercase',
     },
     dividerContainer: {
         flexDirection: 'row',

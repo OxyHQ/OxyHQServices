@@ -3,8 +3,8 @@ export interface ClientSession {
   deviceId: string;
   expiresAt: string;
   lastActive: string;
-  // Only userId for identification, do not store username
   userId?: string;
+  isCurrent?: boolean;
 }
 
 export interface StorageKeys {

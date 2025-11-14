@@ -541,10 +541,14 @@ export class OxyServices {
       if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
         return [];
       }
+      
+      // Deduplicate and sort sessionIds for consistent cache keys
+      const uniqueSessionIds = Array.from(new Set(sessionIds)).sort();
+      
       return await this.makeRequest<Array<{ sessionId: string; user: User | null }>>(
         'POST',
         '/api/session/users/batch',
-        { sessionIds },
+        { sessionIds: uniqueSessionIds },
         {
           cache: true,
           cacheTTL: 2 * 60 * 1000, // 2 minutes cache

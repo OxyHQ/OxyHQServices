@@ -171,19 +171,9 @@ export function mergeSessions(
     sessionMap.set(session.sessionId, session);
   }
   
-  // Merge incoming sessions, prioritizing newer lastActive
+  // Merge incoming sessions - backend data always replaces existing
   for (const session of normalizedIncoming) {
-    const existing = sessionMap.get(session.sessionId);
-    if (!existing) {
-      sessionMap.set(session.sessionId, session);
-    } else {
-      // Keep the one with more recent lastActive
-      const existingTime = new Date(existing.lastActive).getTime();
-      const currentTime = new Date(session.lastActive).getTime();
-      if (currentTime >= existingTime) {
-        sessionMap.set(session.sessionId, session);
-      }
-    }
+    sessionMap.set(session.sessionId, session);
   }
   
   // Convert to array
