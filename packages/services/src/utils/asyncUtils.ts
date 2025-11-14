@@ -2,6 +2,8 @@
  * Async utilities for common asynchronous patterns and error handling
  */
 
+import { TTLCache, registerCacheForCleanup } from './cache';
+
 /**
  * Wrapper for async operations with automatic error handling
  */
@@ -203,7 +205,6 @@ export function createAsyncCache<T>(
   ttl: number = 5 * 60 * 1000 // 5 minutes default
 ) {
   // Re-export from centralized cache utility
-  const { TTLCache, registerCacheForCleanup } = require('./cache');
   const cache = new TTLCache<T>(ttl);
   registerCacheForCleanup(cache);
   
