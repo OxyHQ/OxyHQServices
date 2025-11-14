@@ -291,8 +291,6 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     subtitle: account.email || account.username,
                                     onPress: () => {
                                         toast.info(t('accountOverview.items.accountSwitcher.switchPrompt', { username: account.username }) || `Switch to ${account.username}?`);
-                                        // TODO: Implement account switching logic
-                                        // switchSession(account.sessionId);
                                     },
                                     customContent: (
                                         <>
@@ -378,6 +376,22 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 onPress: () => setShowMoreAccounts(!showMoreAccounts),
                             },
                             {
+                                id: 'history-view',
+                                icon: 'time',
+                                iconColor: '#007AFF',
+                                title: t('accountOverview.items.history.title') || 'History',
+                                subtitle: t('accountOverview.items.history.subtitle') || 'View and manage your search history',
+                                onPress: () => navigate?.('HistoryView'),
+                            },
+                            {
+                                id: 'saves-collections',
+                                icon: 'bookmark',
+                                iconColor: '#FF9500',
+                                title: t('accountOverview.items.saves.title') || 'Saves & Collections',
+                                subtitle: t('accountOverview.items.saves.subtitle') || 'View your saved items and collections',
+                                onPress: () => navigate?.('SavesCollections'),
+                            },
+                            {
                                 id: 'download-data',
                                 icon: 'download',
                                 iconColor: '#34C759',
@@ -403,6 +417,22 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                     <GroupedSection
                         items={[
                             {
+                                id: 'search-settings',
+                                icon: 'search',
+                                iconColor: '#007AFF',
+                                title: t('accountOverview.items.searchSettings.title') || 'Search Settings',
+                                subtitle: t('accountOverview.items.searchSettings.subtitle') || 'SafeSearch and personalization',
+                                onPress: () => navigate?.('SearchSettings'),
+                            },
+                            {
+                                id: 'language-settings',
+                                icon: 'language',
+                                iconColor: '#32D74B',
+                                title: t('accountOverview.items.language.title') || 'Language',
+                                subtitle: t('accountOverview.items.language.subtitle') || 'Choose your preferred language',
+                                onPress: () => navigate?.('LanguageSelector'),
+                            },
+                            {
                                 id: 'account-preferences',
                                 icon: 'settings',
                                 iconColor: '#8E8E93',
@@ -416,7 +446,23 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: '#007AFF',
                                 title: t('accountOverview.items.help.title'),
                                 subtitle: t('accountOverview.items.help.subtitle'),
-                                onPress: () => toast.info(t('accountOverview.items.help.coming')),
+                                onPress: () => navigate?.('HelpSupport'),
+                            },
+                            {
+                                id: 'privacy-policy',
+                                icon: 'shield-checkmark',
+                                iconColor: '#30D158',
+                                title: t('accountOverview.items.privacyPolicy.title') || 'Privacy Policy',
+                                subtitle: t('accountOverview.items.privacyPolicy.subtitle') || 'How we handle your data',
+                                onPress: () => navigate?.('LegalDocuments', { initialStep: 1 }),
+                            },
+                            {
+                                id: 'terms-of-service',
+                                icon: 'document-text',
+                                iconColor: '#007AFF',
+                                title: t('accountOverview.items.termsOfService.title') || 'Terms of Service',
+                                subtitle: t('accountOverview.items.termsOfService.subtitle') || 'Terms and conditions of use',
+                                onPress: () => navigate?.('LegalDocuments', { initialStep: 2 }),
                             },
                             {
                                 id: 'connected-apps',

@@ -1045,7 +1045,6 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
                                 ]}
                                 onPress={() => {
                                     setCurrentAppPackage(app);
-                                    console.log('Switched to app context:', app);
                                 }}
                             >
                                 <Text style={[

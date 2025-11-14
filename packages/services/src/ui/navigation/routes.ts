@@ -22,6 +22,11 @@ import RecoverAccountScreen from '../screens/RecoverAccountScreen';
 import PaymentGatewayScreen from '../screens/PaymentGatewayScreen';
 import WelcomeNewUserScreen from '../screens/WelcomeNewUserScreen';
 import LanguageSelectorScreen from '../screens/LanguageSelectorScreen';
+import HistoryViewScreen from '../screens/HistoryViewScreen';
+import SavesCollectionsScreen from '../screens/SavesCollectionsScreen';
+import SearchSettingsScreen from '../screens/SearchSettingsScreen';
+import HelpSupportScreen from '../screens/HelpSupportScreen';
+import LegalDocumentsScreen from '../screens/LegalDocumentsScreen';
 
 export interface RouteConfig {
   component: ComponentType<any>;
@@ -53,6 +58,11 @@ export const routeNames = [
   'PaymentGateway',
   'WelcomeNewUser',
   'LanguageSelector',
+  'HistoryView',
+  'SavesCollections',
+  'SearchSettings',
+  'HelpSupport',
+  'LegalDocuments',
 ] as const;
 
 export type RouteName = typeof routeNames[number];
@@ -148,6 +158,26 @@ export const routes: Record<RouteName, RouteConfig> = {
   },
   LanguageSelector: {
     component: LanguageSelectorScreen as unknown as ComponentType<any>,
+    snapPoints: ['70%', '100%'],
+  },
+  HistoryView: {
+    component: HistoryViewScreen as unknown as ComponentType<any>,
+    snapPoints: ['70%', '100%'],
+  },
+  SavesCollections: {
+    component: SavesCollectionsScreen as unknown as ComponentType<any>,
+    snapPoints: ['70%', '100%'],
+  },
+  SearchSettings: {
+    component: SearchSettingsScreen as unknown as ComponentType<any>,
+    snapPoints: ['70%', '100%'],
+  },
+  HelpSupport: {
+    component: HelpSupportScreen as unknown as ComponentType<any>,
+    snapPoints: ['70%', '100%'],
+  },
+  LegalDocuments: {
+    component: LegalDocumentsScreen as unknown as ComponentType<any>,
     snapPoints: ['70%', '100%'],
   },
 };

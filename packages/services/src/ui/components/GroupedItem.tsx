@@ -45,7 +45,7 @@ const GroupedItem: React.FC<GroupedItemProps> = ({
 }) => {
     const isDarkTheme = theme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
-    const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#FFFFFF';
+    const secondaryBackgroundColor = isDarkTheme ? '#1C1C1E' : '#FFFFFF';
     const selectedBackgroundColor = selected ? `${iconColor}15` : secondaryBackgroundColor;
 
     const itemStyles = [
@@ -80,7 +80,7 @@ const GroupedItem: React.FC<GroupedItemProps> = ({
             <View style={[styles.actionTextContainer, multiRow && styles.actionTextContainerMultiRow]}>
                 <Text style={[styles.actionButtonText, { color: textColor }]}>{title}</Text>
                 {subtitle && (
-                    <Text style={[styles.actionButtonSubtext, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                    <Text style={[styles.actionButtonSubtext, { color: isDarkTheme ? '#98989D' : '#8E8E93' }]}>
                         {subtitle}
                     </Text>
                 )}
@@ -90,7 +90,7 @@ const GroupedItem: React.FC<GroupedItemProps> = ({
             {selected ? (
                 <Ionicons name="checkmark-circle" size={20} color={iconColor || '#007AFF'} />
             ) : showChevron ? (
-                <Ionicons name="chevron-forward" size={16} color={isDarkTheme ? '#666666' : '#999999'} />
+                <Ionicons name="chevron-forward" size={16} color={isDarkTheme ? '#636366' : '#C7C7CC'} />
             ) : null}
         </View>
     );
@@ -115,56 +115,58 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 2,
+        marginBottom: StyleSheet.hairlineWidth,
         overflow: 'hidden',
         width: '100%',
     },
     firstGroupedItem: {
-        borderTopLeftRadius: 24,
-        borderTopRightRadius: 24,
+        borderTopLeftRadius: 16,
+        borderTopRightRadius: 16,
     },
     lastGroupedItem: {
-        borderBottomLeftRadius: 24,
-        borderBottomRightRadius: 24,
-        marginBottom: 8,
+        borderBottomLeftRadius: 16,
+        borderBottomRightRadius: 16,
+        marginBottom: 0,
     },
     groupedItemContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 12,
+        paddingVertical: 14,
+        paddingHorizontal: 16,
         width: '100%',
     },
     groupedItemContentDense: {
-        paddingVertical: 10,
-        paddingHorizontal: 12,
+        paddingVertical: 12,
+        paddingHorizontal: 16,
     },
     actionIcon: {
         marginRight: 12,
     },
     iconContainer: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
+        width: 32,
+        height: 32,
+        borderRadius: 12,
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: 12,
     },
     actionImage: {
         marginRight: 12,
-        borderRadius: 16,
+        borderRadius: 12,
     },
     actionTextContainer: {
         flex: 1,
     },
     actionButtonText: {
-        fontSize: 16,
-        fontWeight: '500',
+        fontSize: 17,
+        fontWeight: '400',
         marginBottom: 2,
+        letterSpacing: -0.2,
     },
     actionButtonSubtext: {
-        fontSize: 13,
-        lineHeight: 18,
+        fontSize: 15,
+        lineHeight: 20,
+        marginTop: 1,
     },
     groupedItemContentMultiRow: {
         alignItems: 'flex-start',

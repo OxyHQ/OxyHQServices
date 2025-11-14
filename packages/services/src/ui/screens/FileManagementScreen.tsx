@@ -12,6 +12,8 @@ import {
     Modal,
     TextInput,
     Image, // kept for Image.getSize only
+    Animated,
+    Easing,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import type { BaseScreenProps } from '../navigation/types';
@@ -92,18 +94,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     linkContext,
 }) => {
     const { user, oxyServices } = useOxy();
-
-    // Debug: log the actual container width
-    useEffect(() => {
-        console.log('[FileManagementScreen] Container width (full):', containerWidth);
-        // Padding structure:
-        // - containerWidth = full bottom sheet container width (measured from OxyProvider)
-        // - photoScrollContainer adds padding: 16 (32px total horizontal padding)
-        // - Available content width = containerWidth - 32
-        const availableContentWidth = containerWidth - 32;
-        console.log('[FileManagementScreen] Available content width:', availableContentWidth);
-        console.log('[FileManagementScreen] Spacing fix applied: 4px uniform gap both horizontal and vertical');
-    }, [containerWidth]);
     const files = useFiles();
     const uploading = useUploadingStore();
     const uploadProgress = useUploadAggregateProgress();
@@ -144,6 +134,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const MIN_BANNER_MS = 600;
     // Selection state
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set(initialSelectedIds));
+    const [lastSelectedFileId, setLastSelectedFileId] = useState<string | null>(null);
+    const scrollViewRef = useRef<ScrollView>(null);
+    const photoScrollViewRef = useRef<ScrollView>(null);
+    const itemRefs = useRef<Map<string, number>>(new Map()); // Track item positions
     useEffect(() => {
         if (initialSelectedIds && initialSelectedIds.length) {
             setSelectedIds(new Set(initialSelectedIds));
@@ -165,12 +159,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         if (fileVisibility !== defaultVisibility) {
             try {
                 await oxyServices.assetUpdateVisibility(file.id, defaultVisibility);
-                console.log(`Updated file ${file.id} visibility from ${fileVisibility} to ${defaultVisibility}`);
             } catch (error) {
-                console.error('Failed to update file visibility:', error);
                 // Continue anyway - selection shouldn't fail if visibility update fails
             }
         }
+        
+        // Track the selected file for scrolling
+        setLastSelectedFileId(file.id);
 
         // Link file to entity if linkContext is provided
         if (linkContext) {
@@ -183,9 +178,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     defaultVisibility,
                     (linkContext as any).webhookUrl
                 );
-                console.log(`Linked file ${file.id} to ${linkContext.app}/${linkContext.entityType}/${linkContext.entityId}`);
             } catch (error) {
-                console.error('Failed to link file:', error);
                 // Continue anyway - selection shouldn't fail if linking fails
             }
         }
@@ -228,9 +221,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             if (fileVisibility !== defaultVisibility) {
                 try {
                     await oxyServices.assetUpdateVisibility(file.id, defaultVisibility);
-                    console.log(`Updated file ${file.id} visibility from ${fileVisibility} to ${defaultVisibility}`);
                 } catch (error) {
-                    console.error(`Failed to update visibility for ${file.id}:`, error);
+                    // Visibility update failed, continue with selection
                 }
             }
 
@@ -245,9 +237,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         defaultVisibility,
                         (linkContext as any).webhookUrl
                     );
-                    console.log(`Linked file ${file.id} to ${linkContext.app}/${linkContext.entityType}/${linkContext.entityId}`);
                 } catch (error) {
-                    console.error(`Failed to link file ${file.id}:`, error);
+                    // File linking failed, continue with selection
                 }
             }
         });
@@ -378,7 +369,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 }));
             }
         } catch (error: any) {
-            console.error('Failed to load files:', error);
             toast.error(error.message || 'Failed to load files');
         } finally {
             setLoading(false);
@@ -465,7 +455,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 setPhotoDimensions(newDimensions);
             }
         } catch (error) {
-            console.error('Error loading photo dimensions:', error);
+            // Photo dimensions loading failed, continue without dimensions
         } finally {
             setLoadingDimensions(false);
         }
@@ -554,7 +544,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             // Silent background refresh to ensure metadata/variants updated
             setTimeout(() => { loadFiles('silent'); }, 1200);
         } catch (error: any) {
-            console.error('Upload error:', error);
             toast.error(error.message || 'Failed to upload files');
         } finally {
             storeSetUploadProgress(null);
@@ -623,18 +612,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         const confirmed = window.confirm(`Are you sure you want to delete "${filename}"? This action cannot be undone.`);
 
         if (!confirmed) {
-            console.log('Delete cancelled by user');
             return;
         }
 
         try {
-            console.log('Deleting file:', { fileId, filename });
-            console.log('Target user ID:', targetUserId);
-            console.log('Current user ID:', user?.id);
             storeSetDeleting(fileId);
-
-            const result = await oxyServices.deleteFile(fileId);
-            console.log('Delete result:', result);
+            await oxyServices.deleteFile(fileId);
 
             toast.success('File deleted successfully');
 
@@ -644,8 +627,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             // Silent background reconcile
             setTimeout(() => loadFiles('silent'), 800);
         } catch (error: any) {
-            console.error('Delete error:', error);
-            console.error('Error details:', error.response?.data || error.message);
 
             // Provide specific error messages
             if (error.message?.includes('File not found') || error.message?.includes('404')) {
@@ -739,11 +720,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const handleFileDownload = async (fileId: string, filename: string) => {
         try {
             if (Platform.OS === 'web') {
-                console.log('Downloading file:', { fileId, filename });
-
                 // Use the public download URL method
                 const downloadUrl = oxyServices.getFileDownloadUrl(fileId);
-                console.log('Download URL:', downloadUrl);
 
                 try {
                     // Method 1: Try simple link download first
@@ -757,7 +735,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                     toast.success('File download started');
                 } catch (linkError) {
-                    console.warn('Link download failed, trying fetch method:', linkError);
 
                     // Method 2: Fallback to authenticated download
                     const blob = await oxyServices.getFileContentAsBlob(fileId);
@@ -779,7 +756,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 toast.info('File download not implemented for mobile yet');
             }
         } catch (error: any) {
-            console.error('Download error:', error);
             toast.error(error.message || 'Failed to download file');
         }
     };
@@ -837,7 +813,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         setFileContent(content);
                     }
                 } catch (error: any) {
-                    console.error('Failed to load file content:', error);
                     if (error.message?.includes('404') || error.message?.includes('not found')) {
                         toast.error('File not found. It may have been deleted.');
                     } else {
@@ -850,7 +825,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 setFileContent(null);
             }
         } catch (error: any) {
-            console.error('Failed to open file:', error);
             toast.error(error.message || 'Failed to open file');
         } finally {
             setLoadingFileContent(false);
@@ -905,8 +879,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         contentFit="cover"
                         transition={120}
                         cachePolicy="memory-disk"
-                        onError={(e: any) => {
-                            console.error('Photo failed to load:', (e as any)?.nativeEvent ?? e);
+                        onError={() => {
+                            // Photo failed to load, will show placeholder
                         }}
                         accessibilityLabel={photo.filename}
                     />
@@ -945,8 +919,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         contentFit="cover"
                         transition={120}
                         cachePolicy="memory-disk"
-                        onError={(e: any) => {
-                            console.error('Photo failed to load:', (e as any)?.nativeEvent ?? e);
+                        onError={() => {
+                            // Photo failed to load, will show placeholder
                         }}
                         accessibilityLabel={photo.filename}
                     />
@@ -1005,8 +979,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                         contentFit="cover"
                                         transition={120}
                                         cachePolicy="memory-disk"
-                                        onError={(_: any) => {
-                                            console.warn('Failed to load image preview.');
+                                        onError={() => {
+                                            // Image preview failed to load
                                         }}
                                         accessibilityLabel={file.filename}
                                     />
@@ -1129,10 +1103,16 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     // GroupedSection-based file items (for 'all' view) replacing legacy flat list look
     const groupedFileItems = useMemo(() => {
-        return filteredFiles
+        const sortedFiles = filteredFiles
             .filter(f => true)
-            .sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime())
-            .map((file) => {
+            .sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+        
+        // Store file positions for scrolling
+        sortedFiles.forEach((file, index) => {
+            itemRefs.current.set(file.id, index);
+        });
+        
+        return sortedFiles.map((file) => {
                 const isImage = file.contentType.startsWith('image/');
                 const isVideo = file.contentType.startsWith('video/');
                 const hasPreview = isImage || isVideo;
@@ -1191,6 +1171,93 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             });
     }, [filteredFiles, theme, themeStyles, deleting, handleFileDownload, handleFileDelete, handleFileOpen, getSafeDownloadUrl, selectMode, selectedIds]);
 
+    // Scroll to selected file after selection
+    useEffect(() => {
+        if (lastSelectedFileId && selectMode) {
+            if (viewMode === 'all' && scrollViewRef.current) {
+                // Find the index of the selected file
+                const itemIndex = itemRefs.current.get(lastSelectedFileId);
+                
+                if (itemIndex !== undefined && itemIndex >= 0) {
+                    // Estimate item height (GroupedItem with dense mode is approximately 60-70px)
+                    // Account for description rows which add extra height
+                    const baseItemHeight = 65;
+                    const descriptionHeight = 30; // Approximate height for description
+                    const sortedFiles = filteredFiles
+                        .filter(f => true)
+                        .sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+                    
+                    // Calculate total height up to this item
+                    let scrollPosition = 0;
+                    for (let i = 0; i <= itemIndex && i < sortedFiles.length; i++) {
+                        const file = sortedFiles[i];
+                        scrollPosition += baseItemHeight;
+                        if (file.metadata?.description) {
+                            scrollPosition += descriptionHeight;
+                        }
+                    }
+                    
+                    // Add header, controls, search, and stats height (approximately 250px)
+                    const headerHeight = 250;
+                    const finalScrollPosition = headerHeight + scrollPosition - 150; // Offset to show item near top
+                    
+                    // Use requestAnimationFrame to ensure DOM is updated before scrolling
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            scrollViewRef.current?.scrollTo({
+                                y: Math.max(0, finalScrollPosition),
+                                animated: true,
+                            });
+                        });
+                    });
+                }
+            } else if (viewMode === 'photos' && photoScrollViewRef.current) {
+                // For photo grid, find the photo index
+                const photos = filteredFiles.filter(file => file.contentType.startsWith('image/'));
+                const photoIndex = photos.findIndex(p => p.id === lastSelectedFileId);
+                
+                if (photoIndex >= 0) {
+                    // Estimate photo item height based on grid layout
+                    // Calculate items per row
+                    let itemsPerRow = 3;
+                    if (containerWidth > 768) itemsPerRow = 6;
+                    else if (containerWidth > 480) itemsPerRow = 4;
+                    
+                    const scrollContainerPadding = 32;
+                    const gaps = (itemsPerRow - 1) * 4;
+                    const availableWidth = containerWidth - scrollContainerPadding;
+                    const itemWidth = (availableWidth - gaps) / itemsPerRow;
+                    
+                    // Calculate row and approximate scroll position
+                    const row = Math.floor(photoIndex / itemsPerRow);
+                    const headerHeight = 250;
+                    const finalScrollPosition = headerHeight + (row * (itemWidth + 4)) - 150;
+                    
+                    // Use requestAnimationFrame to ensure DOM is updated before scrolling
+                    requestAnimationFrame(() => {
+                        requestAnimationFrame(() => {
+                            photoScrollViewRef.current?.scrollTo({
+                                y: Math.max(0, finalScrollPosition),
+                                animated: true,
+                            });
+                        });
+                    });
+                }
+            }
+        }
+    }, [lastSelectedFileId, selectMode, viewMode, filteredFiles, containerWidth]);
+
+    // Clear selected file ID after scroll animation completes
+    useEffect(() => {
+        if (lastSelectedFileId && scrollViewRef.current) {
+            const timeoutId = setTimeout(() => {
+                setLastSelectedFileId(null);
+            }, 600); // Allow time for scroll animation to complete
+            
+            return () => clearTimeout(timeoutId);
+        }
+    }, [lastSelectedFileId]);
+
     const renderPhotoItem = (photo: FileMetadata, index: number) => {
         const downloadUrl = getSafeDownloadUrl(photo, 'thumb');
 
@@ -1225,8 +1292,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         contentFit="cover"
                         transition={120}
                         cachePolicy="memory-disk"
-                        onError={(_: any) => {
-                            console.warn('Failed to load image preview for photo:', photo.id);
+                        onError={() => {
+                            // Image preview failed to load
                         }}
                         accessibilityLabel={photo.filename}
                     />
@@ -1270,6 +1337,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
         return (
             <ScrollView
+                ref={photoScrollViewRef}
                 style={styles.scrollView}
                 contentContainerStyle={styles.photoScrollContainer}
                 refreshControl={
@@ -1621,8 +1689,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                 contentFit="contain"
                                 transition={120}
                                 cachePolicy="memory-disk"
-                                onError={(e: any) => {
-                                    console.error('Image failed to load:', (e as any)?.nativeEvent ?? e);
+                                onError={() => {
+                                    // Image failed to load
                                 }}
                                 accessibilityLabel={openedFile.filename}
                             />
@@ -1741,13 +1809,190 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         </View>
     );
 
-    if (loading) {
-        return (
-            <View style={[styles.container, styles.centerContent, { backgroundColor }]}>
-                <ActivityIndicator size="large" color={themeStyles.primaryColor} />
-                <Text style={[styles.loadingText, { color: themeStyles.textColor }]}>Loading files...</Text>
+    // Professional Skeleton Loading Component with Advanced Shimmer Effect
+    const SkeletonLoader = React.memo(() => {
+        const shimmerAnim = useRef(new Animated.Value(0)).current;
+        const skeletonContainerWidth = containerWidth || 400;
+
+        useEffect(() => {
+            const shimmer = Animated.loop(
+                Animated.timing(shimmerAnim, {
+                    toValue: 1,
+                    duration: 2000,
+                    easing: Easing.linear,
+                    useNativeDriver: true,
+                })
+            );
+            shimmer.start();
+            return () => shimmer.stop();
+        }, [shimmerAnim]);
+
+        // Create a sweeping shimmer effect
+        const shimmerTranslateX = shimmerAnim.interpolate({
+            inputRange: [0, 1],
+            outputRange: [-skeletonContainerWidth * 2, skeletonContainerWidth * 2],
+        });
+
+        const SkeletonBox = ({ width, height, borderRadius = 8, style, delay = 0 }: { width: number | string; height: number; borderRadius?: number; style?: any; delay?: number }) => {
+            const delayedTranslateX = shimmerAnim.interpolate({
+                inputRange: [0, 1],
+                outputRange: [-skeletonContainerWidth * 2 + delay, skeletonContainerWidth * 2 + delay],
+            });
+
+            return (
+                <View
+                    style={[
+                        {
+                            width,
+                            height,
+                            borderRadius,
+                            backgroundColor: themeStyles.isDarkTheme ? '#1E1E1E' : '#F5F5F5',
+                            overflow: 'hidden',
+                            position: 'relative',
+                        },
+                        style,
+                    ]}
+                >
+                    {/* Base background */}
+                    <View
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            right: 0,
+                            bottom: 0,
+                            backgroundColor: themeStyles.isDarkTheme ? '#1E1E1E' : '#F5F5F5',
+                        }}
+                    />
+                    {/* Shimmer gradient effect */}
+                    <Animated.View
+                        style={{
+                            position: 'absolute',
+                            top: 0,
+                            left: 0,
+                            width: '100%',
+                            height: '100%',
+                            transform: [{ translateX: delayedTranslateX }],
+                        }}
+                    >
+                        <View
+                            style={{
+                                width: skeletonContainerWidth,
+                                height: '100%',
+                                backgroundColor: themeStyles.isDarkTheme 
+                                    ? 'rgba(255, 255, 255, 0.08)' 
+                                    : 'rgba(255, 255, 255, 0.8)',
+                                shadowColor: themeStyles.isDarkTheme ? '#000' : '#FFF',
+                                shadowOffset: { width: 0, height: 0 },
+                                shadowOpacity: 0.3,
+                                shadowRadius: 10,
+                            }}
+                        />
+                    </Animated.View>
+                </View>
+            );
+        };
+
+        // Skeleton file item matching GroupedSection structure
+        const SkeletonFileItem = ({ index }: { index: number }) => (
+            <View
+                style={[
+                    {
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        paddingHorizontal: 16,
+                        paddingVertical: 12,
+                        backgroundColor: themeStyles.isDarkTheme ? '#121212' : '#FFFFFF',
+                        borderBottomWidth: StyleSheet.hairlineWidth,
+                        borderBottomColor: themeStyles.borderColor,
+                    },
+                ]}
+            >
+                {/* Icon/Image skeleton */}
+                <SkeletonBox width={44} height={44} borderRadius={8} delay={index * 50} />
+                
+                {/* Content skeleton */}
+                <View style={{ flex: 1, marginLeft: 12, justifyContent: 'center' }}>
+                    <SkeletonBox 
+                        width={index % 3 === 0 ? '85%' : index % 3 === 1 ? '70%' : '90%'} 
+                        height={16} 
+                        style={{ marginBottom: 8 }} 
+                        delay={index * 50 + 20}
+                    />
+                    <SkeletonBox 
+                        width={index % 2 === 0 ? '50%' : '60%'} 
+                        height={12} 
+                        delay={index * 50 + 40}
+                    />
+                </View>
             </View>
         );
+
+        return (
+            <View style={[styles.container, { backgroundColor }]}>
+                {/* Header Skeleton */}
+                <View style={[styles.header, { borderBottomColor: themeStyles.borderColor, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+                    <SkeletonBox width={44} height={44} borderRadius={12} />
+                    <View style={[styles.headerTitleContainer, { flex: 1 }]}>
+                        <SkeletonBox width={140} height={20} style={{ marginBottom: 6 }} />
+                        <SkeletonBox width={100} height={14} />
+                    </View>
+                    <SkeletonBox width={44} height={44} borderRadius={12} />
+                </View>
+
+                {/* Controls Bar Skeleton */}
+                <View style={styles.controlsBar}>
+                    <SkeletonBox width={100} height={36} borderRadius={18} />
+                    <SkeletonBox width={44} height={44} borderRadius={22} />
+                </View>
+
+                {/* Search Bar Skeleton */}
+                <View style={[styles.searchContainer, { 
+                    backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF', 
+                    borderColor: themeStyles.borderColor,
+                    borderWidth: StyleSheet.hairlineWidth,
+                }]}>
+                    <SkeletonBox width="100%" height={44} borderRadius={12} />
+                </View>
+
+                {/* Stats Container Skeleton */}
+                <View style={[styles.statsContainer, { 
+                    backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF', 
+                    borderColor: themeStyles.borderColor,
+                    borderWidth: StyleSheet.hairlineWidth,
+                }]}>
+                    {[1, 2, 3].map((i) => (
+                        <View key={i} style={styles.statItem}>
+                            <SkeletonBox width={50} height={20} style={{ marginBottom: 4 }} delay={i * 30} />
+                            <SkeletonBox width={40} height={14} delay={i * 30 + 15} />
+                        </View>
+                    ))}
+                </View>
+
+                {/* File List Skeleton - Matching GroupedSection */}
+                <ScrollView 
+                    style={styles.scrollView} 
+                    contentContainerStyle={styles.scrollContainer}
+                    showsVerticalScrollIndicator={false}
+                >
+                    <View style={{
+                        backgroundColor: themeStyles.isDarkTheme ? '#121212' : '#FFFFFF',
+                        borderRadius: 12,
+                        overflow: 'hidden',
+                        marginHorizontal: 16,
+                        marginTop: 8,
+                    }}>
+                        {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
+                            <SkeletonFileItem key={i} index={i} />
+                        ))}
+                    </View>
+                </ScrollView>
+            </View>
+        );
+    });
+
+    if (loading) {
+        return <SkeletonLoader />;
     }
 
     // If a file is opened, show the file viewer
@@ -1923,6 +2168,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 renderPhotoGrid()
             ) : (
                 <ScrollView
+                    ref={scrollViewRef}
                     style={styles.scrollView}
                     contentContainerStyle={styles.scrollContainer}
                     refreshControl={
@@ -2825,6 +3071,18 @@ const styles = StyleSheet.create({
         aspectRatio: 1,
         borderRadius: 8,
         marginBottom: 4,
+    },
+    skeletonFileItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        gap: 12,
+    },
+    skeletonFileInfo: {
+        flex: 1,
+        justifyContent: 'center',
     },
 });
 

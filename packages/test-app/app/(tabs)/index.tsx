@@ -46,6 +46,14 @@ export default function HomeScreen() {
     showBottomSheet('EditProfile');
   }, [showBottomSheet]);
 
+  const handleOpenScreen = useCallback((screen: string) => {
+    if (!showBottomSheet) {
+      Alert.alert('Unavailable', 'Bottom sheet is not available right now.');
+      return;
+    }
+    showBottomSheet(screen as any);
+  }, [showBottomSheet]);
+
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
@@ -93,22 +101,126 @@ export default function HomeScreen() {
         </ThemedView>
 
         {isAuthenticated && (
-          <ThemedView style={styles.authenticatedState}>
-            <ThemedText type="subtitle">Signed in as</ThemedText>
-            <ThemedText type="defaultSemiBold">{displayName}</ThemedText>
+          <>
+            <ThemedView style={styles.authenticatedState}>
+              <ThemedText type="subtitle">Signed in as</ThemedText>
+              <ThemedText type="defaultSemiBold">{displayName}</ThemedText>
 
-            <Pressable style={styles.settingsButton} onPress={handleOpenAccountSettings}>
-              <ThemedText type="defaultSemiBold" style={styles.settingsLabel}>
-                Account settings
-              </ThemedText>
-            </Pressable>
+              <Pressable style={styles.settingsButton} onPress={handleOpenAccountSettings}>
+                <ThemedText type="defaultSemiBold" style={styles.settingsLabel}>
+                  Account settings
+                </ThemedText>
+              </Pressable>
 
-            <Pressable style={styles.logoutButton} onPress={handleLogout}>
-              <ThemedText type="defaultSemiBold" style={styles.logoutLabel}>
-                Sign out
+              <Pressable style={styles.logoutButton} onPress={handleLogout}>
+                <ThemedText type="defaultSemiBold" style={styles.logoutLabel}>
+                  Sign out
+                </ThemedText>
+              </Pressable>
+            </ThemedView>
+
+            {/* Account Overview & New Features */}
+            <ThemedView style={styles.featuresSection}>
+              <ThemedText type="subtitle">Account Overview & Features</ThemedText>
+              <ThemedText type="default" style={styles.sectionDescription}>
+                Test all the new account features
               </ThemedText>
-            </Pressable>
-          </ThemedView>
+
+              <Pressable 
+                style={styles.featureButton} 
+                onPress={() => handleOpenScreen('AccountOverview')}
+              >
+                <ThemedText type="defaultSemiBold" style={styles.featureButtonLabel}>
+                  📱 Account Overview
+                </ThemedText>
+                <ThemedText type="default" style={styles.featureButtonSubtext}>
+                  Main account screen with all features
+                </ThemedText>
+              </Pressable>
+            </ThemedView>
+
+            {/* Quick Access to New Features */}
+            <ThemedView style={styles.featuresSection}>
+              <ThemedText type="subtitle">Quick Feature Access</ThemedText>
+              <ThemedText type="default" style={styles.sectionDescription}>
+                Test individual features directly
+              </ThemedText>
+
+              <ThemedView style={styles.featureGrid}>
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('HistoryView')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    ⏱️ History
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    View & manage history
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('SavesCollections')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    🔖 Saves
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Saved items & collections
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('SearchSettings')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    🔍 Search
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    SafeSearch & settings
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('HelpSupport')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    ❓ Help
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Support & resources
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('LegalDocuments')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    📄 Legal
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Privacy & Terms
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('LanguageSelector')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    🌐 Language
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Change language
+                  </ThemedText>
+                </Pressable>
+              </ThemedView>
+            </ThemedView>
+          </>
         )}
       </ThemedView>
     </ParallaxScrollView>
@@ -180,5 +292,62 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     position: 'absolute',
+  },
+  featuresSection: {
+    gap: 12,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#8b5cf6',
+    backgroundColor: 'rgba(139, 92, 246, 0.08)',
+    marginTop: 8,
+  },
+  sectionDescription: {
+    opacity: 0.7,
+    fontSize: 13,
+  },
+  featureButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 8,
+    backgroundColor: '#8b5cf6',
+    marginTop: 4,
+  },
+  featureButtonLabel: {
+    color: '#ffffff',
+    fontSize: 16,
+    marginBottom: 4,
+  },
+  featureButtonSubtext: {
+    color: '#ffffff',
+    opacity: 0.9,
+    fontSize: 12,
+  },
+  featureGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 8,
+  },
+  featureCard: {
+    flex: 1,
+    minWidth: '47%',
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderRadius: 8,
+    backgroundColor: '#7c3aed',
+    borderWidth: 1,
+    borderColor: '#8b5cf6',
+  },
+  featureCardTitle: {
+    color: '#ffffff',
+    fontSize: 14,
+    marginBottom: 4,
+  },
+  featureCardSubtext: {
+    color: '#ffffff',
+    opacity: 0.85,
+    fontSize: 11,
   },
 });

@@ -44,6 +44,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     const updateUser = useAuthStore((state) => state.updateUser);
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
+    const [optimisticAvatarId, setOptimisticAvatarId] = useState<string | null>(null);
 
     // Two-Factor (TOTP) state
     const [totpSetupUrl, setTotpSetupUrl] = useState<string | null>(null);
@@ -69,7 +71,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     // Editing states
     const [editingField, setEditingField] = useState<string | null>(null);
 
-    // Temporary input states for inline editing
     const [tempDisplayName, setTempDisplayName] = useState('');
     const [tempLastName, setTempLastName] = useState('');
     const [tempUsername, setTempUsername] = useState('');
@@ -117,84 +118,119 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     }, [theme]);
 
     // Memoize animation function to prevent recreation on every render
-    const animateSaveButton = useCallback((toValue: number) => {
+    const animateSaveButton = useCallback((toValue: number, onComplete?: () => void) => {
         Animated.spring(saveButtonScale, {
             toValue,
             useNativeDriver: Platform.OS !== 'web',
             tension: 150,
             friction: 8,
-        }).start();
+        }).start(onComplete ? (finished) => {
+            if (finished) {
+                onComplete();
+            }
+        } : undefined);
     }, [saveButtonScale]);
 
-    // Load user data
+    // Track initialization to prevent unnecessary resets
+    const isInitializedRef = useRef(false);
+    const previousUserIdRef = useRef<string | null>(null);
+    const previousAvatarRef = useRef<string | null>(null);
+
+    // Load user data - only reset fields when user actually changes (not just avatar)
     useEffect(() => {
         if (user) {
-            const userDisplayName = typeof user.name === 'string'
-                ? user.name
-                : user.name?.first || user.name?.full || '';
-            const userLastName = typeof user.name === 'object' ? user.name?.last || '' : '';
-            setDisplayName(userDisplayName);
-            setLastName(userLastName);
-            setUsername(user.username || '');
-            setEmail(user.email || '');
-            setBio(user.bio || '');
-            setLocation(user.location || '');
+            const currentUserId = user.id;
+            const currentAvatar = typeof user.avatar === 'string' ? user.avatar : '';
+            const isNewUser = previousUserIdRef.current !== currentUserId;
+            const isAvatarOnlyUpdate = !isNewUser && previousUserIdRef.current === currentUserId &&
+                previousAvatarRef.current !== currentAvatar &&
+                previousAvatarRef.current !== null;
+            const shouldInitialize = !isInitializedRef.current || isNewUser;
 
-            // Handle locations - convert single location to array format
-            if (user.locations && Array.isArray(user.locations)) {
-                setTempLocations(user.locations.map((loc, index) => ({
-                    id: loc.id || `existing-${index}`,
-                    name: loc.name,
-                    label: loc.label,
-                    coordinates: loc.coordinates
-                })));
-            } else if (user.location) {
-                // Convert single location string to array format
-                setTempLocations([{
-                    id: 'existing-0',
-                    name: user.location,
-                    label: 'Location'
-                }]);
-            } else {
-                setTempLocations([]);
+            // Only reset all fields if it's a new user or first load
+            // Skip reset if it's just an avatar update
+            if (shouldInitialize && !isAvatarOnlyUpdate) {
+                const userDisplayName = typeof user.name === 'string'
+                    ? user.name
+                    : user.name?.first || user.name?.full || '';
+                const userLastName = typeof user.name === 'object' ? user.name?.last || '' : '';
+                setDisplayName(userDisplayName);
+                setLastName(userLastName);
+                setUsername(user.username || '');
+                setEmail(user.email || '');
+                setBio(user.bio || '');
+                setLocation(user.location || '');
+
+                // Handle locations - convert single location to array format
+                if (user.locations && Array.isArray(user.locations)) {
+                    setTempLocations(user.locations.map((loc, index) => ({
+                        id: loc.id || `existing-${index}`,
+                        name: loc.name,
+                        label: loc.label,
+                        coordinates: loc.coordinates
+                    })));
+                } else if (user.location) {
+                    // Convert single location string to array format
+                    setTempLocations([{
+                        id: 'existing-0',
+                        name: user.location,
+                        label: 'Location'
+                    }]);
+                } else {
+                    setTempLocations([]);
+                }
+
+                // Handle links - simple and direct like other fields
+                if (user.linksMetadata && Array.isArray(user.linksMetadata)) {
+                    const urls = user.linksMetadata.map(l => l.url);
+                    setLinks(urls);
+                    const metadataWithIds = user.linksMetadata.map((link, index) => ({
+                        ...link,
+                        id: link.id || `existing-${index}`
+                    }));
+                    setTempLinksWithMetadata(metadataWithIds);
+                } else if (Array.isArray(user.links)) {
+                    const simpleLinks = user.links.map(l => typeof l === 'string' ? l : l.link).filter(Boolean);
+                    setLinks(simpleLinks);
+                    const linksWithMetadata = simpleLinks.map((url, index) => ({
+                        url,
+                        title: url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+                        description: `Link to ${url}`,
+                        image: undefined,
+                        id: `existing-${index}`
+                    }));
+                    setTempLinksWithMetadata(linksWithMetadata);
+                } else if (user.website) {
+                    setLinks([user.website]);
+                    setTempLinksWithMetadata([{
+                        url: user.website,
+                        title: user.website.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+                        description: `Link to ${user.website}`,
+                        image: undefined,
+                        id: 'existing-0'
+                    }]);
+                } else {
+                    setLinks([]);
+                    setTempLinksWithMetadata([]);
+                }
+                isInitializedRef.current = true;
             }
 
-            // Handle links - simple and direct like other fields
-            if (user.linksMetadata && Array.isArray(user.linksMetadata)) {
-                const urls = user.linksMetadata.map(l => l.url);
-                setLinks(urls);
-                const metadataWithIds = user.linksMetadata.map((link, index) => ({
-                    ...link,
-                    id: link.id || `existing-${index}`
-                }));
-                setTempLinksWithMetadata(metadataWithIds);
-            } else if (Array.isArray(user.links)) {
-                const simpleLinks = user.links.map(l => typeof l === 'string' ? l : l.link).filter(Boolean);
-                setLinks(simpleLinks);
-                const linksWithMetadata = simpleLinks.map((url, index) => ({
-                    url,
-                    title: url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
-                    description: `Link to ${url}`,
-                    image: undefined,
-                    id: `existing-${index}`
-                }));
-                setTempLinksWithMetadata(linksWithMetadata);
-            } else if (user.website) {
-                setLinks([user.website]);
-                setTempLinksWithMetadata([{
-                    url: user.website,
-                    title: user.website.replace(/^https?:\/\//, '').replace(/\/$/, ''),
-                    description: `Link to ${user.website}`,
-                    image: undefined,
-                    id: 'existing-0'
-                }]);
-            } else {
-                setLinks([]);
-                setTempLinksWithMetadata([]);
+            // Update avatar only if it changed and we're not in optimistic/updating state
+            // This allows the server response to update the avatar without resetting other fields
+            if (currentAvatar !== avatarFileId && !isUpdatingAvatar && !optimisticAvatarId) {
+                setAvatarFileId(currentAvatar);
             }
-            setAvatarFileId(typeof user.avatar === 'string' ? user.avatar : '');
+
+            // If we just finished updating and the server avatar matches our optimistic one, clear optimistic state
+            if (isUpdatingAvatar === false && optimisticAvatarId && currentAvatar === optimisticAvatarId) {
+                setOptimisticAvatarId(null);
+            }
+
+            previousUserIdRef.current = currentUserId;
+            previousAvatarRef.current = currentAvatar;
         }
-    }, [user]);
+    }, [user, avatarFileId, isUpdatingAvatar, optimisticAvatarId]);
 
     const handleSave = async () => {
         if (!user) return;
@@ -212,9 +248,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 links,
                 linksMetadata: tempLinksWithMetadata.length > 0 ? tempLinksWithMetadata : undefined,
             };
-
-            console.log('Saving updates:', updates);
-            console.log('Links metadata being saved:', tempLinksWithMetadata);
 
             // Handle name field
             if (displayName || lastName) {
@@ -268,32 +301,49 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         toast.info?.(t('editProfile.toasts.avatarUnchanged') || 'Avatar unchanged');
                         return;
                     }
+
+                    // Optimistically update UI immediately
+                    setOptimisticAvatarId(file.id);
                     setAvatarFileId(file.id);
-                    toast.success(t('editProfile.toasts.avatarSelected') || 'Avatar selected');
+
                     // Auto-save avatar immediately (does not close edit profile screen)
                     (async () => {
                         try {
-                            console.log('[AccountSettings] Auto-saving avatar', file.id);
-                            setIsSaving(true);
+                            setIsUpdatingAvatar(true);
 
                             // Update file visibility to public for avatar
                             try {
                                 await oxyServices.assetUpdateVisibility(file.id, 'public');
-                                console.log('[AccountSettings] Avatar visibility updated to public');
                             } catch (visError) {
-                                console.warn('[AccountSettings] Failed to update avatar visibility, continuing anyway:', visError);
                                 // Continue with avatar update even if visibility update fails
                             }
 
-                            await updateUser({ avatar: file.id }, oxyServices);
-                            // Force refresh current user cache (updateUser already does a fetch with force=true internally)
-                            // Extra safeguard: ensure avatarFileId reflects saved id (already set) and trigger any dependent UI.
+                            // Update on server directly without using updateUser (which triggers fetchUser)
+                            // This prevents the entire component from re-rendering
+                            await oxyServices.updateProfile({ avatar: file.id });
+
+                            // Update the user object in store directly without triggering fetchUser
+                            // This prevents isLoading from being set to true, which would show loading screen
+                            const currentUser = useAuthStore.getState().user;
+                            if (currentUser) {
+                                useAuthStore.setState({
+                                    user: { ...currentUser, avatar: file.id },
+                                    // Don't update lastUserFetch to avoid cache issues
+                                });
+                            }
+
+                            // Update local state
+                            setAvatarFileId(file.id);
+                            setOptimisticAvatarId(null); // Clear optimistic state since server update is done
+
                             toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated');
                         } catch (e: any) {
-                            console.error('[AccountSettings] Failed to auto-save avatar', e);
+                            // Revert optimistic update on error
+                            setAvatarFileId(typeof user?.avatar === 'string' ? user.avatar : '');
+                            setOptimisticAvatarId(null);
                             toast.error(e.message || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
                         } finally {
-                            setIsSaving(false);
+                            setIsUpdatingAvatar(false);
                         }
                     })();
                 },
@@ -301,7 +351,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 disabledMimeTypes: ['video/', 'audio/', 'application/pdf']
             }
         });
-    }, [showBottomSheet, oxyServices, avatarFileId, updateUser]);
+    }, [showBottomSheet, oxyServices, avatarFileId, updateUser, user]);
 
     const startEditing = (type: string, currentValue: string) => {
         switch (type) {
@@ -362,11 +412,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 break;
         }
 
-        // Brief delay for animation, then reset and close editing
-        setTimeout(() => {
-            animateSaveButton(1);
+        // Complete animation, then reset and close editing
+        animateSaveButton(1, () => {
             setEditingField(null);
-        }, 150);
+        });
     };
 
     const cancelEditing = () => {
@@ -385,11 +434,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
         try {
             setIsFetchingMetadata(true);
-            console.log('Fetching metadata for URL:', url);
 
             // Use the backend API to fetch metadata
             const metadata = await oxyServices.fetchLinkMetadata(url);
-            console.log('Received metadata:', metadata);
 
             const result = {
                 ...metadata,
@@ -400,7 +447,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             linkMetadataCache.set(cacheKey, result);
             return result;
         } catch (error) {
-            console.error('Error fetching metadata:', error);
             // Fallback to basic metadata
             const fallback = {
                 url: url.startsWith('http') ? url : 'https://' + url,
@@ -437,12 +483,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`
             );
             const data = await response.json();
-            
+
             // Cache the results
             locationSearchCache.set(cacheKey, data);
             setLocationSearchResults(data);
         } catch (error) {
-            console.error('Error searching locations:', error);
             setLocationSearchResults([]);
         } finally {
             setIsSearchingLocations(false);
@@ -491,10 +536,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         if (!newLinkUrl.trim()) return;
 
         const url = newLinkUrl.trim();
-        console.log('Adding link:', url);
-
         const metadata = await fetchLinkMetadata(url);
-        console.log('Final metadata for adding:', metadata);
 
         setTempLinksWithMetadata(prev => [...prev, metadata]);
         setNewLinkUrl('');
@@ -552,7 +594,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                         </TouchableOpacity>
                                     ) : (
                                         <View style={{ alignItems: 'center', gap: 16 }}>
-                                            <View style={{ padding: 16, backgroundColor: '#fff', borderRadius: 12 }}>
+                                            <View style={{ padding: 16, backgroundColor: '#fff', borderRadius: 16 }}>
                                                 <QRCode value={totpSetupUrl} size={180} />
                                             </View>
                                             <View>
@@ -972,27 +1014,27 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
         };
 
         return (
-            <View style={[styles.editingFieldContainer, { backgroundColor: themeStyles.backgroundColor }]}>
+            <View style={[styles.editingFieldContainer, { backgroundColor: themeStyles.isDarkTheme ? '#000000' : '#FFFFFF' }]}>
                 <View style={styles.editingFieldContent}>
                     <View style={styles.newValueSection}>
                         <View style={styles.editingFieldHeader}>
-                            <Text style={[styles.editingFieldLabel, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>
-                                {`Enter ${config.label.toLowerCase()}:`}
+                            <Text style={[styles.editingFieldLabel, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#000000' }]}>
+                                {config.label}
                             </Text>
                         </View>
                         <TextInput
                             style={[
                                 config.multiline ? styles.editingFieldTextArea : styles.editingFieldInput,
                                 {
-                                    backgroundColor: themeStyles.isDarkTheme ? '#333' : '#fff',
-                                    color: themeStyles.isDarkTheme ? '#fff' : '#000',
-                                    borderColor: themeStyles.primaryColor
+                                    backgroundColor: themeStyles.isDarkTheme ? '#1C1C1E' : '#F2F2F7',
+                                    color: themeStyles.isDarkTheme ? '#FFFFFF' : '#000000',
+                                    borderColor: themeStyles.isDarkTheme ? '#38383A' : '#E5E5EA',
                                 }
                             ]}
                             value={tempValue}
                             onChangeText={setTempValue}
                             placeholder={config.placeholder}
-                            placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                            placeholderTextColor={themeStyles.isDarkTheme ? '#636366' : '#8E8E93'}
                             multiline={config.multiline}
                             numberOfLines={config.multiline ? 6 : 1}
                             keyboardType={config.keyboardType}
@@ -1009,25 +1051,42 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
     if (authLoading || !isAuthenticated) {
         return (
-            <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor, justifyContent: 'center' }]}>
+            <View style={[styles.container, {
+                backgroundColor: themeStyles.isDarkTheme ? '#000000' : '#F5F5F7',
+                justifyContent: 'center'
+            }]}>
                 <ActivityIndicator size="large" color={themeStyles.primaryColor} />
             </View>
         );
     }
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+        <View style={[styles.container, { backgroundColor: themeStyles.isDarkTheme ? '#000000' : '#F5F5F7' }]}>
             {/* Header */}
             {editingField ? (
-                <View style={[styles.editingHeader, { backgroundColor: '#FFFFFF', borderBottomColor: themeStyles.isDarkTheme ? '#38383A' : '#E9ECEF' }]}>
+                <View style={[styles.editingHeader, {
+                    backgroundColor: themeStyles.isDarkTheme ? '#000000' : '#FFFFFF',
+                    borderBottomColor: themeStyles.isDarkTheme ? '#38383A' : '#E5E5EA'
+                }]}>
                     <View style={styles.editingHeaderContent}>
-                        <TouchableOpacity style={styles.editingBackButton} onPress={cancelEditing}>
-                            <OxyIcon name="chevron-back" size={20} color={themeStyles.primaryColor} />
+                        <TouchableOpacity
+                            style={[styles.editingBackButton, {
+                                backgroundColor: themeStyles.isDarkTheme ? '#1C1C1E' : '#F2F2F7'
+                            }]}
+                            onPress={cancelEditing}
+                        >
+                            <Ionicons name="chevron-back" size={20} color={themeStyles.primaryColor} />
                         </TouchableOpacity>
                         <View style={styles.editingTitleContainer}>
                         </View>
                         <TouchableOpacity
-                            style={[styles.editingSaveButton, { opacity: isSaving ? 0.5 : 1 }]}
+                            style={[
+                                styles.editingSaveButton,
+                                {
+                                    opacity: isSaving ? 0.5 : 1,
+                                    backgroundColor: themeStyles.isDarkTheme ? '#1C1C1E' : '#F2F2F7'
+                                }
+                            ]}
                             onPress={() => saveField(editingField)}
                             disabled={isSaving}
                         >
@@ -1039,27 +1098,35 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         </TouchableOpacity>
                     </View>
                     <View style={styles.editingHeaderBottom}>
-                        <OxyIcon
-                            name={
-                                editingField === 'displayName' ? 'person' :
-                                    editingField === 'username' ? 'at' :
-                                        editingField === 'email' ? 'mail' :
-                                            editingField === 'bio' ? 'document-text' :
-                                                editingField === 'location' ? 'location' :
-                                                    editingField === 'links' ? 'link' : 'person'
-                            }
-                            size={56}
-                            color={
-                                editingField === 'displayName' ? '#007AFF' :
-                                    editingField === 'username' ? '#5856D6' :
-                                        editingField === 'email' ? '#FF9500' :
-                                            editingField === 'bio' ? '#34C759' :
-                                                editingField === 'location' ? '#FF3B30' :
-                                                    editingField === 'links' ? '#32D74B' : '#007AFF'
-                            }
-                            style={styles.editingBottomIcon}
-                        />
-                        <Text style={[styles.editingBottomTitle, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>
+                        <View style={[styles.editingIconContainer, {
+                            backgroundColor: editingField === 'displayName' ? '#007AFF20' :
+                                editingField === 'username' ? '#5856D620' :
+                                    editingField === 'email' ? '#FF950020' :
+                                        editingField === 'bio' ? '#34C75920' :
+                                            editingField === 'location' ? '#FF3B3020' :
+                                                editingField === 'links' ? '#32D74B20' : '#007AFF20'
+                        }]}>
+                            <Ionicons
+                                name={
+                                    editingField === 'displayName' ? 'person' as any :
+                                        editingField === 'username' ? 'at' as any :
+                                            editingField === 'email' ? 'mail' as any :
+                                                editingField === 'bio' ? 'document-text' as any :
+                                                    editingField === 'location' ? 'location' as any :
+                                                        editingField === 'links' ? 'link' as any : 'person' as any
+                                }
+                                size={28}
+                                color={
+                                    editingField === 'displayName' ? '#007AFF' :
+                                        editingField === 'username' ? '#5856D6' :
+                                            editingField === 'email' ? '#FF9500' :
+                                                editingField === 'bio' ? '#34C759' :
+                                                    editingField === 'location' ? '#FF3B30' :
+                                                        editingField === 'links' ? '#32D74B' : '#007AFF'
+                                }
+                            />
+                        </View>
+                        <Text style={[styles.editingBottomTitle, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#000000' }]}>
                             {editingField === 'displayName' ? (t('editProfile.items.displayName.title') || 'Display Name') :
                                 editingField === 'username' ? (t('editProfile.items.username.title') || 'Username') :
                                     editingField === 'email' ? (t('editProfile.items.email.title') || 'Email') :
@@ -1095,7 +1162,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                     <>
                         {showRecoveryModal && (
                             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 50, padding: 16, justifyContent: 'center' }}>
-                                <View style={{ backgroundColor: '#fff', borderRadius: 16, padding: 20, maxHeight: '80%' }}>
+                                <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 20, maxHeight: '80%' }}>
                                     <Text style={{ fontSize: 18, fontWeight: '700', marginBottom: 12 }}>Save These Codes Now</Text>
                                     <Text style={{ fontSize: 14, color: '#444', marginBottom: 12 }}>
                                         Backup codes and your Recovery Key are shown only once. Store them securely (paper or password manager).
@@ -1103,7 +1170,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                     {generatedBackupCodes && generatedBackupCodes.length > 0 && (
                                         <View style={{ marginBottom: 12 }}>
                                             <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 8 }}>Backup Codes</Text>
-                                            <View style={{ backgroundColor: '#F8F9FA', borderRadius: 8, padding: 12 }}>
+                                            <View style={{ backgroundColor: '#F8F9FA', borderRadius: 12, padding: 12 }}>
                                                 {generatedBackupCodes.map((c, idx) => (
                                                     <Text key={idx} style={{ fontFamily: Platform.OS === 'web' ? 'monospace' as any : 'monospace', fontSize: 14, marginBottom: 4 }}>{c}</Text>
                                                 ))}
@@ -1113,7 +1180,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                     {generatedRecoveryKey && (
                                         <View style={{ marginBottom: 12 }}>
                                             <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 8 }}>Recovery Key</Text>
-                                            <View style={{ backgroundColor: '#F8F9FA', borderRadius: 8, padding: 12 }}>
+                                            <View style={{ backgroundColor: '#F8F9FA', borderRadius: 12, padding: 12 }}>
                                                 <Text style={{ fontFamily: Platform.OS === 'web' ? 'monospace' as any : 'monospace', fontSize: 14 }}>{generatedRecoveryKey}</Text>
                                             </View>
                                         </View>
@@ -1130,220 +1197,268 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                         )}
                         {/* Profile Picture Section */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>{t('editProfile.sections.profilePicture') || 'Profile Picture'}</Text>
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'profile-photo',
-                                        icon: avatarFileId ? undefined : 'person',
-                                        iconColor: '#007AFF',
-                                        // Use download URL (includes token + fallback) instead of raw stream for reliability
-                                        image: avatarFileId ? oxyServices.getFileDownloadUrl(avatarFileId, 'thumb') : undefined,
-                                        imageSize: 40,
-                                        title: 'Profile Photo',
-                                        subtitle: avatarFileId ? 'Tap to change your profile picture' : 'Tap to add a profile picture',
-                                        onPress: openAvatarPicker,
-                                    },
-                                    ...(avatarFileId ? [
+                            <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
+                                {t('editProfile.sections.profilePicture') || 'PROFILE PICTURE'}
+                            </Text>
+                            <View style={styles.groupedSectionWrapper}>
+                                <GroupedSection
+                                    items={[
                                         {
-                                            id: 'remove-profile-photo',
-                                            icon: 'trash',
-                                            iconColor: '#FF3B30',
-                                            title: 'Remove Photo',
-                                            subtitle: 'Delete current profile picture',
-                                            onPress: handleAvatarRemove,
-                                        }
-                                    ] : []),
-                                ]}
-                                theme={theme}
-                            />
+                                            id: 'profile-photo',
+                                            icon: avatarFileId ? undefined : 'person',
+                                            iconColor: '#007AFF',
+                                            // Use optimistic avatar ID if available, otherwise use saved one
+                                            image: (optimisticAvatarId || avatarFileId) ? oxyServices.getFileDownloadUrl(optimisticAvatarId || avatarFileId, 'thumb') : undefined,
+                                            imageSize: 40,
+                                            title: 'Profile Photo',
+                                            subtitle: isUpdatingAvatar
+                                                ? 'Updating profile picture...'
+                                                : (avatarFileId ? 'Tap to change your profile picture' : 'Tap to add a profile picture'),
+                                            onPress: isUpdatingAvatar ? undefined : openAvatarPicker,
+                                            disabled: isUpdatingAvatar,
+                                            customIcon: isUpdatingAvatar ? (
+                                                <Animated.View style={{ position: 'relative', width: 40, height: 40 }}>
+                                                    {(optimisticAvatarId || avatarFileId) && (
+                                                        <Animated.Image
+                                                            source={{ uri: oxyServices.getFileDownloadUrl(optimisticAvatarId || avatarFileId, 'thumb') }}
+                                                            style={{
+                                                                width: 40,
+                                                                height: 40,
+                                                                borderRadius: 22,
+                                                                opacity: 0.6
+                                                            }}
+                                                        />
+                                                    )}
+                                                    <View style={{
+                                                        position: 'absolute',
+                                                        top: 0,
+                                                        left: 0,
+                                                        right: 0,
+                                                        bottom: 0,
+                                                        justifyContent: 'center',
+                                                        alignItems: 'center',
+                                                        backgroundColor: themeStyles.isDarkTheme ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.7)',
+                                                        borderRadius: 22,
+                                                    }}>
+                                                        <ActivityIndicator size="small" color={themeStyles.primaryColor} />
+                                                    </View>
+                                                </Animated.View>
+                                            ) : undefined,
+                                        },
+                                        ...(avatarFileId && !isUpdatingAvatar ? [
+                                            {
+                                                id: 'remove-profile-photo',
+                                                icon: 'trash',
+                                                iconColor: '#FF3B30',
+                                                title: 'Remove Photo',
+                                                subtitle: 'Delete current profile picture',
+                                                onPress: handleAvatarRemove,
+                                            }
+                                        ] : []),
+                                    ]}
+                                    theme={theme}
+                                />
+                            </View>
                         </View>
 
                         {/* Basic Information */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>{t('editProfile.sections.basicInfo') || 'Basic Information'}</Text>
-
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'display-name',
-                                        icon: 'person',
-                                        iconColor: '#007AFF',
-                                        title: t('editProfile.items.displayName.title') || 'Display Name',
-                                        subtitle: [displayName, lastName].filter(Boolean).join(' ') || (t('editProfile.items.displayName.add') || 'Add your display name'),
-                                        onPress: () => startEditing('displayName', ''),
-                                    },
-                                    {
-                                        id: 'username',
-                                        icon: 'at',
-                                        iconColor: '#5856D6',
-                                        title: t('editProfile.items.username.title') || 'Username',
-                                        subtitle: username || (t('editProfile.items.username.choose') || 'Choose a username'),
-                                        onPress: () => startEditing('username', username),
-                                    },
-                                    {
-                                        id: 'email',
-                                        icon: 'mail',
-                                        iconColor: '#FF9500',
-                                        title: t('editProfile.items.email.title') || 'Email',
-                                        subtitle: email || (t('editProfile.items.email.add') || 'Add your email address'),
-                                        onPress: () => startEditing('email', email),
-                                    },
-                                ]}
-                                theme={theme}
-                            />
+                            <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
+                                {t('editProfile.sections.basicInfo') || 'BASIC INFORMATION'}
+                            </Text>
+                            <View style={styles.groupedSectionWrapper}>
+                                <GroupedSection
+                                    items={[
+                                        {
+                                            id: 'display-name',
+                                            icon: 'person',
+                                            iconColor: '#007AFF',
+                                            title: t('editProfile.items.displayName.title') || 'Display Name',
+                                            subtitle: [displayName, lastName].filter(Boolean).join(' ') || (t('editProfile.items.displayName.add') || 'Add your display name'),
+                                            onPress: () => startEditing('displayName', ''),
+                                        },
+                                        {
+                                            id: 'username',
+                                            icon: 'at',
+                                            iconColor: '#5856D6',
+                                            title: t('editProfile.items.username.title') || 'Username',
+                                            subtitle: username || (t('editProfile.items.username.choose') || 'Choose a username'),
+                                            onPress: () => startEditing('username', username),
+                                        },
+                                        {
+                                            id: 'email',
+                                            icon: 'mail',
+                                            iconColor: '#FF9500',
+                                            title: t('editProfile.items.email.title') || 'Email',
+                                            subtitle: email || (t('editProfile.items.email.add') || 'Add your email address'),
+                                            onPress: () => startEditing('email', email),
+                                        },
+                                    ]}
+                                    theme={theme}
+                                />
+                            </View>
                         </View>
 
                         {/* About You */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>{t('editProfile.sections.about') || 'About You'}</Text>
-
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'bio',
-                                        icon: 'document-text',
-                                        iconColor: '#34C759',
-                                        title: t('editProfile.items.bio.title') || 'Bio',
-                                        subtitle: bio || (t('editProfile.items.bio.placeholder') || 'Tell people about yourself'),
-                                        onPress: () => startEditing('bio', bio),
-                                    },
-                                    {
-                                        id: 'locations',
-                                        icon: 'location',
-                                        iconColor: '#FF3B30',
-                                        title: t('editProfile.items.locations.title') || 'Locations',
-                                        subtitle: tempLocations.length > 0
-                                            ? (tempLocations.length === 1
-                                                ? (t('editProfile.items.locations.count', { count: tempLocations.length }) || `${tempLocations.length} location added`)
-                                                : (t('editProfile.items.locations.count_plural', { count: tempLocations.length }) || `${tempLocations.length} locations added`))
-                                            : (t('editProfile.items.locations.add') || 'Add your locations'),
-                                        onPress: () => startEditing('location', ''),
-                                        customContentBelow: tempLocations.length > 0 && (
-                                            <View style={styles.linksPreviewContainer}>
-                                                {tempLocations.slice(0, 2).map((location, index) => (
-                                                    <View key={location.id || index} style={styles.linkPreviewItem}>
-                                                        <View style={styles.linkPreviewImage}>
-                                                            <Text style={styles.linkPreviewImageText}>
-                                                                {location.name.charAt(0).toUpperCase()}
-                                                            </Text>
-                                                        </View>
-                                                        <View style={styles.linkPreviewContent}>
-                                                            <Text style={styles.linkPreviewTitle} numberOfLines={1}>
-                                                                {location.name}
-                                                            </Text>
-                                                            {location.label && (
-                                                                <Text style={styles.linkPreviewSubtitle}>
-                                                                    {location.label}
-                                                                </Text>
-                                                            )}
-                                                        </View>
-                                                    </View>
-                                                ))}
-                                                {tempLocations.length > 2 && (
-                                                    <Text style={styles.linkPreviewMore}>
-                                                        +{tempLocations.length - 2} more
-                                                    </Text>
-                                                )}
-                                            </View>
-                                        ),
-                                    },
-                                    {
-                                        id: 'links',
-                                        icon: 'link',
-                                        iconColor: '#32D74B',
-                                        title: t('editProfile.items.links.title') || 'Links',
-                                        subtitle: tempLinksWithMetadata.length > 0
-                                            ? (tempLinksWithMetadata.length === 1
-                                                ? (t('editProfile.items.links.count', { count: tempLinksWithMetadata.length }) || `${tempLinksWithMetadata.length} link added`)
-                                                : (t('editProfile.items.links.count_plural', { count: tempLinksWithMetadata.length }) || `${tempLinksWithMetadata.length} links added`))
-                                            : (t('editProfile.items.links.add') || 'Add your links'),
-                                        onPress: () => startEditing('links', ''),
-                                        multiRow: true,
-                                        customContentBelow: tempLinksWithMetadata.length > 0 && (
-                                            <View style={styles.linksPreviewContainer}>
-                                                {tempLinksWithMetadata.slice(0, 2).map((link, index) => (
-                                                    <View key={link.id || index} style={styles.linkPreviewItem}>
-                                                        {link.image ? (
-                                                            <Image source={{ uri: link.image }} style={styles.linkPreviewImage} />
-                                                        ) : (
+                            <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
+                                {t('editProfile.sections.about') || 'ABOUT YOU'}
+                            </Text>
+                            <View style={styles.groupedSectionWrapper}>
+                                <GroupedSection
+                                    items={[
+                                        {
+                                            id: 'bio',
+                                            icon: 'document-text',
+                                            iconColor: '#34C759',
+                                            title: t('editProfile.items.bio.title') || 'Bio',
+                                            subtitle: bio || (t('editProfile.items.bio.placeholder') || 'Tell people about yourself'),
+                                            onPress: () => startEditing('bio', bio),
+                                        },
+                                        {
+                                            id: 'locations',
+                                            icon: 'location',
+                                            iconColor: '#FF3B30',
+                                            title: t('editProfile.items.locations.title') || 'Locations',
+                                            subtitle: tempLocations.length > 0
+                                                ? (tempLocations.length === 1
+                                                    ? (t('editProfile.items.locations.count', { count: tempLocations.length }) || `${tempLocations.length} location added`)
+                                                    : (t('editProfile.items.locations.count_plural', { count: tempLocations.length }) || `${tempLocations.length} locations added`))
+                                                : (t('editProfile.items.locations.add') || 'Add your locations'),
+                                            onPress: () => startEditing('location', ''),
+                                            customContentBelow: tempLocations.length > 0 && (
+                                                <View style={styles.linksPreviewContainer}>
+                                                    {tempLocations.slice(0, 2).map((location, index) => (
+                                                        <View key={location.id || index} style={styles.linkPreviewItem}>
                                                             <View style={styles.linkPreviewImage}>
                                                                 <Text style={styles.linkPreviewImageText}>
-                                                                    {link.title?.charAt(0).toUpperCase() || link.url.charAt(0).toUpperCase()}
+                                                                    {location.name.charAt(0).toUpperCase()}
                                                                 </Text>
                                                             </View>
-                                                        )}
-                                                        <Text style={styles.linkPreviewTitle} numberOfLines={1}>
-                                                            {link.title || link.url}
+                                                            <View style={styles.linkPreviewContent}>
+                                                                <Text style={styles.linkPreviewTitle} numberOfLines={1}>
+                                                                    {location.name}
+                                                                </Text>
+                                                                {location.label && (
+                                                                    <Text style={styles.linkPreviewSubtitle}>
+                                                                        {location.label}
+                                                                    </Text>
+                                                                )}
+                                                            </View>
+                                                        </View>
+                                                    ))}
+                                                    {tempLocations.length > 2 && (
+                                                        <Text style={styles.linkPreviewMore}>
+                                                            +{tempLocations.length - 2} more
                                                         </Text>
-                                                    </View>
-                                                ))}
-                                                {tempLinksWithMetadata.length > 2 && (
-                                                    <Text style={styles.linkPreviewMore}>
-                                                        +{tempLinksWithMetadata.length - 2} more
-                                                    </Text>
-                                                )}
-                                            </View>
-                                        ),
-                                    },
-                                ]}
-                                theme={theme}
-                            />
+                                                    )}
+                                                </View>
+                                            ),
+                                        },
+                                        {
+                                            id: 'links',
+                                            icon: 'link',
+                                            iconColor: '#32D74B',
+                                            title: t('editProfile.items.links.title') || 'Links',
+                                            subtitle: tempLinksWithMetadata.length > 0
+                                                ? (tempLinksWithMetadata.length === 1
+                                                    ? (t('editProfile.items.links.count', { count: tempLinksWithMetadata.length }) || `${tempLinksWithMetadata.length} link added`)
+                                                    : (t('editProfile.items.links.count_plural', { count: tempLinksWithMetadata.length }) || `${tempLinksWithMetadata.length} links added`))
+                                                : (t('editProfile.items.links.add') || 'Add your links'),
+                                            onPress: () => startEditing('links', ''),
+                                            multiRow: true,
+                                            customContentBelow: tempLinksWithMetadata.length > 0 && (
+                                                <View style={styles.linksPreviewContainer}>
+                                                    {tempLinksWithMetadata.slice(0, 2).map((link, index) => (
+                                                        <View key={link.id || index} style={styles.linkPreviewItem}>
+                                                            {link.image ? (
+                                                                <Image source={{ uri: link.image }} style={styles.linkPreviewImage} />
+                                                            ) : (
+                                                                <View style={styles.linkPreviewImage}>
+                                                                    <Text style={styles.linkPreviewImageText}>
+                                                                        {link.title?.charAt(0).toUpperCase() || link.url.charAt(0).toUpperCase()}
+                                                                    </Text>
+                                                                </View>
+                                                            )}
+                                                            <Text style={styles.linkPreviewTitle} numberOfLines={1}>
+                                                                {link.title || link.url}
+                                                            </Text>
+                                                        </View>
+                                                    ))}
+                                                    {tempLinksWithMetadata.length > 2 && (
+                                                        <Text style={styles.linkPreviewMore}>
+                                                            +{tempLinksWithMetadata.length - 2} more
+                                                        </Text>
+                                                    )}
+                                                </View>
+                                            ),
+                                        },
+                                    ]}
+                                    theme={theme}
+                                />
+                            </View>
                         </View>
 
                         {/* Quick Actions */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>{t('editProfile.sections.quickActions') || 'Quick Actions'}</Text>
-
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'preview-profile',
-                                        icon: 'eye',
-                                        iconColor: '#007AFF',
-                                        title: t('editProfile.items.previewProfile.title') || 'Preview Profile',
-                                        subtitle: t('editProfile.items.previewProfile.subtitle') || 'See how your profile looks to others',
-                                        onPress: () => navigate?.('Profile', { userId: user?.id }),
-                                    },
-                                    {
-                                        id: 'privacy-settings',
-                                        icon: 'shield-checkmark',
-                                        iconColor: '#8E8E93',
-                                        title: t('editProfile.items.privacySettings.title') || 'Privacy Settings',
-                                        subtitle: t('editProfile.items.privacySettings.subtitle') || 'Control who can see your profile',
-                                        onPress: () => toast.info(t('editProfile.items.privacySettings.coming') || 'Privacy settings coming soon!'),
-                                    },
-                                    {
-                                        id: 'verify-account',
-                                        icon: 'checkmark-circle',
-                                        iconColor: '#30D158',
-                                        title: t('editProfile.items.verifyAccount.title') || 'Verify Account',
-                                        subtitle: t('editProfile.items.verifyAccount.subtitle') || 'Get a verified badge',
-                                        onPress: () => toast.info(t('editProfile.items.verifyAccount.coming') || 'Account verification coming soon!'),
-                                    },
-                                ]}
-                                theme={theme}
-                            />
+                            <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
+                                {t('editProfile.sections.quickActions') || 'QUICK ACTIONS'}
+                            </Text>
+                            <View style={styles.groupedSectionWrapper}>
+                                <GroupedSection
+                                    items={[
+                                        {
+                                            id: 'preview-profile',
+                                            icon: 'eye',
+                                            iconColor: '#007AFF',
+                                            title: t('editProfile.items.previewProfile.title') || 'Preview Profile',
+                                            subtitle: t('editProfile.items.previewProfile.subtitle') || 'See how your profile looks to others',
+                                            onPress: () => navigate?.('Profile', { userId: user?.id }),
+                                        },
+                                        {
+                                            id: 'privacy-settings',
+                                            icon: 'shield-checkmark',
+                                            iconColor: '#8E8E93',
+                                            title: t('editProfile.items.privacySettings.title') || 'Privacy Settings',
+                                            subtitle: t('editProfile.items.privacySettings.subtitle') || 'Control who can see your profile',
+                                            onPress: () => toast.info(t('editProfile.items.privacySettings.coming') || 'Privacy settings coming soon!'),
+                                        },
+                                        {
+                                            id: 'verify-account',
+                                            icon: 'checkmark-circle',
+                                            iconColor: '#30D158',
+                                            title: t('editProfile.items.verifyAccount.title') || 'Verify Account',
+                                            subtitle: t('editProfile.items.verifyAccount.subtitle') || 'Get a verified badge',
+                                            onPress: () => toast.info(t('editProfile.items.verifyAccount.coming') || 'Account verification coming soon!'),
+                                        },
+                                    ]}
+                                    theme={theme}
+                                />
+                            </View>
                         </View>
 
                         {/* Security */}
                         <View style={styles.section}>
-                            <Text style={styles.sectionTitle}>{t('editProfile.sections.security') || 'Security'}</Text>
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'two-factor',
-                                        icon: 'shield-checkmark',
-                                        iconColor: '#007AFF',
-                                        title: t('editProfile.items.twoFactor.title') || 'Two‑Factor Authentication',
-                                        subtitle: user?.privacySettings?.twoFactorEnabled
-                                            ? (t('editProfile.items.twoFactor.enabled') || 'Enabled')
-                                            : (t('editProfile.items.twoFactor.disabled') || 'Disabled (recommended)'),
-                                        onPress: () => startEditing('twoFactor', ''),
-                                    },
-                                ]}
-                                theme={theme}
-                            />
+                            <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
+                                {t('editProfile.sections.security') || 'SECURITY'}
+                            </Text>
+                            <View style={styles.groupedSectionWrapper}>
+                                <GroupedSection
+                                    items={[
+                                        {
+                                            id: 'two-factor',
+                                            icon: 'shield-checkmark',
+                                            iconColor: '#007AFF',
+                                            title: t('editProfile.items.twoFactor.title') || 'Two‑Factor Authentication',
+                                            subtitle: user?.privacySettings?.twoFactorEnabled
+                                                ? (t('editProfile.items.twoFactor.enabled') || 'Enabled')
+                                                : (t('editProfile.items.twoFactor.disabled') || 'Disabled (recommended)'),
+                                            onPress: () => startEditing('twoFactor', ''),
+                                        },
+                                    ]}
+                                    theme={theme}
+                                />
+                            </View>
                         </View>
                     </>
                 )}
@@ -1355,25 +1470,33 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f2f2f2',
     },
     content: {
         flex: 1,
-        padding: 16,
+        paddingTop: 8,
+        paddingBottom: 24,
     },
     contentEditing: {
         flex: 1,
         padding: 0,
     },
     section: {
-        marginBottom: 24,
+        marginBottom: 32,
     },
     sectionTitle: {
-        fontSize: 16,
+        fontSize: 13,
         fontWeight: '600',
-        color: '#333',
-        marginBottom: 12,
+        color: '#8E8E93',
+        marginBottom: 8,
+        marginTop: 4,
+        marginHorizontal: 16,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
         fontFamily: fontFamilies.phuduSemiBold,
+    },
+    groupedSectionWrapper: {
+        marginHorizontal: 16,
+        backgroundColor: 'transparent',
     },
 
     userIcon: {
@@ -1413,21 +1536,21 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     editingFieldLabel: {
-        fontSize: 16,
+        fontSize: 13,
         fontWeight: '600',
-        color: '#333',
-        marginBottom: 12,
+        marginBottom: 8,
         fontFamily: fontFamilies.phuduSemiBold,
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
     },
     editingFieldInput: {
-        backgroundColor: '#fff',
-        borderWidth: 2,
-        borderColor: '#e0e0e0',
-        borderRadius: 12,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderRadius: 14,
         padding: 16,
         fontSize: 17,
         minHeight: 52,
         fontWeight: '400',
+        letterSpacing: -0.2,
     },
     editingFieldDescription: {
         fontSize: 14,
@@ -1450,22 +1573,20 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     editingFieldTextArea: {
-        backgroundColor: '#fff',
-        borderWidth: 2,
-        borderColor: '#e0e0e0',
-        borderRadius: 12,
+        borderWidth: StyleSheet.hairlineWidth,
+        borderRadius: 14,
         padding: 16,
         fontSize: 17,
         minHeight: 120,
         textAlignVertical: 'top',
         fontWeight: '400',
+        letterSpacing: -0.2,
     },
     // Custom editing header styles
     editingHeader: {
         paddingTop: Platform.OS === 'ios' ? 50 : 16,
         paddingBottom: 0,
-        borderBottomWidth: 1,
-        backgroundColor: '#fff',
+        borderBottomWidth: StyleSheet.hairlineWidth,
     },
     editingHeaderContent: {
         flexDirection: 'row',
@@ -1474,10 +1595,9 @@ const styles = StyleSheet.create({
         minHeight: 44,
     },
     editingBackButton: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        backgroundColor: '#F8F9FA',
+        width: 36,
+        height: 36,
+        borderRadius: 20,
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: 12,
@@ -1505,8 +1625,7 @@ const styles = StyleSheet.create({
     editingSaveButton: {
         paddingHorizontal: 16,
         paddingVertical: 8,
-        borderRadius: 18,
-        backgroundColor: '#F8F9FA',
+        borderRadius: 20,
         minWidth: 60,
         alignItems: 'center',
         justifyContent: 'center',
@@ -1519,20 +1638,24 @@ const styles = StyleSheet.create({
     editingHeaderBottom: {
         flexDirection: 'column',
         alignItems: 'flex-start',
-        paddingHorizontal: 16,
-        paddingBottom: 8,
-        paddingTop: 8,
+        paddingHorizontal: 20,
+        paddingBottom: 20,
+        paddingTop: 24,
     },
-    editingBottomIcon: {
-        marginBottom: 8,
-        alignSelf: 'flex-start',
+    editingIconContainer: {
+        width: 64,
+        height: 64,
+        borderRadius: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginBottom: 16,
     },
     editingBottomTitle: {
-        fontSize: 32,
+        fontSize: 28,
         fontWeight: '700',
         fontFamily: fontFamilies.phuduBold,
         letterSpacing: -0.5,
-        lineHeight: 36,
+        lineHeight: 34,
         textAlign: 'left',
         alignSelf: 'flex-start',
     },

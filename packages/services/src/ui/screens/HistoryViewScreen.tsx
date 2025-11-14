@@ -1,0 +1,280 @@
+import React, { useState, useCallback, useMemo } from 'react';
+import {
+    View,
+    Text,
+    TouchableOpacity,
+    StyleSheet,
+    ScrollView,
+    ActivityIndicator,
+} from 'react-native';
+import type { BaseScreenProps } from '../navigation/types';
+import { useOxy } from '../context/OxyContext';
+import { toast } from '../../lib/sonner';
+import { confirmAction } from '../utils/confirmAction';
+import { Header, Section, GroupedSection } from '../components';
+import { useI18n } from '../hooks/useI18n';
+
+interface HistoryItem {
+    id: string;
+    query: string;
+    type: 'search' | 'browse';
+    timestamp: Date;
+}
+
+const HistoryViewScreen: React.FC<BaseScreenProps> = ({
+    onClose,
+    theme,
+    goBack,
+}) => {
+    const { user } = useOxy();
+    const { t } = useI18n();
+    const [history, setHistory] = useState<HistoryItem[]>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [isDeleting, setIsDeleting] = useState(false);
+
+    // Helper to get storage
+    const getStorage = async () => {
+        const isReactNative = typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
+
+        if (isReactNative) {
+            try {
+                const asyncStorageModule = await import('@react-native-async-storage/async-storage');
+                const storage = (asyncStorageModule.default as unknown) as any;
+                return {
+                    getItem: storage.getItem.bind(storage),
+                    setItem: storage.setItem.bind(storage),
+                    removeItem: storage.removeItem.bind(storage),
+                };
+            } catch (error) {
+                console.error('AsyncStorage not available:', error);
+                throw new Error('AsyncStorage is required in React Native environment');
+            }
+        } else {
+            // Use localStorage for web
+            return {
+                getItem: async (key: string) => {
+                    if (typeof window !== 'undefined' && window.localStorage) {
+                        return window.localStorage.getItem(key);
+                    }
+                    return null;
+                },
+                setItem: async (key: string, value: string) => {
+                    if (typeof window !== 'undefined' && window.localStorage) {
+                        window.localStorage.setItem(key, value);
+                    }
+                },
+                removeItem: async (key: string) => {
+                    if (typeof window !== 'undefined' && window.localStorage) {
+                        window.localStorage.removeItem(key);
+                    }
+                }
+            };
+        }
+    };
+
+    // Load history from storage
+    React.useEffect(() => {
+        const loadHistory = async () => {
+            try {
+                setIsLoading(true);
+                // In a real implementation, this would fetch from API or local storage
+                // For now, we'll use a mock implementation
+                const storage = await getStorage();
+                const historyKey = `history_${user?.id || 'guest'}`;
+                const stored = await storage.getItem(historyKey);
+
+                if (stored) {
+                    const parsed = JSON.parse(stored);
+                    setHistory(parsed.map((item: any) => ({
+                        ...item,
+                        timestamp: new Date(item.timestamp),
+                    })));
+                } else {
+                    setHistory([]);
+                }
+            } catch (error) {
+                setHistory([]);
+            } finally {
+                setIsLoading(false);
+            }
+        };
+
+        loadHistory();
+    }, [user?.id]);
+
+    const handleDeleteLast15Minutes = useCallback(async () => {
+        confirmAction(
+            t('history.deleteLast15Minutes.confirm') || 'Delete last 15 minutes of history?',
+            async () => {
+                try {
+                    setIsDeleting(true);
+                    const fifteenMinutesAgo = new Date(Date.now() - 15 * 60 * 1000);
+
+                    const filtered = history.filter(item => item.timestamp < fifteenMinutesAgo);
+                    setHistory(filtered);
+
+                    // Save to storage
+                    const storage = await getStorage();
+                    const historyKey = `history_${user?.id || 'guest'}`;
+                    await storage.setItem(historyKey, JSON.stringify(filtered));
+
+                    toast.success(t('history.deleteLast15Minutes.success') || 'Last 15 minutes deleted');
+                } catch (error) {
+                    console.error('Failed to delete history:', error);
+                    toast.error(t('history.deleteLast15Minutes.error') || 'Failed to delete history');
+                } finally {
+                    setIsDeleting(false);
+                }
+            }
+        );
+    }, [history, user?.id, t]);
+
+    const handleClearAll = useCallback(async () => {
+        confirmAction(
+            t('history.clearAll.confirm') || 'Clear all history? This cannot be undone.',
+            async () => {
+                try {
+                    setIsDeleting(true);
+                    setHistory([]);
+
+                    // Clear from storage
+                    const storage = await getStorage();
+                    const historyKey = `history_${user?.id || 'guest'}`;
+                    await storage.removeItem(historyKey);
+
+                    toast.success(t('history.clearAll.success') || 'History cleared');
+                } catch (error) {
+                    console.error('Failed to clear history:', error);
+                    toast.error(t('history.clearAll.error') || 'Failed to clear history');
+                } finally {
+                    setIsDeleting(false);
+                }
+            }
+        );
+    }, [user?.id, t]);
+
+    const themeStyles = useMemo(() => {
+        const isDarkTheme = theme === 'dark';
+        return {
+            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
+            backgroundColor: isDarkTheme ? '#121212' : '#FFFFFF',
+            secondaryBackgroundColor: isDarkTheme ? '#222222' : '#F5F5F5',
+            borderColor: isDarkTheme ? '#444444' : '#E0E0E0',
+        };
+    }, [theme]);
+
+    const formatTime = (date: Date) => {
+        const now = new Date();
+        const diff = now.getTime() - date.getTime();
+        const minutes = Math.floor(diff / 60000);
+        const hours = Math.floor(minutes / 60);
+        const days = Math.floor(hours / 24);
+
+        if (minutes < 1) return t('history.justNow') || 'Just now';
+        if (minutes < 60) return `${minutes} ${t('history.minutesAgo') || 'minutes ago'}`;
+        if (hours < 24) return `${hours} ${t('history.hoursAgo') || 'hours ago'}`;
+        if (days < 7) return `${days} ${t('history.daysAgo') || 'days ago'}`;
+        return date.toLocaleDateString();
+    };
+
+    return (
+        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+            <Header
+                title={t('history.title') || 'History'}
+                theme={theme}
+                onBack={goBack || onClose}
+                variant="minimal"
+                elevation="subtle"
+            />
+
+            <ScrollView style={styles.content}>
+                {/* Actions */}
+                <Section title={t('history.actions') || 'Actions'} theme={theme} isFirst={true}>
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'delete-last-15',
+                                icon: 'time-outline',
+                                iconColor: '#FF9500',
+                                title: t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes',
+                                subtitle: t('history.deleteLast15Minutes.subtitle') || 'Remove recent history entries',
+                                onPress: handleDeleteLast15Minutes,
+                                disabled: isDeleting || history.length === 0,
+                            },
+                            {
+                                id: 'clear-all',
+                                icon: 'trash-outline',
+                                iconColor: '#FF3B30',
+                                title: t('history.clearAll.title') || 'Clear All History',
+                                subtitle: t('history.clearAll.subtitle') || 'Remove all history entries',
+                                onPress: handleClearAll,
+                                disabled: isDeleting || history.length === 0,
+                            },
+                        ]}
+                        theme={theme}
+                    />
+                </Section>
+
+                {/* History List */}
+                <Section title={t('history.recent') || 'Recent History'} theme={theme}>
+                    {isLoading ? (
+                        <View style={styles.loadingContainer}>
+                            <ActivityIndicator size="large" color={themeStyles.textColor} />
+                            <Text style={[styles.loadingText, { color: themeStyles.textColor }]}>
+                                {t('history.loading') || 'Loading history...'}
+                            </Text>
+                        </View>
+                    ) : history.length === 0 ? (
+                        <View style={styles.emptyContainer}>
+                            <Text style={[styles.emptyText, { color: themeStyles.textColor }]}>
+                                {t('history.empty') || 'No history yet'}
+                            </Text>
+                        </View>
+                    ) : (
+                        <GroupedSection
+                            items={history.map((item) => ({
+                                id: item.id,
+                                icon: item.type === 'search' ? 'search' : 'globe',
+                                iconColor: item.type === 'search' ? '#007AFF' : '#32D74B',
+                                title: item.query,
+                                subtitle: formatTime(item.timestamp),
+                            }))}
+                            theme={theme}
+                        />
+                    )}
+                </Section>
+            </ScrollView>
+        </View>
+    );
+};
+
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+    },
+    content: {
+        flex: 1,
+        padding: 16,
+    },
+    loadingContainer: {
+        padding: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    loadingText: {
+        marginTop: 12,
+        fontSize: 16,
+    },
+    emptyContainer: {
+        padding: 40,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    emptyText: {
+        fontSize: 16,
+        textAlign: 'center',
+    },
+});
+
+export default React.memo(HistoryViewScreen);
+

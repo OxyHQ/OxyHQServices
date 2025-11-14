@@ -10,8 +10,9 @@ import { Toaster } from '../../lib/sonner';
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 
 // Import bottom sheet components directly - no longer a peer dependency
-import { BottomSheetModal, BottomSheetBackdrop, type BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetView } from '@gorhom/bottom-sheet';
+import { BottomSheetModal, BottomSheetBackdrop, type BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import type { BottomSheetModalMethods as BottomSheetModalRef } from '@gorhom/bottom-sheet/lib/typescript/types';
+import { useWindowDimensions } from 'react-native';
 
 // Initialize fonts automatically
 setupFonts();
@@ -113,7 +114,7 @@ const OxyProvider: FC<OxyProviderProps> = (props) => {
                         {/* Global Toaster for app-wide notifications outside of Modal contexts - only show if internal toaster is disabled */}
                         {!showInternalToaster && (
                             <View style={styles.toasterContainer}>
-                                <Toaster position="top-center" swipeToDismissDirection="left" offset={15} />
+                                <Toaster position="bottom-center" swipeToDismissDirection="left" offset={15} />
                             </View>
                         )}
                     </GestureHandlerRootView>
@@ -146,6 +147,8 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
     const shouldUseNativeDriver = () => {
         return Platform.OS === 'ios';
     };
+    // Get window dimensions for max height calculation
+    const { height: windowHeight } = useWindowDimensions();
     // Get oxyServices from context if not provided as prop
     const contextOxy = useOxy();
     const oxyServices = providedOxyServices || contextOxy?.oxyServices;
@@ -153,6 +156,7 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
     const modalRef = useRef<BottomSheetModalRef>(null);
     const isOpenRef = useRef(false);
     const navigationRef = useRef<((screen: any, props?: Record<string, unknown>) => void) | null>(null);
+    
     // Remove contentHeight, containerWidth, and snap point state/logic
     // Animation values - keep for content fade/slide
     const fadeAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 1 : 0)).current;
@@ -200,6 +204,13 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
     const [keyboardVisible, setKeyboardVisible] = useState(false);
     const [keyboardHeight, setKeyboardHeight] = useState(0);
     const insets = useSafeAreaInsets();
+    
+    // Calculate max height for dynamic sizing (screen height minus insets and margin)
+    const maxHeight = useMemo(() => {
+        const topInset = (insets?.top ?? 0) + (appInsets?.top ?? 0);
+        const bottomInset = (insets?.bottom ?? 0) + (appInsets?.bottom ?? 0);
+        return windowHeight - topInset - bottomInset - 20; // 20px margin
+    }, [windowHeight, insets?.top, insets?.bottom, appInsets?.top, appInsets?.bottom]);
     useEffect(() => {
         // Use 'did' events on iOS to avoid multiple intermediate willShow updates
         const showEvent = Platform.OS === 'ios' ? 'keyboardDidShow' : 'keyboardDidShow';
@@ -293,12 +304,14 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
         ),
         []
     );
+    
     // Modernized BottomSheetModal usage
     return (
         <BottomSheetModal
             ref={modalRef}
             index={0}
             enableDynamicSizing={true}
+            maxDynamicContentSize={maxHeight}
             enablePanDownToClose
             backdropComponent={renderBackdrop}
             backgroundStyle={[
@@ -335,19 +348,25 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
             onChange={(index) => { isOpenRef.current = index !== -1; }}
             onDismiss={() => { isOpenRef.current = false; }}
         >
-            <BottomSheetView style={[styles.contentContainer]}>
-                <View
+            <BottomSheetScrollView
+                style={[styles.contentContainer]}
+                contentContainerStyle={styles.scrollContentContainer}
+                showsVerticalScrollIndicator={true}
+                bounces={false}
+                nestedScrollEnabled={true}
+            >
+                <Animated.View
                     style={[
-                        styles.centeredContentWrapper,
-                        { paddingBottom: (insets?.bottom ?? 0) + (appInsets?.bottom ?? 0) }
+                        styles.animatedContent,
+                        Platform.OS === 'android'
+                            ? { opacity: 1 }
+                            : { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
                     ]}
                 >
-                    <Animated.View
+                    <View
                         style={[
-                            styles.animatedContent,
-                            Platform.OS === 'android'
-                                ? { opacity: 1 }
-                                : { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
+                            styles.centeredContentWrapper,
+                            { paddingBottom: (insets?.bottom ?? 0) + (appInsets?.bottom ?? 0) }
                         ]}
                     >
                         {oxyServices ? (
@@ -365,12 +384,12 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
                                 <Text>OxyServices not available</Text>
                             </View>
                         )}
-                    </Animated.View>
-                </View>
-            </BottomSheetView>
+                    </View>
+                </Animated.View>
+            </BottomSheetScrollView>
             {showInternalToaster && (
                 <View style={styles.toasterContainer}>
-                    <Toaster position="top-center" swipeToDismissDirection="left" />
+                    <Toaster position="bottom-center" swipeToDismissDirection="left" />
                 </View>
             )}
         </BottomSheetModal>
@@ -388,6 +407,9 @@ const styles = StyleSheet.create({
         width: '100%',
         borderTopLeftRadius: 35,
         borderTopRightRadius: 35,
+    },
+    scrollContentContainer: {
+        // Content will size naturally, ScrollView handles overflow
     },
     centeredContentWrapper: {
         width: '100%',

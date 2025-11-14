@@ -46,9 +46,6 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     const isOwnProfile = currentUser && currentUser.id === userId;
 
     useEffect(() => {
-        console.log('ProfileScreen - userId:', userId);
-        console.log('ProfileScreen - username:', username);
-
         if (!userId) {
             setError('No user ID provided');
             setIsLoading(false);
@@ -61,23 +58,19 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
         // Load user profile and karma total
         Promise.all([
             oxyServices.getUserById(userId).catch((err: any) => {
-                console.error('getUserById error:', err);
                 // If this is the current user and the API call fails, use current user data as fallback
                 if (currentUser && currentUser.id === userId) {
-                    console.log('API call failed, using current user as fallback:', currentUser);
                     return currentUser;
                 }
                 throw err;
             }),
             oxyServices.getUserKarmaTotal ?
-                oxyServices.getUserKarmaTotal(userId).catch((err: any) => {
-                    console.warn('getUserKarmaTotal error:', err);
+                oxyServices.getUserKarmaTotal(userId).catch(() => {
                     return { total: undefined };
                 }) :
                 Promise.resolve({ total: undefined })
         ])
             .then(([profileRes, karmaRes]) => {
-                console.log('Profile loaded:', profileRes);
                 setProfile(profileRes);
                 setKarmaTotal(typeof karmaRes.total === 'number' ? karmaRes.total : null);
 
