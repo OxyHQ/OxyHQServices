@@ -1,13 +1,5 @@
 import Notification from '../models/Notification';
-import mongoose from 'mongoose';
-
-interface NotificationData {
-  recipientId: mongoose.Types.ObjectId | string;
-  actorId: mongoose.Types.ObjectId | string;
-  type: 'like' | 'reply' | 'mention' | 'follow' | 'repost' | 'quote' | 'welcome';
-  entityId: mongoose.Types.ObjectId | string;
-  entityType: 'post' | 'reply' | 'profile';
-}
+import { NotificationData } from '../types/notification.types';
 
 /**
  * Service to handle notification operations

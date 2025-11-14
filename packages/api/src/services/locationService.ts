@@ -3,65 +3,11 @@ import { logger } from '../utils/logger';
 import locationCache from '../utils/locationCache';
 import { nominatimRateLimiter } from '../utils/apiRateLimiter';
 import performanceMonitor from '../utils/performanceMonitor';
-
-interface NominatimResult {
-  place_id: number;
-  licence: string;
-  osm_type: string;
-  osm_id: number;
-  boundingbox: string[];
-  lat: string;
-  lon: string;
-  display_name: string;
-  class: string;
-  type: string;
-  importance: number;
-  icon?: string;
-  address?: {
-    house_number?: string;
-    road?: string;
-    neighbourhood?: string;
-    suburb?: string;
-    city?: string;
-    state?: string;
-    postcode?: string;
-    country?: string;
-    country_code?: string;
-  };
-}
-
-interface EnhancedLocationResult {
-  place_id: number;
-  display_name: string;
-  lat: string;
-  lon: string;
-  type: string;
-  address: {
-    street?: string;
-    streetNumber?: string;
-    streetDetails?: string;
-    postalCode?: string;
-    city?: string;
-    state?: string;
-    country?: string;
-    formattedAddress?: string;
-  };
-  metadata: {
-    placeId: string;
-    osmId: string;
-    osmType: string;
-    countryCode?: string;
-    timezone?: string;
-  };
-}
-
-interface SearchOptions {
-  limit?: number;
-  countrycodes?: string;
-  addressdetails?: number;
-  useCache?: boolean;
-  cacheTTL?: number;
-}
+import {
+  NominatimResult,
+  EnhancedLocationResult,
+  LocationSearchOptions,
+} from '../types/location.types';
 
 class LocationService {
   private readonly baseUrl = 'https://nominatim.openstreetmap.org';
@@ -95,7 +41,7 @@ class LocationService {
    */
   async searchLocations(
     query: string, 
-    options: SearchOptions = {}
+    options: LocationSearchOptions = {}
   ): Promise<EnhancedLocationResult[]> {
     const endTimer = performanceMonitor.startTimer('location_search');
     
@@ -249,29 +195,35 @@ class LocationService {
   private transformResults(results: NominatimResult[]): EnhancedLocationResult[] {
     return results.map(result => {
       const address = result.address || {};
+      const lat = parseFloat(result.lat) || 0;
+      const lon = parseFloat(result.lon) || 0;
+      
+      // Extract name from display_name (first part before comma)
+      const name = result.display_name.split(',')[0].trim() || result.display_name;
       
       return {
-        place_id: result.place_id,
-        display_name: result.display_name,
-        lat: result.lat,
-        lon: result.lon,
-        type: result.type,
+        id: result.place_id.toString(),
+        name,
+        displayName: result.display_name,
+        type: result.type || result.class || 'unknown',
+        coordinates: {
+          lat,
+          lon,
+        },
         address: {
           street: address.road,
-          streetNumber: address.house_number,
-          streetDetails: address.neighbourhood || address.suburb,
-          postalCode: address.postcode,
-          city: address.city,
+          city: address.city || address.suburb,
           state: address.state,
+          postalCode: address.postcode,
           country: address.country,
-          formattedAddress: result.display_name
+          formattedAddress: result.display_name,
         },
         metadata: {
           placeId: result.place_id.toString(),
           osmId: result.osm_id.toString(),
           osmType: result.osm_type,
-          countryCode: address.country_code?.toUpperCase()
-        }
+          countryCode: address.country_code?.toUpperCase(),
+        },
       };
     });
   }
@@ -281,7 +233,7 @@ class LocationService {
    */
   async batchSearch(
     queries: string[], 
-    options: SearchOptions = {}
+    options: LocationSearchOptions = {}
   ): Promise<Map<string, EnhancedLocationResult[]>> {
     const results = new Map<string, EnhancedLocationResult[]>();
     

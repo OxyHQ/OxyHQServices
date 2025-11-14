@@ -206,7 +206,27 @@ export class HttpClient {
         timeout: config.timeout,
         signal: config.signal,
       });
-      return response.data;
+      
+      // Unwrap standardized API response format: { data: ... }
+      // This handles responses from sendSuccess() and sendPaginated() helpers
+      const responseData = response.data as any;
+      
+      // Handle paginated responses: { data: [...], pagination: {...} }
+      // Return the data array directly - the calling method will wrap it appropriately
+      if (responseData && typeof responseData === 'object' && 'data' in responseData && 'pagination' in responseData) {
+        // For paginated responses, return the data array directly
+        // The calling methods like getUserFollowers/getUserFollowing will handle wrapping
+        // We return the whole response so methods can access both data and pagination
+        return responseData as T;
+      }
+      
+      // Handle regular success responses: { data: ... }
+      if (responseData && typeof responseData === 'object' && 'data' in responseData) {
+        return responseData.data as T;
+      }
+      
+      // Return as-is for responses that don't use sendSuccess wrapper
+      return responseData as T;
     } catch (error) {
       throw handleHttpError(error);
     }

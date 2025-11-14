@@ -4,35 +4,17 @@ import { createReadStream, createWriteStream } from 'fs';
 import { pipeline } from 'stream/promises';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'path';
+import {
+  S3Config,
+  UploadOptions as S3UploadOptions,
+  FileInfo,
+  PresignedUrlOptions,
+} from '../types/s3.types';
 
-export interface S3Config {
-  region: string;
-  accessKeyId: string;
-  secretAccessKey: string;
-  bucketName: string;
-  endpointUrl?: string; // For DigitalOcean Spaces and other S3-compatible services
-}
-
-export interface UploadOptions {
-  contentType?: string;
-  metadata?: Record<string, string>;
+// Extend UploadOptions with service-specific fields
+export interface UploadOptions extends S3UploadOptions {
   publicRead?: boolean;
   folder?: string;
-}
-
-export interface FileInfo {
-  key: string;
-  size: number;
-  lastModified: Date;
-  contentType?: string;
-  metadata?: Record<string, string>;
-  url?: string;
-}
-
-export interface PresignedUrlOptions {
-  expiresIn?: number;
-  contentType?: string;
-  metadata?: Record<string, string>;
 }
 
 export class S3Service {
@@ -356,6 +338,7 @@ export class S3Service {
         key: item.Key!,
         size: item.Size || 0,
         lastModified: item.LastModified!,
+        bucket: this.bucketName,
       }));
     } catch (error) {
       throw new Error(`Failed to list files from S3: ${error}`);
@@ -406,6 +389,7 @@ export class S3Service {
         lastModified: response.LastModified!,
         contentType: response.ContentType,
         metadata: response.Metadata,
+        bucket: this.bucketName,
       };
     } catch (error: any) {
       if (error.name === 'NoSuchKey') {

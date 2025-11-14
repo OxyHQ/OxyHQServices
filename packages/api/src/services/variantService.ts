@@ -3,17 +3,14 @@ import { S3Service } from './s3Service';
 import { logger } from '../utils/logger';
 import sharp from 'sharp';
 import path from 'path';
+import { VariantConfig, VariantCommitRetryOptions } from '../types/variant.types';
 
-export interface VariantConfig {
+export interface VariantConfigWithType extends VariantConfig {
   type: string;
-  width?: number;
-  height?: number;
-  quality?: number;
-  format?: 'webp' | 'jpeg' | 'png';
 }
 
 export class VariantService {
-  private readonly imageVariants: VariantConfig[] = [
+  private readonly imageVariants: VariantConfigWithType[] = [
     { type: 'thumb', width: 256, height: 256, quality: 82, format: 'webp' },
     { type: 'w320', width: 320, quality: 82, format: 'webp' },
     { type: 'w640', width: 640, quality: 82, format: 'webp' },
@@ -319,10 +316,7 @@ export class VariantService {
 }
 
 // Helper methods appended to class
-export interface VariantCommitRetryOptions {
-  retries?: number;
-  delayMs?: number;
-}
+// VariantCommitRetryOptions is imported from types file
 
 // Extend class with private method via declaration merging pattern
 declare module './variantService' {
@@ -332,17 +326,19 @@ declare module './variantService' {
 }
 
 VariantService.prototype.commitVariants = async function(file: IFile, options: VariantCommitRetryOptions = {}): Promise<void> {
-  const { retries = 2, delayMs = 60 } = options;
+  const { retries, delayMs, maxRetries = 2, retryDelay = 60 } = options;
+  const actualRetries = retries ?? maxRetries;
+  const actualDelay = delayMs ?? retryDelay;
   let attempt = 0;
   // We only update the variants field to avoid version key conflicts; using updateOne bypasses optimistic concurrency
-  while (attempt <= retries) {
+  while (attempt <= actualRetries) {
     try {
       await File.updateOne({ _id: file._id }, { $set: { variants: file.variants } }).exec();
       return;
     } catch (err: any) {
-      if (String(err?.name) === 'VersionError' && attempt < retries) {
+      if (String(err?.name) === 'VersionError' && attempt < actualRetries) {
         logger.warn('VersionError committing variants, retrying', { fileId: file._id, attempt });
-        await new Promise(res => setTimeout(res, delayMs * (attempt + 1)));
+        await new Promise(res => setTimeout(res, actualDelay * (attempt + 1)));
         // Refresh variants from DB to merge if needed
         const fresh = await File.findById(file._id);
         if (fresh) {

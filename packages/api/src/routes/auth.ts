@@ -1,7 +1,17 @@
+/**
+ * Authentication Routes
+ * 
+ * RESTful API routes for authentication operations.
+ * Uses asyncHandler for consistent error handling.
+ */
+
 import express from 'express';
 import { SessionController } from '../controllers/session.controller';
 import { User } from '../models/User';
 import { rateLimit } from '../middleware/rateLimiter';
+import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
+import { BadRequestError, NotFoundError } from '../utils/error';
+import { logger } from '../utils/logger';
 
 const router = express.Router();
 
@@ -33,87 +43,71 @@ router.post('/totp/enroll/verify', SessionController.verifyTotpEnrollment);
 router.post('/totp/disable', SessionController.disableTotp);
 
 // Auth validation endpoint
-router.get('/validate', (req, res) => {
+router.get('/validate', asyncHandler(async (req, res) => {
   // This endpoint is used by the frontend to validate auth status
   // It should check if the user is authenticated via the auth middleware
-  res.json({ valid: true });
-});
+  sendSuccess(res, { valid: true });
+}));
 
-// Username and email availability check endpoints
-router.get('/check-username/:username', async (req, res) => {
-  try {
-    let { username } = req.params;
-    
-    // Sanitize username: only allow alphanumeric characters
-    username = username.replace(/[^a-zA-Z0-9]/g, '');
-    
-    if (!username || username.length < 3) {
-      return res.status(400).json({ 
-        available: false, 
-        message: 'Username must be at least 3 characters long and contain only letters and numbers' 
-      });
-    }
-
-    // Validate username format (alphanumeric only)
-    if (!/^[a-zA-Z0-9]{3,30}$/.test(username)) {
-      return res.status(400).json({ 
-        available: false, 
-        message: 'Username can only contain letters and numbers' 
-      });
-    }
-
-    const existingUser = await User.findOne({ username });
-    
-    if (existingUser) {
-      return res.json({ 
-        available: false, 
-        message: 'Username is already taken' 
-      });
-    }
-
-    res.json({ 
-      available: true, 
-      message: 'Username is available' 
-    });
-  } catch (error) {
-    res.status(500).json({ 
-      available: false, 
-      message: 'Error checking username availability' 
-    });
+/**
+ * GET /auth/check-username/:username
+ * 
+ * Check if username is available
+ * 
+ * @param {string} username - Username to check
+ * @returns {object} Availability status
+ */
+router.get('/check-username/:username', asyncHandler(async (req, res) => {
+  let { username } = req.params;
+  
+  // Sanitize username: only allow alphanumeric characters
+  username = username.replace(/[^a-zA-Z0-9]/g, '');
+  
+  if (!username || username.length < 3) {
+    throw new BadRequestError(
+      'Username must be at least 3 characters long and contain only letters and numbers'
+    );
   }
-});
 
-router.get('/check-email/:email', async (req, res) => {
-  try {
-    const { email } = req.params;
-    
-    if (!email || !email.includes('@')) {
-      return res.status(400).json({ 
-        available: false, 
-        message: 'Please provide a valid email address' 
-      });
-    }
-
-    const existingUser = await User.findOne({ email });
-    
-    if (existingUser) {
-      return res.json({ 
-        available: false, 
-        message: 'Email is already registered' 
-      });
-    }
-
-    res.json({ 
-      available: true, 
-      message: 'Email is available' 
-    });
-  } catch (error) {
-    res.status(500).json({ 
-      available: false, 
-      message: 'Error checking email availability' 
-    });
+  // Validate username format (alphanumeric only)
+  if (!/^[a-zA-Z0-9]{3,30}$/.test(username)) {
+    throw new BadRequestError('Username can only contain letters and numbers');
   }
-});
+
+  const existingUser = await User.findOne({ username });
+  
+  logger.debug('GET /auth/check-username', { username, available: !existingUser });
+  
+  sendSuccess(res, { 
+    available: !existingUser, 
+    message: existingUser ? 'Username is already taken' : 'Username is available' 
+  });
+}));
+
+/**
+ * GET /auth/check-email/:email
+ * 
+ * Check if email is available
+ * 
+ * @param {string} email - Email to check
+ * @returns {object} Availability status
+ */
+router.get('/check-email/:email', asyncHandler(async (req, res) => {
+  const { email } = req.params;
+  
+  if (!email || !email.includes('@')) {
+    throw new BadRequestError('Please provide a valid email address');
+  }
+
+  const existingUser = await User.findOne({ email });
+  
+  logger.debug('GET /auth/check-email', { email, available: !existingUser });
+  
+  sendSuccess(res, { 
+    available: !existingUser, 
+    message: existingUser ? 'Email is already registered' : 'Email is available' 
+  });
+}));
 
 export default router; 
  

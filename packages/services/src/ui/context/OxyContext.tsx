@@ -160,6 +160,7 @@ const getStorage = async (): Promise<StorageInterface> => {
 // Storage keys for sessions
 const getStorageKeys = (prefix = 'oxy_session') => ({
   activeSessionId: `${prefix}_active_session_id`, // Only store the active session ID
+  sessionIds: `${prefix}_session_ids`, // Store all session IDs for quick account loading
   language: `${prefix}_language`, // Store the selected language
 });
 
@@ -204,14 +205,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // Track in-flight refresh to prevent duplicate calls
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
 
-  const updateSessions = useCallback((newSessions: ClientSession[], mergeWithExisting = false) => {
-    setSessions((prevSessions) => {
-      const sessionsToProcess = mergeWithExisting
-        ? mergeSessions(prevSessions, newSessions, activeSessionId, false)
-        : normalizeAndSortSessions(newSessions, activeSessionId, false);
-      return sessionsArraysEqual(prevSessions, sessionsToProcess) ? prevSessions : sessionsToProcess;
-    });
-  }, [activeSessionId]);
   const [storage, setStorage] = useState<StorageInterface | null>(null);
   const [currentLanguage, setCurrentLanguage] = useState<string>('en-US');
 
@@ -253,6 +246,37 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }));
   }, []);
 
+  // Save all session IDs to storage for quick loading on initialization
+  const saveSessionIds = useCallback(async (sessionIds: string[]): Promise<void> => {
+    if (!storage) return;
+    try {
+      const uniqueIds = Array.from(new Set(sessionIds));
+      await storage.setItem(keys.sessionIds, JSON.stringify(uniqueIds));
+    } catch (err) {
+      if (__DEV__) {
+        console.warn('Failed to save session IDs:', err);
+      }
+    }
+  }, [storage, keys.sessionIds]);
+
+  const updateSessions = useCallback((newSessions: ClientSession[], mergeWithExisting = false) => {
+    setSessions((prevSessions) => {
+      const sessionsToProcess = mergeWithExisting
+        ? mergeSessions(prevSessions, newSessions, activeSessionId, false)
+        : normalizeAndSortSessions(newSessions, activeSessionId, false);
+      
+      // Save all session IDs to storage
+      if (storage) {
+        const allSessionIds = sessionsToProcess.map(s => s.sessionId);
+        saveSessionIds(allSessionIds).catch(() => {
+          // Ignore errors - non-critical
+        });
+      }
+      
+      return sessionsArraysEqual(prevSessions, sessionsToProcess) ? prevSessions : sessionsToProcess;
+    });
+  }, [activeSessionId, storage, saveSessionIds]);
+
   // Token ready state - start optimistically so children render immediately
   const [tokenReady, setTokenReady] = useState(true);
 
@@ -261,6 +285,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     if (!storage) return;
     try {
       await storage.removeItem(keys.activeSessionId);
+      await storage.removeItem(keys.sessionIds);
     } catch (err) {
       if (__DEV__) {
         console.error('Clear storage error:', err);
@@ -299,8 +324,49 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           setCurrentLanguage(savedLanguage);
         }
 
+        // Load all stored session IDs and validate them
+        const storedSessionIdsJson = await storage.getItem(keys.sessionIds);
+        const storedSessionIds: string[] = storedSessionIdsJson ? JSON.parse(storedSessionIdsJson) : [];
+        
         // Try to restore active session from storage
         const storedActiveSessionId = await storage.getItem(keys.activeSessionId);
+        const validSessions: ClientSession[] = [];
+        
+        // If we have stored session IDs, validate them (even without active session)
+        if (storedSessionIds.length > 0) {
+          if (__DEV__) {
+            console.log('Loading stored sessions on init:', storedSessionIds.length);
+          }
+          
+          // Validate each stored session ID and build session list
+          for (const sessionId of storedSessionIds) {
+            try {
+              const validation = await oxyServices.validateSession(sessionId, { useHeaderValidation: true });
+              if (validation.valid && validation.user) {
+                validSessions.push({
+                  sessionId,
+                  userId: validation.user.id?.toString() || '',
+                  deviceId: '',
+                  expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+                  lastActive: new Date().toISOString(),
+                  isCurrent: sessionId === storedActiveSessionId,
+                });
+              }
+            } catch (e) {
+              // Session invalid, skip it
+              if (__DEV__) {
+                console.warn('Session validation failed for:', sessionId, e);
+              }
+            }
+          }
+          
+          // Update sessions list with validated sessions (even if no active session)
+          if (validSessions.length > 0) {
+            updateSessions(validSessions, false);
+          }
+        }
+        
+        // If we have an active session, authenticate with it
         if (storedActiveSessionId) {
           try {
             const validation = await oxyServices.validateSession(storedActiveSessionId, { useHeaderValidation: true });
@@ -326,13 +392,18 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               }
               onAuthStateChange?.(fullUser);
             } else {
-              await clearAllStorage();
+              // Active session invalid, remove it but keep other sessions
+              await storage.removeItem(keys.activeSessionId);
+              // Update session list to remove invalid active session
+              updateSessions(validSessions.filter(s => s.sessionId !== storedActiveSessionId), false);
             }
           } catch (e) {
             if (__DEV__) {
-              console.error('Session validation error', e);
+              console.error('Active session validation error', e);
             }
-            await clearAllStorage();
+            // Remove invalid active session but keep other sessions
+            await storage.removeItem(keys.activeSessionId);
+            updateSessions(validSessions.filter(s => s.sessionId !== storedActiveSessionId), false);
           }
         }
         setTokenReady(true);
@@ -345,7 +416,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       }
     };
     initAuth();
-  }, [storage, oxyServices, keys, onAuthStateChange, loginSuccess, clearAllStorage, applyLanguagePreference, mapSessionsToClient]);
+  }, [storage, oxyServices, keys, onAuthStateChange, loginSuccess, clearAllStorage, applyLanguagePreference, mapSessionsToClient, updateSessions]);
 
   // Save active session ID to storage (only session ID, no user data)
   const saveActiveSessionId = useCallback(async (sessionId: string): Promise<void> => {

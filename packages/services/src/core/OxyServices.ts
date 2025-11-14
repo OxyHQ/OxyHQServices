@@ -972,10 +972,15 @@ export class OxyServices {
   ): Promise<{ followers: User[]; total: number; hasMore: boolean }> {
     try {
       const params = buildPaginationParams(pagination || {});
-      return await this.makeRequest('GET', `/api/users/${userId}/followers`, params, {
+      const response = await this.makeRequest<{ data: User[]; pagination: { total: number; hasMore: boolean } }>('GET', `/api/users/${userId}/followers`, params, {
         cache: true,
         cacheTTL: 2 * 60 * 1000, // 2 minutes cache
       });
+      return {
+        followers: response.data || [],
+        total: response.pagination.total,
+        hasMore: response.pagination.hasMore,
+      };
     } catch (error) {
       throw this.handleError(error);
     }
@@ -990,10 +995,15 @@ export class OxyServices {
   ): Promise<{ following: User[]; total: number; hasMore: boolean }> {
     try {
       const params = buildPaginationParams(pagination || {});
-      return await this.makeRequest('GET', `/api/users/${userId}/following`, params, {
+      const response = await this.makeRequest<{ data: User[]; pagination: { total: number; hasMore: boolean } }>('GET', `/api/users/${userId}/following`, params, {
         cache: true,
         cacheTTL: 2 * 60 * 1000, // 2 minutes cache
       });
+      return {
+        following: response.data || [],
+        total: response.pagination.total,
+        hasMore: response.pagination.hasMore,
+      };
     } catch (error) {
       throw this.handleError(error);
     }

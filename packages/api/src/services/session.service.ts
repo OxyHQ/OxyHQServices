@@ -12,27 +12,15 @@ import { generateSessionTokens, validateAccessToken, validateRefreshToken } from
 import { Request } from 'express';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import {
+  SessionValidationResult,
+  SessionCreateOptions,
+  SessionRefreshResult,
+} from '../types/session.types';
 
 const SESSION_EXPIRES_IN = 7 * 24 * 60 * 60 * 1000; // 7 days
 const ACCESS_TOKEN_EXPIRES_IN = '15m';
 const REFRESH_TOKEN_EXPIRES_IN = '7d';
-
-export interface SessionValidationResult {
-  session: ISession;
-  user: any;
-  payload: any;
-}
-
-export interface SessionCreateOptions {
-  deviceName?: string;
-  deviceFingerprint?: DeviceFingerprint;
-}
-
-export interface SessionRefreshResult {
-  accessToken: string;
-  refreshToken: string;
-  session: ISession;
-}
 
 class SessionService {
   /**

@@ -1,160 +1,311 @@
+/**
+ * Profile Routes
+ * 
+ * RESTful API routes for profile operations.
+ * Uses service layer for business logic and standardized error handling.
+ */
+
 import { Router, Request, Response } from 'express';
-import User, { IUser } from '../models/User';
+import { Types } from 'mongoose';
 import { authMiddleware } from '../middleware/auth';
 import { logger } from '../utils/logger';
-import { Types } from 'mongoose';
-import { ParsedQs } from 'qs';
+import { asyncHandler, sendSuccess, sendPaginated } from '../utils/asyncHandler';
+import {
+  NotFoundError,
+  BadRequestError,
+  UnauthorizedError,
+} from '../utils/error';
+import { userService } from '../services/user.service';
+import { PaginationParams, UserProfile, UserStatistics } from '../types/user.types';
 import Follow, { FollowType } from '../models/Follow';
+import User from '../models/User';
 
-interface SearchQuery extends ParsedQs {
-  query?: string;
+interface AuthRequest extends Request {
+  user?: {
+    id: string;
+  };
+}
+
+interface PaginationQuery {
   limit?: string;
   offset?: string;
 }
 
 const router = Router();
+const MAX_PAGINATION_LIMIT = 100;
+const DEFAULT_PAGINATION_LIMIT = 10;
 
-// Get profile by username
-router.get('/username/:username', async (req: Request, res: Response) => {
-  try {
+// Constants
+const MIN_USERNAME_LENGTH = 3;
+const MAX_USERNAME_LENGTH = 30;
+
+/**
+ * Validates pagination query parameters
+ */
+const validatePagination = (req: Request, res: Response, next: () => void): void => {
+  const query = req.query as PaginationQuery;
+  const limit = query.limit ? parseInt(query.limit, 10) : undefined;
+  const offset = query.offset ? parseInt(query.offset, 10) : undefined;
+
+  if (limit !== undefined && (isNaN(limit) || limit < 0 || limit > MAX_PAGINATION_LIMIT)) {
+    res.status(400).json({
+      error: 'BAD_REQUEST',
+      message: `Invalid limit parameter. Must be between 1 and ${MAX_PAGINATION_LIMIT}`,
+    });
+    return;
+  }
+
+  if (offset !== undefined && (isNaN(offset) || offset < 0)) {
+    res.status(400).json({
+      error: 'BAD_REQUEST',
+      message: 'Invalid offset parameter. Must be >= 0',
+    });
+    return;
+  }
+
+  next();
+};
+
+/**
+ * GET /profiles/username/:username
+ * 
+ * Get user profile by username
+ * 
+ * @param {string} username - Username (alphanumeric only)
+ * @returns {UserProfile} User profile with statistics
+ */
+router.get(
+  '/username/:username',
+  asyncHandler(async (req: Request, res: Response) => {
     // Sanitize username: only allow alphanumeric characters
     const username = req.params.username.replace(/[^a-zA-Z0-9]/g, '');
-    
-    if (!username || username.length < 3) {
-      return res.status(400).json({ message: 'Invalid username' });
+
+    if (!username || username.length < MIN_USERNAME_LENGTH) {
+      throw new BadRequestError(
+        `Username must be at least ${MIN_USERNAME_LENGTH} characters long and contain only letters and numbers`
+      );
+    }
+
+    if (username.length > MAX_USERNAME_LENGTH) {
+      throw new BadRequestError(`Username must be no more than ${MAX_USERNAME_LENGTH} characters`);
     }
 
     const user = await User.findOne({ username })
-      .select('-password -refreshToken');
+      .select('-password -refreshToken')
+      .lean({ virtuals: true });
 
     if (!user) {
-      return res.status(404).json({ message: 'Profile not found' });
+      throw new NotFoundError('Profile not found');
     }
 
-    res.json(user);
-  } catch (error) {
-    logger.error('Error fetching profile by username:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
+    // Get user statistics
+    const stats = await userService.getUserStats(user._id.toString());
 
-// Search profiles
-router.get('/search', async (req: Request<{}, {}, {}, SearchQuery>, res: Response) => {
-  try {
-    const { query, limit = '10', offset = '0' } = req.query;
-    
-    if (!query) {
-      return res.status(400).json({ message: 'Search query is required' });
+    // Format response with stats
+    const response = userService.formatUserResponse(user as any, stats);
+
+    logger.debug('GET /profiles/username/:username', { username });
+    sendSuccess(res, response);
+  })
+);
+
+/**
+ * GET /profiles/search
+ * 
+ * Search for user profiles by username or name
+ * 
+ * @query {string} query - Search query (required)
+ * @query {number} limit - Number of results (max 100, default 10)
+ * @query {number} offset - Pagination offset (default 0)
+ * @returns {PaginatedResponse<UserProfile>} Paginated list of matching profiles
+ */
+router.get(
+  '/search',
+  validatePagination,
+  asyncHandler(async (req: Request, res: Response) => {
+    const query = req.query.query as string;
+    const { limit, offset } = req.query as PaginationQuery;
+
+    if (!query || typeof query !== 'string' || query.trim().length === 0) {
+      throw new BadRequestError('Search query is required');
     }
 
-    const searchRegex = new RegExp(query, 'i');
+    const parsedLimit = limit
+      ? Math.min(parseInt(limit, 10), MAX_PAGINATION_LIMIT)
+      : DEFAULT_PAGINATION_LIMIT;
+    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+
+    // Sanitize search query to prevent regex injection
+    const sanitizedQuery = query.trim().substring(0, 100);
+    const searchRegex = new RegExp(sanitizedQuery.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+
     const profiles = await User.find({
       $or: [
         { username: searchRegex },
         { 'name.first': searchRegex },
         { 'name.last': searchRegex },
-        { description: searchRegex }
-      ]
+        { description: searchRegex },
+      ],
     })
-    .select('-password -refreshToken')
-    .limit(parseInt(limit))
-    .skip(parseInt(offset));
+      .select('-password -refreshToken')
+      .limit(parsedLimit)
+      .skip(parsedOffset)
+      .lean({ virtuals: true });
 
+    // Enrich profiles with statistics
     const enrichedProfiles = await Promise.all(
-      profiles.map(async (profile: IUser) => {
-        // Followers: people who follow this user
-        const followersCount = await Follow.countDocuments({
-          followedId: profile._id,
-          followType: 'user'
-        });
-        // Following: people this user follows
-        const followingCount = await Follow.countDocuments({
-          followerUserId: profile._id,
-          followType: 'user'
-        });
-
-        logger.info(`Stats for user ${profile._id}: followers=${followersCount}, following=${followingCount}`);
-
-        return {
-          ...profile.toObject(),
-          _count: {
-            followers: followersCount,
-            following: followingCount
-          }
-        };
+      profiles.map(async (profile) => {
+        const stats = await userService.getUserStats(profile._id.toString());
+        return userService.formatUserResponse(profile as any, stats);
       })
     );
 
-    res.json(enrichedProfiles);
-  } catch (error) {
-    logger.error('Error searching profiles:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
+    // Get total count for pagination
+    const total = await User.countDocuments({
+      $or: [
+        { username: searchRegex },
+        { 'name.first': searchRegex },
+        { 'name.last': searchRegex },
+        { description: searchRegex },
+      ],
+    });
 
-// Get recommended profiles
-router.get('/recommendations', authMiddleware, async (req: Request<{}, {}, {}, { limit?: string; offset?: string }> & { user?: { id: string } }, res: Response) => {
-  try {
-    const limit = req.query.limit ? parseInt(req.query.limit) : 10;
-    const offset = req.query.offset ? parseInt(req.query.offset) : 0;
+    logger.debug('GET /profiles/search', {
+      query: sanitizedQuery,
+      limit: parsedLimit,
+      offset: parsedOffset,
+      total,
+    });
+
+    sendPaginated(res, enrichedProfiles, total, parsedLimit, parsedOffset);
+  })
+);
+
+/**
+ * GET /profiles/recommendations
+ * 
+ * Get recommended user profiles based on mutual connections
+ * 
+ * @query {number} limit - Number of results (max 100, default 10)
+ * @query {number} offset - Pagination offset (default 0)
+ * @returns {UserProfile[]} List of recommended profiles
+ */
+router.get(
+  '/recommendations',
+  authMiddleware,
+  validatePagination,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const { limit, offset } = req.query as PaginationQuery;
     const currentUserId = req.user?.id;
 
-    logger.info(`Fetching recommendations${currentUserId ? ` for user ${currentUserId}` : ''} with limit ${limit} and offset ${offset}`);
+    if (!currentUserId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const parsedLimit = limit
+      ? Math.min(parseInt(limit, 10), MAX_PAGINATION_LIMIT)
+      : DEFAULT_PAGINATION_LIMIT;
+    const parsedOffset = offset ? parseInt(offset, 10) : 0;
+
+    logger.debug('GET /profiles/recommendations', {
+      currentUserId,
+      limit: parsedLimit,
+      offset: parsedOffset,
+    });
 
     let excludeIds: Types.ObjectId[] = [];
     let followingIds: Types.ObjectId[] = [];
-    if (currentUserId) {
-      excludeIds.push(new Types.ObjectId(currentUserId));
-      const following = await Follow.find({
-        followerUserId: currentUserId,
-        followType: FollowType.USER
-      }).select('followedId');
-      followingIds = following.map(f => f.followedId instanceof Types.ObjectId ? f.followedId : new Types.ObjectId(f.followedId));
-      excludeIds = excludeIds.concat(followingIds);
-    }
+
+    excludeIds.push(new Types.ObjectId(currentUserId));
+
+    // Get users that current user follows
+    const following = await Follow.find({
+      followerUserId: currentUserId,
+      followType: FollowType.USER,
+    }).select('followedId').lean();
+
+    followingIds = following
+      .map((f) =>
+        f.followedId instanceof Types.ObjectId
+          ? f.followedId
+          : new Types.ObjectId(f.followedId)
+      )
+      .filter((id): id is Types.ObjectId => id instanceof Types.ObjectId);
+
+    excludeIds = excludeIds.concat(followingIds);
 
     let recommendations: any[] = [];
+
+    // Find users followed by people you follow (mutuals), ranked by mutual count
     if (followingIds.length > 0) {
-      // Find users followed by people you follow (mutuals), ranked by how many of your followings follow them
       recommendations = await Follow.aggregate([
-        { $match: {
+        {
+          $match: {
             followerUserId: { $in: followingIds },
-            followType: 'user',
-            followedId: { $nin: excludeIds }
-        }},
-        { $group: {
+            followType: FollowType.USER,
+            followedId: { $nin: excludeIds },
+          },
+        },
+        {
+          $group: {
             _id: '$followedId',
-            mutualCount: { $sum: 1 }
-        }},
+            mutualCount: { $sum: 1 },
+          },
+        },
         { $sort: { mutualCount: -1 } },
-        { $skip: offset },
-        { $limit: limit },
+        { $skip: parsedOffset },
+        { $limit: parsedLimit },
         // Join with User
-        { $lookup: {
+        {
+          $lookup: {
             from: 'users',
             localField: '_id',
             foreignField: '_id',
-            as: 'user'
-        }},
+            as: 'user',
+          },
+        },
         { $unwind: '$user' },
         // Get follower/following counts
-        { $lookup: {
+        {
+          $lookup: {
             from: 'follows',
             let: { userId: '$_id' },
             pipeline: [
-              { $match: { $expr: { $and: [ { $eq: ['$followedId', '$$userId'] }, { $eq: ['$followType', 'user'] } ] } } }
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$followedId', '$$userId'] },
+                      { $eq: ['$followType', FollowType.USER] },
+                    ],
+                  },
+                },
+              },
             ],
-            as: 'followersArr'
-        }},
-        { $lookup: {
+            as: 'followersArr',
+          },
+        },
+        {
+          $lookup: {
             from: 'follows',
             let: { userId: '$_id' },
             pipeline: [
-              { $match: { $expr: { $and: [ { $eq: ['$followerUserId', '$$userId'] }, { $eq: ['$followType', 'user'] } ] } } }
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$followerUserId', '$$userId'] },
+                      { $eq: ['$followType', FollowType.USER] },
+                    ],
+                  },
+                },
+              },
             ],
-            as: 'followingArr'
-        }},
-        { $project: {
+            as: 'followingArr',
+          },
+        },
+        {
+          $project: {
             _id: 1,
             username: '$user.username',
             name: '$user.name',
@@ -162,15 +313,17 @@ router.get('/recommendations', authMiddleware, async (req: Request<{}, {}, {}, {
             description: '$user.description',
             mutualCount: 1,
             followersCount: { $size: '$followersArr' },
-            followingCount: { $size: '$followingArr' }
-        }}
+            followingCount: { $size: '$followingArr' },
+          },
+        },
       ]);
     }
 
-    // If not enough, fill with random users
-    if (recommendations.length < limit) {
-      const alreadyRecommendedIds = recommendations.map(u => u._id);
-      const fillLimit = limit - recommendations.length;
+    // If not enough recommendations, fill with random users
+    if (recommendations.length < parsedLimit) {
+      const alreadyRecommendedIds = recommendations.map((u) => u._id);
+      const fillLimit = parsedLimit - recommendations.length;
+
       const randomUsers = await User.aggregate([
         { $match: { _id: { $nin: excludeIds.concat(alreadyRecommendedIds) } } },
         { $sample: { size: fillLimit } },
@@ -179,20 +332,38 @@ router.get('/recommendations', authMiddleware, async (req: Request<{}, {}, {}, {
             from: 'follows',
             let: { userId: '$_id' },
             pipeline: [
-              { $match: { $expr: { $and: [ { $eq: ['$followedId', '$$userId'] }, { $eq: ['$followType', 'user'] } ] } } }
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$followedId', '$$userId'] },
+                      { $eq: ['$followType', FollowType.USER] },
+                    ],
+                  },
+                },
+              },
             ],
-            as: 'followersArr'
-          }
+            as: 'followersArr',
+          },
         },
         {
           $lookup: {
             from: 'follows',
             let: { userId: '$_id' },
             pipeline: [
-              { $match: { $expr: { $and: [ { $eq: ['$followerUserId', '$$userId'] }, { $eq: ['$followType', 'user'] } ] } } }
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$followerUserId', '$$userId'] },
+                      { $eq: ['$followType', FollowType.USER] },
+                    ],
+                  },
+                },
+              },
             ],
-            as: 'followingArr'
-          }
+            as: 'followingArr',
+          },
         },
         {
           $project: {
@@ -203,30 +374,35 @@ router.get('/recommendations', authMiddleware, async (req: Request<{}, {}, {}, {
             description: 1,
             mutualCount: { $literal: 0 },
             followersCount: { $size: '$followersArr' },
-            followingCount: { $size: '$followingArr' }
-          }
-        }
+            followingCount: { $size: '$followingArr' },
+          },
+        },
       ]);
+
       recommendations = recommendations.concat(randomUsers);
     }
 
-    logger.info(`Returning ${recommendations.length} improved recommendations`);
-    res.json(recommendations.map(u => ({
+    // Format recommendations response
+    const formattedRecommendations = recommendations.map((u) => ({
       id: u._id,
       username: u.username,
       name: u.name,
       avatar: u.avatar,
       description: u.description,
-      mutualCount: u.mutualCount,
+      mutualCount: u.mutualCount || 0,
       _count: {
-        followers: u.followersCount,
-        following: u.followingCount
-      }
-    })));
-  } catch (error) {
-    logger.error('Error getting profile recommendations:', error);
-    res.status(500).json({ message: 'Internal server error' });
-  }
-});
+        followers: u.followersCount || 0,
+        following: u.followingCount || 0,
+      },
+    }));
 
-export default router; 
+    logger.debug('GET /profiles/recommendations', {
+      currentUserId,
+      recommendationsCount: formattedRecommendations.length,
+    });
+
+    sendSuccess(res, formattedRecommendations);
+  })
+);
+
+export default router;

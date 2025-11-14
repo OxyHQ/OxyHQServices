@@ -5,38 +5,12 @@ import { S3Service } from './s3Service';
 import { VariantService } from './variantService';
 import { logger } from '../utils/logger';
 import path from 'path';
-
-export interface AssetInitResponse {
-  uploadUrl: string;
-  fileId: string;
-  sha256: string;
-}
-
-export interface AssetCompleteRequest {
-  fileId: string;
-  originalName: string;
-  size: number;
-  mime: string;
-  visibility?: FileVisibility;
-  metadata?: Record<string, any>;
-}
-
-export interface AssetLinkRequest {
-  app: string;
-  entityType: string;
-  entityId: string;
-  createdBy: string;
-  visibility?: FileVisibility;
-  webhookUrl?: string;
-}
-
-export interface AssetDeleteSummary {
-  fileId: string;
-  wouldDelete: boolean;
-  affectedApps: string[];
-  remainingLinks: number;
-  variants: string[];
-}
+import {
+  AssetInitResponse,
+  AssetCompleteRequest,
+  AssetLinkRequest,
+  AssetDeleteSummary,
+} from '../types/asset.types';
 
 export class AssetService {
   private variantService: VariantService;
