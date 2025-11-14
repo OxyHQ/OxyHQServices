@@ -583,13 +583,11 @@
       },
       "privacySettings": {
         "title": "Privacy Settings",
-        "subtitle": "Control who can see your profile",
-        "coming": "Privacy settings coming soon!"
+        "subtitle": "Control who can see your profile"
       },
       "verifyAccount": {
         "title": "Verify Account",
-        "subtitle": "Get a verified badge",
-        "coming": "Account verification coming soon!"
+        "subtitle": "Get a verified badge"
       },
       "twoFactor": {
         "title": "Two‑Factor Authentication",
@@ -684,12 +682,24 @@
       "downloadData": {
         "title": "Download My Data",
         "subtitle": "Export your account information",
-        "coming": "Download account data feature coming soon!"
+        "confirmTitle": "Download Account Data",
+        "confirmMessage": "Choose the format for your account data export:",
+        "downloading": "Preparing download...",
+        "success": "Data downloaded successfully",
+        "error": "Failed to download data"
       },
       "deleteAccount": {
         "title": "Delete Account",
         "subtitle": "Permanently delete your account",
-        "coming": "Delete account feature coming soon!"
+        "confirmTitle": "Delete Account",
+        "confirmMessage": "This action cannot be undone. This will permanently delete your account and all associated data.\n\nAre you sure you want to delete your account?",
+        "finalConfirm": "This is your final warning. Your account will be permanently deleted and cannot be recovered. Type \"{{username}}\" to confirm.",
+        "confirm": "Delete Forever",
+        "passwordRequired": "Password confirmation required. Please use a modal with password input to complete account deletion.",
+        "missingFields": "Password and confirmation required",
+        "confirmMismatch": "Confirmation text does not match username",
+        "success": "Account deleted successfully",
+        "error": "Failed to delete account"
       },
       "preferences": {
         "title": "Account Preferences",
@@ -796,6 +806,69 @@
       "updated": "Search personalization updated",
       "error": "Failed to update personalization"
     }
+  },
+  "privacySettings": {
+    "title": "Privacy Settings",
+    "loadError": "Failed to load privacy settings",
+    "updated": "Privacy settings updated",
+    "updateError": "Failed to update privacy setting",
+    "sections": {
+      "account": "ACCOUNT PRIVACY",
+      "interactions": "INTERACTIONS",
+      "activity": "ACTIVITY & DATA",
+      "content": "CONTENT & SAFETY"
+    },
+    "isPrivateAccount": "Private Account",
+    "isPrivateAccountDesc": "Only approved followers can see your posts",
+    "profileVisibility": "Profile Visibility",
+    "profileVisibilityDesc": "Control who can view your profile",
+    "hideOnlineStatus": "Hide Online Status",
+    "hideOnlineStatusDesc": "Don't show when you're online",
+    "hideLastSeen": "Hide Last Seen",
+    "hideLastSeenDesc": "Don't show when you were last active",
+    "allowTagging": "Allow Tagging",
+    "allowTaggingDesc": "Let others tag you in posts",
+    "allowMentions": "Allow Mentions",
+    "allowMentionsDesc": "Let others mention you",
+    "allowDirectMessages": "Allow Direct Messages",
+    "allowDirectMessagesDesc": "Let others send you direct messages",
+    "hideReadReceipts": "Hide Read Receipts",
+    "hideReadReceiptsDesc": "Don't show read receipts in messages",
+    "showActivity": "Show Activity Status",
+    "showActivityDesc": "Display your activity on your profile",
+    "dataSharing": "Data Sharing",
+    "dataSharingDesc": "Allow sharing data for personalization",
+    "locationSharing": "Location Sharing",
+    "locationSharingDesc": "Share your location",
+    "analyticsSharing": "Analytics Sharing",
+    "analyticsSharingDesc": "Allow analytics data collection",
+    "sensitiveContent": "Show Sensitive Content",
+    "sensitiveContentDesc": "Allow sensitive or explicit content",
+    "autoFilter": "Auto Filter",
+    "autoFilterDesc": "Automatically filter inappropriate content",
+    "muteKeywords": "Mute Keywords",
+    "muteKeywordsDesc": "Hide posts containing muted keywords",
+    "blockScreenshots": "Block Screenshots",
+    "blockScreenshotsDesc": "Prevent screenshots of your content"
+  },
+  "accountVerification": {
+    "title": "Account Verification",
+    "description": "Request a verified badge for your account. Verified accounts help establish authenticity and credibility.",
+    "sections": {
+      "request": "VERIFICATION REQUEST"
+    },
+    "reasonLabel": "Reason for Verification *",
+    "reasonPlaceholder": "Explain why you need a verified badge (e.g., public figure, brand, organization)",
+    "reasonRequired": "Please provide a reason for verification",
+    "evidenceLabel": "Evidence (Optional)",
+    "evidencePlaceholder": "Provide any supporting documentation or links (e.g., official website, social media profiles)",
+    "submit": "Submit Request",
+    "submitError": "Failed to submit verification request",
+    "successTitle": "Request Submitted",
+    "successMessage": "Your verification request has been submitted. Request ID: {{requestId}}",
+    "ok": "OK",
+    "error": "Service not available",
+    "note": "Note: Verification requests are reviewed manually and may take several days. We will notify you once your request has been reviewed."
   },
   "help": {
     "title": "Help & Support",

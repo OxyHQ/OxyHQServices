@@ -1459,7 +1459,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                             iconColor: '#8E8E93',
                                             title: t('editProfile.items.privacySettings.title') || 'Privacy Settings',
                                             subtitle: t('editProfile.items.privacySettings.subtitle') || 'Control who can see your profile',
-                                            onPress: () => toast.info(t('editProfile.items.privacySettings.coming') || 'Privacy settings coming soon!'),
+                                            onPress: () => navigate?.('PrivacySettings'),
                                         },
                                         {
                                             id: 'verify-account',
@@ -1467,7 +1467,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                             iconColor: '#30D158',
                                             title: t('editProfile.items.verifyAccount.title') || 'Verify Account',
                                             subtitle: t('editProfile.items.verifyAccount.subtitle') || 'Get a verified badge',
-                                            onPress: () => toast.info(t('editProfile.items.verifyAccount.coming') || 'Account verification coming soon!'),
+                                            onPress: () => navigate?.('AccountVerification'),
                                         },
                                     ]}
                                     theme={theme}

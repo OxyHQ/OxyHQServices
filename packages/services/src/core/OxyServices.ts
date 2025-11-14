@@ -798,6 +798,86 @@ export class OxyServices {
     }
   }
 
+  /**
+   * Get privacy settings for a user
+   * @param userId - The user ID (defaults to current user)
+   */
+  async getPrivacySettings(userId?: string): Promise<any> {
+    try {
+      const id = userId || (await this.getCurrentUser()).id;
+      return await this.makeRequest<any>('GET', `/api/privacy/${id}/privacy`, undefined, {
+        cache: true,
+        cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+      });
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Update privacy settings
+   * @param settings - Partial privacy settings object
+   * @param userId - The user ID (defaults to current user)
+   */
+  async updatePrivacySettings(settings: Record<string, any>, userId?: string): Promise<any> {
+    try {
+      const id = userId || (await this.getCurrentUser()).id;
+      return await this.makeRequest<any>('PATCH', `/api/privacy/${id}/privacy`, settings, {
+        cache: false,
+      });
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Request account verification
+   */
+  async requestAccountVerification(reason: string, evidence?: string): Promise<{ message: string; requestId: string }> {
+    try {
+      return await this.makeRequest<{ message: string; requestId: string }>('POST', '/api/users/verify/request', {
+        reason,
+        evidence,
+      }, { cache: false });
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Download account data export
+   */
+  async downloadAccountData(format: 'json' | 'csv' = 'json'): Promise<Blob> {
+    try {
+      // Use axios instance directly for blob responses since RequestManager doesn't handle blobs
+      const axiosInstance = this.httpClient.getAxiosInstance();
+      
+      const response = await axiosInstance.get(`/api/users/me/data?format=${format}`, {
+        responseType: 'blob',
+      });
+      
+      return response.data as Blob;
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Delete account permanently
+   * @param password - User password for confirmation
+   * @param confirmText - Confirmation text (usually username)
+   */
+  async deleteAccount(password: string, confirmText: string): Promise<{ message: string }> {
+    try {
+      return await this.makeRequest<{ message: string }>('DELETE', '/api/users/me', {
+        password,
+        confirmText,
+      }, { cache: false });
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
   // ============================================================================
   // LANGUAGE METHODS
   // ============================================================================

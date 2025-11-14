@@ -27,6 +27,8 @@ import SavesCollectionsScreen from '../screens/SavesCollectionsScreen';
 import SearchSettingsScreen from '../screens/SearchSettingsScreen';
 import HelpSupportScreen from '../screens/HelpSupportScreen';
 import LegalDocumentsScreen from '../screens/LegalDocumentsScreen';
+import PrivacySettingsScreen from '../screens/PrivacySettingsScreen';
+import AccountVerificationScreen from '../screens/AccountVerificationScreen';
 
 export interface RouteConfig {
   component: ComponentType<any>;
@@ -63,6 +65,8 @@ export const routeNames = [
   'SearchSettings',
   'HelpSupport',
   'LegalDocuments',
+  'PrivacySettings',
+  'AccountVerification',
 ] as const;
 
 export type RouteName = typeof routeNames[number];
@@ -178,6 +182,14 @@ export const routes: Record<RouteName, RouteConfig> = {
   },
   LegalDocuments: {
     component: LegalDocumentsScreen as unknown as ComponentType<any>,
+    snapPoints: ['70%', '100%'],
+  },
+  PrivacySettings: {
+    component: PrivacySettingsScreen as unknown as ComponentType<any>,
+    snapPoints: ['60%', '100%'],
+  },
+  AccountVerification: {
+    component: AccountVerificationScreen as unknown as ComponentType<any>,
     snapPoints: ['70%', '100%'],
   },
 };

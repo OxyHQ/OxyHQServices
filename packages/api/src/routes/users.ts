@@ -548,4 +548,161 @@ router.post(
   })
 );
 
+/**
+ * POST /users/verify/request
+ * 
+ * Request account verification
+ * 
+ * @body {string} reason - Reason for verification request
+ * @body {string} [evidence] - Optional evidence/documentation
+ * @returns {object} Confirmation with request ID
+ */
+router.post(
+  '/verify/request',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const { reason, evidence } = req.body;
+    if (!reason || typeof reason !== 'string') {
+      throw new BadRequestError('Reason is required for verification request');
+    }
+
+    // Create verification request (in a real app, you'd save this to a database)
+    const requestId = `VERIFY-${Date.now()}-${userId}`;
+    
+    // For now, we'll just log it. In production, you'd save this to a VerificationRequest model
+    logger.info('Account verification requested', {
+      userId,
+      requestId,
+      reason,
+      hasEvidence: !!evidence,
+    });
+
+    sendSuccess(res, {
+      message: 'Verification request submitted successfully',
+      requestId,
+      status: 'pending',
+    });
+  })
+);
+
+/**
+ * GET /users/me/data
+ * 
+ * Download account data export
+ * 
+ * @query {string} [format] - Export format: 'json' or 'csv' (default: 'json')
+ * @returns {Blob} Account data file
+ */
+router.get(
+  '/me/data',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const format = (req.query.format as string) || 'json';
+    const user = await User.findById(userId).select('+password').lean();
+
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    // Remove sensitive fields
+    const { password, refreshToken, ...safeUserData } = user;
+
+    let data: string;
+    let contentType: string;
+    let filename: string;
+
+    if (format === 'csv') {
+      // Convert to CSV format (simplified - you'd want a proper CSV library)
+      const fields = Object.keys(safeUserData);
+      const headers = fields.join(',');
+      const values = fields.map(field => {
+        const value = (safeUserData as any)[field];
+        if (typeof value === 'object') {
+          return JSON.stringify(value);
+        }
+        return String(value || '');
+      }).join(',');
+      data = `${headers}\n${values}`;
+      contentType = 'text/csv';
+      filename = `account-data-${Date.now()}.csv`;
+    } else {
+      data = JSON.stringify(safeUserData, null, 2);
+      contentType = 'application/json';
+      filename = `account-data-${Date.now()}.json`;
+    }
+
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(data);
+
+    logger.info('Account data exported', { userId, format });
+  })
+);
+
+/**
+ * DELETE /users/me
+ * 
+ * Permanently delete the current user's account
+ * 
+ * @body {string} password - User password for confirmation
+ * @body {string} confirmText - Confirmation text (usually username)
+ * @returns {object} Confirmation message
+ */
+router.delete(
+  '/me',
+  authMiddleware,
+  asyncHandler(async (req: AuthRequest, res: Response) => {
+    const userId = req.user?.id;
+    if (!userId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const { password, confirmText } = req.body;
+    
+    if (!password) {
+      throw new BadRequestError('Password is required to delete account');
+    }
+
+    if (!confirmText) {
+      throw new BadRequestError('Confirmation text is required');
+    }
+
+    const user = await User.findById(userId).select('+password +username');
+    if (!user) {
+      throw new NotFoundError('User not found');
+    }
+
+    // Verify password
+    const bcrypt = require('bcryptjs');
+    const isValidPassword = await bcrypt.compare(password, user.password);
+    if (!isValidPassword) {
+      throw new UnauthorizedError('Invalid password');
+    }
+
+    // Verify confirmation text matches username
+    if (confirmText !== user.username) {
+      throw new BadRequestError('Confirmation text does not match username');
+    }
+
+    // Delete the user account
+    await User.findByIdAndDelete(userId);
+
+    logger.info('Account deleted', { userId, username: user.username });
+
+    sendSuccess(res, {
+      message: 'Account deleted successfully',
+    });
+  })
+);
+
 export default router;
