@@ -1,5 +1,7 @@
 # OxyHQ Monorepo
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/OxyHQ/OxyHQServices)
+
 This monorepo contains all OxyHQ packages including services and API components.
 
 ## 📦 Packages
