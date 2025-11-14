@@ -77,3 +77,13 @@ afterEach(() => {
     }
   } catch {}
 });
+
+// Clean up cache intervals after all tests to allow Jest to exit
+afterAll(() => {
+  try {
+    const { stopAllCleanupIntervals } = require('./src/utils/cache');
+    if (stopAllCleanupIntervals && typeof stopAllCleanupIntervals === 'function') {
+      stopAllCleanupIntervals();
+    }
+  } catch {}
+});

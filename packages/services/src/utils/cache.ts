@@ -250,3 +250,15 @@ export function unregisterCacheFromCleanup(cache: TTLCache<any>): void {
   }
 }
 
+/**
+ * Stop all cleanup intervals (useful for testing)
+ * This will clear the interval and unregister all caches
+ */
+export function stopAllCleanupIntervals(): void {
+  if (cleanupInterval) {
+    clearInterval(cleanupInterval);
+    cleanupInterval = null;
+  }
+  activeCaches.clear();
+}
+
