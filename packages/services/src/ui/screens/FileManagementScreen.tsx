@@ -1839,7 +1839,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 outputRange: [-skeletonContainerWidth * 2 + delay, skeletonContainerWidth * 2 + delay],
             });
 
-            return (
+        return (
                 <View
                     style={[
                         {
@@ -1889,8 +1889,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             }}
                         />
                     </Animated.View>
-                </View>
-            );
+            </View>
+        );
         };
 
         // Skeleton file item matching GroupedSection structure

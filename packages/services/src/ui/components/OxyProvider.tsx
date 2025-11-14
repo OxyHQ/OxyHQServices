@@ -354,13 +354,13 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
                 showsVerticalScrollIndicator={true}
                 bounces={false}
                 nestedScrollEnabled={true}
-            >
-                <Animated.View
-                    style={[
-                        styles.animatedContent,
-                        Platform.OS === 'android'
-                            ? { opacity: 1 }
-                            : { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
+                >
+                    <Animated.View
+                        style={[
+                            styles.animatedContent,
+                            Platform.OS === 'android'
+                                ? { opacity: 1 }
+                                : { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
                     ]}
                 >
                     <View
@@ -385,7 +385,7 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
                             </View>
                         )}
                     </View>
-                </Animated.View>
+                    </Animated.View>
             </BottomSheetScrollView>
             {showInternalToaster && (
                 <View style={styles.toasterContainer}>

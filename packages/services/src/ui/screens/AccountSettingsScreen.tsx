@@ -39,13 +39,18 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
     goBack,
     navigate,
 }) => {
-    const { user, oxyServices, isLoading: authLoading, isAuthenticated, showBottomSheet, activeSessionId } = useOxy();
+    const { user: userFromContext, oxyServices, isLoading: authLoading, isAuthenticated, showBottomSheet, activeSessionId } = useOxy();
     const { t } = useI18n();
     const updateUser = useAuthStore((state) => state.updateUser);
+    // Get user directly from store to ensure reactivity to avatar changes
+    const user = useAuthStore((state) => state.user) || userFromContext;
     const [isLoading, setIsLoading] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
     const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
     const [optimisticAvatarId, setOptimisticAvatarId] = useState<string | null>(null);
+    const scrollViewRef = useRef<ScrollView>(null);
+    const avatarSectionRef = useRef<View>(null);
+    const [avatarSectionY, setAvatarSectionY] = useState<number | null>(null);
 
     // Two-Factor (TOTP) state
     const [totpSetupUrl, setTotpSetupUrl] = useState<string | null>(null);
@@ -218,13 +223,17 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
 
             // Update avatar only if it changed and we're not in optimistic/updating state
             // This allows the server response to update the avatar without resetting other fields
+            // But don't override if we have a pending optimistic update
             if (currentAvatar !== avatarFileId && !isUpdatingAvatar && !optimisticAvatarId) {
                 setAvatarFileId(currentAvatar);
             }
 
             // If we just finished updating and the server avatar matches our optimistic one, clear optimistic state
-            if (isUpdatingAvatar === false && optimisticAvatarId && currentAvatar === optimisticAvatarId) {
-                setOptimisticAvatarId(null);
+            // Also clear if the server avatar matches our current avatarFileId (update completed)
+            if (isUpdatingAvatar === false && optimisticAvatarId) {
+                if (currentAvatar === optimisticAvatarId || currentAvatar === avatarFileId) {
+                    setOptimisticAvatarId(null);
+                }
             }
 
             previousUserIdRef.current = currentUserId;
@@ -332,11 +341,30 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                                 });
                             }
 
-                            // Update local state
+                            // Update local state - keep avatarFileId set to the new value
+                            // Don't clear optimisticAvatarId yet - let it persist until user object updates
+                            // This ensures the avatar displays correctly
                             setAvatarFileId(file.id);
-                            setOptimisticAvatarId(null); // Clear optimistic state since server update is done
 
                             toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated');
+
+                            // Scroll to avatar section after a brief delay to ensure UI is updated
+                            requestAnimationFrame(() => {
+                                requestAnimationFrame(() => {
+                                    if (avatarSectionY !== null) {
+                                        scrollViewRef.current?.scrollTo({
+                                            y: Math.max(0, avatarSectionY - 100), // Offset to show section near top
+                                            animated: true,
+                                        });
+                                    } else {
+                                        // Fallback: scroll to approximate position
+                                        scrollViewRef.current?.scrollTo({
+                                            y: 200, // Approximate position of avatar section
+                                            animated: true,
+                                        });
+                                    }
+                                });
+                            });
                         } catch (e: any) {
                             // Revert optimistic update on error
                             setAvatarFileId(typeof user?.avatar === 'string' ? user.avatar : '');
@@ -688,7 +716,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                     <View style={styles.editingFieldContent}>
                         <View style={styles.newValueSection}>
                             <View style={styles.editingFieldHeader}>
-                                <Text style={[styles.editingFieldLabel, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>Edit Display Name</Text>
+                                <Text style={[styles.editingFieldLabel, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>Edit Full Name</Text>
                             </View>
                             <View style={{ flexDirection: 'row', gap: 12 }}>
                                 <View style={{ flex: 1 }}>
@@ -1151,7 +1179,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                 />
             )}
 
-            <ScrollView style={editingField ? styles.contentEditing : styles.content}>
+            <ScrollView
+                ref={scrollViewRef}
+                style={editingField ? styles.contentEditing : styles.content}
+            >
                 {editingField ? (
                     // Show only the editing interface when editing
                     <View style={styles.editingOnlyContainer}>
@@ -1196,7 +1227,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
                             </View>
                         )}
                         {/* Profile Picture Section */}
-                        <View style={styles.section}>
+                        <View
+                            ref={avatarSectionRef}
+                            style={styles.section}
+                            onLayout={(event) => {
+                                const { y } = event.nativeEvent.layout;
+                                setAvatarSectionY(y);
+                            }}
+                        >
                             <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
                                 {t('editProfile.sections.profilePicture') || 'PROFILE PICTURE'}
                             </Text>

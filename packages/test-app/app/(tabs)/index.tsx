@@ -102,22 +102,22 @@ export default function HomeScreen() {
 
         {isAuthenticated && (
           <>
-            <ThemedView style={styles.authenticatedState}>
-              <ThemedText type="subtitle">Signed in as</ThemedText>
-              <ThemedText type="defaultSemiBold">{displayName}</ThemedText>
+          <ThemedView style={styles.authenticatedState}>
+            <ThemedText type="subtitle">Signed in as</ThemedText>
+            <ThemedText type="defaultSemiBold">{displayName}</ThemedText>
 
-              <Pressable style={styles.settingsButton} onPress={handleOpenAccountSettings}>
-                <ThemedText type="defaultSemiBold" style={styles.settingsLabel}>
-                  Account settings
-                </ThemedText>
-              </Pressable>
+            <Pressable style={styles.settingsButton} onPress={handleOpenAccountSettings}>
+              <ThemedText type="defaultSemiBold" style={styles.settingsLabel}>
+                Account settings
+              </ThemedText>
+            </Pressable>
 
-              <Pressable style={styles.logoutButton} onPress={handleLogout}>
-                <ThemedText type="defaultSemiBold" style={styles.logoutLabel}>
-                  Sign out
-                </ThemedText>
-              </Pressable>
-            </ThemedView>
+            <Pressable style={styles.logoutButton} onPress={handleLogout}>
+              <ThemedText type="defaultSemiBold" style={styles.logoutLabel}>
+                Sign out
+              </ThemedText>
+            </Pressable>
+          </ThemedView>
 
             {/* Account Overview & New Features */}
             <ThemedView style={styles.featuresSection}>
