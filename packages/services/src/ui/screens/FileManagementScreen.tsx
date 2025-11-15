@@ -108,24 +108,61 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [fileContent, setFileContent] = useState<string | null>(null);
     const [loadingFileContent, setLoadingFileContent] = useState(false);
     const [showFileDetailsInViewer, setShowFileDetailsInViewer] = useState(false);
-    const [viewMode, setViewMode] = useState<'all' | 'photos'>('all');
+    const [viewMode, setViewMode] = useState<'all' | 'photos' | 'videos' | 'documents' | 'audio'>('all');
     const [searchQuery, setSearchQuery] = useState('');
-    // Derived filtered files (avoid setState loops)
+    const [sortBy, setSortBy] = useState<'date' | 'size' | 'name' | 'type'>('date');
+    const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+    // Derived filtered and sorted files (avoid setState loops)
     const filteredFiles = useMemo(() => {
         let filteredByMode = files;
         if (viewMode === 'photos') {
             filteredByMode = files.filter(file => file.contentType.startsWith('image/'));
+        } else if (viewMode === 'videos') {
+            filteredByMode = files.filter(file => file.contentType.startsWith('video/'));
+        } else if (viewMode === 'documents') {
+            filteredByMode = files.filter(file => 
+                file.contentType.includes('pdf') ||
+                file.contentType.includes('document') ||
+                file.contentType.includes('text') ||
+                file.contentType.includes('msword') ||
+                file.contentType.includes('excel') ||
+                file.contentType.includes('spreadsheet') ||
+                file.contentType.includes('presentation') ||
+                file.contentType.includes('powerpoint')
+            );
+        } else if (viewMode === 'audio') {
+            filteredByMode = files.filter(file => file.contentType.startsWith('audio/'));
         }
-        if (!searchQuery.trim()) {
-            return filteredByMode;
+        
+        let filtered = filteredByMode;
+        if (searchQuery.trim()) {
+            const query = searchQuery.toLowerCase();
+            filtered = filteredByMode.filter(file =>
+                file.filename.toLowerCase().includes(query) ||
+                file.contentType.toLowerCase().includes(query) ||
+                (file.metadata?.description && file.metadata.description.toLowerCase().includes(query))
+            );
         }
-        const query = searchQuery.toLowerCase();
-        return filteredByMode.filter(file =>
-            file.filename.toLowerCase().includes(query) ||
-            file.contentType.toLowerCase().includes(query) ||
-            (file.metadata?.description && file.metadata.description.toLowerCase().includes(query))
-        );
-    }, [files, searchQuery, viewMode]);
+        
+        // Sort files
+        const sorted = [...filtered].sort((a, b) => {
+            let comparison = 0;
+            if (sortBy === 'date') {
+                const dateA = new Date(a.uploadDate || 0).getTime();
+                const dateB = new Date(b.uploadDate || 0).getTime();
+                comparison = dateA - dateB;
+            } else if (sortBy === 'size') {
+                comparison = (a.length || 0) - (b.length || 0);
+            } else if (sortBy === 'name') {
+                comparison = (a.filename || '').localeCompare(b.filename || '');
+            } else if (sortBy === 'type') {
+                comparison = (a.contentType || '').localeCompare(b.contentType || '');
+            }
+            return sortOrder === 'asc' ? comparison : -comparison;
+        });
+        
+        return sorted;
+    }, [files, searchQuery, viewMode, sortBy, sortOrder]);
     const [isDragging, setIsDragging] = useState(false);
     const [photoDimensions, setPhotoDimensions] = useState<{ [key: string]: { width: number, height: number } }>({});
     const [loadingDimensions, setLoadingDimensions] = useState(false);
@@ -145,7 +182,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }, [initialSelectedIds]);
 
     const toggleSelect = useCallback(async (file: FileMetadata) => {
-        if (!selectMode) return;
+        // Allow selection in regular mode for bulk operations
+        // if (!selectMode) return;
         if (disabledMimeTypes.length) {
             const blocked = disabledMimeTypes.some(mt => file.contentType === mt || file.contentType.startsWith(mt.endsWith('/') ? mt : mt + '/'));
             if (blocked) {
@@ -643,6 +681,84 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
     };
 
+    const handleBulkDelete = useCallback(async () => {
+        if (selectedIds.size === 0) return;
+        
+        const fileMap: Record<string, FileMetadata> = {};
+        files.forEach(f => { fileMap[f.id] = f; });
+        const selectedFiles = Array.from(selectedIds).map(id => fileMap[id]).filter(Boolean);
+        
+        const confirmed = window.confirm(
+            `Are you sure you want to delete ${selectedFiles.length} file(s)? This action cannot be undone.`
+        );
+        
+        if (!confirmed) return;
+        
+        try {
+            const deletePromises = Array.from(selectedIds).map(async (fileId) => {
+                try {
+                    await oxyServices.deleteFile(fileId);
+                    useFileStore.getState().removeFile(fileId);
+                    return { success: true, fileId };
+                } catch (error: any) {
+                    return { success: false, fileId, error };
+                }
+            });
+            
+            const results = await Promise.allSettled(deletePromises);
+            const successful = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+            const failed = results.length - successful;
+            
+            if (successful > 0) {
+                toast.success(`${successful} file(s) deleted successfully`);
+            }
+            if (failed > 0) {
+                toast.error(`${failed} file(s) failed to delete`);
+            }
+            
+            setSelectedIds(new Set());
+            setTimeout(() => loadFiles('silent'), 800);
+        } catch (error: any) {
+            toast.error(error.message || 'Failed to delete files');
+        }
+    }, [selectedIds, files, oxyServices, loadFiles]);
+
+    const handleBulkVisibilityChange = useCallback(async (visibility: 'private' | 'public' | 'unlisted') => {
+        if (selectedIds.size === 0) return;
+        
+        try {
+            const updatePromises = Array.from(selectedIds).map(async (fileId) => {
+                try {
+                    await oxyServices.assetUpdateVisibility(fileId, visibility);
+                    return { success: true, fileId };
+                } catch (error: any) {
+                    return { success: false, fileId, error };
+                }
+            });
+            
+            const results = await Promise.allSettled(updatePromises);
+            const successful = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+            const failed = results.length - successful;
+            
+            if (successful > 0) {
+                toast.success(`${successful} file(s) visibility updated to ${visibility}`);
+                // Update file metadata in store
+                Array.from(selectedIds).forEach(fileId => {
+                    useFileStore.getState().updateFile(fileId, {
+                        metadata: { ...files.find(f => f.id === fileId)?.metadata, visibility }
+                    } as any);
+                });
+            }
+            if (failed > 0) {
+                toast.error(`${failed} file(s) failed to update visibility`);
+            }
+            
+            setTimeout(() => loadFiles('silent'), 800);
+        } catch (error: any) {
+            toast.error(error.message || 'Failed to update visibility');
+        }
+    }, [selectedIds, oxyServices, files, loadFiles]);
+
     // Drag and drop handlers for web
     const handleDragOver = (e: any) => {
         if (Platform.OS === 'web' && user?.id === targetUserId) {
@@ -1127,13 +1243,29 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     title: file.filename,
                     subtitle: `${formatFileSize(file.length)} • ${new Date(file.uploadDate).toLocaleDateString()}`,
                     theme: theme as 'light' | 'dark',
-                    onPress: () => handleFileOpen(file),
+                    onPress: () => {
+                        // Support selection in regular mode with long press or if already selecting
+                        if (!selectMode && selectedIds.size > 0) {
+                            // If already in selection mode (some files selected), toggle selection
+                            toggleSelect(file);
+                        } else {
+                            handleFileOpen(file);
+                        }
+                    },
+                    onLongPress: !selectMode ? () => {
+                        // Enable selection mode on long press
+                        if (selectedIds.size === 0) {
+                            setSelectedIds(new Set([file.id]));
+                        } else {
+                            toggleSelect(file);
+                        }
+                    } : undefined,
                     showChevron: false,
                     dense: true,
                     multiRow: !!file.metadata?.description,
-                    selected: selectMode && isSelected,
-                    // Hide action buttons when selecting
-                    customContent: !selectMode ? (
+                    selected: (selectMode || selectedIds.size > 0) && isSelected,
+                    // Hide action buttons when selecting (in selectMode or bulk operations mode)
+                    customContent: (!selectMode && selectedIds.size === 0) ? (
                         <View style={styles.groupedActions}>
                             {(isImage || isVideo || file.contentType.includes('pdf')) && (
                                 <TouchableOpacity
@@ -2034,6 +2166,36 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         onPress: confirmMultiSelection,
                         disabled: selectedIds.size === 0,
                     }
+                ] : !selectMode && selectedIds.size > 0 ? [
+                    {
+                        key: 'clear',
+                        text: 'Clear',
+                        onPress: () => setSelectedIds(new Set()),
+                    },
+                    {
+                        key: 'delete',
+                        text: `Delete (${selectedIds.size})`,
+                        onPress: handleBulkDelete,
+                        icon: 'trash',
+                    },
+                    {
+                        key: 'visibility',
+                        text: 'Visibility',
+                        onPress: () => {
+                            // Show visibility options menu
+                            Alert.alert(
+                                'Change Visibility',
+                                `Change visibility for ${selectedIds.size} file(s)?`,
+                                [
+                                    { text: 'Cancel', style: 'cancel' },
+                                    { text: 'Private', onPress: () => handleBulkVisibilityChange('private') },
+                                    { text: 'Public', onPress: () => handleBulkVisibilityChange('public') },
+                                    { text: 'Unlisted', onPress: () => handleBulkVisibilityChange('unlisted') },
+                                ]
+                            );
+                        },
+                        icon: 'eye',
+                    }
                 ] : undefined}
                 onBack={onClose || goBack}
                 theme={theme}
@@ -2044,41 +2206,119 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             />
 
             <View style={styles.controlsBar}>
-                <View style={[
-                    styles.viewModeToggle,
-                    {
+                <ScrollView 
+                    horizontal 
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.viewModeScroll}
+                >
+                    <View style={[
+                        styles.viewModeToggle,
+                        {
+                            backgroundColor: themeStyles.isDarkTheme ? '#181818' : '#FFFFFF',
+                            borderWidth: 1,
+                            borderColor: themeStyles.isDarkTheme ? '#2A2A2A' : '#E8E9EA',
+                        }
+                    ]}>
+                        <TouchableOpacity
+                            style={[
+                                styles.viewModeButton,
+                                viewMode === 'all' && { backgroundColor: themeStyles.primaryColor }
+                            ]}
+                            onPress={() => setViewMode('all')}
+                        >
+                            <Ionicons
+                                name="folder"
+                                size={18}
+                                color={viewMode === 'all' ? '#FFFFFF' : themeStyles.textColor}
+                            />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[
+                                styles.viewModeButton,
+                                viewMode === 'photos' && { backgroundColor: themeStyles.primaryColor }
+                            ]}
+                            onPress={() => setViewMode('photos')}
+                        >
+                            <Ionicons
+                                name="images"
+                                size={18}
+                                color={viewMode === 'photos' ? '#FFFFFF' : themeStyles.textColor}
+                            />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[
+                                styles.viewModeButton,
+                                viewMode === 'videos' && { backgroundColor: themeStyles.primaryColor }
+                            ]}
+                            onPress={() => setViewMode('videos')}
+                        >
+                            <Ionicons
+                                name="videocam"
+                                size={18}
+                                color={viewMode === 'videos' ? '#FFFFFF' : themeStyles.textColor}
+                            />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[
+                                styles.viewModeButton,
+                                viewMode === 'documents' && { backgroundColor: themeStyles.primaryColor }
+                            ]}
+                            onPress={() => setViewMode('documents')}
+                        >
+                            <Ionicons
+                                name="document-text"
+                                size={18}
+                                color={viewMode === 'documents' ? '#FFFFFF' : themeStyles.textColor}
+                            />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[
+                                styles.viewModeButton,
+                                viewMode === 'audio' && { backgroundColor: themeStyles.primaryColor }
+                            ]}
+                            onPress={() => setViewMode('audio')}
+                        >
+                            <Ionicons
+                                name="musical-notes"
+                                size={18}
+                                color={viewMode === 'audio' ? '#FFFFFF' : themeStyles.textColor}
+                            />
+                        </TouchableOpacity>
+                    </View>
+                </ScrollView>
+                <TouchableOpacity
+                    style={[styles.sortButton, { 
                         backgroundColor: themeStyles.isDarkTheme ? '#181818' : '#FFFFFF',
-                        borderWidth: 1,
                         borderColor: themeStyles.isDarkTheme ? '#2A2A2A' : '#E8E9EA',
-                    }
-                ]}>
-                    <TouchableOpacity
-                        style={[
-                            styles.viewModeButton,
-                            viewMode === 'all' && { backgroundColor: themeStyles.primaryColor }
-                        ]}
-                        onPress={() => setViewMode('all')}
-                    >
-                        <Ionicons
-                            name="folder"
-                            size={18}
-                            color={viewMode === 'all' ? '#FFFFFF' : themeStyles.textColor}
-                        />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[
-                            styles.viewModeButton,
-                            viewMode === 'photos' && { backgroundColor: themeStyles.primaryColor }
-                        ]}
-                        onPress={() => setViewMode('photos')}
-                    >
-                        <Ionicons
-                            name="images"
-                            size={18}
-                            color={viewMode === 'photos' ? '#FFFFFF' : themeStyles.textColor}
-                        />
-                    </TouchableOpacity>
-                </View>
+                    }]}
+                    onPress={() => {
+                        // Cycle through sort options: date -> size -> name -> type -> date
+                        const sortOrder: Array<'date' | 'size' | 'name' | 'type'> = ['date', 'size', 'name', 'type'];
+                        const currentIndex = sortOrder.indexOf(sortBy);
+                        const nextIndex = (currentIndex + 1) % sortOrder.length;
+                        setSortBy(sortOrder[nextIndex]);
+                        // Toggle order when cycling back to date
+                        if (nextIndex === 0) {
+                            setSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                        }
+                    }}
+                >
+                    <Ionicons
+                        name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'}
+                        size={18}
+                        color={themeStyles.textColor}
+                    />
+                    <Ionicons
+                        name={
+                            sortBy === 'date' ? 'calendar' :
+                            sortBy === 'size' ? 'resize' :
+                            sortBy === 'name' ? 'text' : 'document'
+                        }
+                        size={16}
+                        color={themeStyles.textColor}
+                        style={{ marginLeft: 4 }}
+                    />
+                </TouchableOpacity>
                 {user?.id === targetUserId && (!selectMode || (selectMode && allowUploadInSelectMode)) && (
                     <TouchableOpacity
                         style={[styles.uploadButton, { backgroundColor: themeStyles.primaryColor }]}
@@ -2951,6 +3191,10 @@ const styles = StyleSheet.create({
         paddingBottom: 4,
         gap: 12,
     },
+    viewModeScroll: {
+        flex: 1,
+        maxWidth: '80%',
+    },
     viewModeToggle: {
         flexDirection: 'row',
         borderRadius: 24,
@@ -2965,6 +3209,16 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         marginHorizontal: 1,
+    },
+    sortButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderRadius: 20,
+        borderWidth: 1,
+        minWidth: 44,
     },
 
     // Photo Grid styles

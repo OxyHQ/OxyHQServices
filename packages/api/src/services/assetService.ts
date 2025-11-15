@@ -40,7 +40,13 @@ export class AssetService {
       return variant;
     }
 
-    // Future: support video/pdf variants
+    // Support video poster variants
+    if (file.mime.startsWith('video/') && variantType === 'poster') {
+      const variant = await this.variantService.ensureVideoPoster(file);
+      return variant;
+    }
+
+    // Future: support other video/pdf variants
     throw new Error(`Variant ${variantType} not supported for mime ${file.mime}`);
   }
 

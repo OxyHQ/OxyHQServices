@@ -3,10 +3,141 @@ import { S3Service } from './s3Service';
 import { logger } from '../utils/logger';
 import sharp from 'sharp';
 import path from 'path';
+import fs from 'fs';
+import { promisify } from 'util';
+import { exec, spawn } from 'child_process';
 import { VariantConfig, VariantCommitRetryOptions } from '../types/variant.types';
+
+// Get FFmpeg and FFprobe paths - use static binaries if available, otherwise fallback to system
+function getFfmpegPath(): string {
+  try {
+    // ffmpeg-static exports the path as a string directly
+    const ffmpegStatic = require('ffmpeg-static');
+    console.log('[VariantService] ffmpeg-static require result:', typeof ffmpegStatic, ffmpegStatic);
+    
+    if (ffmpegStatic && typeof ffmpegStatic === 'string') {
+      const binaryPath = ffmpegStatic;
+      console.log('[VariantService] Checking ffmpeg path:', binaryPath);
+      
+      // Verify the path exists and is a file
+      if (fs.existsSync(binaryPath)) {
+        const stats = fs.statSync(binaryPath);
+        if (stats.isFile()) {
+          // Make executable if not already (needed for some platforms)
+          try {
+            fs.chmodSync(binaryPath, 0o755);
+          } catch (e) {
+            // Ignore chmod errors
+          }
+          // Use console at module initialization time (logger may not be ready)
+          console.log('[VariantService] ✓ Using ffmpeg-static binary:', binaryPath);
+          return binaryPath;
+        } else {
+          console.warn('[VariantService] ✗ ffmpeg-static path is not a file:', binaryPath);
+        }
+      } else {
+        console.warn('[VariantService] ✗ ffmpeg-static path does not exist:', binaryPath);
+      }
+    } else {
+      console.warn('[VariantService] ✗ ffmpeg-static did not return a string, got:', typeof ffmpegStatic, ffmpegStatic);
+    }
+  } catch (e) {
+    // Use console at module initialization time
+    const error = e as Error;
+    console.error('[VariantService] ✗ Error loading ffmpeg-static:', error.message);
+    console.error('[VariantService] Error stack:', error.stack);
+  }
+  
+  // Fallback to system ffmpeg
+  console.warn('[VariantService] ⚠ Falling back to system ffmpeg (may not be installed)');
+  return 'ffmpeg';
+}
+
+function getFfprobePath(): string {
+  try {
+    // ffprobe-static exports an object with a path property
+    const ffprobeStatic = require('ffprobe-static');
+    console.log('[VariantService] ffprobe-static require result:', typeof ffprobeStatic, ffprobeStatic);
+    
+    if (ffprobeStatic) {
+      const binaryPath = typeof ffprobeStatic === 'string' 
+        ? ffprobeStatic 
+        : (ffprobeStatic.path || ffprobeStatic.default);
+      
+      if (binaryPath) {
+        console.log('[VariantService] Checking ffprobe path:', binaryPath);
+        
+        // Verify the path exists and is a file
+        if (fs.existsSync(binaryPath)) {
+          const stats = fs.statSync(binaryPath);
+          if (stats.isFile()) {
+            // Make executable if not already (needed for some platforms)
+            try {
+              fs.chmodSync(binaryPath, 0o755);
+            } catch (e) {
+              // Ignore chmod errors
+            }
+            // Use console at module initialization time (logger may not be ready)
+            console.log('[VariantService] ✓ Using ffprobe-static binary:', binaryPath);
+            return binaryPath;
+          } else {
+            console.warn('[VariantService] ✗ ffprobe-static path is not a file:', binaryPath);
+          }
+        } else {
+          console.warn('[VariantService] ✗ ffprobe-static path does not exist:', binaryPath);
+        }
+      } else {
+        console.warn('[VariantService] ✗ ffprobe-static did not provide a path');
+      }
+    }
+  } catch (e) {
+    // Use console at module initialization time
+    const error = e as Error;
+    console.error('[VariantService] ✗ Error loading ffprobe-static:', error.message);
+    console.error('[VariantService] Error stack:', error.stack);
+  }
+  
+  // Fallback to system ffprobe
+  console.warn('[VariantService] ⚠ Falling back to system ffprobe (may not be installed)');
+  return 'ffprobe';
+}
+
+const ffmpegPath = getFfmpegPath();
+const ffprobePath = getFfprobePath();
+
+// Log resolved paths at module load
+console.log('[VariantService] Resolved FFmpeg path:', ffmpegPath);
+console.log('[VariantService] Resolved FFprobe path:', ffprobePath);
+
+// Log final paths being used
+try {
+  logger.info('FFmpeg/FFprobe paths initialized', { 
+    ffmpegPath, 
+    ffprobePath,
+    ffmpegExists: fs.existsSync(ffmpegPath),
+    ffprobeExists: fs.existsSync(ffprobePath)
+  });
+} catch (e) {
+  // Logger might not be initialized yet, ignore
+}
+
+const execAsync = promisify(exec);
+const mkdirAsync = promisify(fs.mkdir);
+const unlinkAsync = promisify(fs.unlink);
+const rmdirAsync = promisify(fs.rmdir);
 
 export interface VariantConfigWithType extends VariantConfig {
   type: string;
+}
+
+export interface VideoVariantConfig {
+  type: string;
+  width?: number;
+  height?: number;
+  bitrate?: string; // e.g., '500k', '1M', '2M'
+  videoCodec?: string;
+  audioCodec?: string;
+  preset?: string; // FFmpeg preset (ultrafast, fast, medium, slow)
 }
 
 export class VariantService {
@@ -16,6 +147,12 @@ export class VariantService {
     { type: 'w640', width: 640, quality: 82, format: 'webp' },
     { type: 'w1280', width: 1280, quality: 82, format: 'webp' },
     { type: 'w2048', width: 2048, quality: 82, format: 'webp' }
+  ];
+
+  private readonly videoVariants: VideoVariantConfig[] = [
+    { type: '360p', width: 640, height: 360, bitrate: '500k', videoCodec: 'libx264', audioCodec: 'aac', preset: 'fast' },
+    { type: '720p', width: 1280, height: 720, bitrate: '1M', videoCodec: 'libx264', audioCodec: 'aac', preset: 'fast' },
+    { type: '1080p', width: 1920, height: 1080, bitrate: '2M', videoCodec: 'libx264', audioCodec: 'aac', preset: 'medium' }
   ];
 
   constructor(private s3Service: S3Service) {}
@@ -130,41 +267,719 @@ export class VariantService {
   }
 
   /**
-   * Generate video variants (placeholder implementation)
+   * Generate video variants with FFmpeg
+   * Generates poster frame, multiple bitrate variants, and HLS streams
    */
   private async generateVideoVariants(file: IFile): Promise<void> {
-    // This would use FFmpeg to generate different bitrates and HLS streams
-    // For now, just generate a poster image
-    
+    const tempDir = path.join(process.cwd(), 'temp', file._id.toString());
+    let videoPath: string | null = null;
+    let cleanupTemp = false;
+
     try {
-      logger.info('Generating video variants (poster only)', { fileId: file._id });
+      logger.info('Generating video variants with FFmpeg', { fileId: file._id });
 
-      // Generate poster frame at 1 second
-      const posterKey = this.generateVariantKey(file.sha256, 'poster', 'jpg');
+      // Create temporary directory
+      await mkdirAsync(tempDir, { recursive: true });
+      cleanupTemp = true;
+
+      // Download video from S3 to temp file
+      const videoBuffer = await this.s3Service.downloadBuffer(file.storageKey);
+      videoPath = path.join(tempDir, `original${file.ext}`);
+      fs.writeFileSync(videoPath, videoBuffer);
+
+      // Extract video metadata
+      const metadata = await this.extractVideoMetadata(videoPath);
       
-      // This is a placeholder - would need FFmpeg integration
-      // For now, we'll skip actual video processing
-      
-      const variants: IFileVariant[] = [{
-        type: 'poster',
-        key: posterKey,
-        width: 1280,
-        height: 720,
-        readyAt: new Date(),
-        metadata: { type: 'poster', position: '00:00:01' }
-      }];
+      const variants: IFileVariant[] = [];
 
-  file.variants = variants;
-  await this.commitVariants(file);
+      // Generate poster frame at 1 second (or 10% of duration, whichever is smaller)
+      const posterTime = Math.min(1, (metadata.duration || 60) * 0.1);
+      const posterVariant = await this.generatePosterFrame(
+        file.storageKey, // Use S3 storage key directly - no temp files
+        file.sha256,
+        posterTime,
+        metadata // Pass metadata to preserve exact aspect ratio
+      );
+      variants.push(posterVariant);
 
-      logger.info('Video variants generated (placeholder)', {
+      // Generate multiple bitrate variants
+      for (const config of this.videoVariants) {
+        // Skip if source resolution is smaller than target
+        if (metadata.width && metadata.height) {
+          if (config.width && config.width > metadata.width) {
+            logger.debug('Skipping variant larger than source', {
+              type: config.type,
+              sourceWidth: metadata.width,
+              targetWidth: config.width
+            });
+            continue;
+          }
+        }
+
+        const variant = await this.generateVideoVariant(
+          videoPath,
+          file.sha256,
+          config,
+          tempDir
+        );
+        if (variant) {
+          variants.push(variant);
+        }
+      }
+
+      // Generate HLS stream (adaptive streaming)
+      const hlsVariants = await this.generateHLSStream(
+        videoPath,
+        file.sha256,
+        metadata,
+        tempDir
+      );
+      variants.push(...hlsVariants);
+
+      // Store original video metadata
+      file.metadata = {
+        ...file.metadata,
+        video: {
+          duration: metadata.duration,
+          width: metadata.width,
+          height: metadata.height,
+          bitrate: metadata.bitrate,
+          fps: metadata.fps,
+          codec: metadata.codec,
+          audioCodec: metadata.audioCodec
+        }
+      };
+
+      file.variants = variants;
+      await this.commitVariants(file);
+
+      logger.info('Video variants generated successfully', {
         fileId: file._id,
-        variantCount: variants.length
+        variantCount: variants.length,
+        metadata
       });
     } catch (error) {
       logger.error('Error generating video variants:', error);
       throw error;
+    } finally {
+      // Cleanup temporary files
+      if (cleanupTemp && fs.existsSync(tempDir)) {
+        try {
+          const files = fs.readdirSync(tempDir);
+          for (const file of files) {
+            await unlinkAsync(path.join(tempDir, file));
+          }
+          await rmdirAsync(tempDir);
+        } catch (cleanupError) {
+          logger.warn('Error cleaning up temp files', { tempDir, error: cleanupError });
+        }
+      }
     }
+  }
+
+  /**
+   * Extract video metadata using FFprobe
+   */
+  private async extractVideoMetadata(videoPath: string): Promise<{
+    duration?: number;
+    width?: number;
+    height?: number;
+    bitrate?: number;
+    fps?: number;
+    codec?: string;
+    audioCodec?: string;
+  }> {
+    try {
+      // Use spawn for better cross-platform compatibility
+      return new Promise((resolve, reject) => {
+        const args = [
+          '-v', 'quiet',
+          '-print_format', 'json',
+          '-show_format',
+          '-show_streams',
+          videoPath
+        ];
+
+        // Verify ffprobe path exists before spawning
+        if (!fs.existsSync(ffprobePath)) {
+          logger.warn('FFprobe binary not found', { path: ffprobePath });
+          resolve({});
+          return;
+        }
+
+        logger.debug('Spawning ffprobe process', { path: ffprobePath, args });
+        const ffprobeProcess = spawn(ffprobePath, args);
+        let stdout = '';
+        let stderr = '';
+
+        ffprobeProcess.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        ffprobeProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        ffprobeProcess.on('close', (code) => {
+          if (code !== 0) {
+            logger.warn('FFprobe failed', { code, stderr });
+            resolve({});
+            return;
+          }
+
+          try {
+            const metadata = JSON.parse(stdout);
+
+            const videoStream = metadata.streams?.find((s: any) => s.codec_type === 'video');
+            const audioStream = metadata.streams?.find((s: any) => s.codec_type === 'audio');
+
+            resolve({
+              duration: metadata.format?.duration ? parseFloat(metadata.format.duration) : undefined,
+              width: videoStream?.width,
+              height: videoStream?.height,
+              bitrate: metadata.format?.bit_rate ? parseInt(metadata.format.bit_rate) : undefined,
+              fps: videoStream?.r_frame_rate ? this.parseFps(videoStream.r_frame_rate) : undefined,
+              codec: videoStream?.codec_name,
+              audioCodec: audioStream?.codec_name
+            });
+          } catch (error) {
+            logger.warn('Error parsing FFprobe output', { error, stdout });
+            resolve({});
+          }
+        });
+
+        ffprobeProcess.on('error', (err) => {
+          logger.warn('FFprobe process error', { error: err });
+          resolve({});
+        });
+      });
+    } catch (error) {
+      logger.warn('Error extracting video metadata, using defaults', { error });
+      return {};
+    }
+  }
+
+  /**
+   * Parse FPS string (e.g., "30/1" -> 30)
+   */
+  private parseFps(fpsString: string): number {
+    const [num, den] = fpsString.split('/').map(Number);
+    return den ? num / den : num;
+  }
+
+  /**
+   * Generate poster frame (thumbnail) from video
+   * Maintains the video's exact aspect ratio (vertical videos stay vertical)
+   * Uses S3 presigned URL directly with FFmpeg - no temp files, production-ready
+   */
+  private async generatePosterFrame(
+    videoStorageKey: string,
+    sha256: string,
+    timeSeconds: number,
+    metadata?: { width?: number; height?: number }
+  ): Promise<IFileVariant> {
+    const posterKey = this.generateVariantKey(sha256, 'poster', 'jpg');
+
+    // Get S3 presigned URL for the video (FFmpeg supports HTTP input)
+    const videoUrl = await this.s3Service.getPresignedDownloadUrl(videoStorageKey, 3600);
+    
+    // Extract metadata if not provided (using S3 URL)
+    if (!metadata || !metadata.width || !metadata.height) {
+      metadata = await this.extractVideoMetadataFromUrl(videoUrl);
+    }
+
+    const videoWidth = metadata.width || 1920;
+    const videoHeight = metadata.height || 1080;
+    const aspectRatio = videoWidth / videoHeight;
+
+    // Use FFmpeg's built-in aspect ratio preservation
+    // Scale to max 1920px while maintaining exact aspect ratio (no stretching)
+    let scaleFilter: string;
+    
+    if (videoWidth >= videoHeight) {
+      // Landscape or square: constrain width to 1920, let FFmpeg calculate height to preserve aspect ratio
+      scaleFilter = 'scale=1920:-1:force_original_aspect_ratio=decrease';
+    } else {
+      // Vertical/portrait: constrain height to 1920, let FFmpeg calculate width to preserve aspect ratio
+      scaleFilter = 'scale=-1:1920:force_original_aspect_ratio=decrease';
+    }
+
+    return new Promise((resolve, reject) => {
+      // Generate poster with scaling to max 1920px while maintaining exact aspect ratio
+      // Stream output directly to stdout (memory) - no temp files
+      const args = [
+        '-i', videoUrl, // Use S3 presigned URL directly
+        '-ss', timeSeconds.toString(),
+        '-vframes', '1',
+        '-vf', scaleFilter,
+        '-q:v', '2',
+        '-f', 'image2pipe', // Output to pipe
+        '-vcodec', 'mjpeg', // JPEG format for pipe
+        'pipe:1' // Output to stdout
+      ];
+
+      // Verify ffmpeg path exists before spawning
+      if (!fs.existsSync(ffmpegPath)) {
+        reject(new Error(`FFmpeg binary not found at path: ${ffmpegPath}. Please install ffmpeg-static or ensure system ffmpeg is available.`));
+        return;
+      }
+
+      logger.debug('Spawning ffmpeg process for poster from S3', { 
+        path: ffmpegPath, 
+        videoUrl: videoUrl.substring(0, 50) + '...',
+        videoWidth,
+        videoHeight,
+        aspectRatio,
+        scaleFilter
+      });
+      
+      const ffmpegProcess = spawn(ffmpegPath, args);
+
+      let stderr = '';
+      const stdoutChunks: Buffer[] = [];
+
+      ffmpegProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      ffmpegProcess.stdout.on('data', (data) => {
+        stdoutChunks.push(data);
+      });
+
+      ffmpegProcess.on('close', async (code) => {
+        if (code !== 0) {
+          logger.error('Poster generation failed', { code, stderr: stderr.substring(0, 500) });
+          reject(new Error(`Poster generation failed with code ${code}: ${stderr.substring(0, 200)}`));
+          return;
+        }
+
+        try {
+          // Get poster from stdout (no temp file needed)
+          const posterBuffer = Buffer.concat(stdoutChunks);
+          
+          // Optimize poster with Sharp (no resize, just optimize)
+          const optimized = await sharp(posterBuffer)
+            .jpeg({ quality: 85 })
+            .toBuffer();
+
+          // Upload to S3
+          await this.s3Service.uploadBuffer(posterKey, optimized, {
+            contentType: 'image/jpeg'
+          });
+
+          const imageMetadata = await sharp(optimized).metadata();
+          resolve({
+            type: 'poster',
+            key: posterKey,
+            width: imageMetadata.width || videoWidth,
+            height: imageMetadata.height || videoHeight,
+            readyAt: new Date(),
+            size: optimized.length,
+            metadata: { 
+              type: 'poster', 
+              position: `${timeSeconds}s`, 
+              format: 'jpg',
+              originalAspectRatio: aspectRatio,
+              videoWidth,
+              videoHeight
+            }
+          });
+        } catch (error) {
+          reject(error);
+        }
+      });
+
+      ffmpegProcess.on('error', (err) => {
+        reject(new Error(`Poster generation failed: ${err.message}`));
+      });
+    });
+  }
+
+  /**
+   * Extract video metadata from S3 URL (for presigned URLs)
+   */
+  private async extractVideoMetadataFromUrl(videoUrl: string): Promise<{
+    duration?: number;
+    width?: number;
+    height?: number;
+    bitrate?: number;
+    fps?: number;
+    codec?: string;
+    audioCodec?: string;
+  }> {
+    try {
+      // Use spawn for better cross-platform compatibility
+      return new Promise((resolve, reject) => {
+        const args = [
+          '-v', 'quiet',
+          '-print_format', 'json',
+          '-show_format',
+          '-show_streams',
+          videoUrl
+        ];
+
+        const ffprobeProcess = spawn(ffprobePath, args);
+        let stdout = '';
+        let stderr = '';
+
+        ffprobeProcess.stdout.on('data', (data) => {
+          stdout += data.toString();
+        });
+
+        ffprobeProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        ffprobeProcess.on('close', (code) => {
+          if (code !== 0) {
+            logger.warn('FFprobe failed from URL', { code, stderr });
+            resolve({});
+            return;
+          }
+
+          try {
+            const metadata = JSON.parse(stdout);
+
+            const videoStream = metadata.streams?.find((s: any) => s.codec_type === 'video');
+            const audioStream = metadata.streams?.find((s: any) => s.codec_type === 'audio');
+
+            resolve({
+              duration: metadata.format?.duration ? parseFloat(metadata.format.duration) : undefined,
+              width: videoStream?.width,
+              height: videoStream?.height,
+              bitrate: metadata.format?.bit_rate ? parseInt(metadata.format.bit_rate) : undefined,
+              fps: videoStream?.r_frame_rate ? this.parseFps(videoStream.r_frame_rate) : undefined,
+              codec: videoStream?.codec_name,
+              audioCodec: audioStream?.codec_name
+            });
+          } catch (error) {
+            logger.warn('Error parsing FFprobe output from URL', { error, stdout });
+            resolve({});
+          }
+        });
+
+        ffprobeProcess.on('error', (err) => {
+          logger.warn('FFprobe process error from URL', { error: err });
+          resolve({});
+        });
+      });
+    } catch (error) {
+      logger.warn('Error extracting video metadata from URL, using defaults', { error });
+      return {};
+    }
+  }
+
+  /**
+   * Generate a video variant with specific encoding settings
+   */
+  private async generateVideoVariant(
+    videoPath: string,
+    sha256: string,
+    config: VideoVariantConfig,
+    tempDir: string
+  ): Promise<IFileVariant | null> {
+    const variantKey = this.generateVariantKey(sha256, config.type, 'mp4');
+    const outputPath = path.join(tempDir, `${config.type}.mp4`);
+
+    return new Promise((resolve, reject) => {
+      const args = [
+        '-i', videoPath,
+        '-c:v', config.videoCodec || 'libx264',
+        '-c:a', config.audioCodec || 'aac',
+        '-b:v', config.bitrate || '1M',
+        '-movflags', '+faststart', // Enable progressive download
+        '-preset', config.preset || 'fast',
+        '-crf', '23', // Constant rate factor for quality
+        '-pix_fmt', 'yuv420p', // Compatibility
+        '-avoid_negative_ts', 'make_zero'
+      ];
+
+      // Set resolution if specified
+      if (config.width && config.height) {
+        args.push('-vf', `scale=${config.width}:${config.height}:force_original_aspect_ratio=decrease,pad=${config.width}:${config.height}:(ow-iw)/2:(oh-ih)/2`);
+      }
+
+      args.push('-y', outputPath); // Overwrite output file
+
+      // Verify ffmpeg path exists before spawning
+      if (!fs.existsSync(ffmpegPath)) {
+        logger.error('FFmpeg binary not found', { path: ffmpegPath, variant: config.type });
+        resolve(null);
+        return;
+      }
+
+      logger.debug('FFmpeg command', { 
+        command: `${ffmpegPath} ${args.join(' ')}`, 
+        variant: config.type 
+      });
+
+      const ffmpegProcess = spawn(ffmpegPath, args);
+
+      let stderr = '';
+      let lastProgress = '';
+
+      ffmpegProcess.stderr.on('data', (data) => {
+        const output = data.toString();
+        stderr += output;
+        
+        // Parse progress from ffmpeg output
+        const timeMatch = output.match(/time=(\d+):(\d+):(\d+\.\d+)/);
+        if (timeMatch) {
+          const hours = parseInt(timeMatch[1]);
+          const minutes = parseInt(timeMatch[2]);
+          const seconds = parseFloat(timeMatch[3]);
+          const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+          lastProgress = totalSeconds.toString();
+        }
+      });
+
+      ffmpegProcess.on('close', async (code) => {
+        if (code !== 0) {
+          logger.error('Video variant generation failed', { 
+            variant: config.type, 
+            code,
+            error: stderr 
+          });
+          resolve(null); // Don't fail entire process if one variant fails
+          return;
+        }
+
+        try {
+          const stats = fs.statSync(outputPath);
+          const variantBuffer = fs.readFileSync(outputPath);
+
+          // Upload to S3
+          await this.s3Service.uploadBuffer(variantKey, variantBuffer, {
+            contentType: 'video/mp4'
+          });
+
+          resolve({
+            type: config.type,
+            key: variantKey,
+            width: config.width,
+            height: config.height,
+            readyAt: new Date(),
+            size: stats.size,
+            metadata: {
+              bitrate: config.bitrate,
+              codec: config.videoCodec,
+              audioCodec: config.audioCodec,
+              preset: config.preset,
+              format: 'mp4'
+            }
+          });
+        } catch (error) {
+          logger.error('Error processing video variant', { variant: config.type, error });
+          resolve(null);
+        }
+      });
+
+      ffmpegProcess.on('error', (err) => {
+        logger.error('FFmpeg process error', { variant: config.type, error: err });
+        resolve(null);
+      });
+    });
+  }
+
+  /**
+   * Generate HLS (HTTP Live Streaming) streams with adaptive bitrate
+   */
+  private async generateHLSStream(
+    videoPath: string,
+    sha256: string,
+    metadata: any,
+    tempDir: string
+  ): Promise<IFileVariant[]> {
+    return new Promise((resolve, reject) => {
+      const hlsDir = path.join(tempDir, 'hls');
+      const masterPlaylistPath = path.join(hlsDir, 'master.m3u8');
+      const variants: IFileVariant[] = [];
+
+      // Create HLS output directory
+      fs.mkdirSync(hlsDir, { recursive: true });
+
+      // Generate HLS variants for each quality
+      const hlsVariants: Array<{ resolution: string; bitrate: string; playlist: string }> = [];
+      const availableVariants = this.videoVariants.filter(v => {
+        // Only include variants that are smaller or equal to source
+        return !v.width || !metadata.width || v.width <= metadata.width;
+      });
+
+      if (availableVariants.length === 0) {
+        // Fallback to original resolution
+        availableVariants.push({
+          type: 'source',
+          width: metadata.width,
+          height: metadata.height,
+          bitrate: '2M',
+          videoCodec: 'libx264',
+          audioCodec: 'aac',
+          preset: 'fast'
+        });
+      }
+
+      let processedCount = 0;
+      const totalVariants = availableVariants.length;
+
+      availableVariants.forEach((config, index) => {
+        const playlistName = `stream_${config.type}.m3u8`;
+        const outputPath = path.join(hlsDir, playlistName);
+        const segmentPattern = path.join(hlsDir, `segment_${config.type}_%03d.ts`);
+
+        const args = [
+          '-i', videoPath,
+          '-c:v', config.videoCodec || 'libx264',
+          '-c:a', config.audioCodec || 'aac',
+          '-b:v', config.bitrate || '1M',
+          '-f', 'hls',
+          '-hls_time', '10', // 10 second segments
+          '-hls_list_size', '0', // Keep all segments in playlist
+          '-hls_segment_filename', segmentPattern,
+          '-hls_flags', 'independent_segments',
+          '-preset', config.preset || 'fast',
+          '-crf', '23',
+          '-pix_fmt', 'yuv420p',
+          '-sc_threshold', '0',
+          '-g', '48',
+          '-keyint_min', '48'
+        ];
+
+        if (config.width && config.height) {
+          args.push('-vf', `scale=${config.width}:${config.height}:force_original_aspect_ratio=decrease,pad=${config.width}:${config.height}:(ow-iw)/2:(oh-ih)/2`);
+        }
+
+        args.push('-y', outputPath); // Overwrite output file
+
+        const ffmpegProcess = spawn(ffmpegPath, args);
+
+        let stderr = '';
+
+        ffmpegProcess.stderr.on('data', (data) => {
+          stderr += data.toString();
+        });
+
+        ffmpegProcess.on('close', async (code) => {
+          if (code !== 0) {
+            logger.error('HLS variant generation failed', { 
+              variant: config.type, 
+              code,
+              error: stderr 
+            });
+            processedCount++;
+            if (processedCount === totalVariants) {
+              resolve(variants);
+            }
+            return;
+          }
+
+          try {
+            // Upload HLS playlist and segments
+            const playlistBuffer = fs.readFileSync(outputPath);
+            const playlistKey = this.generateVariantKey(sha256, `hls_${config.type}`, 'm3u8');
+            await this.s3Service.uploadBuffer(playlistKey, playlistBuffer, {
+              contentType: 'application/vnd.apple.mpegurl'
+            });
+
+            // Upload all segment files
+            const segments = fs.readdirSync(hlsDir).filter(f => f.startsWith(`segment_${config.type}_`));
+            for (const segment of segments) {
+              const segmentPath = path.join(hlsDir, segment);
+              const segmentBuffer = fs.readFileSync(segmentPath);
+              const segmentKey = this.generateVariantKey(sha256, `hls_${config.type}_${segment}`, 'ts');
+              await this.s3Service.uploadBuffer(segmentKey, segmentBuffer, {
+                contentType: 'video/mp2t'
+              });
+            }
+
+            hlsVariants.push({
+              resolution: config.width && config.height ? `${config.width}x${config.height}` : 'source',
+              bitrate: config.bitrate || '1M',
+              playlist: playlistKey
+            });
+
+            variants.push({
+              type: `hls_${config.type}`,
+              key: playlistKey,
+              width: config.width,
+              height: config.height,
+              readyAt: new Date(),
+              metadata: {
+                format: 'hls',
+                bitrate: config.bitrate,
+                segments: segments.length
+              }
+            });
+
+            processedCount++;
+            if (processedCount === totalVariants) {
+              // Generate master playlist
+              const masterPlaylist = this.generateMasterPlaylist(hlsVariants);
+              const masterKey = this.generateVariantKey(sha256, 'hls_master', 'm3u8');
+              await this.s3Service.uploadBuffer(masterKey, Buffer.from(masterPlaylist), {
+                contentType: 'application/vnd.apple.mpegurl'
+              });
+
+              variants.push({
+                type: 'hls_master',
+                key: masterKey,
+                readyAt: new Date(),
+                metadata: {
+                  format: 'hls',
+                  variantCount: hlsVariants.length,
+                  variants: hlsVariants.map(v => v.resolution)
+                }
+              });
+
+              resolve(variants);
+            }
+          } catch (error) {
+            logger.error('Error processing HLS variant', { variant: config.type, error });
+            processedCount++;
+            if (processedCount === totalVariants) {
+              resolve(variants);
+            }
+          }
+        });
+
+        ffmpegProcess.on('error', (err) => {
+          logger.error('FFmpeg process error for HLS', { variant: config.type, error: err });
+          processedCount++;
+          if (processedCount === totalVariants) {
+            resolve(variants);
+          }
+        });
+      });
+    });
+  }
+
+  /**
+   * Generate HLS master playlist
+   */
+  private generateMasterPlaylist(variants: Array<{ resolution: string; bitrate: string; playlist: string }>): string {
+    let playlist = '#EXTM3U\n#EXT-X-VERSION:3\n\n';
+
+    variants.forEach((variant) => {
+      const bitrateNumber = this.parseBitrate(variant.bitrate);
+      playlist += `#EXT-X-STREAM-INF:BANDWIDTH=${bitrateNumber},RESOLUTION=${variant.resolution}\n`;
+      playlist += `${variant.playlist}\n\n`;
+    });
+
+    return playlist;
+  }
+
+  /**
+   * Parse bitrate string to number (e.g., "1M" -> 1000000)
+   */
+  private parseBitrate(bitrate: string): number {
+    const match = bitrate.match(/^(\d+)([kKmM])?$/);
+    if (!match) return 1000000;
+
+    const value = parseInt(match[1]);
+    const unit = match[2]?.toLowerCase();
+
+    if (unit === 'k') return value * 1000;
+    if (unit === 'm') return value * 1000000;
+    return value;
   }
 
   /**
@@ -245,6 +1060,62 @@ export class VariantService {
     } catch (error) {
       logger.error('Error checking variant readiness:', error);
       return false;
+    }
+  }
+
+  /**
+   * Ensure a specific video poster variant exists, generate via FFmpeg if missing.
+   */
+  async ensureVideoPoster(file: IFile): Promise<IFileVariant> {
+    // Check if poster already exists and is valid
+    const existing = file.variants.find(v => v.type === 'poster' && v.readyAt);
+    if (existing) {
+      const ok = await this.s3Service.fileExists(existing.key);
+      if (ok) return existing;
+    }
+
+    // Generate poster frame directly from S3 - no temp files
+    try {
+      // Get S3 presigned URL and extract metadata
+      const videoUrl = await this.s3Service.getPresignedDownloadUrl(file.storageKey, 3600);
+      const metadata = await this.extractVideoMetadataFromUrl(videoUrl);
+      const posterTime = Math.min(1, (metadata.duration || 60) * 0.1);
+
+      // Generate poster frame with exact video aspect ratio (streams directly from S3)
+      const posterVariant = await this.generatePosterFrame(
+        file.storageKey, // Use S3 storage key directly - no temp files
+        file.sha256,
+        posterTime,
+        metadata // Pass metadata to preserve exact aspect ratio
+      );
+
+      // Update file variants
+      const idx = file.variants.findIndex(v => v.type === 'poster');
+      if (idx >= 0) file.variants[idx] = posterVariant;
+      else file.variants.push(posterVariant);
+
+      try {
+        await this.commitVariants(file);
+      } catch (error) {
+        logger.warn('Failed committing poster variant, retrying', { fileId: file._id, error });
+        // Retry once with fresh document
+        const fresh = await File.findById(file._id);
+        if (fresh) {
+          const idx2 = fresh.variants.findIndex(v => v.type === 'poster');
+          if (idx2 >= 0) fresh.variants[idx2] = posterVariant;
+          else fresh.variants.push(posterVariant);
+          try {
+            await File.updateOne({ _id: fresh._id }, { $set: { variants: fresh.variants } });
+          } catch (err2) {
+            logger.error('Retry failed committing poster variant', { fileId: file._id, error: err2 });
+          }
+        }
+      }
+
+      return posterVariant;
+    } catch (error) {
+      logger.error('Error ensuring video poster', { fileId: file._id, error });
+      throw error;
     }
   }
 
