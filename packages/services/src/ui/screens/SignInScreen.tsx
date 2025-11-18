@@ -42,10 +42,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
     // Username validation using core services with caching
     const validateUsername = useCallback(async (usernameToValidate: string) => {
-        if (__DEV__) console.log('🔍 Validating username:', usernameToValidate);
-
         if (!usernameToValidate || usernameToValidate.length < 3) {
-            if (__DEV__) console.log('❌ Username too short');
             setValidationStatus('invalid');
             setErrorMessage('Username must be at least 3 characters.');
             return false;
@@ -53,7 +50,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
         // Safety check for oxyServices
         if (!oxyServices || typeof oxyServices.getProfileByUsername !== 'function') {
-            console.error('🚨 oxyServices not available or getProfileByUsername not found');
+            console.error('oxyServices not available or getProfileByUsername not found');
             setValidationStatus('invalid');
             setErrorMessage('Service unavailable. Please try again.');
             return false;
@@ -62,62 +59,51 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
         const offlineDetected = typeof navigator !== 'undefined' && navigator.onLine === false;
 
         if (offlineDetected) {
-            if (__DEV__) console.log('⚠️ Offline detected, skipping username validation');
             setValidationStatus('invalid');
             setErrorMessage('No connection. Check your internet connection and try again.');
             return false;
         }
 
-        if (__DEV__) console.log('🔄 Validating username with API...');
         setIsValidating(true);
         setValidationStatus('validating');
 
         try {
             // Check if username exists
             const profile = await oxyServices.getProfileByUsername(usernameToValidate);
-            if (__DEV__) console.log('📋 Profile response:', profile);
 
-            if (profile && profile.username) {
+            // Handle case where profile might be wrapped in a data property (defensive check)
+            const userProfile = (profile as any)?.data || profile;
+
+            if (userProfile?.username) {
                 const profileData = {
-                    displayName: profile.name?.full || profile.name?.first || profile.username,
-                    name: profile.username,
-                    avatar: profile.avatar,
-                    id: profile.id
+                    displayName: userProfile.name?.full || userProfile.name?.first || userProfile.username,
+                    name: userProfile.username,
+                    avatar: userProfile.avatar,
+                    id: userProfile.id
                 };
 
-                if (__DEV__) console.log('✅ Username is valid:', profileData);
                 setUserProfile(profileData);
-                
+
                 // Check if this account is already signed in
-                const profileUserId = profile.id?.toString();
+                const profileUserId = userProfile.id?.toString();
                 const existing = sessions?.find(s => {
                     const sessionUserId = s.userId?.toString();
                     return sessionUserId === profileUserId;
                 });
-                
-                if (existing) {
-                    setExistingSession(existing);
-                    if (__DEV__) console.log('✅ Account already signed in:', existing);
-                } else {
-                    setExistingSession(null);
-                }
-                
+
+                setExistingSession(existing || null);
                 setValidationStatus('valid');
                 setErrorMessage('');
 
                 return true;
-            } else {
-                if (__DEV__) console.log('❌ Username not found');
-                setValidationStatus('invalid');
-                setErrorMessage('Username not found.');
-                return false;
             }
-        } catch (error: any) {
-            if (__DEV__) console.log('🚨 Validation error:', error);
 
+            setValidationStatus('invalid');
+            setErrorMessage('Username not found.');
+            return false;
+        } catch (error: any) {
             // If user not found (404), username doesn't exist
             if (error?.status === 404 || error?.code === 'USER_NOT_FOUND') {
-                console.log('❌ Username not found (404)');
                 setValidationStatus('invalid');
                 setErrorMessage('Username not found.');
                 return false;
@@ -147,7 +133,6 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
     // Input change handlers
     const handleUsernameChange = useCallback((text: string) => {
-        console.log('🔄 SignInScreen handleUsernameChange called:', text);
         setUsername(text);
         if (errorMessage) setErrorMessage('');
         setValidationStatus('idle');
@@ -183,7 +168,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
 
     const handleContinueWithExistingAccount = useCallback(async () => {
         if (!existingSession) return;
-        
+
         try {
             setErrorMessage('');
             await switchSession(existingSession.sessionId);
@@ -206,7 +191,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             setErrorMessage('Please enter a valid username first.');
             return;
         }
-        
+
         try {
             setErrorMessage('');
             const user = await login(username, password);
@@ -238,7 +223,6 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     const handleComplete = useCallback(async (stepData: any[]) => {
         // The sign-in is handled by the password step component
         // This callback is here for interface compatibility
-        if (__DEV__) console.log('Sign-in flow completed');
     }, []);
 
     // Step data for the reusable component

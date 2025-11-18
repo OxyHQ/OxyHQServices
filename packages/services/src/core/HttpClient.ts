@@ -221,7 +221,7 @@ export class HttpClient {
       }
       
       // Handle regular success responses: { data: ... }
-      if (responseData && typeof responseData === 'object' && 'data' in responseData) {
+      if (responseData && typeof responseData === 'object' && 'data' in responseData && !Array.isArray(responseData)) {
         return responseData.data as T;
       }
       
