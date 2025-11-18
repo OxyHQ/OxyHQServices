@@ -233,6 +233,75 @@ export class HttpClient {
   }
 
   /**
+   * GET request convenience method
+   */
+  async get<T = any>(url: string, config?: { params?: any; timeout?: number; signal?: AbortSignal }): Promise<{ data: T }> {
+    const response = await this.request<T>({
+      method: 'GET',
+      url,
+      params: config?.params,
+      timeout: config?.timeout,
+      signal: config?.signal,
+    });
+    return { data: response as T };
+  }
+
+  /**
+   * POST request convenience method
+   */
+  async post<T = any>(url: string, data?: any, config?: { timeout?: number; signal?: AbortSignal }): Promise<{ data: T }> {
+    const response = await this.request<T>({
+      method: 'POST',
+      url,
+      data,
+      timeout: config?.timeout,
+      signal: config?.signal,
+    });
+    return { data: response as T };
+  }
+
+  /**
+   * PUT request convenience method
+   */
+  async put<T = any>(url: string, data?: any, config?: { timeout?: number; signal?: AbortSignal }): Promise<{ data: T }> {
+    const response = await this.request<T>({
+      method: 'PUT',
+      url,
+      data,
+      timeout: config?.timeout,
+      signal: config?.signal,
+    });
+    return { data: response as T };
+  }
+
+  /**
+   * PATCH request convenience method
+   */
+  async patch<T = any>(url: string, data?: any, config?: { timeout?: number; signal?: AbortSignal }): Promise<{ data: T }> {
+    const response = await this.request<T>({
+      method: 'PATCH',
+      url,
+      data,
+      timeout: config?.timeout,
+      signal: config?.signal,
+    });
+    return { data: response as T };
+  }
+
+  /**
+   * DELETE request convenience method
+   */
+  async delete<T = any>(url: string, config?: { timeout?: number; signal?: AbortSignal }): Promise<{ data: T }> {
+    const response = await this.request<T>({
+      method: 'DELETE',
+      url,
+      timeout: config?.timeout,
+      signal: config?.signal,
+    });
+    return { data: response as T };
+  }
+
+  /**
    * Get base URL
    */
   getBaseURL(): string {

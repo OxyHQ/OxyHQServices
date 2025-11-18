@@ -180,6 +180,14 @@ export class OxyServices {
   }
 
   /**
+   * Get the HTTP client instance
+   * Useful for advanced use cases where direct access to the HTTP client is needed
+   */
+  public getClient(): HttpClient {
+    return this.httpClient;
+  }
+
+  /**
    * Get performance metrics
    */
   public getMetrics() {
