@@ -9,6 +9,7 @@ interface ToastFunction {
   error: (message: string, options?: Record<string, unknown>) => void;
   info: (message: string, options?: Record<string, unknown>) => void;
   warning: (message: string, options?: Record<string, unknown>) => void;
+  loading: (message: string, options?: Record<string, unknown>) => void;
 }
 
 type ToasterComponent = (props?: Record<string, unknown>) => React.ReactElement | null;

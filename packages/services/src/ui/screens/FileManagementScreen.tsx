@@ -14,6 +14,7 @@ import {
     Image, // kept for Image.getSize only
     Animated,
     Easing,
+    Alert,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import type { BaseScreenProps } from '../navigation/types';
