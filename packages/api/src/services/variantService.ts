@@ -271,24 +271,14 @@ export class VariantService {
    * Generates poster frame, multiple bitrate variants, and HLS streams
    */
   private async generateVideoVariants(file: IFile): Promise<void> {
-    const tempDir = path.join(process.cwd(), 'temp', file._id.toString());
-    let videoPath: string | null = null;
-    let cleanupTemp = false;
-
     try {
       logger.info('Generating video variants with FFmpeg', { fileId: file._id });
 
-      // Create temporary directory
-      await mkdirAsync(tempDir, { recursive: true });
-      cleanupTemp = true;
-
-      // Download video from S3 to temp file
-      const videoBuffer = await this.s3Service.downloadBuffer(file.storageKey);
-      videoPath = path.join(tempDir, `original${file.ext}`);
-      fs.writeFileSync(videoPath, videoBuffer);
-
-      // Extract video metadata
-      const metadata = await this.extractVideoMetadata(videoPath);
+      // Get S3 presigned URL - FFmpeg can read directly from HTTP URLs
+      const videoUrl = await this.s3Service.getPresignedDownloadUrl(file.storageKey, 3600);
+      
+      // Extract video metadata using S3 presigned URL (no download needed)
+      const metadata = await this.extractVideoMetadataFromUrl(videoUrl);
       
       const variants: IFileVariant[] = [];
 
@@ -317,10 +307,9 @@ export class VariantService {
         }
 
         const variant = await this.generateVideoVariant(
-          videoPath,
+          videoUrl, // Use S3 presigned URL directly - no temp files
           file.sha256,
-          config,
-          tempDir
+          config
         );
         if (variant) {
           variants.push(variant);
@@ -329,10 +318,9 @@ export class VariantService {
 
       // Generate HLS stream (adaptive streaming)
       const hlsVariants = await this.generateHLSStream(
-        videoPath,
+        videoUrl, // Use S3 presigned URL directly - no temp files
         file.sha256,
-        metadata,
-        tempDir
+        metadata
       );
       variants.push(...hlsVariants);
 
@@ -361,19 +349,6 @@ export class VariantService {
     } catch (error) {
       logger.error('Error generating video variants:', error);
       throw error;
-    } finally {
-      // Cleanup temporary files
-      if (cleanupTemp && fs.existsSync(tempDir)) {
-        try {
-          const files = fs.readdirSync(tempDir);
-          for (const file of files) {
-            await unlinkAsync(path.join(tempDir, file));
-          }
-          await rmdirAsync(tempDir);
-        } catch (cleanupError) {
-          logger.warn('Error cleaning up temp files', { tempDir, error: cleanupError });
-        }
-      }
     }
   }
 
@@ -671,19 +646,18 @@ export class VariantService {
 
   /**
    * Generate a video variant with specific encoding settings
+   * Uses S3 presigned URL directly - streams output to memory, no temp files
    */
   private async generateVideoVariant(
-    videoPath: string,
+    videoUrl: string,
     sha256: string,
-    config: VideoVariantConfig,
-    tempDir: string
+    config: VideoVariantConfig
   ): Promise<IFileVariant | null> {
     const variantKey = this.generateVariantKey(sha256, config.type, 'mp4');
-    const outputPath = path.join(tempDir, `${config.type}.mp4`);
 
     return new Promise((resolve, reject) => {
       const args = [
-        '-i', videoPath,
+        '-i', videoUrl, // Use S3 presigned URL directly
         '-c:v', config.videoCodec || 'libx264',
         '-c:a', config.audioCodec || 'aac',
         '-b:v', config.bitrate || '1M',
@@ -691,15 +665,15 @@ export class VariantService {
         '-preset', config.preset || 'fast',
         '-crf', '23', // Constant rate factor for quality
         '-pix_fmt', 'yuv420p', // Compatibility
-        '-avoid_negative_ts', 'make_zero'
+        '-avoid_negative_ts', 'make_zero',
+        '-f', 'mp4', // Output format
+        'pipe:1' // Output to stdout (memory)
       ];
 
       // Set resolution if specified
       if (config.width && config.height) {
         args.push('-vf', `scale=${config.width}:${config.height}:force_original_aspect_ratio=decrease,pad=${config.width}:${config.height}:(ow-iw)/2:(oh-ih)/2`);
       }
-
-      args.push('-y', outputPath); // Overwrite output file
 
       // Verify ffmpeg path exists before spawning
       if (!fs.existsSync(ffmpegPath)) {
@@ -708,14 +682,15 @@ export class VariantService {
         return;
       }
 
-      logger.debug('FFmpeg command', { 
-        command: `${ffmpegPath} ${args.join(' ')}`, 
-        variant: config.type 
+      logger.debug('FFmpeg command for variant', { 
+        variant: config.type,
+        videoUrl: videoUrl.substring(0, 50) + '...'
       });
 
       const ffmpegProcess = spawn(ffmpegPath, args);
 
       let stderr = '';
+      const stdoutChunks: Buffer[] = [];
       let lastProgress = '';
 
       ffmpegProcess.stderr.on('data', (data) => {
@@ -733,20 +708,24 @@ export class VariantService {
         }
       });
 
+      ffmpegProcess.stdout.on('data', (data) => {
+        stdoutChunks.push(data);
+      });
+
       ffmpegProcess.on('close', async (code) => {
         if (code !== 0) {
           logger.error('Video variant generation failed', { 
             variant: config.type, 
             code,
-            error: stderr 
+            error: stderr.substring(0, 500)
           });
           resolve(null); // Don't fail entire process if one variant fails
           return;
         }
 
         try {
-          const stats = fs.statSync(outputPath);
-          const variantBuffer = fs.readFileSync(outputPath);
+          // Get variant from stdout (no temp file needed)
+          const variantBuffer = Buffer.concat(stdoutChunks);
 
           // Upload to S3
           await this.s3Service.uploadBuffer(variantKey, variantBuffer, {
@@ -759,7 +738,7 @@ export class VariantService {
             width: config.width,
             height: config.height,
             readyAt: new Date(),
-            size: stats.size,
+            size: variantBuffer.length,
             metadata: {
               bitrate: config.bitrate,
               codec: config.videoCodec,
@@ -783,20 +762,31 @@ export class VariantService {
 
   /**
    * Generate HLS (HTTP Live Streaming) streams with adaptive bitrate
+   * Uses S3 presigned URL directly - segments are uploaded to S3 immediately and temp files cleaned up
+   * Note: HLS requires temp files for segment generation, but they're deleted immediately after upload to S3
    */
   private async generateHLSStream(
-    videoPath: string,
+    videoUrl: string,
     sha256: string,
-    metadata: any,
-    tempDir: string
+    metadata: any
   ): Promise<IFileVariant[]> {
-    return new Promise((resolve, reject) => {
-      const hlsDir = path.join(tempDir, 'hls');
-      const masterPlaylistPath = path.join(hlsDir, 'master.m3u8');
-      const variants: IFileVariant[] = [];
+    // Use /tmp for HLS segments (ephemeral, OS cleans up automatically)
+    // FFmpeg needs to write multiple segment files for HLS
+    const tempDir = path.join('/tmp', 'oxy-hls', sha256.substring(0, 8));
+    const hlsDir = path.join(tempDir, 'hls');
+    let cleanupTemp = false;
 
-      // Create HLS output directory
-      fs.mkdirSync(hlsDir, { recursive: true });
+    return new Promise((resolve, reject) => {
+      try {
+        // Create HLS output directory (temporary, for segment generation)
+        fs.mkdirSync(hlsDir, { recursive: true });
+        cleanupTemp = true;
+      } catch (error) {
+        reject(new Error(`Failed to create HLS temp directory: ${error}`));
+        return;
+      }
+
+      const variants: IFileVariant[] = [];
 
       // Generate HLS variants for each quality
       const hlsVariants: Array<{ resolution: string; bitrate: string; playlist: string }> = [];
@@ -827,7 +817,7 @@ export class VariantService {
         const segmentPattern = path.join(hlsDir, `segment_${config.type}_%03d.ts`);
 
         const args = [
-          '-i', videoPath,
+          '-i', videoUrl, // Use S3 presigned URL directly
           '-c:v', config.videoCodec || 'libx264',
           '-c:a', config.audioCodec || 'aac',
           '-b:v', config.bitrate || '1M',
@@ -880,7 +870,7 @@ export class VariantService {
               contentType: 'application/vnd.apple.mpegurl'
             });
 
-            // Upload all segment files
+            // Upload all segment files and delete immediately after upload
             const segments = fs.readdirSync(hlsDir).filter(f => f.startsWith(`segment_${config.type}_`));
             for (const segment of segments) {
               const segmentPath = path.join(hlsDir, segment);
@@ -889,6 +879,19 @@ export class VariantService {
               await this.s3Service.uploadBuffer(segmentKey, segmentBuffer, {
                 contentType: 'video/mp2t'
               });
+              // Delete segment immediately after upload (no temp file accumulation)
+              try {
+                fs.unlinkSync(segmentPath);
+              } catch (e) {
+                // Ignore deletion errors
+              }
+            }
+            
+            // Delete playlist file after upload
+            try {
+              fs.unlinkSync(outputPath);
+            } catch (e) {
+              // Ignore deletion errors
             }
 
             hlsVariants.push({
@@ -929,6 +932,16 @@ export class VariantService {
                   variants: hlsVariants.map(v => v.resolution)
                 }
               });
+
+              // Cleanup temp directory after all uploads (all segments uploaded to S3)
+              if (cleanupTemp && fs.existsSync(tempDir)) {
+                try {
+                  fs.rmSync(tempDir, { recursive: true, force: true });
+                  logger.debug('Cleaned up HLS temp directory after uploads', { tempDir });
+                } catch (cleanupError) {
+                  logger.warn('Error cleaning up HLS temp files', { tempDir, error: cleanupError });
+                }
+              }
 
               resolve(variants);
             }

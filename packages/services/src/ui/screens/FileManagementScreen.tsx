@@ -112,6 +112,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<'date' | 'size' | 'name' | 'type'>('date');
     const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
+    const [pendingFiles, setPendingFiles] = useState<Array<{ file: File | Blob; preview?: string; size: number; name: string; type: string }>>([]);
+    const [showUploadPreview, setShowUploadPreview] = useState(false);
     // Derived filtered and sorted files (avoid setState loops)
     const filteredFiles = useMemo(() => {
         let filteredByMode = files;
@@ -175,6 +177,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const scrollViewRef = useRef<ScrollView>(null);
     const photoScrollViewRef = useRef<ScrollView>(null);
     const itemRefs = useRef<Map<string, number>>(new Map()); // Track item positions
+    const containerRef = useRef<View>(null); // Ref for drag and drop container
     useEffect(() => {
         if (initialSelectedIds && initialSelectedIds.length) {
             setSelectedIds(new Set(initialSelectedIds));
@@ -588,60 +591,165 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
     };
 
+    const handleFileSelection = useCallback(async (selectedFiles: File[] | any[]) => {
+        const MAX_FILE_SIZE = 100 * 1024 * 1024; // 100MB
+        const processedFiles: Array<{ file: File | Blob; preview?: string; size: number; name: string; type: string }> = [];
+
+        for (const file of selectedFiles) {
+            // Validate file size
+            if (file.size > MAX_FILE_SIZE) {
+                toast.error(`"${file.name}" is too large. Maximum file size is ${formatFileSize(MAX_FILE_SIZE)}`);
+                continue;
+            }
+
+            // Generate preview for images
+            let preview: string | undefined;
+            if (file.type.startsWith('image/')) {
+                preview = URL.createObjectURL(file);
+            }
+
+            processedFiles.push({
+                file,
+                preview,
+                size: file.size,
+                name: file.name,
+                type: file.type
+            });
+        }
+
+        if (processedFiles.length === 0) return;
+
+        // Show preview modal for user to review files before upload
+        setPendingFiles(processedFiles);
+        setShowUploadPreview(true);
+    }, []);
+
+    const handleConfirmUpload = async () => {
+        if (pendingFiles.length === 0) return;
+
+        setShowUploadPreview(false);
+        uploadStartRef.current = Date.now();
+        storeSetUploading(true);
+        storeSetUploadProgress(null);
+
+        try {
+            const filesToUpload = pendingFiles.map(pf => pf.file as File);
+            storeSetUploadProgress({ current: 0, total: filesToUpload.length });
+            await processFileUploads(filesToUpload);
+            
+            // Cleanup preview URLs
+            pendingFiles.forEach(pf => {
+                if (pf.preview) {
+                    URL.revokeObjectURL(pf.preview);
+                }
+            });
+            setPendingFiles([]);
+            endUpload();
+        } catch (error: any) {
+            toast.error(error.message || 'Failed to upload files');
+            endUpload();
+        }
+    };
+
+    const handleCancelUpload = () => {
+        // Cleanup preview URLs
+        pendingFiles.forEach(pf => {
+            if (pf.preview) {
+                URL.revokeObjectURL(pf.preview);
+            }
+        });
+        setPendingFiles([]);
+        setShowUploadPreview(false);
+    };
+
+    const removePendingFile = (index: number) => {
+        const file = pendingFiles[index];
+        if (file.preview) {
+            URL.revokeObjectURL(file.preview);
+        }
+        const updated = pendingFiles.filter((_, i) => i !== index);
+        setPendingFiles(updated);
+        if (updated.length === 0) {
+            setShowUploadPreview(false);
+        }
+    };
+
     const handleFileUpload = async () => {
         try {
-            uploadStartRef.current = Date.now();
-            storeSetUploading(true);
-            storeSetUploadProgress(null);
-
             if (Platform.OS === 'web') {
-                // Web file picker implementation
+                // Enhanced web file picker
                 const input = document.createElement('input');
                 input.type = 'file';
                 input.multiple = true;
                 input.accept = '*/*';
-                // Fallback: if the user cancels the dialog (no onchange fires or 0 files), hide banner
+                
                 const cancellationTimer = setTimeout(() => {
                     const state = useFileStore.getState();
                     if (state.uploading && uploadStartRef.current && !state.uploadProgress) {
-                        // No selection happened; treat as cancel
                         endUpload();
                     }
-                }, 1500); // allow enough time for user to pick
+                }, 1500);
 
                 input.onchange = async (e: any) => {
                     clearTimeout(cancellationTimer);
                     const selectedFiles = Array.from(e.target.files || []) as File[];
                     if (selectedFiles.length === 0) {
-                        // User explicitly canceled (some browsers still fire onchange with empty list)
                         endUpload();
                         return;
                     }
-                    storeSetUploadProgress({ current: 0, total: selectedFiles.length });
-                    await processFileUploads(selectedFiles);
-                    endUpload();
+                    await handleFileSelection(selectedFiles);
                 };
 
                 input.click();
             } else {
-                // Mobile - show info that file picker can be added
-                const installCommand = 'npm install expo-document-picker';
-                const message = `Mobile File Upload\n\nTo enable file uploads on mobile, install expo-document-picker:\n\n${installCommand}\n\nThen import and use DocumentPicker.getDocumentAsync() in this method.`;
+                // Mobile file picker with expo-document-picker
+                try {
+                    // Dynamically import to avoid breaking if not installed
+                    const DocumentPicker = await import('expo-document-picker').catch(() => null);
+                    
+                    if (!DocumentPicker) {
+                        toast.error('File picker not available. Please install expo-document-picker');
+                        return;
+                    }
 
-                if (window.confirm(`${message}\n\nWould you like to copy the install command?`)) {
-                    toast.info(`Install: ${installCommand}`);
-                } else {
-                    toast.info('Mobile file upload requires expo-document-picker');
+                    const result = await DocumentPicker.getDocumentAsync({
+                        type: '*/*',
+                        multiple: true,
+                        copyToCacheDirectory: true,
+                    });
+
+                    if (result.canceled) {
+                        return;
+                    }
+
+                    // Convert expo document picker results to File-like objects
+                    const files: File[] = [];
+                    for (const doc of result.assets) {
+                        if (doc.file) {
+                            // expo-document-picker provides a File-like object
+                            files.push(doc.file as File);
+                        } else if (doc.uri) {
+                            // Fallback: fetch and create Blob
+                            const response = await fetch(doc.uri);
+                            const blob = await response.blob();
+                            const file = new File([blob], doc.name || 'file', { type: doc.mimeType || 'application/octet-stream' });
+                            files.push(file);
+                        }
+                    }
+
+                    if (files.length > 0) {
+                        await handleFileSelection(files);
+                    }
+                } catch (error: any) {
+                    if (error.message?.includes('expo-document-picker')) {
+                        toast.error('File picker not available. Please install expo-document-picker');
+                    } else {
+                        toast.error(error.message || 'Failed to select files');
+                    }
                 }
             }
         } catch (error: any) {
-            toast.error(error.message || 'Failed to upload file');
-        } finally {
-            // IMPORTANT: Do NOT call endUpload here.
-            // We only want to hide the banner after the actual upload(s) complete.
-            // The input.onchange handler invokes processFileUploads then calls endUpload().
-            // Calling endUpload here caused the banner to disappear while files were still uploading.
-            storeSetUploadProgress(null); // keep clearing any stale progress
+            toast.error(error.message || 'Failed to open file picker');
         }
     };
 
@@ -759,79 +867,71 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
     }, [selectedIds, oxyServices, files, loadFiles]);
 
-    // Drag and drop handlers for web
-    const handleDragOver = (e: any) => {
-        if (Platform.OS === 'web' && user?.id === targetUserId) {
-            e.preventDefault();
-            setIsDragging(true);
-        }
-    };
-
-    const handleDragEnter = (e: any) => {
-        if (Platform.OS === 'web' && user?.id === targetUserId) {
-            e.preventDefault();
-            setIsDragging(true);
-        }
-    };
-
-    const handleDragLeave = (e: any) => {
-        if (Platform.OS === 'web') {
-            e.preventDefault();
-            setIsDragging(false);
-        }
-    };
-
-    // Global drag listeners (web) to catch drags outside component bounds
+    // Global drag listeners (web) - attach to document for reliable drag and drop
     useEffect(() => {
         if (Platform.OS !== 'web' || user?.id !== targetUserId) return;
-        const onDocDragEnter = (e: any) => {
-            if (e?.dataTransfer?.types?.includes('Files')) setIsDragging(true);
-        };
-        const onDocDragOver = (e: any) => {
+        
+        let dragCounter = 0; // Track drag enter/leave to handle nested elements
+        
+        const onDragEnter = (e: DragEvent) => {
+            dragCounter++;
             if (e?.dataTransfer?.types?.includes('Files')) {
                 e.preventDefault();
+                e.stopPropagation();
                 setIsDragging(true);
             }
         };
-        const onDocDrop = (e: any) => {
+        
+        const onDragOver = (e: DragEvent) => {
+            if (e?.dataTransfer?.types?.includes('Files')) {
+                e.preventDefault();
+                e.stopPropagation();
+                // Keep dragging state true while over document
+                setIsDragging(true);
+            }
+        };
+        
+        const onDrop = async (e: DragEvent) => {
+            dragCounter = 0;
+            setIsDragging(false);
+            
             if (e?.dataTransfer?.files?.length) {
                 e.preventDefault();
+                e.stopPropagation();
+                
+                try {
+                    const files = Array.from(e.dataTransfer.files) as File[];
+                    if (files.length > 0) {
+                        await handleFileSelection(files);
+                    }
+                } catch (error: any) {
+                    toast.error(error.message || 'Failed to upload files');
+                }
+            }
+        };
+        
+        const onDragLeave = (e: DragEvent) => {
+            dragCounter--;
+            // Only hide drag overlay if we're actually leaving the document (drag counter reaches 0)
+            if (dragCounter === 0) {
                 setIsDragging(false);
             }
         };
-        const onDocDragLeave = (e: any) => {
-            if (!e.relatedTarget && e.screenX === 0 && e.screenY === 0) setIsDragging(false);
-        };
-        document.addEventListener('dragenter', onDocDragEnter);
-        document.addEventListener('dragover', onDocDragOver);
-        document.addEventListener('drop', onDocDrop);
-        document.addEventListener('dragleave', onDocDragLeave);
+        
+        // Attach to document for global drag detection
+        document.addEventListener('dragenter', onDragEnter, false);
+        document.addEventListener('dragover', onDragOver, false);
+        document.addEventListener('drop', onDrop, false);
+        document.addEventListener('dragleave', onDragLeave, false);
+        
         return () => {
-            document.removeEventListener('dragenter', onDocDragEnter);
-            document.removeEventListener('dragover', onDocDragOver);
-            document.removeEventListener('drop', onDocDrop);
-            document.removeEventListener('dragleave', onDocDragLeave);
+            document.removeEventListener('dragenter', onDragEnter, false);
+            document.removeEventListener('dragover', onDragOver, false);
+            document.removeEventListener('drop', onDrop, false);
+            document.removeEventListener('dragleave', onDragLeave, false);
         };
-    }, [user?.id, targetUserId]);
+    }, [user?.id, targetUserId, handleFileSelection]);
 
-    const handleDrop = async (e: any) => {
-        if (Platform.OS === 'web' && user?.id === targetUserId) {
-            e.preventDefault();
-            setIsDragging(false);
-            uploadStartRef.current = Date.now();
-            storeSetUploading(true);
-
-            try {
-                const files = Array.from(e.dataTransfer.files) as File[];
-                if (files.length > 0) storeSetUploadProgress({ current: 0, total: files.length });
-                await processFileUploads(files);
-            } catch (error: any) {
-                toast.error(error.message || 'Failed to upload files');
-            } finally {
-                endUpload();
-            }
-        }
-    };
 
     const handleFileDownload = async (fileId: string, filename: string) => {
         try {
@@ -1219,9 +1319,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     // GroupedSection-based file items (for 'all' view) replacing legacy flat list look
     const groupedFileItems = useMemo(() => {
-        const sortedFiles = filteredFiles
-            .filter(f => true)
-            .sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+        // filteredFiles is already sorted, so just use it directly
+        const sortedFiles = filteredFiles;
         
         // Store file positions for scrolling
         sortedFiles.forEach((file, index) => {
@@ -1315,9 +1414,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     // Account for description rows which add extra height
                     const baseItemHeight = 65;
                     const descriptionHeight = 30; // Approximate height for description
-                    const sortedFiles = filteredFiles
-                        .filter(f => true)
-                        .sort((a, b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+                    // Use filteredFiles which is already sorted according to user's selection
+                    const sortedFiles = filteredFiles;
                     
                     // Calculate total height up to this item
                     let scrollPosition = 0;
@@ -2139,16 +2237,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     return (
         <View
+            ref={containerRef}
             style={[
                 styles.container,
                 isDragging && Platform.OS === 'web' && styles.dragOverlay
             ]}
-            {...(Platform.OS === 'web' && user?.id === targetUserId ? {
-                onDragOver: handleDragOver,
-                onDragEnter: handleDragEnter,
-                onDragLeave: handleDragLeave,
-                onDrop: handleDrop,
-            } : {})}
         >
             <Header
                 title={selectMode ? (multiSelect ? `${selectedIds.size}${maxSelection ? '/' + maxSelection : ''} Selected` : 'Select a File') : (viewMode === 'photos' ? 'Photos' : 'File Management')}
@@ -2476,16 +2569,21 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             {/* Selection bar removed; actions are now in header */}
             {/* Global loadingMore bar removed; now inline in scroll areas */}
 
-            {/* Drag and Drop Overlay */}
+            {/* Drag and Drop Overlay - Enhanced */}
             {isDragging && Platform.OS === 'web' && (
                 <View style={styles.dragDropOverlay}>
-                    <View style={styles.dragDropContent}>
-                        <Ionicons name="cloud-upload" size={64} color={themeStyles.primaryColor} />
+                    <View style={[styles.dragDropContent, {
+                        backgroundColor: themeStyles.isDarkTheme ? 'rgba(30, 30, 30, 0.98)' : 'rgba(255, 255, 255, 0.98)',
+                        borderColor: themeStyles.primaryColor,
+                    }]}>
+                        <View style={[styles.dragDropIconContainer, { backgroundColor: `${themeStyles.primaryColor}15` }]}>
+                            <Ionicons name="cloud-upload" size={64} color={themeStyles.primaryColor} />
+                        </View>
                         <Text style={[styles.dragDropTitle, { color: themeStyles.primaryColor }]}>
                             Drop files to upload
                         </Text>
                         <Text style={[styles.dragDropSubtitle, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                            Release to upload{uploadProgress ? ` (${uploadProgress.current}/${uploadProgress.total})` : ' multiple files'}
+                            Release to upload multiple files
                         </Text>
                     </View>
                 </View>
@@ -2985,36 +3083,151 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
 
-    // Drag and Drop styles
+    // Drag and Drop styles - Enhanced
     dragDropOverlay: {
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.5)',
+        backgroundColor: 'rgba(0, 0, 0, 0.6)',
         justifyContent: 'center',
         alignItems: 'center',
         zIndex: 1000,
     },
     dragDropContent: {
         alignItems: 'center',
-        backgroundColor: 'rgba(255, 255, 255, 0.95)',
-        padding: 20,
-        borderRadius: 14,
-        borderWidth: 1,
-        borderColor: '#66AFFF',
+        padding: 32,
+        borderRadius: 20,
+        borderWidth: 3,
         borderStyle: 'dashed',
+        minWidth: 280,
+        shadowColor: '#000',
+        shadowOpacity: 0.3,
+        shadowRadius: 20,
+        shadowOffset: { width: 0, height: 10 },
+        elevation: 10,
+    },
+    dragDropIconContainer: {
+        padding: 24,
+        borderRadius: 50,
+        marginBottom: 16,
     },
     dragDropTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        marginTop: 12,
-        marginBottom: 6,
+        fontSize: 24,
+        fontWeight: '700',
+        fontFamily: fontFamilies.phuduBold,
+        marginBottom: 8,
     },
     dragDropSubtitle: {
         fontSize: 16,
-        textAlign: 'center',
+        fontWeight: '500',
+        fontFamily: fontFamilies.phuduMedium,
+    },
+    // Upload Preview Modal styles
+    uploadPreviewContainer: {
+        flex: 1,
+    },
+    uploadPreviewHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 16,
+        borderBottomWidth: 1,
+    },
+    uploadPreviewTitle: {
+        fontSize: 20,
+        fontWeight: '700',
+        fontFamily: fontFamilies.phuduBold,
+    },
+    uploadPreviewList: {
+        flex: 1,
+        padding: 16,
+    },
+    uploadPreviewItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        borderRadius: 12,
+        borderWidth: 1,
+        marginBottom: 12,
+        gap: 12,
+    },
+    uploadPreviewThumbnail: {
+        width: 60,
+        height: 60,
+        borderRadius: 8,
+    },
+    uploadPreviewIconContainer: {
+        width: 60,
+        height: 60,
+        borderRadius: 8,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    uploadPreviewInfo: {
+        flex: 1,
+        minWidth: 0,
+    },
+    uploadPreviewName: {
+        fontSize: 16,
+        fontWeight: '600',
+        fontFamily: fontFamilies.phuduSemiBold,
+        marginBottom: 4,
+    },
+    uploadPreviewMeta: {
+        fontSize: 13,
+        fontFamily: fontFamilies.phudu,
+    },
+    uploadPreviewRemove: {
+        padding: 4,
+    },
+    uploadPreviewFooter: {
+        padding: 16,
+        borderTopWidth: 1,
+    },
+    uploadPreviewStats: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        marginBottom: 16,
+    },
+    uploadPreviewStatsText: {
+        fontSize: 15,
+        fontWeight: '600',
+        fontFamily: fontFamilies.phuduSemiBold,
+    },
+    uploadPreviewActions: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    uploadPreviewCancelButton: {
+        flex: 1,
+        paddingVertical: 14,
+        borderRadius: 12,
+        borderWidth: 1,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    uploadPreviewCancelText: {
+        fontSize: 16,
+        fontWeight: '600',
+        fontFamily: fontFamilies.phuduSemiBold,
+    },
+    uploadPreviewConfirmButton: {
+        flex: 2,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 14,
+        borderRadius: 12,
+        gap: 8,
+    },
+    uploadPreviewConfirmText: {
+        color: '#FFFFFF',
+        fontSize: 16,
+        fontWeight: '600',
+        fontFamily: fontFamilies.phuduSemiBold,
     },
 
     // File Viewer styles
