@@ -5,7 +5,7 @@ import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs';
 import { promisify } from 'util';
-import { exec, spawn } from 'child_process';
+import { exec, execSync, spawn } from 'child_process';
 import { VariantConfig, VariantCommitRetryOptions } from '../types/variant.types';
 
 // Get FFmpeg and FFprobe paths - use static binaries if available, otherwise fallback to system
@@ -85,6 +85,13 @@ function getFfprobePath(): string {
           }
         } else {
           console.warn('[VariantService] ✗ ffprobe-static path does not exist:', binaryPath);
+          // Check if this is an unsupported architecture issue
+          const os = require('os');
+          const arch = os.arch();
+          const platform = os.platform();
+          if (platform === 'linux' && arch === 'arm64') {
+            console.warn('[VariantService] ⚠ ffprobe-static does not provide ARM64 Linux binaries. Only x64 and ia32 are supported.');
+          }
         }
       } else {
         console.warn('[VariantService] ✗ ffprobe-static did not provide a path');
@@ -97,9 +104,19 @@ function getFfprobePath(): string {
     console.error('[VariantService] Error stack:', error.stack);
   }
   
-  // Fallback to system ffprobe
-  console.warn('[VariantService] ⚠ Falling back to system ffprobe (may not be installed)');
-  return 'ffprobe';
+  // Fallback to system ffprobe - verify it exists first
+  const systemFfprobe = 'ffprobe';
+  try {
+    // Try to check if system ffprobe is available by checking PATH
+    execSync('which ffprobe', { stdio: 'ignore' });
+    console.log('[VariantService] ✓ Using system ffprobe');
+    return systemFfprobe;
+  } catch (e) {
+    console.warn('[VariantService] ⚠ System ffprobe not found in PATH');
+    console.warn('[VariantService] ⚠ Video metadata extraction may fail. Install ffprobe with: sudo apt-get install ffmpeg (or equivalent for your system)');
+    // Still return 'ffprobe' as fallback - spawn will handle the error gracefully
+    return systemFfprobe;
+  }
 }
 
 const ffmpegPath = getFfmpegPath();
