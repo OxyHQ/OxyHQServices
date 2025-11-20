@@ -31,10 +31,7 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       try {
         const params = { query, ...pagination };
         const searchParams = buildSearchParams(params);
-        const paramsObj: Record<string, string> = {};
-        searchParams.forEach((value, key) => {
-          paramsObj[key] = value;
-        });
+        const paramsObj = Object.fromEntries(searchParams.entries());
 
         const response = await this.makeRequest<SearchProfilesResponse | User[]>(
           'GET',
@@ -53,7 +50,8 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
             total: typedResponse.data.length,
             limit: pagination?.limit ?? typedResponse.data.length,
             offset: pagination?.offset ?? 0,
-            hasMore: false,
+            hasMore: typedResponse.data.length === (pagination?.limit ?? typedResponse.data.length) &&
+              (pagination?.limit ?? typedResponse.data.length) > 0,
           };
 
           return {
@@ -64,14 +62,15 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
 
         // Legacy API shape: returns raw User[]
         if (Array.isArray(response)) {
+          const fallbackLimit = pagination?.limit ?? response.length;
           const fallbackPagination: PaginationInfo = {
             total: response.length,
-            limit: pagination?.limit ?? response.length,
+            limit: fallbackLimit,
             offset: pagination?.offset ?? 0,
-            hasMore: false,
+            hasMore: fallbackLimit > 0 && response.length === fallbackLimit,
           };
 
-          return { data: response, pagination: fallbackPagination } as SearchProfilesResponse;
+          return { data: response, pagination: fallbackPagination };
         }
 
         // If response is unexpected, throw an error
