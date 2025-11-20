@@ -12,6 +12,7 @@ import type { BottomSheetController } from '../navigation/types';
 import type { RouteName } from '../navigation/routes';
 import { getLanguageMetadata, getLanguageName, getNativeLanguageName, normalizeLanguageCode } from '../../utils/languageUtils';
 import type { LanguageMetadata } from '../../utils/languageUtils';
+import type { UseFollowHook } from '../hooks/useFollow.types';
 
 // Define the context shape
 export interface OxyContextState {
@@ -58,6 +59,9 @@ export interface OxyContextState {
   // Methods to directly control the bottom sheet
   showBottomSheet?: (screenOrConfig?: RouteName | string | { screen: RouteName | string; props?: Record<string, any> }) => void;
   hideBottomSheet?: () => void;
+
+  // Legacy hook access (for backward compatibility)
+  useFollow?: UseFollowHook;
 }
 
 // Create the context with default values
@@ -134,6 +138,35 @@ const getStorageKeys = (prefix = 'oxy_session') => ({
   language: `${prefix}_language`, // Store the selected language
 });
 
+let cachedUseFollowHook: UseFollowHook | null = null;
+
+const loadUseFollowHook = (): UseFollowHook => {
+  if (cachedUseFollowHook) {
+    return cachedUseFollowHook;
+  }
+
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { useFollow } = require('../hooks/useFollow');
+    cachedUseFollowHook = useFollow as UseFollowHook;
+    return cachedUseFollowHook;
+  } catch (error) {
+    if (__DEV__) {
+      console.warn(
+        'useFollow hook is not available. Please import useFollow from @oxyhq/services directly.',
+        error
+      );
+    }
+
+    const fallback: UseFollowHook = () => {
+      throw new Error('useFollow hook is only available in the UI bundle. Import it from @oxyhq/services.');
+    };
+
+    cachedUseFollowHook = fallback;
+    return cachedUseFollowHook;
+  }
+};
+
 export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   children,
   oxyServices: providedOxyServices,
@@ -177,6 +210,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const [storage, setStorage] = useState<StorageInterface | null>(null);
   const [currentLanguage, setCurrentLanguage] = useState<string>('en-US');
+  const useFollowHook = useMemo(() => loadUseFollowHook(), []);
 
   // Storage keys (memoized to prevent infinite loops) - declared early for use in helpers
   const keys = useMemo(() => getStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
@@ -907,6 +941,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     bottomSheetRef,
     showBottomSheet,
     hideBottomSheet,
+    useFollow: useFollowHook,
   }), [
     user?.id, // Only depend on user ID, not the entire user object
     minimalUser?.id,
@@ -936,6 +971,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     bottomSheetRef,
     showBottomSheet,
     hideBottomSheet,
+    useFollowHook,
   ]);
 
   // Always render children - let the consuming app decide how to handle token loading state

@@ -719,6 +719,16 @@ npm install axios jwt-decode invariant
 
 **Note**: `react-native-url-polyfill` is already included as a dependency in this package.
 
+## 📚 Documentation
+
+Comprehensive documentation is available in the `/docs` directory:
+
+- **[Getting Started](./docs/GETTING_STARTED.md)** - Quick start guide for new developers
+- **[API Reference](./docs/API_REFERENCE.md)** - Complete API method documentation
+- **[Integration Guide](./docs/INTEGRATION_GUIDE.md)** - Platform-specific integration guides
+- **[Examples](./docs/EXAMPLES.md)** - Complete working code examples
+- **[Best Practices](./docs/BEST_PRACTICES.md)** - Production-ready patterns and tips
+
 ## 📚 Examples
 
 ### Complete React Native App
