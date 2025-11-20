@@ -64,7 +64,9 @@ import type {
   Notification, 
   AssetInitResponse, 
   AssetUrlResponse, 
-  AssetVariant 
+  AssetVariant,
+  BlockedUser,
+  RestrictedUser
 } from '../models/interfaces';
 import { normalizeLanguageCode, getLanguageMetadata, getLanguageName, getNativeLanguageName } from '../utils/languageUtils';
 import type { LanguageMetadata } from '../utils/languageUtils';
@@ -835,6 +837,168 @@ export class OxyServices {
       });
     } catch (error) {
       throw this.handleError(error);
+    }
+  }
+
+  // ============================================================================
+  // BLOCKED USERS METHODS
+  // ============================================================================
+
+  /**
+   * Get list of blocked users
+   * @returns Array of blocked users
+   */
+  async getBlockedUsers(): Promise<BlockedUser[]> {
+    try {
+      return await this.makeRequest<BlockedUser[]>('GET', '/api/privacy/blocked', undefined, {
+        cache: true,
+        cacheTTL: 1 * 60 * 1000, // 1 minute cache
+      });
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Block a user
+   * @param userId - The user ID to block
+   * @returns Success message
+   */
+  async blockUser(userId: string): Promise<{ message: string }> {
+    try {
+      if (!userId) {
+        throw new Error('User ID is required');
+      }
+      return await this.makeRequest<{ message: string }>('POST', `/api/privacy/blocked/${userId}`, undefined, {
+        cache: false,
+      });
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Unblock a user
+   * @param userId - The user ID to unblock
+   * @returns Success message
+   */
+  async unblockUser(userId: string): Promise<{ message: string }> {
+    try {
+      if (!userId) {
+        throw new Error('User ID is required');
+      }
+      return await this.makeRequest<{ message: string }>('DELETE', `/api/privacy/blocked/${userId}`, undefined, {
+        cache: false,
+      });
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Check if a user is blocked
+   * @param userId - The user ID to check
+   * @returns True if the user is blocked, false otherwise
+   */
+  async isUserBlocked(userId: string): Promise<boolean> {
+    try {
+      if (!userId) {
+        return false;
+      }
+      const blockedUsers = await this.getBlockedUsers();
+      return blockedUsers.some(block => {
+        const blockedId = typeof block.blockedId === 'string' 
+          ? block.blockedId 
+          : block.blockedId._id;
+        return blockedId === userId;
+      });
+    } catch (error) {
+      // If there's an error, assume not blocked to avoid breaking functionality
+      if (__DEV__) {
+        console.warn('Error checking if user is blocked:', error);
+      }
+      return false;
+    }
+  }
+
+  // ============================================================================
+  // RESTRICTED USERS METHODS
+  // ============================================================================
+
+  /**
+   * Get list of restricted users
+   * @returns Array of restricted users
+   */
+  async getRestrictedUsers(): Promise<RestrictedUser[]> {
+    try {
+      return await this.makeRequest<RestrictedUser[]>('GET', '/api/privacy/restricted', undefined, {
+        cache: true,
+        cacheTTL: 1 * 60 * 1000, // 1 minute cache
+      });
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Restrict a user (limit their interactions without fully blocking)
+   * @param userId - The user ID to restrict
+   * @returns Success message
+   */
+  async restrictUser(userId: string): Promise<{ message: string }> {
+    try {
+      if (!userId) {
+        throw new Error('User ID is required');
+      }
+      return await this.makeRequest<{ message: string }>('POST', `/api/privacy/restricted/${userId}`, undefined, {
+        cache: false,
+      });
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Unrestrict a user
+   * @param userId - The user ID to unrestrict
+   * @returns Success message
+   */
+  async unrestrictUser(userId: string): Promise<{ message: string }> {
+    try {
+      if (!userId) {
+        throw new Error('User ID is required');
+      }
+      return await this.makeRequest<{ message: string }>('DELETE', `/api/privacy/restricted/${userId}`, undefined, {
+        cache: false,
+      });
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+
+  /**
+   * Check if a user is restricted
+   * @param userId - The user ID to check
+   * @returns True if the user is restricted, false otherwise
+   */
+  async isUserRestricted(userId: string): Promise<boolean> {
+    try {
+      if (!userId) {
+        return false;
+      }
+      const restrictedUsers = await this.getRestrictedUsers();
+      return restrictedUsers.some(restrict => {
+        const restrictedId = typeof restrict.restrictedId === 'string' 
+          ? restrict.restrictedId 
+          : restrict.restrictedId._id;
+        return restrictedId === userId;
+      });
+    } catch (error) {
+      // If there's an error, assume not restricted to avoid breaking functionality
+      if (__DEV__) {
+        console.warn('Error checking if user is restricted:', error);
+      }
+      return false;
     }
   }
 

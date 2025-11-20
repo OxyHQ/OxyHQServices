@@ -90,6 +90,34 @@ export interface Transaction {
   // Add other transaction fields as needed
 }
 
+export interface BlockedUser {
+  _id?: string;
+  blockedId: string | {
+    _id: string;
+    username: string;
+    avatar?: string;
+  };
+  userId: string;
+  createdAt?: string;
+  blockedAt?: string;
+  username?: string;
+  avatar?: string;
+}
+
+export interface RestrictedUser {
+  _id?: string;
+  restrictedId: string | {
+    _id: string;
+    username: string;
+    avatar?: string;
+  };
+  userId: string;
+  createdAt?: string;
+  restrictedAt?: string;
+  username?: string;
+  avatar?: string;
+}
+
 export interface TransferFundsRequest {
   fromUserId: string;
   toUserId: string;

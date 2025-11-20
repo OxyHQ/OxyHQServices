@@ -439,55 +439,6 @@ router.delete(
 );
 
 /**
- * PUT /users/:userId
- * 
- * Update user profile by ID (requires ownership)
- * 
- * @param {string} userId - User ID
- * @body {ProfileUpdateInput} Profile updates
- * @returns {User} Updated user object
- * 
- * @deprecated Use PUT /users/me instead
- */
-router.put(
-  '/:userId',
-  authMiddleware,
-  validateObjectId,
-  requireOwnership,
-  asyncHandler(async (req: AuthRequest, res: Response) => {
-    const { userId } = req.params;
-
-    if (!req.body || typeof req.body !== 'object') {
-      throw new BadRequestError('Invalid request body');
-    }
-
-    logger.warn('PUT /users/:userId used (deprecated)', {
-      userId,
-      suggestion: 'Use PUT /users/me instead',
-    });
-
-    try {
-      const updatedUser = await userService.updateUserProfile(userId, req.body);
-
-      sendSuccess(res, updatedUser);
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.message === 'Email already exists') {
-          throw new ConflictError('Email already exists');
-        }
-        if (error.message === 'Username already exists') {
-          throw new ConflictError('Username already exists');
-        }
-        if (error.message === 'User not found') {
-          throw new NotFoundError('User not found');
-        }
-      }
-      throw error;
-    }
-  })
-);
-
-/**
  * PUT /users/:userId/privacy
  * 
  * Update user privacy settings (requires ownership)

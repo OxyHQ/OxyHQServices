@@ -1,6 +1,5 @@
 import type React from 'react';
 import { createContext, useContext, useEffect, useCallback, useMemo, useRef, useState, type ReactNode } from 'react';
-import type { UseFollowHook } from '../hooks/useFollow.types';
 import { OxyServices } from '../../core';
 import type { User, ApiError } from '../../models/interfaces';
 import type { SessionLoginResponse, ClientSession, MinimalUserData } from '../../models/session';
@@ -15,9 +14,6 @@ import { getLanguageMetadata, getLanguageName, getNativeLanguageName, normalizeL
 import type { LanguageMetadata } from '../../utils/languageUtils';
 
 // Define the context shape
-// NOTE: We intentionally avoid importing useFollow here to prevent a require cycle.
-// If consumers relied on `const { useFollow } = useOxy()`, we provide a lazy proxy below.
-
 export interface OxyContextState {
   // Authentication state
   user: User | null; // Current active user (loaded from server)
@@ -62,33 +58,7 @@ export interface OxyContextState {
   // Methods to directly control the bottom sheet
   showBottomSheet?: (screenOrConfig?: RouteName | string | { screen: RouteName | string; props?: Record<string, any> }) => void;
   hideBottomSheet?: () => void;
-
-  /**
-   * (Deprecated) useFollow hook access via context. Prefer: import { useFollow } from '@oxyhq/services';
-   * Kept for backward compatibility; implemented as a lazy dynamic require to avoid circular dependency.
-   */
-  useFollow: UseFollowHook; // Back-compat; prefer direct import
 }
-
-// Empty follow hook fallback
-const createEmptyFollowHook = (): UseFollowHook => {
-  const emptyResult = {
-    isFollowing: false,
-    isLoading: false,
-    error: null,
-    toggleFollow: async () => { },
-    setFollowStatus: () => { },
-    fetchStatus: async () => { },
-    clearError: () => { },
-    followerCount: null,
-    followingCount: null,
-    isLoadingCounts: false,
-    fetchUserCounts: async () => { },
-    setFollowerCount: () => { },
-    setFollowingCount: () => { },
-  };
-  return () => emptyResult;
-};
 
 // Create the context with default values
 const OxyContext = createContext<OxyContextState | null>(null);
@@ -903,29 +873,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }, [logout]),
   });
 
-  // Context value - optimized to prevent unnecessary re-renders
-  // Lazy proxy to load the hook only when accessed, breaking the static import cycle.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars
-  const useFollowProxy: UseFollowHook = (userId?: string | string[]) => {
-    try {
-      // Dynamically require to avoid top-level cycle
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const mod = require('../hooks/useFollow');
-      if (mod && typeof mod.useFollow === 'function') {
-        return mod.useFollow(userId);
-      }
-      if (__DEV__) {
-        console.warn('useFollow module did not export a function as expected');
-      }
-      return createEmptyFollowHook()(userId);
-    } catch (e) {
-      if (__DEV__) {
-        console.warn('Failed to dynamically load useFollow hook:', e);
-      }
-      return createEmptyFollowHook()(userId);
-    }
-  };
-
   // Compute language metadata from currentLanguage
   const languageMetadata = useMemo(() => getLanguageMetadata(currentLanguage), [currentLanguage]);
   const languageName = useMemo(() => getLanguageName(currentLanguage), [currentLanguage]);
@@ -960,7 +907,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     bottomSheetRef,
     showBottomSheet,
     hideBottomSheet,
-    useFollow: useFollowProxy,
   }), [
     user?.id, // Only depend on user ID, not the entire user object
     minimalUser?.id,

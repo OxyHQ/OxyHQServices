@@ -71,20 +71,6 @@ export interface ErrorResponse {
 }
 
 /**
- * Validate required parameters
- * @param params Object to validate
- * @param requiredKeys Array of required keys
- * @throws Error if any required key is missing
- */
-export function validateRequiredParams(params: Record<string, any>, requiredKeys: string[]): void {
-  const missing = requiredKeys.filter(key => params[key] === undefined || params[key] === null);
-  
-  if (missing.length > 0) {
-    throw new Error(`Missing required parameters: ${missing.join(', ')}`);
-  }
-}
-
-/**
  * Safe JSON parsing with error handling
  * @param data Data to parse
  * @param fallback Fallback value if parsing fails

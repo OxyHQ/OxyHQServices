@@ -65,6 +65,10 @@ export type {
   DeviceSessionsResponse,
   DeviceSessionLogoutResponse,
   UpdateDeviceNameResponse,
+  // Blocked users
+  BlockedUser,
+  // Restricted users
+  RestrictedUser,
   // Central Asset Service types
   FileVisibility,
   AssetLink,

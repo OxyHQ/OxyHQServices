@@ -6,12 +6,14 @@ import {
     ScrollView,
     Switch,
     ActivityIndicator,
+    TouchableOpacity,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { toast } from '../../lib/sonner';
-import { Header, Section } from '../components';
+import { Header, Section, Avatar } from '../components';
 import { useI18n } from '../hooks/useI18n';
+import type { BlockedUser, RestrictedUser } from '../../models/interfaces';
 
 interface PrivacySettings {
     isPrivateAccount: boolean;
@@ -67,8 +69,11 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     });
     const [isLoading, setIsLoading] = useState(true);
     const [isSaving, setIsSaving] = useState(false);
+    const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
+    const [restrictedUsers, setRestrictedUsers] = useState<RestrictedUser[]>([]);
+    const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
-    // Load settings
+    // Load settings and users
     useEffect(() => {
         const loadSettings = async () => {
             try {
@@ -90,6 +95,28 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         loadSettings();
     }, [user?.id, oxyServices, t]);
 
+    // Load blocked and restricted users
+    useEffect(() => {
+        const loadUsers = async () => {
+            if (!oxyServices) return;
+            try {
+                setIsLoadingUsers(true);
+                const [blocked, restricted] = await Promise.all([
+                    oxyServices.getBlockedUsers(),
+                    oxyServices.getRestrictedUsers(),
+                ]);
+                setBlockedUsers(blocked);
+                setRestrictedUsers(restricted);
+            } catch (error) {
+                console.error('Failed to load blocked/restricted users:', error);
+            } finally {
+                setIsLoadingUsers(false);
+            }
+        };
+
+        loadUsers();
+    }, [oxyServices]);
+
     const updateSetting = useCallback(async (key: keyof PrivacySettings, value: boolean) => {
         try {
             setIsSaving(true);
@@ -109,6 +136,36 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
             setIsSaving(false);
         }
     }, [settings, user?.id, oxyServices, t]);
+
+    const handleUnblock = useCallback(async (userId: string) => {
+        if (!oxyServices) return;
+        try {
+            await oxyServices.unblockUser(userId);
+            setBlockedUsers(prev => prev.filter(u => {
+                const id = typeof u.blockedId === 'string' ? u.blockedId : u.blockedId._id;
+                return id !== userId;
+            }));
+            toast.success(t('privacySettings.userUnblocked') || 'User unblocked');
+        } catch (error) {
+            console.error('Failed to unblock user:', error);
+            toast.error(t('privacySettings.unblockError') || 'Failed to unblock user');
+        }
+    }, [oxyServices, t]);
+
+    const handleUnrestrict = useCallback(async (userId: string) => {
+        if (!oxyServices) return;
+        try {
+            await oxyServices.unrestrictUser(userId);
+            setRestrictedUsers(prev => prev.filter(u => {
+                const id = typeof u.restrictedId === 'string' ? u.restrictedId : u.restrictedId._id;
+                return id !== userId;
+            }));
+            toast.success(t('privacySettings.userUnrestricted') || 'User unrestricted');
+        } catch (error) {
+            console.error('Failed to unrestrict user:', error);
+            toast.error(t('privacySettings.unrestrictError') || 'Failed to unrestrict user');
+        }
+    }, [oxyServices, t]);
 
     const themeStyles = useMemo(() => {
         const isDarkTheme = theme === 'dark';
@@ -288,6 +345,115 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         onValueChange={(value) => updateSetting('blockScreenshots', value)}
                     />
                 </Section>
+
+                {/* Blocked Users */}
+                <Section title={t('privacySettings.sections.blockedUsers') || 'BLOCKED USERS'} theme={theme}>
+                    {isLoadingUsers ? (
+                        <View style={styles.loadingUsersContainer}>
+                            <ActivityIndicator size="small" color={themeStyles.textColor} />
+                        </View>
+                    ) : blockedUsers.length === 0 ? (
+                        <View style={styles.emptyContainer}>
+                            <Text style={[styles.emptyText, { color: themeStyles.mutedTextColor }]}>
+                                {t('privacySettings.noBlockedUsers') || 'No blocked users'}
+                            </Text>
+                        </View>
+                    ) : (
+                        blockedUsers.map((blocked) => {
+                            const userId = typeof blocked.blockedId === 'string' 
+                                ? blocked.blockedId 
+                                : blocked.blockedId._id;
+                            const username = typeof blocked.blockedId === 'string'
+                                ? blocked.username || 'Unknown'
+                                : blocked.blockedId.username || 'Unknown';
+                            const avatar = typeof blocked.blockedId === 'string'
+                                ? blocked.avatar
+                                : blocked.blockedId.avatar;
+
+                            return (
+                                <View key={userId} style={[styles.userRow, { borderBottomColor: themeStyles.borderColor }]}>
+                                    <View style={styles.userInfo}>
+                                        <Avatar
+                                            userId={userId}
+                                            username={username}
+                                            avatar={avatar}
+                                            size={40}
+                                        />
+                                        <View style={styles.userDetails}>
+                                            <Text style={[styles.username, { color: themeStyles.textColor }]}>
+                                                {username}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                    <TouchableOpacity
+                                        onPress={() => handleUnblock(userId)}
+                                        style={[styles.actionButton, { backgroundColor: themeStyles.secondaryBackgroundColor }]}
+                                    >
+                                        <Text style={[styles.actionButtonText, { color: '#FF3B30' }]}>
+                                            {t('privacySettings.unblock') || 'Unblock'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+                            );
+                        })
+                    )}
+                </Section>
+
+                {/* Restricted Users */}
+                <Section title={t('privacySettings.sections.restrictedUsers') || 'RESTRICTED USERS'} theme={theme}>
+                    {isLoadingUsers ? (
+                        <View style={styles.loadingUsersContainer}>
+                            <ActivityIndicator size="small" color={themeStyles.textColor} />
+                        </View>
+                    ) : restrictedUsers.length === 0 ? (
+                        <View style={styles.emptyContainer}>
+                            <Text style={[styles.emptyText, { color: themeStyles.mutedTextColor }]}>
+                                {t('privacySettings.noRestrictedUsers') || 'No restricted users'}
+                            </Text>
+                        </View>
+                    ) : (
+                        restrictedUsers.map((restricted) => {
+                            const userId = typeof restricted.restrictedId === 'string' 
+                                ? restricted.restrictedId 
+                                : restricted.restrictedId._id;
+                            const username = typeof restricted.restrictedId === 'string'
+                                ? restricted.username || 'Unknown'
+                                : restricted.restrictedId.username || 'Unknown';
+                            const avatar = typeof restricted.restrictedId === 'string'
+                                ? restricted.avatar
+                                : restricted.restrictedId.avatar;
+
+                            return (
+                                <View key={userId} style={[styles.userRow, { borderBottomColor: themeStyles.borderColor }]}>
+                                    <View style={styles.userInfo}>
+                                        <Avatar
+                                            userId={userId}
+                                            username={username}
+                                            avatar={avatar}
+                                            size={40}
+                                        />
+                                        <View style={styles.userDetails}>
+                                            <Text style={[styles.username, { color: themeStyles.textColor }]}>
+                                                {username}
+                                            </Text>
+                                            <Text style={[styles.userSubtext, { color: themeStyles.mutedTextColor }]}>
+                                                {t('privacySettings.restrictedDescription') || 'Limited interactions'}
+                                            </Text>
+                                        </View>
+                                    </View>
+                                    <TouchableOpacity
+                                        onPress={() => handleUnrestrict(userId)}
+                                        style={[styles.actionButton, { backgroundColor: themeStyles.secondaryBackgroundColor }]}
+                                    >
+                                        <Text style={[styles.actionButtonText, { color: '#007AFF' }]}>
+                                            {t('privacySettings.unrestrict') || 'Unrestrict'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+                            );
+                        })
+                    )}
+                </Section>
             </ScrollView>
         </View>
     );
@@ -325,6 +491,51 @@ const styles = StyleSheet.create({
     settingDescription: {
         fontSize: 14,
         opacity: 0.7,
+    },
+    loadingUsersContainer: {
+        paddingVertical: 20,
+        alignItems: 'center',
+    },
+    emptyContainer: {
+        paddingVertical: 20,
+        alignItems: 'center',
+    },
+    emptyText: {
+        fontSize: 14,
+    },
+    userRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+    },
+    userInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flex: 1,
+        marginRight: 12,
+    },
+    userDetails: {
+        marginLeft: 12,
+        flex: 1,
+    },
+    username: {
+        fontSize: 16,
+        fontWeight: '500',
+        marginBottom: 2,
+    },
+    userSubtext: {
+        fontSize: 13,
+    },
+    actionButton: {
+        paddingHorizontal: 16,
+        paddingVertical: 8,
+        borderRadius: 8,
+    },
+    actionButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
     },
 });
 

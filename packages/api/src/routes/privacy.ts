@@ -1,6 +1,7 @@
 import express, { Request, Response, NextFunction, RequestHandler } from 'express';
 import User from "../models/User";
 import Block from "../models/Block";
+import Restricted from "../models/Restricted";
 import { authMiddleware } from '../middleware/auth';
 import { z } from "zod";
 import { logger } from '../utils/logger';
@@ -167,10 +168,94 @@ const unblockUser = async (req: Request, res: Response) => {
   }
 };
 
+// Get restricted users
+const getRestrictedUsers = async (req: Request, res: Response) => {
+  try {
+    const authUser = (req as AuthenticatedRequest).user;
+    const restricted = await Restricted.find({ userId: authUser?.id })
+      .populate('restrictedId', 'username avatar')
+      .lean();
+    res.json(restricted);
+  } catch (error) {
+    logger.error('Error fetching restricted users:', error);
+    res.status(500).json({ 
+      message: "Error fetching restricted users",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+};
+
+// Restrict a user
+const restrictUser = async (req: Request, res: Response) => {
+  try {
+    const { targetId } = req.params;
+    const authUser = (req as AuthenticatedRequest).user;
+
+    if (!authUser?.id || authUser.id === targetId) {
+      return res.status(400).json({ message: "Invalid restrict request" });
+    }
+
+    const existingRestrict = await Restricted.findOne({
+      userId: authUser.id,
+      restrictedId: targetId
+    });
+
+    if (existingRestrict) {
+      return res.status(409).json({ message: "User already restricted" });
+    }
+
+    const restricted = new Restricted({
+      userId: authUser.id,
+      restrictedId: targetId
+    });
+    await restricted.save();
+
+    res.json({ message: "User restricted successfully" });
+  } catch (error) {
+    logger.error('Error restricting user:', error);
+    res.status(500).json({ 
+      message: "Error restricting user",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+};
+
+// Unrestrict a user
+const unrestrictUser = async (req: Request, res: Response) => {
+  try {
+    const { targetId } = req.params;
+    const authUser = (req as AuthenticatedRequest).user;
+
+    if (!authUser?.id) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    const result = await Restricted.deleteOne({
+      userId: authUser.id,
+      restrictedId: targetId
+    });
+
+    if (result.deletedCount === 0) {
+      return res.status(404).json({ message: "Restriction not found" });
+    }
+
+    res.json({ message: "User unrestricted successfully" });
+  } catch (error) {
+    logger.error('Error unrestricting user:', error);
+    res.status(500).json({ 
+      message: "Error unrestricting user",
+      error: error instanceof Error ? error.message : "Unknown error"
+    });
+  }
+};
+
 router.get("/:id/privacy", getPrivacySettings);
 router.patch("/:id/privacy", updatePrivacySettings);
 router.get("/blocked", getBlockedUsers);
 router.post("/blocked/:targetId", blockUser);
 router.delete("/blocked/:targetId", unblockUser);
+router.get("/restricted", getRestrictedUsers);
+router.post("/restricted/:targetId", restrictUser);
+router.delete("/restricted/:targetId", unrestrictUser);
 
 export default router;

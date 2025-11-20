@@ -80,7 +80,6 @@ export interface OxyProviderProps {
   /**
    * @internal
    * Reference to the bottom sheet component (for internal use only)
-   * @deprecated External bottom sheet ref is no longer required as OxyProvider handles the bottom sheet internally
    * @hidden
    */
   bottomSheetRef?: React.RefObject<BottomSheetController | null>;
