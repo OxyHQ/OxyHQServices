@@ -60,6 +60,21 @@ const user = await oxyServices.getUserById('user123');
 const profile = await oxyServices.getProfileByUsername('johndoe');
 ```
 
+### Search Profiles
+
+```typescript
+const { data, pagination } = await oxyServices.searchProfiles('john', {
+  limit: 10,
+  offset: 0,
+});
+
+data.forEach((profile) => {
+  console.log(profile.username, profile.stats?.followers);
+});
+
+console.log('Has more?', pagination.hasMore);
+```
+
 ### Update Profile
 
 ```typescript

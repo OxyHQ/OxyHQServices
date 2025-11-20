@@ -157,6 +157,31 @@ const profile = await oxyServices.getProfileByUsername('johndoe');
 
 ---
 
+### `searchProfiles(query, pagination?)`
+
+Search for user profiles with pagination support.
+
+```typescript
+const { data, pagination } = await oxyServices.searchProfiles('john', {
+  limit: 20,
+  offset: 0,
+});
+
+data.forEach(profile => {
+  console.log(profile.username, profile.stats?.followers);
+});
+```
+
+**Parameters:**
+- `query` (string): Search term (username, name, bio, etc.)
+- `pagination` (object, optional):
+  - `limit` (number): Number of results to return
+  - `offset` (number): Offset for pagination
+
+**Returns:** `Promise<{ data: User[]; pagination: { total: number; limit: number; offset: number; hasMore: boolean } }>`
+
+---
+
 ### `updateProfile(updates)`
 
 Update the current user's profile.

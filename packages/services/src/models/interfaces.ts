@@ -141,6 +141,18 @@ export interface TransactionResponse {
   transaction: Transaction;
 }
 
+export interface PaginationInfo {
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
+export interface SearchProfilesResponse {
+  data: User[];
+  pagination: PaginationInfo;
+}
+
 export interface KarmaRule {
   id: string;
   description: string;

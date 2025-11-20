@@ -1,7 +1,7 @@
 /**
  * User Management Methods Mixin
  */
-import type { User, Notification } from '../../models/interfaces';
+import type { User, Notification, SearchProfilesResponse, PaginationInfo } from '../../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { buildSearchParams, buildPaginationParams, type PaginationParams } from '../../utils/apiUtils';
 
@@ -27,18 +27,55 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     /**
      * Search user profiles
      */
-    async searchProfiles(query: string, pagination?: PaginationParams): Promise<User[]> {
+    async searchProfiles(query: string, pagination?: PaginationParams): Promise<SearchProfilesResponse> {
       try {
         const params = { query, ...pagination };
         const searchParams = buildSearchParams(params);
-        const paramsObj: any = {};
+        const paramsObj: Record<string, string> = {};
         searchParams.forEach((value, key) => {
           paramsObj[key] = value;
         });
-        return await this.makeRequest<User[]>('GET', '/api/profiles/search', paramsObj, {
-          cache: true,
-          cacheTTL: 2 * 60 * 1000, // 2 minutes cache
-        });
+
+        const response = await this.makeRequest<SearchProfilesResponse | User[]>(
+          'GET',
+          '/api/profiles/search',
+          paramsObj,
+          {
+            cache: true,
+            cacheTTL: 2 * 60 * 1000, // 2 minutes cache
+          }
+        );
+
+        // New API shape: { data: User[], pagination: {...} }
+        if ((response as SearchProfilesResponse)?.data && Array.isArray((response as SearchProfilesResponse).data)) {
+          const typedResponse = response as SearchProfilesResponse;
+          const paginationInfo: PaginationInfo = typedResponse.pagination ?? {
+            total: typedResponse.data.length,
+            limit: pagination?.limit ?? typedResponse.data.length,
+            offset: pagination?.offset ?? 0,
+            hasMore: false,
+          };
+
+          return {
+            data: typedResponse.data,
+            pagination: paginationInfo,
+          };
+        }
+
+        // Legacy API shape: returns raw User[]
+        if (Array.isArray(response)) {
+          const fallbackPagination: PaginationInfo = {
+            total: response.length,
+            limit: pagination?.limit ?? response.length,
+            offset: pagination?.offset ?? 0,
+            hasMore: false,
+          };
+
+          return { data: response, pagination: fallbackPagination } as SearchProfilesResponse;
+        }
+
+        // If response is unexpected, throw an error
+        throw new Error('Unexpected search response format');
       } catch (error) {
         throw this.handleError(error);
       }
