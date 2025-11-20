@@ -1,0 +1,311 @@
+/**
+ * OxyServices Base Class
+ * 
+ * Contains core infrastructure, HTTP client, request management, and error handling
+ */
+import { jwtDecode } from 'jwt-decode';
+import type { OxyConfig as OxyConfigBase, ApiError, User } from '../models/interfaces';
+import { handleHttpError } from '../utils/errorUtils';
+import { HttpClient } from './HttpClient';
+import { RequestManager, type RequestOptions } from './RequestManager';
+import { OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices.errors';
+
+export interface OxyConfig extends OxyConfigBase {
+  cloudURL?: string;
+}
+
+interface JwtPayload {
+  exp?: number;
+  userId?: string;
+  id?: string;
+  sessionId?: string;
+  [key: string]: any;
+}
+
+/**
+ * Base class for OxyServices with core infrastructure
+ */
+export class OxyServicesBase {
+  public httpClient: HttpClient;
+  public requestManager: RequestManager;
+  public cloudURL: string;
+  public config: OxyConfig;
+
+  constructor(...args: any[]) {
+    const config = args[0] as OxyConfig;
+    if (!config || typeof config !== 'object') {
+      throw new Error('OxyConfig is required');
+    }
+    this.config = config;
+    this.cloudURL = config.cloudURL || 'https://cloud.oxy.so';
+
+    // Initialize HTTP client (handles authentication and interceptors)
+    this.httpClient = new HttpClient(config);
+
+    // Initialize request manager (handles caching, deduplication, queuing, retry)
+    this.requestManager = new RequestManager(this.httpClient, config);
+  }
+
+  // Test-only utility to reset global tokens between jest tests
+  static __resetTokensForTests(): void {
+    HttpClient.__resetTokensForTests();
+  }
+
+  /**
+   * Make a request with all performance optimizations
+   * This is the main method for all API calls - ensures authentication and performance features
+   */
+  public async makeRequest<T>(
+    method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    url: string,
+    data?: any,
+    options: RequestOptions = {}
+  ): Promise<T> {
+    return this.requestManager.request<T>(method, url, data, options);
+  }
+
+  // ============================================================================
+  // CORE METHODS (HTTP Client, Token Management, Error Handling)
+  // ============================================================================
+
+  /**
+   * Get the configured Oxy API base URL
+   */
+  public getBaseURL(): string {
+    return this.httpClient.getBaseURL();
+  }
+
+  /**
+   * Get the HTTP client instance
+   * Useful for advanced use cases where direct access to the HTTP client is needed
+   */
+  public getClient(): HttpClient {
+    return this.httpClient;
+  }
+
+  /**
+   * Get performance metrics
+   */
+  public getMetrics() {
+    return this.requestManager.getMetrics();
+  }
+
+  /**
+   * Clear request cache
+   */
+  public clearCache(): void {
+    this.requestManager.clearCache();
+  }
+
+  /**
+   * Clear specific cache entry
+   */
+  public clearCacheEntry(key: string): void {
+    this.requestManager.clearCacheEntry(key);
+  }
+
+  /**
+   * Get cache statistics
+   */
+  public getCacheStats() {
+    return this.requestManager.getCacheStats();
+  }
+
+  /**
+   * Get the configured Oxy Cloud (file storage/CDN) URL
+   */
+  public getCloudURL(): string {
+    return this.cloudURL;
+  }
+
+  /**
+   * Set authentication tokens
+   */
+  public setTokens(accessToken: string, refreshToken = ''): void {
+    this.httpClient.setTokens(accessToken, refreshToken);
+  }
+
+  /**
+   * Clear stored authentication tokens
+   */
+  public clearTokens(): void {
+    this.httpClient.clearTokens();
+  }
+
+  /**
+   * Get the current user ID from the access token
+   */
+  public getCurrentUserId(): string | null {
+    const accessToken = this.httpClient.getAccessToken();
+    if (!accessToken) {
+      return null;
+    }
+    
+    try {
+      const decoded = jwtDecode<JwtPayload>(accessToken);
+      return decoded.userId || decoded.id || null;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  /**
+   * Check if the client has a valid access token (public method)
+   */
+  public hasValidToken(): boolean {
+    return this.httpClient.hasAccessToken();
+  }
+
+  /**
+   * Get the raw access token (for constructing anchor URLs when needed)
+   */
+  public getAccessToken(): string | null {
+    return this.httpClient.getAccessToken();
+  }
+
+  /**
+   * Wait for authentication to be ready (public method)
+   * Useful for apps that want to ensure authentication is complete before proceeding
+   */
+  public async waitForAuth(timeoutMs = 5000): Promise<boolean> {
+    return this.waitForAuthentication(timeoutMs);
+  }
+
+  /**
+   * Wait for authentication to be ready with timeout
+   */
+  public async waitForAuthentication(timeoutMs = 5000): Promise<boolean> {
+    const startTime = Date.now();
+    const checkInterval = 100; // Check every 100ms
+
+    while (Date.now() - startTime < timeoutMs) {
+      if (this.httpClient.hasAccessToken()) {
+        return true;
+      }
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
+    
+    return false;
+  }
+
+  /**
+   * Check if the client has a valid access token
+   */
+  public hasAccessToken(): boolean {
+    return this.httpClient.hasAccessToken();
+  }
+
+  /**
+   * Execute a function with automatic authentication retry logic
+   * This handles the common case where API calls are made before authentication completes
+   */
+  public async withAuthRetry<T>(
+    operation: () => Promise<T>, 
+    operationName: string,
+    options: {
+      maxRetries?: number;
+      retryDelay?: number;
+      authTimeoutMs?: number;
+    } = {}
+  ): Promise<T> {
+    const { 
+      maxRetries = 2, 
+      retryDelay = 1000,
+      authTimeoutMs = 5000 
+    } = options;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        // First attempt: check if we have a token
+        if (!this.httpClient.hasAccessToken()) {
+          if (attempt === 0) {
+            // On first attempt, wait briefly for authentication to complete
+            const authReady = await this.waitForAuthentication(authTimeoutMs);
+            
+            if (!authReady) {
+              throw new OxyAuthenticationTimeoutError(operationName, authTimeoutMs);
+            }
+          } else {
+            // On retry attempts, fail immediately if no token
+            throw new OxyAuthenticationError(
+              `Authentication required: ${operationName} requires a valid access token.`,
+              'AUTH_REQUIRED'
+            );
+          }
+        }
+
+        // Execute the operation
+        return await operation();
+
+      } catch (error: any) {
+        const isLastAttempt = attempt === maxRetries;
+        const isAuthError = error?.response?.status === 401 || 
+                           error?.code === 'MISSING_TOKEN' ||
+                           error?.message?.includes('Authentication') ||
+                           error instanceof OxyAuthenticationError;
+
+        if (isAuthError && !isLastAttempt && !(error instanceof OxyAuthenticationTimeoutError)) {
+          await new Promise(resolve => setTimeout(resolve, retryDelay));
+          continue;
+        }
+
+        // If it's not an auth error, or it's the last attempt, throw the error
+        if (error instanceof OxyAuthenticationError) {
+          throw error;
+        }
+        throw this.handleError(error);
+      }
+    }
+
+    // This should never be reached, but TypeScript requires it
+    throw new OxyAuthenticationError(`${operationName} failed after ${maxRetries + 1} attempts`);
+  }
+
+  /**
+   * Validate the current access token with the server
+   */
+  async validate(): Promise<boolean> {
+    if (!this.hasAccessToken()) {
+      return false;
+    }
+
+    try {
+      const res = await this.makeRequest<{ valid: boolean }>('GET', '/api/auth/validate', undefined, {
+        cache: false,
+        retry: false,
+      });
+      return res.valid === true;
+    } catch (error) {
+      return false;
+    }
+  }
+
+  /**
+   * Centralized error handling
+   */
+  public handleError(error: any): Error {
+    const api = handleHttpError(error);
+    const err = new Error(api.message) as Error & { code?: string; status?: number; details?: Record<string, unknown> };
+    err.code = api.code;
+    err.status = api.status;
+    err.details = api.details as any;
+    return err;
+  }
+
+  /**
+   * Health check endpoint
+   */
+  async healthCheck(): Promise<{ 
+    status: string; 
+    users?: number; 
+    timestamp?: string; 
+    [key: string]: any 
+  }> {
+    try {
+      return await this.makeRequest('GET', '/health', undefined, { cache: false });
+    } catch (error) {
+      throw this.handleError(error);
+    }
+  }
+}
+

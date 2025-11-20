@@ -167,6 +167,83 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         }
     }, [oxyServices, t]);
 
+    // Helper to extract user info from blocked/restricted objects
+    const extractUserInfo = useCallback((
+        item: BlockedUser | RestrictedUser,
+        idField: 'blockedId' | 'restrictedId'
+    ) => {
+        let userIdField: string | { _id: string; username?: string; avatar?: string };
+        let username: string;
+        let avatar: string | undefined;
+
+        if (idField === 'blockedId' && 'blockedId' in item) {
+            userIdField = item.blockedId;
+            username = typeof item.blockedId === 'string'
+                ? (item.username || 'Unknown')
+                : (item.blockedId.username || 'Unknown');
+            avatar = typeof item.blockedId === 'string' ? item.avatar : item.blockedId.avatar;
+        } else if (idField === 'restrictedId' && 'restrictedId' in item) {
+            userIdField = item.restrictedId;
+            username = typeof item.restrictedId === 'string'
+                ? (item.username || 'Unknown')
+                : (item.restrictedId.username || 'Unknown');
+            avatar = typeof item.restrictedId === 'string' ? item.avatar : item.restrictedId.avatar;
+        } else {
+            // Fallback (should not happen)
+            return { userId: '', username: 'Unknown', avatar: undefined };
+        }
+
+        const userId = typeof userIdField === 'string' ? userIdField : userIdField._id;
+        return { userId, username, avatar };
+    }, []);
+
+    // Reusable user list item component
+    const UserListItem: React.FC<{
+        item: BlockedUser | RestrictedUser;
+        idField: 'blockedId' | 'restrictedId';
+        onAction: (userId: string) => void;
+        actionLabel: string;
+        actionColor: string;
+        subtitle?: string;
+    }> = ({ item, idField, onAction, actionLabel, actionColor, subtitle }) => {
+        const { userId, username, avatar } = extractUserInfo(item, idField);
+        // Convert avatar file ID to URI if needed
+        const avatarUri = avatar && oxyServices 
+            ? oxyServices.getFileDownloadUrl(avatar, 'thumb') 
+            : undefined;
+        
+        return (
+            <View style={[styles.userRow, { borderBottomColor: themeStyles.borderColor }]}>
+                <View style={styles.userInfo}>
+                    <Avatar
+                        uri={avatarUri}
+                        name={username}
+                        size={40}
+                        theme={theme}
+                    />
+                    <View style={styles.userDetails}>
+                        <Text style={[styles.username, { color: themeStyles.textColor }]}>
+                            {username}
+                        </Text>
+                        {subtitle && (
+                            <Text style={[styles.userSubtext, { color: themeStyles.mutedTextColor }]}>
+                                {subtitle}
+                            </Text>
+                        )}
+                    </View>
+                </View>
+                <TouchableOpacity
+                    onPress={() => onAction(userId)}
+                    style={[styles.actionButton, { backgroundColor: themeStyles.secondaryBackgroundColor }]}
+                >
+                    <Text style={[styles.actionButtonText, { color: actionColor }]}>
+                        {actionLabel}
+                    </Text>
+                </TouchableOpacity>
+            </View>
+        );
+    };
+
     const themeStyles = useMemo(() => {
         const isDarkTheme = theme === 'dark';
         return {
@@ -360,40 +437,16 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         </View>
                     ) : (
                         blockedUsers.map((blocked) => {
-                            const userId = typeof blocked.blockedId === 'string' 
-                                ? blocked.blockedId 
-                                : blocked.blockedId._id;
-                            const username = typeof blocked.blockedId === 'string'
-                                ? blocked.username || 'Unknown'
-                                : blocked.blockedId.username || 'Unknown';
-                            const avatar = typeof blocked.blockedId === 'string'
-                                ? blocked.avatar
-                                : blocked.blockedId.avatar;
-
+                            const { userId } = extractUserInfo(blocked, 'blockedId');
                             return (
-                                <View key={userId} style={[styles.userRow, { borderBottomColor: themeStyles.borderColor }]}>
-                                    <View style={styles.userInfo}>
-                                        <Avatar
-                                            userId={userId}
-                                            username={username}
-                                            avatar={avatar}
-                                            size={40}
-                                        />
-                                        <View style={styles.userDetails}>
-                                            <Text style={[styles.username, { color: themeStyles.textColor }]}>
-                                                {username}
-                                            </Text>
-                                        </View>
-                                    </View>
-                                    <TouchableOpacity
-                                        onPress={() => handleUnblock(userId)}
-                                        style={[styles.actionButton, { backgroundColor: themeStyles.secondaryBackgroundColor }]}
-                                    >
-                                        <Text style={[styles.actionButtonText, { color: '#FF3B30' }]}>
-                                            {t('privacySettings.unblock') || 'Unblock'}
-                                        </Text>
-                                    </TouchableOpacity>
-                                </View>
+                                <UserListItem
+                                    key={userId}
+                                    item={blocked}
+                                    idField="blockedId"
+                                    onAction={handleUnblock}
+                                    actionLabel={t('privacySettings.unblock') || 'Unblock'}
+                                    actionColor="#FF3B30"
+                                />
                             );
                         })
                     )}
@@ -413,43 +466,17 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         </View>
                     ) : (
                         restrictedUsers.map((restricted) => {
-                            const userId = typeof restricted.restrictedId === 'string' 
-                                ? restricted.restrictedId 
-                                : restricted.restrictedId._id;
-                            const username = typeof restricted.restrictedId === 'string'
-                                ? restricted.username || 'Unknown'
-                                : restricted.restrictedId.username || 'Unknown';
-                            const avatar = typeof restricted.restrictedId === 'string'
-                                ? restricted.avatar
-                                : restricted.restrictedId.avatar;
-
+                            const { userId } = extractUserInfo(restricted, 'restrictedId');
                             return (
-                                <View key={userId} style={[styles.userRow, { borderBottomColor: themeStyles.borderColor }]}>
-                                    <View style={styles.userInfo}>
-                                        <Avatar
-                                            userId={userId}
-                                            username={username}
-                                            avatar={avatar}
-                                            size={40}
-                                        />
-                                        <View style={styles.userDetails}>
-                                            <Text style={[styles.username, { color: themeStyles.textColor }]}>
-                                                {username}
-                                            </Text>
-                                            <Text style={[styles.userSubtext, { color: themeStyles.mutedTextColor }]}>
-                                                {t('privacySettings.restrictedDescription') || 'Limited interactions'}
-                                            </Text>
-                                        </View>
-                                    </View>
-                                    <TouchableOpacity
-                                        onPress={() => handleUnrestrict(userId)}
-                                        style={[styles.actionButton, { backgroundColor: themeStyles.secondaryBackgroundColor }]}
-                                    >
-                                        <Text style={[styles.actionButtonText, { color: '#007AFF' }]}>
-                                            {t('privacySettings.unrestrict') || 'Unrestrict'}
-                                        </Text>
-                                    </TouchableOpacity>
-                                </View>
+                                <UserListItem
+                                    key={userId}
+                                    item={restricted}
+                                    idField="restrictedId"
+                                    onAction={handleUnrestrict}
+                                    actionLabel={t('privacySettings.unrestrict') || 'Unrestrict'}
+                                    actionColor="#007AFF"
+                                    subtitle={t('privacySettings.restrictedDescription') || 'Limited interactions'}
+                                />
                             );
                         })
                     )}
