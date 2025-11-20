@@ -44,8 +44,13 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
         );
 
         // New API shape: { data: User[], pagination: {...} }
-        if ((response as SearchProfilesResponse)?.data && Array.isArray((response as SearchProfilesResponse).data)) {
-          const typedResponse = response as SearchProfilesResponse;
+        const isSearchProfilesResponse = (payload: unknown): payload is SearchProfilesResponse =>
+          typeof payload === 'object' &&
+          payload !== null &&
+          Array.isArray((payload as SearchProfilesResponse).data);
+
+        if (isSearchProfilesResponse(response)) {
+          const typedResponse = response;
           const paginationInfo: PaginationInfo = typedResponse.pagination ?? {
             total: typedResponse.data.length,
             limit: pagination?.limit ?? typedResponse.data.length,
