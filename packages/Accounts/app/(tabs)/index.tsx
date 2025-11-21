@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -10,17 +10,16 @@ import { Ionicons } from '@expo/vector-icons';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
   const { width } = useWindowDimensions();
 
-  // Determine if we're on desktop (web with large screen)
-  const isDesktop = Platform.OS === 'web' && width >= 768;
+  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
+  const isDesktop = useMemo(() => Platform.OS === 'web' && width >= 768, [width]);
 
-  const accountItems = [
+  const accountItems = useMemo(() => [
     {
       id: 'name',
       title: 'Full name',
-      subtitle: 'Nate Isern Alvarez',
+      subtitle: 'Aloha Haloe',
       customContent: (
         <TouchableOpacity style={styles.button}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Edit name</Text>
@@ -30,7 +29,7 @@ export default function HomeScreen() {
     {
       id: 'email',
       title: 'Email',
-      subtitle: 'nate.isern.alvarez@gmail.com',
+      subtitle: 'hello@oxy.so',
       customContent: (
         <TouchableOpacity style={styles.button}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Update email</Text>
@@ -40,7 +39,7 @@ export default function HomeScreen() {
     {
       id: 'subscription',
       title: 'Subscription',
-      subtitle: 'Manage your Grok subscription',
+      subtitle: 'Manage your Oxy subscription',
       customContent: (
         <TouchableOpacity style={styles.button}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
@@ -53,9 +52,9 @@ export default function HomeScreen() {
       title: 'Account created',
       subtitle: 'Feb 21, 2025',
     },
-  ];
+  ], [colors.text]);
 
-  const signInMethods = [
+  const signInMethods = useMemo(() => [
     {
       id: 'email',
       customIcon: (
@@ -101,9 +100,9 @@ export default function HomeScreen() {
         </TouchableOpacity>
       ),
     },
-  ];
+  ], [colors.card, colors.text]);
 
-  const renderContent = () => (
+  const content = useMemo(() => (
     <>
       <Section title={isDesktop ? "Your account" : undefined} isFirst>
         {isDesktop && <ThemedText style={styles.subtitle}>Manage your account information.</ThemedText>}
@@ -113,16 +112,18 @@ export default function HomeScreen() {
       </Section>
 
       <Section title="Sign-in methods">
-        <ThemedText style={styles.subtitle}>Manage your ways of logging into xAI & Grok.</ThemedText>
+        <ThemedText style={styles.subtitle}>Manage your ways of logging into Oxy.</ThemedText>
         <View style={styles.accountCard}>
           <GroupedSection items={signInMethods} />
         </View>
       </Section>
     </>
-  ); const toggleColorScheme = () => {
+  ), [accountItems, isDesktop, signInMethods]);
+
+  const toggleColorScheme = useCallback(() => {
     // This would toggle between light and dark mode
     // You'd need to implement this based on your theme system
-  };
+  }, []);
 
   if (isDesktop) {
     return (
@@ -179,7 +180,7 @@ export default function HomeScreen() {
             <View style={styles.desktopMainHeader}>
               <UserAvatar name="Nate Isern Alvarez" size={80} />
             </View>
-            {renderContent()}
+            {content}
           </ScrollView>
         </View>
       </View>
@@ -200,7 +201,7 @@ export default function HomeScreen() {
         <View style={styles.mobileHeader}>
           <UserAvatar name="Nate Isern Alvarez" size={80} />
         </View>
-        {renderContent()}
+        {content}
 
         {/* Bottom action buttons */}
         <View style={styles.bottomActions}>
@@ -217,7 +218,9 @@ export default function HomeScreen() {
       </ScrollView>
     </View>
   );
-} const styles = StyleSheet.create({
+}
+
+const styles = StyleSheet.create({
   container: {
     flex: 1,
   } as const,

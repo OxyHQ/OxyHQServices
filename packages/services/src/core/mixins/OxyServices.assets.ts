@@ -26,7 +26,9 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     }
 
     /**
-     * Get file download URL (API streaming proxy, attaches token for <img src>)
+     * Get file download URL (synchronous - uses stream endpoint for images to avoid ORB blocking)
+     * The stream endpoint serves images directly with proper CORS headers, avoiding browser ORB blocking
+     * For better performance with signed URLs, use getFileDownloadUrlAsync when possible
      */
     getFileDownloadUrl(fileId: string, variant?: string, expiresIn?: number): string {
       const base = this.getBaseURL();
@@ -37,13 +39,33 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       const token = this.getClient().getAccessToken();
       if (token) params.set('token', token);
 
-      // Use params.toString() to detect whether there are query params.
-      // URLSearchParams.size is not a standard property across all JS runtimes
-      // (some environments like React Native may not implement it), which
-      // caused the query string to be omitted on native. Checking the
-      // serialized string is reliable everywhere.
+      // Use stream endpoint which serves images directly with proper CORS headers
+      // This avoids ERR_BLOCKED_BY_ORB errors that occur with redirect-based endpoints
       const qs = params.toString();
       return `${base}/api/assets/${encodeURIComponent(fileId)}/stream${qs ? `?${qs}` : ''}`;
+    }
+
+    /**
+     * Get file download URL asynchronously (returns signed URL directly from CDN)
+     * This is more efficient than the synchronous version as it avoids redirects
+     * Use this when you can handle async operations (e.g., in useEffect, useMemo with async)
+     */
+    async getFileDownloadUrlAsync(fileId: string, variant?: string, expiresIn?: number): Promise<string> {
+      try {
+        const params: any = {};
+        if (variant) params.variant = variant;
+        if (expiresIn) params.expiresIn = expiresIn;
+        
+        const urlRes = await this.makeRequest<{ url: string }>('GET', `/api/assets/${encodeURIComponent(fileId)}/url`, params, {
+          cache: true,
+          cacheTTL: Math.min((expiresIn || 3600) * 1000, 10 * 60 * 1000), // Cache for up to 10 minutes or expiresIn, whichever is shorter
+        });
+        
+        return urlRes?.url || this.getFileDownloadUrl(fileId, variant, expiresIn);
+      } catch (error) {
+        // Fallback to synchronous method on error
+        return this.getFileDownloadUrl(fileId, variant, expiresIn);
+      }
     }
 
     /**

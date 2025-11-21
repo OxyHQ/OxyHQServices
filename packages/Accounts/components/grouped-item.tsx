@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -18,7 +18,7 @@ interface GroupedItemProps {
     customIcon?: React.ReactNode;
 }
 
-export function GroupedItem({
+const GroupedItemComponent = ({
     icon,
     iconColor = '#007AFF',
     title,
@@ -30,20 +30,23 @@ export function GroupedItem({
     disabled = false,
     customContent,
     customIcon,
-}: GroupedItemProps) {
+}: GroupedItemProps) => {
     const colorScheme = useColorScheme() ?? 'light';
     const colors = Colors[colorScheme];
 
-    const itemStyles = [
-        styles.groupedItem,
-        isFirst && styles.firstGroupedItem,
-        isLast && styles.lastGroupedItem,
-        {
-            backgroundColor: colors.card,
-            borderBottomWidth: isLast ? 0 : 1,
-            borderBottomColor: colors.border,
-        },
-    ];
+    const itemStyles = useMemo(
+        () => [
+            styles.groupedItem,
+            isFirst && styles.firstGroupedItem,
+            isLast && styles.lastGroupedItem,
+            {
+                backgroundColor: colors.card,
+                borderBottomWidth: isLast ? 0 : 1,
+                borderBottomColor: colors.border,
+            },
+        ],
+        [colors.border, colors.card, isFirst, isLast],
+    );
 
     const content = (
         <View style={styles.groupedItemContent}>
@@ -78,7 +81,11 @@ export function GroupedItem({
     }
 
     return <View style={itemStyles}>{content}</View>;
-}
+};
+
+GroupedItemComponent.displayName = 'GroupedItem';
+
+export const GroupedItem = memo(GroupedItemComponent);
 
 const styles = StyleSheet.create({
     groupedItem: {

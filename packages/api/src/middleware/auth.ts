@@ -77,23 +77,29 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
       // Decode token to check if it's session-based
       const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as any;
       
-      logger.debug('Token decoded:', { 
-        hasSessionId: !!decoded.sessionId, 
-        sessionId: decoded.sessionId,
-        userId: decoded.userId,
-        exp: decoded.exp 
-      });
+      if (process.env.NODE_ENV === 'development') {
+        logger.debug('Token decoded:', { 
+          hasSessionId: !!decoded.sessionId, 
+          sessionId: decoded.sessionId,
+          userId: decoded.userId,
+          exp: decoded.exp 
+        });
+      }
       
       if (decoded.sessionId) {
         // Session-based token - validate session using service layer
-        logger.debug('Validating session-based token for sessionId:', decoded.sessionId);
+        if (process.env.NODE_ENV === 'development') {
+          logger.debug('Validating session-based token for sessionId:', decoded.sessionId);
+        }
         
         try {
           // Use session service for optimized validation with caching
           const validationResult = await sessionService.validateSession(token);
 
           if (!validationResult) {
-            logger.debug('Session validation failed for sessionId:', decoded.sessionId);
+            if (process.env.NODE_ENV === 'development') {
+              logger.debug('Session validation failed for sessionId:', decoded.sessionId);
+            }
             return res.status(401).json({
               error: 'Invalid session',
               message: 'Session not found or expired'

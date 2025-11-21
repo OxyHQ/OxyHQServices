@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { View } from 'react-native';
 import { GroupedItem } from './grouped-item';
 import { Ionicons } from '@expo/vector-icons';
@@ -20,7 +20,7 @@ interface GroupedSectionProps {
     items: GroupedSectionItem[];
 }
 
-export function GroupedSection({ items }: GroupedSectionProps) {
+const GroupedSectionComponent = ({ items }: GroupedSectionProps) => {
     return (
         <View style={{ width: '100%' }}>
             {items.map((item, index) => (
@@ -41,4 +41,9 @@ export function GroupedSection({ items }: GroupedSectionProps) {
             ))}
         </View>
     );
-}
+};
+
+GroupedSectionComponent.displayName = 'GroupedSection';
+
+export const GroupedSection = memo(GroupedSectionComponent);
+

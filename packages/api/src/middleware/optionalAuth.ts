@@ -27,15 +27,21 @@ export function optionalAuthMiddleware(
   next: NextFunction
 ): void {
   try {
-    // Check for token in Authorization header
+    // Check for token in Authorization header first
+    let token: string | undefined;
     const authHeader = req.headers.authorization;
     
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (authHeader && authHeader.startsWith('Bearer ')) {
+      token = authHeader.substring(7);
+    } else if (req.query.token && typeof req.query.token === 'string') {
+      // Fallback to query param token (used by getFileDownloadUrl for <img src>)
+      token = req.query.token;
+    }
+    
+    if (!token) {
       // No auth token provided, continue without user
       return next();
     }
-
-    const token = authHeader.substring(7);
     
     try {
       const decoded = jwt.verify(
@@ -44,7 +50,7 @@ export function optionalAuthMiddleware(
       );
       
       req.user = decoded as { _id: string; [key: string]: any };
-      logger.debug('Optional auth: User authenticated', { userId: req.user._id });
+      logger.debug('Optional auth: User authenticated', { userId: req.user._id, source: authHeader ? 'header' : 'query' });
     } catch (jwtError) {
       // Invalid token, but continue without user
       logger.debug('Optional auth: Invalid token, continuing without user', { error: jwtError });

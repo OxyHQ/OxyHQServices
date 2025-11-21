@@ -272,17 +272,6 @@ UserSchema.set("toObject", {
   virtuals: true,
 });
 
-// Add a save middleware to ensure password is included
-UserSchema.pre("save", function (next) {
-  console.log("Saving user document:", {
-    hasUsername: !!this.username,
-    hasEmail: !!this.email,
-    hasPassword: !!this.password,
-    fields: Object.keys(this.toObject()),
-  });
-  next();
-});
-
 // Only create indexes for fields that don't have unique: true in schema
 UserSchema.index({ following: 1 });
 UserSchema.index({ followers: 1 });

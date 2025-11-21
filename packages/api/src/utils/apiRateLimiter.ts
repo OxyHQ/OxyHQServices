@@ -70,10 +70,21 @@ class ApiRateLimiter {
    * Wait for the rate limit to reset
    */
   async waitForReset(key: string): Promise<void> {
-    const check = this.isAllowed(key);
-    if (!check.allowed && check.retryAfter) {
-      logger.debug(`Rate limited for ${key}, waiting ${check.retryAfter}ms`);
-      await new Promise(resolve => setTimeout(resolve, check.retryAfter));
+    while (true) {
+      const { allowed, retryAfter } = this.isAllowed(key);
+
+      if (allowed) {
+        return;
+      }
+
+      const waitTime = Math.max(retryAfter ?? this.config.retryAfterMs, 0);
+      if (waitTime > 0) {
+        logger.debug(`Rate limited for ${key}, waiting ${waitTime}ms`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      } else {
+        // Yield back to the event loop even if we don't need to wait
+        await Promise.resolve();
+      }
     }
   }
 

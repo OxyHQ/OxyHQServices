@@ -49,22 +49,66 @@ class LocationQueryService {
         }
       };
 
+      // Use aggregation with proper geospatial query
+      // First unwind locations, then filter and calculate distances
       const results = await User.aggregate([
-        { $match: query },
         { $unwind: "$locations" },
-        { $match: query },
+        {
+          $match: {
+            "locations.coordinates": {
+              $exists: true,
+              $ne: null,
+              $geoWithin: {
+                $centerSphere: [[lon, lat], maxDistance / 6378100] // Convert meters to radians (Earth radius ~6378100m)
+              }
+            }
+          }
+        },
+        {
+          $addFields: {
+            distance: {
+              $multiply: [
+                6378100, // Earth radius in meters
+                {
+                  $acos: {
+                    $add: [
+                      {
+                        $multiply: [
+                          { $sin: { $degreesToRadians: "$locations.coordinates.lat" } },
+                          { $sin: { $degreesToRadians: lat } }
+                        ]
+                      },
+                      {
+                        $multiply: [
+                          { $cos: { $degreesToRadians: "$locations.coordinates.lat" } },
+                          { $cos: { $degreesToRadians: lat } },
+                          {
+                            $cos: {
+                              $degreesToRadians: {
+                                $subtract: ["$locations.coordinates.lon", lon]
+                              }
+                            }
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          $match: {
+            distance: { $lte: maxDistance }
+          }
+        },
         {
           $project: {
             _id: 1,
             username: 1,
             "location": "$locations",
-            distance: {
-              $geoNear: {
-                near: { type: "Point", coordinates: [lon, lat] },
-                distanceField: "distance",
-                spherical: true
-              }
-            }
+            distance: 1
           }
         },
         { $sort: { distance: 1 } },
@@ -265,7 +309,8 @@ class LocationQueryService {
     topCities: { city: string; count: number }[];
   }> {
     try {
-      const stats = await User.aggregate([
+      // Optimized aggregation using proper grouping instead of inefficient $reduce
+      const [statsResult] = await User.aggregate([
         { $unwind: "$locations" },
         {
           $group: {
@@ -276,70 +321,45 @@ class LocationQueryService {
             },
             locationsByCountry: {
               $push: "$locations.address.country"
-            },
-            cities: {
-              $push: "$locations.address.city"
-            }
-          }
-        },
-        {
-          $project: {
-            totalLocations: 1,
-            locationsByType: {
-              $reduce: {
-                input: "$locationsByType",
-                initialValue: {},
-                in: {
-                  $mergeObjects: [
-                    "$$value",
-                    {
-                      $literal: {
-                        $concat: [
-                          "$$this",
-                          ": ",
-                          { $toString: { $add: [{ $indexOfArray: ["$locationsByType", "$$this"] }, 1] } }
-                        ]
-                      }
-                    }
-                  ]
-                }
-              }
-            },
-            locationsByCountry: {
-              $reduce: {
-                input: "$locationsByCountry",
-                initialValue: {},
-                in: {
-                  $mergeObjects: [
-                    "$$value",
-                    {
-                      $literal: {
-                        $concat: [
-                          "$$this",
-                          ": ",
-                          { $toString: { $add: [{ $indexOfArray: ["$locationsByCountry", "$$this"] }, 1] } }
-                        ]
-                      }
-                    }
-                  ]
-                }
-              }
             }
           }
         }
       ]);
 
-      // Process results
-      const result = stats[0] || {
-        totalLocations: 0,
-        locationsByType: {},
-        locationsByCountry: {},
-        topCities: []
+      // Process type counts efficiently in JavaScript
+      const typeCounts: { [key: string]: number } = {};
+      if (statsResult?.locationsByType) {
+        for (const type of statsResult.locationsByType) {
+          if (type) {
+            typeCounts[type] = (typeCounts[type] || 0) + 1;
+          }
+        }
+      }
+
+      // Process country counts efficiently in JavaScript
+      const countryCounts: { [key: string]: number } = {};
+      if (statsResult?.locationsByCountry) {
+        for (const country of statsResult.locationsByCountry) {
+          if (country) {
+            countryCounts[country] = (countryCounts[country] || 0) + 1;
+          }
+        }
+      }
+
+      const stats = {
+        totalLocations: statsResult?.totalLocations || 0,
+        locationsByType: typeCounts,
+        locationsByCountry: countryCounts
       };
 
-      // Get top cities
+      // Get top cities with optimized query
       const cityStats = await User.aggregate([
         { $unwind: "$locations" },
+        {
+          $match: {
+            "locations.address.city": { $exists: true, $ne: null }
+          }
+        },
         {
           $group: {
             _id: "$locations.address.city",
@@ -358,9 +378,9 @@ class LocationQueryService {
       ]);
 
       return {
-        totalLocations: result.totalLocations,
-        locationsByType: result.locationsByType,
-        locationsByCountry: result.locationsByCountry,
+        totalLocations: stats.totalLocations,
+        locationsByType: stats.locationsByType,
+        locationsByCountry: stats.locationsByCountry,
         topCities: cityStats
       };
 
