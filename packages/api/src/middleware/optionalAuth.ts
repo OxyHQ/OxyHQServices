@@ -6,54 +6,29 @@
  * This allows routes to serve public content while still identifying authenticated users.
  */
 
-import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import { Response, NextFunction } from 'express';
 import { logger } from '../utils/logger';
-
-export interface AuthenticatedRequest extends Request {
-  user?: {
-    _id: string;
-    [key: string]: any;
-  };
-}
+import { authenticateRequestNonBlocking, AuthenticatedRequest } from './authUtils';
 
 /**
  * Optional authentication middleware
  * Attempts to authenticate but doesn't block if authentication fails
+ * Handles both session-based tokens and legacy tokens
  */
-export function optionalAuthMiddleware(
+export async function optionalAuthMiddleware(
   req: AuthenticatedRequest,
   res: Response,
   next: NextFunction
-): void {
+): Promise<void> {
   try {
-    // Check for token in Authorization header first
-    let token: string | undefined;
-    const authHeader = req.headers.authorization;
+    const { user, source } = await authenticateRequestNonBlocking(req, false);
     
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      token = authHeader.substring(7);
-    } else if (req.query.token && typeof req.query.token === 'string') {
-      // Fallback to query param token (used by getFileDownloadUrl for <img src>)
-      token = req.query.token;
-    }
-    
-    if (!token) {
-      // No auth token provided, continue without user
-      return next();
-    }
-    
-    try {
-      const decoded = jwt.verify(
-        token,
-        process.env.ACCESS_TOKEN_SECRET || 'default_secret'
-      );
-      
-      req.user = decoded as { _id: string; [key: string]: any };
-      logger.debug('Optional auth: User authenticated', { userId: req.user._id, source: authHeader ? 'header' : 'query' });
-    } catch (jwtError) {
-      // Invalid token, but continue without user
-      logger.debug('Optional auth: Invalid token, continuing without user', { error: jwtError });
+    if (user) {
+      req.user = user;
+      logger.debug('Optional auth: User authenticated', { 
+        userId: user._id, 
+        source: source || 'unknown'
+      });
     }
     
     next();

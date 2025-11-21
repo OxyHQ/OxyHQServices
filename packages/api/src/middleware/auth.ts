@@ -5,6 +5,14 @@ import dotenv from 'dotenv';
 import { logger } from '../utils/logger';
 import { Document } from 'mongoose';
 import sessionService from '../services/session.service';
+import { 
+  extractTokenFromRequest, 
+  decodeToken, 
+  extractUserIdFromDecoded,
+  validateSessionToken,
+  getUserById,
+  normalizeUser
+} from './authUtils';
 
 // Ensure environment variables are loaded
 dotenv.config();
@@ -26,16 +34,11 @@ export interface SimpleAuthRequest extends Request {
 }
 
 /**
- * Extract user ID from JWT token
+ * Extract user ID from JWT token (legacy function for backward compatibility)
  */
 const extractUserIdFromToken = (token: string): string | null => {
-  try {
-    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as { id: string };
-    return decoded.id || null;
-  } catch (error) {
-    logger.error('Error extracting user ID from token:', error);
-    return null;
-  }
+  const decoded = decodeToken(token);
+  return decoded ? extractUserIdFromDecoded(decoded) : null;
 };
 
 /**
@@ -75,7 +78,14 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 
     try {
       // Decode token to check if it's session-based
-      const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as any;
+      const decoded = decodeToken(token);
+      
+      if (!decoded) {
+        return res.status(401).json({
+          error: 'Invalid token',
+          message: 'Token could not be decoded'
+        });
+      }
       
       if (process.env.NODE_ENV === 'development') {
         logger.debug('Token decoded:', { 
@@ -115,11 +125,20 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
             });
           }
 
-          // Ensure id field is set consistently
-          if (user._id) {
-            user.id = user._id.toString();
+          // Get full user document for compatibility
+          const fullUser = await User.findById(user._id).select('+refreshToken');
+          if (!fullUser) {
+            return res.status(401).json({
+              error: 'Invalid session',
+              message: 'User not found'
+            });
           }
-          req.user = user;
+
+          // Ensure id field is set consistently
+          if (fullUser._id) {
+            fullUser.id = fullUser._id.toString();
+          }
+          req.user = fullUser;
           
           next();
         } catch (dbError) {
@@ -131,7 +150,7 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
         }
       } else {
         // Old token format - use existing logic
-        const userId = extractUserIdFromToken(token);
+        const userId = extractUserIdFromDecoded(decoded);
         if (!userId) {
           return res.status(401).json({
             error: 'Invalid token',
