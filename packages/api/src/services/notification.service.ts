@@ -1,3 +1,4 @@
+import { Types } from 'mongoose';
 import Notification from '../models/Notification';
 import { NotificationData } from '../types/notification.types';
 
@@ -46,9 +47,9 @@ export class NotificationService {
    * Create a like notification
    */
   static async createLikeNotification(
-    recipientId: mongoose.Types.ObjectId | string,
-    actorId: mongoose.Types.ObjectId | string,
-    postId: mongoose.Types.ObjectId | string
+    recipientId: Types.ObjectId | string,
+    actorId: Types.ObjectId | string,
+    postId: Types.ObjectId | string
   ) {
     return this.createNotification({
       recipientId,
@@ -63,8 +64,8 @@ export class NotificationService {
    * Create a follow notification
    */
   static async createFollowNotification(
-    recipientId: mongoose.Types.ObjectId | string,
-    actorId: mongoose.Types.ObjectId | string
+    recipientId: Types.ObjectId | string,
+    actorId: Types.ObjectId | string
   ) {
     return this.createNotification({
       recipientId,
@@ -79,9 +80,9 @@ export class NotificationService {
    * Create a reply notification
    */
   static async createReplyNotification(
-    recipientId: mongoose.Types.ObjectId | string,
-    actorId: mongoose.Types.ObjectId | string,
-    replyId: mongoose.Types.ObjectId | string
+    recipientId: Types.ObjectId | string,
+    actorId: Types.ObjectId | string,
+    replyId: Types.ObjectId | string
   ) {
     return this.createNotification({
       recipientId,
@@ -96,9 +97,9 @@ export class NotificationService {
    * Create a mention notification
    */
   static async createMentionNotification(
-    recipientId: mongoose.Types.ObjectId | string,
-    actorId: mongoose.Types.ObjectId | string,
-    postId: mongoose.Types.ObjectId | string
+    recipientId: Types.ObjectId | string,
+    actorId: Types.ObjectId | string,
+    postId: Types.ObjectId | string
   ) {
     return this.createNotification({
       recipientId,
@@ -113,9 +114,9 @@ export class NotificationService {
    * Create a repost notification
    */
   static async createRepostNotification(
-    recipientId: mongoose.Types.ObjectId | string,
-    actorId: mongoose.Types.ObjectId | string,
-    postId: mongoose.Types.ObjectId | string
+    recipientId: Types.ObjectId | string,
+    actorId: Types.ObjectId | string,
+    postId: Types.ObjectId | string
   ) {
     return this.createNotification({
       recipientId,
@@ -130,9 +131,9 @@ export class NotificationService {
    * Create a quote post notification
    */
   static async createQuoteNotification(
-    recipientId: mongoose.Types.ObjectId | string,
-    actorId: mongoose.Types.ObjectId | string,
-    postId: mongoose.Types.ObjectId | string
+    recipientId: Types.ObjectId | string,
+    actorId: Types.ObjectId | string,
+    postId: Types.ObjectId | string
   ) {
     return this.createNotification({
       recipientId,
@@ -147,10 +148,10 @@ export class NotificationService {
    * Create a welcome notification for new users
    */
   static async createWelcomeNotification(
-    recipientId: mongoose.Types.ObjectId | string
+    recipientId: Types.ObjectId | string
   ) {
     // Use a default "system" actor ID or admin ID for welcome notifications
-    const systemActorId = new mongoose.Types.ObjectId('000000000000000000000000');
+    const systemActorId = new Types.ObjectId('000000000000000000000000');
     
     return this.createNotification({
       recipientId,
@@ -164,7 +165,7 @@ export class NotificationService {
   /**
    * Delete notifications related to a specific entity (e.g., when a post is deleted)
    */
-  static async deleteNotificationsByEntity(entityId: mongoose.Types.ObjectId | string) {
+  static async deleteNotificationsByEntity(entityId: Types.ObjectId | string) {
     try {
       await Notification.deleteMany({ entityId });
     } catch (error) {
