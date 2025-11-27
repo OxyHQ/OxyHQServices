@@ -35,9 +35,12 @@ class SessionCache {
 
   /**
    * Generate cache key for session lookup
+   * 
+   * Optimized: sessionId is already unique, so no prefix needed.
+   * This eliminates string concatenation overhead on every cache operation.
    */
   private generateKey(sessionId: string): string {
-    return `session:${sessionId}`;
+    return sessionId;
   }
 
   /**
@@ -64,13 +67,18 @@ class SessionCache {
 
   /**
    * Store session in cache
+   * 
+   * Optimized for high-scale usage with efficient eviction strategy.
    */
   set(sessionId: string, session: ISession, ttl?: number): void {
     const key = this.generateKey(sessionId);
 
-    // Remove oldest entries if cache is full
+    // Optimized eviction: Evict multiple entries when cache is full to reduce frequency
+    // This reduces the O(n) scan frequency from every insert to only when needed
     if (this.cache.size >= this.config.maxSize) {
-      this.evictOldest();
+      // Evict 10% of cache when full to create headroom and reduce eviction frequency
+      const evictCount = Math.max(1, Math.floor(this.config.maxSize * 0.1));
+      this.evictOldest(evictCount);
     }
 
     this.cache.set(key, {
@@ -135,26 +143,54 @@ class SessionCache {
   }
 
   /**
-   * Remove the oldest cache entry
+   * Remove the oldest cache entry(ies)
+   * 
+   * Optimized for performance: When evicting multiple entries, sorts once and evicts in batch.
+   * This is more efficient than multiple O(n) scans.
+   * 
+   * @param count - Number of entries to evict (default: 1)
    */
-  private evictOldest(): void {
-    let oldestKey: string | null = null;
-    let oldestTimestamp = Infinity;
-
-    for (const [key, cached] of this.cache.entries()) {
-      if (cached.timestamp < oldestTimestamp) {
-        oldestTimestamp = cached.timestamp;
-        oldestKey = key;
-      }
+  private evictOldest(count: number = 1): void {
+    if (count <= 0 || this.cache.size === 0) {
+      return;
     }
 
-    if (oldestKey) {
-      const cached = this.cache.get(oldestKey);
-      if (cached) {
-        this.pendingLastActiveUpdates.delete(cached.session.sessionId);
+    // For single eviction, use simple scan (O(n))
+    // For multiple evictions, sort once and evict batch (O(n log n) but only when needed)
+    if (count === 1) {
+      let oldestKey: string | null = null;
+      let oldestTimestamp = Infinity;
+
+      for (const [key, cached] of this.cache.entries()) {
+        if (cached.timestamp < oldestTimestamp) {
+          oldestTimestamp = cached.timestamp;
+          oldestKey = key;
+        }
       }
-      this.cache.delete(oldestKey);
-      logger.debug('Evicted oldest session from cache');
+
+      if (oldestKey) {
+        const cached = this.cache.get(oldestKey);
+        if (cached) {
+          this.pendingLastActiveUpdates.delete(cached.session.sessionId);
+        }
+        this.cache.delete(oldestKey);
+        logger.debug('Evicted oldest session from cache');
+      }
+    } else {
+      // Batch eviction: Sort entries by timestamp and evict oldest N
+      // More efficient than N separate scans
+      const entries = Array.from(this.cache.entries());
+      entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
+      
+      const toEvict = entries.slice(0, Math.min(count, entries.length));
+      for (const [key, cached] of toEvict) {
+        this.pendingLastActiveUpdates.delete(cached.session.sessionId);
+        this.cache.delete(key);
+      }
+      
+      if (toEvict.length > 0) {
+        logger.debug(`Evicted ${toEvict.length} oldest sessions from cache`);
+      }
     }
   }
 

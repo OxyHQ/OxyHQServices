@@ -33,29 +33,64 @@ export const generateSessionTokens = (userId: string, sessionId: string, deviceI
 };
 
 /**
- * Validate and decode an access token
- * @param token - The access token to validate
- * @returns Decoded token payload or null if invalid
+ * Token validation result with error information
  */
-export const validateAccessToken = (token: string) => {
+export interface TokenValidationResult {
+  valid: boolean;
+  payload?: any;
+  error?: 'expired' | 'invalid' | 'malformed';
+}
+
+/**
+ * Validate and decode an access token
+ * 
+ * Enhanced error handling: Returns specific error types for better debugging
+ * and to distinguish between expired tokens (should refresh) vs invalid tokens.
+ * 
+ * @param token - The access token to validate
+ * @returns Validation result with payload if valid, or error information if invalid
+ */
+export const validateAccessToken = (token: string): TokenValidationResult => {
   try {
-    return jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as any;
+    const payload = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as any;
+    return { valid: true, payload };
   } catch (error) {
+    if (error instanceof jwt.TokenExpiredError) {
+      logger.debug('[SessionUtils] Access token expired');
+      return { valid: false, error: 'expired' };
+    }
+    if (error instanceof jwt.JsonWebTokenError) {
+      logger.debug('[SessionUtils] Access token invalid:', error.message);
+      return { valid: false, error: 'invalid' };
+    }
     logger.debug('[SessionUtils] Access token validation failed:', error);
-    return null;
+    return { valid: false, error: 'malformed' };
   }
 };
 
 /**
  * Validate and decode a refresh token
+ * 
+ * Enhanced error handling: Returns specific error types for better debugging
+ * and to distinguish between expired tokens vs invalid tokens.
+ * 
  * @param token - The refresh token to validate
- * @returns Decoded token payload or null if invalid
+ * @returns Validation result with payload if valid, or error information if invalid
  */
-export const validateRefreshToken = (token: string) => {
+export const validateRefreshToken = (token: string): TokenValidationResult => {
   try {
-    return jwt.verify(token, process.env.REFRESH_TOKEN_SECRET!) as any;
+    const payload = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET!) as any;
+    return { valid: true, payload };
   } catch (error) {
+    if (error instanceof jwt.TokenExpiredError) {
+      logger.debug('[SessionUtils] Refresh token expired');
+      return { valid: false, error: 'expired' };
+    }
+    if (error instanceof jwt.JsonWebTokenError) {
+      logger.debug('[SessionUtils] Refresh token invalid:', error.message);
+      return { valid: false, error: 'invalid' };
+    }
     logger.debug('[SessionUtils] Refresh token validation failed:', error);
-    return null;
+    return { valid: false, error: 'malformed' };
   }
 };

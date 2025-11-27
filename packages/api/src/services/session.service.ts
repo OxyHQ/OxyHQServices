@@ -126,6 +126,8 @@ class SessionService {
       };
     } catch (error) {
       logger.error('[SessionService] Failed to get session with user:', error);
+      // Return null on error for graceful degradation - consistent error handling pattern
+      // Caller should handle null case appropriately
       return null;
     }
   }
@@ -141,9 +143,20 @@ class SessionService {
    */
   async validateSession(accessToken: string): Promise<SessionValidationResult | null> {
     try {
-      // First validate the token format
-      const payload = validateAccessToken(accessToken);
-      if (!payload || !payload.sessionId) {
+      // First validate the token format with enhanced error handling
+      const validationResult = validateAccessToken(accessToken);
+      if (!validationResult.valid || !validationResult.payload) {
+        // Log specific error type for better debugging
+        if (validationResult.error === 'expired') {
+          logger.debug('[SessionService] Access token expired');
+        } else if (validationResult.error === 'invalid') {
+          logger.debug('[SessionService] Access token invalid');
+        }
+        return null;
+      }
+
+      const payload = validationResult.payload;
+      if (!payload.sessionId) {
         return null;
       }
 
@@ -346,10 +359,21 @@ class SessionService {
    */
   async refreshTokens(refreshToken: string): Promise<SessionRefreshResult | null> {
     try {
-      // Validate refresh token
-      const payload = validateRefreshToken(refreshToken);
-      if (!payload || !payload.sessionId) {
+      // Validate refresh token with enhanced error handling
+      const validationResult = validateRefreshToken(refreshToken);
+      if (!validationResult.valid || !validationResult.payload) {
+        // Provide specific error information for better debugging
+        if (validationResult.error === 'expired') {
+          logger.debug('[SessionService] Refresh token expired');
+          throw new Error('Refresh token expired');
+        }
+        logger.debug('[SessionService] Invalid refresh token:', validationResult.error);
         throw new Error('Invalid refresh token');
+      }
+
+      const payload = validationResult.payload;
+      if (!payload.sessionId) {
+        throw new Error('Invalid refresh token: missing sessionId');
       }
 
       const sessionId = payload.sessionId;
@@ -399,6 +423,12 @@ class SessionService {
 
   /**
    * Deactivate a session
+   * 
+   * Consistent error handling: Returns false on error (non-throwing pattern)
+   * for operations that should gracefully degrade.
+   * 
+   * @param sessionId - The session ID to deactivate
+   * @returns true if session was deactivated, false otherwise
    */
   async deactivateSession(sessionId: string): Promise<boolean> {
     try {
@@ -414,12 +444,20 @@ class SessionService {
       return result.modifiedCount > 0;
     } catch (error) {
       logger.error('[SessionService] Failed to deactivate session:', error);
+      // Return false on error for graceful degradation - consistent with other non-critical operations
       return false;
     }
   }
 
   /**
    * Deactivate all sessions for a user
+   * 
+   * Consistent error handling: Returns 0 on error (non-throwing pattern)
+   * for operations that should gracefully degrade.
+   * 
+   * @param userId - The user ID whose sessions should be deactivated
+   * @param excludeSessionId - Optional session ID to exclude from deactivation
+   * @returns Number of sessions deactivated (0 on error)
    */
   async deactivateAllUserSessions(userId: string, excludeSessionId?: string): Promise<number> {
     try {
@@ -440,12 +478,19 @@ class SessionService {
       return result.modifiedCount;
     } catch (error) {
       logger.error('[SessionService] Failed to deactivate all user sessions:', error);
+      // Return 0 on error for graceful degradation - consistent error handling pattern
       return 0;
     }
   }
 
   /**
    * Get all active sessions for a user
+   * 
+   * Consistent error handling: Returns empty array on error (non-throwing pattern)
+   * for operations that should gracefully degrade.
+   * 
+   * @param userId - The user ID to get sessions for
+   * @returns Array of active sessions (empty array on error)
    */
   async getUserActiveSessions(userId: string): Promise<ISession[]> {
     try {
@@ -463,12 +508,20 @@ class SessionService {
       return sessions as ISession[];
     } catch (error) {
       logger.error('[SessionService] Failed to get user active sessions:', error);
+      // Return empty array on error for graceful degradation - consistent error handling pattern
       return [];
     }
   }
 
   /**
    * Validate session and get user by sessionId (for direct sessionId lookups)
+   * 
+   * Consistent error handling: Returns null on error (non-throwing pattern)
+   * for operations that should gracefully degrade.
+   * 
+   * @param sessionId - The session ID to validate
+   * @param populateUser - Whether to populate user data (default: true)
+   * @returns Session and optional user, or null if not found or error
    */
   async validateSessionById(
     sessionId: string, 
@@ -487,12 +540,19 @@ class SessionService {
       return { session };
     } catch (error) {
       logger.error('[SessionService] Failed to validate session by ID:', error);
+      // Return null on error for graceful degradation - consistent error handling pattern
       return null;
     }
   }
 
   /**
    * Get access token by session ID (with auto-refresh if expired)
+   * 
+   * Consistent error handling: Returns null on error (non-throwing pattern)
+   * for operations that should gracefully degrade.
+   * 
+   * @param sessionId - The session ID to get access token for
+   * @returns Access token and expiration date, or null if not found or error
    */
   async getAccessToken(sessionId: string): Promise<{ accessToken: string; expiresAt: Date } | null> {
     try {
@@ -537,6 +597,7 @@ class SessionService {
       };
     } catch (error) {
       logger.error('[SessionService] Failed to get access token:', error);
+      // Return null on error for graceful degradation - consistent error handling pattern
       return null;
     }
   }
