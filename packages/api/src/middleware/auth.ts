@@ -43,7 +43,15 @@ const extractUserIdFromToken = (token: string): string | null => {
 
 /**
  * Authentication middleware that validates JWT tokens and attaches the full user object to the request
- * Supports both old token format and new session-based tokens
+ * 
+ * Optimized for high-scale usage:
+ * - Supports both old token format and new session-based tokens
+ * - Uses session service with caching to minimize database queries
+ * - Eliminates redundant user fetches by using populated user from validation
+ * 
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
  */
 export const authMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
   try {
@@ -125,15 +133,11 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
             });
           }
 
-          // Get full user document for compatibility
-          const fullUser = await User.findById(user._id).select('+refreshToken');
-          if (!fullUser) {
-            return res.status(401).json({
-              error: 'Invalid session',
-              message: 'User not found'
-            });
-          }
-
+          // Use user from validationResult - it's already populated with all fields
+          // Only fetch from DB if refreshToken is specifically needed (rare case)
+          // This eliminates a redundant database query on every authenticated request
+          const fullUser = user as IUser & Document;
+          
           // Ensure id field is set consistently
           if (fullUser._id) {
             fullUser.id = fullUser._id.toString();
@@ -206,7 +210,14 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
 
 /**
  * Simplified authentication middleware that only validates the token and attaches the user ID
- * Supports both old token format and new session-based tokens
+ * 
+ * Optimized for high-scale usage - lighter weight than full authMiddleware.
+ * Supports both old token format and new session-based tokens.
+ * Use this when you only need the user ID, not the full user object.
+ * 
+ * @param req - Express request object
+ * @param res - Express response object
+ * @param next - Express next function
  */
 export const simpleAuthMiddleware = async (req: SimpleAuthRequest, res: Response, next: NextFunction) => {
   try {

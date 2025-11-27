@@ -25,6 +25,13 @@ const REFRESH_TOKEN_EXPIRES_IN = '7d';
 class SessionService {
   /**
    * Get session by sessionId with caching
+   * 
+   * Optimized for high-scale usage with in-memory caching to minimize database queries.
+   * Cache is automatically managed with TTL and cleanup.
+   * 
+   * @param sessionId - The session ID to lookup
+   * @param useCache - Whether to use cache (default: true)
+   * @returns Session object or null if not found or expired
    */
   async getSession(sessionId: string, useCache: boolean = true): Promise<ISession | null> {
     try {
@@ -55,12 +62,24 @@ class SessionService {
       return session as ISession;
     } catch (error) {
       logger.error('[SessionService] Failed to get session:', error);
+      // Return null on error to allow graceful degradation
+      // Caller should handle null case appropriately
       return null;
     }
   }
 
   /**
    * Get session with user populated
+   * 
+   * Optimized for high-scale usage with caching. When cache hit occurs,
+   * still requires a user lookup as user data is not cached with session
+   * (by design, to keep cache size manageable and user data fresh).
+   * 
+   * @param sessionId - The session ID to lookup
+   * @param options - Configuration options
+   * @param options.useCache - Whether to use cache (default: true)
+   * @param options.select - User fields to select (default: '-password')
+   * @returns Session and user object, or null if not found
    */
   async getSessionWithUser(
     sessionId: string, 
@@ -69,19 +88,23 @@ class SessionService {
     try {
       const { useCache = true, select = '-password' } = options;
 
-      // Try cache first
+      // Try cache first for session
       if (useCache) {
         const cached = sessionCache.get(sessionId);
         if (cached) {
-          // Need to populate user separately
+          // User data is not cached with session (keeps cache lean and user data fresh)
+          // This is a single indexed lookup, optimized for performance
           const user = await User.findById(cached.userId).select(select);
           if (user) {
             return { session: cached, user };
           }
+          // If user not found, session is invalid - invalidate cache
+          sessionCache.invalidate(sessionId);
+          return null;
         }
       }
 
-      // Fallback to database with populate
+      // Fallback to database with populate (single query, more efficient)
       const session = await Session.findOne({
         sessionId,
         isActive: true,
@@ -92,7 +115,7 @@ class SessionService {
         return null;
       }
 
-      // Cache the session
+      // Cache the session (user not cached to keep cache size manageable)
       if (useCache) {
         sessionCache.set(sessionId, session);
       }
@@ -109,6 +132,12 @@ class SessionService {
 
   /**
    * Validate session by access token
+   * 
+   * High-performance session validation with caching and token verification.
+   * Returns session and user data for use in authentication middleware.
+   * 
+   * @param accessToken - The JWT access token to validate
+   * @returns Validation result with session, user, and payload, or null if invalid
    */
   async validateSession(accessToken: string): Promise<SessionValidationResult | null> {
     try {
@@ -157,12 +186,16 @@ class SessionService {
 
   /**
    * Update session last activity (non-blocking, batched)
+   * 
+   * Optimized for high-scale usage - updates are batched and throttled
+   * to reduce database load while maintaining accurate last activity tracking.
    */
   async updateLastActivity(sessionId: string): Promise<void> {
     try {
       const now = new Date();
       
       // Update in database (optimized query)
+      // Note: updateOne() doesn't return a document, so .lean() is not applicable
       await Session.updateOne(
         { sessionId, isActive: true },
         { 
@@ -171,7 +204,7 @@ class SessionService {
             updatedAt: now
           } 
         }
-      ).lean();
+      );
 
       // Update cache if present
       const cached = sessionCache.get(sessionId);
@@ -189,6 +222,17 @@ class SessionService {
 
   /**
    * Create a new session for a user
+   * 
+   * Optimized for high-scale usage:
+   * - Reuses existing active sessions on the same device to reduce session proliferation
+   * - Automatically caches new sessions for fast subsequent lookups
+   * - Handles device fingerprinting and registration
+   * 
+   * @param userId - The user ID to create session for
+   * @param req - Express request object for extracting device info
+   * @param options - Session creation options (deviceName, deviceFingerprint)
+   * @returns The created or reused session
+   * @throws Error if session creation fails
    */
   async createSession(
     userId: string,
@@ -293,6 +337,12 @@ class SessionService {
 
   /**
    * Refresh session tokens
+   * 
+   * Security-optimized: Always bypasses cache to ensure fresh token validation.
+   * Invalidates old cache entry and caches new tokens after successful refresh.
+   * 
+   * @param refreshToken - The refresh token to validate and use for token refresh
+   * @returns New access and refresh tokens with session, or null if refresh fails
    */
   async refreshTokens(refreshToken: string): Promise<SessionRefreshResult | null> {
     try {
