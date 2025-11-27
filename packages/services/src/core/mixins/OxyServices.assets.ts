@@ -10,7 +10,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       super(...(args as [any]));
     }
     // ============================================================================
-    // FILE METHODS (LEGACY - Using Asset Service)
+    // FILE METHODS (Convenience wrappers using Asset Service)
     // ============================================================================
 
     /**

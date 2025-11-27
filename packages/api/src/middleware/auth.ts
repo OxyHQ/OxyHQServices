@@ -34,14 +34,6 @@ export interface SimpleAuthRequest extends Request {
 }
 
 /**
- * Extract user ID from JWT token (legacy function for backward compatibility)
- */
-const extractUserIdFromToken = (token: string): string | null => {
-  const decoded = decodeToken(token);
-  return decoded ? extractUserIdFromDecoded(decoded) : null;
-};
-
-/**
  * Authentication middleware that validates JWT tokens and attaches the full user object to the request
  * 
  * Optimized for high-scale usage:
@@ -259,7 +251,7 @@ export const simpleAuthMiddleware = async (req: SimpleAuthRequest, res: Response
         next();
       } else {
         // Old token format - use existing logic
-        const userId = extractUserIdFromToken(token);
+        const userId = extractUserIdFromDecoded(decoded);
         if (!userId) {
           return res.status(401).json({
             error: 'Invalid token',

@@ -94,9 +94,4 @@ export class InternalServerError extends ApiError {
     super(500, message, 'INTERNAL_SERVER_ERROR', details);
     this.name = 'InternalServerError';
   }
-}
-
-// Legacy support
-export const createError = (statusCode: number, message: string) => {
-  return new ApiError(statusCode, message);
-}; 
+} 
