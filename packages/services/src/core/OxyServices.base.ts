@@ -164,35 +164,50 @@ export class OxyServicesBase {
   }
 
   /**
-   * Wait for authentication to be ready (public method)
-   * Useful for apps that want to ensure authentication is complete before proceeding
+   * Wait for authentication to be ready
+   * 
+   * Optimized for high-scale usage with immediate synchronous check and adaptive polling.
+   * Returns immediately if token is already available (0ms delay), otherwise uses
+   * adaptive polling that starts fast (50ms) and gradually increases to reduce CPU usage.
+   * 
+   * @param timeoutMs Maximum time to wait in milliseconds (default: 5000ms)
+   * @returns Promise that resolves to true if authentication is ready, false if timeout
+   * 
+   * @example
+   * ```typescript
+   * const isReady = await oxyServices.waitForAuth(3000);
+   * if (isReady) {
+   *   // Proceed with authenticated operations
+   * }
+   * ```
    */
   public async waitForAuth(timeoutMs = 5000): Promise<boolean> {
-    return this.waitForAuthentication(timeoutMs);
-  }
+    // Immediate synchronous check - no delay if token is ready
+    if (this.httpClient.hasAccessToken()) {
+      return true;
+    }
 
-  /**
-   * Wait for authentication to be ready with timeout
-   */
-  public async waitForAuthentication(timeoutMs = 5000): Promise<boolean> {
-    const startTime = Date.now();
-    const checkInterval = 100; // Check every 100ms
-
-    while (Date.now() - startTime < timeoutMs) {
+    const startTime = performance.now();
+    const maxTime = startTime + timeoutMs;
+    
+    // Adaptive polling: start fast, then slow down to reduce CPU usage
+    let pollInterval = 50; // Start with 50ms
+    
+    while (performance.now() < maxTime) {
+      await new Promise(resolve => setTimeout(resolve, pollInterval));
+      
       if (this.httpClient.hasAccessToken()) {
         return true;
       }
-      await new Promise(resolve => setTimeout(resolve, checkInterval));
+      
+      // Increase interval after first few checks (adaptive polling)
+      // This reduces CPU usage for long waits while maintaining responsiveness
+      if (pollInterval < 200) {
+        pollInterval = Math.min(pollInterval * 1.5, 200);
+      }
     }
     
     return false;
-  }
-
-  /**
-   * Check if the client has a valid access token
-   */
-  public hasAccessToken(): boolean {
-    return this.httpClient.hasAccessToken();
   }
 
   /**
@@ -220,7 +235,7 @@ export class OxyServicesBase {
         if (!this.httpClient.hasAccessToken()) {
           if (attempt === 0) {
             // On first attempt, wait briefly for authentication to complete
-            const authReady = await this.waitForAuthentication(authTimeoutMs);
+            const authReady = await this.waitForAuth(authTimeoutMs);
             
             if (!authReady) {
               throw new OxyAuthenticationTimeoutError(operationName, authTimeoutMs);
@@ -265,7 +280,7 @@ export class OxyServicesBase {
    * Validate the current access token with the server
    */
   async validate(): Promise<boolean> {
-    if (!this.hasAccessToken()) {
+    if (!this.hasValidToken()) {
       return false;
     }
 
