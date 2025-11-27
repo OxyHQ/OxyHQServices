@@ -523,9 +523,31 @@ router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, async 
     }
 
     // Check access permissions
-    if (!assetService.canUserAccessFile(file, userId)) {
+    let context: any = undefined;
+    if (typeof req.query.context === 'string') {
+       const parts = req.query.context.split(':');
+       if (parts.length >= 3) {
+           context = { app: parts[0], entityType: parts[1], entityId: parts[2] };
+       }
+    }
+
+    if (!(await assetService.canUserAccessFile(file, userId, context))) {
       logger.warn('Access denied to file', { fileId, userId, visibility: file.visibility });
       return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // CDN Redirect Optimization for Public Files
+    // If file is public and no variant requested, redirect to CDN/Presigned URL
+    // This offloads bandwidth from the API server
+    if (file.visibility === 'public' && !variantType) {
+        try {
+            const url = await assetService.getFileUrl(fileId, undefined, 3600);
+            res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache the redirect
+            return res.redirect(url);
+        } catch (e) {
+            // Fallback to streaming if URL generation fails
+            logger.warn('Failed to generate redirect URL for public file, falling back to stream', { fileId, error: e });
+        }
     }
 
     const originalKey = file.storageKey;
@@ -633,7 +655,7 @@ router.get('/:id/download', optionalAuthMiddleware, async (req: AuthenticatedReq
     }
 
     // Check access permissions
-    if (!assetService.canUserAccessFile(file, userId)) {
+    if (!(await assetService.canUserAccessFile(file, userId))) {
       logger.warn('Access denied to file download', { fileId, userId, visibility: file.visibility });
       return res.status(403).json({ error: 'Access denied' });
     }
@@ -800,7 +822,7 @@ router.delete('/:id', async (req: AuthenticatedRequest, res: express.Response) =
     }
 
     // Proceed with deletion
-    await assetService.deleteFile(fileId, forceDelete);
+    await assetService.deleteFile(fileId, forceDelete, user._id);
 
     logger.info('File deleted', { 
       userId: user._id, 
@@ -832,6 +854,64 @@ router.delete('/:id', async (req: AuthenticatedRequest, res: express.Response) =
       error: 'Failed to delete file',
       message: error.message
     });
+  }
+});
+
+/**
+ * @route POST /api/assets/batch-access
+ * @desc Check access for multiple files
+ * @access Private
+ */
+router.post('/batch-access', async (req: AuthenticatedRequest, res: express.Response) => {
+  try {
+    const user = req.user;
+    const { fileIds, context } = req.body;
+
+    if (!Array.isArray(fileIds)) {
+      return res.status(400).json({ error: 'fileIds must be an array' });
+    }
+
+    if (fileIds.length > 100) {
+      return res.status(400).json({ error: 'Batch size limit exceeded (max 100)' });
+    }
+
+    const files = await assetService.getFilesByIds(fileIds);
+    const results: Record<string, any> = {};
+
+    // Process in parallel
+    await Promise.all(files.map(async (file) => {
+      const canAccess = await assetService.canUserAccessFile(file, user?._id, context);
+      
+      if (canAccess) {
+        // If accessible, generate a URL (CDN/presigned)
+        const url = await assetService.getFileUrl(file._id.toString(), undefined, 3600);
+        results[file._id.toString()] = {
+          allowed: true,
+          url,
+          visibility: file.visibility,
+          mime: file.mime
+        };
+      } else {
+        results[file._id.toString()] = {
+          allowed: false,
+          error: 'Access denied'
+        };
+      }
+    }));
+    
+    // Handle missing files
+    fileIds.forEach(id => {
+        // We need to check if we found the file. Since _id is ObjectId, we need to be careful with comparison.
+        const found = files.some(f => f._id.toString() === id);
+        if (!found) {
+            results[id] = { allowed: false, error: 'File not found' };
+        }
+    });
+
+    res.json({ success: true, results });
+  } catch (error: any) {
+    logger.error('Batch access check error:', error);
+    res.status(500).json({ error: 'Failed to check batch access', message: error.message });
   }
 });
 

@@ -165,6 +165,9 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
           req.accessToken = token;
           req.user = { id: userId } as User;
           
+          // Automatically authenticate the OxyServices instance so all subsequent API calls are authenticated
+          this.setTokens(token);
+          
           if (debug) {
             console.log(`✅ Auth: Authentication successful for user ${userId}`);
           }

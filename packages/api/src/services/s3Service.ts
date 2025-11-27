@@ -72,25 +72,15 @@ export class S3Service {
         contentType = contentType || 'application/octet-stream';
       }
 
-      const finalKey = options.folder ? `${options.folder}/${key}` : key;
-
-      // Sanitize metadata to ensure all values are strings
-      const sanitizedMetadata: Record<string, string> = {};
-      if (options.metadata) {
-        for (const [key, value] of Object.entries(options.metadata)) {
-          if (value !== null && value !== undefined) {
-            sanitizedMetadata[key] = String(value);
-          }
-        }
-      }
+      const { finalKey, metadata, acl } = this.prepareObjectOptions(key, options);
 
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: finalKey,
         Body: body as any, // Type assertion for compatibility
         ContentType: contentType,
-        Metadata: Object.keys(sanitizedMetadata).length > 0 ? sanitizedMetadata : undefined,
-        ACL: options.publicRead ? 'public-read' : 'private',
+        Metadata: metadata,
+        ACL: acl,
       });
 
       const response = await this.s3Client.send(command);
@@ -100,7 +90,7 @@ export class S3Service {
         size: 0, // Will be updated below
         lastModified: new Date(),
         contentType,
-        metadata: sanitizedMetadata,
+        metadata: metadata || {},
         url: options.publicRead ? this.generatePublicUrl(finalKey) : undefined,
       };
     } catch (error) {
@@ -118,25 +108,15 @@ export class S3Service {
   ): Promise<FileInfo> {
     try {
       const contentType = options.contentType || 'application/octet-stream';
-      const finalKey = options.folder ? `${options.folder}/${key}` : key;
-
-      // Sanitize metadata to ensure all values are strings
-      const sanitizedMetadata: Record<string, string> = {};
-      if (options.metadata) {
-        for (const [key, value] of Object.entries(options.metadata)) {
-          if (value !== null && value !== undefined) {
-            sanitizedMetadata[key] = String(value);
-          }
-        }
-      }
+      const { finalKey, metadata, acl } = this.prepareObjectOptions(key, options);
 
       const command = new PutObjectCommand({
         Bucket: this.bucketName,
         Key: finalKey,
         Body: buffer,
         ContentType: contentType,
-        Metadata: Object.keys(sanitizedMetadata).length > 0 ? sanitizedMetadata : undefined,
-        ACL: options.publicRead ? 'public-read' : 'private',
+        Metadata: metadata,
+        ACL: acl,
       });
 
       await this.s3Client.send(command);
@@ -146,7 +126,7 @@ export class S3Service {
         size: buffer.length,
         lastModified: new Date(),
         contentType,
-        metadata: sanitizedMetadata,
+        metadata: metadata || {},
         url: options.publicRead ? this.generatePublicUrl(finalKey) : undefined,
       };
     } catch (error) {
@@ -532,6 +512,30 @@ export class S3Service {
   validateFileType(filename: string, allowedTypes: string[]): boolean {
     const ext = path.extname(filename).toLowerCase();
     return allowedTypes.includes(ext);
+  }
+
+  private prepareObjectOptions(key: string, options: UploadOptions) {
+    return {
+      finalKey: this.buildFinalKey(key, options.folder),
+      metadata: this.sanitizeMetadata(options.metadata),
+      acl: options.publicRead ? 'public-read' as const : 'private' as const,
+    };
+  }
+
+  private buildFinalKey(key: string, folder?: string) {
+    return folder ? `${folder}/${key}` : key;
+  }
+
+  private sanitizeMetadata(metadata?: Record<string, unknown>) {
+    if (!metadata) return undefined;
+
+    const sanitized: Record<string, string> = {};
+    for (const [metaKey, value] of Object.entries(metadata)) {
+      if (value === null || value === undefined) continue;
+      sanitized[metaKey] = String(value);
+    }
+
+    return Object.keys(sanitized).length > 0 ? sanitized : undefined;
   }
 }
 

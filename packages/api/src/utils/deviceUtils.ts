@@ -2,6 +2,7 @@ import crypto from 'crypto';
 import { Request } from 'express';
 import Session from '../models/Session';
 import { logger } from './logger';
+import { normalizeUser } from './userTransform';
 
 export interface DeviceFingerprint {
   userAgent: string;
@@ -171,10 +172,12 @@ export const getDeviceActiveSessions = async (deviceId: string, currentSessionId
     for (const session of sessions) {
       const user = session.userId as any;
       if (!user || typeof user !== 'object') continue;
-      
-      const userId = user._id?.toString() || user.id;
-      if (!userId) continue;
-      
+
+      const normalizedUser = normalizeUser(user);
+      if (!normalizedUser?.id) continue;
+
+      const userId = normalizedUser.id;
+
       // If we already have a session for this user, keep the one with more recent lastActive
       const existing = userSessionMap.get(userId);
       if (existing) {
@@ -185,33 +188,7 @@ export const getDeviceActiveSessions = async (deviceId: string, currentSessionId
         }
       }
       
-      // Ensure name.full exists (virtuals may not be included with lean)
-      let name = user.name;
-      if (name && typeof name === 'object') {
-        const first = (name.first as string) || '';
-        const last = (name.last as string) || '';
-        if (!name.full) {
-          name = {
-            ...name,
-            full: [first, last].filter(Boolean).join(' ').trim()
-          };
-        }
-      }
-      
-      const userData = {
-        id: userId,
-        username: user.username,
-        email: user.email,
-        avatar: user.avatar,
-        ...user,
-        // Ensure name.full is set (override spread if needed)
-        name: name
-      };
-
-      // Remove MongoDB _id if we have id
-      if (userData._id && userData.id) {
-        delete userData._id;
-      }
+      const userData = normalizedUser;
 
       userSessionMap.set(userId, {
         sessionId: session.sessionId,

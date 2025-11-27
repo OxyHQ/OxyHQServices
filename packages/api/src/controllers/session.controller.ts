@@ -18,6 +18,7 @@ import { authenticator } from 'otplib';
 import sessionService from '../services/session.service';
 import sessionCache from '../utils/sessionCache';
 import { logger } from '../utils/logger';
+import { normalizeUser } from '../utils/userTransform';
 
 const MFA_TOKEN_SECRET: import('jsonwebtoken').Secret = (process.env.MFA_TOKEN_SECRET || process.env.REFRESH_TOKEN_SECRET!) as import('jsonwebtoken').Secret;
 const MFA_TOKEN_TTL_SECONDS: number = Number(process.env.MFA_TOKEN_TTL_SECONDS || 300); // default 5 minutes
@@ -421,11 +422,7 @@ export class SessionController {
         });
       }
 
-      // Transform user data to include id field for frontend compatibility
-      const userData = (result.user as any).toObject ? (result.user as any).toObject() : result.user;
-      if (userData._id) {
-        userData.id = userData._id.toString();
-      }
+      const userData = normalizeUser(result.user);
 
       res.json(userData);
     } catch (error) {
@@ -592,11 +589,7 @@ export class SessionController {
         logger.debug(`Session ${sessionId.substring(0, 8)}... validated with device fingerprint: ${deviceFingerprint.substring(0, 16)}...`);
       }
 
-      // Transform user data to include id field for frontend compatibility
-      const userData = (result.user as any).toObject ? (result.user as any).toObject() : result.user;
-      if (userData._id) {
-        userData.id = userData._id.toString();
-      }
+      const userData = normalizeUser(result.user);
 
       res.json({ 
         valid: true,
@@ -641,11 +634,7 @@ export class SessionController {
         }
       }
 
-      // Transform user data to include id field for frontend compatibility
-      const userData = (result.user as any).toObject ? (result.user as any).toObject() : result.user;
-      if (userData._id) {
-        userData.id = userData._id.toString();
-      }
+      const userData = normalizeUser(result.user);
 
       res.json({ 
         valid: true,
@@ -717,28 +706,8 @@ export class SessionController {
         if (!session.userId || typeof session.userId !== 'object') continue;
         
         const user = session.userId as any;
-        
-        // Ensure name.full exists (virtuals may not be included with lean)
-        let name = user.name;
-        if (name && typeof name === 'object') {
-          const first = (name.first as string) || '';
-          const last = (name.last as string) || '';
-          if (!name.full) {
-            name = {
-              ...name,
-              full: [first, last].filter(Boolean).join(' ').trim()
-            };
-          }
-        }
-        
-        // Build userData efficiently - only include needed fields
-        const userData: any = {
-          id: user._id?.toString() || user.id,
-          username: user.username,
-          email: user.email,
-          avatar: user.avatar,
-          name: name,
-        };
+        const userData = normalizeUser(user);
+        if (!userData?.id) continue;
         
         usersMap.set(session.sessionId, userData);
       }

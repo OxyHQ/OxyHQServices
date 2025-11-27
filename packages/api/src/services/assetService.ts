@@ -12,6 +12,9 @@ import {
   AssetDeleteSummary,
 } from '../types/asset.types';
 
+import { mediaPrivacyService } from './mediaPrivacyService';
+import { MediaAccessContext } from '../types/mediaPrivacy.types';
+
 export class AssetService {
   private variantService: VariantService;
 
@@ -353,6 +356,13 @@ export class AssetService {
   }
 
   /**
+   * Get multiple files by ID
+   */
+  async getFilesByIds(fileIds: string[]): Promise<IFile[]> {
+    return File.find({ _id: { $in: fileIds } });
+  }
+
+  /**
    * Get file by ID with full metadata
    * Also handles legacy storage keys for backward compatibility
    */
@@ -453,14 +463,22 @@ export class AssetService {
   /**
    * Delete file permanently
    */
-  async deleteFile(fileId: string, force: boolean = false): Promise<void> {
+  async deleteFile(fileId: string, force: boolean = false, requestingUserId?: string): Promise<void> {
     try {
       const file = await File.findById(fileId);
       if (!file) {
         throw new Error('File not found');
       }
 
+      // Authorization Check
+      if (requestingUserId && file.ownerUserId.toString() !== requestingUserId) {
+        // TODO: Add admin check here if needed
+        throw new Error('Unauthorized: You do not own this file');
+      }
+
       if (!force && file.links.length > 0) {
+        // Verify if links are actually active (optional enhancement)
+        // For now, strict check
         throw new Error('Cannot delete file with active links. Use force=true to override.');
       }
 
@@ -585,24 +603,10 @@ export class AssetService {
   /**
    * Check if a user can access a file
    */
-  canUserAccessFile(file: IFile, userId?: string): boolean {
-    // Public files are accessible by everyone
-    if (file.visibility === 'public') {
-      return true;
-    }
-
-    // Unlisted files are accessible with direct link
-    if (file.visibility === 'unlisted') {
-      return true;
-    }
-
-    // Private files require authentication and ownership
-    if (!userId) {
-      return false;
-    }
-
-    // Compare as strings (handle ObjectId vs string comparison)
-    return file.ownerUserId.toString() === userId.toString();
+  async canUserAccessFile(file: IFile, userId?: string, context?: MediaAccessContext): Promise<boolean> {
+    // Use the centralized MediaPrivacyService for comprehensive checks
+    const result = await mediaPrivacyService.checkMediaAccess(file, userId, context);
+    return result.allowed;
   }
 
   /**

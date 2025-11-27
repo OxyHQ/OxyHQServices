@@ -52,16 +52,14 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      */
     async getFileDownloadUrlAsync(fileId: string, variant?: string, expiresIn?: number): Promise<string> {
       try {
-        const params: any = {};
-        if (variant) params.variant = variant;
-        if (expiresIn) params.expiresIn = expiresIn;
-        
-        const urlRes = await this.makeRequest<{ url: string }>('GET', `/api/assets/${encodeURIComponent(fileId)}/url`, params, {
-          cache: true,
-          cacheTTL: Math.min((expiresIn || 3600) * 1000, 10 * 60 * 1000), // Cache for up to 10 minutes or expiresIn, whichever is shorter
-        });
-        
-        return urlRes?.url || this.getFileDownloadUrl(fileId, variant, expiresIn);
+        const url = await this.fetchAssetDownloadUrl(
+          fileId,
+          variant,
+          this.getAssetUrlCacheTTL(expiresIn),
+          expiresIn
+        );
+
+        return url || this.getFileDownloadUrl(fileId, variant, expiresIn);
       } catch (error) {
         // Fallback to synchronous method on error
         return this.getFileDownloadUrl(fileId, variant, expiresIn);
@@ -96,14 +94,17 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      */
     async getFileContentAsText(fileId: string, variant?: string): Promise<string> {
       try {
-        const params: any = variant ? { variant } : undefined;
-        const urlRes = await this.makeRequest<{ url: string }>('GET', `/api/assets/${encodeURIComponent(fileId)}/url`, params, {
-          cache: true,
-          cacheTTL: 10 * 60 * 1000, // 10 minutes cache for URLs
-        });
-        const downloadUrl = urlRes?.url;
-        const response = await fetch(downloadUrl);
-        return await response.text();
+        const downloadUrl = await this.fetchAssetDownloadUrl(
+          fileId,
+          variant,
+          this.getAssetUrlCacheTTL()
+        );
+
+        if (!downloadUrl) {
+          throw new Error('No download URL returned for asset');
+        }
+
+        return await this.fetchAssetContent(downloadUrl, 'text');
       } catch (error) {
         throw this.handleError(error);
       }
@@ -114,17 +115,51 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      */
     async getFileContentAsBlob(fileId: string, variant?: string): Promise<Blob> {
       try {
-        const params: any = variant ? { variant } : undefined;
-        const urlRes = await this.makeRequest<{ url: string }>('GET', `/api/assets/${encodeURIComponent(fileId)}/url`, params, {
-          cache: true,
-          cacheTTL: 10 * 60 * 1000, // 10 minutes cache for URLs
-        });
-        const downloadUrl = urlRes?.url;
-        const response = await fetch(downloadUrl);
-        return await response.blob();
+        const downloadUrl = await this.fetchAssetDownloadUrl(
+          fileId,
+          variant,
+          this.getAssetUrlCacheTTL()
+        );
+
+        if (!downloadUrl) {
+          throw new Error('No download URL returned for asset');
+        }
+
+        return await this.fetchAssetContent(downloadUrl, 'blob');
       } catch (error) {
         throw this.handleError(error);
       }
+    }
+
+    /**
+     * Get batch access to multiple files
+     * Returns URLs and access status for each file
+     */
+    async getBatchFileAccess(fileIds: string[], context?: string): Promise<Record<string, any>> {
+      try {
+        return await this.makeRequest('POST', '/api/assets/batch-access', { 
+          fileIds, 
+          context 
+        });
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Get download URLs for multiple files efficiently
+     */
+    async getFileDownloadUrls(fileIds: string[], context?: string): Promise<Record<string, string>> {
+      const response: any = await this.getBatchFileAccess(fileIds, context);
+      const urls: Record<string, string> = {};
+      // response.results is the map
+      const results = response.results || {};
+      for (const [id, result] of Object.entries(results as Record<string, any>)) {
+        if (result.allowed && result.url) {
+          urls[id] = result.url;
+        }
+      }
+      return urls;
     }
 
     /**
@@ -407,6 +442,43 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
         throw this.handleError(error);
       }
     }
+
+    public getAssetUrlCacheTTL(expiresIn?: number) {
+      const desiredTtlMs = (expiresIn ?? 3600) * 1000;
+      return Math.min(desiredTtlMs, 10 * 60 * 1000);
+    }
+
+    public async fetchAssetDownloadUrl(
+      fileId: string,
+      variant?: string,
+      cacheTTL?: number,
+      expiresIn?: number
+    ): Promise<string | null> {
+      const params: any = {};
+      if (variant) params.variant = variant;
+      if (expiresIn) params.expiresIn = expiresIn;
+
+      const urlRes = await this.makeRequest<{ url: string }>(
+        'GET',
+        `/api/assets/${encodeURIComponent(fileId)}/url`,
+        Object.keys(params).length ? params : undefined,
+        {
+          cache: true,
+          cacheTTL: cacheTTL ?? 10 * 60 * 1000, // default 10 minutes cache for URLs
+        }
+      );
+
+      return urlRes?.url || null;
+    }
+
+    public async fetchAssetContent(url: string, type: 'text'): Promise<string>;
+    public async fetchAssetContent(url: string, type: 'blob'): Promise<Blob>;
+    public async fetchAssetContent(url: string, type: 'text' | 'blob') {
+      const response = await fetch(url);
+      if (!response?.ok) {
+        throw new Error(`Failed to fetch asset content (status ${response?.status})`);
+      }
+      return type === 'text' ? response.text() : response.blob();
+    }
   };
 }
-

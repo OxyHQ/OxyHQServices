@@ -98,7 +98,7 @@ import { composeOxyServices } from './mixins';
  * ```
  */
 // Compose all mixins into the final OxyServices class
-const OxyServicesComposed = composeOxyServices();
+const OxyServicesComposed: ReturnType<typeof composeOxyServices> = composeOxyServices();
 
 // Export as a named class to avoid TypeScript issues with anonymous class types
 export class OxyServices extends OxyServicesComposed {
