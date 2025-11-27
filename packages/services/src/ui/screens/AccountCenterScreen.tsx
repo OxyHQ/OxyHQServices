@@ -9,6 +9,7 @@ import {
     Alert,
     Platform,
 } from 'react-native';
+import { useCallback, useMemo } from 'react';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { packageInfo } from '../../constants/version';
@@ -39,7 +40,8 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     const primaryColor = '#0066CC';
     const dangerColor = '#D32F2F';
 
-    const handleLogout = async () => {
+    // Memoized logout handler - prevents unnecessary re-renders
+    const handleLogout = useCallback(async () => {
         try {
             await logout();
             if (onClose) {
@@ -49,14 +51,15 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
             console.error('Logout failed:', error);
             toast.error(t('common.errors.signOutFailed') || 'There was a problem signing you out. Please try again.');
         }
-    };
+    }, [logout, onClose, t]);
 
-    const confirmLogout = () => {
+    // Memoized confirm logout handler - prevents unnecessary re-renders
+    const confirmLogout = useCallback(() => {
         confirmAction(
             t('common.confirms.signOut') || 'Are you sure you want to sign out?',
             handleLogout
         );
-    };
+    }, [handleLogout, t]);
 
     if (!isAuthenticated) {
         return (
@@ -91,14 +94,14 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 {/* Quick Actions */}
                 <Section title={t('accountCenter.sections.quickActions') || 'Quick Actions'} theme={theme} isFirst={true}>
                     <QuickActions
-                        actions={[
+                        actions={useMemo(() => [
                             { id: 'overview', icon: 'person-circle', iconColor: '#007AFF', title: t('accountCenter.quickActions.overview') || 'Overview', onPress: () => navigate('AccountOverview') },
                             { id: 'settings', icon: 'settings', iconColor: '#5856D6', title: t('accountCenter.quickActions.editProfile') || 'Edit Profile', onPress: () => navigate('EditProfile') },
                             { id: 'sessions', icon: 'shield-checkmark', iconColor: '#30D158', title: t('accountCenter.quickActions.sessions') || 'Sessions', onPress: () => navigate('SessionManagement') },
                             { id: 'premium', icon: 'star', iconColor: '#FFD700', title: t('accountCenter.quickActions.premium') || 'Premium', onPress: () => navigate('PremiumSubscription') },
                             ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: '#34C759', title: t('accountCenter.quickActions.billing') || 'Billing', onPress: () => navigate('PaymentGateway') }] : []),
                             ...(sessions && sessions.length > 1 ? [{ id: 'switch', icon: 'swap-horizontal', iconColor: '#FF9500', title: t('accountCenter.quickActions.switch') || 'Switch', onPress: () => navigate('AccountSwitcher') }] : []),
-                        ]}
+                        ], [user?.isPremium, sessions, navigate, t])}
                         theme={theme}
                     />
                 </Section>
@@ -106,7 +109,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 {/* Account Management */}
                 <Section title={t('accountCenter.sections.accountManagement') || 'Account Management'} theme={theme}>
                     <GroupedSection
-                        items={[
+                        items={useMemo(() => [
                             {
                                 id: 'overview',
                                 icon: 'person-circle',
@@ -155,7 +158,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 subtitle: t('accountCenter.items.billing.subtitle') || 'Payment methods and invoices',
                                 onPress: () => navigate('PaymentGateway'),
                             }] : []),
-                        ]}
+                        ], [user?.isPremium, navigate, t])}
                         theme={theme}
                     />
                 </Section>
@@ -164,7 +167,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 {sessions && sessions.length > 1 && (
                     <Section title={t('accountCenter.sections.multiAccount') || 'Multi-Account'} theme={theme}>
                         <GroupedSection
-                            items={[
+                            items={useMemo(() => [
                                 {
                                     id: 'switch',
                                     icon: 'people',
@@ -181,7 +184,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                     subtitle: t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account',
                                     onPress: () => navigate('SignIn'),
                                 },
-                            ]}
+                            ], [sessions.length, navigate, t])}
                             theme={theme}
                         />
                     </Section>
@@ -191,7 +194,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 {(!sessions || sessions.length <= 1) && (
                     <Section title={t('accountCenter.sections.addAccount') || 'Add Account'} theme={theme}>
                         <GroupedSection
-                            items={[
+                            items={useMemo(() => [
                                 {
                                     id: 'add',
                                     icon: 'person-add',
@@ -200,7 +203,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                     subtitle: t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account',
                                     onPress: () => navigate('SignIn'),
                                 },
-                            ]}
+                            ], [navigate, t])}
                             theme={theme}
                         />
                     </Section>
@@ -209,7 +212,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 {/* Additional Options */}
                 <Section title={t('accountCenter.sections.moreOptions') || 'More Options'} theme={theme}>
                     <GroupedSection
-                        items={[
+                        items={useMemo(() => [
                             ...(Platform.OS !== 'web' ? [{
                                 id: 'notifications',
                                 icon: 'notifications',
@@ -242,7 +245,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 subtitle: t('accountCenter.items.appInfo.subtitle') || 'Version and system details',
                                 onPress: () => navigate('AppInfo'),
                             },
-                        ]}
+                        ], [navigate, t])}
                         theme={theme}
                     />
                 </Section>

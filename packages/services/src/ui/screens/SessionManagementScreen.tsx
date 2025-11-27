@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
@@ -39,7 +39,8 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     const dangerColor = '#D32F2F';
     const successColor = '#2E7D32';
 
-    const loadSessions = async (isRefresh = false) => {
+    // Memoized load sessions function - prevents unnecessary re-renders
+    const loadSessions = useCallback(async (isRefresh = false) => {
         try {
             if (isRefresh) {
                 setRefreshing(true);
@@ -64,9 +65,10 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             setLoading(false);
             setRefreshing(false);
         }
-    };
+    }, [refreshSessions]);
 
-    const handleLogoutSession = async (sessionId: string) => {
+    // Memoized logout session handler - prevents unnecessary re-renders
+    const handleLogoutSession = useCallback(async (sessionId: string) => {
         confirmAction('Are you sure you want to logout this session?', async () => {
             try {
                 setActionLoading(sessionId);
@@ -80,9 +82,10 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 setActionLoading(null);
             }
         });
-    };
+    }, [logout, refreshSessions]);
 
-    const handleLogoutOtherSessions = async () => {
+    // Memoized logout other sessions handler - prevents unnecessary re-renders
+    const handleLogoutOtherSessions = useCallback(async () => {
         const otherSessionsCount = userSessions.filter(s => s.sessionId !== activeSessionId).length;
         if (otherSessionsCount === 0) {
             toast.info('No other sessions to logout.');
@@ -108,9 +111,10 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 }
             }
         );
-    };
+    }, [userSessions, activeSessionId, logout, refreshSessions]);
 
-    const handleLogoutAllSessions = async () => {
+    // Memoized logout all sessions handler - prevents unnecessary re-renders
+    const handleLogoutAllSessions = useCallback(async () => {
         confirmAction(
             'This will logout all sessions including this one and you will need to sign in again. Continue?',
             async () => {
@@ -124,10 +128,10 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 }
             }
         );
-    };
+    }, [logoutAll]);
 
-    // Relative time formatter (past & future)
-    const formatRelative = (dateString?: string) => {
+    // Memoized relative time formatter - prevents function recreation on every render
+    const formatRelative = useCallback((dateString?: string) => {
         if (!dateString) return 'Unknown';
         const date = new Date(dateString);
         const now = new Date();
@@ -142,9 +146,10 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         const days = hrs / 24;
         if (days < 7) return isFuture ? `in ${fmt(days)}d` : `${fmt(days)}d ago`;
         return date.toLocaleDateString();
-    };
+    }, []);
 
-    const handleSwitchSession = async (sessionId: string) => {
+    // Memoized switch session handler - prevents unnecessary re-renders
+    const handleSwitchSession = useCallback(async (sessionId: string) => {
         if (sessionId === activeSessionId) return;
         setSwitchLoading(sessionId);
         try {
@@ -156,11 +161,11 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         } finally {
             setSwitchLoading(null);
         }
-    };
+    }, [activeSessionId, switchSession]);
 
     useEffect(() => {
         loadSessions();
-    }, []);
+    }, [loadSessions]);
 
     if (loading) {
         return (
@@ -171,69 +176,76 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         );
     }
 
-    // Build grouped section items for sessions
-    const sessionItems = userSessions.map((session: ClientSession) => {
-        const isCurrent = session.sessionId === activeSessionId;
-        const subtitleParts: string[] = [];
-        if (session.deviceId) subtitleParts.push(`Device ${session.deviceId.substring(0, 10)}...`);
-        subtitleParts.push(`Last ${formatRelative(session.lastActive)}`);
-        subtitleParts.push(`Expires ${formatRelative(session.expiresAt)}`);
+    // Memoized session items - prevents unnecessary re-renders when dependencies haven't changed
+    const sessionItems = useMemo(() => {
+        return userSessions.map((session: ClientSession) => {
+            const isCurrent = session.sessionId === activeSessionId;
+            const subtitleParts: string[] = [];
+            if (session.deviceId) subtitleParts.push(`Device ${session.deviceId.substring(0, 10)}...`);
+            subtitleParts.push(`Last ${formatRelative(session.lastActive)}`);
+            subtitleParts.push(`Expires ${formatRelative(session.expiresAt)}`);
 
-        return {
-            id: session.sessionId,
-            icon: isCurrent ? 'shield-checkmark' : 'laptop-outline',
-            iconColor: isCurrent ? successColor : primaryColor,
-            title: isCurrent ? 'Current Session' : `Session ${session.sessionId.substring(0, 8)}...`,
-            subtitle: subtitleParts.join(' \u2022 '),
-            showChevron: false,
-            multiRow: true,
-            customContentBelow: !isCurrent ? (
-                <View style={styles.sessionActionsRow}>
-                    <TouchableOpacity
-                        onPress={() => handleSwitchSession(session.sessionId)}
-                        style={[styles.sessionPillButton, { backgroundColor: isDarkTheme ? '#1E2A38' : '#E6F2FF', borderColor: primaryColor }]}
-                        disabled={switchLoading === session.sessionId || actionLoading === session.sessionId}
-                    >
-                        {switchLoading === session.sessionId ? (
-                            <ActivityIndicator size="small" color={primaryColor} />
-                        ) : (
-                            <Text style={[styles.sessionPillText, { color: primaryColor }]}>Switch</Text>
-                        )}
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        onPress={() => handleLogoutSession(session.sessionId)}
-                        style={[styles.sessionPillButton, { backgroundColor: isDarkTheme ? '#3A1E1E' : '#FFEBEE', borderColor: dangerColor }]}
-                        disabled={actionLoading === session.sessionId || switchLoading === session.sessionId}
-                    >
-                        {actionLoading === session.sessionId ? (
-                            <ActivityIndicator size="small" color={dangerColor} />
-                        ) : (
-                            <Text style={[styles.sessionPillText, { color: dangerColor }]}>Logout</Text>
-                        )}
-                    </TouchableOpacity>
-                </View>
-            ) : (
-                <View style={styles.sessionActionsRow}>
-                    <Text style={[styles.currentBadgeText, { color: successColor }]}>Active</Text>
-                </View>
-            ),
-            selected: isCurrent,
-            dense: true,
-        };
-    });
+            return {
+                id: session.sessionId,
+                icon: isCurrent ? 'shield-checkmark' : 'laptop-outline',
+                iconColor: isCurrent ? successColor : primaryColor,
+                title: isCurrent ? 'Current Session' : `Session ${session.sessionId.substring(0, 8)}...`,
+                subtitle: subtitleParts.join(' \u2022 '),
+                showChevron: false,
+                multiRow: true,
+                customContentBelow: !isCurrent ? (
+                    <View style={styles.sessionActionsRow}>
+                        <TouchableOpacity
+                            onPress={() => handleSwitchSession(session.sessionId)}
+                            style={[styles.sessionPillButton, { backgroundColor: isDarkTheme ? '#1E2A38' : '#E6F2FF', borderColor: primaryColor }]}
+                            disabled={switchLoading === session.sessionId || actionLoading === session.sessionId}
+                        >
+                            {switchLoading === session.sessionId ? (
+                                <ActivityIndicator size="small" color={primaryColor} />
+                            ) : (
+                                <Text style={[styles.sessionPillText, { color: primaryColor }]}>Switch</Text>
+                            )}
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            onPress={() => handleLogoutSession(session.sessionId)}
+                            style={[styles.sessionPillButton, { backgroundColor: isDarkTheme ? '#3A1E1E' : '#FFEBEE', borderColor: dangerColor }]}
+                            disabled={actionLoading === session.sessionId || switchLoading === session.sessionId}
+                        >
+                            {actionLoading === session.sessionId ? (
+                                <ActivityIndicator size="small" color={dangerColor} />
+                            ) : (
+                                <Text style={[styles.sessionPillText, { color: dangerColor }]}>Logout</Text>
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                ) : (
+                    <View style={styles.sessionActionsRow}>
+                        <Text style={[styles.currentBadgeText, { color: successColor }]}>Active</Text>
+                    </View>
+                ),
+                selected: isCurrent,
+                dense: true,
+            };
+        });
+    }, [userSessions, activeSessionId, formatRelative, successColor, primaryColor, isDarkTheme, switchLoading, actionLoading, handleSwitchSession, handleLogoutSession, dangerColor]);
 
-    // Bulk actions as grouped section items
-    const bulkItems = [
+    // Memoized bulk action items - prevents unnecessary re-renders when dependencies haven't changed
+    const otherSessionsCount = useMemo(() => 
+        userSessions.filter(s => s.sessionId !== activeSessionId).length,
+        [userSessions, activeSessionId]
+    );
+
+    const bulkItems = useMemo(() => [
         {
             id: 'logout-others',
             icon: 'exit-outline',
             iconColor: primaryColor,
             title: 'Logout Other Sessions',
-            subtitle: userSessions.filter(s => s.sessionId !== activeSessionId).length === 0 ? 'No other sessions' : 'End all sessions except this one',
+            subtitle: otherSessionsCount === 0 ? 'No other sessions' : 'End all sessions except this one',
             onPress: handleLogoutOtherSessions,
             showChevron: false,
             customContent: actionLoading === 'others' ? <ActivityIndicator size="small" color={primaryColor} /> : undefined,
-            disabled: actionLoading === 'others' || userSessions.filter(s => s.sessionId !== activeSessionId).length === 0,
+            disabled: actionLoading === 'others' || otherSessionsCount === 0,
             dense: true,
         },
         {
@@ -248,7 +260,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             disabled: actionLoading === 'all',
             dense: true,
         },
-    ];
+    ], [otherSessionsCount, primaryColor, dangerColor, handleLogoutOtherSessions, handleLogoutAllSessions, actionLoading]);
 
     return (
         <View style={[styles.container, { backgroundColor }]}>

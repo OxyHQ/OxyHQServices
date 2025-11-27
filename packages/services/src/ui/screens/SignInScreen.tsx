@@ -129,7 +129,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
         } finally {
             setIsValidating(false);
         }
-    }, [oxyServices]);
+    }, [oxyServices, sessions]);
 
     // Input change handlers
     const handleUsernameChange = useCallback((text: string) => {
