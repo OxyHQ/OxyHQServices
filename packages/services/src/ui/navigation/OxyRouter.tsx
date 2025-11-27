@@ -1,12 +1,47 @@
 import type React from 'react';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, memo } from 'react';
 import { View, StyleSheet } from 'react-native';
 import { OxyServices } from '../../core';
+import ErrorBoundary from '../components/ErrorBoundary';
 
 // Import types and route registry
 import type { OxyRouterProps } from './types';
-import { routes } from './routes';
+import { routes, routeNames } from './routes';
 import type { RouteName } from './routes';
+
+// Helper function to validate route names at runtime
+const isValidRouteName = (screen: string): screen is RouteName => {
+    return routeNames.includes(screen as RouteName);
+};
+
+// Helper function for safe navigation with validation
+const validateAndNavigate = (
+    screen: string,
+    props: Record<string, any>,
+    setCurrentScreen: (screen: RouteName) => void,
+    setScreenHistory: React.Dispatch<React.SetStateAction<RouteName[]>>,
+    setScreenPropsMap: React.Dispatch<React.SetStateAction<Partial<Record<RouteName, any>>>>
+): boolean => {
+    if (!isValidRouteName(screen)) {
+        const errorMsg = `Invalid route name: "${screen}". Valid routes are: ${routeNames.join(', ')}`;
+        console.error('OxyRouter:', errorMsg);
+        if (process.env.NODE_ENV !== 'production') {
+            console.error('Navigation error:', errorMsg);
+        }
+        return false;
+    }
+
+    if (!routes[screen]) {
+        const errorMsg = `Route "${screen}" is registered but component is missing`;
+        console.error('OxyRouter:', errorMsg);
+        if (process.env.NODE_ENV !== 'production') {
+            console.error('Navigation error:', errorMsg);
+        }
+        return false;
+    }
+
+    return true;
+};
 
 const OxyRouter: React.FC<OxyRouterProps> = ({
     oxyServices,
@@ -30,20 +65,19 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         }
     }, [currentScreen, adjustSnapPoints]);
 
-    // Memoized navigation methods
+    // Memoized navigation methods with validation
     const navigate = useCallback((screen: RouteName, props: Record<string, any> = {}) => {
         if (__DEV__) console.log('OxyRouter: navigate called', screen, props);
-        if (routes[screen]) {
-            if (__DEV__) console.log('OxyRouter: screen found in routes');
-            setCurrentScreen(screen);
-            setScreenHistory(prev => [...prev, screen]);
-            setScreenPropsMap(prev => ({ ...prev, [screen]: props }));
-        } else {
-            console.error(`OxyRouter: Screen "${screen}" not found in routes:`, Object.keys(routes));
-            if (process.env.NODE_ENV !== 'production') {
-                console.error(`Screen "${screen}" not found`);
-            }
+        
+        // Validate route before navigating
+        if (!validateAndNavigate(screen, props, setCurrentScreen, setScreenHistory, setScreenPropsMap)) {
+            return; // Early return if validation fails
         }
+
+        // All validations passed, proceed with navigation
+        setCurrentScreen(screen);
+        setScreenHistory(prev => [...prev, screen]);
+        setScreenPropsMap(prev => ({ ...prev, [screen]: props }));
     }, []);
 
     const goBack = useCallback(() => {
@@ -80,10 +114,20 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         const handleNavigationEvent = (event: any) => {
             if (event && event.detail) {
                 if (typeof event.detail === 'string') {
-                    navigate(event.detail);
+                    // Validate string route name before navigating
+                    if (isValidRouteName(event.detail)) {
+                        navigate(event.detail as RouteName);
+                    } else {
+                        console.error('OxyRouter: Invalid route name in event:', event.detail);
+                    }
                 } else if (typeof event.detail === 'object' && event.detail.screen) {
                     const { screen, props } = event.detail;
-                    navigate(screen, props || {});
+                    // Validate route name before navigating
+                    if (isValidRouteName(screen)) {
+                        navigate(screen as RouteName, props || {});
+                    } else {
+                        console.error('OxyRouter: Invalid route name in event:', screen);
+                    }
                 }
             }
         };
@@ -95,8 +139,14 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
             intervalId = setInterval(() => {
                 const globalNav = (globalThis as any).oxyNavigateEvent;
                 if (globalNav && globalNav.screen) {
-                    navigate(globalNav.screen, globalNav.props || {});
-                    (globalThis as any).oxyNavigateEvent = null;
+                    // Validate route name before navigating
+                    if (isValidRouteName(globalNav.screen)) {
+                        navigate(globalNav.screen as RouteName, globalNav.props || {});
+                        (globalThis as any).oxyNavigateEvent = null;
+                    } else {
+                        console.error('OxyRouter: Invalid route name in global event:', globalNav.screen);
+                        (globalThis as any).oxyNavigateEvent = null; // Clear invalid event
+                    }
                 }
             }, 100);
         }
@@ -110,7 +160,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         };
     }, [navigate]);
 
-    // Render the current screen component
+    // Render the current screen component with error boundary
     const renderScreen = () => {
         const CurrentScreen = (routes as any)[currentScreen]?.component;
         if (!CurrentScreen) {
@@ -120,16 +170,22 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
             return <View style={styles.errorContainer} />;
         }
         return (
-            <CurrentScreen
-                oxyServices={oxyServices}
-                navigate={navigate}
-                goBack={goBack}
-                onClose={onClose}
-                onAuthenticated={onAuthenticated}
-                theme={theme}
-                containerWidth={containerWidth}
-                {...(screenPropsMap[currentScreen] || {})}
-            />
+            <ErrorBoundary
+                onError={(error, errorInfo) => {
+                    console.error(`Error in screen "${currentScreen}":`, error, errorInfo);
+                }}
+            >
+                <CurrentScreen
+                    oxyServices={oxyServices}
+                    navigate={navigate}
+                    goBack={goBack}
+                    onClose={onClose}
+                    onAuthenticated={onAuthenticated}
+                    theme={theme}
+                    containerWidth={containerWidth}
+                    {...(screenPropsMap[currentScreen] || {})}
+                />
+            </ErrorBoundary>
         );
     };
 
@@ -139,6 +195,9 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         </View>
     );
 };
+
+// Memoize the router component to prevent unnecessary re-renders
+const MemoizedOxyRouter = memo(OxyRouter);
 
 const styles = StyleSheet.create({
     container: {
@@ -152,4 +211,6 @@ const styles = StyleSheet.create({
     },
 });
 
-export default OxyRouter;
+// Export both the memoized version (default) and the original for testing
+export { OxyRouter };
+export default MemoizedOxyRouter;

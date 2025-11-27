@@ -272,9 +272,18 @@ UserSchema.set("toObject", {
   virtuals: true,
 });
 
-// Only create indexes for fields that don't have unique: true in schema
+// Indexes for frequently queried fields
+// Note: email and username already have unique indexes from schema definition
+// For $or queries like { $or: [{ email: x }, { username: x }] }, MongoDB will use
+// the individual unique indexes on email and username, which is optimal.
+
+// Social graph indexes
 UserSchema.index({ following: 1 });
 UserSchema.index({ followers: 1 });
+
+// Compound index for efficient user lookups (though individual unique indexes are used for $or queries)
+// This can help with queries that filter on both fields simultaneously
+UserSchema.index({ email: 1, username: 1 }, { sparse: true });
 
 // Geospatial index for locations
 UserSchema.index({ "locations.coordinates": "2dsphere" });

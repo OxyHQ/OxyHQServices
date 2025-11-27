@@ -30,7 +30,7 @@ class PerformanceMonitor {
   /**
    * Start timing an operation
    */
-  startTimer(operation: string): () => void {
+  startTimer(operation: string): (metadata?: Record<string, any>) => void {
     const startTime = Date.now();
     
     return (metadata?: Record<string, any>) => {

@@ -9,7 +9,7 @@ import sessionRouter from "./routes/session";
 import dotenv from "dotenv";
 import { User } from "./models/User";
 import searchRoutes from "./routes/search";
-import { rateLimiter, bruteForceProtection } from "./middleware/security";
+import { rateLimiter, authRateLimiter, userRateLimiter, bruteForceProtection } from "./middleware/security";
 import privacyRoutes from "./routes/privacy";
 import analyticsRoutes from "./routes/analytics.routes";
 import paymentRoutes from './routes/payment.routes';
@@ -26,6 +26,8 @@ import { Response } from 'express';
 import { authMiddleware } from './middleware/auth';
 import { createCorsMiddleware, SOCKET_IO_CORS_CONFIG } from './config/cors';
 import { validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
+import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from './middleware/performance';
+import { performanceMonitor } from './utils/performanceMonitor';
 
 // Load environment variables
 dotenv.config();
@@ -44,6 +46,9 @@ const app = express();
 // Body parsing middleware - IMPORTANT: Add this before any routes
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Performance monitoring middleware (before routes)
+app.use(performanceMiddleware);
 
 // CORS middleware - centralized configuration
 app.use(createCorsMiddleware({
@@ -118,17 +123,56 @@ export function emitSessionUpdate(userId: string, payload: any) {
   io.to(room).emit('session_update', payload);
 }
 
-// MongoDB Connection
-mongoose.connect(process.env.MONGODB_URI as string, {
+// MongoDB Connection with optimized connection pooling for scale
+const mongoOptions = {
   autoIndex: true,
   autoCreate: true,
-})
+  // Connection pool settings for handling millions of users
+  maxPoolSize: 50, // Maximum number of connections in the pool
+  minPoolSize: 5, // Minimum number of connections to maintain
+  maxIdleTimeMS: 30000, // Close connections after 30 seconds of inactivity
+  serverSelectionTimeoutMS: 5000, // How long to try selecting a server before timing out
+  socketTimeoutMS: 45000, // How long a send or receive on a socket can take before timing out
+  connectTimeoutMS: 10000, // How long to wait for initial connection
+  heartbeatFrequencyMS: 10000, // Frequency of server heartbeat checks
+  retryWrites: true, // Retry write operations on network errors
+  retryReads: true, // Retry read operations on network errors
+};
+
+mongoose.connect(process.env.MONGODB_URI as string, mongoOptions)
 .then(() => {
-  logger.info("Connected to MongoDB successfully");
+  logger.info("Connected to MongoDB successfully", {
+    maxPoolSize: mongoOptions.maxPoolSize,
+    minPoolSize: mongoOptions.minPoolSize,
+  });
 })
 .catch((error) => {
   logger.error("MongoDB connection error:", error);
   process.exit(1);
+});
+
+// MongoDB connection event handlers for monitoring
+mongoose.connection.on('connected', () => {
+  logger.info('MongoDB connection established');
+});
+
+mongoose.connection.on('error', (err) => {
+  logger.error('MongoDB connection error:', err);
+});
+
+mongoose.connection.on('disconnected', () => {
+  logger.warn('MongoDB disconnected');
+});
+
+mongoose.connection.on('reconnected', () => {
+  logger.info('MongoDB reconnected');
+});
+
+// Graceful shutdown
+process.on('SIGINT', async () => {
+  await mongoose.connection.close();
+  logger.info('MongoDB connection closed through app termination');
+  process.exit(0);
 });
 
 // API Routes
@@ -174,21 +218,58 @@ app.get("/health", async (req, res) => {
   }
 });
 
+// Performance monitoring endpoint (protected, for admin/internal use)
+app.get("/api/metrics", authMiddleware, (req: any, res: Response) => {
+  try {
+    const memoryStats = getMemoryStats();
+    const connectionStats = getConnectionPoolStats(mongoose.connection);
+    const perfSummary = performanceMonitor.getSummary();
+    const slowOperations = performanceMonitor.getSlowOperations(1000);
+    
+    res.json({
+      timestamp: new Date().toISOString(),
+      memory: memoryStats,
+      database: connectionStats,
+      performance: {
+        summary: perfSummary,
+        slowOperations: slowOperations.map(op => ({
+          operation: op.operation,
+          avgDuration: op.avgDuration,
+          count: op.count,
+          maxDuration: op.maxDuration,
+        })),
+      },
+    });
+  } catch (error) {
+    logger.error("Metrics endpoint error:", error);
+    res.status(500).json({
+      error: "Failed to retrieve metrics",
+      message: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
+// Apply rate limiting middleware globally (before routes)
+// Note: Auth routes have their own stricter rate limiting
+app.use(rateLimiter);
+app.use(bruteForceProtection);
+
 // API Routes with /api prefix
+// Apply stricter rate limiting to auth routes
+app.use("/api/auth", authRateLimiter, authRoutes);
 app.use("/api/assets", assetRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/profiles", profilesRouter);
-app.use("/api/users", usersRouter);
-app.use("/api/session", sessionRouter);
-app.use("/api/privacy", privacyRoutes);
-app.use("/api/analytics", analyticsRoutes);
-app.use('/api/payments', paymentRoutes);
-app.use('/api/notifications', notificationsRouter);
+app.use("/api/users", userRateLimiter, usersRouter); // Per-user rate limiting for authenticated routes
+app.use("/api/session", userRateLimiter, sessionRouter);
+app.use("/api/privacy", userRateLimiter, privacyRoutes);
+app.use("/api/analytics", userRateLimiter, analyticsRoutes);
+app.use('/api/payments', userRateLimiter, paymentRoutes);
+app.use('/api/notifications', userRateLimiter, notificationsRouter);
 app.use('/api/karma', karmaRoutes);
-app.use('/api/wallet', walletRoutes);
+app.use('/api/wallet', userRateLimiter, walletRoutes);
 app.use('/api/link-metadata', linkMetadataRoutes);
 app.use('/api/location-search', locationSearchRoutes);
-app.use('/api/auth', authRoutes);
 app.use('/api/developer', developerRoutes);
 
 // Add a protected route for testing
