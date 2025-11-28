@@ -19,6 +19,8 @@ export const Colors = {
     card: '#F2F2F7',
     border: '#E5E5EA',
     secondaryText: '#8E8E93',
+    avatarBackground: '#0a7ea4',
+    avatarText: '#FFFFFF',
   },
   dark: {
     text: '#ECEDEE',
@@ -30,6 +32,8 @@ export const Colors = {
     card: '#1C1C1E',
     border: '#2C2C2E',
     secondaryText: '#8E8E93',
+    avatarBackground: '#0a7ea4',
+    avatarText: '#FFFFFF',
   },
 };
 
