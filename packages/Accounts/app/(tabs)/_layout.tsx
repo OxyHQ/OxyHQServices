@@ -1,14 +1,12 @@
-import { Tabs, Slot } from 'expo-router';
+import { Slot } from 'expo-router';
+import { Drawer } from 'expo-router/drawer';
 import React, { useMemo } from 'react';
 import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, TextInput } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { DesktopSidebar, Logo } from '@/components/ui';
+import { DesktopSidebar, DrawerContent, Logo, MobileHeader } from '@/components/ui';
 import { UserAvatar } from '@/components/user-avatar';
 import { Ionicons } from '@expo/vector-icons';
-
-import { HapticTab } from '@/components/haptic-tab';
-import { IconSymbol } from '@/components/ui/icon-symbol';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -49,104 +47,120 @@ export default function TabLayout() {
         </View>
 
         <View style={styles.desktopBody}>
-          <DesktopSidebar />
-          <ScrollView
-            style={styles.desktopMain}
-            contentContainerStyle={styles.desktopMainContent}
-            showsVerticalScrollIndicator={false}
-          >
-            <Slot />
-          </ScrollView>
+          <View style={styles.desktopSidebarColumn}>
+            <DesktopSidebar />
+          </View>
+          <View style={styles.desktopContentColumn}>
+            <View style={styles.desktopContentWrapper}>
+              <ScrollView
+                style={styles.desktopMain}
+                contentContainerStyle={styles.desktopMainContent}
+                showsVerticalScrollIndicator={false}
+              >
+                <Slot />
+              </ScrollView>
+            </View>
+          </View>
         </View>
       </View>
     );
   }
 
-  // Mobile layout - use tabs
+  // Mobile layout - use drawer
   return (
-    <Tabs
+    <Drawer
+      drawerContent={(props) => <DrawerContent {...props} />}
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
-        headerShown: false,
-        tabBarButton: HapticTab,
-      }}>
-      <Tabs.Screen
+        headerShown: true,
+        header: () => <MobileHeader />,
+        headerStyle: {
+          backgroundColor: colors.background,
+        },
+      }}
+    >
+      <Drawer.Screen
         name="index"
         options={{
-          title: 'Account',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="person.fill" color={color} />,
+          drawerLabel: 'Home',
+          title: 'Home',
         }}
       />
-      <Tabs.Screen
-        name="security"
-        options={{
-          title: 'Security',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="lock.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="sessions"
-        options={{
-          title: 'Sessions',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="clock.fill" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="data"
-        options={{
-          title: 'Data',
-          tabBarIcon: ({ color }) => <IconSymbol size={28} name="server.rack" color={color} />,
-        }}
-      />
-      <Tabs.Screen
-        name="explore"
-        options={{
-          href: null, // Hide explore tab
-        }}
-      />
-      <Tabs.Screen
+      <Drawer.Screen
         name="personal-info"
         options={{
-          href: null, // Hide from tab bar
+          drawerLabel: 'Personal info',
+          title: 'Personal info',
         }}
       />
-      <Tabs.Screen
+      <Drawer.Screen
+        name="security"
+        options={{
+          drawerLabel: 'Security & sign-in',
+          title: 'Security & sign-in',
+        }}
+      />
+      <Drawer.Screen
         name="password-manager"
         options={{
-          href: null, // Hide from tab bar
+          drawerLabel: 'Password Manager',
+          title: 'Password Manager',
         }}
       />
-      <Tabs.Screen
+      <Drawer.Screen
         name="devices"
         options={{
-          href: null, // Hide from tab bar
+          drawerLabel: 'Your devices',
+          title: 'Your devices',
         }}
       />
-      <Tabs.Screen
+      <Drawer.Screen
+        name="data"
+        options={{
+          drawerLabel: 'Data & privacy',
+          title: 'Data & privacy',
+        }}
+      />
+      <Drawer.Screen
         name="sharing"
         options={{
-          href: null, // Hide from tab bar
+          drawerLabel: 'People & sharing',
+          title: 'People & sharing',
         }}
       />
-      <Tabs.Screen
+      <Drawer.Screen
         name="family"
         options={{
-          href: null, // Hide from tab bar
+          drawerLabel: 'Family Group',
+          title: 'Family Group',
         }}
       />
-      <Tabs.Screen
+      <Drawer.Screen
         name="payments"
         options={{
-          href: null, // Hide from tab bar
+          drawerLabel: 'Payments & subscriptions',
+          title: 'Payments & subscriptions',
         }}
       />
-      <Tabs.Screen
+      <Drawer.Screen
         name="storage"
         options={{
-          href: null, // Hide from tab bar
+          drawerLabel: 'Oxy storage',
+          title: 'Oxy storage',
         }}
       />
-    </Tabs>
+      <Drawer.Screen
+        name="explore"
+        options={{
+          drawerItemStyle: { display: 'none' },
+        }}
+      />
+      <Drawer.Screen
+        name="sessions"
+        options={{
+          drawerItemStyle: { display: 'none' },
+        }}
+      />
+    </Drawer>
   );
 }
 
@@ -160,17 +174,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 16,
     borderBottomWidth: 1,
-    gap: 16,
   },
   topBarLeft: {
     flexDirection: 'row',
     alignItems: 'center',
-    minWidth: 200,
+    minWidth: 350,
   },
   searchBarContainer: {
     flex: 1,
-    maxWidth: 600,
+    flexDirection: 'row',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   searchBar: {
     flexDirection: 'row',
@@ -179,6 +193,8 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     paddingHorizontal: 16,
     gap: 12,
+    maxWidth: 600,
+    width: '100%',
   },
   searchIcon: {
     opacity: 0.6,
@@ -192,7 +208,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    minWidth: 100,
     justifyContent: 'flex-end',
   },
   iconButton: {
@@ -202,6 +217,19 @@ const styles = StyleSheet.create({
   desktopBody: {
     flex: 1,
     flexDirection: 'row',
+  },
+  desktopSidebarColumn: {
+    minWidth: 350,
+    alignItems: 'flex-start',
+  },
+  desktopContentColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  desktopContentWrapper: {
+    width: '100%',
+    maxWidth: 800,
+    flex: 1,
   },
   desktopMain: {
     flex: 1,

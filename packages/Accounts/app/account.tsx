@@ -139,7 +139,7 @@ export default function AccountScreen() {
                                 <Ionicons name="logo-react" size={32} color={colors.text} />
                             </View>
                             <ThemedText style={styles.welcomeText}>Welcome, Nate.</ThemedText>
-                            <ThemedText style={styles.welcomeSubtext}>Manage your xAI account.</ThemedText>
+                            <ThemedText style={styles.welcomeSubtext}>Manage your Oxy account.</ThemedText>
                         </View>
 
                         <View style={styles.menuContainer}>

@@ -1,6 +1,8 @@
 export { DesktopSidebar } from './desktop-sidebar';
+export { DrawerContent } from './drawer-content';
+export { SidebarContent } from './sidebar-content';
+export { MobileHeader } from './mobile-header';
 export { LinkButton } from './link-button';
 export { AccountCard } from './account-card';
 export { ScreenLayout } from './screen-layout';
 export { Logo } from './logo';
-
