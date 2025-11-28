@@ -7,8 +7,29 @@ import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { UserAvatar } from '@/components/user-avatar';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import lottieAnimation from '@/assets/lottie/welcomeheader_background_op1.json';
+
+/**
+ * Darkens a color by a specified factor
+ * Returns a darker version of the color
+ */
+const darkenColor = (color: string, factor: number = 0.6): string => {
+  // Remove # if present
+  const hex = color.replace('#', '');
+
+  // Convert to RGB
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+
+  // Darken by factor
+  const newR = Math.max(0, Math.round(r * (1 - factor)));
+  const newG = Math.max(0, Math.round(g * (1 - factor)));
+  const newB = Math.max(0, Math.round(b * (1 - factor)));
+
+  return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+};
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -148,28 +169,72 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.desktopBody}>
-          <View style={styles.desktopSidebar}>
+          <View style={[styles.desktopSidebar, { backgroundColor: colors.sidebarBackground }]}>
             <View style={styles.desktopHeader}>
               <ThemedText style={styles.welcomeText}>Welcome, Nate.</ThemedText>
               <ThemedText style={styles.welcomeSubtext}>Manage your xAI account.</ThemedText>
             </View>
 
             <View style={styles.menuContainer}>
-              <TouchableOpacity style={[styles.menuItem, styles.menuItemActive, { backgroundColor: colors.card }]}>
-                <Ionicons name="person-outline" size={20} color={colors.text} />
-                <Text style={[styles.menuItemText, { color: colors.text }]}>Account</Text>
+              <TouchableOpacity style={[styles.menuItem, styles.menuItemActive, { backgroundColor: colors.sidebarItemActiveBackground }]}>
+                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconHome }]}>
+                  <MaterialCommunityIcons name="home" size={22} color={darkenColor(colors.sidebarIconHome)} />
+                </View>
+                <Text style={[styles.menuItemText, { color: colors.sidebarItemActiveText }]}>Home</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.menuItem}>
-                <Ionicons name="lock-closed-outline" size={20} color={colors.icon} />
-                <Text style={[styles.menuItemText, { color: colors.icon }]}>Security</Text>
+                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconPersonalInfo }]}>
+                  <MaterialCommunityIcons name="card-account-details-outline" size={22} color={darkenColor(colors.sidebarIconPersonalInfo)} />
+                </View>
+                <Text style={[styles.menuItemText, { color: colors.text }]}>Personal info</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.menuItem}>
-                <Ionicons name="time-outline" size={20} color={colors.icon} />
-                <Text style={[styles.menuItemText, { color: colors.icon }]}>Sessions</Text>
+                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
+                  <MaterialCommunityIcons name="lock-outline" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
+                </View>
+                <Text style={[styles.menuItemText, { color: colors.text }]}>Security & sign-in</Text>
               </TouchableOpacity>
               <TouchableOpacity style={styles.menuItem}>
-                <Ionicons name="server-outline" size={20} color={colors.icon} />
-                <Text style={[styles.menuItemText, { color: colors.icon }]}>Data</Text>
+                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconPassword }]}>
+                  <MaterialCommunityIcons name="key-outline" size={22} color={darkenColor(colors.sidebarIconPassword)} />
+                </View>
+                <Text style={[styles.menuItemText, { color: colors.text }]}>Password Manager</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem}>
+                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
+                  <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
+                </View>
+                <Text style={[styles.menuItemText, { color: colors.text }]}>Your devices</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem}>
+                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
+                  <MaterialCommunityIcons name="toggle-switch-outline" size={22} color={darkenColor(colors.sidebarIconData)} />
+                </View>
+                <Text style={[styles.menuItemText, { color: colors.text }]}>Data & privacy</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem}>
+                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSharing }]}>
+                  <MaterialCommunityIcons name="account-group-outline" size={22} color={darkenColor(colors.sidebarIconSharing)} />
+                </View>
+                <Text style={[styles.menuItemText, { color: colors.text }]}>People & sharing</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem}>
+                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconFamily }]}>
+                  <MaterialCommunityIcons name="home-group" size={22} color={darkenColor(colors.sidebarIconFamily)} />
+                </View>
+                <Text style={[styles.menuItemText, { color: colors.text }]}>Family Group</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem}>
+                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconPayments }]}>
+                  <MaterialCommunityIcons name="wallet-outline" size={22} color={darkenColor(colors.sidebarIconPayments)} />
+                </View>
+                <Text style={[styles.menuItemText, { color: colors.text }]}>Payments & subscriptions</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.menuItem}>
+                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconStorage }]}>
+                  <MaterialCommunityIcons name="cloud-outline" size={22} color={darkenColor(colors.sidebarIconStorage)} />
+                </View>
+                <Text style={[styles.menuItemText, { color: colors.text }]}>Oxy storage</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -326,21 +391,29 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   } as const,
   menuContainer: {
-    gap: 2,
+    gap: 4,
   } as const,
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 10,
-    borderRadius: 8,
-    gap: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 26,
+    gap: 12,
   } as const,
   menuItemActive: {
     // backgroundColor is set dynamically
   } as const,
+  menuIconContainer: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  } as const,
   menuItemText: {
     fontSize: 14,
-    fontWeight: '500',
+    fontWeight: '400',
   } as const,
   desktopMain: {
     flex: 1,
