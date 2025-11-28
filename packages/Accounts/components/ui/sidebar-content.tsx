@@ -7,14 +7,14 @@ import { ThemedText } from '@/components/themed-text';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 
-interface MenuItem {
+export interface MenuItem {
     path: string;
     icon: string;
     label: string;
     iconColor: string;
 }
 
-const menuItems: MenuItem[] = [
+export const menuItems: MenuItem[] = [
     { path: '/(tabs)', icon: 'home-variant', label: 'Home', iconColor: 'sidebarIconHome' },
     { path: '/(tabs)/personal-info', icon: 'card-account-details-outline', label: 'Personal info', iconColor: 'sidebarIconPersonalInfo' },
     { path: '/(tabs)/security', icon: 'lock-outline', label: 'Security & sign-in', iconColor: 'sidebarIconSecurity' },

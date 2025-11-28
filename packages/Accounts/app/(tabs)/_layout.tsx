@@ -1,7 +1,8 @@
 import { Slot } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useRef, useEffect } from 'react';
 import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, TextInput } from 'react-native';
+import { useRouter, usePathname, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { DesktopSidebar, DrawerContent, Logo, MobileHeader } from '@/components/ui';
@@ -11,13 +12,45 @@ import { Ionicons } from '@expo/vector-icons';
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const { width } = useWindowDimensions();
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useLocalSearchParams<{ q?: string }>();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
+  const [searchQuery, setSearchQuery] = useState('');
+  const searchInputRef = useRef<TextInput>(null);
 
   const toggleColorScheme = () => {
     // This would toggle between light and dark mode
     // You'd need to implement this based on your theme system
   };
+
+  const handleSearchChange = (text: string) => {
+    setSearchQuery(text);
+    // Always navigate to search screen, even when empty
+    if (pathname === '/(tabs)/search') {
+      // If already on search screen, just update params
+      router.setParams({ q: text || '' });
+    } else {
+      // Navigate to search screen
+      router.push({
+        pathname: '/(tabs)/search',
+        params: { q: text || '' },
+      });
+    }
+  };
+
+  // Sync search query with route params when on search screen
+  useEffect(() => {
+    if (pathname === '/(tabs)/search') {
+      // Sync header input with route params
+      const queryFromParams = params.q || '';
+      setSearchQuery(queryFromParams);
+    } else {
+      // Clear search when navigating away from search screen
+      setSearchQuery('');
+    }
+  }, [pathname, params.q]);
 
   // Render desktop layout with sidebar
   if (isDesktop) {
@@ -32,9 +65,13 @@ export default function TabLayout() {
             <View style={[styles.searchBar, { backgroundColor: colors.card }]}>
               <Ionicons name="search-outline" size={20} color={colors.icon} style={styles.searchIcon} />
               <TextInput
+                ref={searchInputRef}
                 style={[styles.searchInput, { color: colors.text }]}
                 placeholder="Search Oxy Account"
                 placeholderTextColor={colors.secondaryText}
+                value={searchQuery}
+                onChangeText={handleSearchChange}
+                returnKeyType="search"
               />
             </View>
           </View>
@@ -156,6 +193,12 @@ export default function TabLayout() {
       />
       <Drawer.Screen
         name="sessions"
+        options={{
+          drawerItemStyle: { display: 'none' },
+        }}
+      />
+      <Drawer.Screen
+        name="search"
         options={{
           drawerItemStyle: { display: 'none' },
         }}
