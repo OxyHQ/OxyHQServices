@@ -8,7 +8,7 @@ import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 
-export default function DataScreen() {
+export default function StorageScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const { width } = useWindowDimensions();
   const router = useRouter();
@@ -17,37 +17,27 @@ export default function DataScreen() {
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
-  const dataItems = useMemo(() => [
+  const storageItems = useMemo(() => [
     {
-      id: 'download',
-      icon: 'download-outline',
-      iconColor: colors.sidebarIconData,
-      title: 'Download your data',
-      subtitle: 'Get a copy of your data',
+      id: 'usage',
+      icon: 'chart-pie',
+      iconColor: colors.sidebarIconStorage,
+      title: 'Storage used',
+      subtitle: '12.5 GB of 15 GB',
       customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Download</Text>
-        </TouchableOpacity>
+        <View style={styles.progressContainer}>
+          <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
+            <View style={[styles.progressFill, { backgroundColor: colors.tint, width: '83%' }]} />
+          </View>
+        </View>
       ),
     },
     {
-      id: 'activity',
-      icon: 'history',
+      id: 'files',
+      icon: 'file-outline',
       iconColor: colors.sidebarIconData,
-      title: 'Activity controls',
-      subtitle: 'Manage your activity history',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'location',
-      icon: 'map-marker-outline',
-      iconColor: colors.sidebarIconData,
-      title: 'Location history',
-      subtitle: 'View and manage location data',
+      title: 'Files',
+      subtitle: '8.2 GB',
       customContent: (
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
           <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
@@ -55,26 +45,26 @@ export default function DataScreen() {
       ),
     },
     {
-      id: 'privacy',
-      icon: 'shield-outline',
-      iconColor: colors.sidebarIconSecurity,
-      title: 'Privacy settings',
-      subtitle: 'Control your privacy preferences',
+      id: 'photos',
+      icon: 'image-outline',
+      iconColor: colors.sidebarIconPersonalInfo,
+      title: 'Photos',
+      subtitle: '3.1 GB',
       customContent: (
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Configure</Text>
+          <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
         </TouchableOpacity>
       ),
     },
     {
-      id: 'delete',
-      icon: 'delete-outline',
-      iconColor: colors.sidebarIconPayments,
-      title: 'Delete account',
-      subtitle: 'Permanently delete your account',
+      id: 'backups',
+      icon: 'backup-restore',
+      iconColor: colors.sidebarIconSecurity,
+      title: 'Backups',
+      subtitle: '1.2 GB',
       customContent: (
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: '#FF3B30' }]}>Delete</Text>
+          <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
         </TouchableOpacity>
       ),
     },
@@ -193,11 +183,11 @@ export default function DataScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.headerSection}>
-              <ThemedText style={styles.title}>Data & privacy</ThemedText>
-              <ThemedText style={styles.subtitle}>Manage your data and privacy settings.</ThemedText>
+              <ThemedText style={styles.title}>Oxy storage</ThemedText>
+              <ThemedText style={styles.subtitle}>Manage your storage usage and files.</ThemedText>
             </View>
             <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
-              <GroupedSection items={dataItems} />
+              <GroupedSection items={storageItems} />
             </View>
           </ScrollView>
         </View>
@@ -213,11 +203,11 @@ export default function DataScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Data & privacy</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your data and privacy settings.</ThemedText>
+          <ThemedText style={styles.mobileTitle}>Oxy storage</ThemedText>
+          <ThemedText style={styles.mobileSubtitle}>Manage your storage usage and files.</ThemedText>
         </View>
         <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
-          <GroupedSection items={dataItems} />
+          <GroupedSection items={storageItems} />
         </View>
       </ScrollView>
     </View>
@@ -306,6 +296,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
+  progressContainer: {
+    width: 120,
+  },
+  progressBar: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
   mobileContent: {
     padding: 16,
     paddingBottom: 120,
@@ -323,3 +325,4 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
 });
+

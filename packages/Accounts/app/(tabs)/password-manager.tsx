@@ -1,14 +1,15 @@
 import React, { useMemo } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
+import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, TextInput } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
+import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 
-export default function DataScreen() {
+export default function PasswordManagerScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const { width } = useWindowDimensions();
   const router = useRouter();
@@ -17,37 +18,13 @@ export default function DataScreen() {
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
-  const dataItems = useMemo(() => [
+  const passwords = useMemo(() => [
     {
-      id: 'download',
-      icon: 'download-outline',
-      iconColor: colors.sidebarIconData,
-      title: 'Download your data',
-      subtitle: 'Get a copy of your data',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Download</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'activity',
-      icon: 'history',
-      iconColor: colors.sidebarIconData,
-      title: 'Activity controls',
-      subtitle: 'Manage your activity history',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'location',
-      icon: 'map-marker-outline',
-      iconColor: colors.sidebarIconData,
-      title: 'Location history',
-      subtitle: 'View and manage location data',
+      id: 'google',
+      icon: 'google',
+      iconColor: colors.sidebarIconPersonalInfo,
+      title: 'Google',
+      subtitle: 'google.com',
       customContent: (
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
           <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
@@ -55,26 +32,26 @@ export default function DataScreen() {
       ),
     },
     {
-      id: 'privacy',
-      icon: 'shield-outline',
-      iconColor: colors.sidebarIconSecurity,
-      title: 'Privacy settings',
-      subtitle: 'Control your privacy preferences',
+      id: 'github',
+      icon: 'github',
+      iconColor: colors.sidebarIconData,
+      title: 'GitHub',
+      subtitle: 'github.com',
       customContent: (
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Configure</Text>
+          <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
         </TouchableOpacity>
       ),
     },
     {
-      id: 'delete',
-      icon: 'delete-outline',
-      iconColor: colors.sidebarIconPayments,
-      title: 'Delete account',
-      subtitle: 'Permanently delete your account',
+      id: 'facebook',
+      icon: 'facebook',
+      iconColor: colors.sidebarIconSharing,
+      title: 'Facebook',
+      subtitle: 'facebook.com',
       customContent: (
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: '#FF3B30' }]}>Delete</Text>
+          <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
         </TouchableOpacity>
       ),
     },
@@ -193,12 +170,24 @@ export default function DataScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.headerSection}>
-              <ThemedText style={styles.title}>Data & privacy</ThemedText>
-              <ThemedText style={styles.subtitle}>Manage your data and privacy settings.</ThemedText>
+              <ThemedText style={styles.title}>Password Manager</ThemedText>
+              <ThemedText style={styles.subtitle}>Manage your saved passwords securely.</ThemedText>
+            </View>
+            <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
+              <MaterialCommunityIcons name="magnify" size={20} color={colors.icon} style={styles.searchIcon} />
+              <TextInput
+                style={[styles.searchInput, { color: colors.text }]}
+                placeholder="Search passwords..."
+                placeholderTextColor={colors.secondaryText}
+              />
             </View>
             <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
-              <GroupedSection items={dataItems} />
+              <GroupedSection items={passwords} />
             </View>
+            <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+              <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+              <Text style={styles.addButtonText}>Add new password</Text>
+            </TouchableOpacity>
           </ScrollView>
         </View>
       </View>
@@ -213,12 +202,24 @@ export default function DataScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Data & privacy</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your data and privacy settings.</ThemedText>
+          <ThemedText style={styles.mobileTitle}>Password Manager</ThemedText>
+          <ThemedText style={styles.mobileSubtitle}>Manage your saved passwords securely.</ThemedText>
+        </View>
+        <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
+          <MaterialCommunityIcons name="magnify" size={20} color={colors.icon} style={styles.searchIcon} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder="Search passwords..."
+            placeholderTextColor={colors.secondaryText}
+          />
         </View>
         <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
-          <GroupedSection items={dataItems} />
+          <GroupedSection items={passwords} />
         </View>
+        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+          <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+          <Text style={styles.addButtonText}>Add new password</Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -293,9 +294,25 @@ const styles = StyleSheet.create({
     fontSize: 16,
     opacity: 0.6,
   },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginBottom: 16,
+  },
+  searchIcon: {
+    marginRight: 12,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+  },
   accountCard: {
     borderRadius: 16,
     overflow: 'hidden',
+    marginBottom: 16,
   },
   button: {
     paddingHorizontal: 16,
@@ -305,6 +322,20 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    gap: 8,
+  },
+  addButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
   },
   mobileContent: {
     padding: 16,
@@ -323,3 +354,4 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
 });
+

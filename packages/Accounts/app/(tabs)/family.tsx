@@ -8,7 +8,7 @@ import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 
-export default function DataScreen() {
+export default function FamilyScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const { width } = useWindowDimensions();
   const router = useRouter();
@@ -17,25 +17,13 @@ export default function DataScreen() {
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
-  const dataItems = useMemo(() => [
+  const familyMembers = useMemo(() => [
     {
-      id: 'download',
-      icon: 'download-outline',
-      iconColor: colors.sidebarIconData,
-      title: 'Download your data',
-      subtitle: 'Get a copy of your data',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Download</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'activity',
-      icon: 'history',
-      iconColor: colors.sidebarIconData,
-      title: 'Activity controls',
-      subtitle: 'Manage your activity history',
+      id: 'member1',
+      icon: 'account-outline',
+      iconColor: colors.sidebarIconFamily,
+      title: 'Sarah Isern',
+      subtitle: 'Parent • sarah@example.com',
       customContent: (
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
@@ -43,38 +31,14 @@ export default function DataScreen() {
       ),
     },
     {
-      id: 'location',
-      icon: 'map-marker-outline',
-      iconColor: colors.sidebarIconData,
-      title: 'Location history',
-      subtitle: 'View and manage location data',
+      id: 'member2',
+      icon: 'account-outline',
+      iconColor: colors.sidebarIconFamily,
+      title: 'Emma Isern',
+      subtitle: 'Child • emma@example.com',
       customContent: (
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'privacy',
-      icon: 'shield-outline',
-      iconColor: colors.sidebarIconSecurity,
-      title: 'Privacy settings',
-      subtitle: 'Control your privacy preferences',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Configure</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'delete',
-      icon: 'delete-outline',
-      iconColor: colors.sidebarIconPayments,
-      title: 'Delete account',
-      subtitle: 'Permanently delete your account',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: '#FF3B30' }]}>Delete</Text>
+          <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
         </TouchableOpacity>
       ),
     },
@@ -193,12 +157,16 @@ export default function DataScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.headerSection}>
-              <ThemedText style={styles.title}>Data & privacy</ThemedText>
-              <ThemedText style={styles.subtitle}>Manage your data and privacy settings.</ThemedText>
+              <ThemedText style={styles.title}>Family Group</ThemedText>
+              <ThemedText style={styles.subtitle}>Manage your family members and settings.</ThemedText>
             </View>
             <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
-              <GroupedSection items={dataItems} />
+              <GroupedSection items={familyMembers} />
             </View>
+            <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+              <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+              <Text style={styles.addButtonText}>Add family member</Text>
+            </TouchableOpacity>
           </ScrollView>
         </View>
       </View>
@@ -213,12 +181,16 @@ export default function DataScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Data & privacy</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your data and privacy settings.</ThemedText>
+          <ThemedText style={styles.mobileTitle}>Family Group</ThemedText>
+          <ThemedText style={styles.mobileSubtitle}>Manage your family members and settings.</ThemedText>
         </View>
         <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
-          <GroupedSection items={dataItems} />
+          <GroupedSection items={familyMembers} />
         </View>
+        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+          <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+          <Text style={styles.addButtonText}>Add family member</Text>
+        </TouchableOpacity>
       </ScrollView>
     </View>
   );
@@ -296,6 +268,7 @@ const styles = StyleSheet.create({
   accountCard: {
     borderRadius: 16,
     overflow: 'hidden',
+    marginBottom: 16,
   },
   button: {
     paddingHorizontal: 16,
@@ -305,6 +278,20 @@ const styles = StyleSheet.create({
   buttonText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  addButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    borderRadius: 12,
+    gap: 8,
+  },
+  addButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
   },
   mobileContent: {
     padding: 16,
@@ -323,3 +310,4 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
 });
+

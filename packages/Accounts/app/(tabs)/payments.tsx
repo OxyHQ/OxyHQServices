@@ -8,7 +8,7 @@ import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 
-export default function DataScreen() {
+export default function PaymentsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const { width } = useWindowDimensions();
   const router = useRouter();
@@ -17,25 +17,13 @@ export default function DataScreen() {
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
-  const dataItems = useMemo(() => [
+  const paymentItems = useMemo(() => [
     {
-      id: 'download',
-      icon: 'download-outline',
-      iconColor: colors.sidebarIconData,
-      title: 'Download your data',
-      subtitle: 'Get a copy of your data',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Download</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'activity',
-      icon: 'history',
-      iconColor: colors.sidebarIconData,
-      title: 'Activity controls',
-      subtitle: 'Manage your activity history',
+      id: 'subscription',
+      icon: 'credit-card-outline',
+      iconColor: colors.sidebarIconPayments,
+      title: 'Oxy Pro',
+      subtitle: '$9.99/month • Next billing: Feb 21, 2025',
       customContent: (
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
@@ -43,38 +31,26 @@ export default function DataScreen() {
       ),
     },
     {
-      id: 'location',
-      icon: 'map-marker-outline',
+      id: 'payment-method',
+      icon: 'wallet-outline',
+      iconColor: colors.sidebarIconPayments,
+      title: 'Payment methods',
+      subtitle: 'Visa •••• 1234',
+      customContent: (
+        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+          <Text style={[styles.buttonText, { color: colors.text }]}>Edit</Text>
+        </TouchableOpacity>
+      ),
+    },
+    {
+      id: 'billing',
+      icon: 'file-document-outline',
       iconColor: colors.sidebarIconData,
-      title: 'Location history',
-      subtitle: 'View and manage location data',
+      title: 'Billing history',
+      subtitle: 'View past invoices and payments',
       customContent: (
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
           <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'privacy',
-      icon: 'shield-outline',
-      iconColor: colors.sidebarIconSecurity,
-      title: 'Privacy settings',
-      subtitle: 'Control your privacy preferences',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Configure</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'delete',
-      icon: 'delete-outline',
-      iconColor: colors.sidebarIconPayments,
-      title: 'Delete account',
-      subtitle: 'Permanently delete your account',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: '#FF3B30' }]}>Delete</Text>
         </TouchableOpacity>
       ),
     },
@@ -193,11 +169,11 @@ export default function DataScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.headerSection}>
-              <ThemedText style={styles.title}>Data & privacy</ThemedText>
-              <ThemedText style={styles.subtitle}>Manage your data and privacy settings.</ThemedText>
+              <ThemedText style={styles.title}>Payments & subscriptions</ThemedText>
+              <ThemedText style={styles.subtitle}>Manage your payment methods and subscriptions.</ThemedText>
             </View>
             <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
-              <GroupedSection items={dataItems} />
+              <GroupedSection items={paymentItems} />
             </View>
           </ScrollView>
         </View>
@@ -213,11 +189,11 @@ export default function DataScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Data & privacy</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your data and privacy settings.</ThemedText>
+          <ThemedText style={styles.mobileTitle}>Payments & subscriptions</ThemedText>
+          <ThemedText style={styles.mobileSubtitle}>Manage your payment methods and subscriptions.</ThemedText>
         </View>
         <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
-          <GroupedSection items={dataItems} />
+          <GroupedSection items={paymentItems} />
         </View>
       </ScrollView>
     </View>
@@ -323,3 +299,4 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
 });
+

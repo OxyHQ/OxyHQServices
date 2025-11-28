@@ -4,11 +4,12 @@ import { useRouter, usePathname } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
+import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 
-export default function DataScreen() {
+export default function PersonalInfoScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const { width } = useWindowDimensions();
   const router = useRouter();
@@ -17,64 +18,64 @@ export default function DataScreen() {
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
-  const dataItems = useMemo(() => [
+  const personalInfoItems = useMemo(() => [
     {
-      id: 'download',
-      icon: 'download-outline',
-      iconColor: colors.sidebarIconData,
-      title: 'Download your data',
-      subtitle: 'Get a copy of your data',
+      id: 'name',
+      icon: 'account-outline',
+      iconColor: colors.sidebarIconPersonalInfo,
+      title: 'Full name',
+      subtitle: 'Nate Isern Alvarez',
       customContent: (
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Download</Text>
+          <Text style={[styles.buttonText, { color: colors.text }]}>Edit</Text>
         </TouchableOpacity>
       ),
     },
     {
-      id: 'activity',
-      icon: 'history',
-      iconColor: colors.sidebarIconData,
-      title: 'Activity controls',
-      subtitle: 'Manage your activity history',
+      id: 'email',
+      icon: 'email-outline',
+      iconColor: colors.sidebarIconSecurity,
+      title: 'Email',
+      subtitle: 'hello@oxy.so',
       customContent: (
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
+          <Text style={[styles.buttonText, { color: colors.text }]}>Update</Text>
         </TouchableOpacity>
       ),
     },
     {
-      id: 'location',
+      id: 'phone',
+      icon: 'phone-outline',
+      iconColor: colors.sidebarIconPersonalInfo,
+      title: 'Phone number',
+      subtitle: '+1 (555) 123-4567',
+      customContent: (
+        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+          <Text style={[styles.buttonText, { color: colors.text }]}>Edit</Text>
+        </TouchableOpacity>
+      ),
+    },
+    {
+      id: 'address',
       icon: 'map-marker-outline',
       iconColor: colors.sidebarIconData,
-      title: 'Location history',
-      subtitle: 'View and manage location data',
+      title: 'Address',
+      subtitle: '123 Main St, City, State 12345',
       customContent: (
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
+          <Text style={[styles.buttonText, { color: colors.text }]}>Edit</Text>
         </TouchableOpacity>
       ),
     },
     {
-      id: 'privacy',
-      icon: 'shield-outline',
-      iconColor: colors.sidebarIconSecurity,
-      title: 'Privacy settings',
-      subtitle: 'Control your privacy preferences',
+      id: 'birthday',
+      icon: 'cake-outline',
+      iconColor: colors.sidebarIconFamily,
+      title: 'Birthday',
+      subtitle: 'January 1, 1990',
       customContent: (
         <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Configure</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'delete',
-      icon: 'delete-outline',
-      iconColor: colors.sidebarIconPayments,
-      title: 'Delete account',
-      subtitle: 'Permanently delete your account',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: '#FF3B30' }]}>Delete</Text>
+          <Text style={[styles.buttonText, { color: colors.text }]}>Edit</Text>
         </TouchableOpacity>
       ),
     },
@@ -193,11 +194,11 @@ export default function DataScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.headerSection}>
-              <ThemedText style={styles.title}>Data & privacy</ThemedText>
-              <ThemedText style={styles.subtitle}>Manage your data and privacy settings.</ThemedText>
+              <ThemedText style={styles.title}>Personal info</ThemedText>
+              <ThemedText style={styles.subtitle}>Manage your personal information and profile details.</ThemedText>
             </View>
             <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
-              <GroupedSection items={dataItems} />
+              <GroupedSection items={personalInfoItems} />
             </View>
           </ScrollView>
         </View>
@@ -213,11 +214,11 @@ export default function DataScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Data & privacy</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your data and privacy settings.</ThemedText>
+          <ThemedText style={styles.mobileTitle}>Personal info</ThemedText>
+          <ThemedText style={styles.mobileSubtitle}>Manage your personal information and profile details.</ThemedText>
         </View>
         <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
-          <GroupedSection items={dataItems} />
+          <GroupedSection items={personalInfoItems} />
         </View>
       </ScrollView>
     </View>
@@ -323,3 +324,4 @@ const styles = StyleSheet.create({
     opacity: 0.6,
   },
 });
+
