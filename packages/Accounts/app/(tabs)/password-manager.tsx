@@ -1,19 +1,16 @@
 import React, { useMemo } from 'react';
 import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, TextInput } from 'react-native';
-import { useRouter, usePathname } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { darkenColor } from '@/utils/color-utils';
+import { AccountCard } from '@/components/ui';
 
 export default function PasswordManagerScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const { width } = useWindowDimensions();
-  const router = useRouter();
-  const pathname = usePathname();
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
@@ -57,140 +54,30 @@ export default function PasswordManagerScreen() {
     },
   ], [colors]);
 
-  const renderSidebar = () => (
-    <View style={[styles.desktopSidebar, { backgroundColor: colors.sidebarBackground }]}>
-      <View style={styles.desktopHeader}>
-        <ThemedText style={styles.welcomeText}>Welcome, Nate.</ThemedText>
-        <ThemedText style={styles.welcomeSubtext}>Manage your xAI account.</ThemedText>
-      </View>
-
-      <View style={styles.menuContainer}>
-        <TouchableOpacity 
-          style={[styles.menuItem, pathname === '/(tabs)' || pathname === '/(tabs)/' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)' || pathname === '/(tabs)/' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-          onPress={() => router.push('/(tabs)')}
-        >
-          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconHome }]}>
-            <MaterialCommunityIcons name="home-variant" size={22} color={darkenColor(colors.sidebarIconHome)} />
-          </View>
-          <Text style={[styles.menuItemText, { color: pathname === '/(tabs)' || pathname === '/(tabs)/' ? colors.sidebarItemActiveText : colors.text }]}>Home</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.menuItem, pathname === '/(tabs)/personal-info' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/personal-info' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-          onPress={() => router.push('/(tabs)/personal-info')}
-        >
-          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconPersonalInfo }]}>
-            <MaterialCommunityIcons name="card-account-details-outline" size={22} color={darkenColor(colors.sidebarIconPersonalInfo)} />
-          </View>
-          <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/personal-info' ? colors.sidebarItemActiveText : colors.text }]}>Personal info</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.menuItem, pathname === '/(tabs)/security' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/security' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-          onPress={() => router.push('/(tabs)/security')}
-        >
-          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
-            <MaterialCommunityIcons name="lock-outline" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
-          </View>
-          <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/security' ? colors.sidebarItemActiveText : colors.text }]}>Security & sign-in</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.menuItem, pathname === '/(tabs)/password-manager' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/password-manager' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-          onPress={() => router.push('/(tabs)/password-manager')}
-        >
-          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconPassword }]}>
-            <MaterialCommunityIcons name="key-outline" size={22} color={darkenColor(colors.sidebarIconPassword)} />
-          </View>
-          <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/password-manager' ? colors.sidebarItemActiveText : colors.text }]}>Password Manager</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.menuItem, pathname === '/(tabs)/devices' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/devices' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-          onPress={() => router.push('/(tabs)/devices')}
-        >
-          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
-            <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
-          </View>
-          <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/devices' ? colors.sidebarItemActiveText : colors.text }]}>Your devices</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.menuItem, pathname === '/(tabs)/data' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/data' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-          onPress={() => router.push('/(tabs)/data')}
-        >
-          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
-            <MaterialCommunityIcons name="toggle-switch-outline" size={22} color={darkenColor(colors.sidebarIconData)} />
-          </View>
-          <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/data' ? colors.sidebarItemActiveText : colors.text }]}>Data & privacy</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.menuItem, pathname === '/(tabs)/sharing' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/sharing' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-          onPress={() => router.push('/(tabs)/sharing')}
-        >
-          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSharing }]}>
-            <MaterialCommunityIcons name="account-group-outline" size={22} color={darkenColor(colors.sidebarIconSharing)} />
-          </View>
-          <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/sharing' ? colors.sidebarItemActiveText : colors.text }]}>People & sharing</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.menuItem, pathname === '/(tabs)/family' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/family' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-          onPress={() => router.push('/(tabs)/family')}
-        >
-          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconFamily }]}>
-            <MaterialCommunityIcons name="home-group" size={22} color={darkenColor(colors.sidebarIconFamily)} />
-          </View>
-          <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/family' ? colors.sidebarItemActiveText : colors.text }]}>Family Group</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.menuItem, pathname === '/(tabs)/payments' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/payments' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-          onPress={() => router.push('/(tabs)/payments')}
-        >
-          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconPayments }]}>
-            <MaterialCommunityIcons name="wallet-outline" size={22} color={darkenColor(colors.sidebarIconPayments)} />
-          </View>
-          <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/payments' ? colors.sidebarItemActiveText : colors.text }]}>Payments & subscriptions</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.menuItem, pathname === '/(tabs)/storage' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/storage' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-          onPress={() => router.push('/(tabs)/storage')}
-        >
-          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconStorage }]}>
-            <MaterialCommunityIcons name="cloud-outline" size={22} color={darkenColor(colors.sidebarIconStorage)} />
-          </View>
-          <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/storage' ? colors.sidebarItemActiveText : colors.text }]}>Oxy storage</Text>
-        </TouchableOpacity>
-      </View>
-    </View>
-  );
 
   if (isDesktop) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.desktopBody}>
-          {renderSidebar()}
-          <ScrollView
-            style={styles.desktopMain}
-            contentContainerStyle={styles.desktopMainContent}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.headerSection}>
-              <ThemedText style={styles.title}>Password Manager</ThemedText>
-              <ThemedText style={styles.subtitle}>Manage your saved passwords securely.</ThemedText>
-            </View>
-            <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
-              <MaterialCommunityIcons name="magnify" size={20} color={colors.icon} style={styles.searchIcon} />
-              <TextInput
-                style={[styles.searchInput, { color: colors.text }]}
-                placeholder="Search passwords..."
-                placeholderTextColor={colors.secondaryText}
-              />
-            </View>
-            <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
-              <GroupedSection items={passwords} />
-            </View>
-            <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
-              <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
-              <Text style={styles.addButtonText}>Add new password</Text>
-            </TouchableOpacity>
-          </ScrollView>
+      <>
+        <View style={styles.headerSection}>
+          <ThemedText style={styles.title}>Password Manager</ThemedText>
+          <ThemedText style={styles.subtitle}>Manage your saved passwords securely.</ThemedText>
         </View>
-      </View>
+        <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
+          <MaterialCommunityIcons name="magnify" size={20} color={colors.icon} style={styles.searchIcon} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder="Search passwords..."
+            placeholderTextColor={colors.secondaryText}
+          />
+        </View>
+        <AccountCard>
+          <GroupedSection items={passwords} />
+        </AccountCard>
+        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+          <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+          <Text style={styles.addButtonText}>Add new password</Text>
+        </TouchableOpacity>
+      </>
     );
   }
 
@@ -213,9 +100,9 @@ export default function PasswordManagerScreen() {
             placeholderTextColor={colors.secondaryText}
           />
         </View>
-        <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
+        <AccountCard>
           <GroupedSection items={passwords} />
-        </View>
+        </AccountCard>
         <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
           <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
           <Text style={styles.addButtonText}>Add new password</Text>

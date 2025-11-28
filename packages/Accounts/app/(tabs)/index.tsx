@@ -12,6 +12,7 @@ import { UserAvatar } from '@/components/user-avatar';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import lottieAnimation from '@/assets/lottie/welcomeheader_background_op1.json';
 import { darkenColor } from '@/utils/color-utils';
+import { AccountCard } from '@/components/ui';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -121,16 +122,16 @@ export default function HomeScreen() {
     <>
       <Section title={isDesktop ? "Your account" : undefined} isFirst>
         {isDesktop && <ThemedText style={styles.subtitle}>Manage your account information.</ThemedText>}
-        <View style={styles.accountCard}>
+        <AccountCard>
           <GroupedSection items={accountItems} />
-        </View>
+        </AccountCard>
       </Section>
 
       <Section title="Sign-in methods">
         <ThemedText style={styles.subtitle}>Manage your ways of logging into Oxy.</ThemedText>
-        <View style={styles.accountCard}>
+        <AccountCard>
           <GroupedSection items={signInMethods} />
-        </View>
+        </AccountCard>
       </Section>
     </>
   ), [accountItems, isDesktop, signInMethods]);
@@ -142,157 +143,28 @@ export default function HomeScreen() {
 
   if (isDesktop) {
     return (
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Top Header Bar */}
-        <View style={[styles.desktopTopBar, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-          <View style={styles.topBarLeft}>
-            <Image 
-              source={require('@/assets/images/OxyLogo.svg')} 
-              style={styles.logo}
-              contentFit="contain"
-            />
-          </View>
-          <View style={styles.topBarRight}>
-            <TouchableOpacity style={[styles.searchButton, { backgroundColor: colors.card }]}>
-              <Ionicons name="search-outline" size={18} color={colors.icon} />
-              <Text style={[styles.searchText, { color: colors.icon }]}>Ctrl+K</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.iconButton} onPress={toggleColorScheme}>
-              <Ionicons name={colorScheme === 'dark' ? 'sunny-outline' : 'moon-outline'} size={20} color={colors.icon} />
-            </TouchableOpacity>
-            <UserAvatar name="Nate Isern Alvarez" size={36} />
-          </View>
-        </View>
-
-        <View style={styles.desktopBody}>
-          <View style={[styles.desktopSidebar, { backgroundColor: colors.sidebarBackground }]}>
-            <View style={styles.desktopHeader}>
-              <ThemedText style={styles.welcomeText}>Welcome, Nate.</ThemedText>
-              <ThemedText style={styles.welcomeSubtext}>Manage your xAI account.</ThemedText>
-            </View>
-
-            <View style={styles.menuContainer}>
-              <TouchableOpacity 
-                style={[styles.menuItem, pathname === '/(tabs)' || pathname === '/(tabs)/' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)' || pathname === '/(tabs)/' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                onPress={() => router.push('/(tabs)')}
-              >
-                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconHome }]}>
-                  <MaterialCommunityIcons name="home-variant" size={22} color={darkenColor(colors.sidebarIconHome)} />
-                </View>
-                <Text style={[styles.menuItemText, { color: pathname === '/(tabs)' || pathname === '/(tabs)/' ? colors.sidebarItemActiveText : colors.text }]}>Home</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.menuItem, pathname === '/(tabs)/personal-info' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/personal-info' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                onPress={() => router.push('/(tabs)/personal-info')}
-              >
-                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconPersonalInfo }]}>
-                  <MaterialCommunityIcons name="card-account-details-outline" size={22} color={darkenColor(colors.sidebarIconPersonalInfo)} />
-                </View>
-                <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/personal-info' ? colors.sidebarItemActiveText : colors.text }]}>Personal info</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.menuItem, pathname === '/(tabs)/security' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/security' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                onPress={() => router.push('/(tabs)/security')}
-              >
-                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
-                  <MaterialCommunityIcons name="lock-outline" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
-                </View>
-                <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/security' ? colors.sidebarItemActiveText : colors.text }]}>Security & sign-in</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.menuItem, pathname === '/(tabs)/password-manager' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/password-manager' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                onPress={() => router.push('/(tabs)/password-manager')}
-              >
-                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconPassword }]}>
-                  <MaterialCommunityIcons name="key-outline" size={22} color={darkenColor(colors.sidebarIconPassword)} />
-                </View>
-                <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/password-manager' ? colors.sidebarItemActiveText : colors.text }]}>Password Manager</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.menuItem, pathname === '/(tabs)/devices' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/devices' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                onPress={() => router.push('/(tabs)/devices')}
-              >
-                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
-                  <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
-                </View>
-                <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/devices' ? colors.sidebarItemActiveText : colors.text }]}>Your devices</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.menuItem, pathname === '/(tabs)/data' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/data' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                onPress={() => router.push('/(tabs)/data')}
-              >
-                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
-                  <MaterialCommunityIcons name="toggle-switch-outline" size={22} color={darkenColor(colors.sidebarIconData)} />
-                </View>
-                <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/data' ? colors.sidebarItemActiveText : colors.text }]}>Data & privacy</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.menuItem, pathname === '/(tabs)/sharing' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/sharing' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                onPress={() => router.push('/(tabs)/sharing')}
-              >
-                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSharing }]}>
-                  <MaterialCommunityIcons name="account-group-outline" size={22} color={darkenColor(colors.sidebarIconSharing)} />
-                </View>
-                <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/sharing' ? colors.sidebarItemActiveText : colors.text }]}>People & sharing</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.menuItem, pathname === '/(tabs)/family' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/family' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                onPress={() => router.push('/(tabs)/family')}
-              >
-                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconFamily }]}>
-                  <MaterialCommunityIcons name="home-group" size={22} color={darkenColor(colors.sidebarIconFamily)} />
-                </View>
-                <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/family' ? colors.sidebarItemActiveText : colors.text }]}>Family Group</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.menuItem, pathname === '/(tabs)/payments' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/payments' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                onPress={() => router.push('/(tabs)/payments')}
-              >
-                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconPayments }]}>
-                  <MaterialCommunityIcons name="wallet-outline" size={22} color={darkenColor(colors.sidebarIconPayments)} />
-                </View>
-                <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/payments' ? colors.sidebarItemActiveText : colors.text }]}>Payments & subscriptions</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.menuItem, pathname === '/(tabs)/storage' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/storage' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                onPress={() => router.push('/(tabs)/storage')}
-              >
-                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconStorage }]}>
-                  <MaterialCommunityIcons name="cloud-outline" size={22} color={darkenColor(colors.sidebarIconStorage)} />
-                </View>
-                <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/storage' ? colors.sidebarItemActiveText : colors.text }]}>Oxy storage</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          <ScrollView
-            style={styles.desktopMain}
-            contentContainerStyle={styles.desktopMainContent}
-            showsVerticalScrollIndicator={false}
-          >
-            <View style={styles.desktopMainHeader}>
-              <View style={styles.avatarSectionWrapper}>
-                <View style={styles.avatarContainer}>
-                  <LottieView
-                    source={lottieAnimation}
-                    autoPlay
-                    loop
-                    style={styles.lottieBackground}
-                  />
-                  <View style={styles.avatarWrapper}>
-                    <UserAvatar name="Nate Isern Alvarez" size={100} />
-                  </View>
-                </View>
-                <View style={styles.nameWrapper}>
-                  <ThemedText style={styles.userName}>Nate Isern Alvarez</ThemedText>
-                  <ThemedText style={styles.userUsername}>@NateIsern</ThemedText>
-                </View>
+      <>
+        <View style={styles.desktopMainHeader}>
+          <View style={styles.avatarSectionWrapper}>
+            <View style={styles.avatarContainer}>
+              <LottieView
+                source={lottieAnimation}
+                autoPlay
+                loop
+                style={styles.lottieBackground}
+              />
+              <View style={styles.avatarWrapper}>
+                <UserAvatar name="Nate Isern Alvarez" size={100} />
               </View>
             </View>
-            {content}
-          </ScrollView>
+            <View style={styles.nameWrapper}>
+              <ThemedText style={styles.userName}>Nate Isern Alvarez</ThemedText>
+              <ThemedText style={styles.userUsername}>@NateIsern</ThemedText>
+            </View>
+          </View>
         </View>
-      </View>
+        {content}
+      </>
     );
   }
 

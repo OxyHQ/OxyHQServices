@@ -1,208 +1,314 @@
-import React, { useMemo } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
-import { useRouter, usePathname } from 'expo-router';
+import React, { useMemo, useState } from 'react';
+import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, Switch } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
+import { LinkButton, AccountCard } from '@/components/ui';
 
 export default function SecurityScreen() {
     const colorScheme = useColorScheme() ?? 'light';
     const { width } = useWindowDimensions();
-    const router = useRouter();
-    const pathname = usePathname();
 
     const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
     const isDesktop = Platform.OS === 'web' && width >= 768;
 
-    const securityItems = useMemo(() => [
+    const [skipPassword, setSkipPassword] = useState(true);
+    const [enhancedSafeBrowsing, setEnhancedSafeBrowsing] = useState(false);
+    const [darkWebReport, setDarkWebReport] = useState(false);
+
+    const securityRecommendation = useMemo(() => [
         {
-            id: 'password',
-            icon: 'lock-outline',
-            iconColor: colors.sidebarIconSecurity,
-            title: 'Password',
-            subtitle: 'Last changed 30 days ago',
-            customContent: (
-                <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-                    <Text style={[styles.buttonText, { color: colors.text }]}>Change</Text>
-                </TouchableOpacity>
+            id: 'recommendation',
+            customIcon: (
+                <View style={[styles.recommendationIconContainer, { backgroundColor: '#FFC107' }]}>
+                    <MaterialCommunityIcons name="shield-alert" size={22} color={darkenColor('#FFC107')} />
+                </View>
             ),
+            title: 'You have security recommendations',
+            subtitle: 'Recommended actions found in the Security Checkup',
         },
+    ], []);
+
+    const recentActivity = useMemo(() => [
+        {
+            id: 'activity1',
+            icon: 'monitor',
+            iconColor: colors.sidebarIconDevices,
+            title: 'New sign-in on Windows',
+            subtitle: 'Nov 25',
+        },
+        {
+            id: 'activity2',
+            icon: 'monitor',
+            iconColor: colors.sidebarIconDevices,
+            title: 'New sign-in on Windows',
+            subtitle: 'Nov 5 Spain',
+        },
+    ], [colors]);
+
+    const signInItems = useMemo(() => [
         {
             id: '2fa',
             icon: 'shield-check-outline',
             iconColor: colors.sidebarIconSecurity,
-            title: 'Two-factor authentication',
-            subtitle: 'Enabled',
+            title: '2-Step Verification',
+            subtitle: 'On since Jul 8, 2019',
             customContent: (
-                <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-                    <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
-                </TouchableOpacity>
+                <View style={styles.statusContainer}>
+                    <Ionicons name="checkmark-circle" size={20} color="#34C759" />
+                </View>
             ),
         },
         {
-            id: 'signin-methods',
-            icon: 'login',
+            id: 'passkeys',
+            icon: 'key-variant',
             iconColor: colors.sidebarIconSecurity,
-            title: 'Sign-in methods',
-            subtitle: 'Email, Google, X',
+            title: 'Passkeys and security keys',
+            subtitle: '6 passkeys',
+        },
+        {
+            id: 'password',
+            icon: 'dots-horizontal',
+            iconColor: colors.sidebarIconSecurity,
+            title: 'Password',
+            subtitle: 'Last changed Oct 27, 2021',
+        },
+        {
+            id: 'skip-password',
+            icon: 'key-off-outline',
+            iconColor: colors.sidebarIconSecurity,
+            title: 'Skip password when possible',
+            subtitle: skipPassword ? 'On' : 'Off',
             customContent: (
-                <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-                    <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
-                </TouchableOpacity>
+                <Switch
+                    value={skipPassword}
+                    onValueChange={setSkipPassword}
+                    trackColor={{ false: colors.border, true: colors.tint }}
+                    thumbColor="#FFFFFF"
+                />
             ),
         },
         {
-            id: 'recent-activity',
-            icon: 'history',
-            iconColor: colors.sidebarIconData,
-            title: 'Recent security activity',
-            subtitle: 'View your recent sign-ins',
+            id: 'authenticator',
+            icon: 'grid',
+            iconColor: colors.sidebarIconSecurity,
+            title: 'Authenticator',
+            subtitle: 'Added Mar 8, 2020',
+        },
+        {
+            id: 'google-prompt',
+            icon: 'cellphone',
+            iconColor: colors.sidebarIconSecurity,
+            title: 'Oxy prompt',
+            subtitle: '3 devices',
+        },
+        {
+            id: '2fa-phones',
+            icon: 'message-text-outline',
+            iconColor: colors.sidebarIconSecurity,
+            title: '2-Step Verification phones',
+            subtitle: '680 72 76 77',
+        },
+        {
+            id: 'recovery-phone',
+            icon: 'cellphone',
+            iconColor: colors.sidebarIconSecurity,
+            title: 'Recovery phone',
+            subtitle: '680 72 76 77',
+        },
+        {
+            id: 'recovery-email',
+            icon: 'email-outline',
+            iconColor: colors.sidebarIconSecurity,
+            title: 'Recovery email',
+            subtitle: 'nate.isern.alvarez@gmail.com',
             customContent: (
-                <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-                    <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
-                </TouchableOpacity>
+                <View style={styles.statusContainer}>
+                    <Ionicons name="warning" size={20} color="#FFC107" />
+                </View>
             ),
         },
         {
-            id: 'security-alerts',
-            icon: 'bell-outline',
-            iconColor: colors.sidebarIconPayments,
-            title: 'Security alerts',
-            subtitle: 'Get notified about security events',
-            customContent: (
-                <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-                    <Text style={[styles.buttonText, { color: colors.text }]}>Configure</Text>
-                </TouchableOpacity>
-            ),
+            id: 'pin',
+            icon: 'dialpad',
+            iconColor: colors.sidebarIconSecurity,
+            title: 'Oxy Account PIN',
+            subtitle: 'Last changed Jan 7, 2020',
+        },
+        {
+            id: 'backup-codes',
+            icon: 'grid',
+            iconColor: colors.sidebarIconSecurity,
+            title: 'Backup codes',
+            subtitle: '10 codes available',
+        },
+    ], [colors, skipPassword]);
+
+    const actionButtons = useMemo(() => [
+        {
+            id: 'recovery-contacts',
+            icon: 'account-outline',
+            iconColor: colors.sidebarIconPersonalInfo,
+            title: 'Recovery contacts',
+        },
+        {
+            id: 'backup-phones',
+            icon: 'shield-outline',
+            iconColor: colors.sidebarIconSecurity,
+            title: 'Backup 2-Step Verification phones',
         },
     ], [colors]);
 
-    const renderSidebar = () => (
-        <View style={[styles.desktopSidebar, { backgroundColor: colors.sidebarBackground }]}>
-            <View style={styles.desktopHeader}>
-                <ThemedText style={styles.welcomeText}>Welcome, Nate.</ThemedText>
-                <ThemedText style={styles.welcomeSubtext}>Manage your xAI account.</ThemedText>
-            </View>
+    const deviceItems = useMemo(() => [
+        {
+            id: 'windows',
+            icon: 'monitor',
+            iconColor: colors.sidebarIconDevices,
+            title: '2 sessions on Windows computer(s)',
+            subtitle: 'Windows, Windows',
+        },
+        {
+            id: 'android',
+            icon: 'cellphone',
+            iconColor: colors.sidebarIconDevices,
+            title: '3 sessions on Android device(s)',
+            subtitle: 'Android, Redmi M2101K6G,...',
+        },
+        {
+            id: 'chrome',
+            icon: 'monitor',
+            iconColor: colors.sidebarIconDevices,
+            title: '1 session on Chrome device',
+            subtitle: 'Google Pixelbook',
+        },
+    ], [colors]);
 
-            <View style={styles.menuContainer}>
-                <TouchableOpacity
-                    style={[styles.menuItem, pathname === '/(tabs)' || pathname === '/(tabs)/' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)' || pathname === '/(tabs)/' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                    onPress={() => router.push('/(tabs)')}
-                >
-                    <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconHome }]}>
-                        <MaterialCommunityIcons name="home-variant" size={22} color={darkenColor(colors.sidebarIconHome)} />
-                    </View>
-                    <Text style={[styles.menuItemText, { color: pathname === '/(tabs)' || pathname === '/(tabs)/' ? colors.sidebarItemActiveText : colors.text }]}>Home</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.menuItem, pathname === '/(tabs)/personal-info' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/personal-info' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                    onPress={() => router.push('/(tabs)/personal-info')}
-                >
-                    <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconPersonalInfo }]}>
-                        <MaterialCommunityIcons name="card-account-details-outline" size={22} color={darkenColor(colors.sidebarIconPersonalInfo)} />
-                    </View>
-                    <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/personal-info' ? colors.sidebarItemActiveText : colors.text }]}>Personal info</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.menuItem, pathname === '/(tabs)/security' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/security' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                    onPress={() => router.push('/(tabs)/security')}
-                >
-                    <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
-                        <MaterialCommunityIcons name="lock-outline" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
-                    </View>
-                    <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/security' ? colors.sidebarItemActiveText : colors.text }]}>Security & sign-in</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.menuItem, pathname === '/(tabs)/password-manager' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/password-manager' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                    onPress={() => router.push('/(tabs)/password-manager')}
-                >
-                    <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconPassword }]}>
-                        <MaterialCommunityIcons name="key-outline" size={22} color={darkenColor(colors.sidebarIconPassword)} />
-                    </View>
-                    <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/password-manager' ? colors.sidebarItemActiveText : colors.text }]}>Password Manager</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.menuItem, pathname === '/(tabs)/devices' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/devices' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                    onPress={() => router.push('/(tabs)/devices')}
-                >
-                    <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
-                        <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
-                    </View>
-                    <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/devices' ? colors.sidebarItemActiveText : colors.text }]}>Your devices</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.menuItem, pathname === '/(tabs)/data' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/data' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                    onPress={() => router.push('/(tabs)/data')}
-                >
-                    <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
-                        <MaterialCommunityIcons name="toggle-switch-outline" size={22} color={darkenColor(colors.sidebarIconData)} />
-                    </View>
-                    <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/data' ? colors.sidebarItemActiveText : colors.text }]}>Data & privacy</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.menuItem, pathname === '/(tabs)/sharing' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/sharing' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                    onPress={() => router.push('/(tabs)/sharing')}
-                >
-                    <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSharing }]}>
-                        <MaterialCommunityIcons name="account-group-outline" size={22} color={darkenColor(colors.sidebarIconSharing)} />
-                    </View>
-                    <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/sharing' ? colors.sidebarItemActiveText : colors.text }]}>People & sharing</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.menuItem, pathname === '/(tabs)/family' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/family' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                    onPress={() => router.push('/(tabs)/family')}
-                >
-                    <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconFamily }]}>
-                        <MaterialCommunityIcons name="home-group" size={22} color={darkenColor(colors.sidebarIconFamily)} />
-                    </View>
-                    <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/family' ? colors.sidebarItemActiveText : colors.text }]}>Family Group</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.menuItem, pathname === '/(tabs)/payments' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/payments' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                    onPress={() => router.push('/(tabs)/payments')}
-                >
-                    <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconPayments }]}>
-                        <MaterialCommunityIcons name="wallet-outline" size={22} color={darkenColor(colors.sidebarIconPayments)} />
-                    </View>
-                    <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/payments' ? colors.sidebarItemActiveText : colors.text }]}>Payments & subscriptions</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                    style={[styles.menuItem, pathname === '/(tabs)/storage' ? styles.menuItemActive : null, { backgroundColor: pathname === '/(tabs)/storage' ? colors.sidebarItemActiveBackground : 'transparent' }]}
-                    onPress={() => router.push('/(tabs)/storage')}
-                >
-                    <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconStorage }]}>
-                        <MaterialCommunityIcons name="cloud-outline" size={22} color={darkenColor(colors.sidebarIconStorage)} />
-                    </View>
-                    <Text style={[styles.menuItemText, { color: pathname === '/(tabs)/storage' ? colors.sidebarItemActiveText : colors.text }]}>Oxy storage</Text>
-                </TouchableOpacity>
-            </View>
-        </View>
+    const thirdPartyItems = useMemo(() => [
+        {
+            id: 'airbnb',
+            icon: 'home-outline',
+            iconColor: colors.sidebarIconSharing,
+            title: 'Airbnb',
+            subtitle: 'Connected',
+        },
+        {
+            id: 'alexa',
+            icon: 'amazon',
+            iconColor: colors.sidebarIconSharing,
+            title: 'Amazon Alexa',
+            subtitle: 'Connected',
+        },
+        {
+            id: 'android-police',
+            icon: 'newspaper-outline',
+            iconColor: colors.sidebarIconSharing,
+            title: 'Android Police',
+            subtitle: 'Connected',
+        },
+    ], [colors]);
+
+    const featureCards = useMemo(() => [
+        {
+            id: 'safe-browsing',
+            icon: 'shield-check-outline',
+            iconColor: colors.sidebarIconSecurity,
+            title: 'Enhanced Safe Browsing for your account',
+            subtitle: 'More personalized protections against dangerous websites, downloads, and extensions.',
+            customContent: (
+                <Switch
+                    value={enhancedSafeBrowsing}
+                    onValueChange={setEnhancedSafeBrowsing}
+                    trackColor={{ false: colors.border, true: colors.tint }}
+                    thumbColor="#FFFFFF"
+                />
+            ),
+        },
+        {
+            id: 'dark-web',
+            icon: 'magnify',
+            iconColor: colors.sidebarIconData,
+            title: 'Dark web report',
+            subtitle: 'Start monitoring to get alerts and guidance if your info is found on the dark web',
+            customContent: (
+                <Switch
+                    value={darkWebReport}
+                    onValueChange={setDarkWebReport}
+                    trackColor={{ false: colors.border, true: colors.tint }}
+                    thumbColor="#FFFFFF"
+                />
+            ),
+        },
+        {
+            id: 'password-manager',
+            icon: 'key-outline',
+            iconColor: colors.sidebarIconPassword,
+            title: 'Password Manager',
+            subtitle: 'You have 1026 passwords saved in your Oxy Account. Password Manager makes it easier to sign in to sites and apps you use on any signed-in device.',
+        },
+    ], [colors, enhancedSafeBrowsing, darkWebReport]);
+
+
+    const renderContent = () => (
+        <>
+            <AccountCard>
+                <GroupedSection items={securityRecommendation} />
+            </AccountCard>
+
+            <Section title="Recent security activity">
+                <AccountCard>
+                    <GroupedSection items={recentActivity} />
+                </AccountCard>
+                <LinkButton text="Review security activity" />
+            </Section>
+
+            <Section title="How you sign in to Oxy">
+                <ThemedText style={styles.sectionSubtitle}>Make sure you can always access your Oxy Account by keeping this information up to date</ThemedText>
+                <AccountCard>
+                    <GroupedSection items={signInItems} />
+                </AccountCard>
+                <ThemedText style={styles.sectionSubtitle}>You can add more sign-in options</ThemedText>
+                <AccountCard>
+                    <GroupedSection items={actionButtons} />
+                </AccountCard>
+            </Section>
+
+            <Section title="Your devices">
+                <ThemedText style={styles.sectionSubtitle}>Where you're signed in</ThemedText>
+                <AccountCard>
+                    <GroupedSection items={deviceItems} />
+                </AccountCard>
+                <View style={styles.deviceActions}>
+                    <LinkButton text="Find a lost device" icon="target" />
+                    <LinkButton text="Manage all devices" count="12" />
+                </View>
+            </Section>
+
+            <Section title="Your connections to third-party apps & services">
+                <ThemedText style={styles.sectionSubtitle}>Keep track of your connections to third-party apps and services</ThemedText>
+                <AccountCard>
+                    <GroupedSection items={thirdPartyItems} />
+                </AccountCard>
+                <LinkButton text="See all connections" count="68" />
+            </Section>
+
+            <AccountCard>
+                <GroupedSection items={featureCards} />
+            </AccountCard>
+        </>
     );
 
     if (isDesktop) {
         return (
-            <View style={[styles.container, { backgroundColor: colors.background }]}>
-                <View style={styles.desktopBody}>
-                    {renderSidebar()}
-                    <ScrollView
-                        style={styles.desktopMain}
-                        contentContainerStyle={styles.desktopMainContent}
-                        showsVerticalScrollIndicator={false}
-                    >
-                        <View style={styles.headerSection}>
-                            <ThemedText style={styles.title}>Security & sign-in</ThemedText>
-                            <ThemedText style={styles.subtitle}>Manage your security settings and sign-in methods.</ThemedText>
-                        </View>
-                        <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
-                            <GroupedSection items={securityItems} />
-                        </View>
-                    </ScrollView>
+            <>
+                <View style={styles.headerSection}>
+                    <ThemedText style={styles.title}>Security & sign-in</ThemedText>
                 </View>
-            </View>
+                {renderContent()}
+            </>
         );
     }
 
@@ -215,11 +321,8 @@ export default function SecurityScreen() {
             >
                 <View style={styles.mobileHeaderSection}>
                     <ThemedText style={styles.mobileTitle}>Security & sign-in</ThemedText>
-                    <ThemedText style={styles.mobileSubtitle}>Manage your security settings and sign-in methods.</ThemedText>
                 </View>
-                <View style={[styles.accountCard, { backgroundColor: colors.card }]}>
-                    <GroupedSection items={securityItems} />
-                </View>
+                {renderContent()}
             </ScrollView>
         </View>
     );
@@ -236,45 +339,6 @@ const styles = StyleSheet.create({
         flex: 1,
         flexDirection: 'row',
     },
-    desktopSidebar: {
-        width: 260,
-        padding: 20,
-    },
-    desktopHeader: {
-        marginBottom: 24,
-    },
-    welcomeText: {
-        fontSize: 22,
-        fontWeight: '600',
-        marginBottom: 4,
-    },
-    welcomeSubtext: {
-        fontSize: 13,
-        opacity: 0.6,
-    },
-    menuContainer: {
-        gap: 4,
-    },
-    menuItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 8,
-        paddingHorizontal: 12,
-        borderRadius: 26,
-        gap: 12,
-    },
-    menuItemActive: {},
-    menuIconContainer: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    menuItemText: {
-        fontSize: 14,
-        fontWeight: '400',
-    },
     desktopMain: {
         flex: 1,
         maxWidth: 720,
@@ -290,22 +354,25 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         marginBottom: 8,
     },
-    subtitle: {
-        fontSize: 16,
-        opacity: 0.6,
+    recommendationIconContainer: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    accountCard: {
-        borderRadius: 16,
-        overflow: 'hidden',
-    },
-    button: {
-        paddingHorizontal: 16,
-        paddingVertical: 8,
-        borderRadius: 8,
-    },
-    buttonText: {
+    sectionSubtitle: {
         fontSize: 14,
-        fontWeight: '500',
+        opacity: 0.7,
+        marginBottom: 12,
+    },
+    statusContainer: {
+        marginLeft: 8,
+    },
+    deviceActions: {
+        flexDirection: 'row',
+        gap: 24,
+        marginTop: 8,
     },
     mobileContent: {
         padding: 16,
@@ -318,9 +385,5 @@ const styles = StyleSheet.create({
         fontSize: 28,
         fontWeight: '600',
         marginBottom: 6,
-    },
-    mobileSubtitle: {
-        fontSize: 15,
-        opacity: 0.6,
     },
 });
