@@ -14,6 +14,8 @@ const styles = StyleSheet.create({
     desktopSidebar: {
         width: '100%',
         padding: 16,
+        flex: 1,
+        justifyContent: 'center',
     },
 });
 

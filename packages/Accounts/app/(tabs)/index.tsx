@@ -158,8 +158,8 @@ export default function HomeScreen() {
               </View>
             </View>
             <View style={styles.nameWrapper}>
-              <ThemedText style={styles.userName}>Nate Isern Alvarez</ThemedText>
-              <ThemedText style={styles.userUsername}>@NateIsern</ThemedText>
+              <ThemedText style={styles.welcomeText}>Welcome, Nate.</ThemedText>
+              <ThemedText style={styles.welcomeSubtext}>Manage your Oxy account.</ThemedText>
             </View>
           </View>
         </View>
@@ -186,8 +186,8 @@ export default function HomeScreen() {
                 </View>
               </View>
               <View style={styles.nameWrapper}>
-                <ThemedText style={styles.userName}>Nate Isern Alvarez</ThemedText>
-                <ThemedText style={styles.userUsername}>@NateIsern</ThemedText>
+                <ThemedText style={styles.welcomeText}>Welcome, Nate.</ThemedText>
+                <ThemedText style={styles.welcomeSubtext}>Manage your Oxy account.</ThemedText>
               </View>
             </View>
           </View>
@@ -279,15 +279,6 @@ const styles = StyleSheet.create({
   } as const,
   logoContainer: {
     marginBottom: 24,
-  } as const,
-  welcomeText: {
-    fontSize: 22,
-    fontWeight: '600',
-    marginBottom: 4,
-  } as const,
-  welcomeSubtext: {
-    fontSize: 13,
-    opacity: 0.6,
   } as const,
   menuContainer: {
     gap: 4,
@@ -391,6 +382,16 @@ const styles = StyleSheet.create({
     fontWeight: '400',
     opacity: 0.6,
     marginTop: 4,
+  } as const,
+  welcomeText: {
+    fontSize: 24,
+    fontWeight: '600',
+    marginBottom: 8,
+  } as const,
+  welcomeSubtext: {
+    fontSize: 16,
+    fontWeight: '400',
+    opacity: 0.6,
   } as const,
   subtitle: {
     fontSize: 14,

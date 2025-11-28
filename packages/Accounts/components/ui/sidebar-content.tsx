@@ -44,11 +44,6 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
 
     return (
         <>
-            <View style={styles.sidebarHeader}>
-                <ThemedText style={styles.welcomeText}>Welcome, Nate.</ThemedText>
-                <ThemedText style={styles.welcomeSubtext}>Manage your Oxy account.</ThemedText>
-            </View>
-
             <View style={styles.menuContainer}>
                 {menuItems.map((item) => {
                     const isActive = pathname === item.path || (item.path === '/(tabs)' && (pathname === '/(tabs)' || pathname === '/(tabs)/'));
@@ -79,21 +74,6 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
 }
 
 const styles = StyleSheet.create({
-    sidebarHeader: {
-        marginBottom: 24,
-        paddingLeft: 12, // Match menuItem paddingHorizontal
-    },
-    welcomeText: {
-        fontSize: 24,
-        fontWeight: '600',
-        marginBottom: 8,
-        lineHeight: 32,
-    },
-    welcomeSubtext: {
-        fontSize: 24,
-        opacity: 0.6,
-        lineHeight: 32,
-    },
     menuContainer: {
         gap: 4,
     },
