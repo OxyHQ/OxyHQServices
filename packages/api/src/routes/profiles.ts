@@ -32,8 +32,7 @@ interface PaginationQuery {
 }
 
 const router = Router();
-const MAX_PAGINATION_LIMIT = 100;
-const DEFAULT_PAGINATION_LIMIT = 10;
+import { PAGINATION } from '../utils/constants';
 
 // Constants
 const MIN_USERNAME_LENGTH = 3;
@@ -47,10 +46,10 @@ const validatePagination = (req: Request, res: Response, next: () => void): void
   const limit = query.limit ? parseInt(query.limit, 10) : undefined;
   const offset = query.offset ? parseInt(query.offset, 10) : undefined;
 
-  if (limit !== undefined && (isNaN(limit) || limit < 0 || limit > MAX_PAGINATION_LIMIT)) {
+  if (limit !== undefined && (isNaN(limit) || limit < 0 || limit > PAGINATION.MAX_LIMIT)) {
     res.status(400).json({
       error: 'BAD_REQUEST',
-      message: `Invalid limit parameter. Must be between 1 and ${MAX_PAGINATION_LIMIT}`,
+      message: `Invalid limit parameter. Must be between 1 and ${PAGINATION.MAX_LIMIT}`,
     });
     return;
   }
@@ -131,8 +130,8 @@ router.get(
     }
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), MAX_PAGINATION_LIMIT)
-      : DEFAULT_PAGINATION_LIMIT;
+      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      : PAGINATION.DEFAULT_LIMIT;
     const parsedOffset = offset ? parseInt(offset, 10) : 0;
 
     // Sanitize search query to prevent regex injection
@@ -203,8 +202,8 @@ router.get(
     }
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), MAX_PAGINATION_LIMIT)
-      : DEFAULT_PAGINATION_LIMIT;
+      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      : PAGINATION.DEFAULT_LIMIT;
     const parsedOffset = offset ? parseInt(offset, 10) : 0;
 
     logger.debug('GET /profiles/recommendations', {

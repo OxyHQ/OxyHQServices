@@ -16,6 +16,7 @@ export const ErrorCodes = {
   
   // Validation errors
   VALIDATION_ERROR: 'VALIDATION_ERROR',
+  BAD_REQUEST: 'BAD_REQUEST',
   MISSING_PARAMETER: 'MISSING_PARAMETER',
   INVALID_FORMAT: 'INVALID_FORMAT',
   
@@ -103,11 +104,12 @@ export function handleHttpError(error: unknown): ApiError {
 
 /**
  * Get error code from HTTP status
+ * Exported for use in other modules
  */
-function getErrorCodeFromStatus(status: number): string {
+export function getErrorCodeFromStatus(status: number): string {
   switch (status) {
     case 400:
-      return ErrorCodes.VALIDATION_ERROR;
+      return ErrorCodes.BAD_REQUEST;
     case 401:
       return ErrorCodes.UNAUTHORIZED;
     case 403:
@@ -157,28 +159,7 @@ export function logError(error: unknown, context?: string): void {
 
 /**
  * Retry function with exponential backoff
+ * Re-exports retryAsync for backward compatibility
+ * @deprecated Use retryAsync from asyncUtils instead
  */
-export async function retryWithBackoff<T>(
-  fn: () => Promise<T>,
-  maxRetries = 3,
-  baseDelay = 1000
-): Promise<T> {
-  let lastError: unknown;
-  
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await fn();
-    } catch (error) {
-      lastError = error;
-      
-      if (attempt === maxRetries) {
-        break;
-      }
-      
-      const delay = baseDelay * 2 ** attempt;
-      await new Promise(resolve => setTimeout(resolve, delay));
-    }
-  }
-  
-  throw lastError;
-} 
+export { retryAsync as retryWithBackoff } from './asyncUtils'; 

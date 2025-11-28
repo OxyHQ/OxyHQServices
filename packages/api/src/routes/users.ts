@@ -39,9 +39,7 @@ interface PaginationQuery {
   offset?: string;
 }
 
-// Constants
-const MAX_PAGINATION_LIMIT = 100;
-const DEFAULT_PAGINATION_LIMIT = 50;
+import { PAGINATION } from '../utils/constants';
 
 // Initialize router and controller
 const router = Router();
@@ -256,8 +254,8 @@ router.get(
     const { limit, offset } = req.query as PaginationQuery;
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), MAX_PAGINATION_LIMIT)
-      : DEFAULT_PAGINATION_LIMIT;
+      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      : PAGINATION.DEFAULT_LIMIT;
     const parsedOffset = offset ? parseInt(offset, 10) : 0;
 
     const result = await userService.getUserFollowers(userId, {
@@ -295,8 +293,8 @@ router.get(
     const { limit, offset } = req.query as PaginationQuery;
 
     const parsedLimit = limit
-      ? Math.min(parseInt(limit, 10), MAX_PAGINATION_LIMIT)
-      : DEFAULT_PAGINATION_LIMIT;
+      ? Math.min(parseInt(limit, 10), PAGINATION.MAX_LIMIT)
+      : PAGINATION.DEFAULT_LIMIT;
     const parsedOffset = offset ? parseInt(offset, 10) : 0;
 
     const result = await userService.getUserFollowing(userId, {

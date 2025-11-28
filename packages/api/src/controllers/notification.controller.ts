@@ -4,6 +4,9 @@ import { z } from 'zod';
 import { AuthRequest } from '../middleware/auth';
 import Notification from '../models/Notification';
 import { logger } from '../utils/logger';
+import { sendSuccess } from '../utils/asyncHandler';
+import { UnauthorizedError, BadRequestError, NotFoundError, ConflictError, InternalServerError } from '../utils/error';
+import { PAGINATION } from '../utils/constants';
 
 // =============================================================================
 // VALIDATION SCHEMAS
@@ -24,40 +27,15 @@ const CREATE_NOTIFICATION_SCHEMA = z.object({
 // CONSTANTS
 // =============================================================================
 
-const DEFAULT_PAGE_SIZE = 20;
-const MAX_PAGE_SIZE = 100;
-const DEFAULT_PAGE = 1;
-
 // =============================================================================
 // UTILITY FUNCTIONS
 // =============================================================================
 
 /**
- * Creates a standardized error response
- */
-function createErrorResponse(message: string, errorCode?: string) {
-  return {
-    success: false,
-    message,
-    error: errorCode || 'UNKNOWN_ERROR',
-  };
-}
-
-/**
- * Creates a standardized success response
- */
-function createSuccessResponse<T>(data: T) {
-  return {
-    success: true,
-    ...data,
-  };
-}
-
-/**
  * Validates pagination parameters
  */
 function validatePaginationParams(page: number, limit: number): boolean {
-  return page >= 1 && limit >= 1 && limit <= MAX_PAGE_SIZE;
+  return page >= 1 && limit >= 1 && limit <= PAGINATION.MAX_PAGE_SIZE;
 }
 
 /**
@@ -86,16 +64,14 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
   try {
     const userId = req.user?.id;
     if (!userId) {
-      res.status(401).json(createErrorResponse('Unauthorized: User ID not found', 'AUTH_ERROR'));
-      return;
+      throw new UnauthorizedError('Unauthorized: User ID not found');
     }
 
-    const page = parseInt(req.query.page as string) || DEFAULT_PAGE;
-    const limit = parseInt(req.query.limit as string) || DEFAULT_PAGE_SIZE;
+    const page = parseInt(req.query.page as string) || PAGINATION.DEFAULT_PAGE;
+    const limit = parseInt(req.query.limit as string) || PAGINATION.DEFAULT_PAGE_SIZE;
 
     if (!validatePaginationParams(page, limit)) {
-      res.status(400).json(createErrorResponse('Invalid pagination parameters', 'INVALID_PAGINATION'));
-      return;
+      throw new BadRequestError('Invalid pagination parameters');
     }
 
     // Fetch notifications and unread count in parallel
@@ -112,16 +88,19 @@ export const getNotifications = async (req: AuthRequest, res: Response): Promise
       }),
     ]);
 
-    res.json(createSuccessResponse({
+    sendSuccess(res, {
       notifications,
       unreadCount,
       hasMore: notifications.length === limit,
       page,
       limit,
-    }));
+    });
   } catch (error) {
-    logger.error('Error fetching notifications:', error);
-    res.status(500).json(createErrorResponse('Error fetching notifications'));
+    if (error instanceof UnauthorizedError || error instanceof BadRequestError) {
+      throw error;
+    }
+    logger.error('Error fetching notifications', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Error fetching notifications');
   }
 };
 
@@ -144,8 +123,7 @@ export const createNotification = async (req: Request, res: Response): Promise<v
     });
 
     if (existingNotification) {
-      res.status(409).json(createErrorResponse('Duplicate notification', 'DUPLICATE_ERROR'));
-      return;
+      throw new ConflictError('Duplicate notification');
     }
 
     const notification = new Notification({
@@ -164,19 +142,17 @@ export const createNotification = async (req: Request, res: Response): Promise<v
     // Emit real-time notification
     await emitNotification(req, notification);
 
-    res.status(201).json(createSuccessResponse({ notification }));
+    sendSuccess(res, { notification }, 201);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({
-        success: false,
-        message: 'Invalid notification data',
-        errors: error.errors,
-      });
-      return;
+      throw new BadRequestError('Invalid notification data', { errors: error.errors });
+    }
+    if (error instanceof ConflictError || error instanceof BadRequestError) {
+      throw error;
     }
 
-    logger.error('Error creating notification:', error);
-    res.status(500).json(createErrorResponse('Error creating notification'));
+    logger.error('Error creating notification', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Error creating notification');
   }
 };
 
@@ -191,8 +167,7 @@ export const markAsRead = async (req: AuthRequest, res: Response): Promise<void>
     const { notificationId } = req.params;
 
     if (!userId) {
-      res.status(401).json(createErrorResponse('Unauthorized: User ID not found', 'AUTH_ERROR'));
-      return;
+      throw new UnauthorizedError('Unauthorized: User ID not found');
     }
 
     const notification = await Notification.findOneAndUpdate(
@@ -202,14 +177,16 @@ export const markAsRead = async (req: AuthRequest, res: Response): Promise<void>
     );
 
     if (!notification) {
-      res.status(404).json(createErrorResponse('Notification not found', 'NOT_FOUND'));
-      return;
+      throw new NotFoundError('Notification not found');
     }
 
-    res.json(createSuccessResponse({ notification }));
+    sendSuccess(res, { notification });
   } catch (error) {
-    logger.error('Error marking notification as read:', error);
-    res.status(500).json(createErrorResponse('Error marking notification as read'));
+    if (error instanceof UnauthorizedError || error instanceof NotFoundError) {
+      throw error;
+    }
+    logger.error('Error marking notification as read', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Error marking notification as read');
   }
 };
 
@@ -223,8 +200,7 @@ export const markAllAsRead = async (req: AuthRequest, res: Response): Promise<vo
     const userId = req.user?.id;
 
     if (!userId) {
-      res.status(401).json(createErrorResponse('Unauthorized: User ID not found', 'AUTH_ERROR'));
-      return;
+      throw new UnauthorizedError('Unauthorized: User ID not found');
     }
 
     const result = await Notification.updateMany(
@@ -232,13 +208,16 @@ export const markAllAsRead = async (req: AuthRequest, res: Response): Promise<vo
       { read: true, readAt: new Date() }
     );
 
-    res.json(createSuccessResponse({
+    sendSuccess(res, {
       message: `Marked ${result.modifiedCount} notifications as read`,
       modifiedCount: result.modifiedCount,
-    }));
+    });
   } catch (error) {
-    logger.error('Error marking all notifications as read:', error);
-    res.status(500).json(createErrorResponse('Error marking all notifications as read'));
+    if (error instanceof UnauthorizedError) {
+      throw error;
+    }
+    logger.error('Error marking all notifications as read', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Error marking all notifications as read');
   }
 };
 
@@ -253,8 +232,7 @@ export const deleteNotification = async (req: AuthRequest, res: Response): Promi
     const { notificationId } = req.params;
 
     if (!userId) {
-      res.status(401).json(createErrorResponse('Unauthorized: User ID not found', 'AUTH_ERROR'));
-      return;
+      throw new UnauthorizedError('Unauthorized: User ID not found');
     }
 
     const notification = await Notification.findOneAndDelete({
@@ -263,16 +241,18 @@ export const deleteNotification = async (req: AuthRequest, res: Response): Promi
     });
 
     if (!notification) {
-      res.status(404).json(createErrorResponse('Notification not found', 'NOT_FOUND'));
-      return;
+      throw new NotFoundError('Notification not found');
     }
 
-    res.json(createSuccessResponse({
+    sendSuccess(res, {
       message: 'Notification deleted successfully',
-    }));
+    });
   } catch (error) {
-    logger.error('Error deleting notification:', error);
-    res.status(500).json(createErrorResponse('Error deleting notification'));
+    if (error instanceof UnauthorizedError || error instanceof NotFoundError) {
+      throw error;
+    }
+    logger.error('Error deleting notification', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Error deleting notification');
   }
 };
 
@@ -286,8 +266,7 @@ export const getUnreadCount = async (req: AuthRequest, res: Response): Promise<v
     const userId = req.user?.id;
 
     if (!userId) {
-      res.status(401).json(createErrorResponse('Unauthorized: User ID not found', 'AUTH_ERROR'));
-      return;
+      throw new UnauthorizedError('Unauthorized: User ID not found');
     }
 
     const unreadCount = await Notification.countDocuments({
@@ -295,9 +274,12 @@ export const getUnreadCount = async (req: AuthRequest, res: Response): Promise<v
       read: false,
     });
 
-    res.json(createSuccessResponse({ unreadCount }));
+    sendSuccess(res, { unreadCount });
   } catch (error) {
-    logger.error('Error fetching unread count:', error);
-    res.status(500).json(createErrorResponse('Error fetching unread count'));
+    if (error instanceof UnauthorizedError) {
+      throw error;
+    }
+    logger.error('Error fetching unread count', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Error fetching unread count');
   }
 };

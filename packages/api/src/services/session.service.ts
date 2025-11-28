@@ -61,7 +61,10 @@ class SessionService {
 
       return session as ISession;
     } catch (error) {
-      logger.error('[SessionService] Failed to get session:', error);
+      logger.error('[SessionService] Failed to get session', error instanceof Error ? error : new Error(String(error)), {
+        component: 'SessionService',
+        method: 'getSession',
+      });
       // Return null on error to allow graceful degradation
       // Caller should handle null case appropriately
       return null;
@@ -125,7 +128,10 @@ class SessionService {
         user: typeof session.userId === 'object' ? session.userId : null
       };
     } catch (error) {
-      logger.error('[SessionService] Failed to get session with user:', error);
+      logger.error('[SessionService] Failed to get session with user', error instanceof Error ? error : new Error(String(error)), {
+        component: 'SessionService',
+        method: 'getSessionWithUser',
+      });
       // Return null on error for graceful degradation - consistent error handling pattern
       // Caller should handle null case appropriately
       return null;
@@ -182,7 +188,11 @@ class SessionService {
       if (sessionCache.shouldUpdateLastActive(sessionId)) {
         // Update in background without blocking
         this.updateLastActivity(sessionId).catch(err => {
-          logger.error('[SessionService] Failed to update last activity:', err);
+          logger.error('[SessionService] Failed to update last activity', err instanceof Error ? err : new Error(String(err)), {
+            component: 'SessionService',
+            method: 'updateLastActivity',
+            sessionId,
+          });
         });
       }
 
@@ -192,7 +202,10 @@ class SessionService {
         payload
       };
     } catch (error) {
-      logger.error('[SessionService] Session validation failed:', error);
+      logger.error('[SessionService] Session validation failed', error instanceof Error ? error : new Error(String(error)), {
+        component: 'SessionService',
+        method: 'validateSession',
+      });
       return null;
     }
   }
@@ -226,9 +239,13 @@ class SessionService {
         sessionCache.set(sessionId, cached);
       }
 
-      logger.debug(`[SessionService] Updated last activity for session: ${sessionId.substring(0, 8)}...`);
+      logger.debug('[SessionService] Updated last activity for session', { sessionId: sessionId.substring(0, 8) });
     } catch (error) {
-      logger.error('[SessionService] Failed to update last activity:', error);
+      logger.error('[SessionService] Failed to update last activity', error instanceof Error ? error : new Error(String(error)), {
+        component: 'SessionService',
+        method: 'updateLastActivity',
+        sessionId,
+      });
       sessionCache.clearPendingLastActive(sessionId);
     }
   }
@@ -340,10 +357,14 @@ class SessionService {
       // Cache the session
       sessionCache.set(sessionId, session);
 
-      logger.info(`[SessionService] Created new session for user: ${userId} on device: ${deviceInfo.deviceId}`);
+      logger.info('[SessionService] Created new session', { userId, deviceId: deviceInfo.deviceId });
       return session;
     } catch (error) {
-      logger.error('[SessionService] Failed to create session:', error);
+      logger.error('[SessionService] Failed to create session', error instanceof Error ? error : new Error(String(error)), {
+        component: 'SessionService',
+        method: 'createSession',
+        userId,
+      });
       throw error;
     }
   }
@@ -367,7 +388,7 @@ class SessionService {
           logger.debug('[SessionService] Refresh token expired');
           throw new Error('Refresh token expired');
         }
-        logger.debug('[SessionService] Invalid refresh token:', validationResult.error);
+        logger.debug('[SessionService] Invalid refresh token', { error: validationResult.error });
         throw new Error('Invalid refresh token');
       }
 
@@ -408,7 +429,7 @@ class SessionService {
       sessionCache.invalidate(sessionId);
       sessionCache.set(sessionId, session);
 
-      logger.info(`[SessionService] Refreshed tokens for session: ${sessionId.substring(0, 8)}...`);
+      logger.info('[SessionService] Refreshed tokens for session', { sessionId: sessionId.substring(0, 8) });
       
       return {
         accessToken: newAccessToken,
@@ -416,7 +437,10 @@ class SessionService {
         session
       };
     } catch (error) {
-      logger.error('[SessionService] Failed to refresh tokens:', error);
+      logger.error('[SessionService] Failed to refresh tokens', error instanceof Error ? error : new Error(String(error)), {
+        component: 'SessionService',
+        method: 'refreshTokens',
+      });
       return null;
     }
   }
@@ -440,10 +464,14 @@ class SessionService {
       // Invalidate cache
       sessionCache.invalidate(sessionId);
 
-      logger.info(`[SessionService] Deactivated session: ${sessionId.substring(0, 8)}...`);
+      logger.info('[SessionService] Deactivated session', { sessionId: sessionId.substring(0, 8) });
       return result.modifiedCount > 0;
     } catch (error) {
-      logger.error('[SessionService] Failed to deactivate session:', error);
+      logger.error('[SessionService] Failed to deactivate session', error instanceof Error ? error : new Error(String(error)), {
+        component: 'SessionService',
+        method: 'deactivateSession',
+        sessionId,
+      });
       // Return false on error for graceful degradation - consistent with other non-critical operations
       return false;
     }
@@ -474,10 +502,14 @@ class SessionService {
       // Invalidate all cached sessions for this user
       sessionCache.invalidateUserSessions(userId);
 
-      logger.info(`[SessionService] Deactivated ${result.modifiedCount} sessions for user: ${userId}`);
+      logger.info('[SessionService] Deactivated sessions for user', { count: result.modifiedCount, userId });
       return result.modifiedCount;
     } catch (error) {
-      logger.error('[SessionService] Failed to deactivate all user sessions:', error);
+      logger.error('[SessionService] Failed to deactivate all user sessions', error instanceof Error ? error : new Error(String(error)), {
+        component: 'SessionService',
+        method: 'deactivateAllUserSessions',
+        userId,
+      });
       // Return 0 on error for graceful degradation - consistent error handling pattern
       return 0;
     }
@@ -507,7 +539,11 @@ class SessionService {
 
       return sessions as ISession[];
     } catch (error) {
-      logger.error('[SessionService] Failed to get user active sessions:', error);
+      logger.error('[SessionService] Failed to get user active sessions', error instanceof Error ? error : new Error(String(error)), {
+        component: 'SessionService',
+        method: 'getUserActiveSessions',
+        userId,
+      });
       // Return empty array on error for graceful degradation - consistent error handling pattern
       return [];
     }
@@ -539,7 +575,11 @@ class SessionService {
 
       return { session };
     } catch (error) {
-      logger.error('[SessionService] Failed to validate session by ID:', error);
+      logger.error('[SessionService] Failed to validate session by ID', error instanceof Error ? error : new Error(String(error)), {
+        component: 'SessionService',
+        method: 'validateSessionById',
+        sessionId,
+      });
       // Return null on error for graceful degradation - consistent error handling pattern
       return null;
     }
@@ -596,7 +636,11 @@ class SessionService {
         expiresAt: session.expiresAt
       };
     } catch (error) {
-      logger.error('[SessionService] Failed to get access token:', error);
+      logger.error('[SessionService] Failed to get access token', error instanceof Error ? error : new Error(String(error)), {
+        component: 'SessionService',
+        method: 'getAccessToken',
+        sessionId,
+      });
       // Return null on error for graceful degradation - consistent error handling pattern
       return null;
     }

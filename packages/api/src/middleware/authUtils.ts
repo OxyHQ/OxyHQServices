@@ -60,12 +60,6 @@ export function decodeToken(token: string): TokenDecoded | null {
   }
 }
 
-/**
- * Extract user ID from decoded token (supports multiple token formats)
- */
-export function extractUserIdFromDecoded(decoded: TokenDecoded): string | null {
-  return decoded.userId || decoded.id || decoded._id || null;
-}
 
 /**
  * Normalize user object to ensure _id is always a string
@@ -103,22 +97,6 @@ export async function validateSessionToken(token: string): Promise<NormalizedUse
   }
 }
 
-/**
- * Get user from database by ID (for legacy tokens)
- */
-export async function getUserById(userId: string, includeRefreshToken: boolean = false): Promise<NormalizedUser | null> {
-  try {
-    const query = User.findById(userId);
-    if (includeRefreshToken) {
-      query.select('+refreshToken');
-    }
-    const user = await query.lean();
-    return normalizeUser(user);
-  } catch (error) {
-    logger.debug('Database error fetching user', { error, userId });
-    return null;
-  }
-}
 
 /**
  * Authenticate request and return normalized user (non-blocking)
@@ -140,19 +118,12 @@ export async function authenticateRequestNonBlocking(
     return { user: null, source };
   }
   
-  // Session-based token
-  if (decoded.sessionId) {
-    const user = await validateSessionToken(token);
-    return { user, source };
-  }
-  
-  // Legacy token
-  const userId = extractUserIdFromDecoded(decoded);
-  if (!userId) {
+  // Only session-based tokens are supported
+  if (!decoded.sessionId) {
     return { user: null, source };
   }
   
-  const user = await getUserById(userId, false);
+  const user = await validateSessionToken(token);
   return { user, source };
 }
 

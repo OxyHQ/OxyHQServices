@@ -8,10 +8,7 @@ import sessionService from '../services/session.service';
 import { 
   extractTokenFromRequest, 
   decodeToken, 
-  extractUserIdFromDecoded,
-  validateSessionToken,
-  getUserById,
-  normalizeUser
+  validateSessionToken
 } from './authUtils';
 
 // Ensure environment variables are loaded
@@ -37,7 +34,7 @@ export interface SimpleAuthRequest extends Request {
  * Authentication middleware that validates JWT tokens and attaches the full user object to the request
  * 
  * Optimized for high-scale usage:
- * - Supports both old token format and new session-based tokens
+ * - Uses session-based tokens only
  * - Uses session service with caching to minimize database queries
  * - Eliminates redundant user fetches by using populated user from validation
  * 
@@ -88,7 +85,7 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
       }
       
       if (process.env.NODE_ENV === 'development') {
-        logger.debug('Token decoded:', { 
+        logger.debug('Token decoded', { 
           hasSessionId: !!decoded.sessionId, 
           sessionId: decoded.sessionId,
           userId: decoded.userId,
@@ -96,81 +93,68 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
         });
       }
       
-      if (decoded.sessionId) {
-        // Session-based token - validate session using service layer
-        if (process.env.NODE_ENV === 'development') {
-          logger.debug('Validating session-based token for sessionId:', decoded.sessionId);
-        }
-        
-        try {
-          // Use session service for optimized validation with caching
-          const validationResult = await sessionService.validateSession(token);
+      // Only session-based tokens are supported
+      if (!decoded.sessionId) {
+        return res.status(401).json({
+          error: 'Invalid token',
+          message: 'Token must be session-based. Legacy token format is no longer supported.'
+        });
+      }
 
-          if (!validationResult) {
-            if (process.env.NODE_ENV === 'development') {
-              logger.debug('Session validation failed for sessionId:', decoded.sessionId);
-            }
-            return res.status(401).json({
-              error: 'Invalid session',
-              message: 'Session not found or expired'
-            });
+      // Session-based token - validate session using service layer
+      if (process.env.NODE_ENV === 'development') {
+        logger.debug('Validating session-based token', { sessionId: decoded.sessionId });
+      }
+      
+      try {
+        // Use session service for optimized validation with caching
+        const validationResult = await sessionService.validateSession(token);
+
+        if (!validationResult) {
+          if (process.env.NODE_ENV === 'development') {
+            logger.debug('Session validation failed', { sessionId: decoded.sessionId });
           }
-
-          const { user } = validationResult;
-
-          if (!user) {
-            return res.status(401).json({
-              error: 'Invalid session',
-              message: 'User not found'
-            });
-          }
-
-          // Use user from validationResult - it's already populated with all fields
-          // Only fetch from DB if refreshToken is specifically needed (rare case)
-          // This eliminates a redundant database query on every authenticated request
-          const fullUser = user as IUser & Document;
-          
-          // Ensure id field is set consistently
-          if (fullUser._id) {
-            fullUser.id = fullUser._id.toString();
-          }
-          req.user = fullUser;
-          
-          next();
-        } catch (dbError) {
-          logger.error('Database error during session lookup:', dbError);
-          return res.status(500).json({
-            error: 'Database error',
-            message: 'Error validating session'
-          });
-        }
-      } else {
-        // Old token format - use existing logic
-        const userId = extractUserIdFromDecoded(decoded);
-        if (!userId) {
           return res.status(401).json({
-            error: 'Invalid token',
-            message: 'User ID not found in token'
+            error: 'Invalid session',
+            message: 'Session not found or expired'
           });
         }
 
-        // Get user from database
-        const user = await User.findById(userId).select('+refreshToken');
+        const { user } = validationResult;
+
         if (!user) {
           return res.status(401).json({
-            error: 'Invalid token',
+            error: 'Invalid session',
             message: 'User not found'
           });
         }
 
+        // Use user from validationResult - it's already populated with all fields
+        // This eliminates a redundant database query on every authenticated request
+        const fullUser = user as IUser & Document;
+        
         // Ensure id field is set consistently
-        user.id = user._id.toString();
-        req.user = user;
+        if (fullUser._id) {
+          fullUser.id = fullUser._id.toString();
+        }
+        req.user = fullUser;
         
         next();
+      } catch (dbError) {
+        logger.error('Database error during session lookup', dbError instanceof Error ? dbError : new Error(String(dbError)), {
+          component: 'auth',
+          method: 'authMiddleware',
+        });
+        return res.status(500).json({
+          error: 'Database error',
+          message: 'Error validating session'
+        });
       }
     } catch (error) {
-      logger.error('Token verification error:', error);
+      logger.error('Token verification error', error instanceof Error ? error : new Error(String(error)), {
+        component: 'auth',
+        method: 'authMiddleware',
+      });
       
       if (error instanceof jwt.TokenExpiredError) {
         return res.status(401).json({
@@ -192,7 +176,10 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
       });
     }
   } catch (error) {
-    logger.error('Auth middleware error:', error);
+    logger.error('Auth middleware error', error instanceof Error ? error : new Error(String(error)), {
+      component: 'auth',
+      method: 'authMiddleware',
+    });
     return res.status(500).json({
       error: 'Server error',
       message: 'An error occurred while authenticating your request'
@@ -204,7 +191,7 @@ export const authMiddleware = async (req: AuthRequest, res: Response, next: Next
  * Simplified authentication middleware that only validates the token and attaches the user ID
  * 
  * Optimized for high-scale usage - lighter weight than full authMiddleware.
- * Supports both old token format and new session-based tokens.
+ * Uses session-based tokens only.
  * Use this when you only need the user ID, not the full user object.
  * 
  * @param req - Express request object
@@ -234,37 +221,33 @@ export const simpleAuthMiddleware = async (req: SimpleAuthRequest, res: Response
       // Decode token to check if it's session-based
       const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as any;
       
-      if (decoded.sessionId) {
-        // Session-based token - validate session using service layer
-        const validationResult = await sessionService.validateSession(token);
-
-        if (!validationResult) {
-          return res.status(401).json({
-            error: 'Invalid session',
-            message: 'Session not found or expired'
-          });
-        }
-
-        // Set user ID
-        const userId = validationResult.user?._id?.toString() || validationResult.session.userId.toString();
-        req.user = { id: userId };
-        next();
-      } else {
-        // Old token format - use existing logic
-        const userId = extractUserIdFromDecoded(decoded);
-        if (!userId) {
-          return res.status(401).json({
-            error: 'Invalid token',
-            message: 'User ID not found in token'
-          });
-        }
-
-        // Set just the ID for simple auth
-        req.user = { id: userId };
-        next();
+      // Only session-based tokens are supported
+      if (!decoded.sessionId) {
+        return res.status(401).json({
+          error: 'Invalid token',
+          message: 'Token must be session-based. Legacy token format is no longer supported.'
+        });
       }
+
+      // Session-based token - validate session using service layer
+      const validationResult = await sessionService.validateSession(token);
+
+      if (!validationResult) {
+        return res.status(401).json({
+          error: 'Invalid session',
+          message: 'Session not found or expired'
+        });
+      }
+
+      // Set user ID
+      const userId = validationResult.user?._id?.toString() || validationResult.session.userId.toString();
+      req.user = { id: userId };
+      next();
     } catch (error) {
-      logger.error('Token verification error:', error);
+      logger.error('Token verification error', error instanceof Error ? error : new Error(String(error)), {
+        component: 'auth',
+        method: 'simpleAuthMiddleware',
+      });
 
       if (error instanceof jwt.TokenExpiredError) {
         return res.status(401).json({
@@ -288,7 +271,10 @@ export const simpleAuthMiddleware = async (req: SimpleAuthRequest, res: Response
       });
     }
   } catch (error) {
-    logger.error('Unexpected auth error:', error);
+    logger.error('Unexpected auth error', error instanceof Error ? error : new Error(String(error)), {
+      component: 'auth',
+      method: 'simpleAuthMiddleware',
+    });
     return res.status(500).json({
       success: false,
       message: 'Authentication error',

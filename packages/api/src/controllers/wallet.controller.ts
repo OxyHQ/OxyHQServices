@@ -7,6 +7,10 @@ import Transaction from '../models/Transaction';
 import User from '../models/User';
 import Wallet from '../models/Wallet';
 import { logger } from '../utils/logger';
+import { isValidObjectId, validatePagination } from '../utils/validation';
+import { sendSuccess, sendPaginated } from '../utils/asyncHandler';
+import { BadRequestError, NotFoundError, ForbiddenError, UnauthorizedError, InternalServerError } from '../utils/error';
+import { TRANSACTION, PAGINATION } from '../utils/constants';
 
 // =============================================================================
 // VALIDATION SCHEMAS
@@ -37,20 +41,9 @@ const PURCHASE_SCHEMA = z.object({
 // CONSTANTS
 // =============================================================================
 
-const DEFAULT_TRANSACTION_LIMIT = 10;
-const MAX_TRANSACTION_LIMIT = 100;
-const DEFAULT_TRANSACTION_OFFSET = 0;
-
 // =============================================================================
 // UTILITY FUNCTIONS
 // =============================================================================
-
-/**
- * Validates if a string is a valid MongoDB ObjectId
- */
-function isValidObjectId(id: string): boolean {
-  return mongoose.Types.ObjectId.isValid(id);
-}
 
 /**
  * Checks if the requesting user has permission to access a resource
@@ -65,26 +58,6 @@ async function hasPermission(requestingUserId: string, resourceUserId: string): 
 
   const requestingUser = await User.findById(requestingUserId);
   return requestingUser?.username.includes('admin') ?? false;
-}
-
-/**
- * Creates a standardized error response
- */
-function createErrorResponse(statusCode: number, message: string) {
-  return {
-    success: false,
-    message,
-  };
-}
-
-/**
- * Creates a standardized success response
- */
-function createSuccessResponse<T>(data: T) {
-  return {
-    success: true,
-    ...data,
-  };
 }
 
 // =============================================================================
@@ -102,21 +75,18 @@ export const getWallet = async (req: AuthRequest, res: Response): Promise<void> 
 
     // Validate user authentication
     if (!req.user) {
-      res.status(401).json(createErrorResponse(401, 'Authentication required'));
-      return;
+      throw new UnauthorizedError('Authentication required');
     }
 
     // Validate ObjectId format
     if (!isValidObjectId(userId)) {
-      res.status(400).json(createErrorResponse(400, 'Invalid user ID format'));
-      return;
+      throw new BadRequestError('Invalid user ID format');
     }
 
     // Check permissions
     const hasAccess = await hasPermission(req.user._id.toString(), userId);
     if (!hasAccess) {
-      res.status(403).json(createErrorResponse(403, 'You do not have permission to view this wallet'));
-      return;
+      throw new ForbiddenError('You do not have permission to view this wallet');
     }
 
     // Find or create wallet
@@ -126,14 +96,17 @@ export const getWallet = async (req: AuthRequest, res: Response): Promise<void> 
       await wallet.save();
     }
 
-    res.json(createSuccessResponse({
+    sendSuccess(res, {
       userId,
       balance: wallet.balance,
       address: wallet.address || null,
-    }));
+    });
   } catch (error) {
-    logger.error('Error fetching wallet:', error);
-    res.status(500).json(createErrorResponse(500, 'Server error when fetching wallet'));
+    if (error instanceof UnauthorizedError || error instanceof BadRequestError || error instanceof ForbiddenError) {
+      throw error;
+    }
+    logger.error('Error fetching wallet', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Server error when fetching wallet');
   }
 };
 
@@ -145,38 +118,39 @@ export const getWallet = async (req: AuthRequest, res: Response): Promise<void> 
 export const getTransactionHistory = async (req: AuthRequest, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
-    const limit = Math.min(
-      parseInt(req.query.limit as string) || DEFAULT_TRANSACTION_LIMIT,
-      MAX_TRANSACTION_LIMIT
+    const { limit: parsedLimit, offset: parsedOffset } = validatePagination(
+      req.query.limit,
+      req.query.offset,
+      TRANSACTION.MAX_LIMIT,
+      TRANSACTION.DEFAULT_LIMIT
     );
-    const offset = parseInt(req.query.offset as string) || DEFAULT_TRANSACTION_OFFSET;
 
     // Validate user authentication
     if (!req.user) {
-      res.status(401).json(createErrorResponse(401, 'Authentication required'));
-      return;
+      throw new UnauthorizedError('Authentication required');
     }
 
     // Validate ObjectId format
     if (!isValidObjectId(userId)) {
-      res.status(400).json(createErrorResponse(400, 'Invalid user ID format'));
-      return;
+      throw new BadRequestError('Invalid user ID format');
     }
 
     // Check permissions
     const hasAccess = await hasPermission(req.user._id.toString(), userId);
     if (!hasAccess) {
-      res.status(403).json(createErrorResponse(403, 'You do not have permission to view these transactions'));
-      return;
+      throw new ForbiddenError('You do not have permission to view these transactions');
     }
 
     // Fetch transactions
+    const total = await Transaction.countDocuments({
+      $or: [{ userId }, { recipientId: userId }],
+    });
     const transactions = await Transaction.find({
       $or: [{ userId }, { recipientId: userId }],
     })
       .sort({ createdAt: -1 })
-      .skip(offset)
-      .limit(limit)
+      .skip(parsedOffset)
+      .limit(parsedLimit)
       .populate('userId', 'username')
       .populate('recipientId', 'username');
 
@@ -194,10 +168,13 @@ export const getTransactionHistory = async (req: AuthRequest, res: Response): Pr
       completedAt: transaction.completedAt,
     }));
 
-    res.json(createSuccessResponse({ transactions: formattedTransactions }));
+    sendPaginated(res, formattedTransactions, total, parsedLimit, parsedOffset);
   } catch (error) {
-    logger.error('Error fetching transaction history:', error);
-    res.status(500).json(createErrorResponse(500, 'Server error when fetching transaction history'));
+    if (error instanceof UnauthorizedError || error instanceof BadRequestError || error instanceof ForbiddenError) {
+      throw error;
+    }
+    logger.error('Error fetching transaction history', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Server error when fetching transaction history');
   }
 };
 
@@ -216,27 +193,23 @@ export const transferFunds = async (req: AuthRequest, res: Response): Promise<vo
 
     // Validate user authentication
     if (!req.user) {
-      res.status(401).json(createErrorResponse(401, 'Authentication required'));
-      return;
+      throw new UnauthorizedError('Authentication required');
     }
 
     // Prevent self-transfer
     if (fromUserId === toUserId) {
-      res.status(400).json(createErrorResponse(400, 'Cannot transfer funds to the same user'));
-      return;
+      throw new BadRequestError('Cannot transfer funds to the same user');
     }
 
     // Check permissions
     const hasAccess = await hasPermission(req.user._id.toString(), fromUserId);
     if (!hasAccess) {
-      res.status(403).json(createErrorResponse(403, 'You do not have permission to transfer from this account'));
-      return;
+      throw new ForbiddenError('You do not have permission to transfer from this account');
     }
 
     // Validate ObjectId formats
     if (!isValidObjectId(fromUserId) || !isValidObjectId(toUserId)) {
-      res.status(400).json(createErrorResponse(400, 'Invalid user ID format'));
-      return;
+      throw new BadRequestError('Invalid user ID format');
     }
 
     // Verify both users exist
@@ -246,10 +219,7 @@ export const transferFunds = async (req: AuthRequest, res: Response): Promise<vo
     ]);
 
     if (!fromUser || !toUser) {
-      res.status(404).json(createErrorResponse(404, 
-        !fromUser ? 'Sender user not found' : 'Recipient user not found'
-      ));
-      return;
+      throw new NotFoundError(!fromUser ? 'Sender user not found' : 'Recipient user not found');
     }
 
     // Find or create wallets
@@ -267,8 +237,7 @@ export const transferFunds = async (req: AuthRequest, res: Response): Promise<vo
 
     // Check sufficient funds
     if (senderWallet.balance < amount) {
-      res.status(400).json(createErrorResponse(400, 'Insufficient funds'));
-      return;
+      throw new BadRequestError('Insufficient funds');
     }
 
     // Create transaction record
@@ -295,7 +264,7 @@ export const transferFunds = async (req: AuthRequest, res: Response): Promise<vo
 
     await session.commitTransaction();
 
-    res.json(createSuccessResponse({
+    sendSuccess(res, {
       message: 'Transfer completed successfully',
       transaction: {
         id: transaction._id,
@@ -304,21 +273,20 @@ export const transferFunds = async (req: AuthRequest, res: Response): Promise<vo
         status: transaction.status,
         timestamp: transaction.createdAt,
       },
-    }));
+    });
   } catch (error) {
     await session.abortTransaction();
 
     if (error instanceof z.ZodError) {
-      res.status(400).json({
-        success: false,
-        message: 'Invalid transfer data',
-        errors: error.errors,
-      });
-      return;
+      throw new BadRequestError('Invalid transfer data', { errors: error.errors });
+    }
+    if (error instanceof UnauthorizedError || error instanceof BadRequestError || 
+        error instanceof ForbiddenError || error instanceof NotFoundError) {
+      throw error;
     }
 
-    logger.error('Error processing transfer:', error);
-    res.status(500).json(createErrorResponse(500, 'Server error when processing transfer'));
+    logger.error('Error processing transfer', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Server error when processing transfer');
   } finally {
     session.endSession();
   }
@@ -339,28 +307,24 @@ export const processPurchase = async (req: AuthRequest, res: Response): Promise<
 
     // Validate user authentication
     if (!req.user) {
-      res.status(401).json(createErrorResponse(401, 'Authentication required'));
-      return;
+      throw new UnauthorizedError('Authentication required');
     }
 
     // Check permissions
     const hasAccess = await hasPermission(req.user._id.toString(), userId);
     if (!hasAccess) {
-      res.status(403).json(createErrorResponse(403, 'You do not have permission to make purchases from this account'));
-      return;
+      throw new ForbiddenError('You do not have permission to make purchases from this account');
     }
 
     // Validate ObjectId format
     if (!isValidObjectId(userId)) {
-      res.status(400).json(createErrorResponse(400, 'Invalid user ID format'));
-      return;
+      throw new BadRequestError('Invalid user ID format');
     }
 
     // Verify user exists
     const user = await User.findById(userId).session(session);
     if (!user) {
-      res.status(404).json(createErrorResponse(404, 'User not found'));
-      return;
+      throw new NotFoundError('User not found');
     }
 
     // Find or create wallet
@@ -371,8 +335,7 @@ export const processPurchase = async (req: AuthRequest, res: Response): Promise<
 
     // Check sufficient funds
     if (wallet.balance < amount) {
-      res.status(400).json(createErrorResponse(400, 'Insufficient funds'));
-      return;
+      throw new BadRequestError('Insufficient funds');
     }
 
     // Create transaction record
@@ -398,7 +361,7 @@ export const processPurchase = async (req: AuthRequest, res: Response): Promise<
 
     await session.commitTransaction();
 
-    res.json(createSuccessResponse({
+    sendSuccess(res, {
       message: 'Purchase completed successfully',
       transaction: {
         id: transaction._id,
@@ -407,21 +370,20 @@ export const processPurchase = async (req: AuthRequest, res: Response): Promise<
         status: transaction.status,
         timestamp: transaction.createdAt,
       },
-    }));
+    });
   } catch (error) {
     await session.abortTransaction();
 
     if (error instanceof z.ZodError) {
-      res.status(400).json({
-        success: false,
-        message: 'Invalid purchase data',
-        errors: error.errors,
-      });
-      return;
+      throw new BadRequestError('Invalid purchase data', { errors: error.errors });
+    }
+    if (error instanceof UnauthorizedError || error instanceof BadRequestError || 
+        error instanceof ForbiddenError || error instanceof NotFoundError) {
+      throw error;
     }
 
-    logger.error('Error processing purchase:', error);
-    res.status(500).json(createErrorResponse(500, 'Server error when processing purchase'));
+    logger.error('Error processing purchase', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Server error when processing purchase');
   } finally {
     session.endSession();
   }
@@ -442,28 +404,24 @@ export const requestWithdrawal = async (req: AuthRequest, res: Response): Promis
 
     // Validate user authentication
     if (!req.user) {
-      res.status(401).json(createErrorResponse(401, 'Authentication required'));
-      return;
+      throw new UnauthorizedError('Authentication required');
     }
 
     // Check permissions
     const hasAccess = await hasPermission(req.user._id.toString(), userId);
     if (!hasAccess) {
-      res.status(403).json(createErrorResponse(403, 'You do not have permission to withdraw from this account'));
-      return;
+      throw new ForbiddenError('You do not have permission to withdraw from this account');
     }
 
     // Validate ObjectId format
     if (!isValidObjectId(userId)) {
-      res.status(400).json(createErrorResponse(400, 'Invalid user ID format'));
-      return;
+      throw new BadRequestError('Invalid user ID format');
     }
 
     // Verify user exists
     const user = await User.findById(userId).session(session);
     if (!user) {
-      res.status(404).json(createErrorResponse(404, 'User not found'));
-      return;
+      throw new NotFoundError('User not found');
     }
 
     // Find or create wallet
@@ -474,8 +432,7 @@ export const requestWithdrawal = async (req: AuthRequest, res: Response): Promis
 
     // Check sufficient funds
     if (wallet.balance < amount) {
-      res.status(400).json(createErrorResponse(400, 'Insufficient funds'));
-      return;
+      throw new BadRequestError('Insufficient funds');
     }
 
     // Create withdrawal transaction
@@ -498,7 +455,7 @@ export const requestWithdrawal = async (req: AuthRequest, res: Response): Promis
 
     await session.commitTransaction();
 
-    res.json(createSuccessResponse({
+    sendSuccess(res, {
       message: 'Withdrawal request submitted and pending approval',
       transaction: {
         id: transaction._id,
@@ -507,21 +464,20 @@ export const requestWithdrawal = async (req: AuthRequest, res: Response): Promis
         status: transaction.status,
         timestamp: transaction.createdAt,
       },
-    }));
+    });
   } catch (error) {
     await session.abortTransaction();
 
     if (error instanceof z.ZodError) {
-      res.status(400).json({
-        success: false,
-        message: 'Invalid withdrawal data',
-        errors: error.errors,
-      });
-      return;
+      throw new BadRequestError('Invalid withdrawal data', { errors: error.errors });
+    }
+    if (error instanceof UnauthorizedError || error instanceof BadRequestError || 
+        error instanceof ForbiddenError || error instanceof NotFoundError) {
+      throw error;
     }
 
-    logger.error('Error requesting withdrawal:', error);
-    res.status(500).json(createErrorResponse(500, 'Server error when requesting withdrawal'));
+    logger.error('Error requesting withdrawal', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Server error when requesting withdrawal');
   } finally {
     session.endSession();
   }
@@ -538,14 +494,12 @@ export const getTransaction = async (req: AuthRequest, res: Response): Promise<v
 
     // Validate user authentication
     if (!req.user) {
-      res.status(401).json(createErrorResponse(401, 'Authentication required'));
-      return;
+      throw new UnauthorizedError('Authentication required');
     }
 
     // Validate ObjectId format
     if (!isValidObjectId(transactionId)) {
-      res.status(400).json(createErrorResponse(400, 'Invalid transaction ID format'));
-      return;
+      throw new BadRequestError('Invalid transaction ID format');
     }
 
     // Fetch transaction with populated user data
@@ -554,8 +508,7 @@ export const getTransaction = async (req: AuthRequest, res: Response): Promise<v
       .populate('recipientId', 'username');
 
     if (!transaction) {
-      res.status(404).json(createErrorResponse(404, 'Transaction not found'));
-      return;
+      throw new NotFoundError('Transaction not found');
     }
 
     // Check permissions - user can view if they're the sender, recipient, or admin
@@ -565,12 +518,11 @@ export const getTransaction = async (req: AuthRequest, res: Response): Promise<v
     if (!isSender && !isRecipient) {
       const hasAccess = await hasPermission(req.user._id.toString(), transaction.userId.toString());
       if (!hasAccess) {
-        res.status(403).json(createErrorResponse(403, 'You do not have permission to view this transaction'));
-        return;
+        throw new ForbiddenError('You do not have permission to view this transaction');
       }
     }
 
-    res.json(createSuccessResponse({
+    sendSuccess(res, {
       transaction: {
         id: transaction._id,
         userId: transaction.userId,
@@ -584,9 +536,13 @@ export const getTransaction = async (req: AuthRequest, res: Response): Promise<v
         timestamp: transaction.createdAt,
         completedAt: transaction.completedAt,
       },
-    }));
+    });
   } catch (error) {
-    logger.error('Error fetching transaction:', error);
-    res.status(500).json(createErrorResponse(500, 'Server error when fetching transaction'));
+    if (error instanceof UnauthorizedError || error instanceof BadRequestError || 
+        error instanceof ForbiddenError || error instanceof NotFoundError) {
+      throw error;
+    }
+    logger.error('Error fetching transaction', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Server error when fetching transaction');
   }
 }; 

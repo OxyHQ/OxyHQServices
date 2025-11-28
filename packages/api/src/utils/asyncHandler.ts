@@ -28,9 +28,7 @@ export const asyncHandler = (fn: AsyncRequestHandler) => {
       }
 
       // Log unexpected errors
-      logger.error('Unexpected error in route handler:', {
-        error: error.message,
-        stack: error.stack,
+      logger.error('Unexpected error in route handler', error instanceof Error ? error : new Error(String(error)), {
         path: req.path,
         method: req.method,
       });

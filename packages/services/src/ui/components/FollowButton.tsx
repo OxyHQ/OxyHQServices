@@ -233,59 +233,6 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   );
 };
 
-const styles = StyleSheet.create({
-  // Legacy styles kept for backward compatibility but not used in new implementation
-  buttonSmall: {
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 16,
-    minWidth: 60,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonMedium: {
-    paddingVertical: 8,
-    paddingHorizontal: 20,
-    borderRadius: 20,
-    minWidth: 90,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  buttonLarge: {
-    paddingVertical: 12,
-    paddingHorizontal: 32,
-    borderRadius: 24,
-    minWidth: 120,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  following: {
-    backgroundColor: '#007AFF',
-  },
-  notFollowing: {
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#007AFF',
-  },
-  textSmall: {
-    fontSize: 13,
-    fontFamily: fontFamilies.phuduMedium,
-  },
-  textMedium: {
-    fontSize: 15,
-    fontFamily: fontFamilies.phuduMedium,
-  },
-  textLarge: {
-    fontSize: 18,
-    fontFamily: fontFamilies.phuduMedium,
-  },
-  textFollowing: {
-    color: '#fff',
-  },
-  textNotFollowing: {
-    color: '#007AFF',
-  },
-});
 
 export { FollowButton };
 export default FollowButton;

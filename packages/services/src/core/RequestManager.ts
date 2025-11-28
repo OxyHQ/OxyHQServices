@@ -8,7 +8,7 @@
 import type { AxiosInstance } from 'axios';
 import { TTLCache, registerCacheForCleanup } from '../utils/cache';
 import { RequestDeduplicator, RequestQueue, SimpleLogger } from '../utils/requestUtils';
-import { retryWithBackoff } from '../utils/errorUtils';
+import { retryAsync } from '../utils/asyncUtils';
 import type { OxyConfig } from '../models/interfaces';
 
 export interface RequestOptions {
@@ -128,7 +128,7 @@ export class RequestManager {
 
     // Wrap with retry if enabled
     const requestWithRetry = retry
-      ? () => this.retryWithBackoff(requestFn, maxRetries)
+      ? () => retryAsync(requestFn, maxRetries, this.config.retryDelay || 1000)
       : requestFn;
 
     // Wrap with deduplication if enabled
@@ -148,41 +148,6 @@ export class RequestManager {
     return result;
   }
 
-  /**
-   * Exponential backoff retry logic with 4xx error handling
-   */
-  private async retryWithBackoff<T>(
-    fn: () => Promise<T>,
-    maxRetries: number = 3,
-    baseDelay: number = 1000
-  ): Promise<T> {
-    let lastError: any;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        return await fn();
-      } catch (error: any) {
-        lastError = error;
-
-        // Don't retry on 4xx errors (client errors)
-        if (error.response?.status >= 400 && error.response?.status < 500) {
-          throw error;
-        }
-
-        // Don't retry on last attempt
-        if (attempt === maxRetries) {
-          break;
-        }
-
-        // Calculate delay with exponential backoff and jitter
-        const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
-        this.logger.debug(`Retry attempt ${attempt + 1}/${maxRetries} after ${delay}ms`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-
-    throw lastError;
-  }
 
   /**
    * Update request metrics

@@ -60,10 +60,12 @@ export const validateAccessToken = (token: string): TokenValidationResult => {
       return { valid: false, error: 'expired' };
     }
     if (error instanceof jwt.JsonWebTokenError) {
-      logger.debug('[SessionUtils] Access token invalid:', error.message);
+      logger.debug('[SessionUtils] Access token invalid', { error: error.message });
       return { valid: false, error: 'invalid' };
     }
-    logger.debug('[SessionUtils] Access token validation failed:', error);
+    logger.debug('[SessionUtils] Access token validation failed', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
     return { valid: false, error: 'malformed' };
   }
 };
@@ -87,10 +89,12 @@ export const validateRefreshToken = (token: string): TokenValidationResult => {
       return { valid: false, error: 'expired' };
     }
     if (error instanceof jwt.JsonWebTokenError) {
-      logger.debug('[SessionUtils] Refresh token invalid:', error.message);
+      logger.debug('[SessionUtils] Refresh token invalid', { error: error.message });
       return { valid: false, error: 'invalid' };
     }
-    logger.debug('[SessionUtils] Refresh token validation failed:', error);
+    logger.debug('[SessionUtils] Refresh token validation failed', { 
+      error: error instanceof Error ? error.message : String(error) 
+    });
     return { valid: false, error: 'malformed' };
   }
 };

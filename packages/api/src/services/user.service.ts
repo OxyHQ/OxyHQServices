@@ -19,8 +19,7 @@ import {
 } from '../types/user.types';
 
 // Constants
-const MAX_PAGINATION_LIMIT = 100;
-const DEFAULT_PAGINATION_LIMIT = 50;
+import { PAGINATION } from '../utils/constants';
 
 export class UserService {
   /**
@@ -177,8 +176,8 @@ export class UserService {
     params: PaginationParams = {}
   ): Promise<PaginatedResponse<UserProfile>> {
     const limit = Math.min(
-      params.limit || DEFAULT_PAGINATION_LIMIT,
-      MAX_PAGINATION_LIMIT
+      params.limit || PAGINATION.DEFAULT_LIMIT,
+      PAGINATION.MAX_LIMIT
     );
     const offset = params.offset || 0;
 
@@ -237,8 +236,8 @@ export class UserService {
     params: PaginationParams = {}
   ): Promise<PaginatedResponse<UserProfile>> {
     const limit = Math.min(
-      params.limit || DEFAULT_PAGINATION_LIMIT,
-      MAX_PAGINATION_LIMIT
+      params.limit || PAGINATION.DEFAULT_LIMIT,
+      PAGINATION.MAX_LIMIT
     );
     const offset = params.offset || 0;
 

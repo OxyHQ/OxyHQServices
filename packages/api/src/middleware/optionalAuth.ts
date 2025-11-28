@@ -13,7 +13,7 @@ import { authenticateRequestNonBlocking, AuthenticatedRequest } from './authUtil
 /**
  * Optional authentication middleware
  * Attempts to authenticate but doesn't block if authentication fails
- * Handles both session-based tokens and legacy tokens
+ * Uses session-based tokens only
  */
 export async function optionalAuthMiddleware(
   req: AuthenticatedRequest,

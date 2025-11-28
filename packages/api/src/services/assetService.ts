@@ -364,43 +364,31 @@ export class AssetService {
 
   /**
    * Get file by ID with full metadata
-   * Also handles legacy storage keys for backward compatibility
    */
   async getFile(fileId: string): Promise<IFile | null> {
     try {
       // Validate that fileId is a valid ObjectId
       if (!mongoose.Types.ObjectId.isValid(fileId)) {
-        logger.warn('Invalid ObjectId provided to getFile, checking if it\'s a legacy storage key:', { fileId });
-        
-        // Try to find by storage key (for legacy data)
-        const fileByStorageKey = await File.findOne({ storageKey: fileId });
-        if (fileByStorageKey) {
-          logger.info('Found file by legacy storage key:', { fileId, actualId: fileByStorageKey._id });
-          return fileByStorageKey;
-        }
-        
-        logger.warn('File not found by ID or storage key:', { fileId });
+        logger.warn('Invalid ObjectId provided to getFile', undefined, { fileId });
         return null;
       }
       const file = await File.findById(fileId);
       return file;
     } catch (error) {
-      logger.error('Error getting file:', error);
+      logger.error('Error getting file', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
 
   /**
    * Get file URL (CDN or signed URL)
-   * Also handles legacy storage keys for backward compatibility
    */
   async getFileUrl(
-    fileId: string, 
-    variant?: string, 
+    fileId: string,
+    variant?: string,
     expiresIn: number = 3600
   ): Promise<string> {
     try {
-      // Use getFile which handles both ObjectIds and legacy storage keys
       const file = await this.getFile(fileId);
       if (!file) {
         throw new Error('File not found');

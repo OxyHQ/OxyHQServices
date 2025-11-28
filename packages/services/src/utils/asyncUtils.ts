@@ -3,9 +3,11 @@
  */
 
 import { TTLCache, registerCacheForCleanup } from './cache';
+import { logger } from './loggerUtils';
 
 /**
  * Wrapper for async operations with automatic error handling
+ * Returns null on error instead of throwing
  */
 export async function withErrorHandling<T>(
   operation: () => Promise<T>,
@@ -18,7 +20,10 @@ export async function withErrorHandling<T>(
     if (errorHandler) {
       errorHandler(error);
     } else {
-      console.error(`Error in ${context || 'operation'}:`, error);
+      logger.error(`Error in ${context || 'operation'}`, error instanceof Error ? error : new Error(String(error)), {
+        component: 'asyncUtils',
+        method: 'withErrorHandling',
+      });
     }
     return null;
   }
@@ -44,6 +49,9 @@ export async function parallelWithErrorHandling<T>(
 
 /**
  * Retry an async operation with exponential backoff
+ * 
+ * By default, does not retry on 4xx errors (client errors).
+ * Use shouldRetry callback to customize retry behavior.
  */
 export async function retryAsync<T>(
   operation: () => Promise<T>,
@@ -52,6 +60,17 @@ export async function retryAsync<T>(
   shouldRetry?: (error: any) => boolean
 ): Promise<T> {
   let lastError: any;
+  
+  // Default shouldRetry: don't retry on 4xx errors
+  const defaultShouldRetry = (error: any): boolean => {
+    // Don't retry on 4xx errors (client errors)
+    if (error?.response?.status >= 400 && error?.response?.status < 500) {
+      return false;
+    }
+    return true;
+  };
+  
+  const retryCheck = shouldRetry || defaultShouldRetry;
   
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -63,11 +82,12 @@ export async function retryAsync<T>(
         break;
       }
       
-      if (shouldRetry && !shouldRetry(error)) {
+      if (!retryCheck(error)) {
         break;
       }
       
-      const delay = baseDelay * Math.pow(2, attempt);
+      // Calculate delay with exponential backoff and jitter
+      const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
       await new Promise(resolve => setTimeout(resolve, delay));
     }
   }

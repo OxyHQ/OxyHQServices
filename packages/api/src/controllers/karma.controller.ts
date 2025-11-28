@@ -7,6 +7,10 @@ import Karma from '../models/Karma';
 import KarmaRule from '../models/KarmaRule';
 import User from '../models/User';
 import { logger } from '../utils/logger';
+import { isValidObjectId, validatePagination } from '../utils/validation';
+import { sendSuccess, sendPaginated } from '../utils/asyncHandler';
+import { BadRequestError, NotFoundError, ConflictError, InternalServerError } from '../utils/error';
+import { KARMA, PAGINATION } from '../utils/constants';
 
 // =============================================================================
 // VALIDATION SCHEMAS
@@ -40,48 +44,6 @@ const KARMA_RULE_SCHEMA = z.object({
 // CONSTANTS
 // =============================================================================
 
-const DEFAULT_HISTORY_LIMIT = 50;
-const DEFAULT_LEADERBOARD_LIMIT = 10;
-const DEFAULT_OFFSET = 0;
-
-// =============================================================================
-// UTILITY FUNCTIONS
-// =============================================================================
-
-/**
- * Validates if a string is a valid MongoDB ObjectId
- */
-function isValidObjectId(id: string): boolean {
-  return mongoose.Types.ObjectId.isValid(id);
-}
-
-/**
- * Creates a standardized error response
- */
-function createErrorResponse(message: string, errorCode?: string) {
-  return {
-    success: false,
-    message,
-    error: errorCode || 'UNKNOWN_ERROR',
-  };
-}
-
-/**
- * Creates a standardized success response
- */
-function createSuccessResponse<T>(data: T) {
-  return {
-    success: true,
-    ...data,
-  };
-}
-
-/**
- * Validates pagination parameters
- */
-function validatePaginationParams(limit: number, offset: number): boolean {
-  return limit > 0 && limit <= 100 && offset >= 0;
-}
 
 // =============================================================================
 // CONTROLLER FUNCTIONS
@@ -97,27 +59,28 @@ export const getUserKarmaTotal = async (req: Request, res: Response): Promise<vo
     const { userId } = req.params;
 
     if (!isValidObjectId(userId)) {
-      res.status(400).json(createErrorResponse('Invalid user ID format', 'INVALID_USER_ID'));
-      return;
+      throw new BadRequestError('Invalid user ID format');
     }
 
     const user = await User.findById(userId);
     if (!user) {
-      res.status(404).json(createErrorResponse('User not found', 'USER_NOT_FOUND'));
-      return;
+      throw new NotFoundError('User not found');
     }
 
     const karmaRecord = await Karma.findOne({ userId });
     const totalKarma = karmaRecord?.totalKarma || 0;
 
-    res.json(createSuccessResponse({
+    sendSuccess(res, {
       userId,
       totalKarma,
       username: user.username,
-    }));
+    });
   } catch (error) {
-    logger.error('Error fetching user karma total:', error);
-    res.status(500).json(createErrorResponse('Error fetching karma total'));
+    if (error instanceof BadRequestError || error instanceof NotFoundError) {
+      throw error;
+    }
+    logger.error('Error fetching user karma total', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Error fetching karma total');
   }
 };
 
@@ -129,49 +92,43 @@ export const getUserKarmaTotal = async (req: Request, res: Response): Promise<vo
 export const getUserKarmaHistory = async (req: Request, res: Response): Promise<void> => {
   try {
     const { userId } = req.params;
-    const limit = parseInt(req.query.limit as string) || DEFAULT_HISTORY_LIMIT;
-    const offset = parseInt(req.query.offset as string) || DEFAULT_OFFSET;
+    const { limit: parsedLimit, offset: parsedOffset } = validatePagination(
+      req.query.limit,
+      req.query.offset,
+      PAGINATION.MAX_LIMIT,
+      KARMA.DEFAULT_HISTORY_LIMIT
+    );
 
     if (!isValidObjectId(userId)) {
-      res.status(400).json(createErrorResponse('Invalid user ID format', 'INVALID_USER_ID'));
-      return;
-    }
-
-    if (!validatePaginationParams(limit, offset)) {
-      res.status(400).json(createErrorResponse('Invalid pagination parameters', 'INVALID_PAGINATION'));
-      return;
+      throw new BadRequestError('Invalid user ID format');
     }
 
     const user = await User.findById(userId);
     if (!user) {
-      res.status(404).json(createErrorResponse('User not found', 'USER_NOT_FOUND'));
-      return;
+      throw new NotFoundError('User not found');
     }
 
     const karmaRecord = await Karma.findOne({ userId });
     if (!karmaRecord) {
-      res.json(createSuccessResponse({
+      sendSuccess(res, {
         userId,
         totalKarma: 0,
         history: [],
-        hasMore: false,
-      }));
+      });
       return;
     }
 
     const history = karmaRecord.history
       .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
-      .slice(offset, offset + limit);
+      .slice(parsedOffset, parsedOffset + parsedLimit);
 
-    res.json(createSuccessResponse({
-      userId,
-      totalKarma: karmaRecord.totalKarma,
-      history,
-      hasMore: offset + limit < karmaRecord.history.length,
-    }));
+    sendPaginated(res, history, karmaRecord.history.length, parsedLimit, parsedOffset);
   } catch (error) {
-    logger.error('Error fetching user karma history:', error);
-    res.status(500).json(createErrorResponse('Error fetching karma history'));
+    if (error instanceof BadRequestError || error instanceof NotFoundError) {
+      throw error;
+    }
+    logger.error('Error fetching user karma history', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Error fetching karma history');
   }
 };
 
@@ -192,27 +149,23 @@ export const awardKarma = async (req: AuthRequest, res: Response): Promise<void>
     const sourceUserId = req.user?._id;
 
     if (!isValidObjectId(userId)) {
-      res.status(400).json(createErrorResponse('Invalid user ID', 'INVALID_USER_ID'));
-      return;
+      throw new BadRequestError('Invalid user ID');
     }
 
     const user = await User.findById(userId);
     if (!user) {
-      res.status(404).json(createErrorResponse('User not found', 'USER_NOT_FOUND'));
-      return;
+      throw new NotFoundError('User not found');
     }
 
     // Check if karma rule exists and is enabled
     const karmaRule = await KarmaRule.findOne({ action, isEnabled: true });
     if (!karmaRule) {
-      res.status(400).json(createErrorResponse('Invalid or disabled karma action', 'INVALID_ACTION'));
-      return;
+      throw new BadRequestError('Invalid or disabled karma action');
     }
 
     // Points should be positive for awards
     if (karmaRule.points <= 0) {
-      res.status(400).json(createErrorResponse('Karma rule does not award positive points', 'INVALID_RULE'));
-      return;
+      throw new BadRequestError('Karma rule does not award positive points');
     }
 
     // Find or create karma record
@@ -236,11 +189,7 @@ export const awardKarma = async (req: AuthRequest, res: Response): Promise<void>
       );
 
       if (recentSameAction) {
-        res.status(429).json(createErrorResponse(
-          'This action is on cooldown. Please try again later.',
-          'COOLDOWN_ACTIVE'
-        ));
-        return;
+        throw new ConflictError('This action is on cooldown. Please try again later.');
       }
     }
 
@@ -266,24 +215,22 @@ export const awardKarma = async (req: AuthRequest, res: Response): Promise<void>
 
     await session.commitTransaction();
 
-    res.json(createSuccessResponse({
+    sendSuccess(res, {
       message: `Awarded ${karmaRule.points} karma for ${action}`,
       newTotal: karmaRecord.totalKarma,
-    }));
+    });
   } catch (error) {
     await session.abortTransaction();
 
     if (error instanceof z.ZodError) {
-      res.status(400).json({
-        success: false,
-        message: 'Invalid karma award data',
-        errors: error.errors,
-      });
-      return;
+      throw new BadRequestError('Invalid karma award data', { errors: error.errors });
+    }
+    if (error instanceof BadRequestError || error instanceof NotFoundError || error instanceof ConflictError) {
+      throw error;
     }
 
-    logger.error('Error awarding karma:', error);
-    res.status(500).json(createErrorResponse('Error awarding karma'));
+    logger.error('Error awarding karma', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Error awarding karma');
   } finally {
     session.endSession();
   }
@@ -306,14 +253,12 @@ export const deductKarma = async (req: AuthRequest, res: Response): Promise<void
     const sourceUserId = req.user?._id;
 
     if (!isValidObjectId(userId)) {
-      res.status(400).json(createErrorResponse('Invalid user ID', 'INVALID_USER_ID'));
-      return;
+      throw new BadRequestError('Invalid user ID');
     }
 
     const user = await User.findById(userId);
     if (!user) {
-      res.status(404).json(createErrorResponse('User not found', 'USER_NOT_FOUND'));
-      return;
+      throw new NotFoundError('User not found');
     }
 
     // Find or create karma record
@@ -336,11 +281,7 @@ export const deductKarma = async (req: AuthRequest, res: Response): Promise<void
     );
 
     if (recentSameAction) {
-      res.status(429).json(createErrorResponse(
-        'This action is on cooldown. Please try again later.',
-        'COOLDOWN_ACTIVE'
-      ));
-      return;
+      throw new ConflictError('This action is on cooldown. Please try again later.');
     }
 
     // Deduct karma (ensure it doesn't go below 0)
@@ -368,24 +309,22 @@ export const deductKarma = async (req: AuthRequest, res: Response): Promise<void
 
     await session.commitTransaction();
 
-    res.json(createSuccessResponse({
+    sendSuccess(res, {
       message: `Deducted ${actualDeduction} karma for ${action}`,
       newTotal: karmaRecord.totalKarma,
-    }));
+    });
   } catch (error) {
     await session.abortTransaction();
 
     if (error instanceof z.ZodError) {
-      res.status(400).json({
-        success: false,
-        message: 'Invalid karma deduction data',
-        errors: error.errors,
-      });
-      return;
+      throw new BadRequestError('Invalid karma deduction data', { errors: error.errors });
+    }
+    if (error instanceof BadRequestError || error instanceof NotFoundError || error instanceof ConflictError) {
+      throw error;
     }
 
-    logger.error('Error deducting karma:', error);
-    res.status(500).json(createErrorResponse('Error deducting karma'));
+    logger.error('Error deducting karma', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Error deducting karma');
   } finally {
     session.endSession();
   }
@@ -398,33 +337,30 @@ export const deductKarma = async (req: AuthRequest, res: Response): Promise<void
  */
 export const getKarmaLeaderboard = async (req: Request, res: Response): Promise<void> => {
   try {
-    const limit = parseInt(req.query.limit as string) || DEFAULT_LEADERBOARD_LIMIT;
-    const offset = parseInt(req.query.offset as string) || DEFAULT_OFFSET;
+    const { limit: parsedLimit, offset: parsedOffset } = validatePagination(
+      req.query.limit,
+      req.query.offset,
+      PAGINATION.MAX_LIMIT,
+      KARMA.DEFAULT_LEADERBOARD_LIMIT
+    );
 
-    if (!validatePaginationParams(limit, offset)) {
-      res.status(400).json(createErrorResponse('Invalid pagination parameters', 'INVALID_PAGINATION'));
-      return;
-    }
-
+    const total = await Karma.countDocuments({});
     const leaderboard = await Karma.find({})
       .sort({ totalKarma: -1 })
-      .skip(offset)
-      .limit(limit)
+      .skip(parsedOffset)
+      .limit(parsedLimit)
       .populate('userId', 'username name avatar _id');
 
-    const formattedLeaderboard = leaderboard.map((karma) => ({
+    const formattedLeaderboard = leaderboard.map((karma, index) => ({
       userId: karma.userId,
       totalKarma: karma.totalKarma,
-      rank: offset + leaderboard.indexOf(karma) + 1,
+      rank: parsedOffset + index + 1,
     }));
 
-    res.json(createSuccessResponse({
-      leaderboard: formattedLeaderboard,
-      hasMore: formattedLeaderboard.length === limit,
-    }));
+    sendPaginated(res, formattedLeaderboard, total, parsedLimit, parsedOffset);
   } catch (error) {
-    logger.error('Error fetching karma leaderboard:', error);
-    res.status(500).json(createErrorResponse('Error fetching leaderboard'));
+    logger.error('Error fetching karma leaderboard', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Error fetching leaderboard');
   }
 };
 
@@ -448,10 +384,10 @@ export const getKarmaRules = async (req: Request, res: Response): Promise<void> 
       category: rule.category,
     }));
 
-    res.json(createSuccessResponse({ rules: formattedRules }));
+    sendSuccess(res, { rules: formattedRules });
   } catch (error) {
-    logger.error('Error fetching karma rules:', error);
-    res.status(500).json(createErrorResponse('Error fetching karma rules'));
+    logger.error('Error fetching karma rules', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Error fetching karma rules');
   }
 };
 
@@ -497,7 +433,7 @@ export const createOrUpdateKarmaRule = async (req: Request, res: Response): Prom
       await rule.save();
     }
 
-    res.json(createSuccessResponse({
+    sendSuccess(res, {
       message: existingRule ? 'Karma rule updated successfully' : 'Karma rule created successfully',
       rule: {
         id: rule._id,
@@ -508,18 +444,16 @@ export const createOrUpdateKarmaRule = async (req: Request, res: Response): Prom
         isEnabled: rule.isEnabled,
         category: rule.category,
       },
-    }));
+    });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      res.status(400).json({
-        success: false,
-        message: 'Invalid karma rule data',
-        errors: error.errors,
-      });
-      return;
+      throw new BadRequestError('Invalid karma rule data', { errors: error.errors });
+    }
+    if (error instanceof BadRequestError) {
+      throw error;
     }
 
-    logger.error('Error creating/updating karma rule:', error);
-    res.status(500).json(createErrorResponse('Error creating/updating karma rule'));
+    logger.error('Error creating/updating karma rule', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Error creating/updating karma rule');
   }
 }; 

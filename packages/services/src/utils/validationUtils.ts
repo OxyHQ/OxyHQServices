@@ -138,6 +138,20 @@ export function sanitizeHTML(input: string): string {
 }
 
 /**
+ * Validate MongoDB ObjectId format
+ * Note: This is a basic format check. For full validation, use mongoose.Types.ObjectId.isValid()
+ * This function works in environments where mongoose may not be available (e.g., client-side)
+ */
+export function isValidObjectId(id: string): boolean {
+  if (typeof id !== 'string') {
+    return false;
+  }
+  // MongoDB ObjectId is 24 hex characters
+  const OBJECT_ID_REGEX = /^[0-9a-fA-F]{24}$/;
+  return OBJECT_ID_REGEX.test(id);
+}
+
+/**
  * Validate and sanitize user input
  */
 export function validateAndSanitizeUserInput(input: unknown, type: 'string' | 'email' | 'username'): string | null {
