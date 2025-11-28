@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, TouchableOpacity, StyleSheet } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
@@ -8,6 +9,7 @@ import { UserAvatar } from '@/components/user-avatar';
 
 export function MobileHeader() {
   const navigation = useNavigation();
+  const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
 
@@ -16,8 +18,15 @@ export function MobileHeader() {
     // You'd need to implement this based on your theme system
   };
 
+  const handleSearchPress = () => {
+    router.push({
+      pathname: '/(tabs)/search',
+      params: { q: '' },
+    });
+  };
+
   return (
-    <View style={[styles.header, { backgroundColor: colors.background }]}>
+    <View style={[styles.header, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
       <TouchableOpacity
         onPress={() => navigation.openDrawer()}
         style={styles.menuButton}
@@ -25,6 +34,9 @@ export function MobileHeader() {
         <Ionicons name="menu" size={24} color={colors.text} />
       </TouchableOpacity>
       <View style={styles.headerRight}>
+        <TouchableOpacity style={styles.iconButton} onPress={handleSearchPress}>
+          <Ionicons name="search-outline" size={22} color={colors.icon} />
+        </TouchableOpacity>
         <TouchableOpacity style={styles.iconButton} onPress={toggleColorScheme}>
           <Ionicons name={colorScheme === 'dark' ? 'sunny-outline' : 'moon-outline'} size={22} color={colors.icon} />
         </TouchableOpacity>
@@ -42,7 +54,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     height: 64,
     borderBottomWidth: 1,
-    borderBottomColor: 'rgba(0,0,0,0.1)',
   },
   menuButton: {
     padding: 8,
