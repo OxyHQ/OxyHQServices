@@ -1,11 +1,12 @@
 import React, { useMemo } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard } from '@/components/ui';
+import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function FamilyScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -61,25 +62,23 @@ export default function FamilyScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.mobileContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Family Group</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your family members and settings.</ThemedText>
+    <ScreenContentWrapper>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.mobileContent}>
+          <View style={styles.mobileHeaderSection}>
+            <ThemedText style={styles.mobileTitle}>Family Group</ThemedText>
+            <ThemedText style={styles.mobileSubtitle}>Manage your family members and settings.</ThemedText>
+          </View>
+          <AccountCard>
+            <GroupedSection items={familyMembers} />
+          </AccountCard>
+          <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+            <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+            <Text style={styles.addButtonText}>Add family member</Text>
+          </TouchableOpacity>
         </View>
-        <AccountCard>
-          <GroupedSection items={familyMembers} />
-        </AccountCard>
-        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
-          <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
-          <Text style={styles.addButtonText}>Add family member</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </View>
+      </View>
+    </ScreenContentWrapper>
   );
 }
 

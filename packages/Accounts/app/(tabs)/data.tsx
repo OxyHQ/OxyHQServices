@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard } from '@/components/ui';
+import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function DataScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -92,21 +93,19 @@ export default function DataScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.mobileContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Data & privacy</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your data and privacy settings.</ThemedText>
+    <ScreenContentWrapper>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.mobileContent}>
+          <View style={styles.mobileHeaderSection}>
+            <ThemedText style={styles.mobileTitle}>Data & privacy</ThemedText>
+            <ThemedText style={styles.mobileSubtitle}>Manage your data and privacy settings.</ThemedText>
+          </View>
+          <AccountCard>
+            <GroupedSection items={dataItems} />
+          </AccountCard>
         </View>
-        <AccountCard>
-          <GroupedSection items={dataItems} />
-        </AccountCard>
-      </ScrollView>
-    </View>
+      </View>
+    </ScreenContentWrapper>
   );
 }
 

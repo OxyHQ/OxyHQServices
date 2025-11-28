@@ -1,11 +1,12 @@
 import React, { useMemo } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard } from '@/components/ui';
+import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function SharingScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -62,23 +63,21 @@ export default function SharingScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.mobileContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>People & sharing</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage shared accounts and permissions.</ThemedText>
+      <ScreenContentWrapper>
+        <View style={styles.mobileContent}>
+          <View style={styles.mobileHeaderSection}>
+            <ThemedText style={styles.mobileTitle}>People & sharing</ThemedText>
+            <ThemedText style={styles.mobileSubtitle}>Manage shared accounts and permissions.</ThemedText>
+          </View>
+          <AccountCard>
+            <GroupedSection items={sharedItems} />
+          </AccountCard>
+          <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+            <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+            <Text style={styles.addButtonText}>Invite user</Text>
+          </TouchableOpacity>
         </View>
-        <AccountCard>
-          <GroupedSection items={sharedItems} />
-        </AccountCard>
-        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
-          <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
-          <Text style={styles.addButtonText}>Invite user</Text>
-        </TouchableOpacity>
-      </ScrollView>
+      </ScreenContentWrapper>
     </View>
   );
 }

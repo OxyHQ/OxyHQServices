@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard } from '@/components/ui';
+import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function DevicesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -68,21 +69,19 @@ export default function DevicesScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.mobileContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Your devices</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage devices that have access to your account.</ThemedText>
+    <ScreenContentWrapper>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.mobileContent}>
+          <View style={styles.mobileHeaderSection}>
+            <ThemedText style={styles.mobileTitle}>Your devices</ThemedText>
+            <ThemedText style={styles.mobileSubtitle}>Manage devices that have access to your account.</ThemedText>
+          </View>
+          <AccountCard>
+            <GroupedSection items={devices} />
+          </AccountCard>
         </View>
-        <AccountCard>
-          <GroupedSection items={devices} />
-        </AccountCard>
-      </ScrollView>
-    </View>
+      </View>
+    </ScreenContentWrapper>
   );
 }
 

@@ -1,5 +1,6 @@
 import React from 'react';
-import { StyleSheet } from 'react-native';
+import { View, StyleSheet, Platform } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { DrawerContentScrollView, DrawerContentComponentProps } from '@react-navigation/drawer';
@@ -10,16 +11,36 @@ export function DrawerContent(props: DrawerContentComponentProps) {
     const colors = Colors[colorScheme];
 
     return (
-        <DrawerContentScrollView
-            {...props}
-            contentContainerStyle={[styles.drawerContent, { backgroundColor: colors.background }]}
+        <BlurView
+            intensity={50}
+            tint={colorScheme === 'dark' ? 'dark' : 'light'}
+            experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
+            style={styles.blurContainer}
         >
-            <SidebarContent onNavigate={() => props.navigation.closeDrawer()} />
-        </DrawerContentScrollView>
+            <View style={styles.darkOverlay} />
+            <DrawerContentScrollView
+                {...props}
+                contentContainerStyle={styles.drawerContent}
+                style={styles.scrollView}
+            >
+                <SidebarContent onNavigate={() => props.navigation.closeDrawer()} />
+            </DrawerContentScrollView>
+        </BlurView>
     );
 }
 
 const styles = StyleSheet.create({
+    blurContainer: {
+        flex: 1,
+        overflow: 'hidden',
+    },
+    darkOverlay: {
+        ...StyleSheet.absoluteFillObject,
+        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    },
+    scrollView: {
+        backgroundColor: 'transparent',
+    },
     drawerContent: {
         flex: 1,
         padding: 16,

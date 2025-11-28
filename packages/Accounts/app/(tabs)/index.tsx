@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
 import LottieView from 'lottie-react-native';
 import { useRouter, usePathname } from 'expo-router';
@@ -13,6 +13,7 @@ import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import lottieAnimation from '@/assets/lottie/welcomeheader_background_op1.json';
 import { darkenColor } from '@/utils/color-utils';
 import { AccountCard } from '@/components/ui';
+import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -120,8 +121,7 @@ export default function HomeScreen() {
 
   const content = useMemo(() => (
     <>
-      <Section title={isDesktop ? "Your account" : undefined} isFirst>
-        {isDesktop && <ThemedText style={styles.subtitle}>Manage your account information.</ThemedText>}
+      <Section title={undefined} isFirst>
         <AccountCard>
           <GroupedSection items={accountItems} />
         </AccountCard>
@@ -169,65 +169,56 @@ export default function HomeScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.mobileContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Your account</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your account information.</ThemedText>
-        </View>
-        <View style={styles.mobileHeader}>
-          <View style={styles.avatarSectionWrapper}>
-            <View style={styles.avatarContainer}>
-              <LottieView
-                source={lottieAnimation}
-                autoPlay
-                loop
-                style={styles.lottieBackground}
-              />
-              <View style={styles.avatarWrapper}>
-                <UserAvatar name="Nate Isern Alvarez" size={100} />
+    <ScreenContentWrapper>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.mobileContent}>
+          <View style={styles.mobileHeader}>
+            <View style={styles.avatarSectionWrapper}>
+              <View style={styles.avatarContainer}>
+                <LottieView
+                  source={lottieAnimation}
+                  autoPlay
+                  loop
+                  style={styles.lottieBackground}
+                />
+                <View style={styles.avatarWrapper}>
+                  <UserAvatar name="Nate Isern Alvarez" size={100} />
+                </View>
+              </View>
+              <View style={styles.nameWrapper}>
+                <ThemedText style={styles.userName}>Nate Isern Alvarez</ThemedText>
+                <ThemedText style={styles.userUsername}>@NateIsern</ThemedText>
               </View>
             </View>
-            <View style={styles.nameWrapper}>
-              <ThemedText style={styles.userName}>Nate Isern Alvarez</ThemedText>
-              <ThemedText style={styles.userUsername}>@NateIsern</ThemedText>
-            </View>
+          </View>
+          {content}
+
+          {/* Bottom action buttons */}
+          <View style={styles.bottomActions}>
+            <TouchableOpacity style={styles.circleButton}>
+              <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
+                <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.circleButton}>
+              <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
+                <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
+              </View>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.circleButton}>
+              <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
+                <MaterialCommunityIcons name="menu" size={22} color={darkenColor(colors.sidebarIconData)} />
+              </View>
+            </TouchableOpacity>
           </View>
         </View>
-        {content}
-
-        {/* Bottom action buttons */}
-        <View style={styles.bottomActions}>
-          <TouchableOpacity style={styles.circleButton}>
-            <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
-              <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.circleButton}>
-            <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
-              <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
-            </View>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.circleButton}>
-            <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
-              <MaterialCommunityIcons name="menu" size={22} color={darkenColor(colors.sidebarIconData)} />
-            </View>
-          </TouchableOpacity>
-        </View>
-      </ScrollView>
-    </View>
+      </View>
+    </ScreenContentWrapper>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    flex: 1,
-  } as const,
-  scrollView: {
     flex: 1,
   } as const,
   desktopTopBar: {

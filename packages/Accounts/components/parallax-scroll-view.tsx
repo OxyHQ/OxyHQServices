@@ -1,6 +1,7 @@
 import type { PropsWithChildren, ReactElement } from 'react';
 import { StyleSheet } from 'react-native';
 import { useMemo } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, {
   interpolate,
   useAnimatedRef,
@@ -11,6 +12,7 @@ import Animated, {
 import { ThemedView } from '@/components/themed-view';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useThemeColor } from '@/hooks/use-theme-color';
+import { useScrollContext } from '@/contexts/scroll-context';
 
 const HEADER_HEIGHT = 250;
 
@@ -26,6 +28,8 @@ export default function ParallaxScrollView({
 }: Props) {
   const backgroundColor = useThemeColor({}, 'background');
   const colorScheme = useColorScheme() ?? 'light';
+  const insets = useSafeAreaInsets();
+  const { setIsScrolled } = useScrollContext();
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   const scrollOffset = useScrollOffset(scrollRef);
   
@@ -54,11 +58,25 @@ export default function ParallaxScrollView({
   
   const scrollViewStyle = useMemo(() => ({ backgroundColor, flex: 1 }), [backgroundColor]);
 
+  // Header height: safe area top + header top padding (16) + content height (~56) + bottom padding (16)
+  const headerContentHeight = 56;
+  const headerTopPadding = 16;
+  const headerBottomPadding = 16;
+  const headerTotalHeight = insets.top + headerTopPadding + headerContentHeight + headerBottomPadding;
+
+  // Handle scroll events
+  const handleScroll = (event: any) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    setIsScrolled(offsetY > 10);
+  };
+
   return (
     <Animated.ScrollView
       ref={scrollRef}
       style={scrollViewStyle}
-      scrollEventThrottle={16}>
+      scrollEventThrottle={16}
+      onScroll={handleScroll}
+      contentContainerStyle={{ paddingTop: headerTotalHeight }}>
       <Animated.View style={headerStyle}>
         {headerImage}
       </Animated.View>

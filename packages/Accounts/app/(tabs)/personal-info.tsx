@@ -1,10 +1,11 @@
 import React, { useMemo } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard } from '@/components/ui';
+import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function PersonalInfoScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -91,28 +92,23 @@ export default function PersonalInfoScreen() {
     );
   }
 
-  // Mobile: need our own ScrollView
+  // Mobile: use ScreenContentWrapper for consistent scrolling
   return (
-    <ScrollView
-      style={styles.scrollView}
-      contentContainerStyle={styles.mobileContent}
-      showsVerticalScrollIndicator={false}
-    >
-      <View style={styles.mobileHeaderSection}>
-        <ThemedText style={styles.mobileTitle}>Personal info</ThemedText>
-        <ThemedText style={styles.mobileSubtitle}>Manage your personal information and profile details.</ThemedText>
+    <ScreenContentWrapper>
+      <View style={styles.mobileContent}>
+        <View style={styles.mobileHeaderSection}>
+          <ThemedText style={styles.mobileTitle}>Personal info</ThemedText>
+          <ThemedText style={styles.mobileSubtitle}>Manage your personal information and profile details.</ThemedText>
+        </View>
+        <AccountCard>
+          <GroupedSection items={personalInfoItems} />
+        </AccountCard>
       </View>
-      <AccountCard>
-        <GroupedSection items={personalInfoItems} />
-      </AccountCard>
-    </ScrollView>
+    </ScreenContentWrapper>
   );
 }
 
 const styles = StyleSheet.create({
-  scrollView: {
-    flex: 1,
-  },
   headerSection: {
     marginBottom: 24,
   },

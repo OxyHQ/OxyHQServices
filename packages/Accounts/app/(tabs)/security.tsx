@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, Switch } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
@@ -7,7 +7,8 @@ import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
-import { LinkButton, AccountCard } from '@/components/ui';
+import { LinkButton, AccountCard, AppleSwitch } from '@/components/ui';
+import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function SecurityScreen() {
     const colorScheme = useColorScheme() ?? 'light';
@@ -84,11 +85,9 @@ export default function SecurityScreen() {
             title: 'Skip password when possible',
             subtitle: skipPassword ? 'On' : 'Off',
             customContent: (
-                <Switch
+                <AppleSwitch
                     value={skipPassword}
                     onValueChange={setSkipPassword}
-                    trackColor={{ false: colors.border, true: colors.tint }}
-                    thumbColor="#FFFFFF"
                 />
             ),
         },
@@ -219,11 +218,9 @@ export default function SecurityScreen() {
             title: 'Enhanced Safe Browsing for your account',
             subtitle: 'More personalized protections against dangerous websites, downloads, and extensions.',
             customContent: (
-                <Switch
+                <AppleSwitch
                     value={enhancedSafeBrowsing}
                     onValueChange={setEnhancedSafeBrowsing}
-                    trackColor={{ false: colors.border, true: colors.tint }}
-                    thumbColor="#FFFFFF"
                 />
             ),
         },
@@ -234,11 +231,9 @@ export default function SecurityScreen() {
             title: 'Dark web report',
             subtitle: 'Start monitoring to get alerts and guidance if your info is found on the dark web',
             customContent: (
-                <Switch
+                <AppleSwitch
                     value={darkWebReport}
                     onValueChange={setDarkWebReport}
-                    trackColor={{ false: colors.border, true: colors.tint }}
-                    thumbColor="#FFFFFF"
                 />
             ),
         },
@@ -313,26 +308,21 @@ export default function SecurityScreen() {
     }
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
-            <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={styles.mobileContent}
-                showsVerticalScrollIndicator={false}
-            >
-                <View style={styles.mobileHeaderSection}>
-                    <ThemedText style={styles.mobileTitle}>Security & sign-in</ThemedText>
+        <ScreenContentWrapper>
+            <View style={[styles.container, { backgroundColor: colors.background }]}>
+                <View style={styles.mobileContent}>
+                    <View style={styles.mobileHeaderSection}>
+                        <ThemedText style={styles.mobileTitle}>Security & sign-in</ThemedText>
+                    </View>
+                    {renderContent()}
                 </View>
-                {renderContent()}
-            </ScrollView>
-        </View>
+            </View>
+        </ScreenContentWrapper>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
-        flex: 1,
-    },
-    scrollView: {
         flex: 1,
     },
     desktopBody: {

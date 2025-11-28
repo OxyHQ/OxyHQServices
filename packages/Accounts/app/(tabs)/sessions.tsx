@@ -1,31 +1,30 @@
 import React from 'react';
-import { View, ScrollView, StyleSheet, Text } from 'react-native';
+import { View, StyleSheet, Text } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
+import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function SessionsScreen() {
     const colorScheme = useColorScheme() ?? 'light';
     const colors = Colors[colorScheme];
 
     return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
-            <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={styles.content}
-                showsVerticalScrollIndicator={false}
-            >
-                <View style={styles.headerSection}>
-                    <ThemedText style={styles.title}>Sessions</ThemedText>
-                    <ThemedText style={styles.subtitle}>Manage your active sessions.</ThemedText>
+        <ScreenContentWrapper>
+            <View style={[styles.container, { backgroundColor: colors.background }]}>
+                <View style={styles.content}>
+                    <View style={styles.headerSection}>
+                        <ThemedText style={styles.title}>Sessions</ThemedText>
+                        <ThemedText style={styles.subtitle}>Manage your active sessions.</ThemedText>
+                    </View>
+                    <View style={styles.placeholder}>
+                        <Text style={[styles.placeholderText, { color: colors.icon }]}>
+                            Sessions management coming soon
+                        </Text>
+                    </View>
                 </View>
-                <View style={styles.placeholder}>
-                    <Text style={[styles.placeholderText, { color: colors.icon }]}>
-                        Sessions management coming soon
-                    </Text>
-                </View>
-            </ScrollView>
-        </View>
+            </View>
+        </ScreenContentWrapper>
     );
 }
 

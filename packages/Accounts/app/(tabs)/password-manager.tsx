@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, TextInput } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, TextInput } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
@@ -7,6 +7,7 @@ import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard } from '@/components/ui';
+import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function PasswordManagerScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -82,33 +83,31 @@ export default function PasswordManagerScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.mobileContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Password Manager</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your saved passwords securely.</ThemedText>
+    <ScreenContentWrapper>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.mobileContent}>
+          <View style={styles.mobileHeaderSection}>
+            <ThemedText style={styles.mobileTitle}>Password Manager</ThemedText>
+            <ThemedText style={styles.mobileSubtitle}>Manage your saved passwords securely.</ThemedText>
+          </View>
+          <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
+            <MaterialCommunityIcons name="magnify" size={20} color={colors.icon} style={styles.searchIcon} />
+            <TextInput
+              style={[styles.searchInput, { color: colors.text }]}
+              placeholder="Search passwords..."
+              placeholderTextColor={colors.secondaryText}
+            />
+          </View>
+          <AccountCard>
+            <GroupedSection items={passwords} />
+          </AccountCard>
+          <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+            <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+            <Text style={styles.addButtonText}>Add new password</Text>
+          </TouchableOpacity>
         </View>
-        <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
-          <MaterialCommunityIcons name="magnify" size={20} color={colors.icon} style={styles.searchIcon} />
-          <TextInput
-            style={[styles.searchInput, { color: colors.text }]}
-            placeholder="Search passwords..."
-            placeholderTextColor={colors.secondaryText}
-          />
-        </View>
-        <AccountCard>
-          <GroupedSection items={passwords} />
-        </AccountCard>
-        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
-          <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
-          <Text style={styles.addButtonText}>Add new password</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    </View>
+      </View>
+    </ScreenContentWrapper>
   );
 }
 

@@ -1,6 +1,6 @@
 import { Slot } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
-import React, { useMemo, useState, useRef, useEffect } from 'react';
+import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
 import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, TextInput } from 'react-native';
 import { useRouter, usePathname, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -8,6 +8,8 @@ import { Colors } from '@/constants/theme';
 import { DesktopSidebar, DrawerContent, Logo, MobileHeader } from '@/components/ui';
 import { UserAvatar } from '@/components/user-avatar';
 import { Ionicons } from '@expo/vector-icons';
+import { useScrollContext } from '@/contexts/scroll-context';
+import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -19,6 +21,12 @@ export default function TabLayout() {
   const isDesktop = Platform.OS === 'web' && width >= 768;
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
+  const { setIsScrolled } = useScrollContext();
+
+  const handleScroll = useCallback((event: any) => {
+    const offsetY = event.nativeEvent.contentOffset.y;
+    setIsScrolled(offsetY > 10);
+  }, [setIsScrolled]);
 
   const toggleColorScheme = () => {
     // This would toggle between light and dark mode
@@ -63,7 +71,7 @@ export default function TabLayout() {
           </View>
           <View style={styles.searchBarContainer}>
             <View style={[styles.searchBar, { backgroundColor: colors.card }]}>
-              <Ionicons name="search-outline" size={20} color={colors.icon} style={styles.searchIcon} />
+              <Ionicons name="search-outline" size={20} color={colors.text} style={styles.searchIcon} />
               <TextInput
                 ref={searchInputRef}
                 style={[styles.searchInput, { color: colors.text }]}
@@ -77,7 +85,7 @@ export default function TabLayout() {
           </View>
           <View style={styles.topBarRight}>
             <TouchableOpacity style={styles.iconButton} onPress={toggleColorScheme}>
-              <Ionicons name={colorScheme === 'dark' ? 'sunny-outline' : 'moon-outline'} size={22} color={colors.icon} />
+              <Ionicons name={colorScheme === 'dark' ? 'sunny-outline' : 'moon-outline'} size={22} color={colors.text} />
             </TouchableOpacity>
             <UserAvatar name="Nate Isern Alvarez" size={36} />
           </View>
@@ -104,6 +112,9 @@ export default function TabLayout() {
   }
 
   // Mobile layout - use drawer
+  // Note: expo-router Drawer renders screens independently, so we can't have a single ScrollView
+  // Instead, we'll remove ScrollViews from screens and they should use ScreenContentWrapper
+  // OR we apply ScrollView via a custom solution
   return (
     <Drawer
       drawerContent={(props) => <DrawerContent {...props} />}
@@ -112,6 +123,9 @@ export default function TabLayout() {
         header: () => <MobileHeader />,
         headerStyle: {
           backgroundColor: colors.background,
+        },
+        drawerStyle: {
+          backgroundColor: 'transparent',
         },
       }}
     >

@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -7,6 +7,7 @@ import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard } from '@/components/ui';
+import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function StorageScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -84,19 +85,17 @@ export default function StorageScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScrollView
-        style={styles.scrollView}
-        contentContainerStyle={styles.mobileContent}
-        showsVerticalScrollIndicator={false}
-      >
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Oxy storage</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your storage usage and files.</ThemedText>
+      <ScreenContentWrapper>
+        <View style={styles.mobileContent}>
+          <View style={styles.mobileHeaderSection}>
+            <ThemedText style={styles.mobileTitle}>Oxy storage</ThemedText>
+            <ThemedText style={styles.mobileSubtitle}>Manage your storage usage and files.</ThemedText>
+          </View>
+          <AccountCard>
+            <GroupedSection items={storageItems} />
+          </AccountCard>
         </View>
-        <AccountCard>
-          <GroupedSection items={storageItems} />
-        </AccountCard>
-      </ScrollView>
+      </ScreenContentWrapper>
     </View>
   );
 }
