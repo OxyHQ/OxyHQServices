@@ -1,5 +1,6 @@
 import React, { useMemo, useCallback } from 'react';
 import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
+import LottieView from 'lottie-react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
@@ -7,6 +8,7 @@ import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { UserAvatar } from '@/components/user-avatar';
 import { Ionicons } from '@expo/vector-icons';
+import lottieAnimation from '@/assets/lottie/welcomeheader_background_op1.json';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -178,7 +180,23 @@ export default function HomeScreen() {
             showsVerticalScrollIndicator={false}
           >
             <View style={styles.desktopMainHeader}>
-              <UserAvatar name="Nate Isern Alvarez" size={80} />
+              <View style={styles.avatarSectionWrapper}>
+                <View style={styles.avatarContainer}>
+                  <LottieView
+                    source={lottieAnimation}
+                    autoPlay
+                    loop
+                    style={styles.lottieBackground}
+                  />
+                  <View style={styles.avatarWrapper}>
+                    <UserAvatar name="Nate Isern Alvarez" size={100} />
+                  </View>
+                </View>
+                <View style={styles.nameWrapper}>
+                  <ThemedText style={styles.userName}>Nate Isern Alvarez</ThemedText>
+                  <ThemedText style={styles.userUsername}>@NateIsern</ThemedText>
+                </View>
+              </View>
             </View>
             {content}
           </ScrollView>
@@ -199,7 +217,23 @@ export default function HomeScreen() {
           <ThemedText style={styles.mobileSubtitle}>Manage your account information.</ThemedText>
         </View>
         <View style={styles.mobileHeader}>
-          <UserAvatar name="Nate Isern Alvarez" size={80} />
+          <View style={styles.avatarSectionWrapper}>
+            <View style={styles.avatarContainer}>
+              <LottieView
+                source={lottieAnimation}
+                autoPlay
+                loop
+                style={styles.lottieBackground}
+              />
+              <View style={styles.avatarWrapper}>
+                <UserAvatar name="Nate Isern Alvarez" size={100} />
+              </View>
+            </View>
+            <View style={styles.nameWrapper}>
+              <ThemedText style={styles.userName}>Nate Isern Alvarez</ThemedText>
+              <ThemedText style={styles.userUsername}>@NateIsern</ThemedText>
+            </View>
+          </View>
         </View>
         {content}
 
@@ -338,6 +372,53 @@ const styles = StyleSheet.create({
   mobileHeader: {
     alignItems: 'center',
     marginBottom: 24,
+  } as const,
+  avatarContainer: {
+    position: 'relative',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 600,
+    height: 100,
+    overflow: 'hidden',
+  } as const,
+  lottieBackground: {
+    position: 'absolute',
+    width: 600,
+    height: 100,
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 0,
+  } as const,
+  avatarWrapper: {
+    zIndex: 1,
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: 100,
+    height: 100,
+    left: 250,
+    top: 0,
+  } as const,
+  avatarSectionWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  } as const,
+  nameWrapper: {
+    marginTop: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  } as const,
+  userName: {
+    fontSize: 24,
+    fontWeight: '600',
+  } as const,
+  userUsername: {
+    fontSize: 16,
+    fontWeight: '400',
+    opacity: 0.6,
+    marginTop: 4,
   } as const,
   subtitle: {
     fontSize: 14,

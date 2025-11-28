@@ -30,9 +30,9 @@ const UserAvatarComponent = ({ name = 'User', imageUrl, size = 80 }: UserAvatarP
             width: size,
             height: size,
             borderRadius: size / 2,
-            backgroundColor: colors.tint,
+            ...(imageUrl ? {} : { backgroundColor: colors.tint }),
         }
-    ], [size, colors.tint]);
+    ], [size, colors.tint, imageUrl]);
 
     const imageStyle = useMemo(() => [
         styles.image,
