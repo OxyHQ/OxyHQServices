@@ -87,13 +87,13 @@ export default function StorageScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScreenContentWrapper>
         <View style={styles.mobileContent}>
-          <View style={styles.mobileHeaderSection}>
-            <ThemedText style={styles.mobileTitle}>Oxy storage</ThemedText>
-            <ThemedText style={styles.mobileSubtitle}>Manage your storage usage and files.</ThemedText>
-          </View>
-          <AccountCard>
-            <GroupedSection items={storageItems} />
-          </AccountCard>
+        <View style={styles.mobileHeaderSection}>
+          <ThemedText style={styles.mobileTitle}>Oxy storage</ThemedText>
+          <ThemedText style={styles.mobileSubtitle}>Manage your storage usage and files.</ThemedText>
+        </View>
+        <AccountCard>
+          <GroupedSection items={storageItems} />
+        </AccountCard>
         </View>
       </ScreenContentWrapper>
     </View>

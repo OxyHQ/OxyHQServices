@@ -70,17 +70,17 @@ export default function DevicesScreen() {
 
   return (
     <ScreenContentWrapper>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-          <View style={styles.mobileHeaderSection}>
-            <ThemedText style={styles.mobileTitle}>Your devices</ThemedText>
-            <ThemedText style={styles.mobileSubtitle}>Manage devices that have access to your account.</ThemedText>
-          </View>
-          <AccountCard>
-            <GroupedSection items={devices} />
-          </AccountCard>
+        <View style={styles.mobileHeaderSection}>
+          <ThemedText style={styles.mobileTitle}>Your devices</ThemedText>
+          <ThemedText style={styles.mobileSubtitle}>Manage devices that have access to your account.</ThemedText>
         </View>
-      </View>
+        <AccountCard>
+          <GroupedSection items={devices} />
+        </AccountCard>
+        </View>
+    </View>
     </ScreenContentWrapper>
   );
 }

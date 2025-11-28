@@ -75,73 +75,73 @@ export default function SearchScreen() {
       )}
       <ScreenContentWrapper>
         <View style={[styles.content, isDesktop && styles.desktopContent]}>
-          {!searchQuery.trim() ? (
-            <View style={styles.startSearchContainer}>
-              <View style={styles.startSearchContent}>
-                <MaterialCommunityIcons 
-                  name="magnify" 
-                  size={80} 
-                  color={colors.text} 
-                  style={styles.startSearchIcon}
-                />
-                <View style={styles.titleDescriptionWrapper}>
-                  <ThemedText style={[styles.startSearchTitle, { color: colors.text }]}>Start searching</ThemedText>
-                  <ThemedText style={[styles.startSearchSubtitle, { color: colors.text }]}>
-                    Type in the search bar above to find screens and navigate to different sections of your account.
-                  </ThemedText>
-                </View>
-                <View style={styles.suggestionsContainer}>
-                  <ThemedText style={[styles.suggestionsTitle, { color: colors.text }]}>Try searching for:</ThemedText>
-                  <View style={styles.suggestionsList}>
-                    {menuItems.slice(0, 6).map((item) => {
-                      const iconColor = colors[item.iconColor as keyof typeof colors] as string;
-                      return (
-                        <TouchableOpacity
-                          key={item.path}
-                          style={[styles.suggestionItem, { backgroundColor: colors.card }]}
-                          onPress={() => router.push(item.path as any)}
-                          activeOpacity={0.7}
-                        >
-                          <View style={[styles.suggestionIcon, { backgroundColor: iconColor }]}>
-                            <MaterialCommunityIcons name={item.icon as any} size={20} color={darkenColor(iconColor)} />
-                          </View>
-                          <ThemedText style={[styles.suggestionText, { color: colors.text }]}>{item.label}</ThemedText>
-                        </TouchableOpacity>
-                      );
-                    })}
-                  </View>
+        {!searchQuery.trim() ? (
+          <View style={styles.startSearchContainer}>
+            <View style={styles.startSearchContent}>
+              <MaterialCommunityIcons 
+                name="magnify" 
+                size={80} 
+                color={colors.text} 
+                style={styles.startSearchIcon}
+              />
+              <View style={styles.titleDescriptionWrapper}>
+                <ThemedText style={[styles.startSearchTitle, { color: colors.text }]}>Start searching</ThemedText>
+                <ThemedText style={[styles.startSearchSubtitle, { color: colors.text }]}>
+                  Type in the search bar above to find screens and navigate to different sections of your account.
+                </ThemedText>
+              </View>
+              <View style={styles.suggestionsContainer}>
+                <ThemedText style={[styles.suggestionsTitle, { color: colors.text }]}>Try searching for:</ThemedText>
+                <View style={styles.suggestionsList}>
+                  {menuItems.slice(0, 6).map((item) => {
+                    const iconColor = colors[item.iconColor as keyof typeof colors] as string;
+                    return (
+                      <TouchableOpacity
+                        key={item.path}
+                        style={[styles.suggestionItem, { backgroundColor: colors.card }]}
+                        onPress={() => router.push(item.path as any)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={[styles.suggestionIcon, { backgroundColor: iconColor }]}>
+                          <MaterialCommunityIcons name={item.icon as any} size={20} color={darkenColor(iconColor)} />
+                        </View>
+                        <ThemedText style={[styles.suggestionText, { color: colors.text }]}>{item.label}</ThemedText>
+                      </TouchableOpacity>
+                    );
+                  })}
                 </View>
               </View>
             </View>
+          </View>
+        ) : (
+          <>
+            <View style={styles.header}>
+              <ThemedText style={styles.subtitle}>
+                {filteredItems.length} {filteredItems.length === 1 ? 'result' : 'results'} for "{searchQuery}"
+              </ThemedText>
+            </View>
+            {filteredItems.length === 0 ? (
+          <View style={styles.emptyState}>
+            <MaterialCommunityIcons 
+              name="magnify" 
+              size={48} 
+              color={colors.icon} 
+              style={styles.emptyIcon}
+            />
+              <ThemedText style={styles.emptyText}>No results found</ThemedText>
+              <ThemedText style={styles.emptySubtext}>
+                Try searching for something else
+              </ThemedText>
+            </View>
           ) : (
-            <>
-              <View style={styles.header}>
-                <ThemedText style={styles.subtitle}>
-                  {filteredItems.length} {filteredItems.length === 1 ? 'result' : 'results'} for "{searchQuery}"
-                </ThemedText>
-              </View>
-              {filteredItems.length === 0 ? (
-            <View style={styles.emptyState}>
-              <MaterialCommunityIcons 
-                name="magnify" 
-                size={48} 
-                color={colors.icon} 
-                style={styles.emptyIcon}
-              />
-                <ThemedText style={styles.emptyText}>No results found</ThemedText>
-                <ThemedText style={styles.emptySubtext}>
-                  Try searching for something else
-                </ThemedText>
-              </View>
-            ) : (
-              <Section isFirst>
-                <AccountCard>
-                  <GroupedSection items={groupedItems} />
-                </AccountCard>
-              </Section>
-            )}
-            </>
+            <Section isFirst>
+              <AccountCard>
+                <GroupedSection items={groupedItems} />
+              </AccountCard>
+            </Section>
           )}
+          </>
+        )}
         </View>
       </ScreenContentWrapper>
     </View>

@@ -96,13 +96,13 @@ export default function PersonalInfoScreen() {
   return (
     <ScreenContentWrapper>
       <View style={styles.mobileContent}>
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Personal info</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your personal information and profile details.</ThemedText>
-        </View>
-        <AccountCard>
-          <GroupedSection items={personalInfoItems} />
-        </AccountCard>
+      <View style={styles.mobileHeaderSection}>
+        <ThemedText style={styles.mobileTitle}>Personal info</ThemedText>
+        <ThemedText style={styles.mobileSubtitle}>Manage your personal information and profile details.</ThemedText>
+      </View>
+      <AccountCard>
+        <GroupedSection items={personalInfoItems} />
+      </AccountCard>
       </View>
     </ScreenContentWrapper>
   );

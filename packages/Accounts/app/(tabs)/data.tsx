@@ -94,17 +94,17 @@ export default function DataScreen() {
 
   return (
     <ScreenContentWrapper>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-          <View style={styles.mobileHeaderSection}>
-            <ThemedText style={styles.mobileTitle}>Data & privacy</ThemedText>
-            <ThemedText style={styles.mobileSubtitle}>Manage your data and privacy settings.</ThemedText>
-          </View>
-          <AccountCard>
-            <GroupedSection items={dataItems} />
-          </AccountCard>
+        <View style={styles.mobileHeaderSection}>
+          <ThemedText style={styles.mobileTitle}>Data & privacy</ThemedText>
+          <ThemedText style={styles.mobileSubtitle}>Manage your data and privacy settings.</ThemedText>
         </View>
-      </View>
+        <AccountCard>
+          <GroupedSection items={dataItems} />
+        </AccountCard>
+        </View>
+    </View>
     </ScreenContentWrapper>
   );
 }

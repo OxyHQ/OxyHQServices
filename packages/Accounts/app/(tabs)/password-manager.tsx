@@ -84,29 +84,29 @@ export default function PasswordManagerScreen() {
 
   return (
     <ScreenContentWrapper>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-          <View style={styles.mobileHeaderSection}>
-            <ThemedText style={styles.mobileTitle}>Password Manager</ThemedText>
-            <ThemedText style={styles.mobileSubtitle}>Manage your saved passwords securely.</ThemedText>
-          </View>
-          <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
-            <MaterialCommunityIcons name="magnify" size={20} color={colors.icon} style={styles.searchIcon} />
-            <TextInput
-              style={[styles.searchInput, { color: colors.text }]}
-              placeholder="Search passwords..."
-              placeholderTextColor={colors.secondaryText}
-            />
-          </View>
-          <AccountCard>
-            <GroupedSection items={passwords} />
-          </AccountCard>
-          <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
-            <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
-            <Text style={styles.addButtonText}>Add new password</Text>
-          </TouchableOpacity>
+        <View style={styles.mobileHeaderSection}>
+          <ThemedText style={styles.mobileTitle}>Password Manager</ThemedText>
+          <ThemedText style={styles.mobileSubtitle}>Manage your saved passwords securely.</ThemedText>
         </View>
-      </View>
+        <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
+          <MaterialCommunityIcons name="magnify" size={20} color={colors.icon} style={styles.searchIcon} />
+          <TextInput
+            style={[styles.searchInput, { color: colors.text }]}
+            placeholder="Search passwords..."
+            placeholderTextColor={colors.secondaryText}
+          />
+        </View>
+        <AccountCard>
+          <GroupedSection items={passwords} />
+        </AccountCard>
+        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+          <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+          <Text style={styles.addButtonText}>Add new password</Text>
+        </TouchableOpacity>
+        </View>
+    </View>
     </ScreenContentWrapper>
   );
 }

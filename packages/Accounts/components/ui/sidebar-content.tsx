@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import { BlurView } from 'expo-blur';
 import { useRouter, usePathname } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -49,22 +50,35 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
                     const isActive = pathname === item.path || (item.path === '/(tabs)' && (pathname === '/(tabs)' || pathname === '/(tabs)/'));
                     const iconColor = colors[item.iconColor as keyof typeof colors] as string;
 
-                    return (
-                        <TouchableOpacity
-                            key={item.path}
-                            style={[
-                                styles.menuItem,
-                                isActive ? styles.menuItemActive : null,
-                                { backgroundColor: isActive ? colors.sidebarItemActiveBackground : 'transparent' }
-                            ]}
-                            onPress={() => handleNavigate(item.path)}
-                        >
+                    const menuItemContent = (
+                        <>
                             <View style={[styles.menuIconContainer, { backgroundColor: iconColor }]}>
                                 <MaterialCommunityIcons name={item.icon as any} size={22} color={darkenColor(iconColor)} />
                             </View>
                             <Text style={[styles.menuItemText, { color: isActive ? colors.sidebarItemActiveText : colors.text }]}>
                                 {item.label}
                             </Text>
+                        </>
+                    );
+
+                    return (
+                        <TouchableOpacity
+                            key={item.path}
+                            onPress={() => handleNavigate(item.path)}
+                            activeOpacity={0.7}
+                        >
+                            <BlurView
+                                intensity={isActive ? 80 : 50}
+                                tint={colorScheme === 'dark' ? 'dark' : 'light'}
+                                experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
+                                style={[
+                                    styles.menuItem,
+                                    isActive ? styles.menuItemActive : null,
+                                    { backgroundColor: isActive ? colors.sidebarItemActiveBackground : 'rgba(255, 255, 255, 0.1)' }
+                                ]}
+                            >
+                                {menuItemContent}
+                            </BlurView>
                         </TouchableOpacity>
                     );
                 })}
@@ -76,14 +90,18 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
 const styles = StyleSheet.create({
     menuContainer: {
         gap: 4,
+        alignItems: 'flex-start',
     },
     menuItem: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 8,
-        paddingHorizontal: 12,
+        paddingLeft: 12,
+        paddingRight: 24,
         borderRadius: 26,
         gap: 12,
+        overflow: 'hidden',
+        alignSelf: 'flex-start',
     },
     menuItemActive: {},
     menuIconContainer: {

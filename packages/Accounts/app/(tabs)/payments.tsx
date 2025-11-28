@@ -72,13 +72,13 @@ export default function PaymentsScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScreenContentWrapper>
         <View style={styles.mobileContent}>
-          <View style={styles.mobileHeaderSection}>
-            <ThemedText style={styles.mobileTitle}>Payments & subscriptions</ThemedText>
-            <ThemedText style={styles.mobileSubtitle}>Manage your payment methods and subscriptions.</ThemedText>
-          </View>
-          <AccountCard>
-            <GroupedSection items={paymentItems} />
-          </AccountCard>
+        <View style={styles.mobileHeaderSection}>
+          <ThemedText style={styles.mobileTitle}>Payments & subscriptions</ThemedText>
+          <ThemedText style={styles.mobileSubtitle}>Manage your payment methods and subscriptions.</ThemedText>
+        </View>
+        <AccountCard>
+          <GroupedSection items={paymentItems} />
+        </AccountCard>
         </View>
       </ScreenContentWrapper>
     </View>

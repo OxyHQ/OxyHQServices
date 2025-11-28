@@ -65,17 +65,17 @@ export default function SharingScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScreenContentWrapper>
         <View style={styles.mobileContent}>
-          <View style={styles.mobileHeaderSection}>
-            <ThemedText style={styles.mobileTitle}>People & sharing</ThemedText>
-            <ThemedText style={styles.mobileSubtitle}>Manage shared accounts and permissions.</ThemedText>
-          </View>
-          <AccountCard>
-            <GroupedSection items={sharedItems} />
-          </AccountCard>
-          <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
-            <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
-            <Text style={styles.addButtonText}>Invite user</Text>
-          </TouchableOpacity>
+        <View style={styles.mobileHeaderSection}>
+          <ThemedText style={styles.mobileTitle}>People & sharing</ThemedText>
+          <ThemedText style={styles.mobileSubtitle}>Manage shared accounts and permissions.</ThemedText>
+        </View>
+        <AccountCard>
+          <GroupedSection items={sharedItems} />
+        </AccountCard>
+        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+          <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+          <Text style={styles.addButtonText}>Invite user</Text>
+        </TouchableOpacity>
         </View>
       </ScreenContentWrapper>
     </View>

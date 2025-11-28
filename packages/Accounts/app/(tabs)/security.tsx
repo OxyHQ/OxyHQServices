@@ -309,14 +309,14 @@ export default function SecurityScreen() {
 
     return (
         <ScreenContentWrapper>
-            <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
                 <View style={styles.mobileContent}>
-                    <View style={styles.mobileHeaderSection}>
-                        <ThemedText style={styles.mobileTitle}>Security & sign-in</ThemedText>
-                    </View>
-                    {renderContent()}
+                <View style={styles.mobileHeaderSection}>
+                    <ThemedText style={styles.mobileTitle}>Security & sign-in</ThemedText>
                 </View>
-            </View>
+                {renderContent()}
+                </View>
+        </View>
         </ScreenContentWrapper>
     );
 }

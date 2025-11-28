@@ -63,21 +63,21 @@ export default function FamilyScreen() {
 
   return (
     <ScreenContentWrapper>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-          <View style={styles.mobileHeaderSection}>
-            <ThemedText style={styles.mobileTitle}>Family Group</ThemedText>
-            <ThemedText style={styles.mobileSubtitle}>Manage your family members and settings.</ThemedText>
-          </View>
-          <AccountCard>
-            <GroupedSection items={familyMembers} />
-          </AccountCard>
-          <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
-            <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
-            <Text style={styles.addButtonText}>Add family member</Text>
-          </TouchableOpacity>
+        <View style={styles.mobileHeaderSection}>
+          <ThemedText style={styles.mobileTitle}>Family Group</ThemedText>
+          <ThemedText style={styles.mobileSubtitle}>Manage your family members and settings.</ThemedText>
         </View>
-      </View>
+        <AccountCard>
+          <GroupedSection items={familyMembers} />
+        </AccountCard>
+        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+          <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+          <Text style={styles.addButtonText}>Add family member</Text>
+        </TouchableOpacity>
+        </View>
+    </View>
     </ScreenContentWrapper>
   );
 }

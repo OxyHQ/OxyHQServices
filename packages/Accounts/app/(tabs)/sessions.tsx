@@ -11,19 +11,19 @@ export default function SessionsScreen() {
 
     return (
         <ScreenContentWrapper>
-            <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
                 <View style={styles.content}>
-                    <View style={styles.headerSection}>
-                        <ThemedText style={styles.title}>Sessions</ThemedText>
-                        <ThemedText style={styles.subtitle}>Manage your active sessions.</ThemedText>
-                    </View>
-                    <View style={styles.placeholder}>
-                        <Text style={[styles.placeholderText, { color: colors.icon }]}>
-                            Sessions management coming soon
-                        </Text>
-                    </View>
+                <View style={styles.headerSection}>
+                    <ThemedText style={styles.title}>Sessions</ThemedText>
+                    <ThemedText style={styles.subtitle}>Manage your active sessions.</ThemedText>
                 </View>
-            </View>
+                <View style={styles.placeholder}>
+                    <Text style={[styles.placeholderText, { color: colors.icon }]}>
+                        Sessions management coming soon
+                    </Text>
+                </View>
+                </View>
+        </View>
         </ScreenContentWrapper>
     );
 }
