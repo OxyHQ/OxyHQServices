@@ -1,10 +1,10 @@
-import React, { useMemo } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, TouchableOpacity } from 'react-native';
+import React, { useMemo, useState, useEffect } from 'react';
+import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, TouchableOpacity, TextInput } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard } from '@/components/ui';
@@ -17,9 +17,20 @@ export default function SearchScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ q?: string }>();
   const searchQuery = params.q || '';
+  const [localSearchQuery, setLocalSearchQuery] = useState(searchQuery);
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = useMemo(() => Platform.OS === 'web' && width >= 768, [width]);
+
+  // Sync local state with route params
+  useEffect(() => {
+    setLocalSearchQuery(searchQuery);
+  }, [searchQuery]);
+
+  const handleSearchChange = (text: string) => {
+    setLocalSearchQuery(text);
+    router.setParams({ q: text || '' });
+  };
 
   const filteredItems = useMemo(() => {
     if (!searchQuery.trim()) {
@@ -47,6 +58,20 @@ export default function SearchScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
+      {!isDesktop && (
+        <View style={[styles.mobileSearchBar, { backgroundColor: colors.card }]}>
+          <Ionicons name="search-outline" size={20} color={colors.icon} style={styles.mobileSearchIcon} />
+          <TextInput
+            style={[styles.mobileSearchInput, { color: colors.text }]}
+            placeholder="Search Oxy Account"
+            placeholderTextColor={colors.secondaryText}
+            value={localSearchQuery}
+            onChangeText={handleSearchChange}
+            returnKeyType="search"
+            autoFocus
+          />
+        </View>
+      )}
       <ScrollView
         style={styles.scrollView}
         contentContainerStyle={[styles.content, isDesktop && styles.desktopContent]}
@@ -93,7 +118,6 @@ export default function SearchScreen() {
         ) : (
           <>
             <View style={styles.header}>
-              <ThemedText style={styles.title}>Search Results</ThemedText>
               <ThemedText style={styles.subtitle}>
                 {filteredItems.length} {filteredItems.length === 1 ? 'result' : 'results'} for "{searchQuery}"
               </ThemedText>
@@ -129,17 +153,37 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  mobileSearchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    height: 48,
+    borderRadius: 24,
+    paddingHorizontal: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 8,
+    gap: 12,
+  },
+  mobileSearchIcon: {
+    opacity: 0.6,
+  },
+  mobileSearchInput: {
+    flex: 1,
+    fontSize: 16,
+    padding: 0,
+  },
   scrollView: {
     flex: 1,
   },
   content: {
     padding: 24,
+    paddingTop: 0,
   },
   desktopContent: {
     padding: 32,
   },
   header: {
-    marginBottom: 24,
+    marginBottom: 16,
   },
   title: {
     fontSize: 28,
