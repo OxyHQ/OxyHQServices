@@ -6,7 +6,7 @@ import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { UserAvatar } from '@/components/user-avatar';
 import { useScrollContext } from '@/contexts/scroll-context';
 
@@ -48,14 +48,14 @@ export function MobileHeader() {
         onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
         style={styles.menuButton}
       >
-        <Ionicons name="menu" size={24} color={colors.text} />
+        <MaterialCommunityIcons name="menu" size={24} color={colors.text} />
       </TouchableOpacity>
       <View style={styles.headerRight}>
         <TouchableOpacity style={styles.iconButton} onPress={handleSearchPress}>
-          <Ionicons name="search-outline" size={22} color={colors.text} />
+          <MaterialCommunityIcons name="magnify" size={22} color={colors.text} />
         </TouchableOpacity>
         <TouchableOpacity style={styles.iconButton} onPress={toggleColorScheme}>
-          <Ionicons name={colorScheme === 'dark' ? 'sunny-outline' : 'moon-outline'} size={22} color={colors.text} />
+          <MaterialCommunityIcons name={colorScheme === 'dark' ? 'weather-sunny' : 'weather-night'} size={22} color={colors.text} />
         </TouchableOpacity>
         <UserAvatar name="Nate Isern Alvarez" size={36} />
       </View>
