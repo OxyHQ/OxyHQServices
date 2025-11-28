@@ -6,7 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { AccountCard } from '@/components/ui';
+import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function PasswordManagerScreen() {
@@ -59,10 +59,7 @@ export default function PasswordManagerScreen() {
   if (isDesktop) {
     return (
       <>
-        <View style={styles.headerSection}>
-          <ThemedText style={styles.title}>Password Manager</ThemedText>
-          <ThemedText style={styles.subtitle}>Manage your saved passwords securely.</ThemedText>
-        </View>
+        <ScreenHeader title="Password Manager" subtitle="Manage your saved passwords securely." />
         <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
           <MaterialCommunityIcons name="magnify" size={20} color={colors.icon} style={styles.searchIcon} />
           <TextInput
@@ -86,10 +83,7 @@ export default function PasswordManagerScreen() {
     <ScreenContentWrapper>
     <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Password Manager</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your saved passwords securely.</ThemedText>
-        </View>
+        <ScreenHeader title="Password Manager" subtitle="Manage your saved passwords securely." />
         <View style={[styles.searchContainer, { backgroundColor: colors.card }]}>
           <MaterialCommunityIcons name="magnify" size={20} color={colors.icon} style={styles.searchIcon} />
           <TextInput

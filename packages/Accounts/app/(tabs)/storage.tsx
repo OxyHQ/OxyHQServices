@@ -6,7 +6,7 @@ import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { AccountCard } from '@/components/ui';
+import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function StorageScreen() {
@@ -72,10 +72,7 @@ export default function StorageScreen() {
   if (isDesktop) {
     return (
       <>
-        <View style={styles.headerSection}>
-          <ThemedText style={styles.title}>Oxy storage</ThemedText>
-          <ThemedText style={styles.subtitle}>Manage your storage usage and files.</ThemedText>
-        </View>
+        <ScreenHeader title="Oxy storage" subtitle="Manage your storage usage and files." />
         <AccountCard>
           <GroupedSection items={storageItems} />
         </AccountCard>
@@ -87,10 +84,7 @@ export default function StorageScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScreenContentWrapper>
         <View style={styles.mobileContent}>
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Oxy storage</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your storage usage and files.</ThemedText>
-        </View>
+        <ScreenHeader title="Oxy storage" subtitle="Manage your storage usage and files." />
         <AccountCard>
           <GroupedSection items={storageItems} />
         </AccountCard>

@@ -9,6 +9,7 @@ import { Colors } from '@/constants/theme';
 import { MaterialIcons } from '@expo/vector-icons';
 import { UserAvatar } from '@/components/user-avatar';
 import { useScrollContext } from '@/contexts/scroll-context';
+import { useThemeContext } from '@/contexts/theme-context';
 
 export function MobileHeader() {
   const navigation = useNavigation();
@@ -17,11 +18,7 @@ export function MobileHeader() {
   const colors = Colors[colorScheme ?? 'light'];
   const insets = useSafeAreaInsets();
   const { isScrolled } = useScrollContext();
-
-  const toggleColorScheme = () => {
-    // This would toggle between light and dark mode
-    // You'd need to implement this based on your theme system
-  };
+  const { toggleColorScheme } = useThemeContext();
 
   const handleSearchPress = () => {
     router.push({

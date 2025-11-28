@@ -4,7 +4,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard } from '@/components/ui';
+import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function DevicesScreen() {
@@ -57,10 +57,7 @@ export default function DevicesScreen() {
   if (isDesktop) {
     return (
       <>
-        <View style={styles.headerSection}>
-          <ThemedText style={styles.title}>Your devices</ThemedText>
-          <ThemedText style={styles.subtitle}>Manage devices that have access to your account.</ThemedText>
-        </View>
+        <ScreenHeader title="Your devices" subtitle="Manage devices that have access to your account." />
         <AccountCard>
           <GroupedSection items={devices} />
         </AccountCard>
@@ -72,10 +69,7 @@ export default function DevicesScreen() {
     <ScreenContentWrapper>
     <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Your devices</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage devices that have access to your account.</ThemedText>
-        </View>
+        <ScreenHeader title="Your devices" subtitle="Manage devices that have access to your account." />
         <AccountCard>
           <GroupedSection items={devices} />
         </AccountCard>

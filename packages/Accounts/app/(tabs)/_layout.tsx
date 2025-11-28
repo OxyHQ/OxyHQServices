@@ -10,6 +10,7 @@ import { UserAvatar } from '@/components/user-avatar';
 import { Ionicons } from '@expo/vector-icons';
 import { useScrollContext } from '@/contexts/scroll-context';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import { useThemeContext } from '@/contexts/theme-context';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -22,16 +23,12 @@ export default function TabLayout() {
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
   const { setIsScrolled } = useScrollContext();
+  const { toggleColorScheme } = useThemeContext();
 
   const handleScroll = useCallback((event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     setIsScrolled(offsetY > 10);
   }, [setIsScrolled]);
-
-  const toggleColorScheme = () => {
-    // This would toggle between light and dark mode
-    // You'd need to implement this based on your theme system
-  };
 
   const handleSearchChange = (text: string) => {
     setSearchQuery(text);

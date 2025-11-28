@@ -5,7 +5,7 @@ import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { AccountCard } from '@/components/ui';
+import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function SharingScreen() {
@@ -46,10 +46,7 @@ export default function SharingScreen() {
   if (isDesktop) {
     return (
       <>
-        <View style={styles.headerSection}>
-          <ThemedText style={styles.title}>People & sharing</ThemedText>
-          <ThemedText style={styles.subtitle}>Manage shared accounts and permissions.</ThemedText>
-        </View>
+        <ScreenHeader title="People & sharing" subtitle="Manage shared accounts and permissions." />
         <AccountCard>
           <GroupedSection items={sharedItems} />
         </AccountCard>
@@ -65,10 +62,7 @@ export default function SharingScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScreenContentWrapper>
         <View style={styles.mobileContent}>
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>People & sharing</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage shared accounts and permissions.</ThemedText>
-        </View>
+        <ScreenHeader title="People & sharing" subtitle="Manage shared accounts and permissions." />
         <AccountCard>
           <GroupedSection items={sharedItems} />
         </AccountCard>

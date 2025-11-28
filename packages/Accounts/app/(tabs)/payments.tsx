@@ -4,7 +4,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard } from '@/components/ui';
+import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function PaymentsScreen() {
@@ -57,10 +57,7 @@ export default function PaymentsScreen() {
   if (isDesktop) {
     return (
       <>
-        <View style={styles.headerSection}>
-          <ThemedText style={styles.title}>Payments & subscriptions</ThemedText>
-          <ThemedText style={styles.subtitle}>Manage your payment methods and subscriptions.</ThemedText>
-        </View>
+        <ScreenHeader title="Payments & subscriptions" subtitle="Manage your payment methods and subscriptions." />
         <AccountCard>
           <GroupedSection items={paymentItems} />
         </AccountCard>
@@ -72,10 +69,7 @@ export default function PaymentsScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <ScreenContentWrapper>
         <View style={styles.mobileContent}>
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Payments & subscriptions</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your payment methods and subscriptions.</ThemedText>
-        </View>
+        <ScreenHeader title="Payments & subscriptions" subtitle="Manage your payment methods and subscriptions." />
         <AccountCard>
           <GroupedSection items={paymentItems} />
         </AccountCard>

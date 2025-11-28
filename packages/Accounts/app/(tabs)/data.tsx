@@ -4,7 +4,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard } from '@/components/ui';
+import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function DataScreen() {
@@ -81,10 +81,7 @@ export default function DataScreen() {
   if (isDesktop) {
     return (
       <>
-        <View style={styles.headerSection}>
-          <ThemedText style={styles.title}>Data & privacy</ThemedText>
-          <ThemedText style={styles.subtitle}>Manage your data and privacy settings.</ThemedText>
-        </View>
+        <ScreenHeader title="Data & privacy" subtitle="Manage your data and privacy settings." />
         <AccountCard>
           <GroupedSection items={dataItems} />
         </AccountCard>
@@ -96,10 +93,7 @@ export default function DataScreen() {
     <ScreenContentWrapper>
     <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Data & privacy</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your data and privacy settings.</ThemedText>
-        </View>
+        <ScreenHeader title="Data & privacy" subtitle="Manage your data and privacy settings." />
         <AccountCard>
           <GroupedSection items={dataItems} />
         </AccountCard>

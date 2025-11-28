@@ -4,7 +4,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard } from '@/components/ui';
+import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function PersonalInfoScreen() {
@@ -81,10 +81,7 @@ export default function PersonalInfoScreen() {
   if (isDesktop) {
     return (
       <>
-        <View style={styles.headerSection}>
-          <ThemedText style={styles.title}>Personal info</ThemedText>
-          <ThemedText style={styles.subtitle}>Manage your personal information and profile details.</ThemedText>
-        </View>
+        <ScreenHeader title="Personal info" subtitle="Manage your personal information and profile details." />
         <AccountCard>
           <GroupedSection items={personalInfoItems} />
         </AccountCard>
@@ -96,10 +93,7 @@ export default function PersonalInfoScreen() {
   return (
     <ScreenContentWrapper>
       <View style={styles.mobileContent}>
-      <View style={styles.mobileHeaderSection}>
-        <ThemedText style={styles.mobileTitle}>Personal info</ThemedText>
-        <ThemedText style={styles.mobileSubtitle}>Manage your personal information and profile details.</ThemedText>
-      </View>
+      <ScreenHeader title="Personal info" subtitle="Manage your personal information and profile details." />
       <AccountCard>
         <GroupedSection items={personalInfoItems} />
       </AccountCard>

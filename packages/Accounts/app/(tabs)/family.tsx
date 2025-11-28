@@ -5,7 +5,7 @@ import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { AccountCard } from '@/components/ui';
+import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function FamilyScreen() {
@@ -46,10 +46,7 @@ export default function FamilyScreen() {
   if (isDesktop) {
     return (
       <>
-        <View style={styles.headerSection}>
-          <ThemedText style={styles.title}>Family Group</ThemedText>
-          <ThemedText style={styles.subtitle}>Manage your family members and settings.</ThemedText>
-        </View>
+        <ScreenHeader title="Family Group" subtitle="Manage your family members and settings." />
         <AccountCard>
           <GroupedSection items={familyMembers} />
         </AccountCard>
@@ -65,10 +62,7 @@ export default function FamilyScreen() {
     <ScreenContentWrapper>
     <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-        <View style={styles.mobileHeaderSection}>
-          <ThemedText style={styles.mobileTitle}>Family Group</ThemedText>
-          <ThemedText style={styles.mobileSubtitle}>Manage your family members and settings.</ThemedText>
-        </View>
+        <ScreenHeader title="Family Group" subtitle="Manage your family members and settings." />
         <AccountCard>
           <GroupedSection items={familyMembers} />
         </AccountCard>

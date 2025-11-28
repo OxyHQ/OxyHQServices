@@ -7,7 +7,7 @@ import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
-import { LinkButton, AccountCard, AppleSwitch } from '@/components/ui';
+import { LinkButton, AccountCard, AppleSwitch, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 
 export default function SecurityScreen() {
@@ -299,9 +299,7 @@ export default function SecurityScreen() {
     if (isDesktop) {
         return (
             <>
-                <View style={styles.headerSection}>
-                    <ThemedText style={styles.title}>Security & sign-in</ThemedText>
-                </View>
+                <ScreenHeader title="Security & sign-in" subtitle="Manage your security settings and sign-in methods." />
                 {renderContent()}
             </>
         );
@@ -311,9 +309,7 @@ export default function SecurityScreen() {
         <ScreenContentWrapper>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
                 <View style={styles.mobileContent}>
-                <View style={styles.mobileHeaderSection}>
-                    <ThemedText style={styles.mobileTitle}>Security & sign-in</ThemedText>
-                </View>
+                <ScreenHeader title="Security & sign-in" subtitle="Manage your security settings and sign-in methods." />
                 {renderContent()}
                 </View>
         </View>

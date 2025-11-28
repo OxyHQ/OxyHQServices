@@ -4,6 +4,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import { ScreenHeader } from '@/components/ui';
 
 export default function SessionsScreen() {
     const colorScheme = useColorScheme() ?? 'light';
@@ -13,10 +14,7 @@ export default function SessionsScreen() {
         <ScreenContentWrapper>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
                 <View style={styles.content}>
-                <View style={styles.headerSection}>
-                    <ThemedText style={styles.title}>Sessions</ThemedText>
-                    <ThemedText style={styles.subtitle}>Manage your active sessions.</ThemedText>
-                </View>
+                <ScreenHeader title="Sessions" subtitle="Manage your active sessions." />
                 <View style={styles.placeholder}>
                     <Text style={[styles.placeholderText, { color: colors.icon }]}>
                         Sessions management coming soon
