@@ -162,7 +162,7 @@ export default function AccountScreen() {
                         <View style={styles.menuContainer}>
                             <TouchableOpacity style={[styles.menuItem, styles.menuItemActive, { backgroundColor: colors.sidebarItemActiveBackground }]}>
                                 <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconHome }]}>
-                                    <MaterialCommunityIcons name="home" size={22} color={darkenColor(colors.sidebarIconHome)} />
+                                    <MaterialCommunityIcons name="home-variant" size={22} color={darkenColor(colors.sidebarIconHome)} />
                                 </View>
                                 <Text style={[styles.menuItemText, { color: colors.sidebarItemActiveText }]}>Home</Text>
                             </TouchableOpacity>

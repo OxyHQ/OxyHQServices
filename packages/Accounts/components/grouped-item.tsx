@@ -1,11 +1,32 @@
 import React, { memo, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 
+/**
+ * Darkens a color by a specified factor
+ * Returns a darker version of the color
+ */
+const darkenColor = (color: string, factor: number = 0.6): string => {
+  // Remove # if present
+  const hex = color.replace('#', '');
+  
+  // Convert to RGB
+  const r = parseInt(hex.substring(0, 2), 16);
+  const g = parseInt(hex.substring(2, 4), 16);
+  const b = parseInt(hex.substring(4, 6), 16);
+  
+  // Darken by factor
+  const newR = Math.max(0, Math.round(r * (1 - factor)));
+  const newG = Math.max(0, Math.round(g * (1 - factor)));
+  const newB = Math.max(0, Math.round(b * (1 - factor)));
+  
+  return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+};
+
 interface GroupedItemProps {
-    icon?: keyof typeof Ionicons.glyphMap;
+    icon?: string;
     iconColor?: string;
     title: string;
     subtitle?: string;
@@ -53,8 +74,8 @@ const GroupedItemComponent = ({
             {customIcon ? (
                 <View style={styles.actionIcon}>{customIcon}</View>
             ) : icon ? (
-                <View style={[styles.iconContainer, { backgroundColor: `${iconColor}15` }]}>
-                    <Ionicons name={icon} size={20} color={iconColor} />
+                <View style={[styles.iconContainer, { backgroundColor: iconColor }]}>
+                    <MaterialCommunityIcons name={icon as any} size={22} color={darkenColor(iconColor)} />
                 </View>
             ) : null}
             <View style={styles.actionTextContainer}>
@@ -107,11 +128,12 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         paddingVertical: 12,
-        paddingHorizontal: 16,
+        paddingHorizontal: 12,
         width: '100%',
+        gap: 12,
     },
     actionIcon: {
-        marginRight: 12,
+        // marginRight handled by gap
     },
     iconContainer: {
         width: 36,
@@ -119,7 +141,7 @@ const styles = StyleSheet.create({
         borderRadius: 18,
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: 12,
+        // marginRight handled by gap
     },
     actionTextContainer: {
         flex: 1,

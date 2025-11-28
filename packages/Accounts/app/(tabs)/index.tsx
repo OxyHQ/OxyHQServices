@@ -41,6 +41,8 @@ export default function HomeScreen() {
   const accountItems = useMemo(() => [
     {
       id: 'name',
+      icon: 'account-outline' as any,
+      iconColor: colors.sidebarIconPersonalInfo,
       title: 'Full name',
       subtitle: 'Aloha Haloe',
       customContent: (
@@ -51,6 +53,8 @@ export default function HomeScreen() {
     },
     {
       id: 'email',
+      icon: 'email-outline' as any,
+      iconColor: colors.sidebarIconSecurity,
       title: 'Email',
       subtitle: 'hello@oxy.so',
       customContent: (
@@ -61,6 +65,8 @@ export default function HomeScreen() {
     },
     {
       id: 'subscription',
+      icon: 'credit-card-outline' as any,
+      iconColor: colors.sidebarIconPayments,
       title: 'Subscription',
       subtitle: 'Manage your Oxy subscription',
       customContent: (
@@ -72,17 +78,19 @@ export default function HomeScreen() {
     },
     {
       id: 'created',
+      icon: 'calendar-outline' as any,
+      iconColor: colors.sidebarIconData,
       title: 'Account created',
       subtitle: 'Feb 21, 2025',
     },
-  ], [colors.text]);
+  ], [colors.text, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconPayments, colors.sidebarIconData]);
 
   const signInMethods = useMemo(() => [
     {
       id: 'email',
       customIcon: (
-        <View style={[styles.methodIcon, { backgroundColor: colors.card }]}>
-          <Ionicons name="mail-outline" size={24} color={colors.text} />
+        <View style={[styles.methodIcon, { backgroundColor: colors.sidebarIconSecurity }]}>
+          <MaterialCommunityIcons name="email-outline" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
         </View>
       ),
       title: 'Email and password',
@@ -96,8 +104,8 @@ export default function HomeScreen() {
     {
       id: 'x',
       customIcon: (
-        <View style={[styles.methodIcon, { backgroundColor: colors.card }]}>
-          <Ionicons name="logo-twitter" size={24} color={colors.text} />
+        <View style={[styles.methodIcon, { backgroundColor: colors.sidebarIconSharing }]}>
+          <MaterialCommunityIcons name="twitter" size={22} color={darkenColor(colors.sidebarIconSharing)} />
         </View>
       ),
       title: 'X',
@@ -111,8 +119,8 @@ export default function HomeScreen() {
     {
       id: 'google',
       customIcon: (
-        <View style={[styles.methodIcon, { backgroundColor: colors.card }]}>
-          <Ionicons name="logo-google" size={24} color={colors.text} />
+        <View style={[styles.methodIcon, { backgroundColor: colors.sidebarIconPersonalInfo }]}>
+          <MaterialCommunityIcons name="google" size={22} color={darkenColor(colors.sidebarIconPersonalInfo)} />
         </View>
       ),
       title: 'Google',
@@ -123,7 +131,7 @@ export default function HomeScreen() {
         </TouchableOpacity>
       ),
     },
-  ], [colors.card, colors.text]);
+  ], [colors.card, colors.text, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo]);
 
   const content = useMemo(() => (
     <>
@@ -178,7 +186,7 @@ export default function HomeScreen() {
             <View style={styles.menuContainer}>
               <TouchableOpacity style={[styles.menuItem, styles.menuItemActive, { backgroundColor: colors.sidebarItemActiveBackground }]}>
                 <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconHome }]}>
-                  <MaterialCommunityIcons name="home" size={22} color={darkenColor(colors.sidebarIconHome)} />
+                  <MaterialCommunityIcons name="home-variant" size={22} color={darkenColor(colors.sidebarIconHome)} />
                 </View>
                 <Text style={[styles.menuItemText, { color: colors.sidebarItemActiveText }]}>Home</Text>
               </TouchableOpacity>
@@ -304,14 +312,20 @@ export default function HomeScreen() {
 
         {/* Bottom action buttons */}
         <View style={styles.bottomActions}>
-          <TouchableOpacity style={[styles.circleButton, { backgroundColor: colors.card }]}>
-            <Ionicons name="reload-outline" size={22} color={colors.text} />
+          <TouchableOpacity style={styles.circleButton}>
+            <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
+              <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
+            </View>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.circleButton, { backgroundColor: colors.card }]}>
-            <Ionicons name="desktop-outline" size={22} color={colors.text} />
+          <TouchableOpacity style={styles.circleButton}>
+            <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
+              <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
+            </View>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.circleButton, { backgroundColor: colors.card }]}>
-            <Ionicons name="menu-outline" size={22} color={colors.text} />
+          <TouchableOpacity style={styles.circleButton}>
+            <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
+              <MaterialCommunityIcons name="menu" size={22} color={darkenColor(colors.sidebarIconData)} />
+            </View>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -515,12 +529,11 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   } as const,
   methodIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
   } as const,
   methodButton: {
     paddingHorizontal: 16,
@@ -542,16 +555,8 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   } as const,
   circleButton: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   } as const,
   mobileTabBar: {
     position: 'absolute',

@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 interface GroupedSectionItem {
     id: string;
-    icon?: keyof typeof Ionicons.glyphMap;
+    icon?: string;
     iconColor?: string;
     title: string;
     subtitle?: string;
