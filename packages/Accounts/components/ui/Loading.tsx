@@ -56,3 +56,4 @@ export const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({
     </Animated.View>
   );
 };
+
