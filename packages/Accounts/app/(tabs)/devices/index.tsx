@@ -179,10 +179,7 @@ export default function DevicesScreen() {
               <TouchableOpacity
                 style={[styles.removeButton, { backgroundColor: colors.card }]}
                 onPressIn={handlePressIn}
-                onPress={(e) => {
-                  e.stopPropagation();
-                  handleRemoveDevice(deviceId, deviceName, isCurrent);
-                }}
+                onPress={() => handleRemoveDevice(deviceId, deviceName, isCurrent)}
                 disabled={isLoading}
               >
                 {isLoading ? (
