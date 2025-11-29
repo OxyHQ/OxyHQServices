@@ -243,11 +243,22 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string 
     }, [user, avatarFileId, isUpdatingAvatar, optimisticAvatarId]);
 
     // Set initial editing field if provided via props (e.g., from navigation)
+    // Use a ref to track if we've already set the initial field to avoid loops
+    const hasSetInitialFieldRef = useRef(false);
+    const previousInitialFieldRef = useRef<string | undefined>(undefined);
     useEffect(() => {
-        if (initialField && !editingField) {
-            setEditingField(initialField);
+        // If initialField changed, reset the flag
+        if (previousInitialFieldRef.current !== initialField) {
+            hasSetInitialFieldRef.current = false;
+            previousInitialFieldRef.current = initialField;
         }
-    }, [initialField]); // Only depend on initialField, not editingField, to avoid loops
+        
+        // Set the editing field if initialField is provided and we haven't set it yet
+        if (initialField && !hasSetInitialFieldRef.current) {
+            setEditingField(initialField);
+            hasSetInitialFieldRef.current = true;
+        }
+    }, [initialField]);
 
     const handleSave = async () => {
         if (!user) return;

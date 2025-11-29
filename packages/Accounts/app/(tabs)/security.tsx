@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
@@ -24,6 +25,7 @@ interface SecurityInfo {
 export default function SecurityScreen() {
     const colorScheme = useColorScheme() ?? 'light';
     const { width } = useWindowDimensions();
+    const router = useRouter();
 
     const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
     const isDesktop = Platform.OS === 'web' && width >= 768;
@@ -184,7 +186,7 @@ export default function SecurityScreen() {
                 showBottomSheet({ screen: 'EditProfile', props: { initialField: 'twoFactor' } });
             } else if (showBottomSheet) {
                 // Fallback: just open EditProfile screen
-                showBottomSheet('EditProfile');
+                showBottomSheet({ screen: 'EditProfile' });
             }
         };
 
@@ -245,6 +247,7 @@ export default function SecurityScreen() {
             const deviceName = device?.name || device?.deviceName || 'Unknown Device';
             // Use device's lastActive if available (more accurate), otherwise session's lastActive
             const lastActive = device?.lastActive || device?.createdAt || session.lastActive;
+            const deviceId = session.deviceId;
 
             return {
                 id: `activity-${session.deviceId}`,
@@ -252,9 +255,15 @@ export default function SecurityScreen() {
                 iconColor: colors.sidebarIconDevices,
                 title: `New sign-in on ${deviceName}`,
                 subtitle: formatRelativeTime(lastActive),
+                onPress: () => {
+                    if (deviceId) {
+                        router.push(`/(tabs)/devices/${deviceId}` as any);
+                    }
+                },
+                showChevron: true,
             };
         });
-    }, [sessions, devices, colors, formatRelativeTime, getDeviceIcon]);
+    }, [sessions, devices, colors, formatRelativeTime, getDeviceIcon, router]);
 
     // Sign-in items with real data
     const signInItems = useMemo(() => {
@@ -402,11 +411,13 @@ export default function SecurityScreen() {
                 // Fixed: Show "devices" not "sessions" - these are actual devices, not session counts
                 title: `${group.count} device${group.count !== 1 ? 's' : ''} (${typeLabel})`,
                 subtitle,
+                onPress: () => router.push('/(tabs)/devices'),
+                showChevron: true,
             });
         });
 
         return items;
-    }, [devices, colors, getDeviceIcon]);
+    }, [devices, colors, getDeviceIcon, router]);
 
     // Feature cards
     const featureCards = useMemo(() => [
@@ -502,7 +513,11 @@ export default function SecurityScreen() {
                             <GroupedSection items={deviceItems} />
                         </AccountCard>
                         <View style={styles.deviceActions}>
-                            <LinkButton text="Manage all devices" count={devices.length.toString()} />
+                            <LinkButton
+                                text="Manage all devices"
+                                count={devices.length.toString()}
+                                onPress={() => router.push('/(tabs)/devices')}
+                            />
                         </View>
                     </>
                 ) : (

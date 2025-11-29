@@ -29,7 +29,7 @@ export function UnauthenticatedScreen({
   // Handle sign in
   const handleSignIn = useCallback(() => {
     if (showBottomSheet) {
-      showBottomSheet('SignIn');
+      showBottomSheet({ screen: 'SignIn' });
     }
   }, [showBottomSheet]);
 

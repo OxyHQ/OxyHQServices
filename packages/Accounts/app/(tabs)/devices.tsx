@@ -1,5 +1,6 @@
 import React, { useMemo, useCallback, useState, useEffect } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
@@ -26,6 +27,7 @@ interface Device {
 export default function DevicesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const { width } = useWindowDimensions();
+  const router = useRouter();
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
@@ -165,6 +167,8 @@ export default function DevicesScreen() {
         subtitle: isCurrent
           ? 'This device • Last active: ' + formatRelativeTime(lastActive)
           : 'Last active: ' + formatRelativeTime(lastActive),
+        onPress: () => router.push(`/(tabs)/devices/${deviceId}` as any),
+        showChevron: true,
         customContent: (
           <View style={styles.deviceActions}>
             {isCurrent ? (
@@ -175,7 +179,10 @@ export default function DevicesScreen() {
               <TouchableOpacity
                 style={[styles.removeButton, { backgroundColor: colors.card }]}
                 onPressIn={handlePressIn}
-                onPress={() => handleRemoveDevice(deviceId, deviceName, isCurrent)}
+                onPress={(e) => {
+                  e.stopPropagation();
+                  handleRemoveDevice(deviceId, deviceName, isCurrent);
+                }}
                 disabled={isLoading}
               >
                 {isLoading ? (
@@ -189,7 +196,7 @@ export default function DevicesScreen() {
         ),
       };
     });
-  }, [devices, colors, formatRelativeTime, getDeviceIcon, actionLoading, handleRemoveDevice, handlePressIn]);
+  }, [devices, colors, formatRelativeTime, getDeviceIcon, actionLoading, handleRemoveDevice, handlePressIn, router]);
 
   // Show loading state
   if (oxyLoading || loading) {
