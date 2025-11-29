@@ -8,7 +8,6 @@ import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, OxySignInButton } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
-import { DeviceManager } from '@oxyhq/services';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 
 interface Device {
@@ -36,20 +35,6 @@ export default function DevicesScreen() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
-  const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
-
-  // Get current device ID
-  useEffect(() => {
-    const getCurrentDeviceId = async () => {
-      try {
-        const deviceInfo = await DeviceManager.getDeviceInfo();
-        setCurrentDeviceId(deviceInfo.deviceId);
-      } catch (error) {
-        console.error('Error getting current device ID:', error);
-      }
-    };
-    getCurrentDeviceId();
-  }, []);
 
   // Fetch devices when authenticated
   useEffect(() => {
@@ -166,7 +151,8 @@ export default function DevicesScreen() {
       const deviceName = device.name || device.deviceName || 'Unknown Device';
       const deviceType = device.type || device.deviceType || '';
       const lastActive = device.lastActive || device.createdAt;
-      const isCurrent = Boolean(device.isCurrent || (currentDeviceId && deviceId === currentDeviceId));
+      // Use isCurrent from API response (already identified by backend)
+      const isCurrent = Boolean(device.isCurrent);
       const isLoading = actionLoading === deviceId;
 
       return {
@@ -201,7 +187,7 @@ export default function DevicesScreen() {
         ),
       };
     });
-  }, [devices, currentDeviceId, colors, formatRelativeTime, getDeviceIcon, actionLoading, handleRemoveDevice]);
+  }, [devices, colors, formatRelativeTime, getDeviceIcon, actionLoading, handleRemoveDevice, handlePressIn]);
 
   // Show loading state
   if (oxyLoading || loading) {

@@ -5,6 +5,8 @@ import { logoutAllDeviceSessions } from '../utils/deviceUtils';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
 import sessionService from '../services/session.service';
 import { AuthRequest } from '../middleware/auth';
+import Totp from '../models/Totp';
+import RecoveryFactors from '../models/RecoveryFactors';
 
 export class DevicesController {
   /**
@@ -150,6 +152,40 @@ export class DevicesController {
       });
     } catch (error) {
       logger.error('Remove device error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
+   * Get security information (TOTP status, backup codes count)
+   * GET /api/devices/security
+   */
+  static async getSecurityInfo(req: AuthRequest, res: Response) {
+    try {
+      const user = req.user;
+      if (!user || !user._id) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const userId = user._id;
+
+      // Get TOTP info
+      const totp = await Totp.findOne({ userId }).lean();
+      const totpEnabled = user.privacySettings?.twoFactorEnabled || false;
+      const totpCreatedAt = totp?.createdAt || null;
+
+      // Get backup codes count
+      const recoveryFactors = await RecoveryFactors.findOne({ userId }).lean();
+      const backupCodesCount = recoveryFactors?.backupCodes?.filter(code => !code.used).length || 0;
+
+      res.json({
+        twoFactorEnabled: totpEnabled,
+        totpCreatedAt: totpCreatedAt ? totpCreatedAt.toISOString() : null,
+        backupCodesCount,
+        recoveryEmail: user.email || null,
+      });
+    } catch (error) {
+      logger.error('Get security info error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }

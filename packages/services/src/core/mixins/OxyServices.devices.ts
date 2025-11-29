@@ -98,6 +98,25 @@ export function OxyServicesDevicesMixin<T extends typeof OxyServicesBase>(Base: 
         throw this.handleError(error);
       }
     }
+
+    /**
+     * Get security information (TOTP status, backup codes count)
+     * @returns Security information object
+     */
+    async getSecurityInfo(): Promise<{
+      twoFactorEnabled: boolean;
+      totpCreatedAt: string | null;
+      backupCodesCount: number;
+      recoveryEmail: string | null;
+    }> {
+      try {
+        return await this.makeRequest('GET', '/api/devices/security', undefined, {
+          cache: false,
+        });
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
   };
 }
 

@@ -10,6 +10,9 @@ router.use(authMiddleware);
 // Get all devices for the authenticated user
 router.get('/', DevicesController.getUserDevices);
 
+// Get security information
+router.get('/security', DevicesController.getSecurityInfo);
+
 // Remove a device (logout all sessions on that device)
 router.delete('/:deviceId', DevicesController.removeDevice);
 
