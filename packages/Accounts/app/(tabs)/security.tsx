@@ -49,6 +49,14 @@ export default function SecurityScreen() {
                     (oxyServices as any).getSecurityInfo(),
                     oxyServices.getUserDevices(),
                 ]);
+                
+                // Debug logging to verify data consistency
+                console.log('[Security Screen] Fetched devices:', {
+                    count: devicesData?.length || 0,
+                    deviceIds: devicesData?.map((d: any) => d.deviceId || d.id),
+                    devices: devicesData,
+                });
+                
                 setSecurityInfo(securityData);
                 setDevices(devicesData || []);
             } catch (err: any) {
@@ -253,21 +261,38 @@ export default function SecurityScreen() {
     }, [colors, skipPassword, securityInfo, user, formatDate]);
 
     // Device items grouped by type
+    // Note: This groups the same devices shown on the devices screen by their type
+    // Both screens use the same API endpoint (/api/devices) and show the same devices, just organized differently:
+    // - Devices screen: Shows individual devices (one per deviceId)
+    // - Security screen: Groups devices by type for a summary view
     const deviceItems = useMemo(() => {
         if (!devices || devices.length === 0) return [];
 
+        // Debug: Log device data for comparison with devices screen
+        console.log('[Security Screen] Processing devices for grouping:', {
+            totalDevices: devices.length,
+            deviceDetails: devices.map((d: any) => ({
+                id: d.id || d.deviceId,
+                name: d.name || d.deviceName,
+                type: d.type || d.deviceType,
+                isCurrent: d.isCurrent,
+            })),
+        });
+
         // Group devices by type
-        const deviceGroups = new Map<string, { count: number; names: string[] }>();
+        const deviceGroups = new Map<string, { count: number; names: string[]; deviceIds: string[] }>();
 
         devices.forEach((device: any) => {
             const type = device.type || device.deviceType || 'unknown';
             const name = device.name || device.deviceName || 'Unknown Device';
+            const deviceId = device.id || device.deviceId || '';
 
             if (!deviceGroups.has(type)) {
-                deviceGroups.set(type, { count: 0, names: [] });
+                deviceGroups.set(type, { count: 0, names: [], deviceIds: [] });
             }
             const group = deviceGroups.get(type)!;
             group.count++;
+            group.deviceIds.push(deviceId);
             if (group.names.length < 3) {
                 group.names.push(name);
             }
@@ -286,7 +311,8 @@ export default function SecurityScreen() {
                 id: `device-${type}`,
                 icon: icon as any,
                 iconColor: colors.sidebarIconDevices,
-                title: `${group.count} session${group.count !== 1 ? 's' : ''} on ${typeLabel} device${group.count !== 1 ? 's' : ''}`,
+                // Fixed: Show "devices" not "sessions" - these are actual devices, not session counts
+                title: `${group.count} device${group.count !== 1 ? 's' : ''} (${typeLabel})`,
                 subtitle,
             });
         });
@@ -398,7 +424,9 @@ export default function SecurityScreen() {
             </Section>
 
             <Section title="Your devices">
-                <ThemedText style={styles.sectionSubtitle}>Where you're signed in</ThemedText>
+                <ThemedText style={styles.sectionSubtitle}>
+                    Where you're signed in ({devices.length} device{devices.length !== 1 ? 's' : ''} total)
+                </ThemedText>
                 {deviceItems.length > 0 ? (
                     <>
                         <AccountCard>
