@@ -6,7 +6,8 @@ import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useOxy, OxySignInButton } from '@oxyhq/services';
+import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
+import { useOxy } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 
@@ -30,7 +31,7 @@ export default function DevicesScreen() {
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
   // OxyServices integration
-  const { oxyServices, isAuthenticated, isLoading: oxyLoading, showBottomSheet } = useOxy();
+  const { oxyServices, isAuthenticated, isLoading: oxyLoading } = useOxy();
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -66,13 +67,6 @@ export default function DevicesScreen() {
   }, [isAuthenticated, oxyServices]);
 
   const handlePressIn = useHapticPress();
-
-  // Handle sign in
-  const handleSignIn = useCallback(() => {
-    if (showBottomSheet) {
-      showBottomSheet('SignIn');
-    }
-  }, [showBottomSheet]);
 
   // Format relative time for last active
   const formatRelativeTime = useCallback((dateString?: string) => {
@@ -212,32 +206,12 @@ export default function DevicesScreen() {
   // Show message if not authenticated
   if (!isAuthenticated) {
     return (
-      <ScreenContentWrapper>
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
-          <View style={styles.mobileContent}>
-            <ScreenHeader title="Your devices" subtitle="Manage devices that have access to your account." />
-            <View style={styles.unauthenticatedPlaceholder}>
-              <ThemedText style={[styles.placeholderText, { color: colors.text }]}>
-                Please sign in to view your devices.
-              </ThemedText>
-              <View style={styles.signInButtonWrapper}>
-                <OxySignInButton />
-                {showBottomSheet && (
-                  <TouchableOpacity
-                    style={[styles.alternativeSignInButton, { backgroundColor: colors.card, borderColor: colors.tint }]}
-                    onPressIn={handlePressIn}
-                    onPress={handleSignIn}
-                  >
-                    <Text style={[styles.alternativeSignInText, { color: colors.tint }]}>
-                      Sign in with username
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          </View>
-        </View>
-      </ScreenContentWrapper>
+      <UnauthenticatedScreen
+        title="Your devices"
+        subtitle="Manage devices that have access to your account."
+        message="Please sign in to view your devices."
+        isAuthenticated={isAuthenticated}
+      />
     );
   }
 
@@ -457,31 +431,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 8,
-  },
-  unauthenticatedPlaceholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    gap: 24,
-  },
-  signInButtonWrapper: {
-    width: '100%',
-    maxWidth: 300,
-    gap: 12,
-    marginTop: 16,
-  },
-  alternativeSignInButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  alternativeSignInText: {
-    fontSize: 14,
-    fontWeight: '500',
   },
   errorContainer: {
     flex: 1,

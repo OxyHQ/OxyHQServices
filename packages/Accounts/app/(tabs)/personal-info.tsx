@@ -6,7 +6,8 @@ import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useOxy, OxySignInButton } from '@oxyhq/services';
+import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
+import { useOxy } from '@oxyhq/services';
 import { formatDate, getDisplayName } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 
@@ -15,14 +16,7 @@ export default function PersonalInfoScreen() {
   const { width } = useWindowDimensions();
 
   // OxyServices integration
-  const { user, isLoading: oxyLoading, isAuthenticated, showBottomSheet } = useOxy();
-
-  // Handle sign in
-  const handleSignIn = useCallback(() => {
-    if (showBottomSheet) {
-      showBottomSheet('SignIn');
-    }
-  }, [showBottomSheet]);
+  const { user, isLoading: oxyLoading, isAuthenticated } = useOxy();
 
   const handlePressIn = useHapticPress();
 
@@ -131,32 +125,12 @@ export default function PersonalInfoScreen() {
   // Show message if not authenticated
   if (!isAuthenticated) {
     return (
-      <ScreenContentWrapper>
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
-          <View style={styles.content}>
-            <ScreenHeader title="Personal info" subtitle="Manage your personal information and profile details." />
-            <View style={styles.unauthenticatedPlaceholder}>
-              <ThemedText style={[styles.placeholderText, { color: colors.text }]}>
-                Please sign in to view your personal information.
-              </ThemedText>
-              <View style={styles.signInButtonWrapper}>
-                <OxySignInButton />
-                {showBottomSheet && (
-                  <TouchableOpacity
-                    style={[styles.alternativeSignInButton, { backgroundColor: colors.card, borderColor: colors.tint }]}
-                    onPressIn={handlePressIn}
-                    onPress={handleSignIn}
-                  >
-                    <Text style={[styles.alternativeSignInText, { color: colors.tint }]}>
-                      Sign in with username
-                    </Text>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          </View>
-        </View>
-      </ScreenContentWrapper>
+      <UnauthenticatedScreen
+        title="Personal info"
+        subtitle="Manage your personal information and profile details."
+        message="Please sign in to view your personal information."
+        isAuthenticated={isAuthenticated}
+      />
     );
   }
 
@@ -248,31 +222,6 @@ const styles = StyleSheet.create({
   placeholderText: {
     fontSize: 16,
     textAlign: 'center',
-  },
-  unauthenticatedPlaceholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 60,
-    gap: 24,
-  },
-  signInButtonWrapper: {
-    width: '100%',
-    maxWidth: 300,
-    gap: 12,
-    marginTop: 16,
-  },
-  alternativeSignInButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  alternativeSignInText: {
-    fontSize: 14,
-    fontWeight: '500',
   },
 });
 

@@ -9,7 +9,8 @@ import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { LinkButton, AccountCard, AppleSwitch, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useOxy, OxySignInButton } from '@oxyhq/services';
+import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
+import { useOxy } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
 import type { ClientSession } from '@oxyhq/services';
 
@@ -61,12 +62,23 @@ export default function SecurityScreen() {
                 }
             })();
 
+            // Wrap getUserDevices in try-catch to handle synchronous exceptions
+            const getUserDevicesPromise = (() => {
+                try {
+                    return oxyServices.getUserDevices();
+                } catch (err) {
+                    console.error('[Security Screen] Error calling getUserDevices:', err);
+                    setError(err instanceof Error ? err.message : 'Failed to load devices');
+                    return Promise.resolve([]);
+                }
+            })();
+
             const results = await Promise.allSettled([
                 getSecurityInfoPromise.catch((err: any) => {
                     console.error('[Security Screen] Failed to fetch security info:', err);
                     return null; // Return null on error so we can still show devices
                 }),
-                oxyServices.getUserDevices().catch((err: any) => {
+                getUserDevicesPromise.catch((err: any) => {
                     console.error('[Security Screen] Failed to fetch devices:', err);
                     setError(err?.message || 'Failed to load devices');
                     return []; // Return empty array on error
@@ -113,12 +125,6 @@ export default function SecurityScreen() {
         fetchSecurityData();
     }, [isAuthenticated, oxyServices, user?.email]);
 
-    // Handle sign in
-    const handleSignIn = useCallback(() => {
-        if (showBottomSheet) {
-            showBottomSheet('SignIn');
-        }
-    }, [showBottomSheet]);
 
     // Format relative time for dates
     const formatRelativeTime = useCallback((dateString?: string) => {
@@ -156,18 +162,31 @@ export default function SecurityScreen() {
     // Compute security recommendations
     const securityRecommendation = useMemo(() => {
         const recommendations: string[] = [];
+        let primaryAction: string | null = null;
 
         if (!securityInfo?.twoFactorEnabled) {
             recommendations.push('Enable 2-Step Verification');
+            primaryAction = 'twoFactor';
         }
         if (securityInfo && securityInfo.backupCodesCount === 0 && securityInfo.twoFactorEnabled) {
             recommendations.push('Generate backup codes');
+            // If 2FA is already enabled, backup codes would also be in the same screen
+            if (!primaryAction) primaryAction = 'twoFactor';
         }
         if (!user?.email) {
             recommendations.push('Add a recovery email');
         }
 
         if (recommendations.length === 0) return [];
+
+        const handleRecommendationPress = () => {
+            if (primaryAction === 'twoFactor' && showBottomSheet) {
+                showBottomSheet({ screen: 'EditProfile', props: { initialField: 'twoFactor' } });
+            } else if (showBottomSheet) {
+                // Fallback: just open EditProfile screen
+                showBottomSheet('EditProfile');
+            }
+        };
 
         return [{
             id: 'recommendation',
@@ -178,8 +197,10 @@ export default function SecurityScreen() {
             ),
             title: 'You have security recommendations',
             subtitle: recommendations.join(', '),
+            onPress: handleRecommendationPress,
+            showChevron: true,
         }];
-    }, [securityInfo, user]);
+    }, [securityInfo, user, showBottomSheet]);
 
     // Recent activity from sessions - grouped by device to show unique sign-ins
     const recentActivity = useMemo(() => {
@@ -432,31 +453,12 @@ export default function SecurityScreen() {
     // Show message if not authenticated
     if (!isAuthenticated) {
         return (
-            <ScreenContentWrapper>
-                <View style={[styles.container, { backgroundColor: colors.background }]}>
-                    <View style={styles.mobileContent}>
-                        <ScreenHeader title="Security & sign-in" subtitle="Manage your security settings and sign-in methods." />
-                        <View style={styles.unauthenticatedPlaceholder}>
-                            <ThemedText style={[styles.placeholderText, { color: colors.text }]}>
-                                Please sign in to view your security settings.
-                            </ThemedText>
-                            <View style={styles.signInButtonWrapper}>
-                                <OxySignInButton />
-                                {showBottomSheet && (
-                                    <TouchableOpacity
-                                        style={[styles.alternativeSignInButton, { backgroundColor: colors.card, borderColor: colors.tint }]}
-                                        onPress={handleSignIn}
-                                    >
-                                        <Text style={[styles.alternativeSignInText, { color: colors.tint }]}>
-                                            Sign in with username
-                                        </Text>
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                        </View>
-                    </View>
-                </View>
-            </ScreenContentWrapper>
+            <UnauthenticatedScreen
+                title="Security & sign-in"
+                subtitle="Manage your security settings and sign-in methods."
+                message="Please sign in to view your security settings."
+                isAuthenticated={isAuthenticated}
+            />
         );
     }
 
@@ -602,34 +604,9 @@ const styles = StyleSheet.create({
         fontSize: 16,
         opacity: 0.7,
     },
-    unauthenticatedPlaceholder: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 60,
-        gap: 24,
-    },
     placeholderText: {
         fontSize: 16,
         textAlign: 'center',
-    },
-    signInButtonWrapper: {
-        width: '100%',
-        maxWidth: 300,
-        gap: 12,
-        marginTop: 16,
-    },
-    alternativeSignInButton: {
-        paddingVertical: 12,
-        paddingHorizontal: 24,
-        borderRadius: 8,
-        borderWidth: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    alternativeSignInText: {
-        fontSize: 14,
-        fontWeight: '500',
     },
     emptyText: {
         fontSize: 14,

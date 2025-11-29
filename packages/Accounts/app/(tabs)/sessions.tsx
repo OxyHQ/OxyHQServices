@@ -5,7 +5,8 @@ import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { ScreenHeader } from '@/components/ui';
-import { useOxy, OxySignInButton } from '@oxyhq/services';
+import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
+import { useOxy } from '@oxyhq/services';
 import { AccountCard } from '@/components/ui';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
@@ -18,15 +19,8 @@ export default function SessionsScreen() {
     const colors = Colors[colorScheme];
     
     // OxyServices integration
-    const { sessions, activeSessionId, removeSession, switchSession, isLoading: oxyLoading, isAuthenticated, refreshSessions, showBottomSheet } = useOxy();
+    const { sessions, activeSessionId, removeSession, switchSession, isLoading: oxyLoading, isAuthenticated, refreshSessions } = useOxy();
     const [actionLoading, setActionLoading] = useState<string | null>(null);
-
-    // Handle sign in
-    const handleSignIn = useCallback(() => {
-        if (showBottomSheet) {
-            showBottomSheet('SignIn');
-        }
-    }, [showBottomSheet]);
 
     const handlePressIn = useHapticPress();
 
@@ -176,32 +170,12 @@ export default function SessionsScreen() {
     // Show message if not authenticated
     if (!isAuthenticated) {
         return (
-            <ScreenContentWrapper>
-                <View style={[styles.container, { backgroundColor: colors.background }]}>
-                    <View style={styles.content}>
-                        <ScreenHeader title="Sessions" subtitle="Manage your active sessions." />
-                        <View style={styles.unauthenticatedPlaceholder}>
-                            <ThemedText style={[styles.placeholderText, { color: colors.text }]}>
-                                Please sign in to view your sessions.
-                            </ThemedText>
-                            <View style={styles.signInButtonWrapper}>
-                                <OxySignInButton />
-                                {showBottomSheet && (
-                                    <TouchableOpacity
-                                        style={[styles.alternativeSignInButton, { backgroundColor: colors.card, borderColor: colors.tint }]}
-                                        onPressIn={handlePressIn}
-                                        onPress={handleSignIn}
-                                    >
-                                        <Text style={[styles.alternativeSignInText, { color: colors.tint }]}>
-                                            Sign in with username
-                                        </Text>
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                        </View>
-                    </View>
-                </View>
-            </ScreenContentWrapper>
+            <UnauthenticatedScreen
+                title="Sessions"
+                subtitle="Manage your active sessions."
+                message="Please sign in to view your sessions."
+                isAuthenticated={isAuthenticated}
+            />
         );
     }
 
@@ -292,30 +266,5 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.1)',
-    },
-    unauthenticatedPlaceholder: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 60,
-        gap: 24,
-    },
-    signInButtonWrapper: {
-        width: '100%',
-        maxWidth: 300,
-        gap: 12,
-        marginTop: 16,
-    },
-    alternativeSignInButton: {
-        paddingVertical: 12,
-        paddingHorizontal: 24,
-        borderRadius: 8,
-        borderWidth: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    alternativeSignInText: {
-        fontSize: 14,
-        fontWeight: '500',
     },
 });

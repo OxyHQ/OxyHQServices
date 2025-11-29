@@ -33,11 +33,12 @@ const locationSearchCache = new TTLCache<any[]>(60 * 60 * 1000); // 1 hour cache
 registerCacheForCleanup(linkMetadataCache);
 registerCacheForCleanup(locationSearchCache);
 
-const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
+const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string }> = ({
     onClose,
     theme,
     goBack,
     navigate,
+    initialField,
 }) => {
     const { user: userFromContext, oxyServices, isLoading: authLoading, isAuthenticated, showBottomSheet, activeSessionId } = useOxy();
     const { t } = useI18n();
@@ -240,6 +241,13 @@ const AccountSettingsScreen: React.FC<BaseScreenProps> = ({
             previousAvatarRef.current = currentAvatar;
         }
     }, [user, avatarFileId, isUpdatingAvatar, optimisticAvatarId]);
+
+    // Set initial editing field if provided via props (e.g., from navigation)
+    useEffect(() => {
+        if (initialField && !editingField) {
+            setEditingField(initialField);
+        }
+    }, [initialField]); // Only depend on initialField, not editingField, to avoid loops
 
     const handleSave = async () => {
         if (!user) return;
