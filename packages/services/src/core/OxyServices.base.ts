@@ -6,8 +6,7 @@
 import { jwtDecode } from 'jwt-decode';
 import type { OxyConfig as OxyConfigBase, ApiError, User } from '../models/interfaces';
 import { handleHttpError } from '../utils/errorUtils';
-import { HttpClient } from './HttpClient';
-import { RequestManager, type RequestOptions } from './RequestManager';
+import { HttpService, type RequestOptions } from './HttpService';
 import { OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices.errors';
 
 export interface OxyConfig extends OxyConfigBase {
@@ -26,8 +25,7 @@ interface JwtPayload {
  * Base class for OxyServices with core infrastructure
  */
 export class OxyServicesBase {
-  public httpClient: HttpClient;
-  public requestManager: RequestManager;
+  public httpService: HttpService;
   public cloudURL: string;
   public config: OxyConfig;
 
@@ -39,16 +37,13 @@ export class OxyServicesBase {
     this.config = config;
     this.cloudURL = config.cloudURL || 'https://cloud.oxy.so';
 
-    // Initialize HTTP client (handles authentication and interceptors)
-    this.httpClient = new HttpClient(config);
-
-    // Initialize request manager (handles caching, deduplication, queuing, retry)
-    this.requestManager = new RequestManager(this.httpClient, config);
+    // Initialize unified HTTP service (handles auth, caching, deduplication, queuing, retry)
+    this.httpService = new HttpService(config);
   }
 
   // Test-only utility to reset global tokens between jest tests
   static __resetTokensForTests(): void {
-    HttpClient.__resetTokensForTests();
+    HttpService.__resetTokensForTests();
   }
 
   /**
@@ -61,7 +56,13 @@ export class OxyServicesBase {
     data?: any,
     options: RequestOptions = {}
   ): Promise<T> {
-    return this.requestManager.request<T>(method, url, data, options);
+    return this.httpService.request<T>({
+      method,
+      url,
+      data: method !== 'GET' ? data : undefined,
+      params: method === 'GET' ? data : undefined,
+      ...options,
+    });
   }
 
   // ============================================================================
@@ -72,43 +73,43 @@ export class OxyServicesBase {
    * Get the configured Oxy API base URL
    */
   public getBaseURL(): string {
-    return this.httpClient.getBaseURL();
+    return this.httpService.getBaseURL();
   }
 
   /**
-   * Get the HTTP client instance
-   * Useful for advanced use cases where direct access to the HTTP client is needed
+   * Get the HTTP service instance
+   * Useful for advanced use cases where direct access to the HTTP service is needed
    */
-  public getClient(): HttpClient {
-    return this.httpClient;
+  public getClient(): HttpService {
+    return this.httpService;
   }
 
   /**
    * Get performance metrics
    */
   public getMetrics() {
-    return this.requestManager.getMetrics();
+    return this.httpService.getMetrics();
   }
 
   /**
    * Clear request cache
    */
   public clearCache(): void {
-    this.requestManager.clearCache();
+    this.httpService.clearCache();
   }
 
   /**
    * Clear specific cache entry
    */
   public clearCacheEntry(key: string): void {
-    this.requestManager.clearCacheEntry(key);
+    this.httpService.clearCacheEntry(key);
   }
 
   /**
    * Get cache statistics
    */
   public getCacheStats() {
-    return this.requestManager.getCacheStats();
+    return this.httpService.getCacheStats();
   }
 
   /**
@@ -122,21 +123,21 @@ export class OxyServicesBase {
    * Set authentication tokens
    */
   public setTokens(accessToken: string, refreshToken = ''): void {
-    this.httpClient.setTokens(accessToken, refreshToken);
+    this.httpService.setTokens(accessToken, refreshToken);
   }
 
   /**
    * Clear stored authentication tokens
    */
   public clearTokens(): void {
-    this.httpClient.clearTokens();
+    this.httpService.clearTokens();
   }
 
   /**
    * Get the current user ID from the access token
    */
   public getCurrentUserId(): string | null {
-    const accessToken = this.httpClient.getAccessToken();
+    const accessToken = this.httpService.getAccessToken();
     if (!accessToken) {
       return null;
     }
@@ -153,14 +154,14 @@ export class OxyServicesBase {
    * Check if the client has a valid access token (public method)
    */
   public hasValidToken(): boolean {
-    return this.httpClient.hasAccessToken();
+    return this.httpService.hasAccessToken();
   }
 
   /**
    * Get the raw access token (for constructing anchor URLs when needed)
    */
   public getAccessToken(): string | null {
-    return this.httpClient.getAccessToken();
+    return this.httpService.getAccessToken();
   }
 
   /**
@@ -183,7 +184,7 @@ export class OxyServicesBase {
    */
   public async waitForAuth(timeoutMs = 5000): Promise<boolean> {
     // Immediate synchronous check - no delay if token is ready
-    if (this.httpClient.hasAccessToken()) {
+    if (this.httpService.hasAccessToken()) {
       return true;
     }
 
@@ -196,7 +197,7 @@ export class OxyServicesBase {
     while (performance.now() < maxTime) {
       await new Promise(resolve => setTimeout(resolve, pollInterval));
       
-      if (this.httpClient.hasAccessToken()) {
+      if (this.httpService.hasAccessToken()) {
         return true;
       }
       
@@ -232,7 +233,7 @@ export class OxyServicesBase {
     for (let attempt = 0; attempt <= maxRetries; attempt++) {
       try {
         // First attempt: check if we have a token
-        if (!this.httpClient.hasAccessToken()) {
+        if (!this.httpService.hasAccessToken()) {
           if (attempt === 0) {
             // On first attempt, wait briefly for authentication to complete
             const authReady = await this.waitForAuth(authTimeoutMs);
@@ -252,11 +253,12 @@ export class OxyServicesBase {
         // Execute the operation
         return await operation();
 
-      } catch (error: any) {
+      } catch (error: unknown) {
         const isLastAttempt = attempt === maxRetries;
-        const isAuthError = error?.response?.status === 401 || 
-                           error?.code === 'MISSING_TOKEN' ||
-                           error?.message?.includes('Authentication') ||
+        const errorObj = error && typeof error === 'object' ? error as { response?: { status?: number }; code?: string; message?: string } : null;
+        const isAuthError = errorObj?.response?.status === 401 || 
+                           errorObj?.code === 'MISSING_TOKEN' ||
+                           errorObj?.message?.includes('Authentication') ||
                            error instanceof OxyAuthenticationError;
 
         if (isAuthError && !isLastAttempt && !(error instanceof OxyAuthenticationTimeoutError)) {
@@ -298,12 +300,12 @@ export class OxyServicesBase {
   /**
    * Centralized error handling
    */
-  public handleError(error: any): Error {
+  public handleError(error: unknown): Error {
     const api = handleHttpError(error);
     const err = new Error(api.message) as Error & { code?: string; status?: number; details?: Record<string, unknown> };
     err.code = api.code;
     err.status = api.status;
-    err.details = api.details as any;
+    err.details = api.details;
     return err;
   }
 

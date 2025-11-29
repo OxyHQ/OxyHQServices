@@ -189,14 +189,15 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
      */
     async downloadAccountData(format: 'json' | 'csv' = 'json'): Promise<Blob> {
       try {
-        // Use axios instance directly for blob responses since RequestManager doesn't handle blobs
-        const axiosInstance = this.getClient().getAxiosInstance();
-        
-        const response = await axiosInstance.get(`/api/users/me/data?format=${format}`, {
-          responseType: 'blob',
+        // Use httpService for blob responses (it handles blob responses automatically)
+        const result = await this.getClient().request<Blob>({
+          method: 'GET',
+          url: `/api/users/me/data`,
+          params: { format },
+          cache: false,
         });
         
-        return response.data as Blob;
+        return result;
       } catch (error) {
         throw this.handleError(error);
       }

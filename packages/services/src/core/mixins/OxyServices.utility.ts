@@ -177,6 +177,7 @@ export function OxyServicesUtilityMixin<T extends typeof OxyServicesBase>(Base: 
           const apiError = this.handleError(error) as any;
           
           if (debug) {
+            // Debug logging - using console.log is acceptable here for development
             console.log(`❌ Auth: Unexpected error:`, apiError);
           }
           

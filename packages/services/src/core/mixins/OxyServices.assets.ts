@@ -235,11 +235,12 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
           // Fallback: direct upload via API to avoid CORS issues
           const fd = new FormData();
           fd.append('file', file);
-          // Use httpClient directly for FormData uploads (bypasses RequestManager for special handling)
+          // Use httpService directly for FormData uploads (bypasses caching for special handling)
           await this.getClient().request({
             method: 'POST',
             url: `/api/assets/${encodeURIComponent(initResponse.fileId)}/upload-direct`,
             data: fd,
+            cache: false,
           });
         }
 

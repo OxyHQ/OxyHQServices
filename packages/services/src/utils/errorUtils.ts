@@ -1,4 +1,5 @@
 import type { ApiError } from '../models/interfaces';
+import { logger } from './loggerUtils';
 
 /**
  * Error handling utilities for consistent error processing
@@ -61,32 +62,72 @@ export function handleHttpError(error: unknown): ApiError {
     return error as ApiError;
   }
 
-  // Handle axios errors - check if it looks like an axios error
-  if (error && typeof error === 'object' && 'response' in error) {
-    const axiosError = error as { response?: { status: number; data?: { message?: string; code?: string } } };
-    if (axiosError.response) {
-      const { status, data } = axiosError.response;
-      
-      return createApiError(
-        data?.message || `HTTP ${status} error`,
-        data?.code || getErrorCodeFromStatus(status),
-        status,
-        data
-      );
-    }
+  // Handle AbortError (timeout or cancelled requests)
+  if (error instanceof Error && error.name === 'AbortError') {
+    return createApiError(
+      'Request timeout or cancelled',
+      ErrorCodes.TIMEOUT,
+      0
+    );
   }
 
-  // Handle network errors - check if it looks like a network error
-  if (error && typeof error === 'object' && 'request' in error) {
+  // Handle TypeError (network failures, CORS, etc.)
+  if (error instanceof TypeError) {
+    // Check if it's a network-related TypeError
+    if (error.message.includes('fetch') || error.message.includes('network') || error.message.includes('Failed to fetch')) {
+      return createApiError(
+        'Network error - failed to connect to server',
+        ErrorCodes.NETWORK_ERROR,
+        0
+      );
+    }
     return createApiError(
-      'Network error - no response received',
+      error.message || 'Network error occurred',
       ErrorCodes.NETWORK_ERROR,
       0
     );
   }
 
+  // Handle fetch Response errors - check if it has response property with status
+  if (error && typeof error === 'object' && 'response' in error) {
+    const fetchError = error as { 
+      response?: { 
+        status: number; 
+        statusText?: string;
+      };
+      status?: number;
+      message?: string;
+    };
+    
+    const status = fetchError.response?.status || fetchError.status;
+    if (status) {
+      return createApiError(
+        fetchError.message || `HTTP ${status} error`,
+        getErrorCodeFromStatus(status),
+        status
+      );
+    }
+  }
+
   // Handle standard errors
   if (error instanceof Error) {
+    // Check for common error patterns
+    if (error.message.includes('timeout') || error.message.includes('aborted')) {
+      return createApiError(
+        'Request timeout',
+        ErrorCodes.TIMEOUT,
+        0
+      );
+    }
+    
+    if (error.message.includes('network') || error.message.includes('fetch')) {
+      return createApiError(
+        error.message || 'Network error occurred',
+        ErrorCodes.NETWORK_ERROR,
+        0
+      );
+    }
+
     return createApiError(
       error.message || 'Unknown error occurred',
       ErrorCodes.INTERNAL_ERROR,
@@ -148,12 +189,17 @@ export function validateRequiredFields(data: Record<string, unknown>, fields: st
  * Safe error logging with context
  */
 export function logError(error: unknown, context?: string): void {
-  const prefix = context ? `[${context}]` : '[Error]';
-  
   if (error instanceof Error) {
-    console.error(`${prefix} ${error.message}`, error.stack);
+    logger.error(error.message, {
+      component: context || 'errorUtils',
+      method: 'logError',
+      stack: error.stack,
+    });
   } else {
-    console.error(`${prefix}`, error);
+    logger.error(String(error), {
+      component: context || 'errorUtils',
+      method: 'logError',
+    });
   }
 }
 

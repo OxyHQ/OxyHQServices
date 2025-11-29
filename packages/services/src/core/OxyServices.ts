@@ -68,8 +68,7 @@ import { composeOxyServices } from './mixins';
  * This class provides all API functionality in one simple, easy-to-use interface.
  * 
  * ## Architecture
- * - **HttpClient**: Handles HTTP communication and authentication
- * - **RequestManager**: Handles caching, deduplication, queuing, and retry
+ * - **HttpService**: Unified HTTP service handling authentication, caching, deduplication, queuing, and retry
  * - **OxyServices**: Provides high-level API methods
  * 
  * ## Mixin Composition
