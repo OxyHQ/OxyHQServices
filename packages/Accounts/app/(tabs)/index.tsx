@@ -38,7 +38,7 @@ export default function HomeScreen() {
   const accountCreatedDate = useMemo(() => formatDate(user?.createdAt), [user?.createdAt]);
   const avatarUrl = useMemo(() => {
     if (user?.avatar && oxyServices) {
-      return oxyServices.getFileStreamUrl(user.avatar);
+      return oxyServices.getFileDownloadUrl(user.avatar, 'thumb');
     }
     return undefined;
   }, [user?.avatar, oxyServices]);

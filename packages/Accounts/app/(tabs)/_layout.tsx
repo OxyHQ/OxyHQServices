@@ -35,7 +35,7 @@ export default function TabLayout() {
   const displayName = useMemo(() => getDisplayName(user), [user]);
   const avatarUrl = useMemo(() => {
     if (user?.avatar && oxyServices) {
-      return oxyServices.getFileStreamUrl(user.avatar);
+      return oxyServices.getFileDownloadUrl(user.avatar, 'thumb');
     }
     return undefined;
   }, [user?.avatar, oxyServices]);
