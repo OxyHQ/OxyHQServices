@@ -45,14 +45,14 @@ export default function DevicesScreen() {
       setError(null);
       try {
         const devicesData = await oxyServices.getUserDevices();
-        
+
         // Debug logging to verify data consistency
         console.log('[Devices Screen] Fetched devices:', {
           count: devicesData?.length || 0,
           deviceIds: devicesData?.map((d: any) => d.deviceId || d.id),
           devices: devicesData,
         });
-        
+
         setDevices(devicesData || []);
       } catch (err: any) {
         console.error('Failed to fetch devices:', err);
