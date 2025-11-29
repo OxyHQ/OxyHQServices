@@ -11,6 +11,7 @@ import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { formatDate } from '@/utils/date-utils';
 import type { ClientSession } from '@oxyhq/services';
+import * as Haptics from 'expo-haptics';
 
 export default function SessionsScreen() {
     const colorScheme = useColorScheme() ?? 'light';
@@ -26,6 +27,10 @@ export default function SessionsScreen() {
             showBottomSheet('SignIn');
         }
     }, [showBottomSheet]);
+
+    const handlePressIn = useCallback(() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }, []);
 
     // Format relative time for last active
     const formatRelativeTime = useCallback((dateString?: string) => {
@@ -132,6 +137,7 @@ export default function SessionsScreen() {
                             <>
                                 <TouchableOpacity
                                     style={[styles.actionButton, { backgroundColor: colors.card }]}
+                                    onPressIn={handlePressIn}
                                     onPress={() => handleSwitchSession(session.sessionId)}
                                     disabled={isLoading}
                                 >
@@ -143,6 +149,7 @@ export default function SessionsScreen() {
                                 </TouchableOpacity>
                                 <TouchableOpacity
                                     style={[styles.actionButton, { backgroundColor: colors.card }]}
+                                    onPressIn={handlePressIn}
                                     onPress={() => handleRemoveSession(session.sessionId, isActive)}
                                     disabled={isLoading}
                                 >
@@ -184,6 +191,7 @@ export default function SessionsScreen() {
                                 {showBottomSheet && (
                                     <TouchableOpacity
                                         style={[styles.alternativeSignInButton, { backgroundColor: colors.card, borderColor: colors.tint }]}
+                                        onPressIn={handlePressIn}
                                         onPress={handleSignIn}
                                     >
                                         <Text style={[styles.alternativeSignInText, { color: colors.tint }]}>

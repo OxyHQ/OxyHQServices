@@ -8,6 +8,7 @@ import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, OxySignInButton } from '@oxyhq/services';
 import { formatDate, getDisplayName } from '@/utils/date-utils';
+import * as Haptics from 'expo-haptics';
 
 export default function PersonalInfoScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -22,6 +23,10 @@ export default function PersonalInfoScreen() {
       showBottomSheet('SignIn');
     }
   }, [showBottomSheet]);
+
+  const handlePressIn = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
@@ -45,7 +50,7 @@ export default function PersonalInfoScreen() {
         title: 'Full name',
         subtitle: displayName || 'Not set',
         customContent: (
-          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
             <Text style={[styles.buttonText, { color: colors.text }]}>Edit</Text>
           </TouchableOpacity>
         ),
@@ -57,7 +62,7 @@ export default function PersonalInfoScreen() {
         title: 'Email',
         subtitle: userEmail,
         customContent: (
-          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
             <Text style={[styles.buttonText, { color: colors.text }]}>Update</Text>
           </TouchableOpacity>
         ),
@@ -73,7 +78,7 @@ export default function PersonalInfoScreen() {
         title: 'Phone number',
         subtitle: userPhone,
         customContent: (
-          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
             <Text style={[styles.buttonText, { color: colors.text }]}>Edit</Text>
           </TouchableOpacity>
         ),
@@ -88,7 +93,7 @@ export default function PersonalInfoScreen() {
         title: 'Address',
         subtitle: userAddress,
         customContent: (
-          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
             <Text style={[styles.buttonText, { color: colors.text }]}>Edit</Text>
           </TouchableOpacity>
         ),
@@ -103,7 +108,7 @@ export default function PersonalInfoScreen() {
         title: 'Birthday',
         subtitle: userBirthday,
         customContent: (
-          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
             <Text style={[styles.buttonText, { color: colors.text }]}>Edit</Text>
           </TouchableOpacity>
         ),
@@ -111,7 +116,7 @@ export default function PersonalInfoScreen() {
     }
 
     return items;
-  }, [colors, displayName, userEmail, userPhone, userAddress, userBirthday]);
+  }, [colors, displayName, userEmail, userPhone, userAddress, userBirthday, handlePressIn]);
 
   // Show loading state while OxyServices is initializing
   if (oxyLoading) {
@@ -141,6 +146,7 @@ export default function PersonalInfoScreen() {
                 {showBottomSheet && (
                   <TouchableOpacity
                     style={[styles.alternativeSignInButton, { backgroundColor: colors.card, borderColor: colors.tint }]}
+                    onPressIn={handlePressIn}
                     onPress={handleSignIn}
                   >
                     <Text style={[styles.alternativeSignInText, { color: colors.tint }]}>

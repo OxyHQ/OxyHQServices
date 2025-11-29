@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, TextInput } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -8,6 +8,7 @@ import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import * as Haptics from 'expo-haptics';
 
 export default function PasswordManagerScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -15,6 +16,10 @@ export default function PasswordManagerScreen() {
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
+
+  const handlePressIn = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
 
   const passwords = useMemo(() => [
     {
@@ -24,7 +29,7 @@ export default function PasswordManagerScreen() {
       title: 'Google',
       subtitle: 'google.com',
       customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
           <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
         </TouchableOpacity>
       ),
@@ -36,7 +41,7 @@ export default function PasswordManagerScreen() {
       title: 'GitHub',
       subtitle: 'github.com',
       customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
           <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
         </TouchableOpacity>
       ),
@@ -48,12 +53,12 @@ export default function PasswordManagerScreen() {
       title: 'Facebook',
       subtitle: 'facebook.com',
       customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
           <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
         </TouchableOpacity>
       ),
     },
-  ], [colors]);
+  ], [colors, handlePressIn]);
 
 
   if (isDesktop) {
@@ -71,7 +76,7 @@ export default function PasswordManagerScreen() {
         <AccountCard>
           <GroupedSection items={passwords} />
         </AccountCard>
-        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]} onPressIn={handlePressIn}>
           <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
           <Text style={styles.addButtonText}>Add new password</Text>
         </TouchableOpacity>
@@ -95,7 +100,7 @@ export default function PasswordManagerScreen() {
         <AccountCard>
           <GroupedSection items={passwords} />
         </AccountCard>
-        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]} onPressIn={handlePressIn}>
           <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
           <Text style={styles.addButtonText}>Add new password</Text>
         </TouchableOpacity>

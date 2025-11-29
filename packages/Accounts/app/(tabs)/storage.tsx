@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
 import { useRouter, usePathname } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -8,6 +8,7 @@ import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import * as Haptics from 'expo-haptics';
 
 export default function StorageScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -15,6 +16,10 @@ export default function StorageScreen() {
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
+
+  const handlePressIn = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
 
   const storageItems = useMemo(() => [
     {
@@ -38,7 +43,7 @@ export default function StorageScreen() {
       title: 'Files',
       subtitle: '8.2 GB',
       customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
           <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
         </TouchableOpacity>
       ),
@@ -50,7 +55,7 @@ export default function StorageScreen() {
       title: 'Photos',
       subtitle: '3.1 GB',
       customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
           <Text style={[styles.buttonText, { color: colors.text }]}>View</Text>
         </TouchableOpacity>
       ),
@@ -62,12 +67,12 @@ export default function StorageScreen() {
       title: 'Backups',
       subtitle: '1.2 GB',
       customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
         </TouchableOpacity>
       ),
     },
-  ], [colors]);
+  ], [colors, handlePressIn]);
 
   if (isDesktop) {
     return (

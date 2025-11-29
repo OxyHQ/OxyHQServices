@@ -16,6 +16,7 @@ import { AccountCard } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, OxySignInButton } from '@oxyhq/services';
 import { formatDate, getDisplayName, getShortDisplayName } from '@/utils/date-utils';
+import * as Haptics from 'expo-haptics';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -43,6 +44,10 @@ export default function HomeScreen() {
     return undefined;
   }, [user?.avatar, oxyServices]);
 
+  const handlePressIn = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
   const accountItems = useMemo(() => [
     {
       id: 'name',
@@ -51,7 +56,7 @@ export default function HomeScreen() {
       title: 'Full name',
       subtitle: displayName,
       customContent: (
-        <TouchableOpacity style={styles.button}>
+        <TouchableOpacity style={styles.button} onPressIn={handlePressIn}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Edit name</Text>
         </TouchableOpacity>
       ),
@@ -63,7 +68,7 @@ export default function HomeScreen() {
       title: 'Email',
       subtitle: userEmail,
       customContent: (
-        <TouchableOpacity style={styles.button}>
+        <TouchableOpacity style={styles.button} onPressIn={handlePressIn}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Update email</Text>
         </TouchableOpacity>
       ),
@@ -75,7 +80,7 @@ export default function HomeScreen() {
       title: 'Subscription',
       subtitle: 'Manage your Oxy subscription',
       customContent: (
-        <TouchableOpacity style={styles.button}>
+        <TouchableOpacity style={styles.button} onPressIn={handlePressIn}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
           <Ionicons name="open-outline" size={16} color={colors.text} style={{ marginLeft: 4 }} />
         </TouchableOpacity>
@@ -101,7 +106,7 @@ export default function HomeScreen() {
       title: 'Email and password',
       subtitle: 'Enable login with email',
       customContent: (
-        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]}>
+        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
           <Text style={[styles.methodButtonText, { color: colors.text }]}>Enable</Text>
         </TouchableOpacity>
       ),
@@ -116,7 +121,7 @@ export default function HomeScreen() {
       title: 'X',
       subtitle: 'NateIsern',
       customContent: (
-        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]}>
+        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
           <Text style={[styles.methodButtonText, { color: colors.text }]}>Disable</Text>
         </TouchableOpacity>
       ),
@@ -131,12 +136,12 @@ export default function HomeScreen() {
       title: 'Google',
       subtitle: 'nate.isern.alvarez@gmail.com',
       customContent: (
-        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]}>
+        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
           <Text style={[styles.methodButtonText, { color: colors.text }]}>Disable</Text>
         </TouchableOpacity>
       ),
     },
-  ], [colors.card, colors.text, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo]);
+  ], [colors.card, colors.text, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo, handlePressIn]);
 
   const content = useMemo(() => (
     <>
@@ -219,6 +224,7 @@ export default function HomeScreen() {
               {showBottomSheet && (
                 <TouchableOpacity
                   style={[styles.alternativeSignInButton, { backgroundColor: colors.card, borderColor: colors.tint }]}
+                  onPressIn={handlePressIn}
                   onPress={handleSignIn}
                 >
                   <Text style={[styles.alternativeSignInText, { color: colors.tint }]}>
@@ -246,6 +252,7 @@ export default function HomeScreen() {
               />
               <TouchableOpacity 
                 style={styles.avatarWrapper}
+                onPressIn={handlePressIn}
                 onPress={handleAvatarPress}
                 activeOpacity={0.8}
               >
@@ -278,6 +285,7 @@ export default function HomeScreen() {
                 />
                 <TouchableOpacity 
                   style={styles.avatarWrapper}
+                  onPressIn={handlePressIn}
                   onPress={handleAvatarPress}
                   activeOpacity={0.8}
                 >
@@ -294,17 +302,17 @@ export default function HomeScreen() {
 
           {/* Bottom action buttons */}
           <View style={styles.bottomActions}>
-            <TouchableOpacity style={styles.circleButton}>
+            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn}>
               <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
                 <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
               </View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.circleButton}>
+            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn}>
               <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
                 <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
               </View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.circleButton}>
+            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn}>
               <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
                 <MaterialCommunityIcons name="menu" size={22} color={darkenColor(colors.sidebarIconData)} />
               </View>

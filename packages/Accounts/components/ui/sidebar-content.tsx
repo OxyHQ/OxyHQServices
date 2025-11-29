@@ -7,6 +7,7 @@ import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
+import * as Haptics from 'expo-haptics';
 
 export interface MenuItem {
     path: string;
@@ -38,6 +39,11 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
     const router = useRouter();
     const pathname = usePathname();
 
+    const handlePressIn = () => {
+        // Trigger subtle haptic feedback on press down
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    };
+
     const handleNavigate = (path: string) => {
         router.push(path as any);
         onNavigate?.();
@@ -64,6 +70,7 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
                     return (
                         <TouchableOpacity
                             key={item.path}
+                            onPressIn={handlePressIn}
                             onPress={() => handleNavigate(item.path)}
                             activeOpacity={0.7}
                         >

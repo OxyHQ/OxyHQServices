@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -6,6 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import * as Haptics from 'expo-haptics';
 
 export default function DevicesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -13,6 +14,10 @@ export default function DevicesScreen() {
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
+
+  const handlePressIn = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
 
   const devices = useMemo(() => [
     {
@@ -22,7 +27,7 @@ export default function DevicesScreen() {
       title: 'MacBook Pro',
       subtitle: 'This device • Last active: Now',
       customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Current</Text>
         </TouchableOpacity>
       ),
@@ -34,7 +39,7 @@ export default function DevicesScreen() {
       title: 'iPhone 15 Pro',
       subtitle: 'Last active: 2 hours ago',
       customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Remove</Text>
         </TouchableOpacity>
       ),
@@ -46,12 +51,12 @@ export default function DevicesScreen() {
       title: 'iPad Air',
       subtitle: 'Last active: 1 day ago',
       customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Remove</Text>
         </TouchableOpacity>
       ),
     },
-  ], [colors]);
+  ], [colors, handlePressIn]);
 
 
   if (isDesktop) {

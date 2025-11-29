@@ -1,5 +1,6 @@
 import React from 'react';
 import { Switch, SwitchProps, Platform } from 'react-native';
+import * as Haptics from 'expo-haptics';
 
 interface AppleSwitchProps extends Omit<SwitchProps, 'trackColor' | 'thumbColor' | 'ios_backgroundColor'> {
   value: boolean;
@@ -18,10 +19,17 @@ export function AppleSwitch({ value, onValueChange, disabled, ...props }: AppleS
 
   const thumbColor = '#FFFFFF'; // White thumb for both platforms
 
+  const handleValueChange = (newValue: boolean) => {
+    if (!disabled) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }
+    onValueChange(newValue);
+  };
+
   return (
     <Switch
       value={value}
-      onValueChange={onValueChange}
+      onValueChange={handleValueChange}
       disabled={disabled}
       trackColor={trackColor}
       thumbColor={thumbColor}

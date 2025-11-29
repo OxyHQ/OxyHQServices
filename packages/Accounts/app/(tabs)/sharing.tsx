@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -7,6 +7,7 @@ import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import * as Haptics from 'expo-haptics';
 
 export default function SharingScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -14,6 +15,10 @@ export default function SharingScreen() {
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
+
+  const handlePressIn = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
 
   const sharedItems = useMemo(() => [
     {
@@ -23,7 +28,7 @@ export default function SharingScreen() {
       title: 'John Doe',
       subtitle: 'john@example.com • Editor',
       customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
         </TouchableOpacity>
       ),
@@ -35,12 +40,12 @@ export default function SharingScreen() {
       title: 'Jane Smith',
       subtitle: 'jane@example.com • Viewer',
       customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
+        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
         </TouchableOpacity>
       ),
     },
-  ], [colors]);
+  ], [colors, handlePressIn]);
 
 
   if (isDesktop) {
@@ -50,7 +55,7 @@ export default function SharingScreen() {
         <AccountCard>
           <GroupedSection items={sharedItems} />
         </AccountCard>
-        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]} onPressIn={handlePressIn}>
           <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
           <Text style={styles.addButtonText}>Invite user</Text>
         </TouchableOpacity>
@@ -66,7 +71,7 @@ export default function SharingScreen() {
         <AccountCard>
           <GroupedSection items={sharedItems} />
         </AccountCard>
-        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
+        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]} onPressIn={handlePressIn}>
           <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
           <Text style={styles.addButtonText}>Invite user</Text>
         </TouchableOpacity>

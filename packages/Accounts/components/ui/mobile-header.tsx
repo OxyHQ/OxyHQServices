@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
@@ -13,6 +13,7 @@ import { useThemeContext } from '@/contexts/theme-context';
 import { LogoIcon } from '@/assets/logo';
 import { useOxy } from '@oxyhq/services';
 import { getDisplayName } from '@/utils/date-utils';
+import * as Haptics from 'expo-haptics';
 
 export function MobileHeader() {
   const navigation = useNavigation();
@@ -48,6 +49,10 @@ export function MobileHeader() {
     }
   };
 
+  const handlePressIn = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
   return (
     <BlurView
       intensity={isScrolled ? 50 : 0}
@@ -64,6 +69,7 @@ export function MobileHeader() {
     >
       <View style={styles.headerLeft}>
         <TouchableOpacity
+          onPressIn={handlePressIn}
           onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
           style={styles.menuButton}
         >
@@ -72,13 +78,13 @@ export function MobileHeader() {
         <LogoIcon height={28} useThemeColors={true} />
       </View>
       <View style={styles.headerRight}>
-        <TouchableOpacity style={styles.iconButton} onPress={handleSearchPress}>
+        <TouchableOpacity style={styles.iconButton} onPressIn={handlePressIn} onPress={handleSearchPress}>
           <MaterialIcons name="search" size={26} color={colors.text} />
         </TouchableOpacity>
-        <TouchableOpacity style={styles.iconButton} onPress={toggleColorScheme}>
+        <TouchableOpacity style={styles.iconButton} onPressIn={handlePressIn} onPress={toggleColorScheme}>
           <MaterialIcons name={colorScheme === 'dark' ? 'light-mode' : 'dark-mode'} size={26} color={colors.text} />
         </TouchableOpacity>
-        <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.7}>
+        <TouchableOpacity onPressIn={handlePressIn} onPress={handleAvatarPress} activeOpacity={0.7}>
           <UserAvatar name={displayName} imageUrl={avatarUrl} size={36} />
         </TouchableOpacity>
       </View>

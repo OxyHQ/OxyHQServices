@@ -14,6 +14,7 @@ import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useThemeContext } from '@/contexts/theme-context';
 import { useOxy } from '@oxyhq/services';
 import { getDisplayName } from '@/utils/date-utils';
+import * as Haptics from 'expo-haptics';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -30,7 +31,7 @@ export default function TabLayout() {
 
   // OxyServices integration for user data in header
   const { user, oxyServices, showBottomSheet } = useOxy();
-  
+
   // Compute user data for headers
   const displayName = useMemo(() => getDisplayName(user), [user]);
   const avatarUrl = useMemo(() => {
@@ -46,6 +47,10 @@ export default function TabLayout() {
       showBottomSheet('AccountOverview');
     }
   }, [showBottomSheet]);
+
+  const handlePressIn = useCallback(() => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
 
   const handleScroll = useCallback((event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
@@ -103,10 +108,10 @@ export default function TabLayout() {
             </View>
           </View>
           <View style={styles.topBarRight}>
-            <TouchableOpacity style={styles.iconButton} onPress={toggleColorScheme}>
+            <TouchableOpacity style={styles.iconButton} onPressIn={handlePressIn} onPress={toggleColorScheme}>
               <Ionicons name={colorScheme === 'dark' ? 'sunny-outline' : 'moon-outline'} size={22} color={colors.text} />
             </TouchableOpacity>
-            <TouchableOpacity onPress={handleHeaderAvatarPress} activeOpacity={0.7}>
+            <TouchableOpacity onPressIn={handlePressIn} onPress={handleHeaderAvatarPress} activeOpacity={0.7}>
               <UserAvatar name={displayName} imageUrl={avatarUrl} size={36} />
             </TouchableOpacity>
           </View>
