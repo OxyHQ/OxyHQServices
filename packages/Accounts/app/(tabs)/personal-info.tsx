@@ -8,7 +8,7 @@ import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, OxySignInButton } from '@oxyhq/services';
 import { formatDate, getDisplayName } from '@/utils/date-utils';
-import * as Haptics from 'expo-haptics';
+import { useHapticPress } from '@/hooks/use-haptic-press';
 
 export default function PersonalInfoScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -24,9 +24,7 @@ export default function PersonalInfoScreen() {
     }
   }, [showBottomSheet]);
 
-  const handlePressIn = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
+  const handlePressIn = useHapticPress();
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
@@ -116,7 +114,7 @@ export default function PersonalInfoScreen() {
     }
 
     return items;
-  }, [colors, displayName, userEmail, userPhone, userAddress, userBirthday, handlePressIn]);
+  }, [colors, displayName, userEmail, userPhone, userAddress, userBirthday]);
 
   // Show loading state while OxyServices is initializing
   if (oxyLoading) {

@@ -11,7 +11,7 @@ import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { formatDate } from '@/utils/date-utils';
 import type { ClientSession } from '@oxyhq/services';
-import * as Haptics from 'expo-haptics';
+import { useHapticPress } from '@/hooks/use-haptic-press';
 
 export default function SessionsScreen() {
     const colorScheme = useColorScheme() ?? 'light';
@@ -28,9 +28,7 @@ export default function SessionsScreen() {
         }
     }, [showBottomSheet]);
 
-    const handlePressIn = useCallback(() => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }, []);
+    const handlePressIn = useHapticPress();
 
     // Format relative time for last active
     const formatRelativeTime = useCallback((dateString?: string) => {

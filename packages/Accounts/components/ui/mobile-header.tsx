@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo } from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
@@ -13,7 +13,7 @@ import { useThemeContext } from '@/contexts/theme-context';
 import { LogoIcon } from '@/assets/logo';
 import { useOxy } from '@oxyhq/services';
 import { getDisplayName } from '@/utils/date-utils';
-import * as Haptics from 'expo-haptics';
+import { useHapticPress } from '@/hooks/use-haptic-press';
 
 export function MobileHeader() {
   const navigation = useNavigation();
@@ -49,9 +49,7 @@ export function MobileHeader() {
     }
   };
 
-  const handlePressIn = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
+  const handlePressIn = useHapticPress();
 
   return (
     <BlurView

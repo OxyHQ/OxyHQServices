@@ -14,7 +14,7 @@ import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useThemeContext } from '@/contexts/theme-context';
 import { useOxy } from '@oxyhq/services';
 import { getDisplayName } from '@/utils/date-utils';
-import * as Haptics from 'expo-haptics';
+import { useHapticPress } from '@/hooks/use-haptic-press';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -48,9 +48,7 @@ export default function TabLayout() {
     }
   }, [showBottomSheet]);
 
-  const handlePressIn = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
+  const handlePressIn = useHapticPress();
 
   const handleScroll = useCallback((event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;

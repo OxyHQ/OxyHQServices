@@ -8,7 +8,7 @@ import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import * as Haptics from 'expo-haptics';
+import { useHapticPress } from '@/hooks/use-haptic-press';
 
 export default function StorageScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -17,9 +17,7 @@ export default function StorageScreen() {
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
-  const handlePressIn = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
+  const handlePressIn = useHapticPress();
 
   const storageItems = useMemo(() => [
     {
@@ -72,7 +70,7 @@ export default function StorageScreen() {
         </TouchableOpacity>
       ),
     },
-  ], [colors, handlePressIn]);
+  ], [colors]);
 
   if (isDesktop) {
     return (

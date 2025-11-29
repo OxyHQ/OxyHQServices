@@ -7,7 +7,7 @@ import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import * as Haptics from 'expo-haptics';
+import { useHapticPress } from '@/hooks/use-haptic-press';
 
 export default function SharingScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -16,9 +16,7 @@ export default function SharingScreen() {
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
-  const handlePressIn = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
+  const handlePressIn = useHapticPress();
 
   const sharedItems = useMemo(() => [
     {
@@ -45,7 +43,7 @@ export default function SharingScreen() {
         </TouchableOpacity>
       ),
     },
-  ], [colors, handlePressIn]);
+  ], [colors]);
 
 
   if (isDesktop) {

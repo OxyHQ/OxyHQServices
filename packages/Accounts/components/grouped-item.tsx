@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import * as Haptics from 'expo-haptics';
+import { useHapticPress } from '@/hooks/use-haptic-press';
 
 /**
  * Darkens a color by a specified factor
@@ -94,15 +94,16 @@ const GroupedItemComponent = ({
         </View>
     );
 
-    const handlePressIn = () => {
-        if (!disabled) {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        }
-    };
+    const handlePressIn = useHapticPress();
 
     if (onPress && !disabled) {
         return (
-            <TouchableOpacity style={itemStyles} onPressIn={handlePressIn} onPress={onPress} activeOpacity={0.7}>
+            <TouchableOpacity 
+                style={itemStyles} 
+                onPressIn={disabled ? undefined : handlePressIn} 
+                onPress={onPress} 
+                activeOpacity={0.7}
+            >
                 {content}
             </TouchableOpacity>
         );

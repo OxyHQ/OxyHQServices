@@ -1,12 +1,27 @@
-import React, { useMemo, useCallback } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
+import React, { useMemo, useCallback, useState, useEffect } from 'react';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import * as Haptics from 'expo-haptics';
+import { useOxy, OxySignInButton } from '@oxyhq/services';
+import { formatDate } from '@/utils/date-utils';
+import { DeviceManager } from '@oxyhq/services';
+import { useHapticPress } from '@/hooks/use-haptic-press';
+
+interface Device {
+  id?: string;
+  deviceId?: string;
+  name?: string;
+  deviceName?: string;
+  type?: string;
+  deviceType?: string;
+  lastActive?: string;
+  createdAt?: string;
+  isCurrent?: boolean;
+}
 
 export default function DevicesScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -15,71 +30,299 @@ export default function DevicesScreen() {
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
-  const handlePressIn = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  // OxyServices integration
+  const { oxyServices, isAuthenticated, isLoading: oxyLoading, showBottomSheet } = useOxy();
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [currentDeviceId, setCurrentDeviceId] = useState<string | null>(null);
+
+  // Get current device ID
+  useEffect(() => {
+    const getCurrentDeviceId = async () => {
+      try {
+        const deviceInfo = await DeviceManager.getDeviceInfo();
+        setCurrentDeviceId(deviceInfo.deviceId);
+      } catch (error) {
+        console.error('Error getting current device ID:', error);
+      }
+    };
+    getCurrentDeviceId();
   }, []);
 
-  const devices = useMemo(() => [
-    {
-      id: 'current',
-      icon: 'laptop',
-      iconColor: colors.sidebarIconDevices,
-      title: 'MacBook Pro',
-      subtitle: 'This device • Last active: Now',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Current</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'iphone',
-      icon: 'cellphone',
-      iconColor: colors.sidebarIconDevices,
-      title: 'iPhone 15 Pro',
-      subtitle: 'Last active: 2 hours ago',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Remove</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'ipad',
-      icon: 'tablet',
-      iconColor: colors.sidebarIconDevices,
-      title: 'iPad Air',
-      subtitle: 'Last active: 1 day ago',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Remove</Text>
-        </TouchableOpacity>
-      ),
-    },
-  ], [colors, handlePressIn]);
+  // Fetch devices when authenticated
+  useEffect(() => {
+    const fetchDevices = async () => {
+      if (!isAuthenticated || !oxyServices) return;
 
+      setLoading(true);
+      setError(null);
+      try {
+        const devicesData = await oxyServices.getUserDevices();
+        setDevices(devicesData || []);
+      } catch (err: any) {
+        console.error('Failed to fetch devices:', err);
+        setError(err?.message || 'Failed to load devices');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDevices();
+  }, [isAuthenticated, oxyServices]);
+
+  const handlePressIn = useHapticPress();
+
+  // Handle sign in
+  const handleSignIn = useCallback(() => {
+    if (showBottomSheet) {
+      showBottomSheet('SignIn');
+    }
+  }, [showBottomSheet]);
+
+  // Format relative time for last active
+  const formatRelativeTime = useCallback((dateString?: string) => {
+    if (!dateString) return 'Unknown';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const minutes = Math.floor(diffMs / 60000);
+
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return formatDate(dateString);
+  }, []);
+
+  // Get device icon based on type
+  const getDeviceIcon = useCallback((deviceType?: string): string => {
+    if (!deviceType) return 'devices';
+    const type = deviceType.toLowerCase();
+    if (type.includes('mobile') || type.includes('phone') || type.includes('iphone') || type.includes('android')) {
+      return 'cellphone';
+    }
+    if (type.includes('tablet') || type.includes('ipad')) {
+      return 'tablet';
+    }
+    if (type.includes('desktop') || type.includes('laptop') || type.includes('mac') || type.includes('windows') || type.includes('linux')) {
+      return 'laptop';
+    }
+    return 'devices';
+  }, []);
+
+  // Handle device removal
+  const handleRemoveDevice = useCallback(async (deviceId: string, deviceName: string, isCurrent: boolean) => {
+    if (isCurrent) {
+      Alert.alert(
+        'Cannot remove current device',
+        'You cannot remove your current device. Please use another device to remove this one.',
+        [{ text: 'OK' }]
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Remove device',
+      `Are you sure you want to remove "${deviceName}"? This will sign out all sessions on this device.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Remove',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setActionLoading(deviceId);
+              await oxyServices?.removeDevice(deviceId);
+              // Refresh devices list
+              const devicesData = await oxyServices?.getUserDevices();
+              setDevices(devicesData || []);
+              if (Platform.OS === 'web') {
+                console.log('Device removed successfully');
+              } else {
+                Alert.alert('Success', 'Device removed successfully');
+              }
+            } catch (err: any) {
+              console.error('Failed to remove device:', err);
+              Alert.alert('Error', err?.message || 'Failed to remove device. Please try again.');
+            } finally {
+              setActionLoading(null);
+            }
+          },
+        },
+      ]
+    );
+  }, [oxyServices]);
+
+  // Transform devices for UI
+  const deviceItems = useMemo(() => {
+    if (!devices || devices.length === 0) return [];
+
+    return devices.map((device: Device) => {
+      const deviceId = device.id || device.deviceId || '';
+      const deviceName = device.name || device.deviceName || 'Unknown Device';
+      const deviceType = device.type || device.deviceType || '';
+      const lastActive = device.lastActive || device.createdAt;
+      const isCurrent = Boolean(device.isCurrent || (currentDeviceId && deviceId === currentDeviceId));
+      const isLoading = actionLoading === deviceId;
+
+      return {
+        id: deviceId,
+        icon: getDeviceIcon(deviceType) as any,
+        iconColor: isCurrent ? colors.tint : colors.sidebarIconDevices,
+        title: deviceName,
+        subtitle: isCurrent
+          ? 'This device • Last active: ' + formatRelativeTime(lastActive)
+          : 'Last active: ' + formatRelativeTime(lastActive),
+        customContent: (
+          <View style={styles.deviceActions}>
+            {isCurrent ? (
+              <View style={[styles.currentBadge, { backgroundColor: colors.tint }]}>
+                <Text style={[styles.currentBadgeText, { color: '#FFFFFF' }]}>Current</Text>
+              </View>
+            ) : (
+              <TouchableOpacity
+                style={[styles.removeButton, { backgroundColor: colors.card }]}
+                onPressIn={handlePressIn}
+                onPress={() => handleRemoveDevice(deviceId, deviceName, isCurrent)}
+                disabled={isLoading}
+              >
+                {isLoading ? (
+                  <ActivityIndicator size="small" color={colors.text} />
+                ) : (
+                  <Text style={[styles.buttonText, { color: colors.text }]}>Remove</Text>
+                )}
+              </TouchableOpacity>
+            )}
+          </View>
+        ),
+      };
+    });
+  }, [devices, currentDeviceId, colors, formatRelativeTime, getDeviceIcon, actionLoading, handleRemoveDevice]);
+
+  // Show loading state
+  if (oxyLoading || loading) {
+    return (
+      <ScreenContentWrapper>
+        <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.tint} />
+          <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading devices...</ThemedText>
+        </View>
+      </ScreenContentWrapper>
+    );
+  }
+
+  // Show message if not authenticated
+  if (!isAuthenticated) {
+    return (
+      <ScreenContentWrapper>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <View style={styles.mobileContent}>
+            <ScreenHeader title="Your devices" subtitle="Manage devices that have access to your account." />
+            <View style={styles.unauthenticatedPlaceholder}>
+              <ThemedText style={[styles.placeholderText, { color: colors.text }]}>
+                Please sign in to view your devices.
+              </ThemedText>
+              <View style={styles.signInButtonWrapper}>
+                <OxySignInButton />
+                {showBottomSheet && (
+                  <TouchableOpacity
+                    style={[styles.alternativeSignInButton, { backgroundColor: colors.card, borderColor: colors.tint }]}
+                    onPressIn={handlePressIn}
+                    onPress={handleSignIn}
+                  >
+                    <Text style={[styles.alternativeSignInText, { color: colors.tint }]}>
+                      Sign in with username
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          </View>
+        </View>
+      </ScreenContentWrapper>
+    );
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <ScreenContentWrapper>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <View style={styles.mobileContent}>
+            <ScreenHeader title="Your devices" subtitle="Manage devices that have access to your account." />
+            <View style={styles.errorContainer}>
+              <ThemedText style={[styles.errorText, { color: colors.text }]}>
+                {error}
+              </ThemedText>
+              <TouchableOpacity
+                style={[styles.retryButton, { backgroundColor: colors.tint }]}
+                onPressIn={handlePressIn}
+                onPress={() => {
+                  setError(null);
+                  if (oxyServices) {
+                    setLoading(true);
+                    oxyServices.getUserDevices()
+                      .then((devicesData) => {
+                        setDevices(devicesData || []);
+                        setLoading(false);
+                      })
+                      .catch((err) => {
+                        setError(err?.message || 'Failed to load devices');
+                        setLoading(false);
+                      });
+                  }
+                }}
+              >
+                <Text style={[styles.retryButtonText, { color: '#FFFFFF' }]}>Retry</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </ScreenContentWrapper>
+    );
+  }
 
   if (isDesktop) {
     return (
       <>
         <ScreenHeader title="Your devices" subtitle="Manage devices that have access to your account." />
-        <AccountCard>
-          <GroupedSection items={devices} />
-        </AccountCard>
+        {deviceItems.length === 0 ? (
+          <View style={styles.placeholder}>
+            <ThemedText style={[styles.placeholderText, { color: colors.icon }]}>
+              No devices found.
+            </ThemedText>
+          </View>
+        ) : (
+          <AccountCard>
+            <GroupedSection items={deviceItems} />
+          </AccountCard>
+        )}
       </>
     );
   }
 
   return (
     <ScreenContentWrapper>
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-        <ScreenHeader title="Your devices" subtitle="Manage devices that have access to your account." />
-        <AccountCard>
-          <GroupedSection items={devices} />
-        </AccountCard>
+          <ScreenHeader title="Your devices" subtitle="Manage devices that have access to your account." />
+          {deviceItems.length === 0 ? (
+            <View style={styles.placeholder}>
+              <ThemedText style={[styles.placeholderText, { color: colors.icon }]}>
+                No devices found.
+              </ThemedText>
+            </View>
+          ) : (
+            <AccountCard>
+              <GroupedSection items={deviceItems} />
+            </AccountCard>
+          )}
         </View>
-    </View>
+      </View>
     </ScreenContentWrapper>
   );
 }
@@ -182,5 +425,91 @@ const styles = StyleSheet.create({
     fontSize: 15,
     opacity: 0.6,
   },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  },
+  loadingText: {
+    fontSize: 16,
+    opacity: 0.7,
+  },
+  placeholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+  },
+  placeholderText: {
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  deviceActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  currentBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+  },
+  currentBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  removeButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  unauthenticatedPlaceholder: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    gap: 24,
+  },
+  signInButtonWrapper: {
+    width: '100%',
+    maxWidth: 300,
+    gap: 12,
+    marginTop: 16,
+  },
+  alternativeSignInButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  alternativeSignInText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  errorContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    gap: 16,
+  },
+  errorText: {
+    fontSize: 16,
+    textAlign: 'center',
+    opacity: 0.7,
+  },
+  retryButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  retryButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
 });
-

@@ -16,7 +16,7 @@ import { AccountCard } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, OxySignInButton } from '@oxyhq/services';
 import { formatDate, getDisplayName, getShortDisplayName } from '@/utils/date-utils';
-import * as Haptics from 'expo-haptics';
+import { useHapticPress } from '@/hooks/use-haptic-press';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -44,9 +44,7 @@ export default function HomeScreen() {
     return undefined;
   }, [user?.avatar, oxyServices]);
 
-  const handlePressIn = useCallback(() => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-  }, []);
+  const handlePressIn = useHapticPress();
 
   const accountItems = useMemo(() => [
     {
@@ -141,7 +139,7 @@ export default function HomeScreen() {
         </TouchableOpacity>
       ),
     },
-  ], [colors.card, colors.text, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo, handlePressIn]);
+  ], [colors.card, colors.text, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo]);
 
   const content = useMemo(() => (
     <>

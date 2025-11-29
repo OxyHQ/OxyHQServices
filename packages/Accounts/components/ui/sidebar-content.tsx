@@ -7,7 +7,7 @@ import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
-import * as Haptics from 'expo-haptics';
+import { useHapticPress } from '@/hooks/use-haptic-press';
 
 export interface MenuItem {
     path: string;
@@ -39,10 +39,7 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
     const router = useRouter();
     const pathname = usePathname();
 
-    const handlePressIn = () => {
-        // Trigger subtle haptic feedback on press down
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    };
+    const handlePressIn = useHapticPress();
 
     const handleNavigate = (path: string) => {
         router.push(path as any);
