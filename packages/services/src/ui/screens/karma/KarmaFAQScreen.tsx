@@ -1,13 +1,9 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, TextInput, LayoutAnimation, UIManager } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Platform, TouchableOpacity, TextInput, LayoutAnimation } from 'react-native';
 import type { BaseScreenProps } from '../../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
-
-if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
-    UIManager.setLayoutAnimationEnabledExperimental(true);
-}
 
 const FAQ_KEYS = ['what', 'earn', 'lose', 'use', 'transfer', 'support'] as const;
 
