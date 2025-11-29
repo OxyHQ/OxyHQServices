@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import 'react-native-reanimated';
+import { OxyProvider } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ScrollProvider } from '@/contexts/scroll-context';
@@ -15,6 +16,9 @@ import * as SplashScreen from 'expo-splash-screen';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete
 SplashScreen.preventAutoHideAsync();
+
+// Get API URL from environment variable with fallback
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
 
 export const unstable_settings = {
   anchor: '(tabs)',
@@ -36,7 +40,7 @@ export default function RootLayout() {
 
 function RootLayoutContent() {
   const colorScheme = useColorScheme();
-  
+
   // State
   const [appIsReady, setAppIsReady] = useState(false);
   const [splashState, setSplashState] = useState<SplashState>({
@@ -104,17 +108,19 @@ function RootLayoutContent() {
     }
 
     return (
-      <SafeAreaProvider>
-        <ScrollProvider>
-          <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-            <Stack>
-              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-              <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-            </Stack>
-            <StatusBar style="auto" />
-          </ThemeProvider>
-        </ScrollProvider>
-      </SafeAreaProvider>
+      <OxyProvider baseURL={API_URL}>
+        <SafeAreaProvider>
+          <ScrollProvider>
+            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+              <Stack>
+                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+              </Stack>
+              <StatusBar style="auto" />
+            </ThemeProvider>
+          </ScrollProvider>
+        </SafeAreaProvider>
+      </OxyProvider>
     );
   }, [
     appIsReady,

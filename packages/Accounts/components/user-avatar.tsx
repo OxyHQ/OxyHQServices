@@ -1,4 +1,4 @@
-import React, { useMemo, memo } from 'react';
+import React, { useMemo, memo, useState, useEffect } from 'react';
 import { View, Text, StyleSheet, Image } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -49,6 +49,7 @@ const getTextColorForBackground = (backgroundColor: string): string => {
 const UserAvatarComponent = ({ name = 'User', imageUrl, size = 80 }: UserAvatarProps) => {
     const colorScheme = useColorScheme() ?? 'light';
     const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
+    const [imageError, setImageError] = useState(false);
 
     const initials = useMemo(() => getInitials(name), [name]);
 
@@ -65,15 +66,25 @@ const UserAvatarComponent = ({ name = 'User', imageUrl, size = 80 }: UserAvatarP
         return getTextColorForBackground(avatarBackground);
     }, [colors.avatarText, avatarBackground]);
 
+    // Reset error state when imageUrl changes
+    useEffect(() => {
+        if (imageUrl) {
+            setImageError(false);
+        }
+    }, [imageUrl]);
+
+    // Determine if we should show image or initials
+    const shouldShowImage = imageUrl && !imageError;
+
     const containerStyle = useMemo(() => [
         styles.container,
         {
             width: size,
             height: size,
             borderRadius: size / 2,
-            ...(imageUrl ? {} : { backgroundColor: avatarBackground }),
+            backgroundColor: avatarBackground, // Always set background color
         }
-    ], [size, avatarBackground, imageUrl]);
+    ], [size, avatarBackground]);
 
     const imageStyle = useMemo(() => [
         styles.image,
@@ -85,12 +96,17 @@ const UserAvatarComponent = ({ name = 'User', imageUrl, size = 80 }: UserAvatarP
         { fontSize: size / 2.5, color: avatarTextColor }
     ], [size, avatarTextColor]);
 
+    const handleImageError = () => {
+        setImageError(true);
+    };
+
     return (
         <View style={containerStyle}>
-            {imageUrl ? (
+            {shouldShowImage ? (
                 <Image
                     source={{ uri: imageUrl }}
                     style={imageStyle}
+                    onError={handleImageError}
                 />
             ) : (
                 <Text style={textStyle}>

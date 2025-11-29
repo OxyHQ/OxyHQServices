@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback, useRef, useEffect } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { Image } from 'expo-image';
 import LottieView from 'lottie-react-native';
 import { useRouter, usePathname } from 'expo-router';
@@ -14,6 +14,8 @@ import lottieAnimation from '@/assets/lottie/welcomeheader_background_op1.json';
 import { darkenColor } from '@/utils/color-utils';
 import { AccountCard } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import { useOxy, OxySignInButton } from '@oxyhq/services';
+import { formatDate, getDisplayName, getShortDisplayName } from '@/utils/date-utils';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -23,8 +25,23 @@ export default function HomeScreen() {
   const lottieRef = useRef<LottieView>(null);
   const hasPlayedRef = useRef(false);
 
+  // OxyServices integration
+  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet } = useOxy();
+
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = useMemo(() => Platform.OS === 'web' && width >= 768, [width]);
+
+  // Compute user data
+  const displayName = useMemo(() => getDisplayName(user), [user]);
+  const shortDisplayName = useMemo(() => getShortDisplayName(user), [user]);
+  const userEmail = useMemo(() => user?.email || 'No email', [user?.email]);
+  const accountCreatedDate = useMemo(() => formatDate(user?.createdAt), [user?.createdAt]);
+  const avatarUrl = useMemo(() => {
+    if (user?.avatar && oxyServices) {
+      return oxyServices.getFileStreamUrl(user.avatar);
+    }
+    return undefined;
+  }, [user?.avatar, oxyServices]);
 
   const accountItems = useMemo(() => [
     {
@@ -32,7 +49,7 @@ export default function HomeScreen() {
       icon: 'account-outline' as any,
       iconColor: colors.sidebarIconPersonalInfo,
       title: 'Full name',
-      subtitle: 'Aloha Haloe',
+      subtitle: displayName,
       customContent: (
         <TouchableOpacity style={styles.button}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Edit name</Text>
@@ -44,7 +61,7 @@ export default function HomeScreen() {
       icon: 'email-outline' as any,
       iconColor: colors.sidebarIconSecurity,
       title: 'Email',
-      subtitle: 'hello@oxy.so',
+      subtitle: userEmail,
       customContent: (
         <TouchableOpacity style={styles.button}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Update email</Text>
@@ -69,9 +86,9 @@ export default function HomeScreen() {
       icon: 'calendar-outline' as any,
       iconColor: colors.sidebarIconData,
       title: 'Account created',
-      subtitle: 'Feb 21, 2025',
+      subtitle: accountCreatedDate || 'Unknown',
     },
-  ], [colors.text, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconPayments, colors.sidebarIconData]);
+  ], [colors.text, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconPayments, colors.sidebarIconData, displayName, userEmail, accountCreatedDate]);
 
   const signInMethods = useMemo(() => [
     {
@@ -138,6 +155,20 @@ export default function HomeScreen() {
     </>
   ), [accountItems, isDesktop, signInMethods]);
 
+  // Handle sign in - must be defined before any conditional returns
+  const handleSignIn = useCallback(() => {
+    if (showBottomSheet) {
+      showBottomSheet('SignIn');
+    }
+  }, [showBottomSheet]);
+
+  // Handle avatar press to open edit profile for avatar update
+  const handleAvatarPress = useCallback(() => {
+    if (showBottomSheet) {
+      showBottomSheet('EditProfile');
+    }
+  }, [showBottomSheet]);
+
   const toggleColorScheme = useCallback(() => {
     // This would toggle between light and dark mode
     // You'd need to implement this based on your theme system
@@ -158,6 +189,50 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, []);
 
+  // Show loading state while OxyServices is initializing
+  if (oxyLoading) {
+    return (
+      <ScreenContentWrapper>
+        <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.tint} />
+          <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading...</ThemedText>
+        </View>
+      </ScreenContentWrapper>
+    );
+  }
+
+  // Show sign-in prompt if not authenticated
+  if (!isAuthenticated) {
+
+    return (
+      <ScreenContentWrapper>
+        <View style={[styles.container, styles.unauthenticatedContainer, { backgroundColor: colors.background }]}>
+          <View style={styles.unauthenticatedContent}>
+            <ThemedText style={[styles.unauthenticatedTitle, { color: colors.text }]}>
+              Welcome to Oxy Accounts
+            </ThemedText>
+            <ThemedText style={[styles.unauthenticatedSubtitle, { color: colors.text, opacity: 0.7 }]}>
+              Sign in to manage your account settings, view your sessions, and access your personal information.
+            </ThemedText>
+            <View style={styles.signInButtonContainer}>
+              <OxySignInButton />
+              {showBottomSheet && (
+                <TouchableOpacity
+                  style={[styles.alternativeSignInButton, { backgroundColor: colors.card, borderColor: colors.tint }]}
+                  onPress={handleSignIn}
+                >
+                  <Text style={[styles.alternativeSignInText, { color: colors.tint }]}>
+                    Or sign in with username
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </View>
+      </ScreenContentWrapper>
+    );
+  }
+
   if (isDesktop) {
     return (
       <>
@@ -169,12 +244,16 @@ export default function HomeScreen() {
                 source={lottieAnimation}
                 style={styles.lottieBackground}
               />
-              <View style={styles.avatarWrapper}>
-                <UserAvatar name="Nate Isern Alvarez" size={100} />
-              </View>
+              <TouchableOpacity 
+                style={styles.avatarWrapper}
+                onPress={handleAvatarPress}
+                activeOpacity={0.8}
+              >
+                <UserAvatar name={displayName} imageUrl={avatarUrl} size={100} />
+              </TouchableOpacity>
             </View>
             <View style={styles.nameWrapper}>
-              <ThemedText style={styles.welcomeText}>Welcome, Nate.</ThemedText>
+              <ThemedText style={styles.welcomeText}>Welcome, {shortDisplayName}.</ThemedText>
               <ThemedText style={styles.welcomeSubtext}>Manage your Oxy account.</ThemedText>
             </View>
           </View>
@@ -197,12 +276,16 @@ export default function HomeScreen() {
                   loop
                   style={styles.lottieBackground}
                 />
-                <View style={styles.avatarWrapper}>
-                  <UserAvatar name="Nate Isern Alvarez" size={100} />
-                </View>
+                <TouchableOpacity 
+                  style={styles.avatarWrapper}
+                  onPress={handleAvatarPress}
+                  activeOpacity={0.8}
+                >
+                  <UserAvatar name={displayName} imageUrl={avatarUrl} size={100} />
+                </TouchableOpacity>
               </View>
               <View style={styles.nameWrapper}>
-                <ThemedText style={styles.welcomeText}>Welcome, Nate.</ThemedText>
+                <ThemedText style={styles.welcomeText}>Welcome, {shortDisplayName}.</ThemedText>
                 <ThemedText style={styles.welcomeSubtext}>Manage your Oxy account.</ThemedText>
               </View>
             </View>
@@ -479,6 +562,55 @@ const styles = StyleSheet.create({
   tabLabel: {
     fontSize: 11,
     marginTop: 4,
+    fontWeight: '500',
+  } as const,
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+  } as const,
+  loadingText: {
+    fontSize: 16,
+    opacity: 0.7,
+  } as const,
+  unauthenticatedContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+  } as const,
+  unauthenticatedContent: {
+    alignItems: 'center',
+    maxWidth: 400,
+    gap: 16,
+  } as const,
+  unauthenticatedTitle: {
+    fontSize: 28,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 8,
+  } as const,
+  unauthenticatedSubtitle: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 8,
+  } as const,
+  signInButtonContainer: {
+    width: '100%',
+    gap: 12,
+    marginTop: 8,
+  } as const,
+  alternativeSignInButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  } as const,
+  alternativeSignInText: {
+    fontSize: 14,
     fontWeight: '500',
   } as const,
 });

@@ -12,6 +12,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useScrollContext } from '@/contexts/scroll-context';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useThemeContext } from '@/contexts/theme-context';
+import { useOxy } from '@oxyhq/services';
+import { getDisplayName } from '@/utils/date-utils';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -25,6 +27,25 @@ export default function TabLayout() {
   const searchInputRef = useRef<TextInput>(null);
   const { setIsScrolled } = useScrollContext();
   const { toggleColorScheme } = useThemeContext();
+
+  // OxyServices integration for user data in header
+  const { user, oxyServices, showBottomSheet } = useOxy();
+  
+  // Compute user data for headers
+  const displayName = useMemo(() => getDisplayName(user), [user]);
+  const avatarUrl = useMemo(() => {
+    if (user?.avatar && oxyServices) {
+      return oxyServices.getFileStreamUrl(user.avatar);
+    }
+    return undefined;
+  }, [user?.avatar, oxyServices]);
+
+  // Handle avatar press in desktop header to open account overview
+  const handleHeaderAvatarPress = useCallback(() => {
+    if (showBottomSheet) {
+      showBottomSheet('AccountOverview');
+    }
+  }, [showBottomSheet]);
 
   const handleScroll = useCallback((event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
@@ -85,7 +106,9 @@ export default function TabLayout() {
             <TouchableOpacity style={styles.iconButton} onPress={toggleColorScheme}>
               <Ionicons name={colorScheme === 'dark' ? 'sunny-outline' : 'moon-outline'} size={22} color={colors.text} />
             </TouchableOpacity>
-            <UserAvatar name="Nate Isern Alvarez" size={36} />
+            <TouchableOpacity onPress={handleHeaderAvatarPress} activeOpacity={0.7}>
+              <UserAvatar name={displayName} imageUrl={avatarUrl} size={36} />
+            </TouchableOpacity>
           </View>
         </View>
 

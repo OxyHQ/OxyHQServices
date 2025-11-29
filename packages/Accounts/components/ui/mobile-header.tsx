@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
@@ -11,6 +11,8 @@ import { UserAvatar } from '@/components/user-avatar';
 import { useScrollContext } from '@/contexts/scroll-context';
 import { useThemeContext } from '@/contexts/theme-context';
 import { LogoIcon } from '@/assets/logo';
+import { useOxy } from '@oxyhq/services';
+import { getDisplayName } from '@/utils/date-utils';
 
 export function MobileHeader() {
   const navigation = useNavigation();
@@ -21,11 +23,29 @@ export function MobileHeader() {
   const { isScrolled } = useScrollContext();
   const { toggleColorScheme } = useThemeContext();
 
+  // OxyServices integration
+  const { user, oxyServices, showBottomSheet } = useOxy();
+
+  // Compute user data
+  const displayName = useMemo(() => getDisplayName(user), [user]);
+  const avatarUrl = useMemo(() => {
+    if (user?.avatar && oxyServices) {
+      return oxyServices.getFileStreamUrl(user.avatar);
+    }
+    return undefined;
+  }, [user?.avatar, oxyServices]);
+
   const handleSearchPress = () => {
     router.push({
       pathname: '/(tabs)/search',
       params: { q: '' },
     });
+  };
+
+  const handleAvatarPress = () => {
+    if (showBottomSheet) {
+      showBottomSheet('AccountOverview');
+    }
   };
 
   return (
@@ -58,7 +78,9 @@ export function MobileHeader() {
         <TouchableOpacity style={styles.iconButton} onPress={toggleColorScheme}>
           <MaterialIcons name={colorScheme === 'dark' ? 'light-mode' : 'dark-mode'} size={26} color={colors.text} />
         </TouchableOpacity>
-        <UserAvatar name="Nate Isern Alvarez" size={36} />
+        <TouchableOpacity onPress={handleAvatarPress} activeOpacity={0.7}>
+          <UserAvatar name={displayName} imageUrl={avatarUrl} size={36} />
+        </TouchableOpacity>
       </View>
     </BlurView>
   );
