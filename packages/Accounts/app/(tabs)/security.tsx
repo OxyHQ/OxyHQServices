@@ -44,31 +44,74 @@ export default function SecurityScreen() {
 
             setLoading(true);
             setError(null);
-            try {
-                const [securityData, devicesData] = await Promise.all([
-                    (oxyServices as any).getSecurityInfo(),
-                    oxyServices.getUserDevices(),
-                ]);
-                
+
+            // Handle each request independently so one failure doesn't block the other
+            // Try to get security info - use method if available, otherwise return default
+            const getSecurityInfoPromise = (() => {
+                try {
+                    if (typeof (oxyServices as any).getSecurityInfo === 'function') {
+                        return (oxyServices as any).getSecurityInfo();
+                    } else {
+                        console.warn('[Security Screen] getSecurityInfo method not available, using defaults');
+                        return Promise.resolve(null);
+                    }
+                } catch (err) {
+                    console.error('[Security Screen] Error calling getSecurityInfo:', err);
+                    return Promise.resolve(null);
+                }
+            })();
+
+            const results = await Promise.allSettled([
+                getSecurityInfoPromise.catch((err: any) => {
+                    console.error('[Security Screen] Failed to fetch security info:', err);
+                    return null; // Return null on error so we can still show devices
+                }),
+                oxyServices.getUserDevices().catch((err: any) => {
+                    console.error('[Security Screen] Failed to fetch devices:', err);
+                    setError(err?.message || 'Failed to load devices');
+                    return []; // Return empty array on error
+                }),
+            ]);
+
+            // Extract results
+            const securityResult = results[0];
+            const devicesResult = results[1];
+
+            // Set security info (or null if failed)
+            if (securityResult.status === 'fulfilled' && securityResult.value) {
+                setSecurityInfo(securityResult.value);
+            } else {
+                // Set default/empty security info if request failed
+                setSecurityInfo({
+                    twoFactorEnabled: false,
+                    totpCreatedAt: null,
+                    backupCodesCount: 0,
+                    recoveryEmail: user?.email || null,
+                });
+            }
+
+            // Set devices (or empty array if failed)
+            if (devicesResult.status === 'fulfilled') {
+                const devicesData = devicesResult.value || [];
+
                 // Debug logging to verify data consistency
                 console.log('[Security Screen] Fetched devices:', {
-                    count: devicesData?.length || 0,
-                    deviceIds: devicesData?.map((d: any) => d.deviceId || d.id),
+                    count: devicesData.length,
+                    deviceIds: devicesData.map((d: any) => d.deviceId || d.id),
                     devices: devicesData,
                 });
-                
-                setSecurityInfo(securityData);
-                setDevices(devicesData || []);
-            } catch (err: any) {
-                console.error('Failed to fetch security data:', err);
-                setError(err?.message || 'Failed to load security data');
-            } finally {
-                setLoading(false);
+
+                setDevices(devicesData);
+            } else {
+                // Error already set above, but ensure devices is empty array
+                setDevices([]);
             }
+
+            setLoading(false);
         };
 
         fetchSecurityData();
-    }, [isAuthenticated, oxyServices]);
+    }, [isAuthenticated, oxyServices, user?.email]);
 
     // Handle sign in
     const handleSignIn = useCallback(() => {
@@ -138,12 +181,31 @@ export default function SecurityScreen() {
         }];
     }, [securityInfo, user]);
 
-    // Recent activity from sessions
+    // Recent activity from sessions - grouped by device to show unique sign-ins
     const recentActivity = useMemo(() => {
         if (!sessions || sessions.length === 0) return [];
 
-        // Get last 5 sessions, sorted by lastActive
-        const recentSessions = [...sessions]
+        // Group sessions by deviceId and get the most recent session per device
+        const deviceSessionsMap = new Map<string, ClientSession>();
+
+        sessions.forEach((session: ClientSession) => {
+            if (!session.deviceId) return;
+
+            const existing = deviceSessionsMap.get(session.deviceId);
+            if (!existing) {
+                deviceSessionsMap.set(session.deviceId, session);
+            } else {
+                // Keep the most recent session for this device
+                const existingTime = new Date(existing.lastActive || 0).getTime();
+                const currentTime = new Date(session.lastActive || 0).getTime();
+                if (currentTime > existingTime) {
+                    deviceSessionsMap.set(session.deviceId, session);
+                }
+            }
+        });
+
+        // Get last 5 unique devices, sorted by most recent activity
+        const uniqueDeviceSessions = Array.from(deviceSessionsMap.values())
             .sort((a, b) => {
                 const aTime = new Date(a.lastActive || 0).getTime();
                 const bTime = new Date(b.lastActive || 0).getTime();
@@ -151,15 +213,20 @@ export default function SecurityScreen() {
             })
             .slice(0, 5);
 
-        return recentSessions.map((session: ClientSession) => {
-            // Use deviceId to match with devices data if available
-            const device = devices.find((d: any) => d.deviceId === session.deviceId);
-            const deviceType = device?.type || device?.deviceType || 'Unknown';
-            const deviceName = device?.name || device?.deviceName || deviceType;
-            const lastActive = session.lastActive;
+        return uniqueDeviceSessions.map((session: ClientSession) => {
+            // Match device by deviceId - try both d.deviceId and d.id
+            const device = devices.find((d: any) =>
+                (d.deviceId === session.deviceId) || (d.id === session.deviceId)
+            );
+
+            // Use device info if available, otherwise infer from session
+            const deviceType = device?.type || device?.deviceType || 'unknown';
+            const deviceName = device?.name || device?.deviceName || 'Unknown Device';
+            // Use device's lastActive if available (more accurate), otherwise session's lastActive
+            const lastActive = device?.lastActive || device?.createdAt || session.lastActive;
 
             return {
-                id: `activity-${session.sessionId}`,
+                id: `activity-${session.deviceId}`,
                 icon: getDeviceIcon(deviceType) as any,
                 iconColor: colors.sidebarIconDevices,
                 title: `New sign-in on ${deviceName}`,
