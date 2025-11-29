@@ -67,13 +67,6 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     }
 
     /**
-     * Get file stream URL (direct Oxy Cloud/CDN URL, no token)
-     */
-    getFileStreamUrl(fileId: string): string {
-      return `${this.getCloudURL()}/files/${fileId}/stream`;
-    }
-
-    /**
      * List user files
      */
     async listUserFiles(limit?: number, offset?: number): Promise<{ files: any[]; total: number; hasMore: boolean }> {

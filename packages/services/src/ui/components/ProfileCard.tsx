@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
 import Avatar from './Avatar';
 import { useOxy } from '../context/OxyContext';
+import { useFileDownloadUrl } from '../hooks';
 import { fontFamilies } from '../styles/fonts';
 
 interface ProfileCardProps {
@@ -33,6 +34,8 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
     const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#FFFFFF';
     const primaryColor = '#0066CC';
 
+    const avatarUrl = useFileDownloadUrl(user?.avatar, { variant: 'thumb' }).url || undefined;
+
     return (
         <View style={styles.headerSection}>
             <View style={[
@@ -43,7 +46,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
             ]}>
                 <View style={styles.userProfile}>
                     <Avatar
-                        uri={user?.avatar ? oxyServices.getFileDownloadUrl(user.avatar as string, 'thumb') : undefined}
+                        uri={user?.avatar ? avatarUrl : undefined}
                         name={user?.name?.full || user?.username}
                         size={60}
                         theme={theme}

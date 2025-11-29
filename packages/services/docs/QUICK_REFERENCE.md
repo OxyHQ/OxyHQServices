@@ -109,11 +109,8 @@ const fileId = uploaded.file.id;
 ### Get File URL
 
 ```typescript
-// Download URL (with auth token)
+// Download/stream URL (with auth token, ORB-safe headers, and variants)
 const url = oxyServices.getFileDownloadUrl('file123', 'thumb');
-
-// Stream URL (CDN, no auth)
-const url = oxyServices.getFileStreamUrl('file123');
 ```
 
 ### Notifications

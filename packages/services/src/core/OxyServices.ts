@@ -22,8 +22,8 @@
  * const file = fileInput.files[0];
  * await oxy.uploadRawFile(file);
  *
- * // Get a file stream URL for <img src>
- * const url = oxy.getFileStreamUrl('fileId');
+ * // Get a file download URL for <img src>
+ * const url = oxy.getFileDownloadUrl('fileId', 'thumb');
  * ```
  *
  * ## Node.js (CommonJS/TypeScript)

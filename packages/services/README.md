@@ -380,12 +380,11 @@ await oxyClient.markAllNotificationsAsRead();                    // Mark all as 
 await oxyClient.deleteNotification('notification123');           // Delete notification
 
 // File Management
-const fileData = await oxyClient.uploadFile(file);               // Upload file
-const file = await oxyClient.getFile('file123');                 // Get file info
-await oxyClient.deleteFile('file123');                           // Delete file
-const downloadUrl = oxyClient.getFileDownloadUrl('file123');     // Get download URL
-const streamUrl = oxyClient.getFileStreamUrl('file123');         // Get stream URL
-const userFiles = await oxyClient.listUserFiles('user123');      // List user files
+const fileData = await oxyClient.uploadFile(file);                     // Upload file
+const file = await oxyClient.getFile('file123');                       // Get file info
+await oxyClient.deleteFile('file123');                                 // Delete file
+const downloadUrl = oxyClient.getFileDownloadUrl('file123', 'thumb'); // Get download/stream URL
+const userFiles = await oxyClient.listUserFiles('user123');            // List user files
 
 // Payments
 const payment = await oxyClient.createPayment(paymentData);      // Create payment

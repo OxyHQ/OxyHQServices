@@ -330,32 +330,25 @@ const uploaded = await oxyServices.uploadRawFile(file, 'public', {
 
 ### `getFileDownloadUrl(fileId, variant?, expiresIn?)`
 
-Get a download URL for a file (includes authentication token).
+Get a stream/download URL for a file.
+
+This method returns a URL pointing to the `/api/assets/:id/stream` endpoint, which:
+- Handles authentication automatically using the current access token (when available)
+- Supports image variants (e.g. thumbnails)
+- Sets proper media/CORS headers to avoid browser ORB blocking
 
 ```typescript
-const url = oxyServices.getFileDownloadUrl('file123', 'thumb', 3600);
-// Returns: URL string
+// Thumbnail URL for images (recommended for avatars, profile pictures, etc.)
+const thumbUrl = oxyServices.getFileDownloadUrl('file123', 'thumb');
+
+// Custom expiration in seconds (default behavior is usually sufficient)
+const expiringUrl = oxyServices.getFileDownloadUrl('file123', 'thumb', 3600);
 ```
 
 **Parameters:**
 - `fileId` (string): File ID
 - `variant` (string, optional): Image variant (e.g., 'thumb', 'medium')
 - `expiresIn` (number, optional): URL expiration in seconds
-
-**Returns:** `string`
-
----
-
-### `getFileStreamUrl(fileId)`
-
-Get a direct CDN stream URL (no authentication).
-
-```typescript
-const url = oxyServices.getFileStreamUrl('file123');
-```
-
-**Parameters:**
-- `fileId` (string): File ID
 
 **Returns:** `string`
 

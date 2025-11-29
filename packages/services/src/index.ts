@@ -97,6 +97,7 @@ export { useAuthStore } from './ui/stores/authStore';
 export { useAssetStore, useAssets as useAssetsStore, useAsset, useUploadProgress, useAssetLoading, useAssetErrors, useAssetsByApp, useAssetsByEntity, useAssetUsageCount, useIsAssetLinked } from './ui/stores/assetStore';
 export { useSessionSocket } from './ui/hooks/useSessionSocket';
 export { useAssets, setOxyAssetInstance } from './ui/hooks/useAssets';
+export { useFileDownloadUrl, setOxyFileUrlInstance } from './ui/hooks/useFileDownloadUrl';
 
 // UI components
 export { OxySignInButton } from './ui/components/OxySignInButton';
