@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useRef, useEffect } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
 import { Image } from 'expo-image';
 import LottieView from 'lottie-react-native';
@@ -20,6 +20,8 @@ export default function HomeScreen() {
   const { width } = useWindowDimensions();
   const router = useRouter();
   const pathname = usePathname();
+  const lottieRef = useRef<LottieView>(null);
+  const hasPlayedRef = useRef(false);
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = useMemo(() => Platform.OS === 'web' && width >= 768, [width]);
@@ -141,6 +143,21 @@ export default function HomeScreen() {
     // You'd need to implement this based on your theme system
   }, []);
 
+  useEffect(() => {
+    // Play animation only once when component mounts
+    if (hasPlayedRef.current) return;
+    
+    // Use a small timeout to ensure the ref is set after render
+    const timer = setTimeout(() => {
+      if (lottieRef.current && !hasPlayedRef.current) {
+        lottieRef.current.play();
+        hasPlayedRef.current = true;
+      }
+    }, 100);
+
+    return () => clearTimeout(timer);
+  }, []);
+
   if (isDesktop) {
     return (
       <>
@@ -148,9 +165,8 @@ export default function HomeScreen() {
           <View style={styles.avatarSectionWrapper}>
             <View style={styles.avatarContainer}>
               <LottieView
+                ref={lottieRef}
                 source={lottieAnimation}
-                autoPlay
-                loop
                 style={styles.lottieBackground}
               />
               <View style={styles.avatarWrapper}>
@@ -176,8 +192,8 @@ export default function HomeScreen() {
             <View style={styles.avatarSectionWrapper}>
               <View style={styles.avatarContainer}>
                 <LottieView
+                  ref={lottieRef}
                   source={lottieAnimation}
-                  autoPlay
                   loop
                   style={styles.lottieBackground}
                 />

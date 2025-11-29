@@ -80,7 +80,7 @@ export default function SecurityScreen() {
         },
         {
             id: 'skip-password',
-            icon: 'key-off-outline',
+            icon: 'key-minus',
             iconColor: colors.sidebarIconSecurity,
             title: 'Skip password when possible',
             subtitle: skipPassword ? 'On' : 'Off',

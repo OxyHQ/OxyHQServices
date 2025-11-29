@@ -5,7 +5,8 @@ import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, Touc
 import { useRouter, usePathname, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { DesktopSidebar, DrawerContent, Logo, MobileHeader } from '@/components/ui';
+import { DesktopSidebar, DrawerContent, MobileHeader } from '@/components/ui';
+import { LogoIcon } from '@/assets/logo';
 import { UserAvatar } from '@/components/user-avatar';
 import { Ionicons } from '@expo/vector-icons';
 import { useScrollContext } from '@/contexts/scroll-context';
@@ -64,7 +65,7 @@ export default function TabLayout() {
         {/* Top Header Bar */}
         <View style={[styles.desktopTopBar, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
           <View style={styles.topBarLeft}>
-            <Logo height={32} />
+            <LogoIcon height={32} useThemeColors={true} />
           </View>
           <View style={styles.searchBarContainer}>
             <View style={[styles.searchBar, { backgroundColor: colors.card }]}>

@@ -10,6 +10,7 @@ import { MaterialIcons } from '@expo/vector-icons';
 import { UserAvatar } from '@/components/user-avatar';
 import { useScrollContext } from '@/contexts/scroll-context';
 import { useThemeContext } from '@/contexts/theme-context';
+import { LogoIcon } from '@/assets/logo';
 
 export function MobileHeader() {
   const navigation = useNavigation();
@@ -41,12 +42,15 @@ export function MobileHeader() {
         },
       ]}
     >
-      <TouchableOpacity
-        onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
-        style={styles.menuButton}
-      >
-        <MaterialIcons name="menu" size={28} color={colors.text} />
-      </TouchableOpacity>
+      <View style={styles.headerLeft}>
+        <TouchableOpacity
+          onPress={() => navigation.dispatch(DrawerActions.openDrawer())}
+          style={styles.menuButton}
+        >
+          <MaterialIcons name="menu" size={28} color={colors.text} />
+        </TouchableOpacity>
+        <LogoIcon height={28} useThemeColors={true} />
+      </View>
       <View style={styles.headerRight}>
         <TouchableOpacity style={styles.iconButton} onPress={handleSearchPress}>
           <MaterialIcons name="search" size={26} color={colors.text} />
@@ -79,6 +83,11 @@ const styles = StyleSheet.create({
   },
   menuButton: {
     padding: 8,
+  },
+  headerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   headerRight: {
     flexDirection: 'row',
