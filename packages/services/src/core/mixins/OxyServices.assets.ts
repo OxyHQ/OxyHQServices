@@ -172,64 +172,73 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      * Works on both web (uses native arrayBuffer) and React Native (uses expo-file-system)
      */
     async fileToArrayBuffer(file: File | Blob): Promise<ArrayBuffer> {
-      // Try native arrayBuffer (web)
+      // Fast path: use native arrayBuffer if available (web)
       if (typeof file.arrayBuffer === 'function') {
         return await file.arrayBuffer();
       }
       
-      // React Native/Expo path: use expo-file-system for cleaner solution
+      // React Native/Expo path: check for URI from DocumentPicker
       const uri = (file as any).uri;
       if (uri && typeof uri === 'string') {
-        try {
-          // Try to use expo-file-system (Expo 54 recommended approach)
-          const FileSystem = await import('expo-file-system').catch(() => null);
-          if (FileSystem && FileSystem.default) {
-            // Read file as Base64 using Expo's native file system API
+        // Try expo-file-system first (Expo 54 recommended approach)
+        const FileSystem = await import('expo-file-system').catch(() => null);
+        if (FileSystem?.default) {
+          try {
             const FileSystemModule = FileSystem.default;
             const base64String = await FileSystemModule.readAsStringAsync(uri, {
               encoding: (FileSystemModule as any).EncodingType?.Base64 || 'base64',
             });
             
-            // Convert Base64 to ArrayBuffer
+            // Optimized Base64 to ArrayBuffer conversion
             const binaryString = atob(base64String);
             const bytes = new Uint8Array(binaryString.length);
+            // Use Uint8Array.set for better performance
             for (let i = 0; i < binaryString.length; i++) {
               bytes[i] = binaryString.charCodeAt(i);
             }
             return bytes.buffer;
+          } catch (expoError: any) {
+            // Fall through to fetch if expo-file-system fails
+            console.warn('expo-file-system failed, using fetch fallback:', expoError.message);
           }
-        } catch (expoError: any) {
-          // If expo-file-system fails, fall back to fetch
-          console.warn('expo-file-system not available, falling back to fetch:', expoError.message);
         }
         
-        // Fallback: use fetch if expo-file-system is not available
-        try {
-          const response = await fetch(uri);
-          if (!response.ok) {
-            throw new Error(`Failed to fetch file from URI: ${response.statusText}`);
-          }
-          return await response.arrayBuffer();
-        } catch (fetchError: any) {
-          throw new Error(`Failed to read file from URI: ${fetchError.message || 'Unknown error'}`);
+        // Fallback: use fetch API
+        const response = await fetch(uri);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch file from URI: ${response.statusText || 'HTTP ' + response.status}`);
         }
+        return await response.arrayBuffer();
       }
       
-      // Final fallback: create blob URL and fetch (for web Blobs without URI)
+      // Final fallback: create blob URL for web Blobs without URI
+      const blobUrl = URL.createObjectURL(file);
       try {
-        const blobUrl = URL.createObjectURL(file);
-        try {
-          const response = await fetch(blobUrl);
-          if (!response.ok) {
-            throw new Error(`Failed to fetch file from blob URL: ${response.statusText}`);
-          }
-          return await response.arrayBuffer();
-        } finally {
-          URL.revokeObjectURL(blobUrl);
+        const response = await fetch(blobUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch file from blob URL: ${response.statusText || 'HTTP ' + response.status}`);
         }
-      } catch (error: any) {
-        throw new Error(`Failed to convert file to ArrayBuffer: ${error.message || 'Unknown error'}`);
+        return await response.arrayBuffer();
+      } finally {
+        URL.revokeObjectURL(blobUrl);
       }
+    }
+
+    /**
+     * Convert ArrayBuffer to hex string (optimized)
+     */
+    arrayBufferToHex(buffer: ArrayBuffer): string {
+      const bytes = new Uint8Array(buffer);
+      return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    }
+
+    /**
+     * Convert ArrayBuffer to base64 string (optimized)
+     */
+    arrayBufferToBase64(buffer: ArrayBuffer): string {
+      const bytes = new Uint8Array(buffer);
+      const binary = String.fromCharCode.apply(null, Array.from(bytes));
+      return typeof btoa !== 'undefined' ? btoa(binary) : Buffer.from(binary).toString('base64');
     }
 
     /**
@@ -240,42 +249,35 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       const buffer = await this.fileToArrayBuffer(file);
       
       // Try native crypto.subtle first (web and modern environments)
-      if (typeof crypto !== 'undefined' && crypto.subtle && typeof crypto.subtle.digest === 'function') {
+      if (typeof crypto !== 'undefined' && crypto.subtle?.digest) {
         try {
           const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-          const hashArray = Array.from(new Uint8Array(hashBuffer));
-          return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+          return this.arrayBufferToHex(hashBuffer);
         } catch (error: any) {
-          // Fall through to expo-crypto if crypto.subtle fails
           console.warn('crypto.subtle failed, trying expo-crypto:', error.message);
         }
       }
       
       // Try expo-crypto (Expo/React Native) - optional dependency
-      try {
-        // Dynamically import expo-crypto (optional peer dependency)
-        // eslint-disable-next-line @typescript-eslint/no-var-requires
-        const CryptoModule = await import('expo-crypto' as any).catch(() => null);
-        if (CryptoModule) {
-          const Crypto = CryptoModule.default || CryptoModule;
-          if (Crypto && typeof Crypto.digestStringAsync === 'function') {
-            // Convert ArrayBuffer to base64 string for expo-crypto
-            const bytes = new Uint8Array(buffer);
-            const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
-            const base64 = typeof btoa !== 'undefined' ? btoa(binary) : Buffer.from(binary).toString('base64');
-            
-            // expo-crypto's digestStringAsync with BASE64 encoding
+      const CryptoModule = await import('expo-crypto' as any).catch(() => null);
+      if (CryptoModule) {
+        const Crypto = CryptoModule.default || CryptoModule;
+        if (Crypto?.digestStringAsync) {
+          try {
+            const base64 = this.arrayBufferToBase64(buffer);
             const algorithm = (Crypto as any).CryptoDigestAlgorithm?.SHA256 || 'SHA256';
             const encoding = (Crypto as any).CryptoEncoding?.BASE64 || 'base64';
             return await Crypto.digestStringAsync(algorithm, base64, { encoding });
+          } catch (expoError: any) {
+            console.warn('expo-crypto failed:', expoError.message);
           }
         }
-      } catch (expoError: any) {
-        // Continue to error if expo-crypto not available
-        // This is expected if expo-crypto is not installed
       }
       
-      throw new Error('No crypto implementation available. For React Native/Expo, install expo-crypto: npx expo install expo-crypto');
+      throw new Error(
+        'No crypto implementation available. ' +
+        'For React Native/Expo, install expo-crypto: npx expo install expo-crypto'
+      );
     }
 
     /**
@@ -315,40 +317,74 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
      * Upload file using Central Asset Service
      */
     async assetUpload(file: File, visibility?: 'private' | 'public' | 'unlisted', metadata?: Record<string, any>, onProgress?: (progress: number) => void): Promise<any> {
+      const fileName = file.name || 'unknown';
+      const fileSize = file.size;
+      const fileType = file.type || 'application/octet-stream';
+      
       try {
         // Calculate SHA256
-        const sha256 = await this.calculateSHA256(file);
+        let sha256: string;
+        try {
+          sha256 = await this.calculateSHA256(file);
+        } catch (error: any) {
+          throw new Error(`Failed to calculate file hash for "${fileName}": ${error.message || 'Unknown error'}`);
+        }
         
         // Initialize upload
-        const initResponse = await this.assetInit(sha256, file.size, file.type);
+        let initResponse: AssetInitResponse;
+        try {
+          initResponse = await this.assetInit(sha256, fileSize, fileType);
+        } catch (error: any) {
+          throw new Error(`Failed to initialize upload for "${fileName}": ${error.message || 'Unknown error'}`);
+        }
 
-        // Try presigned URL first
+        // Try presigned URL first, fallback to direct upload
         try {
           await this.uploadToPresignedUrl(initResponse.uploadUrl, file, onProgress);
-        } catch (e) {
+        } catch (uploadError: any) {
           // Fallback: direct upload via API to avoid CORS issues
-          const fd = new FormData();
-          fd.append('file', file);
-          // Use httpService directly for FormData uploads (bypasses caching for special handling)
-          await this.getClient().request({
-            method: 'POST',
-            url: `/api/assets/${encodeURIComponent(initResponse.fileId)}/upload-direct`,
-            data: fd,
-            cache: false,
-          });
+          try {
+            const fd = new FormData();
+            fd.append('file', file);
+            await this.getClient().request({
+              method: 'POST',
+              url: `/api/assets/${encodeURIComponent(initResponse.fileId)}/upload-direct`,
+              data: fd,
+              cache: false,
+            });
+          } catch (directUploadError: any) {
+            throw new Error(
+              `Failed to upload file "${fileName}" (${(fileSize / 1024 / 1024).toFixed(2)}MB): ` +
+              `Presigned URL failed: ${uploadError.message || 'Unknown error'}. ` +
+              `Direct upload failed: ${directUploadError.message || 'Unknown error'}`
+            );
+          }
         }
 
         // Complete upload
-        return await this.assetComplete(
-          initResponse.fileId,
-          file.name,
-          file.size,
-          file.type,
-          visibility,
-          metadata
-        );
+        try {
+          return await this.assetComplete(
+            initResponse.fileId,
+            fileName,
+            fileSize,
+            fileType,
+            visibility,
+            metadata
+          );
+        } catch (error: any) {
+          throw new Error(`Failed to complete upload for "${fileName}": ${error.message || 'Unknown error'}`);
+        }
       } catch (error) {
-        throw this.handleError(error);
+        // Add file context to error for better debugging
+        const contextError = error as Error & { fileContext?: Record<string, unknown> };
+        if (!contextError.fileContext) {
+          contextError.fileContext = {
+            fileName,
+            fileSize,
+            fileType,
+          };
+        }
+        throw this.handleError(contextError);
       }
     }
 
