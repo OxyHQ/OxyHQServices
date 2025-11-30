@@ -80,7 +80,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
       }
     };
 
-    const handleSessionUpdate = (data: { 
+    const handleSessionUpdate = async (data: { 
       type: string; 
       sessionId?: string; 
       deviceId?: string; 
@@ -108,7 +108,14 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
             toast.info('You have been signed out remotely.');
           }
           // Use clearSessionState since session was already removed server-side
-          clearSessionStateRef.current();
+          // Await to ensure storage cleanup completes before continuing
+          try {
+            await clearSessionStateRef.current();
+          } catch (error) {
+            if (__DEV__) {
+              console.error('Failed to clear session state after session_removed:', error);
+            }
+          }
         } else {
           // Otherwise, just refresh the sessions list (with error handling)
           refreshSessionsRef.current().catch((error) => {
@@ -134,7 +141,14 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
             toast.info('This device has been removed. You have been signed out.');
           }
           // Use clearSessionState since sessions were already removed server-side
-          clearSessionStateRef.current();
+          // Await to ensure storage cleanup completes before continuing
+          try {
+            await clearSessionStateRef.current();
+          } catch (error) {
+            if (__DEV__) {
+              console.error('Failed to clear session state after device_removed:', error);
+            }
+          }
         } else {
           // Otherwise, refresh sessions and device list (with error handling)
           refreshSessionsRef.current().catch((error) => {
@@ -160,7 +174,14 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
             toast.info('You have been signed out remotely.');
           }
           // Use clearSessionState since sessions were already removed server-side
-          clearSessionStateRef.current();
+          // Await to ensure storage cleanup completes before continuing
+          try {
+            await clearSessionStateRef.current();
+          } catch (error) {
+            if (__DEV__) {
+              console.error('Failed to clear session state after sessions_removed:', error);
+            }
+          }
         } else {
           // Otherwise, refresh sessions list (with error handling)
           refreshSessionsRef.current().catch((error) => {
@@ -187,7 +208,14 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
             toast.info('You have been signed out remotely.');
           }
           // Use clearSessionState since session was already removed server-side
-          clearSessionStateRef.current();
+          // Await to ensure storage cleanup completes before continuing
+          try {
+            await clearSessionStateRef.current();
+          } catch (error) {
+            if (__DEV__) {
+              console.error('Failed to clear session state after session_update:', error);
+            }
+          }
         }
       }
     };
