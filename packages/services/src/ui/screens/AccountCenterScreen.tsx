@@ -34,6 +34,8 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const { user, logout, isLoading, sessions, isAuthenticated } = useOxy();
     const { t } = useI18n();
+    const colorScheme = useColorScheme() ?? theme ?? 'light';
+    const colors = Colors[colorScheme];
 
     // Use centralized theme styles hook for consistency
     const themeStyles = useThemeStyles(theme);
@@ -173,7 +175,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 {
                                     id: 'switch',
                                     icon: 'people',
-                                    iconColor: '#FF9500',
+                                    iconColor: colors.iconStorage,
                                     title: t('accountCenter.items.switchAccount.title') || 'Switch Account',
                                     subtitle: t('accountCenter.items.switchAccount.subtitle', { count: sessions.length }) || `${sessions.length} accounts available`,
                                     onPress: () => navigate('AccountSwitcher'),
@@ -200,12 +202,12 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 {
                                     id: 'add',
                                     icon: 'person-add',
-                                    iconColor: '#30D158',
+                                    iconColor: colors.iconPersonalInfo,
                                     title: t('accountCenter.items.addAccount.title') || 'Add Another Account',
                                     subtitle: t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account',
                                     onPress: () => navigate('SignIn'),
                                 },
-                            ], [navigate, t])}
+                            ], [navigate, t, colors])}
                             
                         />
                     </Section>
@@ -218,7 +220,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             ...(Platform.OS !== 'web' ? [{
                                 id: 'notifications',
                                 icon: 'notifications',
-                                iconColor: '#FF9500',
+                                iconColor: colors.iconStorage,
                                 title: t('accountCenter.items.notifications.title') || 'Notifications',
                                 subtitle: t('accountCenter.items.notifications.subtitle') || 'Manage notification settings',
                                 onPress: () => toast.info(t('accountCenter.items.notifications.coming') || 'Notifications feature coming soon!'),
@@ -226,7 +228,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'language',
                                 icon: 'language',
-                                iconColor: '#32D74B',
+                                iconColor: colors.iconPersonalInfo,
                                 title: t('language.title') || 'Language',
                                 subtitle: t('language.subtitle') || 'Choose your preferred language',
                                 onPress: () => navigate('LanguageSelector'),
@@ -234,7 +236,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'help',
                                 icon: 'help-circle',
-                                iconColor: '#007AFF',
+                                iconColor: colors.iconSecurity,
                                 title: t('accountOverview.items.help.title') || 'Help & Support',
                                 subtitle: t('accountOverview.items.help.subtitle') || 'Get help and contact support',
                                 onPress: () => toast.info(t('accountOverview.items.help.coming') || 'Help & Support feature coming soon!'),
