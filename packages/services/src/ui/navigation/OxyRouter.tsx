@@ -17,22 +17,19 @@ const VALID_ROUTES_STRING = routeNames.join(', ');
 // Empty object constant to avoid creating new objects
 const EMPTY_PROPS = Object.freeze({}) as Record<string, unknown>;
 
-// Helper function to validate route names at runtime
-const isValidRouteName = (screen: string): screen is RouteName => {
-    return routeNameSet.has(screen as RouteName);
-};
+// Error container component (constant to avoid recreation)
+const ErrorContainer = () => <View style={styles.errorContainer} />;
 
 // Helper function to validate route and log errors
 const validateRoute = (screen: string): screen is RouteName => {
-    if (!isValidRouteName(screen)) {
-        const errorMsg = `Invalid route name: "${screen}". Valid routes are: ${VALID_ROUTES_STRING}`;
-        console.error('OxyRouter:', errorMsg);
+    if (!routeNameSet.has(screen as RouteName)) {
+        console.error('OxyRouter:', `Invalid route name: "${screen}". Valid routes are: ${VALID_ROUTES_STRING}`);
         return false;
     }
 
-    if (!routes[screen]) {
-        const errorMsg = `Route "${screen}" is registered but component is missing`;
-        console.error('OxyRouter:', errorMsg);
+    const route = routes[screen as RouteName];
+    if (!route) {
+        console.error('OxyRouter:', `Route "${screen}" is registered but component is missing`);
         return false;
     }
 
@@ -47,6 +44,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
     theme,
     adjustSnapPoints,
     navigationRef,
+    routerRef,
     containerWidth,
 }) => {
     const [currentScreen, setCurrentScreen] = useState<RouteName>(initialScreen);
@@ -85,38 +83,50 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
 
     const goBack = useCallback(() => {
         setScreenHistory(prev => {
-            if (prev.length > 1) {
-                const newHistory = prev.slice(0, -1);
-                const previousScreen = newHistory[newHistory.length - 1];
-                setCurrentScreen(previousScreen);
-                return newHistory;
+            if (prev.length <= 1) {
+                onClose?.();
+                return prev;
             }
-            onClose?.();
-            return prev;
+            const newHistory = prev.slice(0, -1);
+            setCurrentScreen(newHistory[newHistory.length - 1]);
+            return newHistory;
         });
     }, [onClose]);
+
+    // Check if router can go back (has navigation history)
+    const canGoBack = useCallback(() => {
+        return screenHistory.length > 1;
+    }, [screenHistory.length]);
 
     // Expose the navigate function to the parent component
     useEffect(() => {
         if (!navigationRef) return;
 
         navigationRef.current = navigate;
-        if (__DEV__) {
-            console.log('OxyRouter: navigationRef set');
-        }
+        if (__DEV__) console.log('OxyRouter: navigationRef set');
 
         return () => {
             navigationRef.current = null;
-            if (__DEV__) {
-                console.log('OxyRouter: navigationRef cleared');
-            }
+            if (__DEV__) console.log('OxyRouter: navigationRef cleared');
         };
     }, [navigate, navigationRef]);
 
-    // Memoize navigation event handler to prevent recreation on every render
-    const handleNavigationEvent = useCallback((event: CustomEvent<{ screen: RouteName; props?: Record<string, unknown> } | string>) => {
-        const detail = event.detail;
+    // Expose router controller (goBack, canGoBack) to parent component
+    useEffect(() => {
+        if (!routerRef) return;
 
+        routerRef.current = {
+            goBack,
+            canGoBack,
+        };
+
+        return () => {
+            routerRef.current = null;
+        };
+    }, [goBack, canGoBack, routerRef]);
+
+    // Extract navigation detail processing logic
+    const processNavigationDetail = useCallback((detail: { screen: RouteName; props?: Record<string, unknown> } | string) => {
         if (typeof detail === 'string') {
             if (validateRoute(detail)) {
                 navigate(detail);
@@ -127,6 +137,14 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
             }
         }
     }, [navigate]);
+
+    // Memoize navigation event handler to prevent recreation on every render
+    const handleNavigationEvent = useCallback(
+        (event: CustomEvent<{ screen: RouteName; props?: Record<string, unknown> } | string>) => {
+            processNavigationDetail(event.detail);
+        },
+        [processNavigationDetail]
+    );
 
     // Handle navigation events from external sources (web environment only)
     // Note: React Native navigation should use navigationRef directly, not polling
@@ -145,6 +163,21 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
     // Memoize screen props to prevent unnecessary re-renders
     const screenProps = useMemo(() => screenPropsMap[currentScreen] || EMPTY_PROPS, [screenPropsMap, currentScreen]);
 
+    // Memoize complete screen props object to avoid recreating on every render
+    const screenPropsWithDefaults = useMemo(
+        () => ({
+            oxyServices,
+            navigate,
+            goBack,
+            onClose,
+            onAuthenticated,
+            theme,
+            containerWidth,
+            ...screenProps,
+        }),
+        [oxyServices, navigate, goBack, onClose, onAuthenticated, theme, containerWidth, screenProps]
+    );
+
     // Memoize error boundary handler to prevent recreation on every render
     const handleError = useCallback((error: Error, errorInfo: ErrorInfo) => {
         console.error(`Error in screen "${currentScreen}":`, error, errorInfo);
@@ -155,39 +188,16 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
         const CurrentScreen = currentRouteConfig?.component;
 
         if (!CurrentScreen) {
-            if (__DEV__) {
-                console.error(`Screen "${currentScreen}" not found`);
-            }
-            return <View style={styles.errorContainer} />;
+            if (__DEV__) console.error(`Screen "${currentScreen}" not found`);
+            return <ErrorContainer />;
         }
 
         return (
             <ErrorBoundary onError={handleError}>
-                <CurrentScreen
-                    oxyServices={oxyServices}
-                    navigate={navigate}
-                    goBack={goBack}
-                    onClose={onClose}
-                    onAuthenticated={onAuthenticated}
-                    theme={theme}
-                    containerWidth={containerWidth}
-                    {...screenProps}
-                />
+                <CurrentScreen {...screenPropsWithDefaults} />
             </ErrorBoundary>
         );
-    }, [
-        currentRouteConfig,
-        currentScreen,
-        oxyServices,
-        navigate,
-        goBack,
-        onClose,
-        onAuthenticated,
-        theme,
-        containerWidth,
-        screenProps,
-        handleError,
-    ]);
+    }, [currentRouteConfig, currentScreen, screenPropsWithDefaults, handleError]);
 
     return (
         <View style={styles.container}>

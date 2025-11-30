@@ -35,6 +35,15 @@ export interface RouteConfig {
   snapPoints: string[];
 }
 
+// Helper function to create route config (reduces repetitive type assertions)
+const createRoute = <T extends ComponentType<any>>(
+  component: T,
+  snapPoints: [string, string]
+): RouteConfig => ({
+  component: component as unknown as ComponentType<any>,
+  snapPoints,
+});
+
 // Keep a literal list of route names for a precise union type
 export const routeNames = [
   'SignIn',
@@ -72,124 +81,34 @@ export const routeNames = [
 export type RouteName = typeof routeNames[number];
 
 export const routes: Record<RouteName, RouteConfig> = {
-  SignIn: {
-    component: SignInScreen as unknown as ComponentType<any>,
-    snapPoints: ['10%', '80%'],
-  },
-  SignUp: {
-    component: SignUpScreen as unknown as ComponentType<any>,
-    snapPoints: ['10%', '90%'],
-  },
-  RecoverAccount: {
-    component: RecoverAccountScreen as unknown as ComponentType<any>,
-    snapPoints: ['10%', '80%'],
-  },
-  AccountCenter: {
-    component: AccountCenterScreen as unknown as ComponentType<any>,
-    snapPoints: ['60%', '100%'],
-  },
-  AccountSwitcher: {
-    component: AccountSwitcherScreen as unknown as ComponentType<any>,
-    snapPoints: ['70%', '100%'],
-  },
-  SessionManagement: {
-    component: SessionManagementScreen as unknown as ComponentType<any>,
-    snapPoints: ['70%', '100%'],
-  },
-  AccountOverview: {
-    component: AccountOverviewScreen as unknown as ComponentType<any>,
-    snapPoints: ['60%', '85%'],
-  },
-  EditProfile: {
-    component: AccountSettingsScreen as unknown as ComponentType<any>,
-    snapPoints: ['60%', '100%'],
-  },
-  PremiumSubscription: {
-    component: PremiumSubscriptionScreen as unknown as ComponentType<any>,
-    snapPoints: ['70%', '100%'],
-  },
-  AppInfo: {
-    component: AppInfoScreen as unknown as ComponentType<any>,
-    snapPoints: ['60%', '90%'],
-  },
-  Feedback: {
-    component: FeedbackScreen as unknown as ComponentType<any>,
-    snapPoints: ['70%', '100%'],
-  },
-  KarmaCenter: {
-    component: KarmaCenterScreen as unknown as ComponentType<any>,
-    snapPoints: ['60%', '100%'],
-  },
-  KarmaLeaderboard: {
-    component: KarmaLeaderboardScreen as unknown as ComponentType<any>,
-    snapPoints: ['60%', '100%'],
-  },
-  KarmaRules: {
-    component: KarmaRulesScreen as unknown as ComponentType<any>,
-    snapPoints: ['60%', '90%'],
-  },
-  AboutKarma: {
-    component: KarmaAboutScreen as unknown as ComponentType<any>,
-    snapPoints: ['60%', '90%'],
-  },
-  KarmaRewards: {
-    component: KarmaRewardsScreen as unknown as ComponentType<any>,
-    snapPoints: ['60%', '90%'],
-  },
-  KarmaFAQ: {
-    component: KarmaFAQScreen as unknown as ComponentType<any>,
-    snapPoints: ['60%', '90%'],
-  },
-  Profile: {
-    component: ProfileScreen as unknown as ComponentType<any>,
-    snapPoints: ['60%', '90%'],
-  },
-  UserLinks: {
-    component: UserLinksScreen as unknown as ComponentType<any>,
-    snapPoints: ['60%', '90%'],
-  },
-  FileManagement: {
-    component: FileManagementScreen as unknown as ComponentType<any>,
-    snapPoints: ['70%', '100%'],
-  },
-  PaymentGateway: {
-    component: PaymentGatewayScreen as unknown as ComponentType<any>,
-    snapPoints: ['60%', '90%'],
-  },
-  WelcomeNewUser: {
-    component: WelcomeNewUserScreen as unknown as ComponentType<any>,
-    snapPoints: ['65%', '90%'],
-  },
-  LanguageSelector: {
-    component: LanguageSelectorScreen as unknown as ComponentType<any>,
-    snapPoints: ['70%', '100%'],
-  },
-  HistoryView: {
-    component: HistoryViewScreen as unknown as ComponentType<any>,
-    snapPoints: ['70%', '100%'],
-  },
-  SavesCollections: {
-    component: SavesCollectionsScreen as unknown as ComponentType<any>,
-    snapPoints: ['70%', '100%'],
-  },
-  SearchSettings: {
-    component: SearchSettingsScreen as unknown as ComponentType<any>,
-    snapPoints: ['70%', '100%'],
-  },
-  HelpSupport: {
-    component: HelpSupportScreen as unknown as ComponentType<any>,
-    snapPoints: ['70%', '100%'],
-  },
-  LegalDocuments: {
-    component: LegalDocumentsScreen as unknown as ComponentType<any>,
-    snapPoints: ['70%', '100%'],
-  },
-  PrivacySettings: {
-    component: PrivacySettingsScreen as unknown as ComponentType<any>,
-    snapPoints: ['60%', '100%'],
-  },
-  AccountVerification: {
-    component: AccountVerificationScreen as unknown as ComponentType<any>,
-    snapPoints: ['70%', '100%'],
-  },
+  SignIn: createRoute(SignInScreen, ['10%', '80%']),
+  SignUp: createRoute(SignUpScreen, ['10%', '90%']),
+  RecoverAccount: createRoute(RecoverAccountScreen, ['10%', '80%']),
+  AccountCenter: createRoute(AccountCenterScreen, ['60%', '100%']),
+  AccountSwitcher: createRoute(AccountSwitcherScreen, ['70%', '100%']),
+  SessionManagement: createRoute(SessionManagementScreen, ['70%', '100%']),
+  AccountOverview: createRoute(AccountOverviewScreen, ['60%', '85%']),
+  EditProfile: createRoute(AccountSettingsScreen, ['60%', '100%']),
+  PremiumSubscription: createRoute(PremiumSubscriptionScreen, ['70%', '100%']),
+  AppInfo: createRoute(AppInfoScreen, ['60%', '90%']),
+  Feedback: createRoute(FeedbackScreen, ['70%', '100%']),
+  KarmaCenter: createRoute(KarmaCenterScreen, ['60%', '100%']),
+  KarmaLeaderboard: createRoute(KarmaLeaderboardScreen, ['60%', '100%']),
+  KarmaRules: createRoute(KarmaRulesScreen, ['60%', '90%']),
+  AboutKarma: createRoute(KarmaAboutScreen, ['60%', '90%']),
+  KarmaRewards: createRoute(KarmaRewardsScreen, ['60%', '90%']),
+  KarmaFAQ: createRoute(KarmaFAQScreen, ['60%', '90%']),
+  Profile: createRoute(ProfileScreen, ['60%', '90%']),
+  UserLinks: createRoute(UserLinksScreen, ['60%', '90%']),
+  FileManagement: createRoute(FileManagementScreen, ['70%', '100%']),
+  PaymentGateway: createRoute(PaymentGatewayScreen, ['60%', '90%']),
+  WelcomeNewUser: createRoute(WelcomeNewUserScreen, ['65%', '90%']),
+  LanguageSelector: createRoute(LanguageSelectorScreen, ['70%', '100%']),
+  HistoryView: createRoute(HistoryViewScreen, ['70%', '100%']),
+  SavesCollections: createRoute(SavesCollectionsScreen, ['70%', '100%']),
+  SearchSettings: createRoute(SearchSettingsScreen, ['70%', '100%']),
+  HelpSupport: createRoute(HelpSupportScreen, ['70%', '100%']),
+  LegalDocuments: createRoute(LegalDocumentsScreen, ['70%', '100%']),
+  PrivacySettings: createRoute(PrivacySettingsScreen, ['60%', '100%']),
+  AccountVerification: createRoute(AccountVerificationScreen, ['70%', '100%']),
 };

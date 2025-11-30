@@ -258,7 +258,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
                 index === stepIndex ? data : item
             ),
         }));
-    }, [setState]);
+    }, []);
 
     // Animation transition function
     const animateTransition = useCallback((nextStep: number) => {
@@ -362,8 +362,14 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     const currentStepConfig = steps[state.currentStep];
     const CurrentStepComponent = currentStepConfig?.component;
 
-    // Enhanced props for the step component
-    const stepProps = {
+    // Memoize updateStepData callback for current step to prevent recreation
+    const updateCurrentStepData = useCallback(
+        (data: any) => updateStepData(state.currentStep, data),
+        [state.currentStep, updateStepData]
+    );
+
+    // Memoize enhanced props for the step component to prevent unnecessary re-renders
+    const stepProps = useMemo(() => ({
         ...currentStepConfig?.props,
         // Common props
         colors,
@@ -385,7 +391,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         ...state.stepData[state.currentStep],
 
         // Step data management
-        updateStepData: (data: any) => updateStepData(state.currentStep, data),
+        updateStepData: updateCurrentStepData,
         allStepData: state.stepData,
 
         // State
@@ -395,7 +401,27 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         fadeAnim,
         slideAnim,
         scaleAnim,
-    };
+    }), [
+        currentStepConfig?.props,
+        colors,
+        styles,
+        theme,
+        navigate,
+        goBack,
+        onAuthenticated,
+        oxyServices,
+        nextStep,
+        prevStep,
+        goToStep,
+        state.currentStep,
+        state.stepData,
+        state.isTransitioning,
+        steps.length,
+        updateCurrentStepData,
+        fadeAnim,
+        slideAnim,
+        scaleAnim,
+    ]);
 
     return (
         <KeyboardAvoidingView

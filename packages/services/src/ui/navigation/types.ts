@@ -28,6 +28,14 @@ export { routes } from './routes';
 export type { RouteName } from './routes';
 
 /**
+ * Router controller interface for accessing router state
+ */
+export interface OxyRouterController {
+  goBack: () => void;
+  canGoBack: () => boolean;
+}
+
+/**
  * Props for OxyRouter component
  */
 export interface OxyRouterProps {
@@ -38,6 +46,7 @@ export interface OxyRouterProps {
   theme: 'light' | 'dark';
   adjustSnapPoints?: (snapPoints: string[]) => void;
   navigationRef?: React.MutableRefObject<((screen: RouteName, props?: Record<string, unknown>) => void) | null>;
+  routerRef?: React.MutableRefObject<OxyRouterController | null>;
   containerWidth?: number;
 }
 

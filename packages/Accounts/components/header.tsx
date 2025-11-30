@@ -191,7 +191,6 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
 
     const logoCenterStyle = useMemo(() => ({
         top: insets.top + 4,
-        bottom: 10,
     }), [insets.top]);
 
     const avatarSize = isDesktop ? 36 : 32;

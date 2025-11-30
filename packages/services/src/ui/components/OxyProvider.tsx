@@ -1,8 +1,8 @@
 import { useCallback, useRef, useState, useEffect, useMemo, forwardRef, useImperativeHandle, type FC } from 'react';
-import { View, Text, StyleSheet, Platform, Animated, StatusBar, AppState, Keyboard, type KeyboardEvent } from 'react-native';
+import { View, Text, StyleSheet, Platform, Animated, StatusBar, AppState, Keyboard, BackHandler, type KeyboardEvent } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import type { OxyProviderProps, BottomSheetController } from '../navigation/types';
+import type { OxyProviderProps, BottomSheetController, OxyRouterController } from '../navigation/types';
 import { OxyContextProvider, useOxy } from '../context/OxyContext';
 import OxyRouter from '../navigation/OxyRouter';
 import { FontLoader, setupFonts } from './FontLoader';
@@ -143,10 +143,8 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
     showInternalToaster = true,
     appInsets,
 }, ref) => {
-    // Helper function to determine if native driver should be used
-    const shouldUseNativeDriver = () => {
-        return Platform.OS === 'ios';
-    };
+    // Memoize native driver check (constant per platform, no need to recreate)
+    const shouldUseNativeDriver = useMemo(() => Platform.OS === 'ios', []);
     // Get window dimensions for max height calculation
     const { height: windowHeight } = useWindowDimensions();
     // Get oxyServices from context if not provided as prop
@@ -156,6 +154,7 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
     const modalRef = useRef<BottomSheetModalRef>(null);
     const isOpenRef = useRef(false);
     const navigationRef = useRef<((screen: any, props?: Record<string, unknown>) => void) | null>(null);
+    const routerRef = useRef<OxyRouterController | null>(null);
 
     // Remove contentHeight, containerWidth, and snap point state/logic
     // Animation values - keep for content fade/slide
@@ -174,13 +173,13 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
                 Animated.timing(fadeAnim, {
                     toValue: 1,
                     duration: 300,
-                    useNativeDriver: shouldUseNativeDriver(),
+                    useNativeDriver: shouldUseNativeDriver,
                 }),
                 Animated.spring(slideAnim, {
                     toValue: 0,
                     friction: 8,
                     tension: 40,
-                    useNativeDriver: shouldUseNativeDriver(),
+                    useNativeDriver: shouldUseNativeDriver,
                 }),
             ]).start();
         },
@@ -245,13 +244,13 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
                     Animated.timing(fadeAnim, {
                         toValue: 1,
                         duration: 300,
-                        useNativeDriver: shouldUseNativeDriver(),
+                        useNativeDriver: shouldUseNativeDriver,
                     }),
                     Animated.spring(slideAnim, {
                         toValue: 0,
                         friction: 8,
                         tension: 40,
-                        useNativeDriver: shouldUseNativeDriver(),
+                        useNativeDriver: shouldUseNativeDriver,
                     }),
                 ]).start();
             }, 100);
@@ -263,7 +262,7 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
         Animated.timing(fadeAnim, {
             toValue: 0,
             duration: Platform.OS === 'android' ? 100 : 200,
-            useNativeDriver: shouldUseNativeDriver(),
+            useNativeDriver: shouldUseNativeDriver,
         }).start(() => {
             modalRef.current?.dismiss();
             if (onClose) {
@@ -273,6 +272,55 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
             }
         });
     }, [onClose]);
+
+    // Handle hardware back button (Android) and browser back button (Web)
+    // Prioritize Oxy bottom sheet router navigation over app router
+    useEffect(() => {
+        // Only handle back button on mobile platforms
+        if (Platform.OS === 'web') {
+            // For web, handle browser back button
+            const handlePopState = (event: PopStateEvent) => {
+                if (isOpenRef.current && routerRef.current) {
+                    event.preventDefault();
+                    if (routerRef.current.canGoBack()) {
+                        routerRef.current.goBack();
+                        // Push a new state to prevent browser navigation
+                        window.history.pushState(null, '', window.location.href);
+                    } else {
+                        handleClose();
+                    }
+                }
+            };
+
+            window.addEventListener('popstate', handlePopState);
+            return () => {
+                window.removeEventListener('popstate', handlePopState);
+            };
+        } else {
+            // For mobile (Android), handle hardware back button
+            const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+                if (isOpenRef.current && routerRef.current) {
+                    // Bottom sheet is open - prioritize router navigation
+                    if (routerRef.current.canGoBack()) {
+                        // Router has history - navigate back within router
+                        routerRef.current.goBack();
+                        return true; // Prevent default back behavior
+                    } else {
+                        // No router history - close bottom sheet
+                        handleClose();
+                        return true; // Prevent default back behavior
+                    }
+                }
+                // Bottom sheet is closed - let app handle back button
+                return false;
+            });
+
+            return () => {
+                backHandler.remove();
+            };
+        }
+    }, [handleClose]);
+
     // Handle authentication success (unchanged)
     const handleAuthenticated = useCallback((user: any) => {
         fadeAnim.stopAnimation();
@@ -377,6 +425,7 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
                                 onAuthenticated={handleAuthenticated}
                                 theme={theme}
                                 navigationRef={navigationRef}
+                                routerRef={routerRef}
                                 containerWidth={800} // static, since dynamic sizing is used
                             />
                         ) : (
