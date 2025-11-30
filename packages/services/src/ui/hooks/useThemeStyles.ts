@@ -1,4 +1,7 @@
 import { useMemo } from 'react';
+import { useColorScheme } from './use-color-scheme';
+import { Colors } from '../constants/theme';
+import { normalizeColorScheme } from '../utils/themeUtils';
 
 export interface ThemeStyles {
     textColor: string;
@@ -11,6 +14,9 @@ export interface ThemeStyles {
     primaryColor: string;
     dangerColor: string;
     successColor: string;
+    // Normalized color scheme and theme colors
+    colorScheme: 'light' | 'dark';
+    colors: typeof Colors.light;
 }
 
 /**
@@ -21,8 +27,10 @@ export interface ThemeStyles {
  * - Base colors (text, background, borders)
  * - Semantic colors (primary, danger, success)
  * - Theme-aware calculations
+ * - Normalized color scheme and Colors object
  * 
  * @param theme - Theme string ('light' | 'dark')
+ * @param colorSchemeFromHook - Optional color scheme from useColorScheme() hook. If not provided, will call useColorScheme() internally.
  * @returns ThemeStyles object with consistent color values
  * 
  * @example
@@ -32,10 +40,26 @@ export interface ThemeStyles {
  *   <Text style={{ color: themeStyles.textColor }}>Hello</Text>
  * </View>
  * ```
+ * 
+ * @example
+ * ```tsx
+ * const colorScheme = useColorScheme();
+ * const themeStyles = useThemeStyles(theme, colorScheme);
+ * const iconColor = themeStyles.colors.iconSecurity;
+ * ```
  */
-export const useThemeStyles = (theme: string): ThemeStyles => {
+export const useThemeStyles = (
+    theme: string,
+    colorSchemeFromHook?: string | null
+): ThemeStyles => {
+    const hookColorScheme = useColorScheme();
+    const colorSchemeToUse = colorSchemeFromHook ?? hookColorScheme;
+    
     return useMemo(() => {
-        const isDarkTheme = theme === 'dark';
+        const colorScheme = normalizeColorScheme(colorSchemeToUse, theme);
+        const isDarkTheme = colorScheme === 'dark';
+        const colors = Colors[colorScheme];
+        
         return {
             // Base colors
             textColor: isDarkTheme ? '#FFFFFF' : '#000000',
@@ -51,7 +75,11 @@ export const useThemeStyles = (theme: string): ThemeStyles => {
             
             // Theme flag
             isDarkTheme,
+            
+            // Normalized color scheme and theme colors
+            colorScheme,
+            colors,
         };
-    }, [theme]);
+    }, [theme, colorSchemeToUse]);
 };
 

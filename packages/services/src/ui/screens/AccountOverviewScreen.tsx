@@ -25,7 +25,6 @@ import { Section, GroupedSection, GroupedItem } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { getDisplayName, getShortDisplayName } from '../utils/user-utils';
-import { Colors } from '../constants/theme';
 import { useColorScheme } from '../hooks/use-color-scheme';
 
 // Optional Lottie import - gracefully handle if not available
@@ -71,9 +70,8 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     const insets = useSafeAreaInsets();
 
     // Use centralized theme styles hook for consistency
-    const baseThemeStyles = useThemeStyles(theme);
-    const colorScheme = useColorScheme() ?? theme ?? 'light';
-    const colors = Colors[colorScheme];
+    const colorScheme = useColorScheme();
+    const baseThemeStyles = useThemeStyles(theme, colorScheme);
     const themeStyles = useMemo(() => ({
         ...baseThemeStyles,
         // AccountOverviewScreen uses a custom primary color (purple) instead of the default blue
@@ -391,7 +389,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'profile-info',
                                 icon: 'person',
-                                iconColor: colors.iconSecurity,
+                                iconColor: baseThemeStyles.colors.iconSecurity,
                                 title: displayName,
                                 subtitle: user ? (user.email || user.username) : (t('common.status.loading') || 'Loading...'),
                                 onPress: () => navigate?.('EditProfile', { activeTab: 'profile' }),
@@ -407,7 +405,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'edit-profile',
                                 icon: 'person-circle',
-                                iconColor: colors.iconPersonalInfo,
+                                iconColor: baseThemeStyles.colors.iconPersonalInfo,
                                 title: t('accountOverview.items.editProfile.title'),
                                 subtitle: t('accountOverview.items.editProfile.subtitle'),
                                 onPress: () => navigate?.('EditProfile', { activeTab: 'profile' }),
@@ -415,7 +413,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'security-privacy',
                                 icon: 'shield-checkmark',
-                                iconColor: colors.iconSecurity,
+                                iconColor: baseThemeStyles.colors.iconSecurity,
                                 title: t('accountOverview.items.security.title'),
                                 subtitle: t('accountOverview.items.security.subtitle'),
                                 onPress: () => navigate?.('EditProfile', { activeTab: 'password' }),
@@ -423,7 +421,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'notifications',
                                 icon: 'notifications',
-                                iconColor: colors.iconStorage,
+                                iconColor: baseThemeStyles.colors.iconStorage,
                                 title: t('accountOverview.items.notifications.title'),
                                 subtitle: t('accountOverview.items.notifications.subtitle'),
                                 onPress: () => navigate?.('EditProfile', { activeTab: 'notifications' }),
@@ -431,7 +429,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'premium-subscription',
                                 icon: 'star',
-                                iconColor: colors.iconPayments,
+                                iconColor: baseThemeStyles.colors.iconPayments,
                                 title: t('accountOverview.items.premium.title'),
                                 subtitle: user?.isPremium ? t('accountOverview.items.premium.manage') : t('accountOverview.items.premium.upgrade'),
                                 onPress: () => navigate?.('PremiumSubscription'),
@@ -439,7 +437,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             ...(user?.isPremium ? [{
                                 id: 'billing-management',
                                 icon: 'card',
-                                iconColor: colors.iconPersonalInfo,
+                                iconColor: baseThemeStyles.colors.iconPersonalInfo,
                                 title: t('accountOverview.items.billing.title'),
                                 subtitle: t('accountOverview.items.billing.subtitle'),
                                 onPress: () => toast.info(t('accountOverview.items.billing.coming')),
@@ -458,7 +456,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     {
                                         id: 'loading-accounts',
                                         icon: 'sync',
-                                        iconColor: colors.iconSecurity,
+                                        iconColor: baseThemeStyles.colors.iconSecurity,
                                         title: t('accountOverview.loadingAdditional.title') || 'Loading accounts...',
                                         subtitle: t('accountOverview.loadingAdditional.subtitle') || 'Please wait while we load your additional accounts',
                                         customContent: (
@@ -476,7 +474,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 items={additionalAccountsData.map((account, index) => ({
                                     id: `account-${account.id}`,
                                     icon: 'person',
-                                    iconColor: colors.iconData,
+                                    iconColor: baseThemeStyles.colors.iconData,
                                     title: typeof account.name === 'object'
                                         ? account.name?.full || account.name?.first || account.username
                                         : account.name || account.username,
@@ -531,7 +529,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 {
                                     id: 'add-account',
                                     icon: 'add',
-                                    iconColor: colors.iconSecurity,
+                                    iconColor: baseThemeStyles.colors.iconSecurity,
                                     title: t('accountOverview.items.addAccount.title') || 'Add Another Account',
                                     subtitle: t('accountOverview.items.addAccount.subtitle') || 'Sign in with a different account',
                                     onPress: handleAddAccount,
@@ -539,7 +537,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 {
                                     id: 'sign-out-all',
                                     icon: 'log-out',
-                                    iconColor: colors.iconSharing,
+                                    iconColor: baseThemeStyles.colors.iconSharing,
                                     title: t('accountOverview.items.signOutAll.title') || 'Sign out of all accounts',
                                     subtitle: t('accountOverview.items.signOutAll.subtitle') || 'Remove all accounts from this device',
                                     onPress: handleSignOutAll,
@@ -557,7 +555,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'account-switcher',
                                 icon: 'people',
-                                iconColor: colors.iconData,
+                                iconColor: baseThemeStyles.colors.iconData,
                                 title: showMoreAccounts
                                     ? t('accountOverview.items.accountSwitcher.titleHide')
                                     : t('accountOverview.items.accountSwitcher.titleShow'),
@@ -573,7 +571,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'history-view',
                                 icon: 'time',
-                                iconColor: colors.iconSecurity,
+                                iconColor: baseThemeStyles.colors.iconSecurity,
                                 title: t('accountOverview.items.history.title') || 'History',
                                 subtitle: t('accountOverview.items.history.subtitle') || 'View and manage your search history',
                                 onPress: () => navigate?.('HistoryView'),
@@ -581,7 +579,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'saves-collections',
                                 icon: 'bookmark',
-                                iconColor: colors.iconStorage,
+                                iconColor: baseThemeStyles.colors.iconStorage,
                                 title: t('accountOverview.items.saves.title') || 'Saves & Collections',
                                 subtitle: t('accountOverview.items.saves.subtitle') || 'View your saved items and collections',
                                 onPress: () => navigate?.('SavesCollections'),
@@ -589,7 +587,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'download-data',
                                 icon: 'download',
-                                iconColor: colors.iconPersonalInfo,
+                                iconColor: baseThemeStyles.colors.iconPersonalInfo,
                                 title: t('accountOverview.items.downloadData.title'),
                                 subtitle: t('accountOverview.items.downloadData.subtitle'),
                                 onPress: handleDownloadData,
@@ -597,7 +595,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'delete-account',
                                 icon: 'trash',
-                                iconColor: colors.iconSharing,
+                                iconColor: baseThemeStyles.colors.iconSharing,
                                 title: t('accountOverview.items.deleteAccount.title'),
                                 subtitle: t('accountOverview.items.deleteAccount.subtitle'),
                                 onPress: handleDeleteAccount,
@@ -614,7 +612,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'search-settings',
                                 icon: 'search',
-                                iconColor: colors.iconSecurity,
+                                iconColor: baseThemeStyles.colors.iconSecurity,
                                 title: t('accountOverview.items.searchSettings.title') || 'Search Settings',
                                 subtitle: t('accountOverview.items.searchSettings.subtitle') || 'SafeSearch and personalization',
                                 onPress: () => navigate?.('SearchSettings'),
@@ -622,7 +620,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'language-settings',
                                 icon: 'language',
-                                iconColor: colors.iconPersonalInfo,
+                                iconColor: baseThemeStyles.colors.iconPersonalInfo,
                                 title: t('accountOverview.items.language.title') || 'Language',
                                 subtitle: t('accountOverview.items.language.subtitle') || 'Choose your preferred language',
                                 onPress: () => navigate?.('LanguageSelector'),
@@ -638,7 +636,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'help-support',
                                 icon: 'help-circle',
-                                iconColor: colors.iconSecurity,
+                                iconColor: baseThemeStyles.colors.iconSecurity,
                                 title: t('accountOverview.items.help.title'),
                                 subtitle: t('accountOverview.items.help.subtitle'),
                                 onPress: () => navigate?.('HelpSupport'),
@@ -646,7 +644,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'privacy-policy',
                                 icon: 'shield-checkmark',
-                                iconColor: colors.iconPersonalInfo,
+                                iconColor: baseThemeStyles.colors.iconPersonalInfo,
                                 title: t('accountOverview.items.privacyPolicy.title') || 'Privacy Policy',
                                 subtitle: t('accountOverview.items.privacyPolicy.subtitle') || 'How we handle your data',
                                 onPress: () => navigate?.('LegalDocuments', { initialStep: 1 }),
@@ -654,7 +652,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'terms-of-service',
                                 icon: 'document-text',
-                                iconColor: colors.iconSecurity,
+                                iconColor: baseThemeStyles.colors.iconSecurity,
                                 title: t('accountOverview.items.termsOfService.title') || 'Terms of Service',
                                 subtitle: t('accountOverview.items.termsOfService.subtitle') || 'Terms and conditions of use',
                                 onPress: () => navigate?.('LegalDocuments', { initialStep: 2 }),
@@ -662,7 +660,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'connected-apps',
                                 icon: 'link',
-                                iconColor: colors.iconPersonalInfo,
+                                iconColor: baseThemeStyles.colors.iconPersonalInfo,
                                 title: t('accountOverview.items.connectedApps.title'),
                                 subtitle: t('accountOverview.items.connectedApps.subtitle'),
                                 onPress: () => toast.info(t('accountOverview.items.connectedApps.coming')),

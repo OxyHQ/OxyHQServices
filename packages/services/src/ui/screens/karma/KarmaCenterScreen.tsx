@@ -15,7 +15,7 @@ import { useOxy } from '../../context/OxyContext';
 import { fontFamilies } from '../../styles/fonts';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../../hooks/useI18n';
-import { Colors } from '../../constants/theme';
+import { useThemeStyles } from '../../hooks/useThemeStyles';
 import { useColorScheme } from '../../hooks/use-color-scheme';
 import { darkenColor } from '../../utils/colorUtils';
 
@@ -31,21 +31,17 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const isDarkTheme = theme === 'dark';
-    const colorScheme = useColorScheme() ?? theme ?? 'light';
-    const colors = Colors[colorScheme];
-    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
-    const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
-    const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#F5F5F5';
-    const borderColor = isDarkTheme ? '#444444' : '#E0E0E0';
+    const colorScheme = useColorScheme();
+    const themeStyles = useThemeStyles(theme, colorScheme);
+    // Override primaryColor for Karma screens (purple instead of blue)
     const primaryColor = '#d169e5';
-    
+
     // Icon colors from theme
-    const iconLeaderboard = colors.iconPayments;
-    const iconRules = colors.iconSecurity;
-    const iconAbout = colors.iconPayments;
-    const iconRewards = colors.iconStorage;
-    const iconFAQ = colors.iconPersonalInfo;
+    const iconLeaderboard = themeStyles.colors.iconPayments;
+    const iconRules = themeStyles.colors.iconSecurity;
+    const iconAbout = themeStyles.colors.iconPayments;
+    const iconRewards = themeStyles.colors.iconStorage;
+    const iconFAQ = themeStyles.colors.iconPersonalInfo;
 
     useEffect(() => {
         if (!user) return;
@@ -67,26 +63,26 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
 
     if (!isAuthenticated) {
         return (
-            <View style={[styles.container, { backgroundColor }]}>
-                <Text style={[styles.message, { color: textColor }]}>{t('common.status.notSignedIn') || 'Not signed in'}</Text>
+            <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
+                <Text style={[styles.message, { color: themeStyles.textColor }]}>{t('common.status.notSignedIn') || 'Not signed in'}</Text>
             </View>
         );
     }
 
     if (isLoading) {
         return (
-            <View style={[styles.container, { backgroundColor, justifyContent: 'center' }]}>
+            <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor, justifyContent: 'center' }]}>
                 <ActivityIndicator size="large" color={primaryColor} />
             </View>
         );
     }
 
     return (
-        <View style={[styles.container, { backgroundColor }]}>
+        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
                 <View style={styles.walletHeader}>
                     <Text style={[styles.karmaAmount, { color: primaryColor }]}>{karmaTotal ?? 0}</Text>
-                    <Text style={[styles.karmaLabel, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>
+                    <Text style={[styles.karmaLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#888888' }]}>
                         {t('karma.center.balance') || 'Karma Balance'}
                     </Text>
                     <View style={styles.actionContainer}>
@@ -129,24 +125,24 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                         {t('karma.center.info') || 'Karma can only be earned by positive actions in the Oxy Ecosystem. It cannot be sent or received directly.'}
                     </Text>
                 </View>
-                <Text style={[styles.sectionTitle, { color: textColor }]}>
+                <Text style={[styles.sectionTitle, { color: themeStyles.textColor }]}>
                     {t('karma.center.history') || 'Karma History'}
                 </Text>
                 <View style={styles.historyContainer}>
                     {karmaHistory.length === 0 ? (
-                        <Text style={{ color: textColor, textAlign: 'center', marginTop: 16 }}>
+                        <Text style={{ color: themeStyles.textColor, textAlign: 'center', marginTop: 16 }}>
                             {t('karma.center.noHistory') || 'No karma history yet.'}
                         </Text>
                     ) : (
                         karmaHistory.map((entry: any) => (
-                            <View key={entry.id} style={[styles.historyItem, { borderColor }]}>
+                            <View key={entry.id} style={[styles.historyItem, { borderColor: themeStyles.borderColor }]}>
                                 <Text style={[styles.historyPoints, { color: entry.points > 0 ? primaryColor : '#D32F2F' }]}>
                                     {entry.points > 0 ? '+' : ''}{entry.points}
                                 </Text>
-                                <Text style={[styles.historyDesc, { color: textColor }]}>
+                                <Text style={[styles.historyDesc, { color: themeStyles.textColor }]}>
                                     {entry.reason || (t('karma.center.noDescription') || 'No description')}
                                 </Text>
-                                <Text style={[styles.historyDate, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>
+                                <Text style={[styles.historyDate, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#888888' }]}>
                                     {entry.createdAt ? new Date(entry.createdAt).toLocaleString() : ''}
                                 </Text>
                             </View>

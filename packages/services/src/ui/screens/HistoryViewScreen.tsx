@@ -11,7 +11,6 @@ import { confirmAction } from '../utils/confirmAction';
 import { Header, Section, GroupedSection, LoadingState, EmptyState } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
-import { Colors } from '../constants/theme';
 import { useColorScheme } from '../hooks/use-color-scheme';
 
 interface HistoryItem {
@@ -28,8 +27,8 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const { user } = useOxy();
     const { t } = useI18n();
-    const colorScheme = useColorScheme() ?? theme ?? 'light';
-    const colors = Colors[colorScheme];
+    const colorScheme = useColorScheme();
+    const themeStyles = useThemeStyles(theme, colorScheme);
     const [history, setHistory] = useState<HistoryItem[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [isDeleting, setIsDeleting] = useState(false);
@@ -188,7 +187,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'delete-last-15',
                                 icon: 'time-outline',
-                                iconColor: colors.iconStorage,
+                                iconColor: themeStyles.colors.iconStorage,
                                 title: t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes',
                                 subtitle: t('history.deleteLast15Minutes.subtitle') || 'Remove recent history entries',
                                 onPress: handleDeleteLast15Minutes,
@@ -197,7 +196,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'clear-all',
                                 icon: 'trash-outline',
-                                iconColor: colors.iconSharing,
+                                iconColor: themeStyles.colors.iconSharing,
                                 title: t('history.clearAll.title') || 'Clear All History',
                                 subtitle: t('history.clearAll.subtitle') || 'Remove all history entries',
                                 onPress: handleClearAll,
@@ -225,7 +224,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
                             items={history.map((item) => ({
                                 id: item.id,
                                 icon: item.type === 'search' ? 'search' : 'globe',
-                                iconColor: item.type === 'search' ? colors.iconSecurity : colors.iconPersonalInfo,
+                                iconColor: item.type === 'search' ? themeStyles.colors.iconSecurity : themeStyles.colors.iconPersonalInfo,
                                 title: item.query,
                                 subtitle: formatTime(item.timestamp),
                             }))}

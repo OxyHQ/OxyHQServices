@@ -12,7 +12,6 @@ import { toast } from '../../lib/sonner';
 import { Header, Section, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
-import { Colors } from '../constants/theme';
 import { useColorScheme } from '../hooks/use-color-scheme';
 
 const HelpSupportScreen: React.FC<BaseScreenProps> = ({
@@ -21,8 +20,8 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
     goBack,
 }) => {
     const { t } = useI18n();
-    const colorScheme = useColorScheme() ?? theme ?? 'light';
-    const colors = Colors[colorScheme];
+    const colorScheme = useColorScheme();
+    const themeStyles = useThemeStyles(theme, colorScheme);
 
     const handleContactSupport = useMemo(() => () => {
         // In a real implementation, this would open a contact form or email
@@ -64,7 +63,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'faq',
                                 icon: 'help-circle',
-                                iconColor: colors.iconSecurity,
+                                iconColor: themeStyles.colors.iconSecurity,
                                 title: t('help.faq.title') || 'Frequently Asked Questions',
                                 subtitle: t('help.faq.subtitle') || 'Find answers to common questions',
                                 onPress: handleFAQ,
@@ -72,7 +71,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'contact',
                                 icon: 'mail',
-                                iconColor: colors.iconPersonalInfo,
+                                iconColor: themeStyles.colors.iconPersonalInfo,
                                 title: t('help.contact.title') || 'Contact Support',
                                 subtitle: t('help.contact.subtitle') || 'Get help from our support team',
                                 onPress: handleContactSupport,
@@ -80,7 +79,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'report-bug',
                                 icon: 'bug',
-                                iconColor: colors.iconStorage,
+                                iconColor: themeStyles.colors.iconStorage,
                                 title: t('help.reportBug.title') || 'Report a Bug',
                                 subtitle: t('help.reportBug.subtitle') || 'Help us improve by reporting issues',
                                 onPress: handleReportBug,
@@ -109,7 +108,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'community',
                                 icon: 'people',
-                                iconColor: colors.iconData,
+                                iconColor: themeStyles.colors.iconData,
                                 title: t('help.community.title') || 'Community',
                                 subtitle: t('help.community.subtitle') || 'Join our community',
                                 onPress: () => {
@@ -121,7 +120,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'developers-portal',
                                 icon: 'code',
-                                iconColor: colors.iconSharing,
+                                iconColor: themeStyles.colors.iconSharing,
                                 title: t('help.developersPortal.title') || 'Developers Portal',
                                 subtitle: t('help.developersPortal.subtitle') || 'API documentation and developer resources',
                                 onPress: () => {

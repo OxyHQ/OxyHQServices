@@ -5,6 +5,8 @@ import type { BaseScreenProps } from '../../navigation/types';
 import { useOxy } from '../../context/OxyContext';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
+import { useThemeStyles } from '../../hooks/useThemeStyles';
+import { useColorScheme } from '../../hooks/use-color-scheme';
 
 const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const { oxyServices } = useOxy();
@@ -13,9 +15,9 @@ const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
-    const isDarkTheme = theme === 'dark';
-    const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
-    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
+    const colorScheme = useColorScheme();
+    const themeStyles = useThemeStyles(theme, colorScheme);
+    // Override primaryColor for Karma screens (purple instead of blue)
     const primaryColor = '#d169e5';
 
     useEffect(() => {
@@ -28,7 +30,7 @@ const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     }, [oxyServices]);
 
     return (
-        <View style={[styles.container, { backgroundColor }]}>
+        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
                 title={t('karma.rules.title') || 'Karma Rules'}
                 subtitle={t('karma.rules.subtitle') || 'How to earn karma points'}
@@ -43,11 +45,11 @@ const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             ) : (
                 <ScrollView contentContainerStyle={styles.listContainer}>
                     {rules.length === 0 ? (
-                        <Text style={[styles.placeholder, { color: textColor }]}>{t('karma.rules.empty') || 'No rules found.'}</Text>
+                        <Text style={[styles.placeholder, { color: themeStyles.textColor }]}>{t('karma.rules.empty') || 'No rules found.'}</Text>
                     ) : (
                         rules.map((rule, idx) => (
                             <View key={rule.id || idx} style={styles.ruleRow}>
-                                <Text style={[styles.ruleDesc, { color: textColor }]}>{rule.description}</Text>
+                                <Text style={[styles.ruleDesc, { color: themeStyles.textColor }]}>{rule.description}</Text>
                             </View>
                         ))
                     )}

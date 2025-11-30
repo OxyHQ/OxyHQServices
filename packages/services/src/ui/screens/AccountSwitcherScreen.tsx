@@ -25,6 +25,7 @@ import Avatar from '../components/Avatar';
 import { Header, GroupedSection, LoadingState } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useColorScheme } from '../hooks/use-color-scheme';
 
 interface SessionWithUser extends ClientSession {
     userProfile?: User;
@@ -72,23 +73,25 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     const [loggingOutAllDevices, setLoggingOutAllDevices] = useState(false);
 
     const screenWidth = Dimensions.get('window').width;
-    const isDarkTheme = theme === 'dark';
     const { t } = useI18n();
+    const colorScheme = useColorScheme();
+    const themeStyles = useThemeStyles(theme, colorScheme);
 
     // Modern color scheme - memoized for performance
+    // Uses themeStyles for base colors, with some custom additions for this screen
     const colors = useMemo(() => ({
-        background: isDarkTheme ? '#000000' : '#FFFFFF',
-        surface: isDarkTheme ? '#1C1C1E' : '#F2F2F7',
-        card: isDarkTheme ? '#2C2C2E' : '#FFFFFF',
-        text: isDarkTheme ? '#FFFFFF' : '#000000',
-        secondaryText: isDarkTheme ? '#8E8E93' : '#6D6D70',
-        accent: '#007AFF',
-        destructive: '#FF3B30',
-        success: '#34C759',
-        border: isDarkTheme ? '#38383A' : '#C6C6C8',
-        activeCard: isDarkTheme ? '#0A84FF20' : '#007AFF15',
-        shadow: isDarkTheme ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.1)',
-    }), [isDarkTheme]);
+        background: themeStyles.backgroundColor,
+        surface: themeStyles.secondaryBackgroundColor,
+        card: themeStyles.isDarkTheme ? '#2C2C2E' : '#FFFFFF',
+        text: themeStyles.textColor,
+        secondaryText: themeStyles.isDarkTheme ? '#8E8E93' : '#6D6D70',
+        accent: themeStyles.primaryColor,
+        destructive: themeStyles.dangerColor,
+        success: themeStyles.successColor,
+        border: themeStyles.borderColor,
+        activeCard: themeStyles.isDarkTheme ? '#0A84FF20' : '#007AFF15',
+        shadow: themeStyles.isDarkTheme ? 'rgba(0,0,0,0.3)' : 'rgba(0,0,0,0.1)',
+    }), [themeStyles]);
 
     // Refresh sessions when screen loads
     useEffect(() => {

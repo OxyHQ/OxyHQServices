@@ -24,7 +24,6 @@ import GroupedSection from '../components/GroupedSection';
 import GroupedItem from '../components/GroupedItem';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
-import { Colors } from '../constants/theme';
 import { useColorScheme } from '../hooks/use-color-scheme';
 
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
@@ -34,16 +33,12 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const { user, logout, isLoading, sessions, isAuthenticated } = useOxy();
     const { t } = useI18n();
-    const colorScheme = useColorScheme() ?? theme ?? 'light';
-    const colors = Colors[colorScheme];
-    const isDarkTheme = colorScheme === 'dark';
-
-    // Use centralized theme styles hook for consistency
-    const themeStyles = useThemeStyles(theme);
+    const colorScheme = useColorScheme();
+    const themeStyles = useThemeStyles(theme, colorScheme);
     // AccountCenterScreen uses a slightly different light background
     const backgroundColor = themeStyles.isDarkTheme ? themeStyles.backgroundColor : '#f2f2f2';
     // Extract commonly used colors for readability
-    const { textColor, secondaryBackgroundColor, borderColor, primaryColor, dangerColor } = themeStyles;
+    const { textColor, secondaryBackgroundColor, borderColor, primaryColor, dangerColor, colors } = themeStyles;
 
     // Memoized logout handler - prevents unnecessary re-renders
     const handleLogout = useCallback(async () => {
@@ -275,7 +270,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 <View style={styles.versionContainer}>
-                    <Text style={[styles.versionText, { color: isDarkTheme ? '#666666' : '#999999' }]}>
+                    <Text style={[styles.versionText, { color: themeStyles.isDarkTheme ? '#666666' : '#999999' }]}>
                         {t('accountCenter.version', { version: packageInfo.version }) || `Version ${packageInfo.version}`}
                     </Text>
                 </View>
