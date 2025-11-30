@@ -175,12 +175,15 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       // Check for URI from DocumentPicker (Expo 54)
       const uri = (file as any).uri;
       if (uri && typeof uri === 'string') {
-        // Use expo-file-system to read base64 directly (Expo 54 unified API)
+        // Use new expo-file-system File API (Expo 54 unified API)
         try {
           const FileSystem = await import('expo-file-system');
-          const FileSystemModule = FileSystem.default || FileSystem;
-          const encoding = (FileSystemModule as any).EncodingType?.Base64 || 'base64';
-          return await FileSystemModule.readAsStringAsync(uri, { encoding });
+          const FileClass = FileSystem.File || (FileSystem as any).default?.File;
+          if (!FileClass) {
+            throw new Error('File class not found in expo-file-system');
+          }
+          const fileInstance = new FileClass(uri);
+          return await fileInstance.base64();
         } catch (error: any) {
           throw new Error(`Failed to read file from URI: ${error.message || 'Unknown error'}`);
         }
@@ -208,13 +211,15 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       // Check for URI from DocumentPicker (Expo 54)
       const uri = (file as any).uri;
       if (uri && typeof uri === 'string') {
-        // Use expo-file-system to read and convert (Expo 54 unified API)
+        // Use new expo-file-system File API (Expo 54 unified API)
         try {
           const FileSystem = await import('expo-file-system');
-          const FileSystemModule = FileSystem.default || FileSystem;
-          const base64String = await FileSystemModule.readAsStringAsync(uri, {
-            encoding: (FileSystemModule as any).EncodingType?.Base64 || 'base64',
-          });
+          const FileClass = FileSystem.File || (FileSystem as any).default?.File;
+          if (!FileClass) {
+            throw new Error('File class not found in expo-file-system');
+          }
+          const fileInstance = new FileClass(uri);
+          const base64String = await fileInstance.base64();
           
           // Convert Base64 to ArrayBuffer using safe chunked approach
           return this.base64ToArrayBuffer(base64String);
