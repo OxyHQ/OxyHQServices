@@ -11,7 +11,6 @@ import {
     Image,
     TextStyle,
 } from 'react-native';
-import Animated, { useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
@@ -22,7 +21,7 @@ import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';
 import { Ionicons } from '@expo/vector-icons';
-import { Header, Section, GroupedSection, GroupedItem, getHeaderHeight } from '../components';
+import { Section, GroupedSection, GroupedItem } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { getDisplayName, getShortDisplayName } from '../utils/user-utils';
@@ -68,10 +67,6 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     const lottieRef = useRef<any>(null);
     const hasPlayedRef = useRef(false);
     const insets = useSafeAreaInsets();
-    const scrollY = useSharedValue(0);
-
-    // Calculate header height for padding
-    const headerHeight = useMemo(() => getHeaderHeight('minimal', insets.top), [insets.top]);
 
     // Use centralized theme styles hook for consistency
     const baseThemeStyles = useThemeStyles(theme);
@@ -338,742 +333,364 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
         );
     }
 
-    // Scroll handler for sticky header on native
-    const scrollHandler = useAnimatedScrollHandler({
-        onScroll: (event) => {
-            scrollY.value = event.contentOffset.y;
-        },
-    });
-
-    const AnimatedScrollView = Platform.OS === 'web' ? ScrollView : Animated.ScrollView;
 
     return (
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
-            {Platform.OS === 'web' ? (
-                <>
-                    {/* Header - outside ScrollView for web sticky */}
-                    <Header
-                        title={t('accountOverview.title')}
-                        onBack={onClose}
-                        variant="minimal"
-                        elevation="subtle"
-                    />
-                    <AnimatedScrollView
-                        style={styles.content}
-                        contentContainerStyle={[
-                            styles.scrollContent,
-                            { paddingTop: headerHeight + 8 }
-                        ]}
-                        showsVerticalScrollIndicator={false}
-                    >
-                        {/* Centered Avatar and Name Header Section */}
-                        {user && (
-                            <View style={styles.headerSection}>
-                                <View style={styles.avatarSectionWrapper}>
-                                    <View style={styles.avatarContainer}>
-                                        {LottieView && lottieAnimation && (
-                                            <LottieView
-                                                ref={lottieRef}
-                                                source={lottieAnimation}
-                                                style={styles.lottieBackground}
-                                            />
-                                        )}
-                                        <TouchableOpacity
-                                            style={styles.avatarWrapper}
-                                            onPress={handleAvatarPress}
-                                            activeOpacity={0.8}
-                                        >
-                                            <Avatar
-                                                uri={avatarUrl}
-                                                name={displayName}
-                                                size={100}
-                                                theme={theme}
-                                            />
-                                        </TouchableOpacity>
-                                    </View>
-                                    <View style={styles.nameWrapper}>
-                                        <Text style={[styles.welcomeText, { color: themeStyles.textColor }]}>
-                                            Welcome, {shortDisplayName}.
-                                        </Text>
-                                        <Text style={[styles.welcomeSubtext, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                            Manage your Oxy account.
-                                        </Text>
-                                    </View>
-                                </View>
-                            </View>
-                        )}
-
-                        {/* User Profile Section */}
-                        <Section title={t('accountOverview.sections.profile')} isFirst={true}>
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'profile-info',
-                                        icon: 'person',
-                                        iconColor: '#007AFF',
-                                        title: displayName,
-                                        subtitle: user ? (user.email || user.username) : (t('common.status.loading') || 'Loading...'),
-                                        onPress: () => navigate?.('EditProfile', { activeTab: 'profile' }),
-                                    },
-                                ]}
-                            />
-                        </Section>
-
-                        {/* Account Settings */}
-                        <Section title={t('accountOverview.sections.accountSettings')} >
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'edit-profile',
-                                        icon: 'person-circle',
-                                        iconColor: '#007AFF',
-                                        title: t('accountOverview.items.editProfile.title'),
-                                        subtitle: t('accountOverview.items.editProfile.subtitle'),
-                                        onPress: () => navigate?.('EditProfile', { activeTab: 'profile' }),
-                                    },
-                                    {
-                                        id: 'security-privacy',
-                                        icon: 'shield-checkmark',
-                                        iconColor: '#30D158',
-                                        title: t('accountOverview.items.security.title'),
-                                        subtitle: t('accountOverview.items.security.subtitle'),
-                                        onPress: () => navigate?.('EditProfile', { activeTab: 'password' }),
-                                    },
-                                    {
-                                        id: 'notifications',
-                                        icon: 'notifications',
-                                        iconColor: '#FF9500',
-                                        title: t('accountOverview.items.notifications.title'),
-                                        subtitle: t('accountOverview.items.notifications.subtitle'),
-                                        onPress: () => navigate?.('EditProfile', { activeTab: 'notifications' }),
-                                    },
-                                    {
-                                        id: 'premium-subscription',
-                                        icon: 'star',
-                                        iconColor: '#FFD700',
-                                        title: t('accountOverview.items.premium.title'),
-                                        subtitle: user?.isPremium ? t('accountOverview.items.premium.manage') : t('accountOverview.items.premium.upgrade'),
-                                        onPress: () => navigate?.('PremiumSubscription'),
-                                    },
-                                    ...(user?.isPremium ? [{
-                                        id: 'billing-management',
-                                        icon: 'card',
-                                        iconColor: '#34C759',
-                                        title: t('accountOverview.items.billing.title'),
-                                        subtitle: t('accountOverview.items.billing.subtitle'),
-                                        onPress: () => toast.info(t('accountOverview.items.billing.coming')),
-                                    }] : []),
-                                ]}
-
-                            />
-                        </Section>
-
-                        {/* Additional Accounts */}
-                        {showMoreAccounts && (
-                            <Section title={`${t('accountOverview.sections.additionalAccounts') || 'Additional Accounts'}${additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}`} >
-                                {loadingAdditionalAccounts ? (
-                                    <GroupedSection
-                                        items={[
-                                            {
-                                                id: 'loading-accounts',
-                                                icon: 'sync',
-                                                iconColor: '#007AFF',
-                                                title: t('accountOverview.loadingAdditional.title') || 'Loading accounts...',
-                                                subtitle: t('accountOverview.loadingAdditional.subtitle') || 'Please wait while we load your additional accounts',
-                                                customContent: (
-                                                    <View style={styles.loadingContainer}>
-                                                        <ActivityIndicator size="small" color="#007AFF" />
-                                                        <Text style={styles.loadingText}>{t('accountOverview.loadingAdditional.title') || 'Loading accounts...'}</Text>
-                                                    </View>
-                                                ),
-                                            },
-                                        ]}
-
-                                    />
-                                ) : additionalAccountsData.length > 0 ? (
-                                    <GroupedSection
-                                        items={additionalAccountsData.map((account, index) => ({
-                                            id: `account-${account.id}`,
-                                            icon: 'person',
-                                            iconColor: '#5856D6',
-                                            title: typeof account.name === 'object'
-                                                ? account.name?.full || account.name?.first || account.username
-                                                : account.name || account.username,
-                                            subtitle: account.email || account.username,
-                                            onPress: () => {
-                                                toast.info(t('accountOverview.items.accountSwitcher.switchPrompt', { username: account.username }) || `Switch to ${account.username}?`);
-                                            },
-                                            customContent: (
-                                                <>
-                                                    <View style={styles.userIcon}>
-                                                        {account.avatar ? (
-                                                            <Image
-                                                                source={{ uri: oxyServices.getFileDownloadUrl(account.avatar as string, 'thumb') }}
-                                                                style={styles.accountAvatarImage}
-                                                            />
-                                                        ) : (
-                                                            <View style={styles.accountAvatarFallback}>
-                                                                <Text style={styles.accountAvatarText}>
-                                                                    {account.username?.charAt(0).toUpperCase() || '?'}
-                                                                </Text>
-                                                            </View>
-                                                        )}
-                                                    </View>
-                                                    <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                                                </>
-                                            ),
-                                        }))}
-
-                                    />
-                                ) : (
-                                    <GroupedSection
-                                        items={[
-                                            {
-                                                id: 'no-accounts',
-                                                icon: 'person-outline',
-                                                iconColor: '#ccc',
-                                                title: t('accountOverview.additional.noAccounts.title') || 'No other accounts',
-                                                subtitle: t('accountOverview.additional.noAccounts.subtitle') || 'Add another account to switch between them',
-                                            },
-                                        ]}
-
+            <ScrollView
+                style={styles.content}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
+            >
+                {/* Centered Avatar and Name Header Section */}
+                {user && (
+                    <View style={styles.headerSection}>
+                        <View style={styles.avatarSectionWrapper}>
+                            <View style={styles.avatarContainer}>
+                                {LottieView && lottieAnimation && (
+                                    <LottieView
+                                        ref={lottieRef}
+                                        source={lottieAnimation}
+                                        style={styles.lottieBackground}
+                                        loop={false}
+                                        autoPlay={false}
                                     />
                                 )}
-                            </Section>
-                        )}
-
-                        {/* Account Management */}
-                        {showMoreAccounts && (
-                            <Section title={t('accountOverview.sections.accountManagement') || 'Account Management'} >
-                                <GroupedSection
-                                    items={[
-                                        {
-                                            id: 'add-account',
-                                            icon: 'add',
-                                            iconColor: '#007AFF',
-                                            title: t('accountOverview.items.addAccount.title') || 'Add Another Account',
-                                            subtitle: t('accountOverview.items.addAccount.subtitle') || 'Sign in with a different account',
-                                            onPress: handleAddAccount,
-                                        },
-                                        {
-                                            id: 'sign-out-all',
-                                            icon: 'log-out',
-                                            iconColor: '#FF3B30',
-                                            title: t('accountOverview.items.signOutAll.title') || 'Sign out of all accounts',
-                                            subtitle: t('accountOverview.items.signOutAll.subtitle') || 'Remove all accounts from this device',
-                                            onPress: handleSignOutAll,
-                                        },
-                                    ]}
-
-                                />
-                            </Section>
-                        )}
-
-                        {/* Quick Actions */}
-                        <Section title={t('accountOverview.sections.quickActions')} >
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'account-switcher',
-                                        icon: 'people',
-                                        iconColor: '#5856D6',
-                                        title: showMoreAccounts
-                                            ? t('accountOverview.items.accountSwitcher.titleHide')
-                                            : t('accountOverview.items.accountSwitcher.titleShow'),
-                                        subtitle: showMoreAccounts
-                                            ? t('accountOverview.items.accountSwitcher.subtitleHide')
-                                            : additionalAccountsData.length > 0
-                                                ? t('accountOverview.items.accountSwitcher.subtitleSwitchBetween', { count: String(additionalAccountsData.length + 1) })
-                                                : loadingAdditionalAccounts
-                                                    ? t('accountOverview.items.accountSwitcher.subtitleLoading')
-                                                    : t('accountOverview.items.accountSwitcher.subtitleManageMultiple'),
-                                        onPress: () => setShowMoreAccounts(!showMoreAccounts),
-                                    },
-                                    {
-                                        id: 'history-view',
-                                        icon: 'time',
-                                        iconColor: '#007AFF',
-                                        title: t('accountOverview.items.history.title') || 'History',
-                                        subtitle: t('accountOverview.items.history.subtitle') || 'View and manage your search history',
-                                        onPress: () => navigate?.('HistoryView'),
-                                    },
-                                    {
-                                        id: 'saves-collections',
-                                        icon: 'bookmark',
-                                        iconColor: '#FF9500',
-                                        title: t('accountOverview.items.saves.title') || 'Saves & Collections',
-                                        subtitle: t('accountOverview.items.saves.subtitle') || 'View your saved items and collections',
-                                        onPress: () => navigate?.('SavesCollections'),
-                                    },
-                                    {
-                                        id: 'download-data',
-                                        icon: 'download',
-                                        iconColor: '#34C759',
-                                        title: t('accountOverview.items.downloadData.title'),
-                                        subtitle: t('accountOverview.items.downloadData.subtitle'),
-                                        onPress: handleDownloadData,
-                                    },
-                                    {
-                                        id: 'delete-account',
-                                        icon: 'trash',
-                                        iconColor: '#FF3B30',
-                                        title: t('accountOverview.items.deleteAccount.title'),
-                                        subtitle: t('accountOverview.items.deleteAccount.subtitle'),
-                                        onPress: handleDeleteAccount,
-                                    },
-                                ]}
-
-                            />
-                        </Section>
-
-                        {/* Support & Settings */}
-                        <Section title={t('accountOverview.sections.support')} >
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'search-settings',
-                                        icon: 'search',
-                                        iconColor: '#007AFF',
-                                        title: t('accountOverview.items.searchSettings.title') || 'Search Settings',
-                                        subtitle: t('accountOverview.items.searchSettings.subtitle') || 'SafeSearch and personalization',
-                                        onPress: () => navigate?.('SearchSettings'),
-                                    },
-                                    {
-                                        id: 'language-settings',
-                                        icon: 'language',
-                                        iconColor: '#32D74B',
-                                        title: t('accountOverview.items.language.title') || 'Language',
-                                        subtitle: t('accountOverview.items.language.subtitle') || 'Choose your preferred language',
-                                        onPress: () => navigate?.('LanguageSelector'),
-                                    },
-                                    {
-                                        id: 'account-preferences',
-                                        icon: 'settings',
-                                        iconColor: '#8E8E93',
-                                        title: t('accountOverview.items.preferences.title'),
-                                        subtitle: t('accountOverview.items.preferences.subtitle'),
-                                        onPress: () => toast.info(t('accountOverview.items.preferences.coming')),
-                                    },
-                                    {
-                                        id: 'help-support',
-                                        icon: 'help-circle',
-                                        iconColor: '#007AFF',
-                                        title: t('accountOverview.items.help.title'),
-                                        subtitle: t('accountOverview.items.help.subtitle'),
-                                        onPress: () => navigate?.('HelpSupport'),
-                                    },
-                                    {
-                                        id: 'privacy-policy',
-                                        icon: 'shield-checkmark',
-                                        iconColor: '#30D158',
-                                        title: t('accountOverview.items.privacyPolicy.title') || 'Privacy Policy',
-                                        subtitle: t('accountOverview.items.privacyPolicy.subtitle') || 'How we handle your data',
-                                        onPress: () => navigate?.('LegalDocuments', { initialStep: 1 }),
-                                    },
-                                    {
-                                        id: 'terms-of-service',
-                                        icon: 'document-text',
-                                        iconColor: '#007AFF',
-                                        title: t('accountOverview.items.termsOfService.title') || 'Terms of Service',
-                                        subtitle: t('accountOverview.items.termsOfService.subtitle') || 'Terms and conditions of use',
-                                        onPress: () => navigate?.('LegalDocuments', { initialStep: 2 }),
-                                    },
-                                    {
-                                        id: 'connected-apps',
-                                        icon: 'link',
-                                        iconColor: '#32D74B',
-                                        title: t('accountOverview.items.connectedApps.title'),
-                                        subtitle: t('accountOverview.items.connectedApps.subtitle'),
-                                        onPress: () => toast.info(t('accountOverview.items.connectedApps.coming')),
-                                    },
-                                    {
-                                        id: 'about',
-                                        icon: 'information-circle',
-                                        iconColor: '#8E8E93',
-                                        title: t('accountOverview.items.about.title'),
-                                        subtitle: t('accountOverview.items.about.subtitle'),
-                                        onPress: () => navigate?.('AppInfo'),
-                                    },
-                                ]}
-
-                            />
-                        </Section>
-
-                        {/* Sign Out */}
-                        <Section title={t('accountOverview.sections.actions')} >
-                            <GroupedItem
-                                icon="log-out"
-                                iconColor="#FF3B30"
-                                title={t('accountOverview.items.signOut.title')}
-                                subtitle={t('accountOverview.items.signOut.subtitle')}
-
-                                onPress={confirmLogout}
-                                isFirst={true}
-                                isLast={true}
-                                showChevron={false}
-                            />
-                        </Section>
-                    </AnimatedScrollView>
-                </>
-            ) : (
-                <AnimatedScrollView
-                    style={styles.content}
-                    contentContainerStyle={styles.scrollContent}
-                    showsVerticalScrollIndicator={false}
-                    onScroll={scrollHandler}
-                    scrollEventThrottle={16}
-                >
-                    {/* Header - inside ScrollView for native sticky */}
-                    <Header
-                        title={t('accountOverview.title')}
-                        onBack={onClose}
-                        variant="minimal"
-                        elevation="subtle"
-                        scrollY={scrollY}
-                    />
-                    <View style={{ paddingTop: 8 }}>
-                        {/* Centered Avatar and Name Header Section */}
-                        {user && (
-                            <View style={styles.headerSection}>
-                                <View style={styles.avatarSectionWrapper}>
-                                    <View style={styles.avatarContainer}>
-                                        {LottieView && lottieAnimation && (
-                                            <LottieView
-                                                ref={lottieRef}
-                                                source={lottieAnimation}
-                                                style={styles.lottieBackground}
-                                            />
-                                        )}
-                                        <TouchableOpacity
-                                            style={styles.avatarWrapper}
-                                            onPress={handleAvatarPress}
-                                            activeOpacity={0.8}
-                                        >
-                                            <Avatar
-                                                uri={avatarUrl}
-                                                name={displayName}
-                                                size={100}
-                                                theme={theme}
-                                            />
-                                        </TouchableOpacity>
-                                    </View>
-                                    <View style={styles.nameWrapper}>
-                                        <Text style={[styles.welcomeText, { color: themeStyles.textColor }]}>
-                                            Welcome, {shortDisplayName}.
-                                        </Text>
-                                        <Text style={[styles.welcomeSubtext, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                            Manage your Oxy account.
-                                        </Text>
-                                    </View>
-                                </View>
+                                <TouchableOpacity
+                                    style={styles.avatarWrapper}
+                                    onPress={handleAvatarPress}
+                                    activeOpacity={0.8}
+                                >
+                                    <Avatar
+                                        uri={avatarUrl}
+                                        name={displayName}
+                                        size={100}
+                                        theme={theme}
+                                    />
+                                </TouchableOpacity>
                             </View>
-                        )}
-
-                        {/* User Profile Section */}
-                        <Section title={t('accountOverview.sections.profile')} isFirst={true}>
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'profile-info',
-                                        icon: 'person',
-                                        iconColor: '#007AFF',
-                                        title: displayName,
-                                        subtitle: user ? (user.email || user.username) : (t('common.status.loading') || 'Loading...'),
-                                        onPress: () => navigate?.('EditProfile', { activeTab: 'profile' }),
-                                    },
-                                ]}
-                            />
-                        </Section>
-
-                        {/* Account Settings */}
-                        <Section title={t('accountOverview.sections.accountSettings')} >
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'edit-profile',
-                                        icon: 'person-circle',
-                                        iconColor: '#007AFF',
-                                        title: t('accountOverview.items.editProfile.title'),
-                                        subtitle: t('accountOverview.items.editProfile.subtitle'),
-                                        onPress: () => navigate?.('EditProfile', { activeTab: 'profile' }),
-                                    },
-                                    {
-                                        id: 'security-privacy',
-                                        icon: 'shield-checkmark',
-                                        iconColor: '#30D158',
-                                        title: t('accountOverview.items.security.title'),
-                                        subtitle: t('accountOverview.items.security.subtitle'),
-                                        onPress: () => navigate?.('EditProfile', { activeTab: 'password' }),
-                                    },
-                                    {
-                                        id: 'notifications',
-                                        icon: 'notifications',
-                                        iconColor: '#FF9500',
-                                        title: t('accountOverview.items.notifications.title'),
-                                        subtitle: t('accountOverview.items.notifications.subtitle'),
-                                        onPress: () => navigate?.('EditProfile', { activeTab: 'notifications' }),
-                                    },
-                                    {
-                                        id: 'premium-subscription',
-                                        icon: 'star',
-                                        iconColor: '#FFD700',
-                                        title: t('accountOverview.items.premium.title'),
-                                        subtitle: user?.isPremium ? t('accountOverview.items.premium.manage') : t('accountOverview.items.premium.upgrade'),
-                                        onPress: () => navigate?.('PremiumSubscription'),
-                                    },
-                                    ...(user?.isPremium ? [{
-                                        id: 'billing-management',
-                                        icon: 'card',
-                                        iconColor: '#34C759',
-                                        title: t('accountOverview.items.billing.title'),
-                                        subtitle: t('accountOverview.items.billing.subtitle'),
-                                        onPress: () => toast.info(t('accountOverview.items.billing.coming')),
-                                    }] : []),
-                                ]}
-                            />
-                        </Section>
-
-                        {/* Additional Accounts */}
-                        {showMoreAccounts && (
-                            <Section title={`${t('accountOverview.sections.additionalAccounts') || 'Additional Accounts'}${additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}`} >
-                                {loadingAdditionalAccounts ? (
-                                    <GroupedSection
-                                        items={[
-                                            {
-                                                id: 'loading-accounts',
-                                                icon: 'sync',
-                                                iconColor: '#007AFF',
-                                                title: t('accountOverview.loadingAdditional.title') || 'Loading accounts...',
-                                                subtitle: t('accountOverview.loadingAdditional.subtitle') || 'Please wait while we load your additional accounts',
-                                                customContent: (
-                                                    <View style={styles.loadingContainer}>
-                                                        <ActivityIndicator size="small" color="#007AFF" />
-                                                        <Text style={styles.loadingText}>{t('accountOverview.loadingAdditional.title') || 'Loading accounts...'}</Text>
-                                                    </View>
-                                                ),
-                                            },
-                                        ]}
-                                    />
-                                ) : additionalAccountsData.length > 0 ? (
-                                    <GroupedSection
-                                        items={additionalAccountsData.map((account, index) => ({
-                                            id: `account-${account.id}`,
-                                            icon: 'person',
-                                            iconColor: '#5856D6',
-                                            title: typeof account.name === 'object'
-                                                ? account.name?.full || account.name?.first || account.username
-                                                : account.name || account.username,
-                                            subtitle: account.email || account.username,
-                                            onPress: () => {
-                                                toast.info(t('accountOverview.items.accountSwitcher.switchPrompt', { username: account.username }) || `Switch to ${account.username}?`);
-                                            },
-                                            customContent: (
-                                                <>
-                                                    <View style={styles.userIcon}>
-                                                        {account.avatar ? (
-                                                            <Image
-                                                                source={{ uri: oxyServices.getFileDownloadUrl(account.avatar as string, 'thumb') }}
-                                                                style={styles.accountAvatarImage}
-                                                            />
-                                                        ) : (
-                                                            <View style={styles.accountAvatarFallback}>
-                                                                <Text style={styles.accountAvatarText}>
-                                                                    {account.username?.charAt(0).toUpperCase() || '?'}
-                                                                </Text>
-                                                            </View>
-                                                        )}
-                                                    </View>
-                                                    <OxyIcon name="chevron-forward" size={16} color="#ccc" />
-                                                </>
-                                            ),
-                                        }))}
-                                    />
-                                ) : (
-                                    <GroupedSection
-                                        items={[
-                                            {
-                                                id: 'no-accounts',
-                                                icon: 'person-outline',
-                                                iconColor: '#ccc',
-                                                title: t('accountOverview.additional.noAccounts.title') || 'No other accounts',
-                                                subtitle: t('accountOverview.additional.noAccounts.subtitle') || 'Add another account to switch between them',
-                                            },
-                                        ]}
-                                    />
-                                )}
-                            </Section>
-                        )}
-
-                        {/* Account Management */}
-                        {showMoreAccounts && (
-                            <Section title={t('accountOverview.sections.accountManagement') || 'Account Management'} >
-                                <GroupedSection
-                                    items={[
-                                        {
-                                            id: 'add-account',
-                                            icon: 'add',
-                                            iconColor: '#007AFF',
-                                            title: t('accountOverview.items.addAccount.title') || 'Add Another Account',
-                                            subtitle: t('accountOverview.items.addAccount.subtitle') || 'Sign in with a different account',
-                                            onPress: handleAddAccount,
-                                        },
-                                        {
-                                            id: 'sign-out-all',
-                                            icon: 'log-out',
-                                            iconColor: '#FF3B30',
-                                            title: t('accountOverview.items.signOutAll.title') || 'Sign out of all accounts',
-                                            subtitle: t('accountOverview.items.signOutAll.subtitle') || 'Remove all accounts from this device',
-                                            onPress: handleSignOutAll,
-                                        },
-                                    ]}
-                                />
-                            </Section>
-                        )}
-
-                        {/* Quick Actions */}
-                        <Section title={t('accountOverview.sections.quickActions')} >
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'account-switcher',
-                                        icon: 'people',
-                                        iconColor: '#5856D6',
-                                        title: showMoreAccounts
-                                            ? t('accountOverview.items.accountSwitcher.titleHide')
-                                            : t('accountOverview.items.accountSwitcher.titleShow'),
-                                        subtitle: showMoreAccounts
-                                            ? t('accountOverview.items.accountSwitcher.subtitleHide')
-                                            : additionalAccountsData.length > 0
-                                                ? t('accountOverview.items.accountSwitcher.subtitleSwitchBetween', { count: String(additionalAccountsData.length + 1) })
-                                                : loadingAdditionalAccounts
-                                                    ? t('accountOverview.items.accountSwitcher.subtitleLoading')
-                                                    : t('accountOverview.items.accountSwitcher.subtitleManageMultiple'),
-                                        onPress: () => setShowMoreAccounts(!showMoreAccounts),
-                                    },
-                                    {
-                                        id: 'history-view',
-                                        icon: 'time',
-                                        iconColor: '#007AFF',
-                                        title: t('accountOverview.items.history.title') || 'History',
-                                        subtitle: t('accountOverview.items.history.subtitle') || 'View and manage your search history',
-                                        onPress: () => navigate?.('HistoryView'),
-                                    },
-                                    {
-                                        id: 'saves-collections',
-                                        icon: 'bookmark',
-                                        iconColor: '#FF9500',
-                                        title: t('accountOverview.items.saves.title') || 'Saves & Collections',
-                                        subtitle: t('accountOverview.items.saves.subtitle') || 'View your saved items and collections',
-                                        onPress: () => navigate?.('SavesCollections'),
-                                    },
-                                    {
-                                        id: 'download-data',
-                                        icon: 'download',
-                                        iconColor: '#34C759',
-                                        title: t('accountOverview.items.downloadData.title'),
-                                        subtitle: t('accountOverview.items.downloadData.subtitle'),
-                                        onPress: handleDownloadData,
-                                    },
-                                    {
-                                        id: 'delete-account',
-                                        icon: 'trash',
-                                        iconColor: '#FF3B30',
-                                        title: t('accountOverview.items.deleteAccount.title'),
-                                        subtitle: t('accountOverview.items.deleteAccount.subtitle'),
-                                        onPress: handleDeleteAccount,
-                                    },
-                                ]}
-                            />
-                        </Section>
-
-                        {/* Support & Settings */}
-                        <Section title={t('accountOverview.sections.support')} >
-                            <GroupedSection
-                                items={[
-                                    {
-                                        id: 'search-settings',
-                                        icon: 'search',
-                                        iconColor: '#007AFF',
-                                        title: t('accountOverview.items.searchSettings.title') || 'Search Settings',
-                                        subtitle: t('accountOverview.items.searchSettings.subtitle') || 'SafeSearch and personalization',
-                                        onPress: () => navigate?.('SearchSettings'),
-                                    },
-                                    {
-                                        id: 'language-settings',
-                                        icon: 'language',
-                                        iconColor: '#32D74B',
-                                        title: t('accountOverview.items.language.title') || 'Language',
-                                        subtitle: t('accountOverview.items.language.subtitle') || 'Choose your preferred language',
-                                        onPress: () => navigate?.('LanguageSelector'),
-                                    },
-                                    {
-                                        id: 'account-preferences',
-                                        icon: 'settings',
-                                        iconColor: '#8E8E93',
-                                        title: t('accountOverview.items.preferences.title'),
-                                        subtitle: t('accountOverview.items.preferences.subtitle'),
-                                        onPress: () => toast.info(t('accountOverview.items.preferences.coming')),
-                                    },
-                                    {
-                                        id: 'help-support',
-                                        icon: 'help-circle',
-                                        iconColor: '#007AFF',
-                                        title: t('accountOverview.items.help.title'),
-                                        subtitle: t('accountOverview.items.help.subtitle'),
-                                        onPress: () => navigate?.('HelpSupport'),
-                                    },
-                                    {
-                                        id: 'privacy-policy',
-                                        icon: 'shield-checkmark',
-                                        iconColor: '#30D158',
-                                        title: t('accountOverview.items.privacyPolicy.title') || 'Privacy Policy',
-                                        subtitle: t('accountOverview.items.privacyPolicy.subtitle') || 'How we handle your data',
-                                        onPress: () => navigate?.('LegalDocuments', { initialStep: 1 }),
-                                    },
-                                    {
-                                        id: 'terms-of-service',
-                                        icon: 'document-text',
-                                        iconColor: '#007AFF',
-                                        title: t('accountOverview.items.termsOfService.title') || 'Terms of Service',
-                                        subtitle: t('accountOverview.items.termsOfService.subtitle') || 'Terms and conditions of use',
-                                        onPress: () => navigate?.('LegalDocuments', { initialStep: 2 }),
-                                    },
-                                    {
-                                        id: 'connected-apps',
-                                        icon: 'link',
-                                        iconColor: '#32D74B',
-                                        title: t('accountOverview.items.connectedApps.title'),
-                                        subtitle: t('accountOverview.items.connectedApps.subtitle'),
-                                        onPress: () => toast.info(t('accountOverview.items.connectedApps.coming')),
-                                    },
-                                    {
-                                        id: 'about',
-                                        icon: 'information-circle',
-                                        iconColor: '#8E8E93',
-                                        title: t('accountOverview.items.about.title'),
-                                        subtitle: t('accountOverview.items.about.subtitle'),
-                                        onPress: () => navigate?.('AppInfo'),
-                                    },
-                                ]}
-                            />
-                        </Section>
-
-                        {/* Sign Out */}
-                        <Section title={t('accountOverview.sections.actions')} >
-                            <GroupedItem
-                                icon="log-out"
-                                iconColor="#FF3B30"
-                                title={t('accountOverview.items.signOut.title')}
-                                subtitle={t('accountOverview.items.signOut.subtitle')}
-                                onPress={confirmLogout}
-                                isFirst={true}
-                                isLast={true}
-                                showChevron={false}
-                            />
-                        </Section>
+                            <View style={styles.nameWrapper}>
+                                <Text style={[styles.welcomeText, { color: themeStyles.textColor }]}>
+                                    {displayName}
+                                </Text>
+                                <Text style={[styles.welcomeSubtext, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                                    Manage your Oxy account.
+                                </Text>
+                            </View>
+                        </View>
                     </View>
-                </AnimatedScrollView>
-            )}
+                )}
+
+                {/* User Profile Section */}
+                <Section title={t('accountOverview.sections.profile')} isFirst={true}>
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'profile-info',
+                                icon: 'person',
+                                iconColor: '#007AFF',
+                                title: displayName,
+                                subtitle: user ? (user.email || user.username) : (t('common.status.loading') || 'Loading...'),
+                                onPress: () => navigate?.('EditProfile', { activeTab: 'profile' }),
+                            },
+                        ]}
+                    />
+                </Section>
+
+                {/* Account Settings */}
+                <Section title={t('accountOverview.sections.accountSettings')} >
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'edit-profile',
+                                icon: 'person-circle',
+                                iconColor: '#007AFF',
+                                title: t('accountOverview.items.editProfile.title'),
+                                subtitle: t('accountOverview.items.editProfile.subtitle'),
+                                onPress: () => navigate?.('EditProfile', { activeTab: 'profile' }),
+                            },
+                            {
+                                id: 'security-privacy',
+                                icon: 'shield-checkmark',
+                                iconColor: '#30D158',
+                                title: t('accountOverview.items.security.title'),
+                                subtitle: t('accountOverview.items.security.subtitle'),
+                                onPress: () => navigate?.('EditProfile', { activeTab: 'password' }),
+                            },
+                            {
+                                id: 'notifications',
+                                icon: 'notifications',
+                                iconColor: '#FF9500',
+                                title: t('accountOverview.items.notifications.title'),
+                                subtitle: t('accountOverview.items.notifications.subtitle'),
+                                onPress: () => navigate?.('EditProfile', { activeTab: 'notifications' }),
+                            },
+                            {
+                                id: 'premium-subscription',
+                                icon: 'star',
+                                iconColor: '#FFD700',
+                                title: t('accountOverview.items.premium.title'),
+                                subtitle: user?.isPremium ? t('accountOverview.items.premium.manage') : t('accountOverview.items.premium.upgrade'),
+                                onPress: () => navigate?.('PremiumSubscription'),
+                            },
+                            ...(user?.isPremium ? [{
+                                id: 'billing-management',
+                                icon: 'card',
+                                iconColor: '#34C759',
+                                title: t('accountOverview.items.billing.title'),
+                                subtitle: t('accountOverview.items.billing.subtitle'),
+                                onPress: () => toast.info(t('accountOverview.items.billing.coming')),
+                            }] : []),
+                        ]}
+
+                    />
+                </Section>
+
+                {/* Additional Accounts */}
+                {showMoreAccounts && (
+                    <Section title={`${t('accountOverview.sections.additionalAccounts') || 'Additional Accounts'}${additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}`} >
+                        {loadingAdditionalAccounts ? (
+                            <GroupedSection
+                                items={[
+                                    {
+                                        id: 'loading-accounts',
+                                        icon: 'sync',
+                                        iconColor: '#007AFF',
+                                        title: t('accountOverview.loadingAdditional.title') || 'Loading accounts...',
+                                        subtitle: t('accountOverview.loadingAdditional.subtitle') || 'Please wait while we load your additional accounts',
+                                        customContent: (
+                                            <View style={styles.loadingContainer}>
+                                                <ActivityIndicator size="small" color="#007AFF" />
+                                                <Text style={styles.loadingText}>{t('accountOverview.loadingAdditional.title') || 'Loading accounts...'}</Text>
+                                            </View>
+                                        ),
+                                    },
+                                ]}
+
+                            />
+                        ) : additionalAccountsData.length > 0 ? (
+                            <GroupedSection
+                                items={additionalAccountsData.map((account, index) => ({
+                                    id: `account-${account.id}`,
+                                    icon: 'person',
+                                    iconColor: '#5856D6',
+                                    title: typeof account.name === 'object'
+                                        ? account.name?.full || account.name?.first || account.username
+                                        : account.name || account.username,
+                                    subtitle: account.email || account.username,
+                                    onPress: () => {
+                                        toast.info(t('accountOverview.items.accountSwitcher.switchPrompt', { username: account.username }) || `Switch to ${account.username}?`);
+                                    },
+                                    customContent: (
+                                        <>
+                                            <View style={styles.userIcon}>
+                                                {account.avatar ? (
+                                                    <Image
+                                                        source={{ uri: oxyServices.getFileDownloadUrl(account.avatar as string, 'thumb') }}
+                                                        style={styles.accountAvatarImage}
+                                                    />
+                                                ) : (
+                                                    <View style={styles.accountAvatarFallback}>
+                                                        <Text style={styles.accountAvatarText}>
+                                                            {account.username?.charAt(0).toUpperCase() || '?'}
+                                                        </Text>
+                                                    </View>
+                                                )}
+                                            </View>
+                                            <OxyIcon name="chevron-forward" size={16} color="#ccc" />
+                                        </>
+                                    ),
+                                }))}
+
+                            />
+                        ) : (
+                            <GroupedSection
+                                items={[
+                                    {
+                                        id: 'no-accounts',
+                                        icon: 'person-outline',
+                                        iconColor: '#ccc',
+                                        title: t('accountOverview.additional.noAccounts.title') || 'No other accounts',
+                                        subtitle: t('accountOverview.additional.noAccounts.subtitle') || 'Add another account to switch between them',
+                                    },
+                                ]}
+
+                            />
+                        )}
+                    </Section>
+                )}
+
+                {/* Account Management */}
+                {showMoreAccounts && (
+                    <Section title={t('accountOverview.sections.accountManagement') || 'Account Management'} >
+                        <GroupedSection
+                            items={[
+                                {
+                                    id: 'add-account',
+                                    icon: 'add',
+                                    iconColor: '#007AFF',
+                                    title: t('accountOverview.items.addAccount.title') || 'Add Another Account',
+                                    subtitle: t('accountOverview.items.addAccount.subtitle') || 'Sign in with a different account',
+                                    onPress: handleAddAccount,
+                                },
+                                {
+                                    id: 'sign-out-all',
+                                    icon: 'log-out',
+                                    iconColor: '#FF3B30',
+                                    title: t('accountOverview.items.signOutAll.title') || 'Sign out of all accounts',
+                                    subtitle: t('accountOverview.items.signOutAll.subtitle') || 'Remove all accounts from this device',
+                                    onPress: handleSignOutAll,
+                                },
+                            ]}
+
+                        />
+                    </Section>
+                )}
+
+                {/* Quick Actions */}
+                <Section title={t('accountOverview.sections.quickActions')} >
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'account-switcher',
+                                icon: 'people',
+                                iconColor: '#5856D6',
+                                title: showMoreAccounts
+                                    ? t('accountOverview.items.accountSwitcher.titleHide')
+                                    : t('accountOverview.items.accountSwitcher.titleShow'),
+                                subtitle: showMoreAccounts
+                                    ? t('accountOverview.items.accountSwitcher.subtitleHide')
+                                    : additionalAccountsData.length > 0
+                                        ? t('accountOverview.items.accountSwitcher.subtitleSwitchBetween', { count: String(additionalAccountsData.length + 1) })
+                                        : loadingAdditionalAccounts
+                                            ? t('accountOverview.items.accountSwitcher.subtitleLoading')
+                                            : t('accountOverview.items.accountSwitcher.subtitleManageMultiple'),
+                                onPress: () => setShowMoreAccounts(!showMoreAccounts),
+                            },
+                            {
+                                id: 'history-view',
+                                icon: 'time',
+                                iconColor: '#007AFF',
+                                title: t('accountOverview.items.history.title') || 'History',
+                                subtitle: t('accountOverview.items.history.subtitle') || 'View and manage your search history',
+                                onPress: () => navigate?.('HistoryView'),
+                            },
+                            {
+                                id: 'saves-collections',
+                                icon: 'bookmark',
+                                iconColor: '#FF9500',
+                                title: t('accountOverview.items.saves.title') || 'Saves & Collections',
+                                subtitle: t('accountOverview.items.saves.subtitle') || 'View your saved items and collections',
+                                onPress: () => navigate?.('SavesCollections'),
+                            },
+                            {
+                                id: 'download-data',
+                                icon: 'download',
+                                iconColor: '#34C759',
+                                title: t('accountOverview.items.downloadData.title'),
+                                subtitle: t('accountOverview.items.downloadData.subtitle'),
+                                onPress: handleDownloadData,
+                            },
+                            {
+                                id: 'delete-account',
+                                icon: 'trash',
+                                iconColor: '#FF3B30',
+                                title: t('accountOverview.items.deleteAccount.title'),
+                                subtitle: t('accountOverview.items.deleteAccount.subtitle'),
+                                onPress: handleDeleteAccount,
+                            },
+                        ]}
+
+                    />
+                </Section>
+
+                {/* Support & Settings */}
+                <Section title={t('accountOverview.sections.support')} >
+                    <GroupedSection
+                        items={[
+                            {
+                                id: 'search-settings',
+                                icon: 'search',
+                                iconColor: '#007AFF',
+                                title: t('accountOverview.items.searchSettings.title') || 'Search Settings',
+                                subtitle: t('accountOverview.items.searchSettings.subtitle') || 'SafeSearch and personalization',
+                                onPress: () => navigate?.('SearchSettings'),
+                            },
+                            {
+                                id: 'language-settings',
+                                icon: 'language',
+                                iconColor: '#32D74B',
+                                title: t('accountOverview.items.language.title') || 'Language',
+                                subtitle: t('accountOverview.items.language.subtitle') || 'Choose your preferred language',
+                                onPress: () => navigate?.('LanguageSelector'),
+                            },
+                            {
+                                id: 'account-preferences',
+                                icon: 'settings',
+                                iconColor: '#8E8E93',
+                                title: t('accountOverview.items.preferences.title'),
+                                subtitle: t('accountOverview.items.preferences.subtitle'),
+                                onPress: () => toast.info(t('accountOverview.items.preferences.coming')),
+                            },
+                            {
+                                id: 'help-support',
+                                icon: 'help-circle',
+                                iconColor: '#007AFF',
+                                title: t('accountOverview.items.help.title'),
+                                subtitle: t('accountOverview.items.help.subtitle'),
+                                onPress: () => navigate?.('HelpSupport'),
+                            },
+                            {
+                                id: 'privacy-policy',
+                                icon: 'shield-checkmark',
+                                iconColor: '#30D158',
+                                title: t('accountOverview.items.privacyPolicy.title') || 'Privacy Policy',
+                                subtitle: t('accountOverview.items.privacyPolicy.subtitle') || 'How we handle your data',
+                                onPress: () => navigate?.('LegalDocuments', { initialStep: 1 }),
+                            },
+                            {
+                                id: 'terms-of-service',
+                                icon: 'document-text',
+                                iconColor: '#007AFF',
+                                title: t('accountOverview.items.termsOfService.title') || 'Terms of Service',
+                                subtitle: t('accountOverview.items.termsOfService.subtitle') || 'Terms and conditions of use',
+                                onPress: () => navigate?.('LegalDocuments', { initialStep: 2 }),
+                            },
+                            {
+                                id: 'connected-apps',
+                                icon: 'link',
+                                iconColor: '#32D74B',
+                                title: t('accountOverview.items.connectedApps.title'),
+                                subtitle: t('accountOverview.items.connectedApps.subtitle'),
+                                onPress: () => toast.info(t('accountOverview.items.connectedApps.coming')),
+                            },
+                            {
+                                id: 'about',
+                                icon: 'information-circle',
+                                iconColor: '#8E8E93',
+                                title: t('accountOverview.items.about.title'),
+                                subtitle: t('accountOverview.items.about.subtitle'),
+                                onPress: () => navigate?.('AppInfo'),
+                            },
+                        ]}
+
+                    />
+                </Section>
+
+                {/* Sign Out */}
+                <Section title={t('accountOverview.sections.actions')} >
+                    <GroupedItem
+                        icon="log-out"
+                        iconColor="#FF3B30"
+                        title={t('accountOverview.items.signOut.title')}
+                        subtitle={t('accountOverview.items.signOut.subtitle')}
+
+                        onPress={confirmLogout}
+                        isFirst={true}
+                        isLast={true}
+                        showChevron={false}
+                    />
+                </Section>
+            </ScrollView>
         </View>
     );
 };
@@ -1091,7 +708,7 @@ const styles = StyleSheet.create({
     headerSection: {
         alignItems: 'center',
         marginBottom: 24,
-        paddingTop: 16,
+        paddingTop: 38,
     },
     avatarSectionWrapper: {
         alignItems: 'center',
@@ -1102,20 +719,24 @@ const styles = StyleSheet.create({
         position: 'relative',
         alignItems: 'center',
         justifyContent: 'center',
-        width: 600,
-        height: 100,
+        width: '100%',
+        maxWidth: 600,
+        minHeight: 100,
         overflow: 'hidden',
         alignSelf: 'center',
+        aspectRatio: 6,
     },
     lottieBackground: {
         position: 'absolute',
-        width: 600,
-        height: 100,
+        width: '100%',
+        maxWidth: 600,
+        minHeight: 100,
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
         zIndex: 0,
+        aspectRatio: 6,
     },
     avatarWrapper: {
         zIndex: 1,
@@ -1124,7 +745,8 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         width: 100,
         height: 100,
-        left: 250,
+        left: '50%',
+        marginLeft: -50,
         top: 0,
     },
     nameWrapper: {
@@ -1133,10 +755,11 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     welcomeText: {
-        fontSize: 24,
+        fontSize: 28,
         fontWeight: '600',
         marginBottom: 8,
         fontFamily: fontFamilies.phuduBold,
+        maxWidth: '90%',
     },
     welcomeSubtext: {
         fontSize: 16,

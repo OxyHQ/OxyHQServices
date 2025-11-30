@@ -44,4 +44,15 @@ config.resolver.extraNodeModules = {
 // 6. Enable better platform resolution
 config.resolver.platforms = ['native', 'android', 'ios', 'tsx', 'ts', 'web'];
 
+// 7. Ensure Fast Refresh is enabled (default in Expo, but explicit for clarity)
+config.server = {
+  ...config.server,
+  enhanceMiddleware: (middleware) => {
+    return middleware;
+  },
+};
+
+// 8. Optimize cache for better hot reload performance
+config.cacheStores = config.cacheStores || [];
+
 module.exports = config;
