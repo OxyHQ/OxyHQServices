@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import {
     View,
     Text,
@@ -10,7 +10,7 @@ import {
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { toast } from '../../lib/sonner';
-import { Header, Section, Avatar, SettingRow, LoadingState, EmptyState } from '../components';
+import { Header, Section, Avatar, SettingRow, LoadingState, EmptyState, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import type { BlockedUser, RestrictedUser } from '../../models/interfaces';
@@ -197,54 +197,72 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         return { userId, username, avatar };
     }, []);
 
-    // Reusable user list item component
-    const UserListItem: React.FC<{
-        item: BlockedUser | RestrictedUser;
-        idField: 'blockedId' | 'restrictedId';
-        onAction: (userId: string) => void;
-        actionLabel: string;
-        actionColor: string;
-        subtitle?: string;
-    }> = ({ item, idField, onAction, actionLabel, actionColor, subtitle }) => {
-        const { userId, username, avatar } = extractUserInfo(item, idField);
-        // Convert avatar file ID to URI if needed
-        const avatarUri = avatar && oxyServices 
-            ? oxyServices.getFileDownloadUrl(avatar, 'thumb') 
-            : undefined;
-        
-        return (
-            <View style={[styles.userRow, { borderBottomColor: themeStyles.borderColor }]}>
-                <View style={styles.userInfo}>
+    const themeStyles = useThemeStyles(theme);
+
+    // Convert blocked users to GroupedSection items
+    const blockedUserItems = useMemo(() => {
+        return blockedUsers.map((blocked) => {
+            const { userId, username, avatar } = extractUserInfo(blocked, 'blockedId');
+            const avatarUri = avatar && oxyServices 
+                ? oxyServices.getFileDownloadUrl(avatar, 'thumb') 
+                : undefined;
+            
+            return {
+                id: userId,
+                title: username,
+                customIcon: (
                     <Avatar
                         uri={avatarUri}
                         name={username}
                         size={40}
-                        
                     />
-                    <View style={styles.userDetails}>
-                        <Text style={[styles.username, { color: themeStyles.textColor }]}>
-                            {username}
+                ),
+                customContent: (
+                    <TouchableOpacity
+                        onPress={() => handleUnblock(userId)}
+                        style={[styles.actionButton, { backgroundColor: themeStyles.secondaryBackgroundColor }]}
+                    >
+                        <Text style={[styles.actionButtonText, { color: themeStyles.dangerColor }]}>
+                            {t('privacySettings.unblock') || 'Unblock'}
                         </Text>
-                        {subtitle && (
-                            <Text style={[styles.userSubtext, { color: themeStyles.mutedTextColor }]}>
-                                {subtitle}
-                            </Text>
-                        )}
-                    </View>
-                </View>
-                <TouchableOpacity
-                    onPress={() => onAction(userId)}
-                    style={[styles.actionButton, { backgroundColor: themeStyles.secondaryBackgroundColor }]}
-                >
-                    <Text style={[styles.actionButtonText, { color: actionColor }]}>
-                        {actionLabel}
-                    </Text>
-                </TouchableOpacity>
-            </View>
-        );
-    };
+                    </TouchableOpacity>
+                ),
+            };
+        });
+    }, [blockedUsers, oxyServices, themeStyles, handleUnblock, t]);
 
-    const themeStyles = useThemeStyles(theme);
+    // Convert restricted users to GroupedSection items
+    const restrictedUserItems = useMemo(() => {
+        return restrictedUsers.map((restricted) => {
+            const { userId, username, avatar } = extractUserInfo(restricted, 'restrictedId');
+            const avatarUri = avatar && oxyServices 
+                ? oxyServices.getFileDownloadUrl(avatar, 'thumb') 
+                : undefined;
+            
+            return {
+                id: userId,
+                title: username,
+                subtitle: t('privacySettings.restrictedDescription') || 'Limited interactions',
+                customIcon: (
+                    <Avatar
+                        uri={avatarUri}
+                        name={username}
+                        size={40}
+                    />
+                ),
+                customContent: (
+                    <TouchableOpacity
+                        onPress={() => handleUnrestrict(userId)}
+                        style={[styles.actionButton, { backgroundColor: themeStyles.secondaryBackgroundColor }]}
+                    >
+                        <Text style={[styles.actionButtonText, { color: themeStyles.primaryColor }]}>
+                            {t('privacySettings.unrestrict') || 'Unrestrict'}
+                        </Text>
+                    </TouchableOpacity>
+                ),
+            };
+        });
+    }, [restrictedUsers, oxyServices, themeStyles, handleUnrestrict, t]);
 
     if (isLoading) {
         return (
@@ -447,7 +465,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 {/* Blocked Users */}
-                <Section title={t('privacySettings.sections.blockedUsers') || 'BLOCKED USERS'} >
+                <Section title={t('privacySettings.sections.blockedUsers') || 'BLOCKED USERS'}>
                     {isLoadingUsers ? (
                         <LoadingState color={themeStyles.textColor} size="small" />
                     ) : blockedUsers.length === 0 ? (
@@ -456,19 +474,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                             textColor={themeStyles.mutedTextColor}
                         />
                     ) : (
-                        blockedUsers.map((blocked) => {
-                            const { userId } = extractUserInfo(blocked, 'blockedId');
-                            return (
-                                <UserListItem
-                                    key={userId}
-                                    item={blocked}
-                                    idField="blockedId"
-                                    onAction={handleUnblock}
-                                    actionLabel={t('privacySettings.unblock') || 'Unblock'}
-                                    actionColor="#FF3B30"
-                                />
-                            );
-                        })
+                        <GroupedSection items={blockedUserItems} />
                     )}
                 </Section>
 
@@ -482,20 +488,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                             textColor={themeStyles.mutedTextColor}
                         />
                     ) : (
-                        restrictedUsers.map((restricted) => {
-                            const { userId } = extractUserInfo(restricted, 'restrictedId');
-                            return (
-                                <UserListItem
-                                    key={userId}
-                                    item={restricted}
-                                    idField="restrictedId"
-                                    onAction={handleUnrestrict}
-                                    actionLabel={t('privacySettings.unrestrict') || 'Unrestrict'}
-                                    actionColor="#007AFF"
-                                    subtitle={t('privacySettings.restrictedDescription') || 'Limited interactions'}
-                                />
-                            );
-                        })
+                        <GroupedSection items={restrictedUserItems} />
                     )}
                 </Section>
             </ScrollView>
@@ -510,31 +503,6 @@ const styles = StyleSheet.create({
     content: {
         flex: 1,
         padding: 16,
-    },
-    userRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-    },
-    userInfo: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-        marginRight: 12,
-    },
-    userDetails: {
-        marginLeft: 12,
-        flex: 1,
-    },
-    username: {
-        fontSize: 16,
-        fontWeight: '500',
-        marginBottom: 2,
-    },
-    userSubtext: {
-        fontSize: 13,
     },
     actionButton: {
         paddingHorizontal: 16,

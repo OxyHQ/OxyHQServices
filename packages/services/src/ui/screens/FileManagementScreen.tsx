@@ -339,20 +339,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         [oxyServices]
     );
 
-    // Memoize theme-related calculations to prevent unnecessary recalculations
-    const themeStyles = useMemo(() => {
-        const isDarkTheme = theme === 'dark';
-        return {
-            isDarkTheme,
-            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
-            backgroundColor: isDarkTheme ? '#121212' : '#f2f2f2',
-            secondaryBackgroundColor: isDarkTheme ? '#222222' : '#FFFFFF',
-            borderColor: isDarkTheme ? '#444444' : '#E0E0E0',
-            primaryColor: '#007AFF',
-            dangerColor: '#FF3B30',
-            successColor: '#34C759',
-        };
-    }, [theme]);
+    // Use centralized theme styles hook for consistency
+    const baseThemeStyles = useThemeStyles(theme);
+    // FileManagementScreen uses a slightly different light background
+    const themeStyles = useMemo(() => ({
+        ...baseThemeStyles,
+        backgroundColor: baseThemeStyles.isDarkTheme ? baseThemeStyles.backgroundColor : '#f2f2f2',
+    }), [baseThemeStyles]);
 
     // Extract commonly used theme variables
     const backgroundColor = themeStyles.backgroundColor;

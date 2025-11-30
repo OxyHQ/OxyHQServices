@@ -808,12 +808,9 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         }
     };
 
-    // Memoize theme-related calculations to prevent unnecessary recalculations
-    const baseThemeStyles = useThemeStyles(theme);
-    const themeStyles = useMemo(() => ({
-        ...baseThemeStyles,
-        primaryColor: '#007AFF',
-    }), [baseThemeStyles]);
+    // Use centralized theme styles hook for consistency
+    // primaryColor from hook (#007AFF) is already correct for this screen
+    const themeStyles = useThemeStyles(theme);
 
     return (
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>

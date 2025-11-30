@@ -45,12 +45,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     const [additionalAccountsData, setAdditionalAccountsData] = useState<any[]>([]);
     const [loadingAdditionalAccounts, setLoadingAdditionalAccounts] = useState(false);
 
-    // Memoize theme-related calculations to prevent unnecessary recalculations
+    // Use centralized theme styles hook for consistency
     const baseThemeStyles = useThemeStyles(theme);
     const themeStyles = useMemo(() => ({
         ...baseThemeStyles,
+        // AccountOverviewScreen uses a custom primary color (purple) instead of the default blue
         primaryColor: '#d169e5',
-        dangerColor: '#D32F2F',
+        // Keep custom icon color for this screen
         iconColor: baseThemeStyles.isDarkTheme ? '#BBBBBB' : '#666666',
     }), [baseThemeStyles]);
 

@@ -23,11 +23,9 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
     goBack,
     navigate
 }) => {
-    const baseThemeStyles = useThemeStyles(theme);
-    const themeStyles = {
-        ...baseThemeStyles,
-        primaryColor: '#007AFF',
-    };
+    // Use centralized theme styles hook for consistency
+    // primaryColor from hook (#007AFF) is already correct for this screen
+    const themeStyles = useThemeStyles(theme);
 
     const handleLinkPress = async (url: string) => {
         try {

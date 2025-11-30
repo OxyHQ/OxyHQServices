@@ -54,6 +54,50 @@ export default function HomeScreen() {
     showBottomSheet(screen as any);
   }, [showBottomSheet]);
 
+  const handleOpenPaymentGateway = useCallback(() => {
+    if (!showBottomSheet) {
+      Alert.alert('Unavailable', 'Bottom sheet is not available right now.');
+      return;
+    }
+    showBottomSheet({
+      screen: 'PaymentGateway',
+      props: {
+        amount: 10,
+        currency: 'FAIR',
+      },
+    });
+  }, [showBottomSheet]);
+
+  const handleOpenPaymentGatewayWithProducts = useCallback(() => {
+    if (!showBottomSheet) {
+      Alert.alert('Unavailable', 'Bottom sheet is not available right now.');
+      return;
+    }
+    showBottomSheet({
+      screen: 'PaymentGateway',
+      props: {
+        amount: 18, // Total: (2 * 5) + (1 * 8) = 18 FAIR
+        currency: 'FAIR',
+        paymentItems: [
+          {
+            type: 'product',
+            name: 'Test Product 1',
+            description: 'A sample product for testing',
+            quantity: 2,
+            price: 5,
+          },
+          {
+            type: 'product',
+            name: 'Test Product 2',
+            description: 'Another sample product',
+            quantity: 1,
+            price: 8,
+          },
+        ],
+      },
+    });
+  }, [showBottomSheet]);
+
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
@@ -216,6 +260,42 @@ export default function HomeScreen() {
                   </ThemedText>
                   <ThemedText type="default" style={styles.featureCardSubtext}>
                     Change language
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={handleOpenPaymentGateway}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    💳 Payment
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Test payment flow
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={handleOpenPaymentGatewayWithProducts}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    🛒 Products
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Test with products
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('KarmaCenter')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    ⭐ Karma
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Karma center
                   </ThemedText>
                 </Pressable>
               </ThemedView>

@@ -17,6 +17,7 @@ import { toast } from '../../lib/sonner';
 import type { ClientSession } from '../../models/session';
 import { confirmAction } from '../utils/confirmAction';
 import { Header, GroupedSection } from '../components';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 
 const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -30,14 +31,10 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     const [switchLoading, setSwitchLoading] = useState<string | null>(null);
     const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
-    const isDarkTheme = theme === 'dark';
-    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
-    const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
-    const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#F5F5F5';
-    const borderColor = isDarkTheme ? '#444444' : '#E0E0E0';
-    const primaryColor = '#0066CC';
-    const dangerColor = '#D32F2F';
-    const successColor = '#2E7D32';
+    // Use centralized theme styles hook for consistency
+    const themeStyles = useThemeStyles(theme);
+    // Extract commonly used colors for readability
+    const { textColor, backgroundColor, secondaryBackgroundColor, borderColor, primaryColor, dangerColor, successColor } = themeStyles;
 
     // Memoized load sessions function - prevents unnecessary re-renders
     const loadSessions = useCallback(async (isRefresh = false) => {

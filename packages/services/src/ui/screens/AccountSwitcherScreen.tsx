@@ -22,8 +22,9 @@ import { confirmAction } from '../utils/confirmAction';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
-import { Header, GroupedSection } from '../components';
+import { Header, GroupedSection, LoadingState } from '../components';
 import { useI18n } from '../hooks/useI18n';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 
 interface SessionWithUser extends ClientSession {
     userProfile?: User;
@@ -319,10 +320,10 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {isLoading ? (
-                    <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="large" color="#007AFF" />
-                        <Text style={styles.loadingText}>{t('accountSwitcher.loading') || 'Loading accounts...'}</Text>
-                    </View>
+                    <LoadingState
+                        message={t('accountSwitcher.loading') || 'Loading accounts...'}
+                        color="#007AFF"
+                    />
                 ) : (
                     <>
                         {/* Current Account */}
@@ -710,17 +711,6 @@ const styles = StyleSheet.create({
         borderColor: '#FF3B30',
         alignItems: 'center',
         justifyContent: 'center',
-    },
-    loadingContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 20,
-        gap: 12,
-    },
-    loadingText: {
-        fontSize: 16,
-        color: '#666',
     },
     emptyStateContainer: {
         alignItems: 'center',

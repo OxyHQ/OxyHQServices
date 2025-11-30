@@ -23,6 +23,7 @@ import QuickActions from '../components/QuickActions';
 import GroupedSection from '../components/GroupedSection';
 import GroupedItem from '../components/GroupedItem';
 import { useI18n } from '../hooks/useI18n';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -32,13 +33,12 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     const { user, logout, isLoading, sessions, isAuthenticated } = useOxy();
     const { t } = useI18n();
 
-    const isDarkTheme = theme === 'dark';
-    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
-    const backgroundColor = isDarkTheme ? '#121212' : '#f2f2f2';
-    const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#FFFFFF';
-    const borderColor = isDarkTheme ? '#444444' : '#E0E0E0';
-    const primaryColor = '#0066CC';
-    const dangerColor = '#D32F2F';
+    // Use centralized theme styles hook for consistency
+    const themeStyles = useThemeStyles(theme);
+    // AccountCenterScreen uses a slightly different light background
+    const backgroundColor = themeStyles.isDarkTheme ? themeStyles.backgroundColor : '#f2f2f2';
+    // Extract commonly used colors for readability
+    const { textColor, secondaryBackgroundColor, borderColor, primaryColor, dangerColor } = themeStyles;
 
     // Memoized logout handler - prevents unnecessary re-renders
     const handleLogout = useCallback(async () => {
