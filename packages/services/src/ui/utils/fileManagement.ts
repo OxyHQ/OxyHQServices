@@ -1,6 +1,6 @@
 import { Alert } from 'react-native';
 import type { FileMetadata } from '../../models/interfaces';
-import { File } from 'expo-file-system';
+import { File as ExpoFile } from 'expo-file-system';
 
 /**
  * Format file size in bytes to human-readable string
@@ -70,12 +70,12 @@ export async function convertDocumentPickerAssetToFile(
 
         // Priority 1: Use doc.file if available (web native File API)
         // This is the most efficient path as it doesn't require fetching
-        if (doc.file && doc.file instanceof File) {
+        if (doc.file && doc.file instanceof globalThis.File) {
             file = doc.file as File;
             // Ensure file has required properties
             if (!file.name && doc.name) {
                 // Create new File with proper name if missing
-                file = new File([file], doc.name, { type: file.type || doc.mimeType || 'application/octet-stream' });
+                file = new globalThis.File([file], doc.name, { type: file.type || doc.mimeType || 'application/octet-stream' });
             }
             // Preserve URI for preview if available (useful for mobile previews)
             if (doc.uri) {
@@ -97,20 +97,22 @@ export async function convertDocumentPickerAssetToFile(
                     const blob = await response.blob();
                     const fileName = doc.name || `file-${index + 1}`;
                     const fileType = doc.mimeType || blob.type || 'application/octet-stream';
-                    file = new File([blob], fileName, { type: fileType });
+                    file = new globalThis.File([blob], fileName, { type: fileType });
                     // Preserve URI for preview
                     (file as any).uri = doc.uri;
                     return file;
                 }
 
                 // For mobile file URIs (file://, content://), use Expo 54 FileSystem API
-                const fileInstance = new File(doc.uri);
+                const fileInstance = new ExpoFile(doc.uri);
                 const bytes = await fileInstance.bytes();
                 const fileName = doc.name || `file-${index + 1}`;
                 const fileType = doc.mimeType || 'application/octet-stream';
                 
-                // Create File object from bytes
-                file = new File([bytes], fileName, { type: fileType });
+                // Convert Uint8Array to Blob, then to File
+                // Blob constructor accepts Uint8Array directly
+                const blob = new Blob([bytes], { type: fileType });
+                file = new globalThis.File([blob], fileName, { type: fileType });
                 // Preserve URI for preview (especially important for mobile)
                 (file as any).uri = doc.uri;
                 return file;
