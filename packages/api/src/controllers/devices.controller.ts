@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import Session from '../models/Session';
 import { logger } from '../utils/logger';
-import { logoutAllDeviceSessions } from '../utils/deviceUtils';
 import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
 import sessionService from '../services/session.service';
 import { AuthRequest } from '../middleware/auth';
@@ -133,45 +132,34 @@ export class DevicesController {
         });
       }
 
-      // Verify that the device belongs to this user and get all affected sessions
+      // Only query and remove sessions belonging to the requesting user on this device
       const now = new Date();
-      const deviceSessions = await Session.find({
+      const userDeviceSessions = await Session.find({
+        userId: user._id,
         deviceId: deviceId,
         isActive: true,
         expiresAt: { $gt: now }
-      }).select('userId sessionId').lean().exec();
+      }).select('sessionId').lean().exec();
 
-      if (deviceSessions.length === 0) {
+      if (userDeviceSessions.length === 0) {
         return res.status(404).json({ error: 'Device not found' });
       }
 
-      // Verify at least one session belongs to the requesting user
-      const userOwnsDevice = deviceSessions.some(s => s.userId.toString() === user._id.toString());
-      if (!userOwnsDevice) {
-        return res.status(404).json({ error: 'Device not found' });
+      // Get sessionIds for the requesting user's sessions on this device
+      const sessionIds = userDeviceSessions.map(s => s.sessionId);
+
+      // Logout only the requesting user's sessions on this device
+      // Use sessionService to properly deactivate each session
+      for (const sessionId of sessionIds) {
+        await sessionService.deactivateSession(sessionId);
       }
 
-      // Group sessions by userId and collect sessionIds
-      const userSessionsMap = new Map<string, string[]>();
-      for (const session of deviceSessions) {
-        const userId = session.userId.toString();
-        if (!userSessionsMap.has(userId)) {
-          userSessionsMap.set(userId, []);
-        }
-        userSessionsMap.get(userId)!.push(session.sessionId);
-      }
-
-      // Logout all sessions for this device
-      await logoutAllDeviceSessions(deviceId);
-
-      // Emit socket notifications for each affected user
-      for (const [userId, sessionIds] of userSessionsMap.entries()) {
-        emitSessionUpdate(userId, {
-          type: 'device_removed',
-          deviceId: deviceId,
-          sessionIds: sessionIds
-        });
-      }
+      // Emit socket notification only for the requesting user
+      emitSessionUpdate(user._id.toString(), {
+        type: 'device_removed',
+        deviceId: deviceId,
+        sessionIds: sessionIds
+      });
 
       res.json({ 
         success: true,

@@ -27,7 +27,7 @@ export default function HomeScreen() {
   const hasPlayedRef = useRef(false);
 
   // OxyServices integration
-  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet } = useOxy();
+  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions } = useOxy();
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = useMemo(() => Platform.OS === 'web' && width >= 768, [width]);
@@ -46,6 +46,60 @@ export default function HomeScreen() {
 
   const handlePressIn = useHapticPress();
 
+  // Navigation handlers - defined before useMemo to avoid dependency issues
+  const handleSignIn = useCallback(() => {
+    showBottomSheet?.('SignIn');
+  }, [showBottomSheet]);
+
+  const handleAvatarPress = useCallback(() => {
+    showBottomSheet?.({
+      screen: 'EditProfile',
+      props: { initialSection: 'profilePicture', initialField: 'avatar' }
+    });
+  }, [showBottomSheet]);
+
+  const handleEditName = useCallback(() => {
+    showBottomSheet?.({
+      screen: 'EditProfile',
+      props: { initialSection: 'basicInfo', initialField: 'displayName' }
+    });
+  }, [showBottomSheet]);
+
+  const handleUpdateEmail = useCallback(() => {
+    showBottomSheet?.({
+      screen: 'EditProfile',
+      props: { initialSection: 'basicInfo', initialField: 'email' }
+    });
+  }, [showBottomSheet]);
+
+  const handleManageSubscription = useCallback(() => {
+    showBottomSheet?.('PremiumSubscription');
+  }, [showBottomSheet]);
+
+  const handleSignInMethod = useCallback(() => {
+    showBottomSheet?.({
+      screen: 'EditProfile',
+      props: { initialSection: 'security' }
+    });
+  }, [showBottomSheet]);
+
+  const handleReload = useCallback(async () => {
+    if (!refreshSessions) return;
+    try {
+      await refreshSessions();
+    } catch (error) {
+      console.error('Failed to refresh sessions', error);
+    }
+  }, [refreshSessions]);
+
+  const handleDevices = useCallback(() => {
+    showBottomSheet?.('SessionManagement');
+  }, [showBottomSheet]);
+
+  const handleMenu = useCallback(() => {
+    showBottomSheet?.('AccountOverview');
+  }, [showBottomSheet]);
+
   const accountItems = useMemo(() => [
     {
       id: 'name',
@@ -54,7 +108,7 @@ export default function HomeScreen() {
       title: 'Full name',
       subtitle: displayName,
       customContent: (
-        <TouchableOpacity style={styles.button} onPressIn={handlePressIn}>
+        <TouchableOpacity style={styles.button} onPressIn={handlePressIn} onPress={handleEditName}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Edit name</Text>
         </TouchableOpacity>
       ),
@@ -66,7 +120,7 @@ export default function HomeScreen() {
       title: 'Email',
       subtitle: userEmail,
       customContent: (
-        <TouchableOpacity style={styles.button} onPressIn={handlePressIn}>
+        <TouchableOpacity style={styles.button} onPressIn={handlePressIn} onPress={handleUpdateEmail}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Update email</Text>
         </TouchableOpacity>
       ),
@@ -78,7 +132,7 @@ export default function HomeScreen() {
       title: 'Subscription',
       subtitle: 'Manage your Oxy subscription',
       customContent: (
-        <TouchableOpacity style={styles.button} onPressIn={handlePressIn}>
+        <TouchableOpacity style={styles.button} onPressIn={handlePressIn} onPress={handleManageSubscription}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
           <Ionicons name="open-outline" size={16} color={colors.text} style={{ marginLeft: 4 }} />
         </TouchableOpacity>
@@ -91,7 +145,7 @@ export default function HomeScreen() {
       title: 'Account created',
       subtitle: accountCreatedDate || 'Unknown',
     },
-  ], [colors.text, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconPayments, colors.sidebarIconData, displayName, userEmail, accountCreatedDate]);
+  ], [colors.text, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconPayments, colors.sidebarIconData, displayName, userEmail, accountCreatedDate, handleEditName, handleUpdateEmail, handleManageSubscription]);
 
   const signInMethods = useMemo(() => [
     {
@@ -104,7 +158,7 @@ export default function HomeScreen() {
       title: 'Email and password',
       subtitle: 'Enable login with email',
       customContent: (
-        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
+        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]} onPressIn={handlePressIn} onPress={handleSignInMethod}>
           <Text style={[styles.methodButtonText, { color: colors.text }]}>Enable</Text>
         </TouchableOpacity>
       ),
@@ -119,7 +173,7 @@ export default function HomeScreen() {
       title: 'X',
       subtitle: 'NateIsern',
       customContent: (
-        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
+        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]} onPressIn={handlePressIn} onPress={handleSignInMethod}>
           <Text style={[styles.methodButtonText, { color: colors.text }]}>Disable</Text>
         </TouchableOpacity>
       ),
@@ -134,12 +188,12 @@ export default function HomeScreen() {
       title: 'Google',
       subtitle: 'nate.isern.alvarez@gmail.com',
       customContent: (
-        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
+        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]} onPressIn={handlePressIn} onPress={handleSignInMethod}>
           <Text style={[styles.methodButtonText, { color: colors.text }]}>Disable</Text>
         </TouchableOpacity>
       ),
     },
-  ], [colors.card, colors.text, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo]);
+  ], [colors.card, colors.text, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo, handleSignInMethod]);
 
   const content = useMemo(() => (
     <>
@@ -158,20 +212,6 @@ export default function HomeScreen() {
     </>
   ), [accountItems, isDesktop, signInMethods]);
 
-  // Handle sign in - must be defined before any conditional returns
-  const handleSignIn = useCallback(() => {
-    if (showBottomSheet) {
-      showBottomSheet('SignIn');
-    }
-  }, [showBottomSheet]);
-
-  // Handle avatar press to open edit profile for avatar update
-  const handleAvatarPress = useCallback(() => {
-    if (showBottomSheet) {
-      showBottomSheet('EditProfile');
-    }
-  }, [showBottomSheet]);
-
   const toggleColorScheme = useCallback(() => {
     // This would toggle between light and dark mode
     // You'd need to implement this based on your theme system
@@ -180,7 +220,7 @@ export default function HomeScreen() {
   useEffect(() => {
     // Play animation only once when component mounts
     if (hasPlayedRef.current) return;
-    
+
     // Use a small timeout to ensure the ref is set after render
     const timer = setTimeout(() => {
       if (lottieRef.current && !hasPlayedRef.current) {
@@ -248,7 +288,7 @@ export default function HomeScreen() {
                 source={lottieAnimation}
                 style={styles.lottieBackground}
               />
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={styles.avatarWrapper}
                 onPressIn={handlePressIn}
                 onPress={handleAvatarPress}
@@ -281,7 +321,7 @@ export default function HomeScreen() {
                   loop
                   style={styles.lottieBackground}
                 />
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.avatarWrapper}
                   onPressIn={handlePressIn}
                   onPress={handleAvatarPress}
@@ -300,17 +340,17 @@ export default function HomeScreen() {
 
           {/* Bottom action buttons */}
           <View style={styles.bottomActions}>
-            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn}>
+            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleReload}>
               <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
                 <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
               </View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn}>
+            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleDevices}>
               <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
                 <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
               </View>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn}>
+            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleMenu}>
               <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
                 <MaterialCommunityIcons name="menu" size={22} color={darkenColor(colors.sidebarIconData)} />
               </View>

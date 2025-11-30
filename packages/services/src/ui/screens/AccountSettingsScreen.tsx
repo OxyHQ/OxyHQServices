@@ -33,12 +33,13 @@ const locationSearchCache = new TTLCache<any[]>(60 * 60 * 1000); // 1 hour cache
 registerCacheForCleanup(linkMetadataCache);
 registerCacheForCleanup(locationSearchCache);
 
-const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string }> = ({
+const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string; initialSection?: string }> = ({
     onClose,
     theme,
     goBack,
     navigate,
     initialField,
+    initialSection,
 }) => {
     const { user: userFromContext, oxyServices, isLoading: authLoading, isAuthenticated, showBottomSheet, activeSessionId } = useOxy();
     const { t } = useI18n();
@@ -52,6 +53,20 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string 
     const scrollViewRef = useRef<ScrollView>(null);
     const avatarSectionRef = useRef<View>(null);
     const [avatarSectionY, setAvatarSectionY] = useState<number | null>(null);
+    
+    // Section refs for navigation
+    const profilePictureSectionRef = useRef<View>(null);
+    const basicInfoSectionRef = useRef<View>(null);
+    const aboutSectionRef = useRef<View>(null);
+    const quickActionsSectionRef = useRef<View>(null);
+    const securitySectionRef = useRef<View>(null);
+    
+    // Section Y positions for scrolling
+    const [profilePictureSectionY, setProfilePictureSectionY] = useState<number | null>(null);
+    const [basicInfoSectionY, setBasicInfoSectionY] = useState<number | null>(null);
+    const [aboutSectionY, setAboutSectionY] = useState<number | null>(null);
+    const [quickActionsSectionY, setQuickActionsSectionY] = useState<number | null>(null);
+    const [securitySectionY, setSecuritySectionY] = useState<number | null>(null);
 
     // Two-Factor (TOTP) state
     const [totpSetupUrl, setTotpSetupUrl] = useState<string | null>(null);
@@ -246,19 +261,69 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string 
     // Use a ref to track if we've already set the initial field to avoid loops
     const hasSetInitialFieldRef = useRef(false);
     const previousInitialFieldRef = useRef<string | undefined>(undefined);
+    const initialFieldTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    
+    // Delay constant for scroll completion
+    const SCROLL_DELAY_MS = 600;
+    
+    // Helper to get current value for a field
+    const getFieldCurrentValue = useCallback((field: string): string => {
+        switch (field) {
+            case 'displayName':
+                return displayName;
+            case 'username':
+                return username;
+            case 'email':
+                return email;
+            case 'bio':
+                return bio;
+            case 'location':
+            case 'links':
+            case 'twoFactor':
+                return '';
+            default:
+                return '';
+        }
+    }, [displayName, username, email, bio]);
+
+    // Handle initialSection prop to scroll to specific section
+    const hasScrolledToSectionRef = useRef(false);
+    const previousInitialSectionRef = useRef<string | undefined>(undefined);
+    const SCROLL_OFFSET = 100; // Offset to show section near top of viewport
+    
+    // Map section names to their Y positions
+    const sectionYPositions = useMemo(() => ({
+        profilePicture: profilePictureSectionY,
+        basicInfo: basicInfoSectionY,
+        about: aboutSectionY,
+        quickActions: quickActionsSectionY,
+        security: securitySectionY,
+    }), [profilePictureSectionY, basicInfoSectionY, aboutSectionY, quickActionsSectionY, securitySectionY]);
+    
     useEffect(() => {
-        // If initialField changed, reset the flag
-        if (previousInitialFieldRef.current !== initialField) {
-            hasSetInitialFieldRef.current = false;
-            previousInitialFieldRef.current = initialField;
+        // If initialSection changed, reset the flag
+        if (previousInitialSectionRef.current !== initialSection) {
+            hasScrolledToSectionRef.current = false;
+            previousInitialSectionRef.current = initialSection;
         }
-        
-        // Set the editing field if initialField is provided and we haven't set it yet
-        if (initialField && !hasSetInitialFieldRef.current) {
-            setEditingField(initialField);
-            hasSetInitialFieldRef.current = true;
+
+        // Scroll to the specified section if initialSection is provided and we haven't scrolled yet
+        if (initialSection && !hasScrolledToSectionRef.current) {
+            const sectionY = sectionYPositions[initialSection as keyof typeof sectionYPositions];
+            
+            if (sectionY !== null && sectionY !== undefined && scrollViewRef.current) {
+                requestAnimationFrame(() => {
+                    requestAnimationFrame(() => {
+                        scrollViewRef.current?.scrollTo({
+                            y: Math.max(0, sectionY - SCROLL_OFFSET),
+                            animated: true,
+                        });
+                        hasScrolledToSectionRef.current = true;
+                    });
+                });
+            }
         }
-    }, [initialField]);
+    }, [initialSection, sectionYPositions]);
 
     const handleSave = async () => {
         if (!user) return;
@@ -400,7 +465,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string 
         });
     }, [showBottomSheet, oxyServices, avatarFileId, updateUser, user]);
 
-    const startEditing = (type: string, currentValue: string) => {
+    const startEditing = useCallback((type: string, currentValue: string) => {
         switch (type) {
             case 'displayName':
                 setTempDisplayName(displayName);
@@ -429,7 +494,50 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string 
                 break;
         }
         setEditingField(type);
-    };
+    }, [displayName, lastName]);
+
+    // Handle initialField prop - must be after startEditing and openAvatarPicker are declared
+    useEffect(() => {
+        // Clear any pending timeout
+        if (initialFieldTimeoutRef.current) {
+            clearTimeout(initialFieldTimeoutRef.current);
+            initialFieldTimeoutRef.current = null;
+        }
+        
+        // If initialField changed, reset the flag
+        if (previousInitialFieldRef.current !== initialField) {
+            hasSetInitialFieldRef.current = false;
+            previousInitialFieldRef.current = initialField;
+        }
+        
+        // Set the editing field if initialField is provided and we haven't set it yet
+        if (initialField && !hasSetInitialFieldRef.current) {
+            // Special handling for avatar - open avatar picker directly
+            if (initialField === 'avatar') {
+                // Wait for section to be scrolled, then open picker
+                initialFieldTimeoutRef.current = setTimeout(() => {
+                    openAvatarPicker();
+                    hasSetInitialFieldRef.current = true;
+                }, SCROLL_DELAY_MS);
+            } else {
+                // For other fields, get current value and start editing after scroll
+                const currentValue = getFieldCurrentValue(initialField);
+                
+                // Wait for section to be scrolled, then start editing
+                initialFieldTimeoutRef.current = setTimeout(() => {
+                    startEditing(initialField, currentValue);
+                    hasSetInitialFieldRef.current = true;
+                }, SCROLL_DELAY_MS);
+            }
+        }
+        
+        return () => {
+            if (initialFieldTimeoutRef.current) {
+                clearTimeout(initialFieldTimeoutRef.current);
+                initialFieldTimeoutRef.current = null;
+            }
+        };
+    }, [initialField, getFieldCurrentValue, startEditing, openAvatarPicker]);
 
     const saveField = (type: string) => {
         animateSaveButton(0.95); // Scale down slightly for animation
@@ -1247,11 +1355,15 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string 
                         )}
                         {/* Profile Picture Section */}
                         <View
-                            ref={avatarSectionRef}
+                            ref={(ref) => {
+                                avatarSectionRef.current = ref;
+                                profilePictureSectionRef.current = ref;
+                            }}
                             style={styles.section}
                             onLayout={(event) => {
                                 const { y } = event.nativeEvent.layout;
                                 setAvatarSectionY(y);
+                                setProfilePictureSectionY(y);
                             }}
                         >
                             <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
@@ -1319,7 +1431,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string 
                         </View>
 
                         {/* Basic Information */}
-                        <View style={styles.section}>
+                        <View
+                            ref={basicInfoSectionRef}
+                            style={styles.section}
+                            onLayout={(event) => {
+                                const { y } = event.nativeEvent.layout;
+                                setBasicInfoSectionY(y);
+                            }}
+                        >
                             <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
                                 {t('editProfile.sections.basicInfo') || 'BASIC INFORMATION'}
                             </Text>
@@ -1357,7 +1476,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string 
                         </View>
 
                         {/* About You */}
-                        <View style={styles.section}>
+                        <View
+                            ref={aboutSectionRef}
+                            style={styles.section}
+                            onLayout={(event) => {
+                                const { y } = event.nativeEvent.layout;
+                                setAboutSectionY(y);
+                            }}
+                        >
                             <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
                                 {t('editProfile.sections.about') || 'ABOUT YOU'}
                             </Text>
@@ -1457,7 +1583,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string 
                         </View>
 
                         {/* Quick Actions */}
-                        <View style={styles.section}>
+                        <View
+                            ref={quickActionsSectionRef}
+                            style={styles.section}
+                            onLayout={(event) => {
+                                const { y } = event.nativeEvent.layout;
+                                setQuickActionsSectionY(y);
+                            }}
+                        >
                             <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
                                 {t('editProfile.sections.quickActions') || 'QUICK ACTIONS'}
                             </Text>
@@ -1495,7 +1628,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string 
                         </View>
 
                         {/* Security */}
-                        <View style={styles.section}>
+                        <View
+                            ref={securitySectionRef}
+                            style={styles.section}
+                            onLayout={(event) => {
+                                const { y } = event.nativeEvent.layout;
+                                setSecuritySectionY(y);
+                            }}
+                        >
                             <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
                                 {t('editProfile.sections.security') || 'SECURITY'}
                             </Text>

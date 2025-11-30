@@ -8,18 +8,20 @@ interface UseSessionSocketProps {
   currentDeviceId: string | null | undefined;
   refreshSessions: () => Promise<void>;
   logout: () => Promise<void>;
+  clearSessionState: () => Promise<void>;
   baseURL: string;
   onRemoteSignOut?: () => void;
   onSessionRemoved?: (sessionId: string) => void;
 }
 
-export function useSessionSocket({ userId, activeSessionId, currentDeviceId, refreshSessions, logout, baseURL, onRemoteSignOut, onSessionRemoved }: UseSessionSocketProps) {
+export function useSessionSocket({ userId, activeSessionId, currentDeviceId, refreshSessions, logout, clearSessionState, baseURL, onRemoteSignOut, onSessionRemoved }: UseSessionSocketProps) {
   const socketRef = useRef<any>(null);
   const joinedRoomRef = useRef<string | null>(null);
   
   // Store callbacks in refs to avoid re-joining when they change
   const refreshSessionsRef = useRef(refreshSessions);
   const logoutRef = useRef(logout);
+  const clearSessionStateRef = useRef(clearSessionState);
   const onRemoteSignOutRef = useRef(onRemoteSignOut);
   const onSessionRemovedRef = useRef(onSessionRemoved);
   const activeSessionIdRef = useRef(activeSessionId);
@@ -29,11 +31,12 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
   useEffect(() => {
     refreshSessionsRef.current = refreshSessions;
     logoutRef.current = logout;
+    clearSessionStateRef.current = clearSessionState;
     onRemoteSignOutRef.current = onRemoteSignOut;
     onSessionRemovedRef.current = onSessionRemoved;
     activeSessionIdRef.current = activeSessionId;
     currentDeviceIdRef.current = currentDeviceId;
-  }, [refreshSessions, logout, onRemoteSignOut, onSessionRemoved, activeSessionId, currentDeviceId]);
+  }, [refreshSessions, logout, clearSessionState, onRemoteSignOut, onSessionRemoved, activeSessionId, currentDeviceId]);
 
   useEffect(() => {
     if (!userId || !baseURL) {
@@ -97,14 +100,15 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
           onSessionRemovedRef.current(data.sessionId);
         }
         
-        // If the removed sessionId matches the current activeSessionId, immediately logout
+        // If the removed sessionId matches the current activeSessionId, immediately clear state
         if (data.sessionId === currentActiveSessionId) {
           if (onRemoteSignOutRef.current) {
             onRemoteSignOutRef.current();
           } else {
             toast.info('You have been signed out remotely.');
           }
-          logoutRef.current();
+          // Use clearSessionState since session was already removed server-side
+          clearSessionStateRef.current();
         } else {
           // Otherwise, just refresh the sessions list (with error handling)
           refreshSessionsRef.current().catch((error) => {
@@ -122,14 +126,15 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
           }
         }
         
-        // If the removed deviceId matches the current device, immediately logout
+        // If the removed deviceId matches the current device, immediately clear state
         if (data.deviceId && data.deviceId === currentDeviceId) {
           if (onRemoteSignOutRef.current) {
             onRemoteSignOutRef.current();
           } else {
             toast.info('This device has been removed. You have been signed out.');
           }
-          logoutRef.current();
+          // Use clearSessionState since sessions were already removed server-side
+          clearSessionStateRef.current();
         } else {
           // Otherwise, refresh sessions and device list (with error handling)
           refreshSessionsRef.current().catch((error) => {
@@ -147,14 +152,15 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
           }
         }
         
-        // If the current activeSessionId is in the removed sessionIds list, immediately logout
+        // If the current activeSessionId is in the removed sessionIds list, immediately clear state
         if (data.sessionIds && currentActiveSessionId && data.sessionIds.includes(currentActiveSessionId)) {
           if (onRemoteSignOutRef.current) {
             onRemoteSignOutRef.current();
           } else {
             toast.info('You have been signed out remotely.');
           }
-          logoutRef.current();
+          // Use clearSessionState since sessions were already removed server-side
+          clearSessionStateRef.current();
         } else {
           // Otherwise, refresh sessions list (with error handling)
           refreshSessionsRef.current().catch((error) => {
@@ -180,7 +186,8 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
           } else {
             toast.info('You have been signed out remotely.');
           }
-          logoutRef.current();
+          // Use clearSessionState since session was already removed server-side
+          clearSessionStateRef.current();
         }
       }
     };

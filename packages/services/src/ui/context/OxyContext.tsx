@@ -588,6 +588,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
   }, [storage, oxyServices, saveActiveSessionId, loginSuccess, onAuthStateChange, loginFailure, mapSessionsToClient, onError, sessions, switchToSession]);
 
+  // Clear session state without calling API (for remote removals)
+  const clearSessionState = useCallback(async (): Promise<void> => {
+    updateSessions([], false);
+    setActiveSessionId(null);
+    logoutStore();
+    setMinimalUser(null);
+    await clearAllStorage();
+    onAuthStateChange?.(null);
+  }, [updateSessions, logoutStore, clearAllStorage, onAuthStateChange]);
+
   // Logout method
   const logout = useCallback(async (targetSessionId?: string): Promise<void> => {
     if (!activeSessionId) return;
@@ -614,6 +624,17 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         }
       }
     } catch (error) {
+      // Check if error is 401 (session already removed remotely)
+      const is401Error = (error as any)?.response?.status === 401 ||
+        (error as any)?.message?.includes('Invalid or expired session') ||
+        (error as any)?.message?.includes('Session is invalid');
+
+      if (is401Error && targetSessionId === activeSessionId) {
+        // Session was already removed remotely, clear state without API call
+        await clearSessionState();
+        return;
+      }
+
       const errorMessage = error instanceof Error ? error.message : 'Logout failed';
       if (__DEV__) {
         console.error('Logout error:', error);
@@ -621,7 +642,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       useAuthStore.setState({ error: errorMessage });
       onError?.({ message: errorMessage, code: 'LOGOUT_ERROR', status: 500 });
     }
-  }, [activeSessionId, oxyServices, sessions, switchToSession, logoutStore, storage, keys.activeSessionId, onAuthStateChange, onError]);
+  }, [activeSessionId, oxyServices, sessions, switchToSession, logoutStore, storage, keys.activeSessionId, onAuthStateChange, onError, clearSessionState]);
 
   const logoutAll = useCallback(async (): Promise<void> => {
     if (!activeSessionId) {
@@ -953,6 +974,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     currentDeviceId,
     refreshSessions,
     logout,
+    clearSessionState,
     baseURL: oxyServices.getBaseURL(),
     onRemoteSignOut: useCallback(() => {
       toast.info('You have been signed out remotely.');
