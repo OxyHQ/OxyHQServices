@@ -15,27 +15,9 @@ import { useOxy } from '../../context/OxyContext';
 import { fontFamilies } from '../../styles/fonts';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../../hooks/useI18n';
-
-/**
- * Darkens a color by a specified factor
- * Returns a darker version of the color
- */
-const darkenColor = (color: string, factor: number = 0.6): string => {
-    // Remove # if present
-    const hex = color.replace('#', '');
-
-    // Convert to RGB
-    const r = parseInt(hex.substring(0, 2), 16);
-    const g = parseInt(hex.substring(2, 4), 16);
-    const b = parseInt(hex.substring(4, 6), 16);
-
-    // Darken by factor
-    const newR = Math.max(0, Math.round(r * (1 - factor)));
-    const newG = Math.max(0, Math.round(g * (1 - factor)));
-    const newB = Math.max(0, Math.round(b * (1 - factor)));
-
-    return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
-};
+import { Colors } from '../../constants/theme';
+import { useColorScheme } from '../../hooks/use-color-scheme';
+import { darkenColor } from '../../utils/colorUtils';
 
 const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     theme,
@@ -50,11 +32,20 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     const [error, setError] = useState<string | null>(null);
 
     const isDarkTheme = theme === 'dark';
+    const colorScheme = useColorScheme() ?? theme ?? 'light';
+    const colors = Colors[colorScheme];
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
     const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
     const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#F5F5F5';
     const borderColor = isDarkTheme ? '#444444' : '#E0E0E0';
     const primaryColor = '#d169e5';
+    
+    // Icon colors from theme
+    const iconLeaderboard = colors.iconPayments;
+    const iconRules = colors.iconSecurity;
+    const iconAbout = colors.iconPayments;
+    const iconRewards = colors.iconStorage;
+    const iconFAQ = colors.iconPersonalInfo;
 
     useEffect(() => {
         if (!user) return;
@@ -101,34 +92,34 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                     <View style={styles.actionContainer}>
                         <View style={styles.actionRow}>
                             <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaLeaderboard')}>
-                                <View style={[styles.actionIcon, { backgroundColor: '#FFD700' }]}>
-                                    <Ionicons name="trophy-outline" size={28} color={darkenColor('#FFD700')} />
+                                <View style={[styles.actionIcon, { backgroundColor: iconLeaderboard }]}>
+                                    <Ionicons name="trophy-outline" size={28} color={darkenColor(iconLeaderboard)} />
                                 </View>
                                 <Text style={styles.actionLabel}>{t('karma.center.actions.leaderboard') || 'Leaderboard'}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaRules')}>
-                                <View style={[styles.actionIcon, { backgroundColor: '#007AFF' }]}>
-                                    <Ionicons name="document-text-outline" size={28} color={darkenColor('#007AFF')} />
+                                <View style={[styles.actionIcon, { backgroundColor: iconRules }]}>
+                                    <Ionicons name="document-text-outline" size={28} color={darkenColor(iconRules)} />
                                 </View>
                                 <Text style={styles.actionLabel}>{t('karma.center.actions.rules') || 'Rules'}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('AboutKarma')}>
-                                <View style={[styles.actionIcon, { backgroundColor: '#FFD700' }]}>
-                                    <Ionicons name="star-outline" size={28} color={darkenColor('#FFD700')} />
+                                <View style={[styles.actionIcon, { backgroundColor: iconAbout }]}>
+                                    <Ionicons name="star-outline" size={28} color={darkenColor(iconAbout)} />
                                 </View>
                                 <Text style={styles.actionLabel}>{t('karma.center.actions.about') || 'About'}</Text>
                             </TouchableOpacity>
                         </View>
                         <View style={styles.actionRow}>
                             <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaRewards')}>
-                                <View style={[styles.actionIcon, { backgroundColor: '#FF9500' }]}>
-                                    <Ionicons name="gift-outline" size={28} color={darkenColor('#FF9500')} />
+                                <View style={[styles.actionIcon, { backgroundColor: iconRewards }]}>
+                                    <Ionicons name="gift-outline" size={28} color={darkenColor(iconRewards)} />
                                 </View>
                                 <Text style={styles.actionLabel}>{t('karma.center.actions.rewards') || 'Rewards'}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaFAQ')}>
-                                <View style={[styles.actionIcon, { backgroundColor: '#30D158' }]}>
-                                    <Ionicons name="help-circle-outline" size={28} color={darkenColor('#30D158')} />
+                                <View style={[styles.actionIcon, { backgroundColor: iconFAQ }]}>
+                                    <Ionicons name="help-circle-outline" size={28} color={darkenColor(iconFAQ)} />
                                 </View>
                                 <Text style={styles.actionLabel}>{t('karma.center.actions.faq') || 'FAQ'}</Text>
                             </TouchableOpacity>

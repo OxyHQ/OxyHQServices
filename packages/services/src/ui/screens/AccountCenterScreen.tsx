@@ -24,6 +24,8 @@ import GroupedSection from '../components/GroupedSection';
 import GroupedItem from '../components/GroupedItem';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { Colors } from '../constants/theme';
+import { useColorScheme } from '../hooks/use-color-scheme';
 
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -95,12 +97,12 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 <Section title={t('accountCenter.sections.quickActions') || 'Quick Actions'}  isFirst={true}>
                     <QuickActions
                         actions={useMemo(() => [
-                            { id: 'overview', icon: 'person-circle', iconColor: '#007AFF', title: t('accountCenter.quickActions.overview') || 'Overview', onPress: () => navigate('AccountOverview') },
-                            { id: 'settings', icon: 'settings', iconColor: '#5856D6', title: t('accountCenter.quickActions.editProfile') || 'Edit Profile', onPress: () => navigate('EditProfile') },
-                            { id: 'sessions', icon: 'shield-checkmark', iconColor: '#30D158', title: t('accountCenter.quickActions.sessions') || 'Sessions', onPress: () => navigate('SessionManagement') },
-                            { id: 'premium', icon: 'star', iconColor: '#FFD700', title: t('accountCenter.quickActions.premium') || 'Premium', onPress: () => navigate('PremiumSubscription') },
-                            ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: '#34C759', title: t('accountCenter.quickActions.billing') || 'Billing', onPress: () => navigate('PaymentGateway') }] : []),
-                            ...(sessions && sessions.length > 1 ? [{ id: 'switch', icon: 'swap-horizontal', iconColor: '#FF9500', title: t('accountCenter.quickActions.switch') || 'Switch', onPress: () => navigate('AccountSwitcher') }] : []),
+                            { id: 'overview', icon: 'person-circle', iconColor: colors.iconSecurity, title: t('accountCenter.quickActions.overview') || 'Overview', onPress: () => navigate('AccountOverview') },
+                            { id: 'settings', icon: 'settings', iconColor: colors.iconData, title: t('accountCenter.quickActions.editProfile') || 'Edit Profile', onPress: () => navigate('EditProfile') },
+                            { id: 'sessions', icon: 'shield-checkmark', iconColor: colors.iconSecurity, title: t('accountCenter.quickActions.sessions') || 'Sessions', onPress: () => navigate('SessionManagement') },
+                            { id: 'premium', icon: 'star', iconColor: colors.iconPayments, title: t('accountCenter.quickActions.premium') || 'Premium', onPress: () => navigate('PremiumSubscription') },
+                            ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: colors.iconPersonalInfo, title: t('accountCenter.quickActions.billing') || 'Billing', onPress: () => navigate('PaymentGateway') }] : []),
+                            ...(sessions && sessions.length > 1 ? [{ id: 'switch', icon: 'swap-horizontal', iconColor: colors.iconStorage, title: t('accountCenter.quickActions.switch') || 'Switch', onPress: () => navigate('AccountSwitcher') }] : []),
                         ], [user?.isPremium, sessions, navigate, t])}
                         
                     />
@@ -113,7 +115,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'overview',
                                 icon: 'person-circle',
-                                iconColor: '#007AFF',
+                                iconColor: colors.iconSecurity,
                                 title: t('accountCenter.items.accountOverview.title') || 'Account Overview',
                                 subtitle: t('accountCenter.items.accountOverview.subtitle') || 'Complete account information',
                                 onPress: () => navigate('AccountOverview'),
@@ -121,7 +123,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'settings',
                                 icon: 'settings',
-                                iconColor: '#5856D6',
+                                iconColor: colors.iconData,
                                 title: t('accountCenter.items.editProfile.title') || 'Edit Profile',
                                 subtitle: t('accountCenter.items.editProfile.subtitle') || 'Manage your profile and preferences',
                                 onPress: () => navigate('EditProfile'),
@@ -129,7 +131,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'sessions',
                                 icon: 'shield-checkmark',
-                                iconColor: '#30D158',
+                                iconColor: colors.iconSecurity,
                                 title: t('accountCenter.items.manageSessions.title') || 'Manage Sessions',
                                 subtitle: t('accountCenter.items.manageSessions.subtitle') || 'Security and active devices',
                                 onPress: () => navigate('SessionManagement'),
@@ -137,7 +139,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'files',
                                 icon: 'folder',
-                                iconColor: '#FF9500',
+                                iconColor: colors.iconStorage,
                                 title: t('accountCenter.items.fileManagement.title') || 'File Management',
                                 subtitle: t('accountCenter.items.fileManagement.subtitle') || 'Upload, download, and manage your files',
                                 onPress: () => navigate('FileManagement'),
@@ -145,7 +147,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'premium',
                                 icon: 'star',
-                                iconColor: '#FFD700',
+                                iconColor: colors.iconPayments,
                                 title: t('accountCenter.items.premium.title') || 'Oxy+ Subscriptions',
                                 subtitle: user?.isPremium ? (t('accountCenter.items.premium.manage') || 'Manage your premium plan') : (t('accountCenter.items.premium.upgrade') || 'Upgrade to premium features'),
                                 onPress: () => navigate('PremiumSubscription'),
@@ -153,7 +155,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             ...(user?.isPremium ? [{
                                 id: 'billing',
                                 icon: 'card',
-                                iconColor: '#34C759',
+                                iconColor: colors.iconPersonalInfo,
                                 title: t('accountCenter.items.billing.title') || 'Billing Management',
                                 subtitle: t('accountCenter.items.billing.subtitle') || 'Payment methods and invoices',
                                 onPress: () => navigate('PaymentGateway'),

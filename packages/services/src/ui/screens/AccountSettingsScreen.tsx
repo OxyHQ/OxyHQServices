@@ -1148,13 +1148,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 </View>
             );
         }
+        const colors = Colors[colorScheme];
         const fieldConfig = {
-            displayName: { label: 'Display Name', value: displayName, placeholder: 'Enter your display name', icon: 'person', color: '#007AFF', multiline: false, keyboardType: 'default' as const },
-            username: { label: 'Username', value: username, placeholder: 'Choose a username', icon: 'at', color: '#5856D6', multiline: false, keyboardType: 'default' as const },
-            email: { label: 'Email', value: email, placeholder: 'Enter your email address', icon: 'mail', color: '#FF9500', multiline: false, keyboardType: 'email-address' as const },
-            bio: { label: 'Bio', value: bio, placeholder: 'Tell people about yourself...', icon: 'document-text', color: '#34C759', multiline: true, keyboardType: 'default' as const },
-            location: { label: 'Location', value: location, placeholder: 'Enter your location', icon: 'location', color: '#FF3B30', multiline: false, keyboardType: 'default' as const },
-            links: { label: 'Links', value: links.join(', '), placeholder: 'Enter your links (comma separated)', icon: 'link', color: '#32D74B', multiline: false, keyboardType: 'url' as const }
+            displayName: { label: 'Display Name', value: displayName, placeholder: 'Enter your display name', icon: 'person', color: colors.iconPersonalInfo, multiline: false, keyboardType: 'default' as const },
+            username: { label: 'Username', value: username, placeholder: 'Choose a username', icon: 'at', color: colors.iconData, multiline: false, keyboardType: 'default' as const },
+            email: { label: 'Email', value: email, placeholder: 'Enter your email address', icon: 'mail', color: colors.iconStorage, multiline: false, keyboardType: 'email-address' as const },
+            bio: { label: 'Bio', value: bio, placeholder: 'Tell people about yourself...', icon: 'document-text', color: colors.iconPersonalInfo, multiline: true, keyboardType: 'default' as const },
+            location: { label: 'Location', value: location, placeholder: 'Enter your location', icon: 'location', color: colors.iconSharing, multiline: false, keyboardType: 'default' as const },
+            links: { label: 'Links', value: links.join(', '), placeholder: 'Enter your links (comma separated)', icon: 'link', color: colors.iconPersonalInfo, multiline: false, keyboardType: 'url' as const }
         };
 
         const config = fieldConfig[type as keyof typeof fieldConfig];
@@ -1718,7 +1719,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        backgroundColor: '#007AFF',
+        backgroundColor: Colors.light.iconSecurity,
         paddingVertical: 12,
         paddingHorizontal: 16,
         borderRadius: 10,
@@ -1865,7 +1866,7 @@ const styles = StyleSheet.create({
         color: '#6C757D',
     },
     addButton: {
-        backgroundColor: '#007AFF',
+        backgroundColor: Colors.light.iconSecurity,
     },
     addButtonText: {
         fontSize: 14,
@@ -1886,7 +1887,7 @@ const styles = StyleSheet.create({
     addLinkTriggerText: {
         fontSize: 14,
         fontWeight: '600',
-        color: '#007AFF',
+        color: Colors.light.iconSecurity,
         marginLeft: 6,
     },
     linksList: {
@@ -1983,7 +1984,7 @@ const styles = StyleSheet.create({
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: '#007AFF',
+        backgroundColor: Colors.light.iconSecurity,
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: 8,
@@ -1995,7 +1996,7 @@ const styles = StyleSheet.create({
     },
     fetchingText: {
         fontSize: 12,
-        color: '#007AFF',
+        color: Colors.light.iconSecurity,
         fontStyle: 'italic',
     },
     linksFieldContent: {
@@ -2020,7 +2021,7 @@ const styles = StyleSheet.create({
         width: 20,
         height: 20,
         borderRadius: 10,
-        backgroundColor: '#007AFF',
+        backgroundColor: Colors.light.iconSecurity,
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: 6,
@@ -2061,7 +2062,7 @@ const styles = StyleSheet.create({
     },
     searchingText: {
         fontSize: 12,
-        color: '#007AFF',
+        color: Colors.light.iconSecurity,
         fontStyle: 'italic',
     },
     addLocationInputContainer: {
@@ -2102,7 +2103,7 @@ const styles = StyleSheet.create({
     addLocationTriggerText: {
         marginLeft: 8,
         fontSize: 16,
-        color: '#007AFF',
+        color: Colors.light.iconSecurity,
         fontWeight: '500',
     },
     searchResults: {
@@ -2166,7 +2167,7 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     locationLabel: {
-        backgroundColor: '#007AFF',
+        backgroundColor: Colors.light.iconSecurity,
         paddingHorizontal: 6,
         paddingVertical: 2,
         borderRadius: 4,
