@@ -168,13 +168,114 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     // ============================================================================
 
     /**
-     * Calculate SHA256 hash of file content
+     * Convert File or Blob to ArrayBuffer - platform agnostic
+     * Works on both web (uses native arrayBuffer) and React Native (uses expo-file-system)
+     */
+    async fileToArrayBuffer(file: File | Blob): Promise<ArrayBuffer> {
+      // Try native arrayBuffer (web)
+      if (typeof file.arrayBuffer === 'function') {
+        return await file.arrayBuffer();
+      }
+      
+      // React Native/Expo path: use expo-file-system for cleaner solution
+      const uri = (file as any).uri;
+      if (uri && typeof uri === 'string') {
+        try {
+          // Try to use expo-file-system (Expo 54 recommended approach)
+          const FileSystem = await import('expo-file-system').catch(() => null);
+          if (FileSystem && FileSystem.default) {
+            // Read file as Base64 using Expo's native file system API
+            const FileSystemModule = FileSystem.default;
+            const base64String = await FileSystemModule.readAsStringAsync(uri, {
+              encoding: (FileSystemModule as any).EncodingType?.Base64 || 'base64',
+            });
+            
+            // Convert Base64 to ArrayBuffer
+            const binaryString = atob(base64String);
+            const bytes = new Uint8Array(binaryString.length);
+            for (let i = 0; i < binaryString.length; i++) {
+              bytes[i] = binaryString.charCodeAt(i);
+            }
+            return bytes.buffer;
+          }
+        } catch (expoError: any) {
+          // If expo-file-system fails, fall back to fetch
+          console.warn('expo-file-system not available, falling back to fetch:', expoError.message);
+        }
+        
+        // Fallback: use fetch if expo-file-system is not available
+        try {
+          const response = await fetch(uri);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch file from URI: ${response.statusText}`);
+          }
+          return await response.arrayBuffer();
+        } catch (fetchError: any) {
+          throw new Error(`Failed to read file from URI: ${fetchError.message || 'Unknown error'}`);
+        }
+      }
+      
+      // Final fallback: create blob URL and fetch (for web Blobs without URI)
+      try {
+        const blobUrl = URL.createObjectURL(file);
+        try {
+          const response = await fetch(blobUrl);
+          if (!response.ok) {
+            throw new Error(`Failed to fetch file from blob URL: ${response.statusText}`);
+          }
+          return await response.arrayBuffer();
+        } finally {
+          URL.revokeObjectURL(blobUrl);
+        }
+      } catch (error: any) {
+        throw new Error(`Failed to convert file to ArrayBuffer: ${error.message || 'Unknown error'}`);
+      }
+    }
+
+    /**
+     * Calculate SHA256 hash of file content - platform agnostic
+     * Uses crypto.subtle for web, expo-crypto for React Native/Expo
      */
     async calculateSHA256(file: File | Blob): Promise<string> {
-      const buffer = await file.arrayBuffer();
-      const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-      const hashArray = Array.from(new Uint8Array(hashBuffer));
-      return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+      const buffer = await this.fileToArrayBuffer(file);
+      
+      // Try native crypto.subtle first (web and modern environments)
+      if (typeof crypto !== 'undefined' && crypto.subtle && typeof crypto.subtle.digest === 'function') {
+        try {
+          const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+          const hashArray = Array.from(new Uint8Array(hashBuffer));
+          return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+        } catch (error: any) {
+          // Fall through to expo-crypto if crypto.subtle fails
+          console.warn('crypto.subtle failed, trying expo-crypto:', error.message);
+        }
+      }
+      
+      // Try expo-crypto (Expo/React Native) - optional dependency
+      try {
+        // Dynamically import expo-crypto (optional peer dependency)
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const CryptoModule = await import('expo-crypto' as any).catch(() => null);
+        if (CryptoModule) {
+          const Crypto = CryptoModule.default || CryptoModule;
+          if (Crypto && typeof Crypto.digestStringAsync === 'function') {
+            // Convert ArrayBuffer to base64 string for expo-crypto
+            const bytes = new Uint8Array(buffer);
+            const binary = Array.from(bytes, byte => String.fromCharCode(byte)).join('');
+            const base64 = typeof btoa !== 'undefined' ? btoa(binary) : Buffer.from(binary).toString('base64');
+            
+            // expo-crypto's digestStringAsync with BASE64 encoding
+            const algorithm = (Crypto as any).CryptoDigestAlgorithm?.SHA256 || 'SHA256';
+            const encoding = (Crypto as any).CryptoEncoding?.BASE64 || 'base64';
+            return await Crypto.digestStringAsync(algorithm, base64, { encoding });
+          }
+        }
+      } catch (expoError: any) {
+        // Continue to error if expo-crypto not available
+        // This is expected if expo-crypto is not installed
+      }
+      
+      throw new Error('No crypto implementation available. For React Native/Expo, install expo-crypto: npx expo install expo-crypto');
     }
 
     /**

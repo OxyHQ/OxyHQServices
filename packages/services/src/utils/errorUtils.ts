@@ -57,9 +57,17 @@ export function createApiError(
  * Handle common HTTP errors and convert to ApiError
  */
 export function handleHttpError(error: unknown): ApiError {
-  // If it's already an ApiError, return it
+  // If it's already an ApiError, ensure it has a non-empty message
   if (error && typeof error === 'object' && 'code' in error && 'status' in error) {
-    return error as ApiError;
+    const apiError = error as ApiError;
+    // Ensure message is not empty
+    if (!apiError.message || !apiError.message.trim()) {
+      return {
+        ...apiError,
+        message: apiError.message || 'An error occurred',
+      };
+    }
+    return apiError;
   }
 
   // Handle AbortError (timeout or cancelled requests)
@@ -135,9 +143,11 @@ export function handleHttpError(error: unknown): ApiError {
     );
   }
 
-  // Handle other errors
+  // Handle other errors - ensure we always return a non-empty message
+  const errorString = error ? String(error) : '';
+  const message = errorString.trim() || 'Unknown error occurred';
   return createApiError(
-    String(error) || 'Unknown error occurred',
+    message,
     ErrorCodes.INTERNAL_ERROR,
     500
   );

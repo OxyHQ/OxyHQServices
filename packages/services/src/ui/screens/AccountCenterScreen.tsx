@@ -86,7 +86,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
             {user && (
                 <ProfileCard
                     user={user}
-                    theme={theme}
+                    theme={theme || 'light'}
                     onEditPress={() => navigate('EditProfile', { activeTab: 'profile' })}
                     onClosePress={onClose}
                     showCloseButton={!!onClose}

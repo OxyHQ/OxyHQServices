@@ -460,10 +460,14 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     const prevStep = useCallback(() => {
         if (state.isTransitioning) return;
 
-        // All back navigation is managed by OxyRouter's goBack
-        // This will restore the previous step's props from router history
-        goBack?.();
-    }, [state.isTransitioning, goBack]);
+        // Only navigate back if we're not on the first step
+        // If we're on the first step, prevent back navigation to avoid closing the screen
+        if (state.currentStep > 0) {
+            // All back navigation is managed by OxyRouter's goBack
+            // This will restore the previous step's props from router history
+            goBack?.();
+        }
+    }, [state.isTransitioning, state.currentStep, goBack]);
 
     const goToStep = useCallback((stepIndex: number) => {
         if (state.isTransitioning || stepIndex < 0 || stepIndex >= steps.length) return;

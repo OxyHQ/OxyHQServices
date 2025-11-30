@@ -6,12 +6,9 @@ import {
     StyleSheet,
     ScrollView,
     ActivityIndicator,
-    Platform,
     RefreshControl,
-    Dimensions,
-    Modal,
     TextInput,
-    Image, // kept for Image.getSize only
+    Image,
     Animated,
     Easing,
     Alert,
@@ -19,7 +16,6 @@ import {
 import { Image as ExpoImage } from 'expo-image';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
-import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 import type { FileMetadata } from '../../models/interfaces';
@@ -29,6 +25,18 @@ import JustifiedPhotoGrid from '../components/photogrid/JustifiedPhotoGrid';
 import { GroupedSection } from '../components';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import {
+    confirmAction,
+    convertDocumentPickerAssetToFile,
+    formatFileSize,
+    getFileIcon,
+    getSafeDownloadUrl,
+    uploadFileRaw
+} from '../utils/fileManagement';
+import { FileViewer } from '../components/fileManagement/FileViewer';
+import { FileDetailsModal } from '../components/fileManagement/FileDetailsModal';
+import { UploadPreview } from '../components/fileManagement/UploadPreview';
+import { fileManagementStyles } from '../components/fileManagement/styles';
 
 // Exporting props & callback types so external callers (e.g. showBottomSheet config objects) can annotate
 export type OnConfirmFileSelection = (files: FileMetadata[]) => void;
@@ -72,100 +80,6 @@ export interface FileManagementScreenProps extends BaseScreenProps {
     };
 }
 
-// Add this helper function near the top (after imports):
-async function uploadFileRaw(file: File | Blob, userId: string, oxyServices: any, visibility?: 'private' | 'public' | 'unlisted') {
-    return await oxyServices.uploadRawFile(file, visibility);
-}
-
-// Platform-aware confirmation dialog helper
-const confirmAction = (
-    message: string,
-    title?: string,
-    confirmText: string = 'OK',
-    cancelText: string = 'Cancel'
-): Promise<boolean> => {
-    return new Promise((resolve) => {
-        if (Platform.OS === 'web' && typeof window !== 'undefined' && window.confirm) {
-            resolve(window.confirm(message));
-        } else {
-            Alert.alert(
-                title || 'Confirm',
-                message,
-                [
-                    {
-                        text: cancelText,
-                        style: 'cancel',
-                        onPress: () => resolve(false),
-                    },
-                    {
-                        text: confirmText,
-                        onPress: () => resolve(true),
-                    },
-                ],
-                { cancelable: true, onDismiss: () => resolve(false) }
-            );
-        }
-    });
-};
-
-/**
- * Convert DocumentPicker asset to File object
- * Handles both web (native File API) and mobile (URI-based) file sources
- * Expo 54 compatible - works across all platforms
- */
-const convertDocumentPickerAssetToFile = async (
-    doc: { file?: File | Blob; uri?: string; name?: string | null; mimeType?: string | null; size?: number | null },
-    index: number
-): Promise<File | null> => {
-    try {
-        let file: File | null = null;
-
-        // Priority 1: Use doc.file if available (web native File API)
-        // This is the most efficient path as it doesn't require fetching
-        if (doc.file && doc.file instanceof File) {
-            file = doc.file as File;
-            // Ensure file has required properties
-            if (!file.name && doc.name) {
-                // Create new File with proper name if missing
-                file = new File([file], doc.name, { type: file.type || doc.mimeType || 'application/octet-stream' });
-            }
-            // Preserve URI for preview if available (useful for mobile previews)
-            if (doc.uri) {
-                (file as any).uri = doc.uri;
-            }
-            return file;
-        }
-
-        // Priority 2: Use uri to create File (works on both web and mobile)
-        // This path handles mobile file URIs and web blob URLs
-        if (doc.uri) {
-            try {
-                // Fetch the file from URI and create File object
-                // Works with file://, content://, and http(s):// URIs
-                const response = await fetch(doc.uri);
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch file: ${response.statusText}`);
-                }
-                const blob = await response.blob();
-                const fileName = doc.name || `file-${index + 1}`;
-                const fileType = doc.mimeType || blob.type || 'application/octet-stream';
-                file = new File([blob], fileName, { type: fileType });
-                // Preserve URI for preview (especially important for mobile)
-                (file as any).uri = doc.uri;
-                return file;
-            } catch (fetchError: any) {
-                console.error('Failed to fetch file from URI:', fetchError);
-                throw new Error(`Failed to load file: ${fetchError.message || 'Unknown error'}`);
-            }
-        }
-
-        // No file or URI available - this shouldn't happen with Expo 54
-        throw new Error('Missing file data (no file or uri property)');
-    } catch (error: any) {
-        console.error('Error converting document to file:', error);
-        throw error;
-    }
-};
 
 const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     onClose,
@@ -258,10 +172,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
         return sorted;
     }, [files, searchQuery, viewMode, sortBy, sortOrder]);
-    const [isDragging, setIsDragging] = useState(false);
     const [photoDimensions, setPhotoDimensions] = useState<{ [key: string]: { width: number, height: number } }>({});
     const [loadingDimensions, setLoadingDimensions] = useState(false);
-    const [hoveredPreview, setHoveredPreview] = useState<string | null>(null);
     const uploadStartRef = useRef<number | null>(null);
     const MIN_BANNER_MS = 600;
     // Selection state
@@ -270,7 +182,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const scrollViewRef = useRef<ScrollView>(null);
     const photoScrollViewRef = useRef<ScrollView>(null);
     const itemRefs = useRef<Map<string, number>>(new Map()); // Track item positions
-    const containerRef = useRef<View>(null); // Ref for drag and drop container
+    const containerRef = useRef<View>(null);
     useEffect(() => {
         if (initialSelectedIds && initialSelectedIds.length) {
             setSelectedIds(new Set(initialSelectedIds));
@@ -395,38 +307,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }, []);
 
     // Helper to safely request a thumbnail variant only for image mime types.
-    // Prevents backend warnings: "Variant thumb not supported for mime application/pdf".
-    const getSafeDownloadUrl = useCallback(
+    const getSafeDownloadUrlCallback = useCallback(
         (file: FileMetadata, variant: string = 'thumb') => {
-            const isImage = file.contentType.startsWith('image/');
-            const isVideo = file.contentType.startsWith('video/');
-
-            // Prefer explicit variant key if variants metadata present
-            if (file.variants && file.variants.length > 0) {
-                // For videos, try 'poster' regardless of requested variant
-                if (isVideo) {
-                    const poster = file.variants.find(v => v.type === 'poster');
-                    if (poster) return oxyServices.getFileDownloadUrl(file.id, 'poster');
-                }
-                if (isImage) {
-                    const desired = file.variants.find(v => v.type === variant);
-                    if (desired) return oxyServices.getFileDownloadUrl(file.id, variant);
-                }
-            }
-
-            if (isImage) {
-                return oxyServices.getFileDownloadUrl(file.id, variant);
-            }
-            if (isVideo) {
-                // Fallback to poster if backend supports implicit generation
-                try {
-                    return oxyServices.getFileDownloadUrl(file.id, 'poster');
-                } catch {
-                    return oxyServices.getFileDownloadUrl(file.id);
-                }
-            }
-            // Other mime types: no variant
-            return oxyServices.getFileDownloadUrl(file.id);
+            return getSafeDownloadUrl(file, variant, (fileId: string, variant?: string) => oxyServices.getFileDownloadUrl(fileId, variant));
         },
         [oxyServices]
     );
@@ -511,7 +394,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     // (removed effect; filteredFiles is memoized)
 
-    // Load photo dimensions for justified grid
+    // Load photo dimensions for justified grid - unified approach using Image.getSize
     const loadPhotoDimensions = useCallback(async (photos: FileMetadata[]) => {
         if (photos.length === 0) return;
 
@@ -531,46 +414,25 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             await Promise.all(
                 photosToLoad.map(async (photo) => {
                     try {
-                        const downloadUrl = getSafeDownloadUrl(photo, 'thumb');
+                        const downloadUrl = getSafeDownloadUrlCallback(photo, 'thumb');
 
-                        if (Platform.OS === 'web') {
-                            const img = new (window as any).Image();
-                            await new Promise<void>((resolve, reject) => {
-                                img.onload = () => {
-                                    newDimensions[photo.id] = {
-                                        width: img.naturalWidth,
-                                        height: img.naturalHeight
-                                    };
+                        // Unified approach using Image.getSize (works on all platforms)
+                        await new Promise<void>((resolve) => {
+                            Image.getSize(
+                                downloadUrl,
+                                (width: number, height: number) => {
+                                    newDimensions[photo.id] = { width, height };
                                     hasNewDimensions = true;
                                     resolve();
-                                };
-                                img.onerror = () => {
-                                    // Fallback dimensions for failed loads
+                                },
+                                () => {
+                                    // Fallback dimensions
                                     newDimensions[photo.id] = { width: 1, height: 1 };
                                     hasNewDimensions = true;
                                     resolve();
-                                };
-                                img.src = downloadUrl;
-                            });
-                        } else {
-                            // For mobile, use Image.getSize from react-native
-                            await new Promise<void>((resolve) => {
-                                Image.getSize(
-                                    downloadUrl,
-                                    (width: number, height: number) => {
-                                        newDimensions[photo.id] = { width, height };
-                                        hasNewDimensions = true;
-                                        resolve();
-                                    },
-                                    () => {
-                                        // Fallback dimensions
-                                        newDimensions[photo.id] = { width: 1, height: 1 };
-                                        hasNewDimensions = true;
-                                        resolve();
-                                    }
-                                );
-                            });
-                        }
+                                }
+                            );
+                        });
                     } catch (error) {
                         // Fallback dimensions for any errors
                         newDimensions[photo.id] = { width: 1, height: 1 };
@@ -587,7 +449,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         } finally {
             setLoadingDimensions(false);
         }
-    }, [oxyServices, photoDimensions]);
+    }, [getSafeDownloadUrlCallback, photoDimensions]);
 
     // Create justified rows from photos with responsive algorithm
     const createJustifiedRows = useCallback((photos: FileMetadata[], containerWidth: number) => {
@@ -753,30 +615,26 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             // Ensure file has a type property
             const fileType = file.type || 'application/octet-stream';
 
-            // Generate preview for images
+            // Generate preview for images - unified approach
             let preview: string | undefined;
             if (fileType.startsWith('image/')) {
-                if (Platform.OS === 'web') {
-                    // Web: Use blob URL for preview
+                // Try to use file URI from expo-document-picker if available (works on all platforms)
+                const fileUri = (file as any).uri;
+                if (fileUri && typeof fileUri === 'string' &&
+                    (fileUri.startsWith('file://') || fileUri.startsWith('content://') ||
+                        fileUri.startsWith('http://') || fileUri.startsWith('https://') ||
+                        fileUri.startsWith('blob:'))) {
+                    preview = fileUri;
+                } else {
+                    // Fallback: create blob URL if possible (works on web)
                     try {
-                        preview = URL.createObjectURL(file);
+                        if (file instanceof File || file instanceof Blob) {
+                            preview = URL.createObjectURL(file);
+                        }
                     } catch (error: any) {
                         console.warn('Failed to create preview URL:', error);
                         // Preview is optional, continue without it
                     }
-                } else {
-                    // Mobile: Use file URI from expo-document-picker if available
-                    // The file object from expo-document-picker may have a uri property
-                    const fileUri = (file as any).uri;
-                    if (fileUri) {
-                        // Validate URI format (should be file://, content://, or http(s)://)
-                        if (typeof fileUri === 'string' && (fileUri.startsWith('file://') || fileUri.startsWith('content://') || fileUri.startsWith('http://') || fileUri.startsWith('https://'))) {
-                            preview = fileUri;
-                        } else {
-                            console.warn('Invalid file URI format:', fileUri);
-                        }
-                    }
-                    // If no URI available, skip preview (preview is optional)
                 }
             }
 
@@ -883,18 +741,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             // Dynamically import expo-document-picker (Expo 54 supports it on all platforms)
             const DocumentPicker = await import('expo-document-picker').catch(() => null);
 
-            if (!DocumentPicker) {
+            if (!DocumentPicker || !DocumentPicker.getDocumentAsync) {
                 toast.error('File picker not available. Please install expo-document-picker');
                 return;
             }
 
-            // Check if document picker is available on this platform/device
-            const isAvailable = await DocumentPicker.isAvailableAsync().catch(() => false);
-            if (!isAvailable) {
-                toast.error('File picker is not available on this device');
-                return;
-            }
-
+            // Use getDocumentAsync directly - it will handle platform availability
             const result = await DocumentPicker.getDocumentAsync({
                 type: '*/*',
                 multiple: true,
@@ -1095,80 +947,17 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
     }, [selectedIds, oxyServices, files, loadFiles]);
 
-    // Global drag listeners (web) - attach to document for reliable drag and drop
-    useEffect(() => {
-        if (Platform.OS !== 'web' || user?.id !== targetUserId) return;
-
-        let dragCounter = 0; // Track drag enter/leave to handle nested elements
-
-        const onDragEnter = (e: DragEvent) => {
-            dragCounter++;
-            if (e?.dataTransfer?.types?.includes('Files')) {
-                e.preventDefault();
-                e.stopPropagation();
-                setIsDragging(true);
-            }
-        };
-
-        const onDragOver = (e: DragEvent) => {
-            if (e?.dataTransfer?.types?.includes('Files')) {
-                e.preventDefault();
-                e.stopPropagation();
-                // Keep dragging state true while over document
-                setIsDragging(true);
-            }
-        };
-
-        const onDrop = async (e: DragEvent) => {
-            dragCounter = 0;
-            setIsDragging(false);
-
-            if (e?.dataTransfer?.files?.length) {
-                e.preventDefault();
-                e.stopPropagation();
-
-                try {
-                    const files = Array.from(e.dataTransfer.files) as File[];
-                    if (files.length > 0) {
-                        await handleFileSelection(files);
-                    }
-                } catch (error: any) {
-                    toast.error(error.message || 'Failed to upload files');
-                }
-            }
-        };
-
-        const onDragLeave = (e: DragEvent) => {
-            dragCounter--;
-            // Only hide drag overlay if we're actually leaving the document (drag counter reaches 0)
-            if (dragCounter === 0) {
-                setIsDragging(false);
-            }
-        };
-
-        // Attach to document for global drag detection
-        document.addEventListener('dragenter', onDragEnter, false);
-        document.addEventListener('dragover', onDragOver, false);
-        document.addEventListener('drop', onDrop, false);
-        document.addEventListener('dragleave', onDragLeave, false);
-
-        return () => {
-            document.removeEventListener('dragenter', onDragEnter, false);
-            document.removeEventListener('dragover', onDragOver, false);
-            document.removeEventListener('drop', onDrop, false);
-            document.removeEventListener('dragleave', onDragLeave, false);
-        };
-    }, [user?.id, targetUserId, handleFileSelection]);
-
-
+    // Unified download function - works on all platforms
     const handleFileDownload = async (fileId: string, filename: string) => {
         try {
-            if (Platform.OS === 'web') {
-                // Use the public download URL method
-                const downloadUrl = oxyServices.getFileDownloadUrl(fileId);
+            // Try to use the download URL with a simple approach
+            // On web, this creates a download link. On mobile, it opens the URL.
+            const downloadUrl = oxyServices.getFileDownloadUrl(fileId);
 
+            // For web platforms, use link download
+            if (typeof window !== 'undefined' && window.document) {
                 try {
-                    // Method 1: Try simple link download first
+                    // Try simple link download first
                     const link = document.createElement('a');
                     link.href = downloadUrl;
                     link.download = filename;
@@ -1176,13 +965,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     document.body.appendChild(link);
                     link.click();
                     document.body.removeChild(link);
-
                     toast.success('File download started');
                 } catch (linkError) {
-
-                    // Method 2: Fallback to authenticated download
+                    // Fallback to authenticated download
                     const blob = await oxyServices.getFileContentAsBlob(fileId);
-                    const url = window.URL.createObjectURL(blob);
+                    const url = URL.createObjectURL(blob);
 
                     const link = document.createElement('a');
                     link.href = url;
@@ -1192,36 +979,20 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     document.body.removeChild(link);
 
                     // Clean up the blob URL
-                    window.URL.revokeObjectURL(url);
-
+                    URL.revokeObjectURL(url);
                     toast.success('File downloaded successfully');
                 }
             } else {
-                toast.info('File download not implemented for mobile yet');
+                // For mobile, open the URL (user can save from browser)
+                // Note: This is a simplified approach - for full mobile support,
+                // consider using expo-file-system or react-native-fs
+                toast.info('Please use your browser to download the file');
             }
         } catch (error: any) {
             toast.error(error.message || 'Failed to download file');
         }
     };
 
-    const formatFileSize = (bytes: number): string => {
-        if (bytes === 0) return '0 Bytes';
-        const k = 1024;
-        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(k));
-        return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-    };
-
-    const getFileIcon = (contentType: string): string => {
-        if (contentType.startsWith('image/')) return 'image';
-        if (contentType.startsWith('video/')) return 'videocam';
-        if (contentType.startsWith('audio/')) return 'musical-notes';
-        if (contentType.includes('pdf')) return 'document-text';
-        if (contentType.includes('word') || contentType.includes('doc')) return 'document';
-        if (contentType.includes('excel') || contentType.includes('sheet')) return 'grid';
-        if (contentType.includes('zip') || contentType.includes('archive')) return 'archive';
-        return 'document-outline';
-    };
 
     const handleFileOpen = async (file: FileMetadata) => {
         if (selectMode) {
@@ -1288,7 +1059,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     };
 
     const renderSimplePhotoItem = useCallback((photo: FileMetadata, index: number) => {
-        const downloadUrl = getSafeDownloadUrl(photo, 'thumb');
+        const downloadUrl = getSafeDownloadUrlCallback(photo, 'thumb');
 
         // Calculate photo item width based on actual container size from bottom sheet
         let itemsPerRow = 3; // Default for mobile
@@ -1305,7 +1076,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             <TouchableOpacity
                 key={photo.id}
                 style={[
-                    styles.simplePhotoItem,
+                    fileManagementStyles.simplePhotoItem,
                     {
                         width: itemWidth,
                         height: itemWidth,
@@ -1316,10 +1087,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 onPress={() => handleFileOpen(photo)}
                 activeOpacity={0.8}
             >
-                <View style={styles.simplePhotoContainer}>
+                <View style={fileManagementStyles.simplePhotoContainer}>
                     <ExpoImage
                         source={{ uri: downloadUrl }}
-                        style={styles.simplePhotoImage}
+                        style={fileManagementStyles.simplePhotoImage}
                         contentFit="cover"
                         transition={120}
                         cachePolicy="memory-disk"
@@ -1329,7 +1100,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         accessibilityLabel={photo.filename}
                     />
                     {selectMode && (
-                        <View style={styles.selectionBadge}>
+                        <View style={fileManagementStyles.selectionBadge}>
                             <Ionicons name={selectedIds.has(photo.id) ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={selectedIds.has(photo.id) ? themeStyles.primaryColor : themeStyles.textColor} />
                         </View>
                     )}
@@ -1339,13 +1110,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }, [oxyServices, containerWidth, selectMode, selectedIds, themeStyles.primaryColor, themeStyles.textColor]);
 
     const renderJustifiedPhotoItem = useCallback((photo: FileMetadata, width: number, height: number, isLast: boolean) => {
-        const downloadUrl = getSafeDownloadUrl(photo, 'thumb');
+        const downloadUrl = getSafeDownloadUrlCallback(photo, 'thumb');
 
         return (
             <TouchableOpacity
                 key={photo.id}
                 style={[
-                    styles.justifiedPhotoItem,
+                    fileManagementStyles.justifiedPhotoItem,
                     {
                         width,
                         height,
@@ -1356,10 +1127,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 onPress={() => handleFileOpen(photo)}
                 activeOpacity={0.8}
             >
-                <View style={styles.justifiedPhotoContainer}>
+                <View style={fileManagementStyles.justifiedPhotoContainer}>
                     <ExpoImage
                         source={{ uri: downloadUrl }}
-                        style={styles.justifiedPhotoImage}
+                        style={fileManagementStyles.justifiedPhotoImage}
                         contentFit="cover"
                         transition={120}
                         cachePolicy="memory-disk"
@@ -1369,7 +1140,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         accessibilityLabel={photo.filename}
                     />
                     {selectMode && (
-                        <View style={styles.selectionBadge}>
+                        <View style={fileManagementStyles.selectionBadge}>
                             <Ionicons name={selectedIds.has(photo.id) ? 'checkmark-circle' : 'ellipse-outline'} size={20} color={selectedIds.has(photo.id) ? themeStyles.primaryColor : themeStyles.textColor} />
                         </View>
                     )}
@@ -1400,26 +1171,20 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         return (
             <View
                 key={file.id}
-                style={[styles.fileItem, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }, selectMode && selectedIds.has(file.id) && { borderColor: themeStyles.primaryColor, borderWidth: 2 }]}
+                style={[fileManagementStyles.fileItem, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }, selectMode && selectedIds.has(file.id) && { borderColor: themeStyles.primaryColor, borderWidth: 2 }]}
             >
                 <TouchableOpacity
-                    style={styles.fileContent}
+                    style={fileManagementStyles.fileContent}
                     onPress={() => handleFileOpen(file)}
                 >
                     {/* Preview Thumbnail */}
-                    <View style={styles.filePreviewContainer}>
+                    <View style={fileManagementStyles.filePreviewContainer}>
                         {hasPreview ? (
-                            <View
-                                style={styles.filePreview}
-                                {...(Platform.OS === 'web' && {
-                                    onMouseEnter: () => setHoveredPreview(file.id),
-                                    onMouseLeave: () => setHoveredPreview(null),
-                                })}
-                            >
+                            <View style={fileManagementStyles.filePreview}>
                                 {isImage && (
                                     <ExpoImage
-                                        source={{ uri: getSafeDownloadUrl(file, 'thumb') }}
-                                        style={styles.previewImage}
+                                        source={{ uri: getSafeDownloadUrlCallback(file, 'thumb') }}
+                                        style={fileManagementStyles.previewImage}
                                         contentFit="cover"
                                         transition={120}
                                         cachePolicy="memory-disk"
@@ -1430,16 +1195,16 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                     />
                                 )}
                                 {isPDF && (
-                                    <View style={styles.pdfPreview}>
+                                    <View style={fileManagementStyles.pdfPreview}>
                                         <Ionicons name="document" size={32} color={themeStyles.primaryColor} />
-                                        <Text style={[styles.pdfLabel, { color: themeStyles.primaryColor }]}>PDF</Text>
+                                        <Text style={[fileManagementStyles.pdfLabel, { color: themeStyles.primaryColor }]}>PDF</Text>
                                     </View>
                                 )}
                                 {isVideo && (
-                                    <View style={styles.videoPreviewWrapper}>
+                                    <View style={fileManagementStyles.videoPreviewWrapper}>
                                         <ExpoImage
-                                            source={{ uri: getSafeDownloadUrl(file, 'thumb') }}
-                                            style={styles.videoPosterImage}
+                                            source={{ uri: getSafeDownloadUrlCallback(file, 'thumb') }}
+                                            style={fileManagementStyles.videoPosterImage}
                                             contentFit="cover"
                                             transition={120}
                                             cachePolicy="memory-disk"
@@ -1448,14 +1213,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                             }}
                                             accessibilityLabel={file.filename + ' video thumbnail'}
                                         />
-                                        <View style={styles.videoOverlay}>
+                                        <View style={fileManagementStyles.videoOverlay}>
                                             <Ionicons name="play" size={24} color="#FFFFFF" />
                                         </View>
                                     </View>
                                 )}
                                 {/* Fallback icon (hidden by default for images) */}
                                 <View
-                                    style={[styles.fallbackIcon, { display: isImage ? 'none' : 'flex' }]}
+                                    style={[fileManagementStyles.fallbackIcon, { display: isImage ? 'none' : 'flex' }]}
                                 >
                                     <Ionicons
                                         name={getFileIcon(file.contentType) as any}
@@ -1464,20 +1229,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                     />
                                 </View>
 
-                                {/* Preview overlay for hover effect */}
-                                {!selectMode && Platform.OS === 'web' && hoveredPreview === file.id && isImage && (
-                                    <View style={styles.previewOverlay}>
-                                        <Ionicons name="eye" size={24} color="#FFFFFF" />
-                                    </View>
-                                )}
                                 {selectMode && (
-                                    <View style={styles.selectionBadge}>
+                                    <View style={fileManagementStyles.selectionBadge}>
                                         <Ionicons name={selectedIds.has(file.id) ? 'checkmark-circle' : 'ellipse-outline'} size={22} color={selectedIds.has(file.id) ? themeStyles.primaryColor : themeStyles.textColor} />
                                     </View>
                                 )}
                             </View>
                         ) : (
-                            <View style={styles.fileIconContainer}>
+                            <View style={fileManagementStyles.fileIconContainer}>
                                 <Ionicons
                                     name={getFileIcon(file.contentType) as any}
                                     size={32}
@@ -1487,16 +1246,16 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         )}
                     </View>
 
-                    <View style={styles.fileInfo}>
-                        <Text style={[styles.fileName, { color: themeStyles.textColor }]} numberOfLines={1}>
+                    <View style={fileManagementStyles.fileInfo}>
+                        <Text style={[fileManagementStyles.fileName, { color: themeStyles.textColor }]} numberOfLines={1}>
                             {file.filename}
                         </Text>
-                        <Text style={[styles.fileDetails, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[fileManagementStyles.fileDetails, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                             {formatFileSize(file.length)} • {new Date(file.uploadDate).toLocaleDateString()}
                         </Text>
                         {file.metadata?.description && (
                             <Text
-                                style={[styles.fileDescription, { color: themeStyles.isDarkTheme ? '#AAAAAA' : '#888888' }]}
+                                style={[fileManagementStyles.fileDescription, { color: themeStyles.isDarkTheme ? '#AAAAAA' : '#888888' }]}
                                 numberOfLines={2}
                             >
                                 {file.metadata.description}
@@ -1506,11 +1265,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </TouchableOpacity>
 
                 {!selectMode && (
-                    <View style={styles.fileActions}>
+                    <View style={fileManagementStyles.fileActions}>
                         {/* Preview button for supported files */}
                         {hasPreview && (
                             <TouchableOpacity
-                                style={[styles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
+                                style={[fileManagementStyles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
                                 onPress={() => handleFileOpen(file)}
                             >
                                 <Ionicons name="eye" size={20} color={themeStyles.primaryColor} />
@@ -1518,7 +1277,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         )}
 
                         <TouchableOpacity
-                            style={[styles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
+                            style={[fileManagementStyles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
                             onPress={() => handleFileDownload(file.id, file.filename)}
                         >
                             <Ionicons name="download" size={20} color={themeStyles.primaryColor} />
@@ -1526,7 +1285,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                         {/* Always show delete button for debugging */}
                         <TouchableOpacity
-                            style={[styles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#400000' : '#FFEBEE' }]}
+                            style={[fileManagementStyles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#400000' : '#FFEBEE' }]}
                             onPress={() => {
                                 handleFileDelete(file.id, file.filename);
                             }}
@@ -1558,7 +1317,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             const isImage = file.contentType.startsWith('image/');
             const isVideo = file.contentType.startsWith('video/');
             const hasPreview = isImage || isVideo;
-            const previewUrl = hasPreview ? (isVideo ? getSafeDownloadUrl(file, 'poster') : getSafeDownloadUrl(file, 'thumb')) : undefined;
+            const previewUrl = hasPreview ? (isVideo ? getSafeDownloadUrlCallback(file, 'poster') : getSafeDownloadUrlCallback(file, 'thumb')) : undefined;
             const isSelected = selectedIds.has(file.id);
             return {
                 id: file.id,
@@ -1592,23 +1351,23 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 selected: (selectMode || selectedIds.size > 0) && isSelected,
                 // Hide action buttons when selecting (in selectMode or bulk operations mode)
                 customContent: (!selectMode && selectedIds.size === 0) ? (
-                    <View style={styles.groupedActions}>
+                    <View style={fileManagementStyles.groupedActions}>
                         {(isImage || isVideo || file.contentType.includes('pdf')) && (
                             <TouchableOpacity
-                                style={[styles.groupedActionBtn, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
+                                style={[fileManagementStyles.groupedActionBtn, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
                                 onPress={() => handleFileOpen(file)}
                             >
                                 <Ionicons name="eye" size={18} color={themeStyles.primaryColor} />
                             </TouchableOpacity>
                         )}
                         <TouchableOpacity
-                            style={[styles.groupedActionBtn, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
+                            style={[fileManagementStyles.groupedActionBtn, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
                             onPress={() => handleFileDownload(file.id, file.filename)}
                         >
                             <Ionicons name="download" size={18} color={themeStyles.primaryColor} />
                         </TouchableOpacity>
                         <TouchableOpacity
-                            style={[styles.groupedActionBtn, { backgroundColor: themeStyles.isDarkTheme ? '#400000' : '#FFEBEE' }]}
+                            style={[fileManagementStyles.groupedActionBtn, { backgroundColor: themeStyles.isDarkTheme ? '#400000' : '#FFEBEE' }]}
                             onPress={() => handleFileDelete(file.id, file.filename)}
                             disabled={deleting === file.id}
                         >
@@ -1621,7 +1380,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     </View>
                 ) : undefined,
                 customContentBelow: file.metadata?.description ? (
-                    <Text style={[styles.groupedDescription, { color: themeStyles.isDarkTheme ? '#AAAAAA' : '#666666' }]} numberOfLines={2}>
+                    <Text style={[fileManagementStyles.groupedDescription, { color: themeStyles.isDarkTheme ? '#AAAAAA' : '#666666' }]} numberOfLines={2}>
                         {file.metadata.description}
                     </Text>
                 ) : undefined,
@@ -1716,7 +1475,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     }, [lastSelectedFileId]);
 
     const renderPhotoItem = (photo: FileMetadata, index: number) => {
-        const downloadUrl = getSafeDownloadUrl(photo, 'thumb');
+        const downloadUrl = getSafeDownloadUrlCallback(photo, 'thumb');
 
         // Calculate photo item width based on actual container size from bottom sheet
         let itemsPerRow = 3; // Default for mobile
@@ -1733,7 +1492,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             <TouchableOpacity
                 key={photo.id}
                 style={[
-                    styles.photoItem,
+                    fileManagementStyles.photoItem,
                     {
                         width: itemWidth,
                         height: itemWidth,
@@ -1742,10 +1501,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 onPress={() => handleFileOpen(photo)}
                 activeOpacity={0.8}
             >
-                <View style={styles.photoContainer}>
+                <View style={fileManagementStyles.photoContainer}>
                     <ExpoImage
                         source={{ uri: downloadUrl }}
-                        style={styles.photoImage}
+                        style={fileManagementStyles.photoImage}
                         contentFit="cover"
                         transition={120}
                         cachePolicy="memory-disk"
@@ -1764,17 +1523,17 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
         if (photos.length === 0) {
             return (
-                <View style={styles.emptyState}>
+                <View style={fileManagementStyles.emptyState}>
                     <Ionicons name="images-outline" size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
-                    <Text style={[styles.emptyStateTitle, { color: themeStyles.textColor }]}>No Photos Yet</Text>
-                    <Text style={[styles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}> {
+                    <Text style={[fileManagementStyles.emptyStateTitle, { color: themeStyles.textColor }]}>No Photos Yet</Text>
+                    <Text style={[fileManagementStyles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}> {
                         user?.id === targetUserId
                             ? `Upload photos to get started. You can select multiple photos at once.`
                             : "This user hasn't uploaded any photos yet"
                     } </Text>
                     {user?.id === targetUserId && (
                         <TouchableOpacity
-                            style={[styles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
+                            style={[fileManagementStyles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
                             onPress={handleFileUpload}
                             disabled={uploading}
                         >
@@ -1783,7 +1542,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             ) : (
                                 <>
                                     <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
-                                    <Text style={styles.emptyStateButtonText}>Upload Photos</Text>
+                                    <Text style={fileManagementStyles.emptyStateButtonText}>Upload Photos</Text>
                                 </>
                             )}
                         </TouchableOpacity>
@@ -1795,8 +1554,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         return (
             <ScrollView
                 ref={photoScrollViewRef}
-                style={styles.scrollView}
-                contentContainerStyle={styles.photoScrollContainer}
+                style={fileManagementStyles.scrollView}
+                contentContainerStyle={fileManagementStyles.photoScrollContainer}
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
@@ -1815,9 +1574,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 scrollEventThrottle={250}
             >
                 {loadingDimensions && (
-                    <View style={styles.dimensionsLoadingIndicator}>
+                    <View style={fileManagementStyles.dimensionsLoadingIndicator}>
                         <ActivityIndicator size="small" color={themeStyles.primaryColor} />
-                        <Text style={[styles.dimensionsLoadingText, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>Loading photo layout...</Text>
+                        <Text style={[fileManagementStyles.dimensionsLoadingText, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>Loading photo layout...</Text>
                     </View>
                 )}
 
@@ -1853,395 +1612,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     // Inline justified grid removed (moved to components/photogrid/JustifiedPhotoGrid.tsx)
 
-    const renderFileDetailsModal = () => {
-        const backgroundColor = themeStyles.backgroundColor;
-        const borderColor = themeStyles.borderColor;
 
-        return (
-            <Modal
-                visible={showFileDetails}
-                animationType="slide"
-                presentationStyle="pageSheet"
-                onRequestClose={() => setShowFileDetails(false)}
-            >
-                <View style={[styles.modalContainer, { backgroundColor }]}>
-                    <View style={[styles.modalHeader, { borderBottomColor: borderColor }]}>
-                        <TouchableOpacity
-                            style={styles.modalCloseButton}
-                            onPress={() => setShowFileDetails(false)}
-                        >
-                            <Ionicons name="close" size={24} color={themeStyles.textColor} />
-                        </TouchableOpacity>
-                        <Text style={[styles.modalTitle, { color: themeStyles.textColor }]}>File Details</Text>
-                        <View style={styles.modalPlaceholder} />
-                    </View>
-
-                    {selectedFile && (
-                        <ScrollView style={styles.modalContent}>
-                            <View style={[styles.fileDetailCard, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }]}>
-                                <View style={styles.fileDetailIcon}>
-                                    <Ionicons
-                                        name={getFileIcon(selectedFile.contentType) as any}
-                                        size={64}
-                                        color={themeStyles.primaryColor}
-                                    />
-                                </View>
-
-                                <Text style={[styles.fileDetailName, { color: themeStyles.textColor }]}>
-                                    {selectedFile.filename}
-                                </Text>
-
-                                <View style={styles.fileDetailInfo}>
-                                    <View style={styles.detailRow}>
-                                        <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                            Size:
-                                        </Text>
-                                        <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
-                                            {formatFileSize(selectedFile.length)}
-                                        </Text>
-                                    </View>
-
-                                    <View style={styles.detailRow}>
-                                        <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                            Type:
-                                        </Text>
-                                        <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
-                                            {selectedFile.contentType}
-                                        </Text>
-                                    </View>
-
-                                    <View style={styles.detailRow}>
-                                        <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                            Uploaded:
-                                        </Text>
-                                        <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
-                                            {new Date(selectedFile.uploadDate).toLocaleString()}
-                                        </Text>
-                                    </View>
-
-                                    {selectedFile.metadata?.description && (
-                                        <View style={styles.detailRow}>
-                                            <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                                Description:
-                                            </Text>
-                                            <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
-                                                {selectedFile.metadata.description}
-                                            </Text>
-                                        </View>
-                                    )}
-                                </View>
-
-                                <View style={styles.modalActions}>
-                                    <TouchableOpacity
-                                        style={[styles.modalActionButton, { backgroundColor: themeStyles.primaryColor }]}
-                                        onPress={() => {
-                                            handleFileDownload(selectedFile.id, selectedFile.filename);
-                                            setShowFileDetails(false);
-                                        }}
-                                    >
-                                        <Ionicons name="download" size={20} color="#FFFFFF" />
-                                        <Text style={styles.modalActionText}>Download</Text>
-                                    </TouchableOpacity>
-
-                                    {(user?.id === targetUserId) && (
-                                        <TouchableOpacity
-                                            style={[styles.modalActionButton, { backgroundColor: themeStyles.dangerColor }]}
-                                            onPress={() => {
-                                                setShowFileDetails(false);
-                                                handleFileDelete(selectedFile.id, selectedFile.filename);
-                                            }}
-                                        >
-                                            <Ionicons name="trash" size={20} color="#FFFFFF" />
-                                            <Text style={styles.modalActionText}>Delete</Text>
-                                        </TouchableOpacity>
-                                    )}
-                                </View>
-                            </View>
-                        </ScrollView>
-                    )}
-                </View>
-            </Modal>
-        );
-    };
-
-    const renderFileViewer = () => {
-        if (!openedFile) return null;
-
-        const backgroundColor = themeStyles.backgroundColor;
-        const borderColor = themeStyles.borderColor;
-
-        const isImage = openedFile.contentType.startsWith('image/');
-        const isText = openedFile.contentType.startsWith('text/') ||
-            openedFile.contentType.includes('json') ||
-            openedFile.contentType.includes('xml') ||
-            openedFile.contentType.includes('javascript') ||
-            openedFile.contentType.includes('typescript');
-        const isPDF = openedFile.contentType.includes('pdf');
-        const isVideo = openedFile.contentType.startsWith('video/');
-        const isAudio = openedFile.contentType.startsWith('audio/');
-
-        return (
-            <View style={[styles.fileViewerContainer, { backgroundColor }]}>
-                {/* File Viewer Header */}
-                <View style={[styles.fileViewerHeader, { borderBottomColor: borderColor }]}>
-                    <TouchableOpacity
-                        style={styles.backButton}
-                        onPress={handleCloseFile}
-                    >
-                        <Ionicons name="arrow-back" size={24} color={themeStyles.textColor} />
-                    </TouchableOpacity>
-                    <View style={styles.fileViewerTitleContainer}>
-                        <Text style={[styles.fileViewerTitle, { color: themeStyles.textColor }]} numberOfLines={1}>
-                            {openedFile.filename}
-                        </Text>
-                        <Text style={[styles.fileViewerSubtitle, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                            {formatFileSize(openedFile.length)} • {openedFile.contentType}
-                        </Text>
-                    </View>
-                    <View style={styles.fileViewerActions}>
-                        <TouchableOpacity
-                            style={[styles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
-                            onPress={() => handleFileDownload(openedFile.id, openedFile.filename)}
-                        >
-                            <Ionicons name="download" size={20} color={themeStyles.primaryColor} />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[
-                                styles.actionButton,
-                                {
-                                    backgroundColor: showFileDetailsInViewer
-                                        ? themeStyles.primaryColor
-                                        : (themeStyles.isDarkTheme ? '#333333' : '#F0F0F0')
-                                }
-                            ]}
-                            onPress={() => setShowFileDetailsInViewer(!showFileDetailsInViewer)}
-                        >
-                            <Ionicons
-                                name={showFileDetailsInViewer ? "chevron-up" : "information-circle"}
-                                size={20}
-                                color={showFileDetailsInViewer ? "#FFFFFF" : themeStyles.primaryColor}
-                            />
-                        </TouchableOpacity>
-                    </View>
-                </View>
-
-                {/* File Details Section */}
-                {showFileDetailsInViewer && (
-                    <View style={[styles.fileDetailsSection, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }]}>
-                        <View style={styles.fileDetailsSectionHeader}>
-                            <Text style={[styles.fileDetailsSectionTitle, { color: themeStyles.textColor }]}>
-                                File Details
-                            </Text>
-                            <TouchableOpacity
-                                style={styles.fileDetailsSectionToggle}
-                                onPress={() => setShowFileDetailsInViewer(false)}
-                            >
-                                <Ionicons name="chevron-up" size={20} color={themeStyles.isDarkTheme ? '#BBBBBB' : '#666666'} />
-                            </TouchableOpacity>
-                        </View>
-
-                        <View style={styles.fileDetailInfo}>
-                            <View style={styles.detailRow}>
-                                <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                    File Name:
-                                </Text>
-                                <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
-                                    {openedFile.filename}
-                                </Text>
-                            </View>
-
-                            <View style={styles.detailRow}>
-                                <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                    Size:
-                                </Text>
-                                <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
-                                    {formatFileSize(openedFile.length)}
-                                </Text>
-                            </View>
-
-                            <View style={styles.detailRow}>
-                                <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                    Type:
-                                </Text>
-                                <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
-                                    {openedFile.contentType}
-                                </Text>
-                            </View>
-
-                            <View style={styles.detailRow}>
-                                <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                    Uploaded:
-                                </Text>
-                                <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
-                                    {new Date(openedFile.uploadDate).toLocaleString()}
-                                </Text>
-                            </View>
-
-                            {openedFile.metadata?.description && (
-                                <View style={styles.detailRow}>
-                                    <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                        Description:
-                                    </Text>
-                                    <Text style={[styles.detailValue, { color: themeStyles.textColor }]}>
-                                        {openedFile.metadata.description}
-                                    </Text>
-                                </View>
-                            )}
-
-                            <View style={styles.detailRow}>
-                                <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                    File ID:
-                                </Text>
-                                <Text style={[styles.detailValue, { color: themeStyles.textColor, fontSize: 12, fontFamily: 'monospace' }]}>
-                                    {openedFile.id}
-                                </Text>
-                            </View>
-                        </View>
-
-                        <View style={styles.fileDetailsActions}>
-                            <TouchableOpacity
-                                style={[styles.fileDetailsActionButton, { backgroundColor: themeStyles.primaryColor }]}
-                                onPress={() => handleFileDownload(openedFile.id, openedFile.filename)}
-                            >
-                                <Ionicons name="download" size={16} color="#FFFFFF" />
-                                <Text style={styles.fileDetailsActionText}>Download</Text>
-                            </TouchableOpacity>
-
-                            {(user?.id === targetUserId) && (
-                                <TouchableOpacity
-                                    style={[styles.fileDetailsActionButton, { backgroundColor: themeStyles.dangerColor }]}
-                                    onPress={() => {
-                                        handleCloseFile();
-                                        handleFileDelete(openedFile.id, openedFile.filename);
-                                    }}
-                                >
-                                    <Ionicons name="trash" size={16} color="#FFFFFF" />
-                                    <Text style={styles.fileDetailsActionText}>Delete</Text>
-                                </TouchableOpacity>
-                            )}
-                        </View>
-                    </View>
-                )}
-
-                {/* File Content */}
-                <ScrollView
-                    style={[
-                        styles.fileViewerContent,
-                        showFileDetailsInViewer && styles.fileViewerContentWithDetails
-                    ]}
-                    contentContainerStyle={styles.fileViewerContentContainer}
-                >
-                    {loadingFileContent ? (
-                        <View style={styles.fileViewerLoading}>
-                            <ActivityIndicator size="large" color={themeStyles.primaryColor} />
-                            <Text style={[styles.fileViewerLoadingText, { color: themeStyles.textColor }]}>
-                                Loading file content...
-                            </Text>
-                        </View>
-                    ) : isImage && fileContent ? (
-                        <View style={styles.imageContainer}>
-                            <ExpoImage
-                                source={{ uri: fileContent }}
-                                style={{ width: '100%', height: 400, borderRadius: 8 }}
-                                contentFit="contain"
-                                transition={120}
-                                cachePolicy="memory-disk"
-                                onError={() => {
-                                    // Image failed to load
-                                }}
-                                accessibilityLabel={openedFile.filename}
-                            />
-                        </View>
-                    ) : isText && fileContent ? (
-                        <View style={[styles.textContainer, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }]}>
-                            <ScrollView style={{ flex: 1 }} nestedScrollEnabled>
-                                <Text style={[styles.textContent, { color: themeStyles.textColor }]}>
-                                    {fileContent}
-                                </Text>
-                            </ScrollView>
-                        </View>
-                    ) : isPDF && fileContent && Platform.OS === 'web' ? (
-                        <View style={styles.pdfContainer}>
-                            <iframe
-                                src={fileContent}
-                                width="100%"
-                                height="600px"
-                                style={{ border: 'none', borderRadius: 8 }}
-                                title={openedFile.filename}
-                            />
-                        </View>
-                    ) : isVideo && fileContent ? (
-                        <View style={styles.mediaContainer}>
-                            {Platform.OS === 'web' ? (
-                                <video
-                                    controls
-                                    style={{
-                                        width: '100%',
-                                        maxHeight: '70vh',
-                                        borderRadius: 8,
-                                    }}
-                                >
-                                    <source src={fileContent} type={openedFile.contentType} />
-                                    Your browser does not support the video tag.
-                                </video>
-                            ) : (
-                                <Text style={[styles.unsupportedText, { color: themeStyles.textColor }]}>
-                                    Video playback not supported on mobile
-                                </Text>
-                            )}
-                        </View>
-                    ) : isAudio && fileContent ? (
-                        <View style={styles.mediaContainer}>
-                            {Platform.OS === 'web' ? (
-                                <audio
-                                    controls
-                                    style={{
-                                        width: '100%',
-                                        borderRadius: 8,
-                                    }}
-                                >
-                                    <source src={fileContent} type={openedFile.contentType} />
-                                    Your browser does not support the audio tag.
-                                </audio>
-                            ) : (
-                                <Text style={[styles.unsupportedText, { color: themeStyles.textColor }]}>
-                                    Audio playback not supported on mobile
-                                </Text>
-                            )}
-                        </View>
-                    ) : (
-                        <View style={styles.unsupportedFileContainer}>
-                            <Ionicons
-                                name={getFileIcon(openedFile.contentType) as any}
-                                size={64}
-                                color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'}
-                            />
-                            <Text style={[styles.unsupportedFileTitle, { color: themeStyles.textColor }]}>
-                                Preview Not Available
-                            </Text>
-                            <Text style={[styles.unsupportedFileDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                This file type cannot be previewed in the browser.{'\n'}
-                                Download the file to view its contents.
-                            </Text>
-                            <TouchableOpacity
-                                style={[styles.downloadButtonLarge, { backgroundColor: themeStyles.primaryColor }]}
-                                onPress={() => handleFileDownload(openedFile.id, openedFile.filename)}
-                            >
-                                <Ionicons name="download" size={20} color="#FFFFFF" />
-                                <Text style={styles.downloadButtonText}>Download File</Text>
-                            </TouchableOpacity>
-                        </View>
-                    )}
-                </ScrollView>
-            </View>
-        );
-    };
 
     const renderEmptyState = () => (
-        <View style={styles.emptyState}>
+        <View style={fileManagementStyles.emptyState}>
             <Ionicons name="folder-open-outline" size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
-            <Text style={[styles.emptyStateTitle, { color: themeStyles.textColor }]}>No Files Yet</Text>
-            <Text style={[styles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+            <Text style={[fileManagementStyles.emptyStateTitle, { color: themeStyles.textColor }]}>No Files Yet</Text>
+            <Text style={[fileManagementStyles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                 {user?.id === targetUserId
                     ? `Upload files to get started. You can select multiple files at once.`
                     : "This user hasn't uploaded any files yet"
@@ -2249,7 +1626,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             </Text>
             {user?.id === targetUserId && (
                 <TouchableOpacity
-                    style={[styles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
+                    style={[fileManagementStyles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
                     onPress={handleFileUpload}
                     disabled={uploading}
                 >
@@ -2258,7 +1635,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     ) : (
                         <>
                             <Ionicons name="cloud-upload" size={20} color="#FFFFFF" />
-                            <Text style={styles.emptyStateButtonText}>Upload Files</Text>
+                            <Text style={fileManagementStyles.emptyStateButtonText}>Upload Files</Text>
                         </>
                     )}
                 </TouchableOpacity>
@@ -2386,11 +1763,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         );
 
         return (
-            <View style={[styles.container, { backgroundColor }]}>
+            <View style={[fileManagementStyles.container, { backgroundColor }]}>
                 {/* Header Skeleton */}
-                <View style={[styles.header, { borderBottomColor: themeStyles.borderColor, borderBottomWidth: StyleSheet.hairlineWidth }]}>
+                <View style={[fileManagementStyles.header, { borderBottomColor: themeStyles.borderColor, borderBottomWidth: StyleSheet.hairlineWidth }]}>
                     <SkeletonBox width={44} height={44} borderRadius={12} />
-                    <View style={[styles.headerTitleContainer, { flex: 1 }]}>
+                    <View style={[fileManagementStyles.headerTitleContainer, { flex: 1 }]}>
                         <SkeletonBox width={140} height={20} style={{ marginBottom: 6 }} />
                         <SkeletonBox width={100} height={14} />
                     </View>
@@ -2398,13 +1775,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </View>
 
                 {/* Controls Bar Skeleton */}
-                <View style={styles.controlsBar}>
+                <View style={fileManagementStyles.controlsBar}>
                     <SkeletonBox width={100} height={36} borderRadius={18} />
                     <SkeletonBox width={44} height={44} borderRadius={22} />
                 </View>
 
                 {/* Search Bar Skeleton */}
-                <View style={[styles.searchContainer, {
+                <View style={[fileManagementStyles.searchContainer, {
                     backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF',
                     borderColor: themeStyles.borderColor,
                     borderWidth: StyleSheet.hairlineWidth,
@@ -2413,13 +1790,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </View>
 
                 {/* Stats Container Skeleton */}
-                <View style={[styles.statsContainer, {
+                <View style={[fileManagementStyles.statsContainer, {
                     backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF',
                     borderColor: themeStyles.borderColor,
                     borderWidth: StyleSheet.hairlineWidth,
                 }]}>
                     {[1, 2, 3].map((i) => (
-                        <View key={i} style={styles.statItem}>
+                        <View key={i} style={fileManagementStyles.statItem}>
                             <SkeletonBox width={50} height={20} style={{ marginBottom: 4 }} delay={i * 30} />
                             <SkeletonBox width={40} height={14} delay={i * 30 + 15} />
                         </View>
@@ -2428,8 +1805,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                 {/* File List Skeleton - Matching GroupedSection */}
                 <ScrollView
-                    style={styles.scrollView}
-                    contentContainerStyle={styles.scrollContainer}
+                    style={fileManagementStyles.scrollView}
+                    contentContainerStyle={fileManagementStyles.scrollContainer}
                     showsVerticalScrollIndicator={false}
                 >
                     <View style={{
@@ -2456,20 +1833,33 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     if (!selectMode && openedFile) {
         return (
             <>
-                {renderFileViewer()}
-                {renderFileDetailsModal()}
+                <FileViewer
+                    file={openedFile}
+                    fileContent={fileContent}
+                    loadingFileContent={loadingFileContent}
+                    showFileDetailsInViewer={showFileDetailsInViewer}
+                    onToggleDetails={() => setShowFileDetailsInViewer(!showFileDetailsInViewer)}
+                    onClose={handleCloseFile}
+                    onDownload={handleFileDownload}
+                    onDelete={handleFileDelete}
+                    themeStyles={themeStyles}
+                    isOwner={user?.id === targetUserId}
+                />
+                <FileDetailsModal
+                    visible={showFileDetails}
+                    file={selectedFile}
+                    onClose={() => setShowFileDetails(false)}
+                    onDownload={handleFileDownload}
+                    onDelete={handleFileDelete}
+                    themeStyles={themeStyles}
+                    isOwner={user?.id === targetUserId}
+                />
             </>
         );
     }
 
     return (
-        <View
-            ref={containerRef}
-            style={[
-                styles.container,
-                isDragging && Platform.OS === 'web' && styles.dragOverlay
-            ]}
-        >
+        <View style={fileManagementStyles.container}>
             <Header
                 title={selectMode ? (multiSelect ? `${selectedIds.size}${maxSelection ? '/' + maxSelection : ''} Selected` : 'Select a File') : (viewMode === 'photos' ? 'Photos' : 'File Management')}
                 subtitle={selectMode ? (multiSelect ? `${filteredFiles.length} available` : 'Tap to select') : `${filteredFiles.length} ${filteredFiles.length === 1 ? 'item' : 'items'}`}
@@ -2525,14 +1915,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 titleAlignment="left"
             />
 
-            <View style={styles.controlsBar}>
+            <View style={fileManagementStyles.controlsBar}>
                 <ScrollView
                     horizontal
                     showsHorizontalScrollIndicator={false}
-                    style={styles.viewModeScroll}
+                    style={fileManagementStyles.viewModeScroll}
                 >
                     <View style={[
-                        styles.viewModeToggle,
+                        fileManagementStyles.viewModeToggle,
                         {
                             backgroundColor: themeStyles.isDarkTheme ? '#181818' : '#FFFFFF',
                             borderWidth: 1,
@@ -2541,7 +1931,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     ]}>
                         <TouchableOpacity
                             style={[
-                                styles.viewModeButton,
+                                fileManagementStyles.viewModeButton,
                                 viewMode === 'all' && { backgroundColor: themeStyles.primaryColor }
                             ]}
                             onPress={() => setViewMode('all')}
@@ -2554,7 +1944,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[
-                                styles.viewModeButton,
+                                fileManagementStyles.viewModeButton,
                                 viewMode === 'photos' && { backgroundColor: themeStyles.primaryColor }
                             ]}
                             onPress={() => setViewMode('photos')}
@@ -2567,7 +1957,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[
-                                styles.viewModeButton,
+                                fileManagementStyles.viewModeButton,
                                 viewMode === 'videos' && { backgroundColor: themeStyles.primaryColor }
                             ]}
                             onPress={() => setViewMode('videos')}
@@ -2580,7 +1970,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[
-                                styles.viewModeButton,
+                                fileManagementStyles.viewModeButton,
                                 viewMode === 'documents' && { backgroundColor: themeStyles.primaryColor }
                             ]}
                             onPress={() => setViewMode('documents')}
@@ -2593,7 +1983,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[
-                                styles.viewModeButton,
+                                fileManagementStyles.viewModeButton,
                                 viewMode === 'audio' && { backgroundColor: themeStyles.primaryColor }
                             ]}
                             onPress={() => setViewMode('audio')}
@@ -2607,7 +1997,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     </View>
                 </ScrollView>
                 <TouchableOpacity
-                    style={[styles.sortButton, {
+                    style={[fileManagementStyles.sortButton, {
                         backgroundColor: themeStyles.isDarkTheme ? '#181818' : '#FFFFFF',
                         borderColor: themeStyles.isDarkTheme ? '#2A2A2A' : '#E8E9EA',
                     }]}
@@ -2641,15 +2031,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </TouchableOpacity>
                 {user?.id === targetUserId && (!selectMode || (selectMode && allowUploadInSelectMode)) && (
                     <TouchableOpacity
-                        style={[styles.uploadButton, { backgroundColor: themeStyles.primaryColor }]}
+                        style={[fileManagementStyles.uploadButton, { backgroundColor: themeStyles.primaryColor }]}
                         onPress={handleFileUpload}
                         disabled={uploading}
                     >
                         {uploading ? (
-                            <View style={styles.uploadProgress}>
+                            <View style={fileManagementStyles.uploadProgress}>
                                 <ActivityIndicator size="small" color="#FFFFFF" />
                                 {uploadProgress && (
-                                    <Text style={styles.uploadProgressText}>
+                                    <Text style={fileManagementStyles.uploadProgressText}>
                                         {uploadProgress.current}/{uploadProgress.total}
                                     </Text>
                                 )}
@@ -2664,7 +2054,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             {/* Search Bar */}
             {files.length > 0 && (viewMode === 'all' || files.some(f => f.contentType.startsWith('image/'))) && (
                 <View style={[
-                    styles.searchContainer,
+                    fileManagementStyles.searchContainer,
                     {
                         backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF',
                         borderColor: themeStyles.isDarkTheme ? '#3A3A3A' : '#E8E9EA',
@@ -2672,7 +2062,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 ]}>
                     <Ionicons name="search" size={22} color={themeStyles.isDarkTheme ? '#888888' : '#666666'} />
                     <TextInput
-                        style={[styles.searchInput, { color: themeStyles.textColor }]}
+                        style={[fileManagementStyles.searchInput, { color: themeStyles.textColor }]}
                         placeholder={viewMode === 'photos' ? 'Search photos...' : 'Search files...'}
                         placeholderTextColor={themeStyles.isDarkTheme ? '#888888' : '#999999'}
                         value={searchQuery}
@@ -2681,7 +2071,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     {searchQuery.length > 0 && (
                         <TouchableOpacity
                             onPress={() => setSearchQuery('')}
-                            style={styles.searchClearButton}
+                            style={fileManagementStyles.searchClearButton}
                         >
                             <Ionicons name="close-circle" size={22} color={themeStyles.isDarkTheme ? '#888888' : '#666666'} />
                         </TouchableOpacity>
@@ -2692,30 +2082,30 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             {/* File Stats */}
             {files.length > 0 && (
                 <View style={[
-                    styles.statsContainer,
+                    fileManagementStyles.statsContainer,
                     {
                         backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF',
                         borderColor: themeStyles.isDarkTheme ? '#3A3A3A' : '#E8E9EA',
                     }
                 ]}>
-                    <View style={styles.statItem}>
-                        <Text style={[styles.statValue, { color: themeStyles.textColor }]}>{filteredFiles.length}</Text>
-                        <Text style={[styles.statLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                    <View style={fileManagementStyles.statItem}>
+                        <Text style={[fileManagementStyles.statValue, { color: themeStyles.textColor }]}>{filteredFiles.length}</Text>
+                        <Text style={[fileManagementStyles.statLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                             {searchQuery.length > 0 ? 'Found' : (filteredFiles.length === 1 ? (viewMode === 'photos' ? 'Photo' : 'File') : (viewMode === 'photos' ? 'Photos' : 'Files'))}
                         </Text>
                     </View>
-                    <View style={styles.statItem}>
-                        <Text style={[styles.statValue, { color: themeStyles.textColor }]}>
+                    <View style={fileManagementStyles.statItem}>
+                        <Text style={[fileManagementStyles.statValue, { color: themeStyles.textColor }]}>
                             {formatFileSize(filteredFiles.reduce((total, file) => total + file.length, 0))}
                         </Text>
-                        <Text style={[styles.statLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[fileManagementStyles.statLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                             {searchQuery.length > 0 ? 'Size' : 'Total Size'}
                         </Text>
                     </View>
                     {searchQuery.length > 0 && (
-                        <View style={styles.statItem}>
-                            <Text style={[styles.statValue, { color: themeStyles.textColor }]}>{files.length}</Text>
-                            <Text style={[styles.statLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <View style={fileManagementStyles.statItem}>
+                            <Text style={[fileManagementStyles.statValue, { color: themeStyles.textColor }]}>{files.length}</Text>
+                            <Text style={[fileManagementStyles.statLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                 Total
                             </Text>
                         </View>
@@ -2729,8 +2119,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             ) : (
                 <ScrollView
                     ref={scrollViewRef}
-                    style={styles.scrollView}
-                    contentContainerStyle={styles.scrollContainer}
+                    style={fileManagementStyles.scrollView}
+                    contentContainerStyle={fileManagementStyles.scrollContainer}
                     refreshControl={
                         <RefreshControl
                             refreshing={refreshing}
@@ -2748,27 +2138,27 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     scrollEventThrottle={250}
                 >
                     {filteredFiles.length === 0 && searchQuery.length > 0 ? (
-                        <View style={styles.emptyState}>
+                        <View style={fileManagementStyles.emptyState}>
                             <Ionicons name="search" size={64} color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'} />
-                            <Text style={[styles.emptyStateTitle, { color: themeStyles.textColor }]}>No Results Found</Text>
-                            <Text style={[styles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                            <Text style={[fileManagementStyles.emptyStateTitle, { color: themeStyles.textColor }]}>No Results Found</Text>
+                            <Text style={[fileManagementStyles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                 No files match your search for "{searchQuery}"
                             </Text>
                             <TouchableOpacity
-                                style={[styles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
+                                style={[fileManagementStyles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
                                 onPress={() => setSearchQuery('')}
                             >
                                 <Ionicons name="refresh" size={20} color="#FFFFFF" />
-                                <Text style={styles.emptyStateButtonText}>Clear Search</Text>
+                                <Text style={fileManagementStyles.emptyStateButtonText}>Clear Search</Text>
                             </TouchableOpacity>
                         </View>
                     ) : filteredFiles.length === 0 ? renderEmptyState() : (
                         <>
                             <GroupedSection items={groupedFileItems} />
                             {paging.loadingMore && (
-                                <View style={styles.loadingMoreBar}>
+                                <View style={fileManagementStyles.loadingMoreBar}>
                                     <ActivityIndicator size="small" color={themeStyles.primaryColor} />
-                                    <Text style={[styles.loadingMoreText, { color: themeStyles.textColor }]}>Loading more...</Text>
+                                    <Text style={[fileManagementStyles.loadingMoreText, { color: themeStyles.textColor }]}>Loading more...</Text>
                                 </View>
                             )}
                         </>
@@ -2776,22 +2166,32 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </ScrollView>
             )}
 
-            {!selectMode && renderFileDetailsModal()}
+            {!selectMode && (
+                <FileDetailsModal
+                    visible={showFileDetails}
+                    file={selectedFile}
+                    onClose={() => setShowFileDetails(false)}
+                    onDownload={handleFileDownload}
+                    onDelete={handleFileDelete}
+                    themeStyles={themeStyles}
+                    isOwner={user?.id === targetUserId}
+                />
+            )}
 
             {/* Uploading banner overlay with progress */}
             {!selectMode && uploading && (
-                <View style={[styles.uploadBannerContainer, { pointerEvents: 'none' }]}>
-                    <View style={[styles.uploadBanner, { backgroundColor: themeStyles.isDarkTheme ? '#222831EE' : '#FFFFFFEE', borderColor: themeStyles.borderColor }]}>
+                <View style={[fileManagementStyles.uploadBannerContainer, { pointerEvents: 'none' }]}>
+                    <View style={[fileManagementStyles.uploadBanner, { backgroundColor: themeStyles.isDarkTheme ? '#222831EE' : '#FFFFFFEE', borderColor: themeStyles.borderColor }]}>
                         <Ionicons name="cloud-upload" size={18} color={themeStyles.primaryColor} />
-                        <View style={styles.uploadBannerContent}>
-                            <Text style={[styles.uploadBannerText, { color: themeStyles.textColor }]}>
+                        <View style={fileManagementStyles.uploadBannerContent}>
+                            <Text style={[fileManagementStyles.uploadBannerText, { color: themeStyles.textColor }]}>
                                 Uploading{uploadProgress ? ` ${uploadProgress.current}/${uploadProgress.total}` : '...'}
                             </Text>
                             {uploadProgress && uploadProgress.total > 0 && (
-                                <View style={[styles.uploadProgressBarContainer, { backgroundColor: themeStyles.isDarkTheme ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
+                                <View style={[fileManagementStyles.uploadProgressBarContainer, { backgroundColor: themeStyles.isDarkTheme ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
                                     <View
                                         style={[
-                                            styles.uploadProgressBar,
+                                            fileManagementStyles.uploadProgressBar,
                                             {
                                                 width: `${(uploadProgress.current / uploadProgress.total) * 100}%`,
                                                 backgroundColor: themeStyles.primaryColor
@@ -2809,1003 +2209,18 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             {/* Selection bar removed; actions are now in header */}
             {/* Global loadingMore bar removed; now inline in scroll areas */}
 
-            {/* Drag and Drop Overlay - Enhanced */}
-            {isDragging && Platform.OS === 'web' && (
-                <View style={styles.dragDropOverlay}>
-                    <View style={[styles.dragDropContent, {
-                        backgroundColor: themeStyles.isDarkTheme ? 'rgba(30, 30, 30, 0.98)' : 'rgba(255, 255, 255, 0.98)',
-                        borderColor: themeStyles.primaryColor,
-                    }]}>
-                        <View style={[styles.dragDropIconContainer, { backgroundColor: `${themeStyles.primaryColor}15` }]}>
-                            <Ionicons name="cloud-upload" size={64} color={themeStyles.primaryColor} />
-                        </View>
-                        <Text style={[styles.dragDropTitle, { color: themeStyles.primaryColor }]}>
-                            Drop files to upload
-                        </Text>
-                        <Text style={[styles.dragDropSubtitle, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                            Release to upload multiple files
-                        </Text>
-                    </View>
-                </View>
-            )}
+            <UploadPreview
+                visible={showUploadPreview}
+                pendingFiles={pendingFiles}
+                onConfirm={handleConfirmUpload}
+                onCancel={handleCancelUpload}
+                onRemoveFile={removePendingFile}
+                themeStyles={themeStyles}
+            />
         </View>
     );
 };
 
-const styles = StyleSheet.create({
-    container: {
-        flex: 1,
-    },
-    selectionBadge: {
-        position: 'absolute',
-        top: 4,
-        right: 4,
-        backgroundColor: 'rgba(0,0,0,0.4)',
-        borderRadius: 12,
-        padding: 2,
-    },
-    selectionBar: {
-        position: 'absolute',
-        left: 0,
-        right: 0,
-        bottom: 0,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        padding: 12,
-        backgroundColor: 'rgba(0,0,0,0.55)',
-        gap: 12,
-    },
-    selectionBarButton: {
-        flex: 1,
-        paddingVertical: 14,
-        borderRadius: 10,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    selectionBarButtonText: {
-        color: '#FFFFFF',
-        fontSize: 15,
-        fontWeight: '600',
-    },
-    loadingMoreBar: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 12,
-        gap: 8,
-    },
-    loadingMoreText: {
-        fontSize: 13,
-        fontWeight: '500',
-    },
-    dragOverlay: {
-        backgroundColor: 'rgba(0, 122, 255, 0.06)',
-        borderWidth: 1,
-        borderColor: '#66AFFF',
-        borderStyle: 'dashed',
-    },
-    centerContent: {
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    header: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        position: 'relative',
-    },
-    backButton: {
-        padding: 12,
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-        minWidth: 44,
-        minHeight: 44,
-    },
-    headerTitleContainer: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginHorizontal: 16,
-    },
-    headerTitle: {
-        fontSize: 22,
-        fontWeight: '700',
-        fontFamily: fontFamilies.phuduBold,
-        letterSpacing: -0.5,
-        lineHeight: 28,
-    },
-    headerSubtitle: {
-        fontSize: 13,
-        fontWeight: '500',
-        fontFamily: fontFamilies.phuduMedium,
-        marginTop: 2,
-        letterSpacing: 0.2,
-    },
-    uploadButton: {
-        width: 44,
-        height: 44,
-        borderRadius: 22,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    uploadProgress: {
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    uploadProgressText: {
-        color: '#FFFFFF',
-        fontSize: 10,
-        fontWeight: '600',
-        marginTop: 2,
-    },
-    uploadBannerContainer: {
-        position: 'absolute',
-        top: 72, // below header
-        left: 0,
-        right: 0,
-        alignItems: 'center',
-        zIndex: 50,
-    },
-    uploadBanner: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 24,
-        gap: 10,
-        borderWidth: 1,
-        shadowColor: '#000',
-        shadowOpacity: 0.1,
-        shadowRadius: 6,
-        shadowOffset: { width: 0, height: 2 },
-        elevation: 2,
-        minWidth: 200,
-    },
-    uploadBannerContent: {
-        flex: 1,
-        gap: 6,
-    },
-    uploadBannerText: {
-        fontSize: 13,
-        fontWeight: '500',
-    },
-    uploadProgressBarContainer: {
-        height: 3,
-        backgroundColor: 'rgba(0,0,0,0.1)',
-        borderRadius: 2,
-        overflow: 'hidden',
-    },
-    uploadProgressBar: {
-        height: '100%',
-        borderRadius: 2,
-    },
-    uploadBannerDots: {
-        flexDirection: 'row',
-        gap: 4,
-        marginLeft: 2,
-    },
-    dot: {
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        backgroundColor: '#007AFF',
-    },
-    searchContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        marginHorizontal: 16,
-        marginTop: 12,
-        borderRadius: 10,
-        borderWidth: 1,
-        gap: 10,
-    },
-    searchInput: {
-        flex: 1,
-        fontSize: 16,
-        fontFamily: fontFamilies.phudu,
-        lineHeight: 20,
-    },
-    searchClearButton: {
-        padding: 4,
-        borderRadius: 12,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    searchIcon: {
-        marginRight: 8,
-    },
-    statsContainer: {
-        flexDirection: 'row',
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        marginHorizontal: 16,
-        marginTop: 12,
-        borderRadius: 10,
-        borderWidth: 1,
-    },
-    statItem: {
-        flex: 1,
-        alignItems: 'center',
-        paddingVertical: 4,
-    },
-    statValue: {
-        fontSize: 20,
-        fontWeight: '800',
-        fontFamily: fontFamilies.phuduBold,
-        letterSpacing: -0.5,
-        lineHeight: 24,
-    },
-    statLabel: {
-        fontSize: 12,
-        fontWeight: '500',
-        fontFamily: fontFamilies.phuduMedium,
-        marginTop: 2,
-        letterSpacing: 0.2,
-    },
-    scrollView: {
-        flex: 1,
-        backgroundColor: '#e5f1ff',
-    },
-    scrollContainer: {
-        padding: 12,
-    },
-    fileItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 10,
-        marginBottom: 8,
-        borderRadius: 10,
-        borderWidth: 1,
-    },
-    fileContent: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        flex: 1,
-    },
-    fileIconContainer: {
-        width: 50,
-        height: 50,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 12,
-    },
-    filePreviewContainer: {
-        width: 52,
-        height: 52,
-        marginRight: 10,
-    },
-    filePreview: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 8,
-        backgroundColor: 'transparent',
-        alignItems: 'center',
-        justifyContent: 'center',
-        overflow: 'hidden',
-        position: 'relative',
-    },
-    previewImage: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 8,
-    },
-    pdfPreview: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: '100%',
-        height: '100%',
-        backgroundColor: '#FF6B6B20',
-    },
-    pdfLabel: {
-        fontSize: 8,
-        fontWeight: 'bold',
-        marginTop: 2,
-    },
-    videoPreview: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: '100%',
-        height: '100%',
-        backgroundColor: '#4ECDC420',
-    },
-    videoLabel: {
-        fontSize: 8,
-        fontWeight: 'bold',
-        marginTop: 2,
-    },
-    fallbackIcon: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'transparent',
-        borderRadius: 8,
-    },
-    previewOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.25)',
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderRadius: 8,
-    },
-    groupedActions: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 6,
-        marginLeft: 12,
-    },
-    groupedActionBtn: {
-        width: 34,
-        height: 34,
-        borderRadius: 8,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    groupedDescription: {
-        fontSize: 12,
-        lineHeight: 16,
-        marginTop: 6,
-    },
-    videoPreviewWrapper: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 8,
-        overflow: 'hidden',
-        backgroundColor: '#000000',
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    videoPosterImage: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        width: '100%',
-        height: '100%',
-    },
-    videoOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(0,0,0,0.25)',
-    },
-    fileInfo: {
-        flex: 1,
-    },
-    fileName: {
-        fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 4,
-    },
-    fileDetails: {
-        fontSize: 14,
-        marginBottom: 2,
-    },
-    fileDescription: {
-        fontSize: 12,
-        fontStyle: 'italic',
-    },
-    fileActions: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    actionButton: {
-        width: 36,
-        height: 36,
-        borderRadius: 18,
-        alignItems: 'center',
-        justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        backgroundColor: 'transparent',
-    },
-    emptyState: {
-        alignItems: 'center',
-        paddingVertical: 40,
-        paddingHorizontal: 24,
-    },
-    emptyStateTitle: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        fontFamily: fontFamilies.phuduBold,
-        marginTop: 16,
-        marginBottom: 8,
-    },
-    emptyStateDescription: {
-        fontSize: 16,
-        textAlign: 'center',
-        lineHeight: 24,
-        marginBottom: 32,
-    },
-    emptyStateButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 24,
-        paddingVertical: 12,
-        borderRadius: 24,
-        gap: 8,
-    },
-    emptyStateButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    loadingText: {
-        fontSize: 16,
-        marginTop: 16,
-    },
-
-    // Modal styles
-    modalContainer: {
-        flex: 1,
-    },
-    modalHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-    },
-    modalCloseButton: {
-        padding: 8,
-    },
-    modalTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
-    },
-    modalPlaceholder: {
-        width: 40,
-    },
-    modalContent: {
-        flex: 1,
-        padding: 16,
-    },
-    fileDetailCard: {
-        padding: 18,
-        borderRadius: 14,
-        borderWidth: 1,
-        alignItems: 'center',
-    },
-    fileDetailIcon: {
-        marginBottom: 16,
-    },
-    fileDetailName: {
-        fontSize: 20,
-        fontWeight: 'bold',
-        fontFamily: fontFamilies.phuduBold,
-        textAlign: 'center',
-        marginBottom: 24,
-    },
-    fileDetailInfo: {
-        width: '100%',
-        marginBottom: 32,
-    },
-    detailRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        marginBottom: 12,
-        flexWrap: 'wrap',
-    },
-    detailLabel: {
-        fontSize: 16,
-        fontWeight: '500',
-        flex: 1,
-        minWidth: 100,
-    },
-    detailValue: {
-        fontSize: 16,
-        flex: 2,
-        textAlign: 'right',
-    },
-    modalActions: {
-        flexDirection: 'row',
-        gap: 12,
-        width: '100%',
-    },
-    modalActionButton: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 16,
-        borderRadius: 12,
-        gap: 8,
-    },
-    modalActionText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-
-    // Drag and Drop styles - Enhanced
-    dragDropOverlay: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.6)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        zIndex: 1000,
-    },
-    dragDropContent: {
-        alignItems: 'center',
-        padding: 32,
-        borderRadius: 20,
-        borderWidth: 3,
-        borderStyle: 'dashed',
-        minWidth: 280,
-        shadowColor: '#000',
-        shadowOpacity: 0.3,
-        shadowRadius: 20,
-        shadowOffset: { width: 0, height: 10 },
-        elevation: 10,
-    },
-    dragDropIconContainer: {
-        padding: 24,
-        borderRadius: 50,
-        marginBottom: 16,
-    },
-    dragDropTitle: {
-        fontSize: 24,
-        fontWeight: '700',
-        fontFamily: fontFamilies.phuduBold,
-        marginBottom: 8,
-    },
-    dragDropSubtitle: {
-        fontSize: 16,
-        fontWeight: '500',
-        fontFamily: fontFamilies.phuduMedium,
-    },
-    // Upload Preview Modal styles
-    uploadPreviewContainer: {
-        flex: 1,
-    },
-    uploadPreviewHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingVertical: 16,
-        borderBottomWidth: 1,
-    },
-    uploadPreviewTitle: {
-        fontSize: 20,
-        fontWeight: '700',
-        fontFamily: fontFamilies.phuduBold,
-    },
-    uploadPreviewList: {
-        flex: 1,
-        padding: 16,
-    },
-    uploadPreviewItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 12,
-        borderRadius: 12,
-        borderWidth: 1,
-        marginBottom: 12,
-        gap: 12,
-    },
-    uploadPreviewThumbnail: {
-        width: 60,
-        height: 60,
-        borderRadius: 8,
-    },
-    uploadPreviewIconContainer: {
-        width: 60,
-        height: 60,
-        borderRadius: 8,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    uploadPreviewInfo: {
-        flex: 1,
-        minWidth: 0,
-    },
-    uploadPreviewName: {
-        fontSize: 16,
-        fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
-        marginBottom: 4,
-    },
-    uploadPreviewMeta: {
-        fontSize: 13,
-        fontFamily: fontFamilies.phudu,
-    },
-    uploadPreviewRemove: {
-        padding: 4,
-    },
-    uploadPreviewFooter: {
-        padding: 16,
-        borderTopWidth: 1,
-    },
-    uploadPreviewStats: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        marginBottom: 16,
-    },
-    uploadPreviewStatsText: {
-        fontSize: 15,
-        fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
-    },
-    uploadPreviewActions: {
-        flexDirection: 'row',
-        gap: 12,
-    },
-    uploadPreviewCancelButton: {
-        flex: 1,
-        paddingVertical: 14,
-        borderRadius: 12,
-        borderWidth: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    uploadPreviewCancelText: {
-        fontSize: 16,
-        fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
-    },
-    uploadPreviewConfirmButton: {
-        flex: 2,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 14,
-        borderRadius: 12,
-        gap: 8,
-    },
-    uploadPreviewConfirmText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
-    },
-
-    // File Viewer styles
-    fileViewerContainer: {
-        flex: 1,
-    },
-    fileViewerHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-    },
-    fileViewerTitleContainer: {
-        flex: 1,
-        marginHorizontal: 16,
-    },
-    fileViewerTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
-        marginBottom: 2,
-    },
-    fileViewerSubtitle: {
-        fontSize: 14,
-    },
-    fileViewerActions: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    fileViewerContent: {
-        flex: 1,
-    },
-    fileViewerContentWithDetails: {
-        paddingBottom: 20,
-    },
-    fileViewerContentContainer: {
-        flexGrow: 1,
-        padding: 14,
-    },
-    fileViewerLoading: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    fileViewerLoadingText: {
-        fontSize: 16,
-        marginTop: 16,
-    },
-    imageContainer: {
-        alignItems: 'center',
-        justifyContent: 'center',
-        flex: 1,
-    },
-    textContainer: {
-        flex: 1,
-        borderRadius: 10,
-        borderWidth: 1,
-        padding: 12,
-        minHeight: 180,
-        maxHeight: '80%',
-    },
-    textContent: {
-        fontSize: 14,
-        fontFamily: 'monospace',
-        lineHeight: 20,
-    },
-    unsupportedFileContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-        paddingVertical: 40,
-        paddingHorizontal: 24,
-    },
-    unsupportedFileTitle: {
-        fontSize: 24,
-        fontWeight: 'bold',
-        fontFamily: fontFamilies.phuduBold,
-        marginTop: 16,
-        marginBottom: 8,
-        textAlign: 'center',
-    },
-    unsupportedFileDescription: {
-        fontSize: 16,
-        textAlign: 'center',
-        lineHeight: 24,
-        marginBottom: 32,
-    },
-    downloadButtonLarge: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 18,
-        paddingVertical: 12,
-        borderRadius: 20,
-        gap: 8,
-    },
-    downloadButtonText: {
-        color: '#FFFFFF',
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    pdfContainer: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    mediaContainer: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 20,
-    },
-    unsupportedText: {
-        fontSize: 16,
-        textAlign: 'center',
-        fontStyle: 'italic',
-    },
-
-    // File Details in Viewer styles
-    fileDetailsSection: {
-        margin: 12,
-        marginTop: 0,
-        padding: 14,
-        borderRadius: 10,
-        borderWidth: 1,
-    },
-    fileDetailsSectionTitle: {
-        fontSize: 18,
-        fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
-        flex: 1,
-    },
-    fileDetailsSectionHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        marginBottom: 16,
-    },
-    fileDetailsSectionToggle: {
-        padding: 4,
-    },
-    fileDetailsActions: {
-        flexDirection: 'row',
-        gap: 12,
-        marginTop: 16,
-    },
-    fileDetailsActionButton: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 12,
-        borderRadius: 8,
-        gap: 6,
-    },
-    fileDetailsActionText: {
-        color: '#FFFFFF',
-        fontSize: 14,
-        fontWeight: '600',
-    },
-
-    // Header styles
-    headerActions: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 16,
-    },
-    controlsBar: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        paddingHorizontal: 16,
-        paddingTop: 8,
-        paddingBottom: 4,
-        gap: 12,
-    },
-    viewModeScroll: {
-        flex: 1,
-        maxWidth: '80%',
-    },
-    viewModeToggle: {
-        flexDirection: 'row',
-        borderRadius: 24,
-        padding: 3,
-        overflow: 'hidden',
-    },
-    viewModeButton: {
-        paddingHorizontal: 14,
-        paddingVertical: 10,
-        borderRadius: 20,
-        minWidth: 44,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginHorizontal: 1,
-    },
-    sortButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        borderRadius: 20,
-        borderWidth: 1,
-        minWidth: 44,
-    },
-
-    // Photo Grid styles
-    photoScrollContainer: {
-        padding: 10,
-    },
-    photoDateSection: {
-        marginBottom: 16,
-    },
-    photoDateHeader: {
-        fontSize: 16,
-        fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
-        marginBottom: 8,
-        paddingHorizontal: 2,
-    },
-    photoGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 4,
-        justifyContent: 'flex-start',
-    },
-    photoItem: {
-        borderRadius: 8,
-        overflow: 'hidden',
-    },
-    photoContainer: {
-        width: '100%',
-        height: '100%',
-        position: 'relative',
-        borderRadius: 8,
-        overflow: 'hidden',
-    },
-    photoImage: {
-        width: '100%',
-        height: '100%',
-    },
-
-    // Justified Grid styles
-    dimensionsLoadingIndicator: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 16,
-        gap: 8,
-    },
-    dimensionsLoadingText: {
-        fontSize: 14,
-        fontStyle: 'italic',
-    },
-    justifiedPhotoGrid: {
-        gap: 4,
-    },
-    justifiedPhotoRow: {
-        flexDirection: 'row',
-    },
-    justifiedPhotoItem: {
-        borderRadius: 6,
-        overflow: 'hidden',
-        position: 'relative',
-    },
-    justifiedPhotoContainer: {
-        width: '100%',
-        height: '100%',
-        position: 'relative',
-        borderRadius: 6,
-        overflow: 'hidden',
-        backgroundColor: 'transparent',
-    },
-    justifiedPhotoImage: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 6,
-    },
-
-    // Simple Photo Grid styles  
-    simplePhotoItem: {
-        borderRadius: 8,
-        overflow: 'hidden',
-        backgroundColor: 'transparent',
-    },
-    simplePhotoContainer: {
-        width: '100%',
-        height: '100%',
-        position: 'relative',
-        borderRadius: 8,
-        overflow: 'hidden',
-    },
-    simplePhotoImage: {
-        width: '100%',
-        height: '100%',
-        borderRadius: 8,
-    },
-
-    // Loading skeleton styles
-    photoSkeletonGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 4,
-        marginTop: 20,
-    },
-    photoSkeletonItem: {
-        width: '32%',
-        aspectRatio: 1,
-        borderRadius: 8,
-        marginBottom: 4,
-    },
-    skeletonFileItem: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        borderBottomWidth: 1,
-        gap: 12,
-    },
-    skeletonFileInfo: {
-        flex: 1,
-        justifyContent: 'center',
-    },
-});
+// Styles have been moved to components/fileManagement/styles.ts
 
 export default FileManagementScreen;

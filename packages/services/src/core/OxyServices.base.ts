@@ -302,7 +302,9 @@ export class OxyServicesBase {
    */
   public handleError(error: unknown): Error {
     const api = handleHttpError(error);
-    const err = new Error(api.message) as Error & { code?: string; status?: number; details?: Record<string, unknown> };
+    // Ensure we always have a non-empty message
+    const message = api.message?.trim() || 'An unexpected error occurred';
+    const err = new Error(message) as Error & { code?: string; status?: number; details?: Record<string, unknown> };
     err.code = api.code;
     err.status = api.status;
     err.details = api.details;
