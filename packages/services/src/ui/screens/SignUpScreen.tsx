@@ -30,15 +30,103 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
     goBack,
     onAuthenticated,
     theme,
+    initialStep,
+    currentScreen,
+    username: initialUsername,
+    email: initialEmail,
+    password: initialPassword,
+    confirmPassword: initialConfirmPassword,
 }) => {
     const { signUp, oxyServices } = useOxy();
     const colors = useThemeColors(theme);
 
-    // Form data state
-    const [username, setUsername] = useState('');
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [confirmPassword, setConfirmPassword] = useState('');
+    // Form data state - sync with props when they change from router navigation
+    const [username, setUsername] = useState(initialUsername || '');
+    const [email, setEmail] = useState(initialEmail || '');
+    const [password, setPassword] = useState(initialPassword || '');
+    const [confirmPassword, setConfirmPassword] = useState(initialConfirmPassword || '');
+    
+    // Refs to store latest values for navigation prop extraction
+    // These ensure we always get current state values, even if stepData memo hasn't updated yet
+    const usernameRef = useRef<string>(initialUsername || '');
+    const emailRef = useRef<string>(initialEmail || '');
+    const passwordRef = useRef<string>(initialPassword || '');
+    const confirmPasswordRef = useRef<string>(initialConfirmPassword || '');
+    
+    // Keep refs in sync with state
+    useEffect(() => {
+        usernameRef.current = username;
+    }, [username]);
+    
+    useEffect(() => {
+        emailRef.current = email;
+    }, [email]);
+    
+    useEffect(() => {
+        passwordRef.current = password;
+    }, [password]);
+    
+    useEffect(() => {
+        confirmPasswordRef.current = confirmPassword;
+    }, [confirmPassword]);
+    
+    // Sync state with props when they change from router navigation (to preserve state across step changes)
+    useEffect(() => {
+        if (initialUsername !== undefined && initialUsername !== username) {
+            setUsername(initialUsername || '');
+            usernameRef.current = initialUsername || '';
+        }
+    }, [initialUsername, username]);
+    
+    useEffect(() => {
+        if (initialEmail !== undefined && initialEmail !== email) {
+            setEmail(initialEmail || '');
+            emailRef.current = initialEmail || '';
+        }
+    }, [initialEmail, email]);
+    
+    useEffect(() => {
+        if (initialPassword !== undefined && initialPassword !== password) {
+            setPassword(initialPassword || '');
+            passwordRef.current = initialPassword || '';
+        }
+    }, [initialPassword, password]);
+    
+    useEffect(() => {
+        if (initialConfirmPassword !== undefined && initialConfirmPassword !== confirmPassword) {
+            setConfirmPassword(initialConfirmPassword || '');
+            confirmPasswordRef.current = initialConfirmPassword || '';
+        }
+    }, [initialConfirmPassword, confirmPassword]);
+    
+    // Extraction function for navigation props - gets latest values from refs
+    // This ensures we always have the current state, not stale memoized values
+    const getNavigationProps = useCallback((): Record<string, unknown> => {
+        const props: Record<string, unknown> = {};
+        
+        if (usernameRef.current) {
+            props.username = usernameRef.current;
+        }
+        if (emailRef.current) {
+            props.email = emailRef.current;
+        }
+        if (passwordRef.current) {
+            props.password = passwordRef.current;
+        }
+        if (confirmPasswordRef.current) {
+            props.confirmPassword = confirmPasswordRef.current;
+        }
+        
+        if (__DEV__) {
+            console.log('SignUpScreen: getNavigationProps called', {
+                username: usernameRef.current,
+                email: emailRef.current,
+                hasPassword: !!passwordRef.current,
+            });
+        }
+        
+        return props;
+    }, []);
     const [showPassword, setShowPassword] = useState(false);
     const [showConfirmPassword, setShowConfirmPassword] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
@@ -223,12 +311,15 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
     return (
         <StepBasedScreen
             steps={steps}
+            initialStep={initialStep}
             stepData={stepData}
             onComplete={handleComplete}
             navigate={navigate}
             goBack={goBack}
             onAuthenticated={onAuthenticated}
-            
+            theme={theme}
+            currentScreen={currentScreen}
+            getNavigationProps={getNavigationProps}
             showProgressIndicator={true}
             enableAnimations={true}
             oxyServices={oxyServices}

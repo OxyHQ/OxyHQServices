@@ -27,6 +27,8 @@ import { useFileStore, useFiles, useUploading as useUploadingStore, useUploadAgg
 import Header from '../components/Header';
 import JustifiedPhotoGrid from '../components/photogrid/JustifiedPhotoGrid';
 import { GroupedSection } from '../components';
+import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useColorScheme } from '../hooks/use-color-scheme';
 
 // Exporting props & callback types so external callers (e.g. showBottomSheet config objects) can annotate
 export type OnConfirmFileSelection = (files: FileMetadata[]) => void;
@@ -74,6 +76,96 @@ export interface FileManagementScreenProps extends BaseScreenProps {
 async function uploadFileRaw(file: File | Blob, userId: string, oxyServices: any, visibility?: 'private' | 'public' | 'unlisted') {
     return await oxyServices.uploadRawFile(file, visibility);
 }
+
+// Platform-aware confirmation dialog helper
+const confirmAction = (
+    message: string,
+    title?: string,
+    confirmText: string = 'OK',
+    cancelText: string = 'Cancel'
+): Promise<boolean> => {
+    return new Promise((resolve) => {
+        if (Platform.OS === 'web' && typeof window !== 'undefined' && window.confirm) {
+            resolve(window.confirm(message));
+        } else {
+            Alert.alert(
+                title || 'Confirm',
+                message,
+                [
+                    {
+                        text: cancelText,
+                        style: 'cancel',
+                        onPress: () => resolve(false),
+                    },
+                    {
+                        text: confirmText,
+                        onPress: () => resolve(true),
+                    },
+                ],
+                { cancelable: true, onDismiss: () => resolve(false) }
+            );
+        }
+    });
+};
+
+/**
+ * Convert DocumentPicker asset to File object
+ * Handles both web (native File API) and mobile (URI-based) file sources
+ * Expo 54 compatible - works across all platforms
+ */
+const convertDocumentPickerAssetToFile = async (
+    doc: { file?: File | Blob; uri?: string; name?: string | null; mimeType?: string | null; size?: number | null },
+    index: number
+): Promise<File | null> => {
+    try {
+        let file: File | null = null;
+
+        // Priority 1: Use doc.file if available (web native File API)
+        // This is the most efficient path as it doesn't require fetching
+        if (doc.file && doc.file instanceof File) {
+            file = doc.file as File;
+            // Ensure file has required properties
+            if (!file.name && doc.name) {
+                // Create new File with proper name if missing
+                file = new File([file], doc.name, { type: file.type || doc.mimeType || 'application/octet-stream' });
+            }
+            // Preserve URI for preview if available (useful for mobile previews)
+            if (doc.uri) {
+                (file as any).uri = doc.uri;
+            }
+            return file;
+        }
+
+        // Priority 2: Use uri to create File (works on both web and mobile)
+        // This path handles mobile file URIs and web blob URLs
+        if (doc.uri) {
+            try {
+                // Fetch the file from URI and create File object
+                // Works with file://, content://, and http(s):// URIs
+                const response = await fetch(doc.uri);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch file: ${response.statusText}`);
+                }
+                const blob = await response.blob();
+                const fileName = doc.name || `file-${index + 1}`;
+                const fileType = doc.mimeType || blob.type || 'application/octet-stream';
+                file = new File([blob], fileName, { type: fileType });
+                // Preserve URI for preview (especially important for mobile)
+                (file as any).uri = doc.uri;
+                return file;
+            } catch (fetchError: any) {
+                console.error('Failed to fetch file from URI:', fetchError);
+                throw new Error(`Failed to load file: ${fetchError.message || 'Unknown error'}`);
+            }
+        }
+
+        // No file or URI available - this shouldn't happen with Expo 54
+        throw new Error('Missing file data (no file or uri property)');
+    } catch (error: any) {
+        console.error('Error converting document to file:', error);
+        throw error;
+    }
+};
 
 const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     onClose,
@@ -123,7 +215,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         } else if (viewMode === 'videos') {
             filteredByMode = files.filter(file => file.contentType.startsWith('video/'));
         } else if (viewMode === 'documents') {
-            filteredByMode = files.filter(file => 
+            filteredByMode = files.filter(file =>
                 file.contentType.includes('pdf') ||
                 file.contentType.includes('document') ||
                 file.contentType.includes('text') ||
@@ -136,7 +228,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         } else if (viewMode === 'audio') {
             filteredByMode = files.filter(file => file.contentType.startsWith('audio/'));
         }
-        
+
         let filtered = filteredByMode;
         if (searchQuery.trim()) {
             const query = searchQuery.toLowerCase();
@@ -146,7 +238,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 (file.metadata?.description && file.metadata.description.toLowerCase().includes(query))
             );
         }
-        
+
         // Sort files
         const sorted = [...filtered].sort((a, b) => {
             let comparison = 0;
@@ -163,7 +255,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             }
             return sortOrder === 'asc' ? comparison : -comparison;
         });
-        
+
         return sorted;
     }, [files, searchQuery, viewMode, sortBy, sortOrder]);
     const [isDragging, setIsDragging] = useState(false);
@@ -205,7 +297,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 // Continue anyway - selection shouldn't fail if visibility update fails
             }
         }
-        
+
         // Track the selected file for scrolling
         setLastSelectedFileId(file.id);
 
@@ -340,7 +432,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     );
 
     // Use centralized theme styles hook for consistency
-    const baseThemeStyles = useThemeStyles(theme);
+    const colorScheme = useColorScheme();
+    const baseThemeStyles = useThemeStyles(theme, colorScheme);
     // FileManagementScreen uses a slightly different light background
     const themeStyles = useMemo(() => ({
         ...baseThemeStyles,
@@ -511,26 +604,38 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         return rows;
     }, []);
 
-    const processFileUploads = async (selectedFiles: File[]) => {
-        if (selectedFiles.length === 0) return;
-        if (!targetUserId) return; // Guard clause to ensure userId is defined
+    const processFileUploads = async (selectedFiles: File[]): Promise<FileMetadata[]> => {
+        if (selectedFiles.length === 0) return [];
+        if (!targetUserId) return []; // Guard clause to ensure userId is defined
+        const uploadedFiles: FileMetadata[] = [];
         try {
             storeSetUploadProgress({ current: 0, total: selectedFiles.length });
             const maxSize = 50 * 1024 * 1024; // 50MB
             const oversizedFiles = selectedFiles.filter(file => file.size > maxSize);
             if (oversizedFiles.length > 0) {
-                const fileList = oversizedFiles.map(f => f.name).join('\n');
-                window.alert(`File Size Limit\n\nThe following files are too large (max 50MB):\n${fileList}`);
-                return;
+                const fileList = oversizedFiles.map(f => f.name).join(', ');
+                toast.error(`The following files are too large (max 50MB): ${fileList}`);
+                return [];
             }
             let successCount = 0;
             let failureCount = 0;
             const errors: string[] = [];
             for (let i = 0; i < selectedFiles.length; i++) {
                 storeSetUploadProgress({ current: i + 1, total: selectedFiles.length });
+                const raw = selectedFiles[i];
+                const fileName = raw.name || `file-${i + 1}`;
+                const optimisticId = `temp-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 9)}`; // Unique ID per file
+
                 try {
-                    const raw = selectedFiles[i];
-                    const optimisticId = `temp-${Date.now()}-${i}`;
+                    // Validate file before upload
+                    if (!raw || !raw.name || raw.size === undefined || raw.size <= 0) {
+                        const errorMsg = `Invalid file: ${fileName}`;
+                        console.error('Upload validation failed:', { file: raw, error: errorMsg });
+                        failureCount++;
+                        errors.push(`${fileName}: Invalid file (missing name or size)`);
+                        continue;
+                    }
+
                     const optimisticFile: FileMetadata = {
                         id: optimisticId,
                         filename: raw.name,
@@ -542,7 +647,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         variants: [],
                     };
                     useFileStore.getState().addFile(optimisticFile, { prepend: true });
+
                     const result = await uploadFileRaw(raw, targetUserId, oxyServices, defaultVisibility);
+
                     // Attempt to refresh file list incrementally – fetch single file metadata if API allows
                     if (result?.file || result?.files?.[0]) {
                         const f = result.file || result.files[0];
@@ -559,22 +666,43 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         // Remove optimistic then add real
                         useFileStore.getState().removeFile(optimisticId);
                         useFileStore.getState().addFile(merged, { prepend: true });
+                        uploadedFiles.push(merged);
+                        successCount++;
                     } else {
                         // Fallback: will reconcile on later list refresh
                         useFileStore.getState().updateFile(optimisticId, { metadata: { uploading: false } as any });
+                        console.warn('Upload completed but no file data returned:', { fileName, result });
+                        // Still count as success if upload didn't throw
+                        successCount++;
                     }
-                    successCount++;
                 } catch (error: any) {
                     failureCount++;
-                    errors.push(`${selectedFiles[i].name}: ${error.message || 'Upload failed'}`);
+                    const errorMessage = error.message || error.toString() || 'Upload failed';
+                    const fullError = `${fileName}: ${errorMessage}`;
+                    errors.push(fullError);
+                    console.error('File upload failed:', {
+                        fileName,
+                        fileSize: raw.size,
+                        fileType: raw.type,
+                        error: errorMessage,
+                        stack: error.stack
+                    });
+
+                    // Remove optimistic file on error (use the same optimisticId from above)
+                    useFileStore.getState().removeFile(optimisticId);
                 }
             }
+
+            // Show success/error messages
             if (successCount > 0) {
                 toast.success(`${successCount} file(s) uploaded successfully`);
             }
             if (failureCount > 0) {
-                const errorMessage = `${failureCount} file(s) failed to upload${errors.length > 0 ? ':\n' + errors.slice(0, 3).join('\n') + (errors.length > 3 ? '\n...' : '') : ''}`;
-                toast.error(errorMessage);
+                // Show detailed error message with first few errors
+                const errorDetails = errors.length > 0
+                    ? `\n${errors.slice(0, 3).join('\n')}${errors.length > 3 ? `\n...and ${errors.length - 3} more` : ''}`
+                    : '';
+                toast.error(`${failureCount} file(s) failed to upload${errorDetails}`);
             }
             // Silent background refresh to ensure metadata/variants updated
             setTimeout(() => { loadFiles('silent'); }, 1200);
@@ -583,6 +711,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         } finally {
             storeSetUploadProgress(null);
         }
+        return uploadedFiles;
     };
 
     const handleFileSelection = useCallback(async (selectedFiles: File[] | any[]) => {
@@ -590,16 +719,65 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         const processedFiles: Array<{ file: File | Blob; preview?: string; size: number; name: string; type: string }> = [];
 
         for (const file of selectedFiles) {
+            // Validate file has required properties
+            if (!file) {
+                console.error('Invalid file: file is null or undefined');
+                toast.error('Invalid file: file is missing');
+                continue;
+            }
+
+            if (!file.name || typeof file.name !== 'string') {
+                console.error('Invalid file: missing or invalid name property', file);
+                toast.error('Invalid file: missing file name');
+                continue;
+            }
+
+            if (file.size === undefined || file.size === null || isNaN(file.size)) {
+                console.error('Invalid file: missing or invalid size property', file);
+                toast.error(`Invalid file "${file.name || 'unknown'}": missing file size`);
+                continue;
+            }
+
+            if (file.size <= 0) {
+                console.error('Invalid file: file size is zero or negative', file);
+                toast.error(`File "${file.name}" is empty`);
+                continue;
+            }
+
             // Validate file size
             if (file.size > MAX_FILE_SIZE) {
                 toast.error(`"${file.name}" is too large. Maximum file size is ${formatFileSize(MAX_FILE_SIZE)}`);
                 continue;
             }
 
+            // Ensure file has a type property
+            const fileType = file.type || 'application/octet-stream';
+
             // Generate preview for images
             let preview: string | undefined;
-            if (file.type.startsWith('image/')) {
-                preview = URL.createObjectURL(file);
+            if (fileType.startsWith('image/')) {
+                if (Platform.OS === 'web') {
+                    // Web: Use blob URL for preview
+                    try {
+                        preview = URL.createObjectURL(file);
+                    } catch (error: any) {
+                        console.warn('Failed to create preview URL:', error);
+                        // Preview is optional, continue without it
+                    }
+                } else {
+                    // Mobile: Use file URI from expo-document-picker if available
+                    // The file object from expo-document-picker may have a uri property
+                    const fileUri = (file as any).uri;
+                    if (fileUri) {
+                        // Validate URI format (should be file://, content://, or http(s)://)
+                        if (typeof fileUri === 'string' && (fileUri.startsWith('file://') || fileUri.startsWith('content://') || fileUri.startsWith('http://') || fileUri.startsWith('https://'))) {
+                            preview = fileUri;
+                        } else {
+                            console.warn('Invalid file URI format:', fileUri);
+                        }
+                    }
+                    // If no URI available, skip preview (preview is optional)
+                }
             }
 
             processedFiles.push({
@@ -607,11 +785,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 preview,
                 size: file.size,
                 name: file.name,
-                type: file.type
+                type: fileType
             });
         }
 
-        if (processedFiles.length === 0) return;
+        if (processedFiles.length === 0) {
+            toast.error('No valid files to upload');
+            return;
+        }
 
         // Show preview modal for user to review files before upload
         setPendingFiles(processedFiles);
@@ -629,8 +810,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         try {
             const filesToUpload = pendingFiles.map(pf => pf.file as File);
             storeSetUploadProgress({ current: 0, total: filesToUpload.length });
-            await processFileUploads(filesToUpload);
-            
+            const uploadedFiles = await processFileUploads(filesToUpload);
+
             // Cleanup preview URLs
             pendingFiles.forEach(pf => {
                 if (pf.preview) {
@@ -638,6 +819,31 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 }
             });
             setPendingFiles([]);
+
+            // If in selectMode, automatically select the uploaded file(s)
+            if (selectMode && uploadedFiles.length > 0) {
+                // Wait a bit for the file store to update and ensure file is available
+                setTimeout(() => {
+                    const fileToSelect = uploadedFiles[0];
+                    if (!multiSelect && fileToSelect) {
+                        // Single select mode - directly call onSelect callback
+                        onSelect?.(fileToSelect);
+                        if (afterSelect === 'back') {
+                            goBack?.();
+                        } else if (afterSelect === 'close') {
+                            onClose?.();
+                        }
+                    } else if (multiSelect) {
+                        // Multi-select mode - add all uploaded files to selection
+                        uploadedFiles.forEach(file => {
+                            if (!selectedIds.has(file.id)) {
+                                setSelectedIds(prev => new Set(prev).add(file.id));
+                            }
+                        });
+                    }
+                }, 500);
+            }
+
             endUpload();
         } catch (error: any) {
             toast.error(error.message || 'Failed to upload files');
@@ -668,88 +874,113 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         }
     };
 
+    /**
+     * Handle file upload - opens document picker and processes selected files
+     * Expo 54 compatible - works on web, iOS, and Android
+     */
     const handleFileUpload = async () => {
         try {
-            if (Platform.OS === 'web') {
-                // Enhanced web file picker
-                const input = document.createElement('input');
-                input.type = 'file';
-                input.multiple = true;
-                input.accept = '*/*';
-                
-                const cancellationTimer = setTimeout(() => {
-                    const state = useFileStore.getState();
-                    if (state.uploading && uploadStartRef.current && !state.uploadProgress) {
-                        endUpload();
-                    }
-                }, 1500);
+            // Dynamically import expo-document-picker (Expo 54 supports it on all platforms)
+            const DocumentPicker = await import('expo-document-picker').catch(() => null);
 
-                input.onchange = async (e: any) => {
-                    clearTimeout(cancellationTimer);
-                    const selectedFiles = Array.from(e.target.files || []) as File[];
-                    if (selectedFiles.length === 0) {
-                        endUpload();
-                        return;
-                    }
-                    await handleFileSelection(selectedFiles);
-                };
+            if (!DocumentPicker) {
+                toast.error('File picker not available. Please install expo-document-picker');
+                return;
+            }
 
-                input.click();
-            } else {
-                // Mobile file picker with expo-document-picker
-                try {
-                    // Dynamically import to avoid breaking if not installed
-                    const DocumentPicker = await import('expo-document-picker').catch(() => null);
-                    
-                    if (!DocumentPicker) {
-                        toast.error('File picker not available. Please install expo-document-picker');
-                        return;
-                    }
+            // Check if document picker is available on this platform/device
+            const isAvailable = await DocumentPicker.isAvailableAsync().catch(() => false);
+            if (!isAvailable) {
+                toast.error('File picker is not available on this device');
+                return;
+            }
 
-                    const result = await DocumentPicker.getDocumentAsync({
-                        type: '*/*',
-                        multiple: true,
-                        copyToCacheDirectory: true,
-                    });
+            const result = await DocumentPicker.getDocumentAsync({
+                type: '*/*',
+                multiple: true,
+                copyToCacheDirectory: true,
+            });
 
-                    if (result.canceled) {
-                        return;
-                    }
+            if (result.canceled) {
+                return;
+            }
 
-                    // Convert expo document picker results to File-like objects
-                    const files: File[] = [];
-                    for (const doc of result.assets) {
-                        if (doc.file) {
-                            // expo-document-picker provides a File-like object
-                            files.push(doc.file as File);
-                        } else if (doc.uri) {
-                            // Fallback: fetch and create Blob
-                            const response = await fetch(doc.uri);
-                            const blob = await response.blob();
-                            const file = new File([blob], doc.name || 'file', { type: doc.mimeType || 'application/octet-stream' });
-                            files.push(file);
+            if (!result.assets || result.assets.length === 0) {
+                toast.error('No files were selected');
+                return;
+            }
+
+            // Convert expo document picker results to File-like objects
+            // According to Expo 54 docs, expo-document-picker returns assets with:
+            // - uri: file URI (file://, content://, or blob URL)
+            // - name: file name
+            // - size: file size in bytes
+            // - mimeType: MIME type of the file
+            // - file: (optional) native File object (usually only on web)
+            const files: File[] = [];
+            const errors: string[] = [];
+
+            // Process files in parallel for better performance
+            // This allows multiple files to be converted simultaneously
+            const conversionPromises = result.assets.map((doc, index) =>
+                convertDocumentPickerAssetToFile(doc, index)
+                    .then((file) => {
+                        if (file) {
+                            // Validate file has required properties before adding
+                            if (!file.name || file.size === undefined) {
+                                errors.push(`File "${doc.name || 'file'}" is invalid: missing required properties`);
+                                return null;
+                            }
+                            return file;
                         }
-                    }
+                        return null;
+                    })
+                    .catch((error: any) => {
+                        errors.push(`File "${doc.name || 'file'}": ${error.message || 'Failed to process'}`);
+                        return null;
+                    })
+            );
 
-                    if (files.length > 0) {
-                        await handleFileSelection(files);
-                    }
-                } catch (error: any) {
-                    if (error.message?.includes('expo-document-picker')) {
-                        toast.error('File picker not available. Please install expo-document-picker');
-                    } else {
-                        toast.error(error.message || 'Failed to select files');
-                    }
+            const convertedFiles = await Promise.all(conversionPromises);
+
+            // Filter out null values
+            for (const file of convertedFiles) {
+                if (file) {
+                    files.push(file);
                 }
             }
+
+            // Show errors if any
+            if (errors.length > 0) {
+                const errorMessage = errors.slice(0, 3).join('\n') + (errors.length > 3 ? `\n...and ${errors.length - 3} more` : '');
+                toast.error(`Failed to load some files:\n${errorMessage}`);
+            }
+
+            // Process successfully converted files
+            if (files.length > 0) {
+                await handleFileSelection(files);
+            } else {
+                // Files were selected but none could be converted
+                toast.error('No files could be processed. Please try selecting files again.');
+            }
         } catch (error: any) {
-            toast.error(error.message || 'Failed to open file picker');
+            console.error('File upload error:', error);
+            if (error.message?.includes('expo-document-picker')) {
+                toast.error('File picker not available. Please install expo-document-picker');
+            } else {
+                toast.error(error.message || 'Failed to select files');
+            }
         }
     };
 
     const handleFileDelete = async (fileId: string, filename: string) => {
-        // Use web-compatible confirmation dialog
-        const confirmed = window.confirm(`Are you sure you want to delete "${filename}"? This action cannot be undone.`);
+        // Use platform-aware confirmation dialog
+        const confirmed = await confirmAction(
+            `Are you sure you want to delete "${filename}"? This action cannot be undone.`,
+            'Delete File',
+            'Delete',
+            'Cancel'
+        );
 
         if (!confirmed) {
             return;
@@ -785,17 +1016,20 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     const handleBulkDelete = useCallback(async () => {
         if (selectedIds.size === 0) return;
-        
+
         const fileMap: Record<string, FileMetadata> = {};
         files.forEach(f => { fileMap[f.id] = f; });
         const selectedFiles = Array.from(selectedIds).map(id => fileMap[id]).filter(Boolean);
-        
-        const confirmed = window.confirm(
-            `Are you sure you want to delete ${selectedFiles.length} file(s)? This action cannot be undone.`
+
+        const confirmed = await confirmAction(
+            `Are you sure you want to delete ${selectedFiles.length} file(s)? This action cannot be undone.`,
+            'Delete Files',
+            'Delete',
+            'Cancel'
         );
-        
+
         if (!confirmed) return;
-        
+
         try {
             const deletePromises = Array.from(selectedIds).map(async (fileId) => {
                 try {
@@ -806,18 +1040,18 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     return { success: false, fileId, error };
                 }
             });
-            
+
             const results = await Promise.allSettled(deletePromises);
             const successful = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
             const failed = results.length - successful;
-            
+
             if (successful > 0) {
                 toast.success(`${successful} file(s) deleted successfully`);
             }
             if (failed > 0) {
                 toast.error(`${failed} file(s) failed to delete`);
             }
-            
+
             setSelectedIds(new Set());
             setTimeout(() => loadFiles('silent'), 800);
         } catch (error: any) {
@@ -827,7 +1061,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     const handleBulkVisibilityChange = useCallback(async (visibility: 'private' | 'public' | 'unlisted') => {
         if (selectedIds.size === 0) return;
-        
+
         try {
             const updatePromises = Array.from(selectedIds).map(async (fileId) => {
                 try {
@@ -837,11 +1071,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     return { success: false, fileId, error };
                 }
             });
-            
+
             const results = await Promise.allSettled(updatePromises);
             const successful = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
             const failed = results.length - successful;
-            
+
             if (successful > 0) {
                 toast.success(`${successful} file(s) visibility updated to ${visibility}`);
                 // Update file metadata in store
@@ -854,7 +1088,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             if (failed > 0) {
                 toast.error(`${failed} file(s) failed to update visibility`);
             }
-            
+
             setTimeout(() => loadFiles('silent'), 800);
         } catch (error: any) {
             toast.error(error.message || 'Failed to update visibility');
@@ -864,9 +1098,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     // Global drag listeners (web) - attach to document for reliable drag and drop
     useEffect(() => {
         if (Platform.OS !== 'web' || user?.id !== targetUserId) return;
-        
+
         let dragCounter = 0; // Track drag enter/leave to handle nested elements
-        
+
         const onDragEnter = (e: DragEvent) => {
             dragCounter++;
             if (e?.dataTransfer?.types?.includes('Files')) {
@@ -875,7 +1109,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 setIsDragging(true);
             }
         };
-        
+
         const onDragOver = (e: DragEvent) => {
             if (e?.dataTransfer?.types?.includes('Files')) {
                 e.preventDefault();
@@ -884,15 +1118,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 setIsDragging(true);
             }
         };
-        
+
         const onDrop = async (e: DragEvent) => {
             dragCounter = 0;
             setIsDragging(false);
-            
+
             if (e?.dataTransfer?.files?.length) {
                 e.preventDefault();
                 e.stopPropagation();
-                
+
                 try {
                     const files = Array.from(e.dataTransfer.files) as File[];
                     if (files.length > 0) {
@@ -903,7 +1137,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 }
             }
         };
-        
+
         const onDragLeave = (e: DragEvent) => {
             dragCounter--;
             // Only hide drag overlay if we're actually leaving the document (drag counter reaches 0)
@@ -911,13 +1145,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 setIsDragging(false);
             }
         };
-        
+
         // Attach to document for global drag detection
         document.addEventListener('dragenter', onDragEnter, false);
         document.addEventListener('dragover', onDragOver, false);
         document.addEventListener('drop', onDrop, false);
         document.addEventListener('dragleave', onDragLeave, false);
-        
+
         return () => {
             document.removeEventListener('dragenter', onDragEnter, false);
             document.removeEventListener('dragover', onDragOver, false);
@@ -1222,7 +1456,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                 {/* Fallback icon (hidden by default for images) */}
                                 <View
                                     style={[styles.fallbackIcon, { display: isImage ? 'none' : 'flex' }]}
-                                    {...(Platform.OS === 'web' && { 'data-fallback': 'true' })}
                                 >
                                     <Ionicons
                                         name={getFileIcon(file.contentType) as any}
@@ -1315,85 +1548,85 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const groupedFileItems = useMemo(() => {
         // filteredFiles is already sorted, so just use it directly
         const sortedFiles = filteredFiles;
-        
+
         // Store file positions for scrolling
         sortedFiles.forEach((file, index) => {
             itemRefs.current.set(file.id, index);
         });
-        
+
         return sortedFiles.map((file) => {
-                const isImage = file.contentType.startsWith('image/');
-                const isVideo = file.contentType.startsWith('video/');
-                const hasPreview = isImage || isVideo;
-                const previewUrl = hasPreview ? (isVideo ? getSafeDownloadUrl(file, 'poster') : getSafeDownloadUrl(file, 'thumb')) : undefined;
-                const isSelected = selectedIds.has(file.id);
-                return {
-                    id: file.id,
-                    image: previewUrl,
-                    imageSize: 44,
-                    icon: !previewUrl ? getFileIcon(file.contentType) : undefined,
-                    iconColor: themeStyles.primaryColor,
-                    title: file.filename,
-                    subtitle: `${formatFileSize(file.length)} • ${new Date(file.uploadDate).toLocaleDateString()}`,
-                    theme: theme as 'light' | 'dark',
-                    onPress: () => {
-                        // Support selection in regular mode with long press or if already selecting
-                        if (!selectMode && selectedIds.size > 0) {
-                            // If already in selection mode (some files selected), toggle selection
-                            toggleSelect(file);
-                        } else {
-                            handleFileOpen(file);
-                        }
-                    },
-                    onLongPress: !selectMode ? () => {
-                        // Enable selection mode on long press
-                        if (selectedIds.size === 0) {
-                            setSelectedIds(new Set([file.id]));
-                        } else {
-                            toggleSelect(file);
-                        }
-                    } : undefined,
-                    showChevron: false,
-                    dense: true,
-                    multiRow: !!file.metadata?.description,
-                    selected: (selectMode || selectedIds.size > 0) && isSelected,
-                    // Hide action buttons when selecting (in selectMode or bulk operations mode)
-                    customContent: (!selectMode && selectedIds.size === 0) ? (
-                        <View style={styles.groupedActions}>
-                            {(isImage || isVideo || file.contentType.includes('pdf')) && (
-                                <TouchableOpacity
-                                    style={[styles.groupedActionBtn, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
-                                    onPress={() => handleFileOpen(file)}
-                                >
-                                    <Ionicons name="eye" size={18} color={themeStyles.primaryColor} />
-                                </TouchableOpacity>
-                            )}
+            const isImage = file.contentType.startsWith('image/');
+            const isVideo = file.contentType.startsWith('video/');
+            const hasPreview = isImage || isVideo;
+            const previewUrl = hasPreview ? (isVideo ? getSafeDownloadUrl(file, 'poster') : getSafeDownloadUrl(file, 'thumb')) : undefined;
+            const isSelected = selectedIds.has(file.id);
+            return {
+                id: file.id,
+                image: previewUrl,
+                imageSize: 44,
+                icon: !previewUrl ? getFileIcon(file.contentType) : undefined,
+                iconColor: themeStyles.primaryColor,
+                title: file.filename,
+                subtitle: `${formatFileSize(file.length)} • ${new Date(file.uploadDate).toLocaleDateString()}`,
+                theme: theme as 'light' | 'dark',
+                onPress: () => {
+                    // Support selection in regular mode with long press or if already selecting
+                    if (!selectMode && selectedIds.size > 0) {
+                        // If already in selection mode (some files selected), toggle selection
+                        toggleSelect(file);
+                    } else {
+                        handleFileOpen(file);
+                    }
+                },
+                onLongPress: !selectMode ? () => {
+                    // Enable selection mode on long press
+                    if (selectedIds.size === 0) {
+                        setSelectedIds(new Set([file.id]));
+                    } else {
+                        toggleSelect(file);
+                    }
+                } : undefined,
+                showChevron: false,
+                dense: true,
+                multiRow: !!file.metadata?.description,
+                selected: (selectMode || selectedIds.size > 0) && isSelected,
+                // Hide action buttons when selecting (in selectMode or bulk operations mode)
+                customContent: (!selectMode && selectedIds.size === 0) ? (
+                    <View style={styles.groupedActions}>
+                        {(isImage || isVideo || file.contentType.includes('pdf')) && (
                             <TouchableOpacity
                                 style={[styles.groupedActionBtn, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
-                                onPress={() => handleFileDownload(file.id, file.filename)}
+                                onPress={() => handleFileOpen(file)}
                             >
-                                <Ionicons name="download" size={18} color={themeStyles.primaryColor} />
+                                <Ionicons name="eye" size={18} color={themeStyles.primaryColor} />
                             </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.groupedActionBtn, { backgroundColor: themeStyles.isDarkTheme ? '#400000' : '#FFEBEE' }]}
-                                onPress={() => handleFileDelete(file.id, file.filename)}
-                                disabled={deleting === file.id}
-                            >
-                                {deleting === file.id ? (
-                                    <ActivityIndicator size="small" color={themeStyles.dangerColor} />
-                                ) : (
-                                    <Ionicons name="trash" size={18} color={themeStyles.dangerColor} />
-                                )}
-                            </TouchableOpacity>
-                        </View>
-                    ) : undefined,
-                    customContentBelow: file.metadata?.description ? (
-                        <Text style={[styles.groupedDescription, { color: themeStyles.isDarkTheme ? '#AAAAAA' : '#666666' }]} numberOfLines={2}>
-                            {file.metadata.description}
-                        </Text>
-                    ) : undefined,
-                } as any;
-            });
+                        )}
+                        <TouchableOpacity
+                            style={[styles.groupedActionBtn, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
+                            onPress={() => handleFileDownload(file.id, file.filename)}
+                        >
+                            <Ionicons name="download" size={18} color={themeStyles.primaryColor} />
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.groupedActionBtn, { backgroundColor: themeStyles.isDarkTheme ? '#400000' : '#FFEBEE' }]}
+                            onPress={() => handleFileDelete(file.id, file.filename)}
+                            disabled={deleting === file.id}
+                        >
+                            {deleting === file.id ? (
+                                <ActivityIndicator size="small" color={themeStyles.dangerColor} />
+                            ) : (
+                                <Ionicons name="trash" size={18} color={themeStyles.dangerColor} />
+                            )}
+                        </TouchableOpacity>
+                    </View>
+                ) : undefined,
+                customContentBelow: file.metadata?.description ? (
+                    <Text style={[styles.groupedDescription, { color: themeStyles.isDarkTheme ? '#AAAAAA' : '#666666' }]} numberOfLines={2}>
+                        {file.metadata.description}
+                    </Text>
+                ) : undefined,
+            } as any;
+        });
     }, [filteredFiles, theme, themeStyles, deleting, handleFileDownload, handleFileDelete, handleFileOpen, getSafeDownloadUrl, selectMode, selectedIds]);
 
     // Scroll to selected file after selection
@@ -1402,7 +1635,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             if (viewMode === 'all' && scrollViewRef.current) {
                 // Find the index of the selected file
                 const itemIndex = itemRefs.current.get(lastSelectedFileId);
-                
+
                 if (itemIndex !== undefined && itemIndex >= 0) {
                     // Estimate item height (GroupedItem with dense mode is approximately 60-70px)
                     // Account for description rows which add extra height
@@ -1410,7 +1643,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     const descriptionHeight = 30; // Approximate height for description
                     // Use filteredFiles which is already sorted according to user's selection
                     const sortedFiles = filteredFiles;
-                    
+
                     // Calculate total height up to this item
                     let scrollPosition = 0;
                     for (let i = 0; i <= itemIndex && i < sortedFiles.length; i++) {
@@ -1420,11 +1653,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             scrollPosition += descriptionHeight;
                         }
                     }
-                    
+
                     // Add header, controls, search, and stats height (approximately 250px)
                     const headerHeight = 250;
                     const finalScrollPosition = headerHeight + scrollPosition - 150; // Offset to show item near top
-                    
+
                     // Use requestAnimationFrame to ensure DOM is updated before scrolling
                     requestAnimationFrame(() => {
                         requestAnimationFrame(() => {
@@ -1439,24 +1672,24 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 // For photo grid, find the photo index
                 const photos = filteredFiles.filter(file => file.contentType.startsWith('image/'));
                 const photoIndex = photos.findIndex(p => p.id === lastSelectedFileId);
-                
+
                 if (photoIndex >= 0) {
                     // Estimate photo item height based on grid layout
                     // Calculate items per row
                     let itemsPerRow = 3;
                     if (containerWidth > 768) itemsPerRow = 6;
                     else if (containerWidth > 480) itemsPerRow = 4;
-                    
+
                     const scrollContainerPadding = 32;
                     const gaps = (itemsPerRow - 1) * 4;
                     const availableWidth = containerWidth - scrollContainerPadding;
                     const itemWidth = (availableWidth - gaps) / itemsPerRow;
-                    
+
                     // Calculate row and approximate scroll position
                     const row = Math.floor(photoIndex / itemsPerRow);
                     const headerHeight = 250;
                     const finalScrollPosition = headerHeight + (row * (itemWidth + 4)) - 150;
-                    
+
                     // Use requestAnimationFrame to ensure DOM is updated before scrolling
                     requestAnimationFrame(() => {
                         requestAnimationFrame(() => {
@@ -1477,7 +1710,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             const timeoutId = setTimeout(() => {
                 setLastSelectedFileId(null);
             }, 600); // Allow time for scroll animation to complete
-            
+
             return () => clearTimeout(timeoutId);
         }
     }, [lastSelectedFileId]);
@@ -1536,7 +1769,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     <Text style={[styles.emptyStateTitle, { color: themeStyles.textColor }]}>No Photos Yet</Text>
                     <Text style={[styles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}> {
                         user?.id === targetUserId
-                            ? `Upload photos to get started. You can select multiple photos at once${Platform.OS === 'web' ? ' or drag & drop them here.' : '.'}`
+                            ? `Upload photos to get started. You can select multiple photos at once.`
                             : "This user hasn't uploaded any photos yet"
                     } </Text>
                     {user?.id === targetUserId && (
@@ -1859,7 +2092,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                 <Text style={[styles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                     File ID:
                                 </Text>
-                                <Text style={[styles.detailValue, { color: themeStyles.textColor, fontSize: 12, fontFamily: Platform.OS === 'web' ? 'monospace' : 'Courier' }]}>
+                                <Text style={[styles.detailValue, { color: themeStyles.textColor, fontSize: 12, fontFamily: 'monospace' }]}>
                                     {openedFile.id}
                                 </Text>
                             </View>
@@ -2010,7 +2243,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             <Text style={[styles.emptyStateTitle, { color: themeStyles.textColor }]}>No Files Yet</Text>
             <Text style={[styles.emptyStateDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                 {user?.id === targetUserId
-                    ? `Upload files to get started. You can select multiple files at once${Platform.OS === 'web' ? ' or drag & drop them here.' : '.'}`
+                    ? `Upload files to get started. You can select multiple files at once.`
                     : "This user hasn't uploaded any files yet"
                 }
             </Text>
@@ -2063,7 +2296,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 outputRange: [-skeletonContainerWidth * 2 + delay, skeletonContainerWidth * 2 + delay],
             });
 
-        return (
+            return (
                 <View
                     style={[
                         {
@@ -2103,8 +2336,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             style={{
                                 width: skeletonContainerWidth,
                                 height: '100%',
-                                backgroundColor: themeStyles.isDarkTheme 
-                                    ? 'rgba(255, 255, 255, 0.08)' 
+                                backgroundColor: themeStyles.isDarkTheme
+                                    ? 'rgba(255, 255, 255, 0.08)'
                                     : 'rgba(255, 255, 255, 0.8)',
                                 shadowColor: themeStyles.isDarkTheme ? '#000' : '#FFF',
                                 shadowOffset: { width: 0, height: 0 },
@@ -2113,8 +2346,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             }}
                         />
                     </Animated.View>
-            </View>
-        );
+                </View>
+            );
         };
 
         // Skeleton file item matching GroupedSection structure
@@ -2134,18 +2367,18 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             >
                 {/* Icon/Image skeleton */}
                 <SkeletonBox width={44} height={44} borderRadius={8} delay={index * 50} />
-                
+
                 {/* Content skeleton */}
                 <View style={{ flex: 1, marginLeft: 12, justifyContent: 'center' }}>
-                    <SkeletonBox 
-                        width={index % 3 === 0 ? '85%' : index % 3 === 1 ? '70%' : '90%'} 
-                        height={16} 
-                        style={{ marginBottom: 8 }} 
+                    <SkeletonBox
+                        width={index % 3 === 0 ? '85%' : index % 3 === 1 ? '70%' : '90%'}
+                        height={16}
+                        style={{ marginBottom: 8 }}
                         delay={index * 50 + 20}
                     />
-                    <SkeletonBox 
-                        width={index % 2 === 0 ? '50%' : '60%'} 
-                        height={12} 
+                    <SkeletonBox
+                        width={index % 2 === 0 ? '50%' : '60%'}
+                        height={12}
                         delay={index * 50 + 40}
                     />
                 </View>
@@ -2171,8 +2404,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </View>
 
                 {/* Search Bar Skeleton */}
-                <View style={[styles.searchContainer, { 
-                    backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF', 
+                <View style={[styles.searchContainer, {
+                    backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF',
                     borderColor: themeStyles.borderColor,
                     borderWidth: StyleSheet.hairlineWidth,
                 }]}>
@@ -2180,8 +2413,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </View>
 
                 {/* Stats Container Skeleton */}
-                <View style={[styles.statsContainer, { 
-                    backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF', 
+                <View style={[styles.statsContainer, {
+                    backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF',
                     borderColor: themeStyles.borderColor,
                     borderWidth: StyleSheet.hairlineWidth,
                 }]}>
@@ -2194,8 +2427,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </View>
 
                 {/* File List Skeleton - Matching GroupedSection */}
-                <ScrollView 
-                    style={styles.scrollView} 
+                <ScrollView
+                    style={styles.scrollView}
                     contentContainerStyle={styles.scrollContainer}
                     showsVerticalScrollIndicator={false}
                 >
@@ -2285,7 +2518,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     }
                 ] : undefined}
                 onBack={onClose || goBack}
-                
+
                 showBackButton
                 variant="minimal"
                 elevation="none"
@@ -2293,8 +2526,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             />
 
             <View style={styles.controlsBar}>
-                <ScrollView 
-                    horizontal 
+                <ScrollView
+                    horizontal
                     showsHorizontalScrollIndicator={false}
                     style={styles.viewModeScroll}
                 >
@@ -2374,7 +2607,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     </View>
                 </ScrollView>
                 <TouchableOpacity
-                    style={[styles.sortButton, { 
+                    style={[styles.sortButton, {
                         backgroundColor: themeStyles.isDarkTheme ? '#181818' : '#FFFFFF',
                         borderColor: themeStyles.isDarkTheme ? '#2A2A2A' : '#E8E9EA',
                     }]}
@@ -2398,8 +2631,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     <Ionicons
                         name={
                             sortBy === 'date' ? 'calendar' :
-                            sortBy === 'size' ? 'resize' :
-                            sortBy === 'name' ? 'text' : 'document'
+                                sortBy === 'size' ? 'resize' :
+                                    sortBy === 'name' ? 'text' : 'document'
                         }
                         size={16}
                         color={themeStyles.textColor}
@@ -2531,7 +2764,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         </View>
                     ) : filteredFiles.length === 0 ? renderEmptyState() : (
                         <>
-                            <GroupedSection items={groupedFileItems}  />
+                            <GroupedSection items={groupedFileItems} />
                             {paging.loadingMore && (
                                 <View style={styles.loadingMoreBar}>
                                     <ActivityIndicator size="small" color={themeStyles.primaryColor} />
@@ -2545,17 +2778,30 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {!selectMode && renderFileDetailsModal()}
 
-            {/* Uploading banner overlay */}
+            {/* Uploading banner overlay with progress */}
             {!selectMode && uploading && (
                 <View style={[styles.uploadBannerContainer, { pointerEvents: 'none' }]}>
                     <View style={[styles.uploadBanner, { backgroundColor: themeStyles.isDarkTheme ? '#222831EE' : '#FFFFFFEE', borderColor: themeStyles.borderColor }]}>
                         <Ionicons name="cloud-upload" size={18} color={themeStyles.primaryColor} />
-                        <Text style={[styles.uploadBannerText, { color: themeStyles.textColor }]}>Uploading{uploadProgress ? ` ${uploadProgress.current}/${uploadProgress.total}` : '...'}</Text>
-                        <View style={styles.uploadBannerDots}>
-                            {[0, 1, 2].map(i => (
-                                <View key={i} style={[styles.dot, { opacity: ((Date.now() / 400 + i) % 3) < 1 ? 1 : 0.25 }]} />
-                            ))}
+                        <View style={styles.uploadBannerContent}>
+                            <Text style={[styles.uploadBannerText, { color: themeStyles.textColor }]}>
+                                Uploading{uploadProgress ? ` ${uploadProgress.current}/${uploadProgress.total}` : '...'}
+                            </Text>
+                            {uploadProgress && uploadProgress.total > 0 && (
+                                <View style={[styles.uploadProgressBarContainer, { backgroundColor: themeStyles.isDarkTheme ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' }]}>
+                                    <View
+                                        style={[
+                                            styles.uploadProgressBar,
+                                            {
+                                                width: `${(uploadProgress.current / uploadProgress.total) * 100}%`,
+                                                backgroundColor: themeStyles.primaryColor
+                                            }
+                                        ]}
+                                    />
+                                </View>
+                            )}
                         </View>
+                        <ActivityIndicator size="small" color={themeStyles.primaryColor} />
                     </View>
                 </View>
             )}
@@ -2708,19 +2954,34 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 14,
-        paddingVertical: 8,
+        paddingVertical: 10,
         borderRadius: 24,
-        gap: 8,
+        gap: 10,
         borderWidth: 1,
         shadowColor: '#000',
         shadowOpacity: 0.1,
         shadowRadius: 6,
         shadowOffset: { width: 0, height: 2 },
         elevation: 2,
+        minWidth: 200,
+    },
+    uploadBannerContent: {
+        flex: 1,
+        gap: 6,
     },
     uploadBannerText: {
         fontSize: 13,
         fontWeight: '500',
+    },
+    uploadProgressBarContainer: {
+        height: 3,
+        backgroundColor: 'rgba(0,0,0,0.1)',
+        borderRadius: 2,
+        overflow: 'hidden',
+    },
+    uploadProgressBar: {
+        height: '100%',
+        borderRadius: 2,
     },
     uploadBannerDots: {
         flexDirection: 'row',
@@ -3286,7 +3547,7 @@ const styles = StyleSheet.create({
     },
     textContent: {
         fontSize: 14,
-        fontFamily: Platform.OS === 'web' ? 'monospace' : 'Courier',
+        fontFamily: 'monospace',
         lineHeight: 20,
     },
     unsupportedFileContainer: {

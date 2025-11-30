@@ -292,6 +292,46 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
     });
 
     // ========================================================================
+    // Gesture Handling for Back Navigation
+    // ========================================================================
+    // Track previous index to detect gesture start
+    const previousIndexRef = useRef<number>(0);
+    
+    const handleSheetChange = useCallback((index: number) => {
+        const previousIndex = previousIndexRef.current;
+        const wasOpen = previousIndex === 0; // Check if sheet was open before update
+        previousIndexRef.current = index;
+        isOpenRef.current = index !== -1;
+        
+        // Detect when gesture starts to dismiss (index decreasing from 0)
+        // Navigate immediately before keyboard can dismiss
+        // Check wasOpen instead of isOpenRef.current since we just set it to false when index < 0
+        if (wasOpen && index < 0) {
+            // Priority 1: Check if current screen has step history
+            if (stepControllerRef.current?.canGoBack()) {
+                // Navigate immediately - this happens before keyboard dismiss completes
+                stepControllerRef.current.goBack();
+                // Cancel the dismissal gesture by snapping back
+                requestAnimationFrame(() => {
+                    modalRef.current?.snapToIndex(0);
+                });
+                return;
+            }
+
+            // Priority 2: Check if router has navigation history
+            if (routerRef.current?.canGoBack()) {
+                // Navigate immediately - this happens before keyboard dismiss completes
+                routerRef.current.goBack();
+                // Cancel the dismissal gesture by snapping back
+                requestAnimationFrame(() => {
+                    modalRef.current?.snapToIndex(0);
+                });
+                return;
+            }
+        }
+    }, [stepControllerRef, routerRef]);
+
+    // ========================================================================
     // Auto-Present Logic
     // ========================================================================
     useEffect(() => {
@@ -367,12 +407,21 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
             enableContentPanningGesture={true}
             enableHandlePanningGesture={true}
             overDragResistanceFactor={2.5}
-            enableBlurKeyboardOnGesture={true}
+            enableBlurKeyboardOnGesture={false}
             detached
             topInset={(insets?.top ?? 0) + (appInsets?.top ?? 0)}
             bottomInset={keyboardHeight > 0 ? keyboardHeight : 0}
-            onChange={(index) => { isOpenRef.current = index !== -1; }}
-            onDismiss={() => { isOpenRef.current = false; }}
+            onChange={handleSheetChange}
+            onAnimate={(fromIndex: number, toIndex: number) => {
+                // Initialize previousIndex when sheet animates to index 0 (presented)
+                if (toIndex === 0) {
+                    previousIndexRef.current = 0;
+                }
+            }}
+            onDismiss={() => { 
+                isOpenRef.current = false;
+                previousIndexRef.current = -1;
+            }}
         >
             <BottomSheetScrollView
                 style={[styles.contentContainer]}

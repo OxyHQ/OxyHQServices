@@ -1,5 +1,5 @@
 import type React from 'react';
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { useThemeColors } from '../styles';
@@ -17,12 +17,73 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     initialStep,
     username: initialUsername,
     userProfile: initialUserProfile,
+    currentScreen,
 }) => {
-    // Form data states
+    // Form data states - sync with props when they change from router navigation
     const [username, setUsername] = useState(initialUsername || '');
     const [password, setPassword] = useState('');
     const [errorMessage, setErrorMessage] = useState('');
     const [userProfile, setUserProfile] = useState<any>(initialUserProfile || null);
+    
+    // Refs to store latest values for navigation prop extraction
+    // These ensure we always get current state values, even if stepData memo hasn't updated yet
+    const usernameRef = useRef<string>(initialUsername || '');
+    const userProfileRef = useRef<any>(initialUserProfile || null);
+    
+    // Keep refs in sync with state
+    useEffect(() => {
+        usernameRef.current = username;
+    }, [username]);
+    
+    useEffect(() => {
+        userProfileRef.current = userProfile;
+    }, [userProfile]);
+    
+    // Sync state with props when they change from router navigation (to preserve state across step changes)
+    // This is critical because router navigation causes component remount, so we need to restore state from props
+    useEffect(() => {
+        if (initialUsername !== undefined) {
+            // Always sync if prop is provided (even if empty string) to handle router navigation
+            if (initialUsername !== username) {
+                setUsername(initialUsername || '');
+                usernameRef.current = initialUsername || '';
+            }
+        }
+    }, [initialUsername]);
+    
+    useEffect(() => {
+        if (initialUserProfile !== undefined) {
+            // Always sync if prop is provided to handle router navigation
+            const currentProfileId = userProfile?.id;
+            const newProfileId = initialUserProfile?.id;
+            if (currentProfileId !== newProfileId || initialUserProfile !== userProfile) {
+                setUserProfile(initialUserProfile || null);
+                userProfileRef.current = initialUserProfile || null;
+            }
+        }
+    }, [initialUserProfile]);
+    
+    // Extraction function for navigation props - gets latest values from refs
+    // This ensures we always have the current state, not stale memoized values
+    const getNavigationProps = useCallback((): Record<string, unknown> => {
+        const props: Record<string, unknown> = {};
+        
+        if (usernameRef.current) {
+            props.username = usernameRef.current;
+        }
+        if (userProfileRef.current) {
+            props.userProfile = userProfileRef.current;
+        }
+        
+        if (__DEV__) {
+            console.log('SignInScreen: getNavigationProps called', {
+                username: usernameRef.current,
+                hasUserProfile: !!userProfileRef.current,
+            });
+        }
+        
+        return props;
+    }, []);
     const [showPassword, setShowPassword] = useState(false);
     const [isInputFocused, setIsInputFocused] = useState(false);
     const [isValidating, setIsValidating] = useState(false);
@@ -83,6 +144,8 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
                 };
 
                 setUserProfile(profileData);
+                // Update ref immediately so it's available for navigation
+                userProfileRef.current = profileData;
 
                 // Check if this account is already signed in
                 const profileUserId = userProfile.id?.toString();
@@ -183,18 +246,47 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     }, [existingSession, switchSession, oxyServices, onAuthenticated]);
 
     const handleSignIn = useCallback(async () => {
+        // Use current values - props first (from router), then state
+        // Same logic as currentUsername/currentUserProfile above to ensure consistency
+        const currentUsername = (initialUsername !== undefined && initialUsername !== null && initialUsername !== '') 
+            ? initialUsername 
+            : username;
+        const currentUserProfile = (initialUserProfile !== undefined && initialUserProfile !== null) 
+            ? initialUserProfile 
+            : userProfile;
+        
+        if (__DEV__) {
+            console.log('handleSignIn called', {
+                initialUsername,
+                username,
+                currentUsername,
+                hasUserProfile: !!currentUserProfile,
+                hasPassword: !!password,
+            });
+        }
+        
         if (!password) {
             setErrorMessage('Please enter your password.');
             return;
         }
-        if (!username || !userProfile) {
+        if (!currentUsername || !currentUserProfile) {
+            if (__DEV__) {
+                console.warn('handleSignIn: Missing username or userProfile', {
+                    currentUsername,
+                    hasUserProfile: !!currentUserProfile,
+                    initialUsername,
+                    initialUserProfile: !!initialUserProfile,
+                    username,
+                    userProfile: !!userProfile,
+                });
+            }
             setErrorMessage('Please enter a valid username first.');
             return;
         }
 
         try {
             setErrorMessage('');
-            const user = await login(username, password);
+            const user = await login(currentUsername, password);
             if (onAuthenticated) {
                 onAuthenticated(user);
             }
@@ -205,7 +297,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             }
             setErrorMessage(error.message || 'Login failed');
         }
-    }, [username, password, login, onAuthenticated, userProfile]);
+    }, [username, password, login, onAuthenticated, userProfile, initialUsername, initialUserProfile]);
 
     // Step configurations
     const steps: StepConfig[] = useMemo(() => {
@@ -225,15 +317,38 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
         // This callback is here for interface compatibility
     }, []);
 
+    // Use props directly when available (from router navigation), fallback to state
+    // This ensures values are available immediately on remount, before useEffect syncs
+    // IMPORTANT: Always prefer props from router over state to avoid stale values after remount
+    const currentUsername = (initialUsername !== undefined && initialUsername !== null && initialUsername !== '') 
+        ? initialUsername 
+        : username;
+    const currentUserProfile = (initialUserProfile !== undefined && initialUserProfile !== null) 
+        ? initialUserProfile 
+        : userProfile;
+    
+    // Debug logging in dev mode
+    if (__DEV__) {
+        if (initialStep === 1) {
+            console.log('SignInScreen: Password step render', {
+                initialUsername,
+                username,
+                currentUsername,
+                hasUserProfile: !!currentUserProfile,
+                initialUserProfile: !!initialUserProfile,
+            });
+        }
+    }
+
     // Step data for the reusable component
     const stepData = useMemo(() => [
         {
-            username,
+            username: currentUsername,
             setUsername: handleUsernameChange,
             errorMessage,
             setErrorMessage,
             validationStatus,
-            userProfile,
+            userProfile: currentUserProfile,
             isValidating,
             isInputFocused,
             isAddAccountMode,
@@ -251,8 +366,8 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             setErrorMessage,
             isLoading,
             isInputFocused,
-            userProfile,
-            username,
+            userProfile: currentUserProfile,
+            username: currentUsername,
             handleInputFocus,
             handleInputBlur,
             handleSignIn, // Add sign-in function for password step
@@ -261,7 +376,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             handleContinueWithExistingAccount,
         },
         ...(mfaToken ? [{
-            username,
+            username: currentUsername,
             mfaToken,
             completeMfaLogin,
             errorMessage,
@@ -269,10 +384,11 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             isLoading,
         }] : []),
     ], [
-        username, password, errorMessage, validationStatus, userProfile, mfaToken,
+        currentUsername, currentUserProfile, password, errorMessage, validationStatus, mfaToken,
         isValidating, isInputFocused, isAddAccountMode, user, showPassword,
         isLoading, handleUsernameChange, handlePasswordChange, handleInputFocus, handleInputBlur,
-        validateUsername, handleSignIn, completeMfaLogin, existingSession, handleContinueWithExistingAccount
+        validateUsername, handleSignIn, completeMfaLogin, existingSession, handleContinueWithExistingAccount,
+        initialUsername, initialUserProfile // Include props in dependencies
     ]);
 
     return (
@@ -284,7 +400,9 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             navigate={navigate}
             goBack={goBack}
             onAuthenticated={onAuthenticated}
-            
+            theme={theme}
+            currentScreen={currentScreen}
+            getNavigationProps={getNavigationProps}
             showProgressIndicator={true}
             enableAnimations={true}
             oxyServices={oxyServices}

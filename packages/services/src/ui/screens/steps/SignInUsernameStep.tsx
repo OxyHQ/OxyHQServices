@@ -53,6 +53,11 @@ interface SignInUsernameStepProps {
 
     // Validation function
     validateUsername: (username: string) => Promise<boolean>;
+
+    // Input focus state
+    isInputFocused?: boolean;
+    handleInputFocus?: () => void;
+    handleInputBlur?: () => void;
 }
 
 const MAX_QUICK_ACCOUNTS = 3;
@@ -76,6 +81,9 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
     isAddAccountMode,
     user,
     validateUsername,
+    isInputFocused = false,
+    handleInputFocus,
+    handleInputBlur,
 }) => {
     const inputRef = useRef<any>(null);
     const { t } = useI18n();
@@ -245,10 +253,12 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                     accessibilityLabel={t('common.labels.username')}
                     accessibilityHint={t('signin.username.helper') || 'Enter your username, 3-30 characters, letters and numbers only'}
                     style={{ marginBottom: 0 }}
+                    onFocus={handleInputFocus}
+                    onBlur={handleInputBlur}
                 />
             </View>
 
-            {accountsForDisplay.length > 0 && (
+            {accountsForDisplay.length > 0 && !isInputFocused && (
                 <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.dividerContainer]}>
                     <View style={[stylesheet.dividerLine, { backgroundColor: colors.border }]} />
                     <Text style={[stylesheet.dividerText, { color: colors.secondaryText }]}>
@@ -258,7 +268,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                 </View>
             )}
 
-            {accountsForDisplay.length > 0 ? (
+            {accountsForDisplay.length > 0 && !isInputFocused ? (
                 <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
                     <TouchableOpacity
                         style={[

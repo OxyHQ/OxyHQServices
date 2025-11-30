@@ -14,6 +14,9 @@ interface UseBackButtonHandlerParams {
  * 1. Step navigation (if current screen has steps)
  * 2. Router navigation (if router has history)
  * 3. Close bottom sheet
+ * 
+ * Navigation happens immediately without waiting for keyboard dismiss.
+ * Keyboard will dismiss naturally after screen changes.
  */
 const handleBackNavigation = (
     stepControllerRef: React.MutableRefObject<StepController | null>,
@@ -22,12 +25,14 @@ const handleBackNavigation = (
 ): boolean => {
     // Priority 1: Check if current screen has step history
     if (stepControllerRef.current?.canGoBack()) {
+        // Navigate immediately - keyboard will dismiss naturally after screen changes
         stepControllerRef.current.goBack();
         return true; // Prevent default back behavior
     }
 
     // Priority 2: Check if router has navigation history
     if (routerRef.current?.canGoBack()) {
+        // Navigate immediately - keyboard will dismiss naturally after screen changes
         routerRef.current.goBack();
         return true; // Prevent default back behavior
     }

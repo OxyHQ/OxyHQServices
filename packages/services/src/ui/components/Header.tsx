@@ -6,6 +6,7 @@ import {
     StyleSheet,
     Platform,
     Animated,
+    Keyboard,
 } from 'react-native';
 import { useMemo } from 'react';
 import AnimatedReanimated, { useAnimatedStyle, interpolate, Extrapolation } from 'react-native-reanimated';
@@ -106,6 +107,14 @@ const Header: React.FC<HeaderProps> = ({
         };
     }, [scrollY, headerHeight]);
 
+    const handleBackPress = () => {
+        if (!onBack) return;
+        
+        // Navigate immediately and synchronously - this prioritizes navigation
+        // over keyboard dismiss. The keyboard will close naturally after screen changes.
+        onBack();
+    };
+
     const renderBackButton = () => {
         if (!showBackButton || !onBack) return null;
 
@@ -115,7 +124,7 @@ const Header: React.FC<HeaderProps> = ({
                     styles.backButton,
                     { backgroundColor: colors.card }
                 ]}
-                onPress={onBack}
+                onPress={handleBackPress}
                 activeOpacity={0.7}
             >
                 <OxyIcon name="chevron-back" size={18} color={colors.tint} />

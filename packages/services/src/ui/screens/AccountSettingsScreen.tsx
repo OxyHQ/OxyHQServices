@@ -601,39 +601,46 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     const handleOpenTwoFactorModal = useCallback(() => setShowTwoFactorModal(true), []);
 
     // Handler to refresh data after modal saves
+    // Note: Access user directly from store when invoked to get latest value,
+    // not from closure which may be stale after modal saves update the backend
     const handleModalSave = useCallback(() => {
+        // Get fresh user data from store to ensure we have the latest values
+        // after the modal's save operation updates the backend
+        // Read from store directly (not from closure) to avoid stale data
+        const currentUser = useAuthStore.getState().user;
+        
         // Reload user data to reflect changes
-        if (user) {
-            const userDisplayName = typeof user.name === 'string'
-                ? user.name
-                : user.name?.first || user.name?.full || '';
-            const userLastName = typeof user.name === 'object' ? user.name?.last || '' : '';
+        if (currentUser) {
+            const userDisplayName = typeof currentUser.name === 'string'
+                ? currentUser.name
+                : currentUser.name?.first || currentUser.name?.full || '';
+            const userLastName = typeof currentUser.name === 'object' ? currentUser.name?.last || '' : '';
             setDisplayName(userDisplayName);
             setLastName(userLastName);
-            setUsername(user.username || '');
-            setEmail(user.email || '');
-            setBio(user.bio || '');
+            setUsername(currentUser.username || '');
+            setEmail(currentUser.email || '');
+            setBio(currentUser.bio || '');
 
             // Reload locations and links
-            if (user.locations && Array.isArray(user.locations)) {
-                setLocations(user.locations.map((loc, index) => ({
+            if (currentUser.locations && Array.isArray(currentUser.locations)) {
+                setLocations(currentUser.locations.map((loc, index) => ({
                     id: loc.id || `existing-${index}`,
                     name: loc.name,
                     label: loc.label,
                     coordinates: loc.coordinates
                 })));
-            } else if (user.location) {
+            } else if (currentUser.location) {
                 setLocations([{
                     id: 'existing-0',
-                    name: user.location,
+                    name: currentUser.location,
                     label: 'Location'
                 }]);
             } else {
                 setLocations([]);
             }
 
-            if (user.linksMetadata && Array.isArray(user.linksMetadata)) {
-                setLinksMetadata(user.linksMetadata.map((link, index) => ({
+            if (currentUser.linksMetadata && Array.isArray(currentUser.linksMetadata)) {
+                setLinksMetadata(currentUser.linksMetadata.map((link, index) => ({
                     ...link,
                     id: link.id || `existing-${index}`
                 })));
@@ -641,7 +648,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 setLinksMetadata([]);
             }
         }
-    }, [user]);
+    }, []); // Empty dependency array - callback reads fresh data from store at call time
 
     // Handle initialField prop - open appropriate modal
     useEffect(() => {

@@ -18,6 +18,8 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
     goBack,
     theme,
     oxyServices,
+    initialStep,
+    currentScreen,
 }) => {
     const colors = useThemeColors(theme);
     const { t } = useI18n();
@@ -124,11 +126,13 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
     return (
         <StepBasedScreen
             steps={steps}
+            initialStep={initialStep}
             stepData={stepData}
             onComplete={handleComplete}
             navigate={navigate}
             goBack={handleBack}
-            
+            theme={theme}
+            currentScreen={currentScreen}
             oxyServices={oxyServices}
             showProgressIndicator={true}
             enableAnimations={true}

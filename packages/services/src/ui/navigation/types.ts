@@ -66,7 +66,11 @@ export interface BaseScreenProps {
   initialStep?: number;
   username?: string;
   userProfile?: User;
+  email?: string; // For SignUpScreen
+  password?: string; // For SignUpScreen
+  confirmPassword?: string; // For SignUpScreen
   stepControllerRef?: React.MutableRefObject<StepController | null>;
+  currentScreen?: RouteName; // Current screen name for router-based step navigation
 }
 
 // ============================================================================
