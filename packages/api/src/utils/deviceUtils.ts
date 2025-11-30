@@ -3,6 +3,7 @@ import { Request } from 'express';
 import Session from '../models/Session';
 import { logger } from './logger';
 import { normalizeUser } from './userTransform';
+import sessionCache from './sessionCache';
 
 export interface DeviceFingerprint {
   userAgent: string;
@@ -219,8 +220,12 @@ export const logoutAllDeviceSessions = async (deviceId: string, excludeSessionId
     };
     
     if (excludeSessionId) {
-      query._id = { $ne: excludeSessionId };
+      query.sessionId = { $ne: excludeSessionId };
     }
+    
+    // Get sessionIds before updating for cache invalidation
+    const sessions = await Session.find(query).select('sessionId').lean().exec();
+    const sessionIds = sessions.map(s => s.sessionId);
     
     const result = await Session.updateMany(query, {
       $set: {
@@ -228,6 +233,11 @@ export const logoutAllDeviceSessions = async (deviceId: string, excludeSessionId
         loggedOutAt: new Date()
       }
     });
+    
+    // Invalidate session cache for all affected sessions
+    for (const sessionId of sessionIds) {
+      sessionCache.invalidate(sessionId);
+    }
     
     logger.info(`[DeviceUtils] Logged out ${result.modifiedCount} sessions for device: ${deviceId}`);
     return result.modifiedCount;

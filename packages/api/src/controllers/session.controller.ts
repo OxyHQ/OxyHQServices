@@ -510,11 +510,26 @@ export class SessionController {
         return res.status(400).json({ error: 'Session ID is required' });
       }
 
+      // Get session info before deactivating to retrieve userId and deviceId for socket notification
+      const sessionResult = await sessionService.validateSessionById(sessionIdToLogout, false);
+      const session = sessionResult?.session;
+      const userId = session?.userId?.toString();
+      const deviceId = session?.deviceId;
+
       // Use session service to deactivate
       const success = await sessionService.deactivateSession(sessionIdToLogout);
 
       if (!success) {
         return res.status(404).json({ error: 'Session not found' });
+      }
+
+      // Emit socket notification to notify remote devices
+      if (userId) {
+        emitSessionUpdate(userId, {
+          type: 'session_removed',
+          sessionId: sessionIdToLogout,
+          deviceId: deviceId || null
+        });
       }
 
       logger.info(`Logged out session: ${sessionIdToLogout.substring(0, 8)}...`);
@@ -541,13 +556,31 @@ export class SessionController {
         return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
       }
 
-      // Deactivate all sessions for this user except the current one
-      const count = await sessionService.deactivateAllUserSessions(
-        currentSessionResult.session.userId.toString(),
-        sessionId
-      );
+      const userId = currentSessionResult.session.userId.toString();
 
-      logger.info(`Logged out ${count} sessions for user ${currentSessionResult.session.userId}`);
+      // Get list of sessionIds that will be deactivated before deactivating
+      const now = new Date();
+      const sessionsToDeactivate = await Session.find({
+        userId,
+        isActive: true,
+        sessionId: { $ne: sessionId },
+        expiresAt: { $gt: now }
+      }).select('sessionId').lean().exec();
+      
+      const sessionIds = sessionsToDeactivate.map(s => s.sessionId);
+
+      // Deactivate all sessions for this user except the current one
+      const count = await sessionService.deactivateAllUserSessions(userId, sessionId);
+
+      // Emit socket notification with list of removed sessionIds
+      if (sessionIds.length > 0) {
+        emitSessionUpdate(userId, {
+          type: 'sessions_removed',
+          sessionIds: sessionIds
+        });
+      }
+
+      logger.info(`Logged out ${count} sessions for user ${userId}`);
       
       res.json({ 
         success: true, 

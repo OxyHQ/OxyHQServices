@@ -7,6 +7,7 @@ import sessionService from '../services/session.service';
 import { AuthRequest } from '../middleware/auth';
 import Totp from '../models/Totp';
 import RecoveryFactors from '../models/RecoveryFactors';
+import { emitSessionUpdate } from '../server';
 
 export class DevicesController {
   /**
@@ -132,19 +133,45 @@ export class DevicesController {
         });
       }
 
-      // Verify that the device belongs to this user
-      const userSessions = await Session.find({
-        userId: user._id,
+      // Verify that the device belongs to this user and get all affected sessions
+      const now = new Date();
+      const deviceSessions = await Session.find({
         deviceId: deviceId,
-        isActive: true
-      }).limit(1).lean().exec();
+        isActive: true,
+        expiresAt: { $gt: now }
+      }).select('userId sessionId').lean().exec();
 
-      if (userSessions.length === 0) {
+      if (deviceSessions.length === 0) {
         return res.status(404).json({ error: 'Device not found' });
+      }
+
+      // Verify at least one session belongs to the requesting user
+      const userOwnsDevice = deviceSessions.some(s => s.userId.toString() === user._id.toString());
+      if (!userOwnsDevice) {
+        return res.status(404).json({ error: 'Device not found' });
+      }
+
+      // Group sessions by userId and collect sessionIds
+      const userSessionsMap = new Map<string, string[]>();
+      for (const session of deviceSessions) {
+        const userId = session.userId.toString();
+        if (!userSessionsMap.has(userId)) {
+          userSessionsMap.set(userId, []);
+        }
+        userSessionsMap.get(userId)!.push(session.sessionId);
       }
 
       // Logout all sessions for this device
       await logoutAllDeviceSessions(deviceId);
+
+      // Emit socket notifications for each affected user
+      for (const [userId, sessionIds] of userSessionsMap.entries()) {
+        emitSessionUpdate(userId, {
+          type: 'device_removed',
+          deviceId: deviceId,
+          sessionIds: sessionIds
+        });
+      }
 
       res.json({ 
         success: true,

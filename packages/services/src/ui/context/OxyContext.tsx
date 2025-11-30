@@ -207,6 +207,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   // Track in-flight refresh to prevent duplicate calls
   const refreshInFlightRef = useRef<Promise<void> | null>(null);
+  
+  // Track recently removed session IDs to avoid validating them (cleared after 5 seconds)
+  const removedSessionsRef = useRef<Set<string>>(new Set());
 
   const [storage, setStorage] = useState<StorageInterface | null>(null);
   const [currentLanguage, setCurrentLanguage] = useState<string>('en-US');
@@ -750,9 +753,30 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             console.error('Refresh sessions error:', fallbackError);
           }
 
+          // Check if the error is a 401 (session removed/invalid)
+          const is401Error = (fallbackError as any)?.response?.status === 401 ||
+            (fallbackError as any)?.message?.includes('Invalid or expired session') ||
+            (fallbackError as any)?.message?.includes('Session is invalid');
+
+          // If 401 error, don't try to validate other sessions - they may have been removed too
+          // Instead, check if current session is in removed sessions list
+          if (is401Error && removedSessionsRef.current.has(activeSessionId || '')) {
+            // Current session was removed, clear all and logout
+            updateSessions([], false);
+            setActiveSessionId(null);
+            logoutStore();
+            setMinimalUser(null);
+            await clearAllStorage();
+            onAuthStateChange?.(null);
+            return;
+          }
+
           // If the current session is invalid, try to find another valid session
+          // But skip sessions that were recently removed
           if (sessions.length > 1) {
-            const otherSessions = sessions.filter(s => s.sessionId !== activeSessionId);
+            const otherSessions = sessions.filter(
+              s => s.sessionId !== activeSessionId && !removedSessionsRef.current.has(s.sessionId)
+            );
 
             for (const session of otherSessions) {
               try {
@@ -763,7 +787,18 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
                   await switchToSession(session.sessionId);
                   return;
                 }
-              } catch {
+              } catch (validationError: any) {
+                // If validation returns 401, mark this session as removed
+                const isValidation401 = validationError?.response?.status === 401 ||
+                  validationError?.message?.includes('Invalid or expired session');
+                
+                if (isValidation401) {
+                  removedSessionsRef.current.add(session.sessionId);
+                  // Clear from tracking after 5 seconds
+                  setTimeout(() => {
+                    removedSessionsRef.current.delete(session.sessionId);
+                  }, 5000);
+                }
                 continue;
               }
             }
@@ -894,10 +929,28 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     }
   }, [bottomSheetRef]);
 
+  // Get current deviceId from active session
+  const currentDeviceId = useMemo(() => {
+    if (!activeSessionId || !sessions.length) return null;
+    const activeSession = sessions.find(s => s.sessionId === activeSessionId);
+    return activeSession?.deviceId || null;
+  }, [activeSessionId, sessions]);
+
+  // Callback to track removed sessions
+  const handleSessionRemoved = useCallback((sessionId: string) => {
+    // Add to removed sessions tracking
+    removedSessionsRef.current.add(sessionId);
+    // Clear from tracking after 5 seconds
+    setTimeout(() => {
+      removedSessionsRef.current.delete(sessionId);
+    }, 5000);
+  }, []);
+
   // Integrate socket for real-time session updates
   useSessionSocket({
     userId: user?.id,
     activeSessionId,
+    currentDeviceId,
     refreshSessions,
     logout,
     baseURL: oxyServices.getBaseURL(),
@@ -905,6 +958,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       toast.info('You have been signed out remotely.');
       logout();
     }, [logout]),
+    onSessionRemoved: handleSessionRemoved,
   });
 
   // Compute language metadata from currentLanguage
