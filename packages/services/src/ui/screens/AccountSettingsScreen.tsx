@@ -1564,7 +1564,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                             iconColor: colors.sidebarIconPersonalInfo,
                                             title: t('editProfile.items.displayName.title') || 'Display Name',
                                             subtitle: [displayName, lastName].filter(Boolean).join(' ') || (t('editProfile.items.displayName.add') || 'Add your display name'),
-                                            onPress: () => startEditing('displayName', ''),
+                                            onPress: handleOpenDisplayNameModal,
                                         },
                                         {
                                             id: 'username',
@@ -1572,7 +1572,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                             iconColor: colors.sidebarIconData,
                                             title: t('editProfile.items.username.title') || 'Username',
                                             subtitle: username || (t('editProfile.items.username.choose') || 'Choose a username'),
-                                            onPress: () => startEditing('username', username),
+                                            onPress: handleOpenUsernameModal,
                                         },
                                         {
                                             id: 'email',
@@ -1580,7 +1580,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                             iconColor: colors.sidebarIconSecurity,
                                             title: t('editProfile.items.email.title') || 'Email',
                                             subtitle: email || (t('editProfile.items.email.add') || 'Add your email address'),
-                                            onPress: () => startEditing('email', email),
+                                            onPress: handleOpenEmailModal,
                                         },
                                     ]}
                                 />
@@ -1608,31 +1608,31 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                             iconColor: colors.sidebarIconPersonalInfo,
                                             title: t('editProfile.items.bio.title') || 'Bio',
                                             subtitle: bio || (t('editProfile.items.bio.placeholder') || 'Tell people about yourself'),
-                                            onPress: () => startEditing('bio', bio),
+                                            onPress: handleOpenBioModal,
                                         },
                                         {
                                             id: 'locations',
                                             icon: 'map-marker-outline',
                                             iconColor: colors.sidebarIconSharing,
                                             title: t('editProfile.items.locations.title') || 'Locations',
-                                            subtitle: tempLocations.length > 0
-                                                ? (tempLocations.length === 1
-                                                    ? (t('editProfile.items.locations.count', { count: tempLocations.length }) || `${tempLocations.length} location added`)
-                                                    : (t('editProfile.items.locations.count_plural', { count: tempLocations.length }) || `${tempLocations.length} locations added`))
+                                            subtitle: locations.length > 0
+                                                ? (locations.length === 1
+                                                    ? (t('editProfile.items.locations.count', { count: locations.length }) || `${locations.length} location added`)
+                                                    : (t('editProfile.items.locations.count_plural', { count: locations.length }) || `${locations.length} locations added`))
                                                 : (t('editProfile.items.locations.add') || 'Add your locations'),
-                                            onPress: () => startEditing('location', ''),
+                                            onPress: handleOpenLocationModal,
                                         },
                                         {
                                             id: 'links',
                                             icon: 'link-variant',
                                             iconColor: colors.sidebarIconSharing,
                                             title: t('editProfile.items.links.title') || 'Links',
-                                            subtitle: tempLinksWithMetadata.length > 0
-                                                ? (tempLinksWithMetadata.length === 1
-                                                    ? (t('editProfile.items.links.count', { count: tempLinksWithMetadata.length }) || `${tempLinksWithMetadata.length} link added`)
-                                                    : (t('editProfile.items.links.count_plural', { count: tempLinksWithMetadata.length }) || `${tempLinksWithMetadata.length} links added`))
+                                            subtitle: linksMetadata.length > 0
+                                                ? (linksMetadata.length === 1
+                                                    ? (t('editProfile.items.links.count', { count: linksMetadata.length }) || `${linksMetadata.length} link added`)
+                                                    : (t('editProfile.items.links.count_plural', { count: linksMetadata.length }) || `${linksMetadata.length} links added`))
                                                 : (t('editProfile.items.links.add') || 'Add your links'),
-                                            onPress: () => startEditing('links', ''),
+                                            onPress: handleOpenLinksModal,
                                         },
                                     ]}
                                 />
@@ -1706,7 +1706,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                             subtitle: user?.privacySettings?.twoFactorEnabled
                                                 ? (t('editProfile.items.twoFactor.enabled') || 'Enabled')
                                                 : (t('editProfile.items.twoFactor.disabled') || 'Disabled (recommended)'),
-                                            onPress: () => startEditing('twoFactor', ''),
+                                            onPress: handleOpenTwoFactorModal,
                                         },
                                     ]}
                                 />
@@ -1715,6 +1715,57 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                     </>
                 )}
             </ScrollView>
+
+            {/* Modal Components */}
+            <EditDisplayNameModal
+                visible={showEditDisplayNameModal}
+                onClose={() => setShowEditDisplayNameModal(false)}
+                initialDisplayName={displayName}
+                initialLastName={lastName}
+                theme={theme}
+                onSave={handleModalSave}
+            />
+            <EditUsernameModal
+                visible={showEditUsernameModal}
+                onClose={() => setShowEditUsernameModal(false)}
+                initialValue={username}
+                theme={theme}
+                onSave={handleModalSave}
+            />
+            <EditEmailModal
+                visible={showEditEmailModal}
+                onClose={() => setShowEditEmailModal(false)}
+                initialValue={email}
+                theme={theme}
+                onSave={handleModalSave}
+            />
+            <EditBioModal
+                visible={showEditBioModal}
+                onClose={() => setShowEditBioModal(false)}
+                initialValue={bio}
+                theme={theme}
+                onSave={handleModalSave}
+            />
+            <EditLocationModal
+                visible={showEditLocationModal}
+                onClose={() => setShowEditLocationModal(false)}
+                initialLocations={locations}
+                theme={theme}
+                onSave={handleModalSave}
+            />
+            <EditLinksModal
+                visible={showEditLinksModal}
+                onClose={() => setShowEditLinksModal(false)}
+                initialLinks={linksMetadata}
+                theme={theme}
+                onSave={handleModalSave}
+            />
+            <TwoFactorSetupModal
+                visible={showTwoFactorModal}
+                onClose={() => setShowTwoFactorModal(false)}
+                isEnabled={!!user?.privacySettings?.twoFactorEnabled}
+                theme={theme}
+            />
         </View>
     );
 };
