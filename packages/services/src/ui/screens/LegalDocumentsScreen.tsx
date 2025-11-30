@@ -10,6 +10,8 @@ import { toast } from '../../lib/sonner';
 import { Header, Section, GroupedSection, LoadingState } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { Colors } from '../constants/theme';
+import { useColorScheme } from '../hooks/use-color-scheme';
 
 const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -19,6 +21,8 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const { t } = useI18n();
     const [loading, setLoading] = useState(false);
+    const colorScheme = useColorScheme() ?? theme ?? 'light';
+    const colors = Colors[colorScheme];
 
     // Policy URLs from Oxy Transparency Center
     const POLICY_URLS = {
@@ -120,7 +124,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'privacy-policy',
                                 icon: 'shield-checkmark',
-                                iconColor: '#30D158',
+                                iconColor: colors.iconPersonalInfo,
                                 title: t('legal.privacyPolicy.title') || 'Privacy Policy',
                                 subtitle: t('legal.privacyPolicy.subtitle') || 'How we handle your data',
                                 onPress: handleOpenPolicy('privacy'),
@@ -128,7 +132,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'terms-of-service',
                                 icon: 'document-text',
-                                iconColor: '#007AFF',
+                                iconColor: colors.iconSecurity,
                                 title: t('legal.termsOfService.title') || 'Terms of Service',
                                 subtitle: t('legal.termsOfService.subtitle') || 'Terms and conditions of use',
                                 onPress: handleOpenPolicy('terms'),
@@ -136,7 +140,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'community-guidelines',
                                 icon: 'people',
-                                iconColor: '#5856D6',
+                                iconColor: colors.iconData,
                                 title: t('legal.communityGuidelines.title') || 'Community Guidelines',
                                 subtitle: t('legal.communityGuidelines.subtitle') || 'Rules and expectations for our community',
                                 onPress: handleOpenPolicy('community'),
@@ -144,7 +148,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'data-retention',
                                 icon: 'time',
-                                iconColor: '#FF9500',
+                                iconColor: colors.iconStorage,
                                 title: t('legal.dataRetention.title') || 'Data Retention Policy',
                                 subtitle: t('legal.dataRetention.subtitle') || 'How long we keep your data',
                                 onPress: handleOpenPolicy('dataRetention'),
@@ -152,7 +156,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'content-moderation',
                                 icon: 'eye',
-                                iconColor: '#FF3B30',
+                                iconColor: colors.iconSharing,
                                 title: t('legal.contentModeration.title') || 'Content Moderation Policy',
                                 subtitle: t('legal.contentModeration.subtitle') || 'How we moderate content',
                                 onPress: handleOpenPolicy('contentModeration'),

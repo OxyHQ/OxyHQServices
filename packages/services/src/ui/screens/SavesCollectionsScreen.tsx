@@ -12,6 +12,8 @@ import { toast } from '../../lib/sonner';
 import { Header, Section, GroupedSection, LoadingState, EmptyState } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { Colors } from '../constants/theme';
+import { useColorScheme } from '../hooks/use-color-scheme';
 
 interface SavedItem {
     id: string;
@@ -34,7 +36,9 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     const [activeTab, setActiveTab] = useState<'saves' | 'collections'>('saves');
 
     const themeStyles = useThemeStyles(theme);
-    const tabActiveColor = '#007AFF';
+    const colorScheme = useColorScheme() ?? theme ?? 'light';
+    const colors = Colors[colorScheme];
+    const tabActiveColor = colors.iconSecurity;
     const tabInactiveColor = themeStyles.isDarkTheme ? '#888888' : '#666666';
 
     // TODO: Implement API integration for saved items and collections
@@ -136,7 +140,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                                 items={savedItems.map((item) => ({
                                     id: item.id,
                                     icon: item.type === 'post' ? 'document-text' : 'folder',
-                                    iconColor: item.type === 'post' ? '#007AFF' : '#FF9500',
+                                    iconColor: item.type === 'post' ? colors.iconSecurity : colors.iconStorage,
                                     title: item.title,
                                     subtitle: formatDate(item.savedAt),
                                 }))}
@@ -155,7 +159,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                                 items={collections.map((collection) => ({
                                     id: collection.id,
                                     icon: 'folder',
-                                    iconColor: '#FF9500',
+                                    iconColor: colors.iconStorage,
                                     title: collection.name,
                                     subtitle: `${collection.itemCount || 0} items`,
                                 }))}

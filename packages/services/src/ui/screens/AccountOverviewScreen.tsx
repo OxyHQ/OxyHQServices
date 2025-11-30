@@ -774,10 +774,10 @@ const styles = StyleSheet.create({
         marginRight: 12,
     },
     manageButton: {
-        backgroundColor: Colors.light.iconSecurity,
         paddingHorizontal: 16,
         paddingVertical: 8,
         borderRadius: 16,
+        // backgroundColor should be applied inline using colors.iconSecurity
     },
     manageButtonText: {
         color: '#fff',

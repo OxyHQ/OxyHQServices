@@ -36,6 +36,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     const { t } = useI18n();
     const colorScheme = useColorScheme() ?? theme ?? 'light';
     const colors = Colors[colorScheme];
+    const isDarkTheme = colorScheme === 'dark';
 
     // Use centralized theme styles hook for consistency
     const themeStyles = useThemeStyles(theme);
@@ -87,7 +88,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
             {user && (
                 <ProfileCard
                     user={user}
-                    
+                    theme={theme}
                     onEditPress={() => navigate('EditProfile', { activeTab: 'profile' })}
                     onClosePress={onClose}
                     showCloseButton={!!onClose}
@@ -96,8 +97,9 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
                 {/* Quick Actions */}
-                <Section title={t('accountCenter.sections.quickActions') || 'Quick Actions'}  isFirst={true}>
+                <Section title={t('accountCenter.sections.quickActions') || 'Quick Actions'} isFirst={true}>
                     <QuickActions
+                        theme={theme}
                         actions={useMemo(() => [
                             { id: 'overview', icon: 'person-circle', iconColor: colors.iconSecurity, title: t('accountCenter.quickActions.overview') || 'Overview', onPress: () => navigate('AccountOverview') },
                             { id: 'settings', icon: 'settings', iconColor: colors.iconData, title: t('accountCenter.quickActions.editProfile') || 'Edit Profile', onPress: () => navigate('EditProfile') },
@@ -105,8 +107,8 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             { id: 'premium', icon: 'star', iconColor: colors.iconPayments, title: t('accountCenter.quickActions.premium') || 'Premium', onPress: () => navigate('PremiumSubscription') },
                             ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: colors.iconPersonalInfo, title: t('accountCenter.quickActions.billing') || 'Billing', onPress: () => navigate('PaymentGateway') }] : []),
                             ...(sessions && sessions.length > 1 ? [{ id: 'switch', icon: 'swap-horizontal', iconColor: colors.iconStorage, title: t('accountCenter.quickActions.switch') || 'Switch', onPress: () => navigate('AccountSwitcher') }] : []),
-                        ], [user?.isPremium, sessions, navigate, t])}
-                        
+                        ], [user?.isPremium, sessions, navigate, t, colors])}
+
                     />
                 </Section>
 
@@ -162,8 +164,8 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 subtitle: t('accountCenter.items.billing.subtitle') || 'Payment methods and invoices',
                                 onPress: () => navigate('PaymentGateway'),
                             }] : []),
-                        ], [user?.isPremium, navigate, t])}
-                        
+                        ], [user?.isPremium, navigate, t, colors])}
+
                     />
                 </Section>
 
@@ -183,13 +185,13 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 {
                                     id: 'add',
                                     icon: 'person-add',
-                                    iconColor: '#30D158',
+                                    iconColor: colors.iconPersonalInfo,
                                     title: t('accountCenter.items.addAccount.title') || 'Add Another Account',
                                     subtitle: t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account',
                                     onPress: () => navigate('SignIn'),
                                 },
-                            ], [sessions.length, navigate, t])}
-                            
+                            ], [sessions.length, navigate, t, colors])}
+
                         />
                     </Section>
                 )}
@@ -208,7 +210,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                     onPress: () => navigate('SignIn'),
                                 },
                             ], [navigate, t, colors])}
-                            
+
                         />
                     </Section>
                 )}
@@ -249,8 +251,8 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 subtitle: t('accountCenter.items.appInfo.subtitle') || 'Version and system details',
                                 onPress: () => navigate('AppInfo'),
                             },
-                        ], [navigate, t])}
-                        
+                        ], [navigate, t, colors, Platform.OS])}
+
                     />
                 </Section>
 
@@ -260,7 +262,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                         icon="log-out"
                         iconColor={dangerColor}
                         title={isLoading ? (t('accountCenter.signingOut') || 'Signing out...') : (t('common.actions.signOut') || 'Sign Out')}
-                        
+
                         onPress={confirmLogout}
                         isFirst={true}
                         isLast={true}

@@ -71,7 +71,7 @@ interface GroupedItemProps {
 
 const GroupedItemComponent = ({
     icon,
-    iconColor = '#007AFF',
+    iconColor,
     title,
     subtitle,
     onPress,
@@ -84,6 +84,7 @@ const GroupedItemComponent = ({
 }: GroupedItemProps) => {
     const colorScheme = useColorScheme() ?? 'light';
     const colors = Colors[colorScheme];
+    const finalIconColor = iconColor || colors.iconSecurity;
 
     const itemStyles = useMemo(
         () => [
@@ -104,8 +105,8 @@ const GroupedItemComponent = ({
             {customIcon ? (
                 <View style={styles.actionIcon}>{customIcon}</View>
             ) : icon ? (
-                <View style={[styles.iconContainer, { backgroundColor: iconColor }]}>
-                    <MaterialCommunityIcons name={mapIconName(icon) as any} size={22} color={darkenColor(iconColor)} />
+                <View style={[styles.iconContainer, { backgroundColor: finalIconColor }]}>
+                    <MaterialCommunityIcons name={mapIconName(icon) as any} size={22} color={darkenColor(finalIconColor)} />
                 </View>
             ) : null}
             <View style={styles.actionTextContainer}>

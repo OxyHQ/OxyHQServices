@@ -194,11 +194,185 @@ export default function HomeScreen() {
               </Pressable>
             </ThemedView>
 
-            {/* Quick Access to New Features */}
+            {/* Authentication Screens */}
             <ThemedView style={styles.featuresSection}>
-              <ThemedText type="subtitle">Quick Feature Access</ThemedText>
+              <ThemedText type="subtitle">Authentication</ThemedText>
               <ThemedText type="default" style={styles.sectionDescription}>
-                Test individual features directly
+                Sign in, sign up, and account recovery
+              </ThemedText>
+
+              <ThemedView style={styles.featureGrid}>
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('SignIn')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    🔐 Sign In
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Sign in screen
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('SignUp')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    ✍️ Sign Up
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Create new account
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('RecoverAccount')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    🔑 Recover
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Account recovery
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('WelcomeNewUser')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    👋 Welcome
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    New user welcome
+                  </ThemedText>
+                </Pressable>
+              </ThemedView>
+            </ThemedView>
+
+            {/* Account Management */}
+            <ThemedView style={styles.featuresSection}>
+              <ThemedText type="subtitle">Account Management</ThemedText>
+              <ThemedText type="default" style={styles.sectionDescription}>
+                Account settings, switching, and sessions
+              </ThemedText>
+
+              <ThemedView style={styles.featureGrid}>
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('AccountCenter')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    🏠 Account Center
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Main account hub
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('AccountSwitcher')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    🔄 Switch Account
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Switch between accounts
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('SessionManagement')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    📱 Sessions
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Manage device sessions
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('AccountVerification')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    ✅ Verification
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Account verification
+                  </ThemedText>
+                </Pressable>
+              </ThemedView>
+            </ThemedView>
+
+            {/* Profile & Settings */}
+            <ThemedView style={styles.featuresSection}>
+              <ThemedText type="subtitle">Profile & Settings</ThemedText>
+              <ThemedText type="default" style={styles.sectionDescription}>
+                Profile, links, privacy, and preferences
+              </ThemedText>
+
+              <ThemedView style={styles.featureGrid}>
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('Profile')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    👤 Profile
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    User profile
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('UserLinks')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    🔗 Links
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    User links
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('PrivacySettings')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    🔒 Privacy
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Privacy settings
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('LanguageSelector')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    🌐 Language
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Change language
+                  </ThemedText>
+                </Pressable>
+              </ThemedView>
+            </ThemedView>
+
+            {/* Content & Features */}
+            <ThemedView style={styles.featuresSection}>
+              <ThemedText type="subtitle">Content & Features</ThemedText>
+              <ThemedText type="default" style={styles.sectionDescription}>
+                History, saves, search, and files
               </ThemedText>
 
               <ThemedView style={styles.featureGrid}>
@@ -240,40 +414,108 @@ export default function HomeScreen() {
 
                 <Pressable 
                   style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('HelpSupport')}
+                  onPress={() => handleOpenScreen('FileManagement')}
                 >
                   <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    ❓ Help
+                    📁 Files
                   </ThemedText>
                   <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Support & resources
+                    File management
+                  </ThemedText>
+                </Pressable>
+              </ThemedView>
+            </ThemedView>
+
+            {/* Karma System */}
+            <ThemedView style={styles.featuresSection}>
+              <ThemedText type="subtitle">Karma System</ThemedText>
+              <ThemedText type="default" style={styles.sectionDescription}>
+                Karma center, leaderboard, rewards, and info
+              </ThemedText>
+
+              <ThemedView style={styles.featureGrid}>
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('KarmaCenter')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    ⭐ Karma Center
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Main karma hub
                   </ThemedText>
                 </Pressable>
 
                 <Pressable 
                   style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('LegalDocuments')}
+                  onPress={() => handleOpenScreen('KarmaLeaderboard')}
                 >
                   <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    📄 Legal
+                    🏆 Leaderboard
                   </ThemedText>
                   <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Privacy & Terms
+                    Karma rankings
                   </ThemedText>
                 </Pressable>
 
                 <Pressable 
                   style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('LanguageSelector')}
+                  onPress={() => handleOpenScreen('KarmaRewards')}
                 >
                   <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    🌐 Language
+                    🎁 Rewards
                   </ThemedText>
                   <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Change language
+                    Karma rewards
                   </ThemedText>
                 </Pressable>
 
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('KarmaRules')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    📋 Rules
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Karma rules
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('AboutKarma')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    ℹ️ About
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    About karma
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('KarmaFAQ')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    ❓ FAQ
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Karma FAQ
+                  </ThemedText>
+                </Pressable>
+              </ThemedView>
+            </ThemedView>
+
+            {/* Payments & Subscriptions */}
+            <ThemedView style={styles.featuresSection}>
+              <ThemedText type="subtitle">Payments & Subscriptions</ThemedText>
+              <ThemedText type="default" style={styles.sectionDescription}>
+                Payment gateway and premium subscriptions
+              </ThemedText>
+
+              <ThemedView style={styles.featureGrid}>
                 <Pressable 
                   style={styles.featureCard} 
                   onPress={handleOpenPaymentGateway}
@@ -300,13 +542,71 @@ export default function HomeScreen() {
 
                 <Pressable 
                   style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('KarmaCenter')}
+                  onPress={() => handleOpenScreen('PremiumSubscription')}
                 >
                   <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    ⭐ Karma
+                    ⭐ Premium
                   </ThemedText>
                   <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Karma center
+                    Premium subscription
+                  </ThemedText>
+                </Pressable>
+              </ThemedView>
+            </ThemedView>
+
+            {/* Support & Legal */}
+            <ThemedView style={styles.featuresSection}>
+              <ThemedText type="subtitle">Support & Legal</ThemedText>
+              <ThemedText type="default" style={styles.sectionDescription}>
+                Help, feedback, legal documents, and app info
+              </ThemedText>
+
+              <ThemedView style={styles.featureGrid}>
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('HelpSupport')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    ❓ Help
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Support & resources
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('Feedback')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    💬 Feedback
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Send feedback
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('LegalDocuments')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    📄 Legal
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    Privacy & Terms
+                  </ThemedText>
+                </Pressable>
+
+                <Pressable 
+                  style={styles.featureCard} 
+                  onPress={() => handleOpenScreen('AppInfo')}
+                >
+                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
+                    ℹ️ App Info
+                  </ThemedText>
+                  <ThemedText type="default" style={styles.featureCardSubtext}>
+                    App information
                   </ThemedText>
                 </Pressable>
               </ThemedView>

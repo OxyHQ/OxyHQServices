@@ -745,7 +745,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                     </Text>
                                     {!totpSetupUrl ? (
                                         <TouchableOpacity
-                                            style={styles.primaryButton}
+                                            style={[styles.primaryButton, { backgroundColor: colors.iconSecurity }]}
                                             disabled={isTotpBusy}
                                             onPress={async () => {
                                                 if (!activeSessionId) { toast.error(t('editProfile.toasts.noActiveSession') || 'No active session'); return; }
@@ -780,7 +780,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                                 />
                                             </View>
                                             <TouchableOpacity
-                                                style={styles.primaryButton}
+                                                style={[styles.primaryButton, { backgroundColor: colors.iconSecurity }]}
                                                 disabled={isTotpBusy || totpCode.length !== 6}
                                                 onPress={async () => {
                                                     if (!activeSessionId) { toast.error(t('editProfile.toasts.noActiveSession') || 'No active session'); return; }
@@ -907,7 +907,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                     <Text style={styles.addLocationLabel}>
                                         Add New Location
                                         {isSearchingLocations && (
-                                            <Text style={styles.searchingText}> • Searching...</Text>
+                                            <Text style={[styles.searchingText, { color: colors.iconSecurity }]}> • Searching...</Text>
                                         )}
                                     </Text>
                                     <View style={styles.addLocationInputContainer}>
@@ -963,7 +963,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                     onPress={() => setIsAddingLocation(true)}
                                 >
                                     <OxyIcon name="add" size={20} color={themeStyles.primaryColor} />
-                                    <Text style={styles.addLocationTriggerText}>Add a new location</Text>
+                                    <Text style={[styles.addLocationTriggerText, { color: colors.iconSecurity }]}>Add a new location</Text>
                                 </TouchableOpacity>
                             )}
 
@@ -998,7 +998,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                                             {location.name}
                                                         </Text>
                                                         {location.label && (
-                                                            <View style={styles.locationLabel}>
+                                                            <View style={[styles.locationLabel, { backgroundColor: colors.iconSecurity }]}>
                                                                 <Text style={styles.locationLabelText}>
                                                                     {location.label}
                                                                 </Text>
@@ -1077,7 +1077,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                                         <Text style={styles.cancelButtonText}>Cancel</Text>
                                                     </TouchableOpacity>
                                                     <TouchableOpacity
-                                                        style={[styles.addLinkButton, styles.addButton, { opacity: isFetchingMetadata ? 0.5 : 1 }]}
+                                                        style={[styles.addLinkButton, styles.addButton, { backgroundColor: colors.iconSecurity, opacity: isFetchingMetadata ? 0.5 : 1 }]}
                                                         onPress={addLink}
                                                         disabled={isFetchingMetadata}
                                                     >
@@ -1361,7 +1361,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                         </View>
                                     )}
                                     <TouchableOpacity
-                                        style={[styles.primaryButton, { alignSelf: 'flex-end', marginTop: 8 }]}
+                                        style={[styles.primaryButton, { backgroundColor: colors.iconSecurity, alignSelf: 'flex-end', marginTop: 8 }]}
                                         onPress={() => { setShowRecoveryModal(false); setEditingField(null); toast.success(t('editProfile.toasts.twoFactorEnabled') || 'Two‑Factor Authentication enabled'); }}
                                     >
                                         <Ionicons name="checkmark" size={18} color="#fff" />
@@ -1719,7 +1719,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         gap: 8,
-        backgroundColor: Colors.light.iconSecurity,
+        // backgroundColor should be applied inline using colors.iconSecurity
         paddingVertical: 12,
         paddingHorizontal: 16,
         borderRadius: 10,
@@ -1866,7 +1866,7 @@ const styles = StyleSheet.create({
         color: '#6C757D',
     },
     addButton: {
-        backgroundColor: Colors.light.iconSecurity,
+        // backgroundColor should be applied inline using colors.iconSecurity
     },
     addButtonText: {
         fontSize: 14,
@@ -1887,7 +1887,7 @@ const styles = StyleSheet.create({
     addLinkTriggerText: {
         fontSize: 14,
         fontWeight: '600',
-        color: Colors.light.iconSecurity,
+        // color should be applied inline using colors.iconSecurity
         marginLeft: 6,
     },
     linksList: {
@@ -1984,7 +1984,7 @@ const styles = StyleSheet.create({
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: Colors.light.iconSecurity,
+        // backgroundColor should be applied inline using colors.iconSecurity
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: 8,
@@ -1996,7 +1996,7 @@ const styles = StyleSheet.create({
     },
     fetchingText: {
         fontSize: 12,
-        color: Colors.light.iconSecurity,
+        // color should be applied inline using colors.iconSecurity
         fontStyle: 'italic',
     },
     linksFieldContent: {
@@ -2021,7 +2021,7 @@ const styles = StyleSheet.create({
         width: 20,
         height: 20,
         borderRadius: 10,
-        backgroundColor: Colors.light.iconSecurity,
+        // backgroundColor should be applied inline using colors.iconSecurity
         alignItems: 'center',
         justifyContent: 'center',
         marginRight: 6,
@@ -2062,7 +2062,7 @@ const styles = StyleSheet.create({
     },
     searchingText: {
         fontSize: 12,
-        color: Colors.light.iconSecurity,
+        // color should be applied inline using colors.iconSecurity
         fontStyle: 'italic',
     },
     addLocationInputContainer: {
@@ -2103,7 +2103,7 @@ const styles = StyleSheet.create({
     addLocationTriggerText: {
         marginLeft: 8,
         fontSize: 16,
-        color: Colors.light.iconSecurity,
+        // color should be applied inline using colors.iconSecurity
         fontWeight: '500',
     },
     searchResults: {
@@ -2167,7 +2167,7 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     locationLabel: {
-        backgroundColor: Colors.light.iconSecurity,
+        // backgroundColor should be applied inline using colors.iconSecurity
         paddingHorizontal: 6,
         paddingVertical: 2,
         borderRadius: 4,
