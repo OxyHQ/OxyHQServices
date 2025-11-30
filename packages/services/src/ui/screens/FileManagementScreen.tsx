@@ -1858,6 +1858,32 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         );
     }
 
+    // If upload preview is showing, render it inline instead of the file list
+    if (showUploadPreview) {
+        return (
+            <View style={fileManagementStyles.container}>
+                <Header
+                    title="Review Files"
+                    subtitle={`${pendingFiles.length} file${pendingFiles.length !== 1 ? 's' : ''} ready to upload`}
+                    onBack={handleCancelUpload}
+                    showBackButton
+                    variant="minimal"
+                    elevation="none"
+                    titleAlignment="left"
+                />
+                <UploadPreview
+                    visible={true}
+                    pendingFiles={pendingFiles}
+                    onConfirm={handleConfirmUpload}
+                    onCancel={handleCancelUpload}
+                    onRemoveFile={removePendingFile}
+                    themeStyles={themeStyles}
+                    inline={true}
+                />
+            </View>
+        );
+    }
+
     return (
         <View style={fileManagementStyles.container}>
             <Header
@@ -2208,15 +2234,6 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
             {/* Selection bar removed; actions are now in header */}
             {/* Global loadingMore bar removed; now inline in scroll areas */}
-
-            <UploadPreview
-                visible={showUploadPreview}
-                pendingFiles={pendingFiles}
-                onConfirm={handleConfirmUpload}
-                onCancel={handleCancelUpload}
-                onRemoveFile={removePendingFile}
-                themeStyles={themeStyles}
-            />
         </View>
     );
 };

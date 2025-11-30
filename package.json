@@ -8,17 +8,19 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces",
+    "build:all": "npm run api:build && npm run accounts:build",
     "start": "cd packages/api && npm start",
-    "test": "npm run test --workspaces",
     "dev": "npm run dev --workspaces",
-    "install:all": "npm install",
+    "test": "npm run test --workspaces",
     "clean": "npm run clean --workspaces",
-    "services:build": "npm run build -w @oxyhq/services",
-    "services:test": "npm run test -w @oxyhq/services",
+    "install:all": "npm install",
     "api:build": "npm run build -w @oxyhq/api",
     "api:dev": "npm run dev -w @oxyhq/api",
     "api:start": "npm run start -w @oxyhq/api",
-    "heroku-postbuild": "npm run api:build"
+    "accounts:build": "cd packages/accounts && npm run build",
+    "services:build": "npm run build -w @oxyhq/services",
+    "services:test": "npm run test -w @oxyhq/services",
+    "heroku-postbuild": "npm run build:all"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
