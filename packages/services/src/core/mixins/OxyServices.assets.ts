@@ -3,6 +3,7 @@
  */
 import type { AssetInitResponse, AssetUrlResponse, AssetVariant } from '../../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
+import { File } from 'expo-file-system';
 
 export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
@@ -175,14 +176,9 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       // Check for URI from DocumentPicker (Expo 54)
       const uri = (file as any).uri;
       if (uri && typeof uri === 'string') {
-        // Use new expo-file-system File API (Expo 54 unified API)
+        // Use Expo 54 FileSystem API
         try {
-          const FileSystem = await import('expo-file-system');
-          const FileClass = FileSystem.File || (FileSystem as any).default?.File;
-          if (!FileClass) {
-            throw new Error('File class not found in expo-file-system');
-          }
-          const fileInstance = new FileClass(uri);
+          const fileInstance = new File(uri);
           return await fileInstance.base64();
         } catch (error: any) {
           throw new Error(`Failed to read file from URI: ${error.message || 'Unknown error'}`);
@@ -211,18 +207,11 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       // Check for URI from DocumentPicker (Expo 54)
       const uri = (file as any).uri;
       if (uri && typeof uri === 'string') {
-        // Use new expo-file-system File API (Expo 54 unified API)
+        // Use Expo 54 FileSystem API
         try {
-          const FileSystem = await import('expo-file-system');
-          const FileClass = FileSystem.File || (FileSystem as any).default?.File;
-          if (!FileClass) {
-            throw new Error('File class not found in expo-file-system');
-          }
-          const fileInstance = new FileClass(uri);
-          const base64String = await fileInstance.base64();
-          
-          // Convert Base64 to ArrayBuffer using safe chunked approach
-          return this.base64ToArrayBuffer(base64String);
+          const fileInstance = new File(uri);
+          const bytes = await fileInstance.bytes();
+          return bytes.buffer;
         } catch (error: any) {
           throw new Error(`Failed to read file from URI: ${error.message || 'Unknown error'}`);
         }

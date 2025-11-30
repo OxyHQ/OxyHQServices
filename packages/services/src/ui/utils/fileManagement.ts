@@ -1,5 +1,6 @@
 import { Alert } from 'react-native';
 import type { FileMetadata } from '../../models/interfaces';
+import { File } from 'expo-file-system';
 
 /**
  * Format file size in bytes to human-readable string
@@ -83,26 +84,39 @@ export async function convertDocumentPickerAssetToFile(
             return file;
         }
 
-        // Priority 2: Use uri to create File (works on both web and mobile)
-        // This path handles mobile file URIs and web blob URLs
+        // Priority 2: Use uri to create File using Expo 54 FileSystem API
+        // This path handles mobile file URIs (file://, content://) and web blob URLs
         if (doc.uri) {
             try {
-                // Fetch the file from URI and create File object
-                // Works with file://, content://, and http(s):// URIs
-                const response = await fetch(doc.uri);
-                if (!response.ok) {
-                    throw new Error(`Failed to fetch file: ${response.statusText}`);
+                // Check if it's a web blob URL - use fetch for those
+                if (doc.uri.startsWith('blob:') || doc.uri.startsWith('http://') || doc.uri.startsWith('https://')) {
+                    const response = await fetch(doc.uri);
+                    if (!response.ok) {
+                        throw new Error(`Failed to fetch file: ${response.statusText}`);
+                    }
+                    const blob = await response.blob();
+                    const fileName = doc.name || `file-${index + 1}`;
+                    const fileType = doc.mimeType || blob.type || 'application/octet-stream';
+                    file = new File([blob], fileName, { type: fileType });
+                    // Preserve URI for preview
+                    (file as any).uri = doc.uri;
+                    return file;
                 }
-                const blob = await response.blob();
+
+                // For mobile file URIs (file://, content://), use Expo 54 FileSystem API
+                const fileInstance = new File(doc.uri);
+                const bytes = await fileInstance.bytes();
                 const fileName = doc.name || `file-${index + 1}`;
-                const fileType = doc.mimeType || blob.type || 'application/octet-stream';
-                file = new File([blob], fileName, { type: fileType });
+                const fileType = doc.mimeType || 'application/octet-stream';
+                
+                // Create File object from bytes
+                file = new File([bytes], fileName, { type: fileType });
                 // Preserve URI for preview (especially important for mobile)
                 (file as any).uri = doc.uri;
                 return file;
-            } catch (fetchError: any) {
-                console.error('Failed to fetch file from URI:', fetchError);
-                throw new Error(`Failed to load file: ${fetchError.message || 'Unknown error'}`);
+            } catch (error: any) {
+                console.error('Failed to read file from URI:', error);
+                throw new Error(`Failed to load file: ${error.message || 'Unknown error'}`);
             }
         }
 
