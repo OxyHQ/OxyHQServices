@@ -52,7 +52,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
                 title={t('help.title') || 'Help & Support'}
-                
+
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
@@ -60,7 +60,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {/* Help Options */}
-                <Section title={t('help.options') || 'Get Help'}  isFirst={true}>
+                <Section title={t('help.options') || 'Get Help'} isFirst={true}>
                     <GroupedSection
                         items={[
                             {
@@ -88,7 +88,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                                 onPress: handleReportBug,
                             },
                         ]}
-                        
+
                     />
                 </Section>
 
@@ -103,7 +103,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                                 title: t('help.documentation.title') || 'Documentation',
                                 subtitle: t('help.documentation.subtitle') || 'User guides and tutorials',
                                 onPress: () => {
-                                    Linking.openURL('https://docs.oxy.so').catch(() => {
+                                    Linking.openURL('https://developer.oxy.so/docs').catch(() => {
                                         toast.error(t('help.linkError') || 'Failed to open link');
                                     });
                                 },
@@ -120,8 +120,20 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                                     });
                                 },
                             },
+                            {
+                                id: 'developers-portal',
+                                icon: 'code',
+                                iconColor: '#FF3B30',
+                                title: t('help.developersPortal.title') || 'Developers Portal',
+                                subtitle: t('help.developersPortal.subtitle') || 'API documentation and developer resources',
+                                onPress: () => {
+                                    Linking.openURL('https://developer.oxy.so').catch(() => {
+                                        toast.error(t('help.linkError') || 'Failed to open link');
+                                    });
+                                },
+                            },
                         ]}
-                        
+
                     />
                 </Section>
             </ScrollView>

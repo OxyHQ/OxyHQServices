@@ -897,6 +897,10 @@
     "community": {
       "title": "Community",
       "subtitle": "Join our community"
+    },
+    "developersPortal": {
+      "title": "Developers Portal",
+      "subtitle": "API documentation and developer resources"
     }
   },
   "legal": {

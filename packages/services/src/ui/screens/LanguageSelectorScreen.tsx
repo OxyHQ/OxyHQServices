@@ -5,14 +5,13 @@ import {
     TouchableOpacity,
     StyleSheet,
     ScrollView,
-    Alert,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
-import { useThemeColors } from '../styles';
+import { Colors } from '../constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
-import { Header, Section, GroupedSection } from '../components';
+import { Header, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { SUPPORTED_LANGUAGES } from '../../utils/languageUtils';
 
@@ -34,7 +33,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
 }) => {
     const { user, currentLanguage, setLanguage, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
-    const colors = useThemeColors(theme);
+    const themeColors = Colors[theme];
     const [isLoading, setIsLoading] = useState(false);
 
     // Memoize the language select handler to prevent recreation on every render
@@ -47,7 +46,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
 
         try {
             let serverSyncFailed = false;
-            
+
             // If signed in, persist preference to backend user settings
             if (isAuthenticated && user?.id) {
                 try {
@@ -65,10 +64,10 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
             await setLanguage(languageId);
 
             const selectedLang = SUPPORTED_LANGUAGES.find(lang => lang.id === languageId);
-            
+
             // Show success message (language is saved locally regardless of server sync)
             toast.success(t('language.changed', { lang: selectedLang?.name || languageId }));
-            
+
             // Log server sync failure only in dev mode (user experience is still good - saved locally)
             if (serverSyncFailed && __DEV__) {
                 console.warn('Language saved locally but server sync failed');
@@ -87,109 +86,67 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     }, [currentLanguage, isLoading, isAuthenticated, user?.id, oxyServices, setLanguage, t, onClose, goBack]);
 
     // Memoize language items to prevent recreation on every render
-    const languageItems = useMemo(() => 
-        SUPPORTED_LANGUAGES.map(language => ({
-            id: language.id,
-            title: language.name,
-            subtitle: language.nativeName,
-            customIcon: (
-                <View style={[styles.languageFlag, { backgroundColor: `${language.color}20` }]}>
-                    <Text style={styles.flagEmoji}>{language.flag}</Text>
-                </View>
-            ),
-            iconColor: language.color,
-            selected: currentLanguage === language.id,
-            onPress: () => handleLanguageSelect(language.id),
-            dense: true,
-        })), 
-        [currentLanguage, handleLanguageSelect]
+    const languageItems = useMemo(() =>
+        SUPPORTED_LANGUAGES.map(language => {
+            const isSelected = currentLanguage === language.id;
+            return {
+                id: language.id,
+                title: language.name,
+                subtitle: language.nativeName,
+                customIcon: (
+                    <View style={[styles.languageFlag, { backgroundColor: `${language.color}15` }]}>
+                        <Text style={styles.flagEmoji}>{language.flag}</Text>
+                    </View>
+                ),
+                iconColor: language.color,
+                selected: isSelected,
+                onPress: () => handleLanguageSelect(language.id),
+                customContent: isSelected ? (
+                    <Ionicons name="checkmark-circle" size={24} color={themeColors.tint} />
+                ) : undefined,
+            };
+        }),
+        [currentLanguage, handleLanguageSelect, themeColors.tint]
     );
 
-    // Memoize current language data to prevent recalculation
-    const currentLanguageData = useMemo(() => {
-        if (!currentLanguage) return null;
-        return SUPPORTED_LANGUAGES.find(lang => lang.id === currentLanguage);
-    }, [currentLanguage]);
-
-    // Memoize current language section items
-    const currentLanguageItems = useMemo(() => {
-        if (!currentLanguageData) return [];
-        return [{
-            id: `current-${currentLanguageData.id}`,
-            title: currentLanguageData.name,
-            subtitle: currentLanguageData.nativeName,
-            customIcon: (
-                <View style={[styles.languageFlag, { backgroundColor: `${currentLanguageData.color}20` }]}>
-                    <Text style={styles.flagEmoji}>{currentLanguageData.flag}</Text>
-                </View>
-            ),
-            iconColor: currentLanguageData.color,
-            selected: false,
-            showChevron: false,
-            dense: true,
-            disabled: true,
-        }];
-    }, [currentLanguageData]);
 
     return (
-        <View style={[styles.container, { backgroundColor: '#f2f2f2' }]}>
+        <View style={[styles.container, { backgroundColor: theme === 'dark' ? '#000000' : '#F5F5F5' }]}>
             <Header
-                title={t('language.title')}
-                subtitle={t('language.subtitle')}
-                
+                title=""
+                subtitle=""
+                theme={theme}
                 onBack={onClose || goBack}
                 variant="minimal"
-                elevation="subtle"
+                elevation="none"
             />
 
-            <ScrollView 
-                style={styles.content} 
+            <ScrollView
+                style={styles.content}
+                contentContainerStyle={styles.contentContainer}
                 showsVerticalScrollIndicator={false}
                 removeClippedSubviews={true}
             >
-                {/* Current selection */}
-                {currentLanguage && currentLanguageItems.length > 0 && (
-                    <Section title={t('language.current')}  isFirst={true}>
-                        <GroupedSection
-                            items={currentLanguageItems}
-                            
-                        />
-                    </Section>
-                )}
-
-                {/* Available languages */}
-                <Section title={t('language.available')} >
-                    <Text style={[styles.sectionDescription, { color: colors.secondaryText }]}>
-                        {t('language.subtitle')}
+                {/* Big Title */}
+                <View style={styles.titleContainer}>
+                    <Text style={[styles.bigTitle, { color: themeColors.text }]}>
+                        {t('language.title')}
                     </Text>
-                    <View style={styles.languageList}>
-                        <GroupedSection
-                            items={languageItems}
-                            
-                        />
-                    </View>
-                </Section>
-
-                {/* Information */}
-                <Section >
-                    <View style={[styles.infoCard, {
-                        backgroundColor: colors.inputBackground,
-                        borderColor: colors.border
-                    }]}>
-                        <View style={styles.infoHeader}>
-                            <Ionicons name="information-circle" size={20} color={colors.primary} />
-                            <Text style={[styles.infoTitle, { color: colors.text }]}>
-                                Language Settings
-                            </Text>
-                        </View>
-                        <Text style={[styles.infoText, { color: colors.secondaryText }]}>
-                            • Language changes apply immediately{'\n'}
-                            • Your preference is saved automatically{'\n'}
-                            • All text and interface elements will update{'\n'}
-                            • You can change this setting anytime
+                    {t('language.subtitle') && (
+                        <Text style={[styles.bigSubtitle, { color: themeColors.secondaryText }]}>
+                            {t('language.subtitle')}
                         </Text>
+                    )}
+                </View>
+
+                {/* Available languages - Main section */}
+                <View style={styles.sectionContainer}>
+                    <View style={[styles.materialCard, {
+                        backgroundColor: themeColors.card,
+                    }]}>
+                        <GroupedSection items={languageItems} />
                     </View>
-                </Section>
+                </View>
             </ScrollView>
         </View>
     );
@@ -201,92 +158,44 @@ const styles = StyleSheet.create({
     },
     content: {
         flex: 1,
+    },
+    contentContainer: {
         padding: 16,
+        paddingTop: 24,
     },
-    section: {
-        marginBottom: 24,
+    titleContainer: {
+        marginBottom: 32,
+        paddingTop: 0,
     },
-    sectionTitle: {
+    bigTitle: {
+        fontSize: 34,
+        fontWeight: '700',
+        lineHeight: 40,
+        marginBottom: 8,
+        letterSpacing: -0.5,
+    },
+    bigSubtitle: {
         fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 4,
+        lineHeight: 22,
+        opacity: 0.7,
+        marginTop: 4,
     },
-    sectionDescription: {
-        fontSize: 14,
-        lineHeight: 20,
-        marginBottom: 16,
+    sectionContainer: {
+        marginBottom: 8,
     },
-    languageList: {
-        marginTop: 8,
+    materialCard: {
+        borderRadius: 12,
+        overflow: 'hidden',
     },
     languageFlag: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
+        width: 40,
+        height: 40,
+        borderRadius: 20,
         alignItems: 'center',
         justifyContent: 'center',
     },
     flagEmoji: {
-        fontSize: 18,
-    },
-    infoSection: {
-        marginBottom: 24,
-    },
-    infoCard: {
-        padding: 16,
-        borderRadius: 12,
-        borderWidth: 1,
-    },
-    infoHeader: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        marginBottom: 8,
-    },
-    infoTitle: {
-        fontSize: 16,
-        fontWeight: '600',
-        marginLeft: 8,
-    },
-    infoText: {
-        fontSize: 14,
-        lineHeight: 20,
-    },
-    currentSection: {
-        marginBottom: 24,
-    },
-    currentLabel: {
-        fontSize: 14,
-        fontWeight: '500',
-        marginBottom: 8,
-    },
-    currentLanguage: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 16,
-        borderRadius: 12,
-        borderWidth: 2,
-    },
-    currentFlag: {
-        width: 38,
-        height: 38,
-        borderRadius: 19,
-        alignItems: 'center',
-        justifyContent: 'center',
-        marginRight: 12,
-    },
-    currentFlagEmoji: {
-        fontSize: 18,
-    },
-    currentInfo: {
-        flex: 1,
-    },
-    currentName: {
-        fontSize: 16,
-        fontWeight: '600',
-    },
-    currentNative: {
-        fontSize: 14,
-        marginTop: 2,
+        fontSize: 20,
     },
 });
 

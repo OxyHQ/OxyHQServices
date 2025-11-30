@@ -378,7 +378,6 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
                 bounces={false}
                 nestedScrollEnabled={true}
                 keyboardShouldPersistTaps="handled"
-                keyboardDismissMode="on-drag"
             >
                 <Animated.View
                     style={[

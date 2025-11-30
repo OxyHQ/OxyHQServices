@@ -26,6 +26,35 @@ const darkenColor = (color: string, factor: number = 0.6): string => {
     return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
 };
 
+/**
+ * Maps Ionicons-style icon names to valid MaterialCommunityIcons names
+ */
+const mapIconName = (iconName: string): string => {
+    const iconMap: Record<string, string> = {
+        'person': 'account',
+        'person-circle': 'account-circle',
+        'person-outline': 'account-outline',
+        'person-add': 'account-plus',
+        'shield-checkmark': 'shield-check',
+        'notifications': 'bell',
+        'people': 'account-group',
+        'time': 'clock',
+        'time-outline': 'clock-outline',
+        'trash': 'delete',
+        'trash-outline': 'delete-outline',
+        'search': 'magnify',
+        'language': 'translate',
+        'language-outline': 'translate',
+        'settings': 'cog',
+        'document-text': 'file-document',
+        'information-circle': 'information',
+        'information-circle-outline': 'information-outline',
+        'log-out': 'logout',
+    };
+
+    return iconMap[iconName] || iconName;
+};
+
 interface GroupedItemProps {
     icon?: string;
     iconColor?: string;
@@ -76,7 +105,7 @@ const GroupedItemComponent = ({
                 <View style={styles.actionIcon}>{customIcon}</View>
             ) : icon ? (
                 <View style={[styles.iconContainer, { backgroundColor: iconColor }]}>
-                    <MaterialCommunityIcons name={icon as any} size={22} color={darkenColor(iconColor)} />
+                    <MaterialCommunityIcons name={mapIconName(icon) as any} size={22} color={darkenColor(iconColor)} />
                 </View>
             ) : null}
             <View style={styles.actionTextContainer}>

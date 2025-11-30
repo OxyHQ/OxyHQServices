@@ -34,9 +34,11 @@ export interface HeaderProps {
         text?: string;
         key?: string; // optional identifier
     }>;
-    theme: 'light' | 'dark';
+    theme?: 'light' | 'dark';
     showBackButton?: boolean;
     showCloseButton?: boolean;
+    showThemeToggle?: boolean;
+    onThemeToggle?: () => void;
     variant?: 'default' | 'large' | 'minimal' | 'gradient';
     elevation?: 'none' | 'subtle' | 'prominent';
     subtitleVariant?: 'default' | 'small' | 'large' | 'muted';
@@ -53,6 +55,8 @@ const Header: React.FC<HeaderProps> = ({
     theme,
     showBackButton = true,
     showCloseButton = false,
+    showThemeToggle = false,
+    onThemeToggle,
     variant = 'default',
     elevation = 'subtle',
     subtitleVariant = 'default',
@@ -86,7 +90,7 @@ const Header: React.FC<HeaderProps> = ({
             <TouchableOpacity
                 style={[
                     styles.closeButton,
-                    { backgroundColor: colors.surface }
+                    { backgroundColor: colors.card }
                 ]}
                 onPress={onClose}
                 activeOpacity={0.7}
@@ -131,15 +135,34 @@ const Header: React.FC<HeaderProps> = ({
     };
 
     const renderRightActions = () => {
+        const actions: Array<NonNullable<HeaderProps['rightAction']>> = [];
+        
+        // Add existing right actions
         if (rightActions?.length) {
+            actions.push(...rightActions);
+        } else if (rightAction) {
+            actions.push(rightAction);
+        }
+        
+        // Add theme toggle button if enabled
+        if (showThemeToggle && onThemeToggle) {
+            actions.push({
+                icon: colorScheme === 'dark' ? 'sunny' : 'moon',
+                onPress: onThemeToggle,
+                key: 'theme-toggle',
+            });
+        }
+        
+        if (actions.length === 0) return null;
+        
+        if (actions.length > 1) {
             return (
                 <View style={styles.rightActionsRow}>
-                    {rightActions.map((a, i) => renderRightActionButton(a, i))}
+                    {actions.map((a, i) => renderRightActionButton(a, i))}
                 </View>
             );
         }
-        if (rightAction) return renderRightActionButton(rightAction, 0);
-        return null;
+        return renderRightActionButton(actions[0], 0);
     };
 
     const renderTitle = () => {

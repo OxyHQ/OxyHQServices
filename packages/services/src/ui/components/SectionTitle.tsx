@@ -1,15 +1,17 @@
 import type React from 'react';
 import { Text, StyleSheet, type StyleProp, type TextStyle } from 'react-native';
 import { fontFamilies } from '../styles/fonts';
+import { useColorScheme } from '../hooks/use-color-scheme';
 
 interface SectionTitleProps {
     title: string;
-    theme: 'light' | 'dark';
+    theme?: 'light' | 'dark';
     style?: StyleProp<TextStyle>;
 }
 
 const SectionTitle: React.FC<SectionTitleProps> = ({ title, theme, style }) => {
-    const isDarkTheme = theme === 'dark';
+    const colorScheme = useColorScheme() ?? theme ?? 'light';
+    const isDarkTheme = colorScheme === 'dark';
     const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
 
     return (

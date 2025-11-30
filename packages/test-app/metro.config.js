@@ -4,12 +4,18 @@ const path = require('path');
 // Find the project and services directories
 const projectRoot = __dirname;
 const servicesRoot = path.resolve(projectRoot, '..', 'services');
+const servicesSrc = path.resolve(servicesRoot, 'src');
 const servicesNodeModules = path.resolve(servicesRoot, 'node_modules');
 
 const config = getDefaultConfig(projectRoot);
 
 // 1. Watch the local services package (source + its node_modules)
-config.watchFolders = [servicesRoot, servicesNodeModules];
+// Explicitly include the src directory to ensure hot reload works
+config.watchFolders = [
+  servicesRoot,
+  servicesSrc,
+  servicesNodeModules,
+];
 
 // 2. Let Metro know where to resolve packages and in what order
 config.resolver.nodeModulesPaths = [
@@ -20,7 +26,14 @@ config.resolver.nodeModulesPaths = [
 // 3. Force Metro to resolve (sub)dependencies in the workspace
 config.resolver.disableHierarchicalLookup = true;
 
-// 4. Extra module resolution for local packages
+// 4. Ensure source extensions include TypeScript files
+config.resolver.sourceExts = [
+  ...config.resolver.sourceExts,
+  'ts',
+  'tsx',
+];
+
+// 5. Extra module resolution for local packages
 config.resolver.extraNodeModules = {
   '@oxyhq/services': path.resolve(servicesRoot, 'src', 'index.ts'),
   '@oxyhq/services/core': path.resolve(servicesRoot, 'src', 'core'),
@@ -28,7 +41,7 @@ config.resolver.extraNodeModules = {
   '@oxyhq/services/ui': path.resolve(servicesRoot, 'src', 'ui'),
 };
 
-// 5. Enable better platform resolution
+// 6. Enable better platform resolution
 config.resolver.platforms = ['native', 'android', 'ios', 'tsx', 'ts', 'web'];
 
 module.exports = config;

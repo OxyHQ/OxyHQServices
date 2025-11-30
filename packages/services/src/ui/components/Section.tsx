@@ -1,10 +1,11 @@
 import type React from 'react';
 import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import SectionTitle from './SectionTitle';
+import { useColorScheme } from '../hooks/use-color-scheme';
 
 interface SectionProps {
     title?: string;
-    theme: 'light' | 'dark';
+    theme?: 'light' | 'dark';
     children: React.ReactNode;
     isFirst?: boolean;
     style?: StyleProp<ViewStyle>;
@@ -17,9 +18,11 @@ const Section: React.FC<SectionProps> = ({
     isFirst = false,
     style
 }) => {
+    const colorScheme = useColorScheme() ?? theme ?? 'light';
+    
     return (
         <View style={[styles.section, isFirst && styles.firstSection, style]}>
-            {title && <SectionTitle title={title} theme={theme} />}
+            {title && <SectionTitle title={title} theme={colorScheme} />}
             {children}
         </View>
     );

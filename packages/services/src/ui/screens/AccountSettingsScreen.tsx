@@ -1555,7 +1555,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                     items={[
                                         {
                                             id: 'preview-profile',
-                                            icon: 'eye-outline',
+                                            icon: 'eye',
                                             iconColor: colors.sidebarIconHome,
                                             title: t('editProfile.items.previewProfile.title') || 'Preview Profile',
                                             subtitle: t('editProfile.items.previewProfile.subtitle') || 'See how your profile looks to others',
@@ -1563,7 +1563,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                         },
                                         {
                                             id: 'privacy-settings',
-                                            icon: 'shield-check-outline',
+                                            icon: 'shield-check',
                                             iconColor: colors.sidebarIconSecurity,
                                             title: t('editProfile.items.privacySettings.title') || 'Privacy Settings',
                                             subtitle: t('editProfile.items.privacySettings.subtitle') || 'Control who can see your profile',
@@ -1571,7 +1571,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                         },
                                         {
                                             id: 'verify-account',
-                                            icon: 'check-circle-outline',
+                                            icon: 'check-circle',
                                             iconColor: colors.sidebarIconPersonalInfo,
                                             title: t('editProfile.items.verifyAccount.title') || 'Verify Account',
                                             subtitle: t('editProfile.items.verifyAccount.subtitle') || 'Get a verified badge',
@@ -1599,7 +1599,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                     items={[
                                         {
                                             id: 'two-factor',
-                                            icon: 'shield-lock-outline',
+                                            icon: 'shield-lock',
                                             iconColor: colors.sidebarIconSecurity,
                                             title: t('editProfile.items.twoFactor.title') || 'Two‑Factor Authentication',
                                             subtitle: user?.privacySettings?.twoFactorEnabled
