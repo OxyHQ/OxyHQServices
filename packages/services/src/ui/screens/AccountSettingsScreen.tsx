@@ -24,14 +24,23 @@ import { toast } from '../../lib/sonner';
 import { fontFamilies } from '../styles/fonts';
 import { confirmAction } from '../utils/confirmAction';
 import { useAuthStore } from '../stores/authStore';
-import { Header, GroupedSection } from '../components';
+import { Header, GroupedSection, Section } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { Colors } from '../constants/theme';
+import { normalizeColorScheme } from '../utils/themeUtils';
 import { useHapticPress } from '../hooks/use-haptic-press';
-import QRCode from 'react-native-qrcode-svg';
+import { EditDisplayNameModal } from '../components/profile/EditDisplayNameModal';
+import { EditUsernameModal } from '../components/profile/EditUsernameModal';
+import { EditEmailModal } from '../components/profile/EditEmailModal';
+import { EditBioModal } from '../components/profile/EditBioModal';
+import { EditLocationModal } from '../components/profile/EditLocationModal';
+import { EditLinksModal } from '../components/profile/EditLinksModal';
+import { TwoFactorSetupModal } from '../components/profile/TwoFactorSetupModal';
+import { getDisplayName } from '../utils/user-utils';
 import { TTLCache, registerCacheForCleanup } from '../../utils/cache';
+import QRCode from 'react-native-qrcode-svg';
 
 // Caches for link metadata and location searches
 const linkMetadataCache = new TTLCache<any>(30 * 60 * 1000); // 30 minutes cache for link metadata
@@ -96,9 +105,32 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     const [links, setLinks] = useState<string[]>([]);
     const [avatarFileId, setAvatarFileId] = useState('');
 
-    // Editing states
-    const [editingField, setEditingField] = useState<string | null>(null);
+    // Modal visibility states
+    const [showEditDisplayNameModal, setShowEditDisplayNameModal] = useState(false);
+    const [showEditUsernameModal, setShowEditUsernameModal] = useState(false);
+    const [showEditEmailModal, setShowEditEmailModal] = useState(false);
+    const [showEditBioModal, setShowEditBioModal] = useState(false);
+    const [showEditLocationModal, setShowEditLocationModal] = useState(false);
+    const [showEditLinksModal, setShowEditLinksModal] = useState(false);
+    const [showTwoFactorModal, setShowTwoFactorModal] = useState(false);
 
+    // Location and links state (for display only - modals handle editing)
+    const [locations, setLocations] = useState<Array<{
+        id: string;
+        name: string;
+        label?: string;
+        coordinates?: { lat: number; lon: number };
+    }>>([]);
+    const [linksMetadata, setLinksMetadata] = useState<Array<{
+        url: string;
+        title?: string;
+        description?: string;
+        image?: string;
+        id: string;
+    }>>([]);
+
+    // State for inline editing (used by old renderEditingField code)
+    const [editingField, setEditingField] = useState<string | null>(null);
     const [tempDisplayName, setTempDisplayName] = useState('');
     const [tempLastName, setTempLastName] = useState('');
     const [tempUsername, setTempUsername] = useState('');
@@ -106,6 +138,12 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     const [tempBio, setTempBio] = useState('');
     const [tempLocation, setTempLocation] = useState('');
     const [tempLinks, setTempLinks] = useState<string[]>([]);
+    const [tempLocations, setTempLocations] = useState<Array<{
+        id: string;
+        name: string;
+        label?: string;
+        coordinates?: { lat: number; lon: number };
+    }>>([]);
     const [tempLinksWithMetadata, setTempLinksWithMetadata] = useState<Array<{
         url: string;
         title?: string;
@@ -113,44 +151,22 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         image?: string;
         id: string;
     }>>([]);
-    const [isAddingLink, setIsAddingLink] = useState(false);
-    const [newLinkUrl, setNewLinkUrl] = useState('');
-    const [isFetchingMetadata, setIsFetchingMetadata] = useState(false);
-
-    // Location management state
-    const [tempLocations, setTempLocations] = useState<Array<{
-        id: string;
-        name: string;
-        label?: string;
-        coordinates?: { lat: number; lon: number };
-    }>>([]);
     const [isAddingLocation, setIsAddingLocation] = useState(false);
-    const [newLocationQuery, setNewLocationQuery] = useState('');
-    const [locationSearchResults, setLocationSearchResults] = useState<Array<{
-        place_id: number;
-        display_name: string;
-        lat: string;
-        lon: string;
-        type: string;
-    }>>([]);
     const [isSearchingLocations, setIsSearchingLocations] = useState(false);
+    const [locationSearchResults, setLocationSearchResults] = useState<any[]>([]);
+    const [newLocationQuery, setNewLocationQuery] = useState('');
+    const [isAddingLink, setIsAddingLink] = useState(false);
+    const [isFetchingMetadata, setIsFetchingMetadata] = useState(false);
+    const [newLinkUrl, setNewLinkUrl] = useState('');
 
     // Get theme colors using centralized hook
     const colorScheme = useColorScheme();
-    const baseThemeStyles = useThemeStyles(theme, colorScheme);
+    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
     const handlePressIn = useHapticPress();
 
-    // Memoize theme-related calculations to prevent unnecessary recalculations
-    const themeStyles = useMemo(() => {
-        return {
-            ...baseThemeStyles,
-            // AccountSettingsScreen uses colors.tint for primaryColor
-            primaryColor: baseThemeStyles.colors.tint,
-        };
-    }, [baseThemeStyles]);
-
-    // Extract colors for convenience
-    const colors = baseThemeStyles.colors;
+    // Extract colors for convenience - ensure it's always defined
+    // useThemeStyles always returns colors, but add safety check for edge cases
+    const colors = themeStyles.colors || Colors[normalizeColorScheme(colorScheme, theme || 'light')];
 
     // Memoize onBack handler to provide stable reference for Reanimated
     const handleBack = useMemo(() => {
@@ -203,7 +219,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
                 // Handle locations - convert single location to array format
                 if (user.locations && Array.isArray(user.locations)) {
-                    setTempLocations(user.locations.map((loc, index) => ({
+                    setLocations(user.locations.map((loc, index) => ({
                         id: loc.id || `existing-${index}`,
                         name: loc.name,
                         label: loc.label,
@@ -211,13 +227,13 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                     })));
                 } else if (user.location) {
                     // Convert single location string to array format
-                    setTempLocations([{
+                    setLocations([{
                         id: 'existing-0',
                         name: user.location,
                         label: 'Location'
                     }]);
                 } else {
-                    setTempLocations([]);
+                    setLocations([]);
                 }
 
                 // Handle links - simple and direct like other fields
@@ -228,7 +244,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                         ...link,
                         id: link.id || `existing-${index}`
                     }));
-                    setTempLinksWithMetadata(metadataWithIds);
+                    setLinksMetadata(metadataWithIds);
                 } else if (Array.isArray(user.links)) {
                     const simpleLinks = user.links.map(l => typeof l === 'string' ? l : l.link).filter(Boolean);
                     setLinks(simpleLinks);
@@ -239,10 +255,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                         image: undefined,
                         id: `existing-${index}`
                     }));
-                    setTempLinksWithMetadata(linksWithMetadata);
+                    setLinksMetadata(linksWithMetadata);
                 } else if (user.website) {
                     setLinks([user.website]);
-                    setTempLinksWithMetadata([{
+                    setLinksMetadata([{
                         url: user.website,
                         title: user.website.replace(/^https?:\/\//, '').replace(/\/$/, ''),
                         description: `Link to ${user.website}`,
@@ -251,7 +267,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                     }]);
                 } else {
                     setLinks([]);
-                    setTempLinksWithMetadata([]);
+                    setLinksMetadata([]);
                 }
                 isInitializedRef.current = true;
             }
@@ -284,6 +300,97 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
     // Delay constant for scroll completion
     const SCROLL_DELAY_MS = 600;
+
+    // Helper functions for inline editing (legacy support)
+    const startEditing = useCallback((field: string, initialValue: string) => {
+        setEditingField(field);
+        switch (field) {
+            case 'displayName':
+                setTempDisplayName(initialValue || displayName);
+                setTempLastName(lastName);
+                break;
+            case 'username':
+                setTempUsername(initialValue || username);
+                break;
+            case 'email':
+                setTempEmail(initialValue || email);
+                break;
+            case 'bio':
+                setTempBio(initialValue || bio);
+                break;
+            case 'location':
+                setTempLocations([...locations]);
+                break;
+            case 'links':
+                setTempLinksWithMetadata([...linksMetadata]);
+                break;
+            case 'twoFactor':
+                // No temp state needed for twoFactor
+                break;
+        }
+    }, [displayName, lastName, username, email, bio, locations, linksMetadata]);
+
+    const cancelEditing = useCallback(() => {
+        setEditingField(null);
+        setTempDisplayName('');
+        setTempLastName('');
+        setTempUsername('');
+        setTempEmail('');
+        setTempBio('');
+        setTempLocation('');
+        setTempLinks([]);
+        setTempLocations([]);
+        setTempLinksWithMetadata([]);
+        setIsAddingLocation(false);
+        setIsSearchingLocations(false);
+        setLocationSearchResults([]);
+        setNewLocationQuery('');
+        setIsAddingLink(false);
+        setIsFetchingMetadata(false);
+        setNewLinkUrl('');
+    }, []);
+
+    const saveField = useCallback(async (field: string | null) => {
+        if (!field) return;
+
+        setIsSaving(true);
+        try {
+            switch (field) {
+                case 'displayName':
+                    await updateUser({ name: { first: tempDisplayName, last: tempLastName } }, oxyServices);
+                    setDisplayName(tempDisplayName);
+                    setLastName(tempLastName);
+                    break;
+                case 'username':
+                    await updateUser({ username: tempUsername }, oxyServices);
+                    setUsername(tempUsername);
+                    break;
+                case 'email':
+                    await updateUser({ email: tempEmail }, oxyServices);
+                    setEmail(tempEmail);
+                    break;
+                case 'bio':
+                    await updateUser({ bio: tempBio }, oxyServices);
+                    setBio(tempBio);
+                    break;
+                case 'location':
+                    await updateUser({ locations: tempLocations }, oxyServices);
+                    setLocations(tempLocations);
+                    break;
+                case 'links':
+                    await updateUser({ linksMetadata: tempLinksWithMetadata }, oxyServices);
+                    setLinksMetadata(tempLinksWithMetadata);
+                    setLinks(tempLinksWithMetadata.map(l => l.url));
+                    break;
+            }
+            setEditingField(null);
+            toast.success(t('editProfile.toasts.saved') || 'Saved');
+        } catch (error: any) {
+            toast.error(error?.message || (t('editProfile.toasts.saveFailed') || 'Failed to save'));
+        } finally {
+            setIsSaving(false);
+        }
+    }, [tempDisplayName, tempLastName, tempUsername, tempEmail, tempBio, tempLocations, tempLinksWithMetadata, updateUser, oxyServices, t]);
 
     // Helper to get current value for a field
     const getFieldCurrentValue = useCallback((field: string): string => {
@@ -355,10 +462,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 username,
                 email,
                 bio,
-                location: tempLocations.length > 0 ? tempLocations[0].name : '', // Keep backward compatibility
-                locations: tempLocations.length > 0 ? tempLocations : undefined,
+                location: locations.length > 0 ? locations[0].name : '', // Keep backward compatibility
+                locations: locations.length > 0 ? locations : undefined,
                 links,
-                linksMetadata: tempLinksWithMetadata.length > 0 ? tempLinksWithMetadata : undefined,
+                linksMetadata: linksMetadata.length > 0 ? linksMetadata : undefined,
             };
 
             // Handle name field
@@ -484,121 +591,102 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         });
     }, [showBottomSheet, oxyServices, avatarFileId, updateUser, user]);
 
-    const startEditing = useCallback((type: string, currentValue: string) => {
-        switch (type) {
-            case 'displayName':
-                setTempDisplayName(displayName);
-                setTempLastName(lastName);
-                break;
-            case 'username':
-                setTempUsername(currentValue);
-                break;
-            case 'email':
-                setTempEmail(currentValue);
-                break;
-            case 'bio':
-                setTempBio(currentValue);
-                break;
-            case 'location':
-                // Don't reset the locations - keep the existing data
-                break;
-            case 'links':
-                // Don't reset the metadata - keep the existing rich metadata
-                // The tempLinksWithMetadata should already contain the rich data from the database
-                break;
-            case 'twoFactor':
-                // Reset TOTP temp state
-                setTotpSetupUrl(null);
-                setTotpCode('');
-                break;
-        }
-        setEditingField(type);
-    }, [displayName, lastName]);
+    // Handlers to open modals
+    const handleOpenDisplayNameModal = useCallback(() => setShowEditDisplayNameModal(true), []);
+    const handleOpenUsernameModal = useCallback(() => setShowEditUsernameModal(true), []);
+    const handleOpenEmailModal = useCallback(() => setShowEditEmailModal(true), []);
+    const handleOpenBioModal = useCallback(() => setShowEditBioModal(true), []);
+    const handleOpenLocationModal = useCallback(() => setShowEditLocationModal(true), []);
+    const handleOpenLinksModal = useCallback(() => setShowEditLinksModal(true), []);
+    const handleOpenTwoFactorModal = useCallback(() => setShowTwoFactorModal(true), []);
 
-    // Handle initialField prop - must be after startEditing and openAvatarPicker are declared
+    // Handler to refresh data after modal saves
+    const handleModalSave = useCallback(() => {
+        // Reload user data to reflect changes
+        if (user) {
+            const userDisplayName = typeof user.name === 'string'
+                ? user.name
+                : user.name?.first || user.name?.full || '';
+            const userLastName = typeof user.name === 'object' ? user.name?.last || '' : '';
+            setDisplayName(userDisplayName);
+            setLastName(userLastName);
+            setUsername(user.username || '');
+            setEmail(user.email || '');
+            setBio(user.bio || '');
+
+            // Reload locations and links
+            if (user.locations && Array.isArray(user.locations)) {
+                setLocations(user.locations.map((loc, index) => ({
+                    id: loc.id || `existing-${index}`,
+                    name: loc.name,
+                    label: loc.label,
+                    coordinates: loc.coordinates
+                })));
+            } else if (user.location) {
+                setLocations([{
+                    id: 'existing-0',
+                    name: user.location,
+                    label: 'Location'
+                }]);
+            } else {
+                setLocations([]);
+            }
+
+            if (user.linksMetadata && Array.isArray(user.linksMetadata)) {
+                setLinksMetadata(user.linksMetadata.map((link, index) => ({
+                    ...link,
+                    id: link.id || `existing-${index}`
+                })));
+            } else {
+                setLinksMetadata([]);
+            }
+        }
+    }, [user]);
+
+    // Handle initialField prop - open appropriate modal
     useEffect(() => {
-        // Clear any pending timeout
-        if (initialFieldTimeoutRef.current) {
-            clearTimeout(initialFieldTimeoutRef.current);
-            initialFieldTimeoutRef.current = null;
-        }
-
-        // If initialField changed, reset the flag
-        if (previousInitialFieldRef.current !== initialField) {
-            hasSetInitialFieldRef.current = false;
-            previousInitialFieldRef.current = initialField;
-        }
-
-        // Set the editing field if initialField is provided and we haven't set it yet
-        if (initialField && !hasSetInitialFieldRef.current) {
+        if (initialField) {
             // Special handling for avatar - open avatar picker directly
             if (initialField === 'avatar') {
-                // Wait for section to be scrolled, then open picker
-                initialFieldTimeoutRef.current = setTimeout(() => {
+                setTimeout(() => {
                     openAvatarPicker();
-                    hasSetInitialFieldRef.current = true;
-                }, SCROLL_DELAY_MS);
+                }, 300);
             } else {
-                // For other fields, get current value and start editing after scroll
-                const currentValue = getFieldCurrentValue(initialField);
-
-                // Wait for section to be scrolled, then start editing
-                initialFieldTimeoutRef.current = setTimeout(() => {
-                    startEditing(initialField, currentValue);
-                    hasSetInitialFieldRef.current = true;
-                }, SCROLL_DELAY_MS);
+                // Open appropriate modal
+                setTimeout(() => {
+                    switch (initialField) {
+                        case 'displayName':
+                            setShowEditDisplayNameModal(true);
+                            break;
+                        case 'username':
+                            setShowEditUsernameModal(true);
+                            break;
+                        case 'email':
+                            setShowEditEmailModal(true);
+                            break;
+                        case 'bio':
+                            setShowEditBioModal(true);
+                            break;
+                        case 'location':
+                            setShowEditLocationModal(true);
+                            break;
+                        case 'links':
+                            setShowEditLinksModal(true);
+                            break;
+                        case 'twoFactor':
+                            setShowTwoFactorModal(true);
+                            break;
+                    }
+                }, 300);
             }
         }
-
-        return () => {
-            if (initialFieldTimeoutRef.current) {
-                clearTimeout(initialFieldTimeoutRef.current);
-                initialFieldTimeoutRef.current = null;
-            }
-        };
-    }, [initialField, getFieldCurrentValue, startEditing, openAvatarPicker]);
-
-    const saveField = (type: string) => {
-        animateSaveButton(0.95); // Scale down slightly for animation
-
-        switch (type) {
-            case 'displayName':
-                setDisplayName(tempDisplayName);
-                setLastName(tempLastName);
-                break;
-            case 'username':
-                setUsername(tempUsername);
-                break;
-            case 'email':
-                setEmail(tempEmail);
-                break;
-            case 'bio':
-                setBio(tempBio);
-                break;
-            case 'location':
-                // Locations are handled in the main save function
-                break;
-            case 'links':
-                // Save both URLs and metadata
-                setLinks(tempLinksWithMetadata.map(link => link.url));
-                // Store full metadata for database
-                setTempLinksWithMetadata(tempLinksWithMetadata);
-                break;
-        }
-
-        // Complete animation, then reset and close editing
-        animateSaveButton(1, () => {
-            setEditingField(null);
-        });
-    };
-
-    const cancelEditing = () => {
-        setEditingField(null);
-    };
+    }, [initialField, openAvatarPicker]);
 
 
 
-    const fetchLinkMetadata = async (url: string) => {
+
+    // Removed fetchLinkMetadata - now handled by EditLinksModal
+    const _fetchLinkMetadata = async (url: string) => {
         // Check cache first
         const cacheKey = url.toLowerCase().trim();
         const cached = linkMetadataCache.get(cacheKey);
@@ -637,6 +725,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         }
     };
 
+    // Helper functions for inline editing (legacy support - still used by renderEditingField)
     const searchLocations = async (query: string) => {
         if (!query.trim() || query.length < 3) {
             setLocationSearchResults([]);
@@ -710,7 +799,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         if (!newLinkUrl.trim()) return;
 
         const url = newLinkUrl.trim();
-        const metadata = await fetchLinkMetadata(url);
+        const metadata = await _fetchLinkMetadata(url);
 
         setTempLinksWithMetadata(prev => [...prev, metadata]);
         setNewLinkUrl('');
@@ -730,7 +819,13 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         });
     };
 
-    const renderEditingField = (type: string) => {
+    // Memoize display name for avatar
+    const displayNameForAvatar = useMemo(() => getDisplayName(user), [user]);
+
+    // Legacy renderEditingField function (still used for twoFactor and fallback)
+    const renderEditingField = (type: string | null) => {
+        if (!type) return null;
+
         if (type === 'twoFactor') {
             const enabled = !!user?.privacySettings?.twoFactorEnabled;
             return (
@@ -1222,10 +1317,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
 
 
-    if (authLoading || !isAuthenticated) {
+    if (isLoading || !isAuthenticated) {
         return (
             <View style={[styles.container, {
-                backgroundColor: themeStyles.isDarkTheme ? '#000000' : '#F5F5F7',
+                backgroundColor: themeStyles.backgroundColor,
                 justifyContent: 'center'
             }]}>
                 <ActivityIndicator size="large" color={themeStyles.primaryColor} />
@@ -1234,7 +1329,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     }
 
     return (
-        <View style={[styles.container, { backgroundColor: themeStyles.isDarkTheme ? '#000000' : '#F5F5F7' }]}>
+        <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             {/* Header */}
             {editingField ? (
                 <View style={[styles.editingHeader, {
@@ -1309,25 +1404,13 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                         </Text>
                     </View>
                 </View>
-            ) : (
-                <Header
-                    title={t('editProfile.title') || 'Edit Profile'}
-                    theme={theme}
-                    onBack={handleBack}
-                    rightAction={{
-                        icon: 'checkmark',
-                        onPress: handleSave,
-                        loading: isSaving,
-                        disabled: isSaving,
-                    }}
-                    elevation="subtle"
-                />
-            )}
+            ) : null}
 
             <ScrollView
                 ref={scrollViewRef}
                 style={editingField ? styles.contentEditing : styles.content}
-                contentContainerStyle={!editingField ? { paddingTop: Platform.OS === 'ios' ? 100 : 80 } : undefined}
+                contentContainerStyle={!editingField ? styles.scrollContent : undefined}
+                showsVerticalScrollIndicator={false}
             >
                 {editingField ? (
                     // Show only the editing interface when editing
@@ -1337,6 +1420,16 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 ) : (
                     // Show all settings when not editing
                     <>
+                        {/* Title and Subtitle Header */}
+                        <View style={[styles.headerContainer, styles.headerSection]}>
+                            <Text style={[styles.modernTitle, { color: themeStyles.textColor, marginBottom: 0, marginTop: 0 }]}>
+                                {t('accountOverview.items.editProfile.title') || t('editProfile.title') || 'Edit Profile'}
+                            </Text>
+                            <Text style={[styles.modernSubtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>
+                                {t('accountOverview.items.editProfile.subtitle') || t('editProfile.subtitle') || 'Manage your profile and preferences'}
+                            </Text>
+                        </View>
+
                         {showRecoveryModal && (
                             <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 50, padding: 16, justifyContent: 'center' }}>
                                 <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 20, maxHeight: '80%' }}>
@@ -1632,12 +1725,41 @@ const styles = StyleSheet.create({
     },
     content: {
         flex: 1,
-        paddingTop: 8,
-        paddingBottom: 24,
     },
     contentEditing: {
         flex: 1,
         padding: 0,
+    },
+    scrollContent: {
+        padding: 16,
+        paddingTop: 40,
+    },
+    headerContainer: {
+        width: '100%',
+        maxWidth: 420,
+        alignSelf: 'center',
+        marginBottom: 32,
+    },
+    headerSection: {
+        alignItems: 'flex-start',
+        width: '100%',
+        gap: 12,
+    },
+    modernTitle: {
+        fontFamily: fontFamilies.phuduBold,
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+        fontSize: 42,
+        lineHeight: 50.4, // 42 * 1.2
+        textAlign: 'left',
+        letterSpacing: -0.5,
+    },
+    modernSubtitle: {
+        fontSize: 18,
+        lineHeight: 24,
+        textAlign: 'left',
+        maxWidth: 320,
+        alignSelf: 'flex-start',
+        opacity: 0.8,
     },
     section: {
         marginBottom: 32,
@@ -1648,13 +1770,11 @@ const styles = StyleSheet.create({
         color: '#8E8E93',
         marginBottom: 8,
         marginTop: 4,
-        marginHorizontal: 16,
         textTransform: 'uppercase',
         letterSpacing: 0.5,
         fontFamily: fontFamilies.phuduSemiBold,
     },
     groupedSectionWrapper: {
-        marginHorizontal: 16,
         backgroundColor: 'transparent',
     },
 

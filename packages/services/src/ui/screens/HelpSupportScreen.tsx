@@ -21,7 +21,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
 }) => {
     const { t } = useI18n();
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme, colorScheme);
+    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
 
     const handleContactSupport = useMemo(() => () => {
         // In a real implementation, this would open a contact form or email

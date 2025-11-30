@@ -48,7 +48,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'unknown'>('unknown');
 
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme, colorScheme);
+    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
     // AppInfoScreen uses a slightly different light background
     const backgroundColor = themeStyles.isDarkTheme ? themeStyles.backgroundColor : '#f2f2f2';
     const primaryColor = themeStyles.colors.iconSecurity;

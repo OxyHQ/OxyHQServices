@@ -25,6 +25,8 @@ import GroupedItem from '../components/GroupedItem';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { Colors } from '../constants/theme';
+import { normalizeColorScheme } from '../utils/themeUtils';
 
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -34,11 +36,12 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     const { user, logout, isLoading, sessions, isAuthenticated } = useOxy();
     const { t } = useI18n();
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme, colorScheme);
+    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
     // AccountCenterScreen uses a slightly different light background
     const backgroundColor = themeStyles.isDarkTheme ? themeStyles.backgroundColor : '#f2f2f2';
-    // Extract commonly used colors for readability
-    const { textColor, secondaryBackgroundColor, borderColor, primaryColor, dangerColor, colors } = themeStyles;
+    // Extract commonly used colors for readability - ensure colors is always defined
+    const { textColor, secondaryBackgroundColor, borderColor, primaryColor, dangerColor, colors: themeColors } = themeStyles;
+    const colors = themeColors || Colors[normalizeColorScheme(colorScheme, theme || 'light')];
 
     // Memoized logout handler - prevents unnecessary re-renders
     const handleLogout = useCallback(async () => {

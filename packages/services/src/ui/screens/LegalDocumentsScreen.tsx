@@ -21,7 +21,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
     const { t } = useI18n();
     const [loading, setLoading] = useState(false);
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme, colorScheme);
+    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
 
     // Policy URLs from Oxy Transparency Center
     const POLICY_URLS = {

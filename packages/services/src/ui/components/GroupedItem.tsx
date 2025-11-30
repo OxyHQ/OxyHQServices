@@ -2,10 +2,10 @@ import React, { memo, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColorScheme } from '../hooks/use-color-scheme';
-import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useHapticPress } from '../hooks/use-haptic-press';
 import { darkenColor } from '../utils/colorUtils';
 import { normalizeColorScheme } from '../utils/themeUtils';
+import { Colors } from '../constants/theme';
 
 /**
  * Maps Ionicons-style icon names to valid MaterialCommunityIcons names
@@ -69,8 +69,10 @@ const GroupedItemComponent = ({
 }: GroupedItemProps) => {
     const hookColorScheme = useColorScheme();
     const colorScheme = normalizeColorScheme(hookColorScheme);
-    const themeStyles = useThemeStyles(colorScheme, hookColorScheme);
-    const colors = themeStyles.colors;
+    // GroupedItem is a leaf component without a theme prop, so it should directly use Colors
+    // instead of useThemeStyles which expects a theme prop from screen components
+    const colors = Colors[colorScheme];
+    // Use fallback color when iconColor is not provided
     const finalIconColor = iconColor || colors.iconSecurity;
 
     const itemStyles = useMemo(
@@ -80,11 +82,9 @@ const GroupedItemComponent = ({
             isLast && styles.lastGroupedItem,
             {
                 backgroundColor: colors.card,
-                borderBottomWidth: isLast ? 0 : 1,
-                borderBottomColor: colors.border,
             },
         ],
-        [colors.border, colors.card, isFirst, isLast],
+        [colors.card, isFirst, isLast],
     );
 
     const content = (
@@ -142,20 +142,20 @@ const styles = StyleSheet.create({
         width: '100%',
     },
     firstGroupedItem: {
-        borderTopLeftRadius: 12,
-        borderTopRightRadius: 12,
+        borderTopLeftRadius: 18,
+        borderTopRightRadius: 18,
     },
     lastGroupedItem: {
-        borderBottomLeftRadius: 12,
-        borderBottomRightRadius: 12,
+        borderBottomLeftRadius: 18,
+        borderBottomRightRadius: 18,
     },
     groupedItemContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 12,
+        paddingVertical: 8,
+        paddingHorizontal: 10,
         width: '100%',
-        gap: 12,
+        gap: 10,
     },
     actionIcon: {
         // marginRight handled by gap
@@ -172,11 +172,11 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     actionButtonText: {
-        fontSize: 15,
+        fontSize: 14,
         fontWeight: '400',
     },
     actionButtonSubtext: {
-        fontSize: 13,
+        fontSize: 12,
         marginTop: 2,
     },
 });

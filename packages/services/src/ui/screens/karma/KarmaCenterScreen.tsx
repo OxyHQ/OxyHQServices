@@ -32,7 +32,7 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     const [error, setError] = useState<string | null>(null);
 
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme, colorScheme);
+    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
     // Override primaryColor for Karma screens (purple instead of blue)
     const primaryColor = '#d169e5';
 

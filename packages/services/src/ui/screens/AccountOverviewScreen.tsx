@@ -461,7 +461,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                         subtitle: t('accountOverview.loadingAdditional.subtitle') || 'Please wait while we load your additional accounts',
                                         customContent: (
                                             <View style={styles.loadingContainer}>
-                                                <ActivityIndicator size="small" color={colors.iconSecurity} />
+                                                <ActivityIndicator size="small" color={baseThemeStyles.colors.iconSecurity} />
                                                 <Text style={styles.loadingText}>{t('accountOverview.loadingAdditional.title') || 'Loading accounts...'}</Text>
                                             </View>
                                         ),

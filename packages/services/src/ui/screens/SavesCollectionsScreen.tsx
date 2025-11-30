@@ -35,7 +35,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     const [activeTab, setActiveTab] = useState<'saves' | 'collections'>('saves');
 
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme, colorScheme);
+    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
     const tabActiveColor = themeStyles.colors.iconSecurity;
     const tabInactiveColor = themeStyles.isDarkTheme ? '#888888' : '#666666';
 
