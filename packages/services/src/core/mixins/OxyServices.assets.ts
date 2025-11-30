@@ -168,55 +168,72 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     // ============================================================================
 
     /**
-     * Convert File or Blob to ArrayBuffer - platform agnostic
-     * Works on both web (uses native arrayBuffer) and React Native (uses expo-file-system)
+     * Get base64 string from file - uses expo-file-system when URI is available
+     * Returns base64 string directly for use with expo-crypto
      */
-    async fileToArrayBuffer(file: File | Blob): Promise<ArrayBuffer> {
-      // Fast path: use native arrayBuffer if available (web)
-      if (typeof file.arrayBuffer === 'function') {
-        return await file.arrayBuffer();
-      }
-      
-      // React Native/Expo path: check for URI from DocumentPicker
+    async getFileBase64(file: File | Blob): Promise<string> {
+      // Check for URI from DocumentPicker (Expo 54)
       const uri = (file as any).uri;
       if (uri && typeof uri === 'string') {
-        // Try expo-file-system first (Expo 54 recommended approach)
-        const FileSystem = await import('expo-file-system').catch(() => null);
-        if (FileSystem?.default) {
-          try {
-            const FileSystemModule = FileSystem.default;
-            const base64String = await FileSystemModule.readAsStringAsync(uri, {
-              encoding: (FileSystemModule as any).EncodingType?.Base64 || 'base64',
-            });
-            
-            // Optimized Base64 to ArrayBuffer conversion
-            const binaryString = atob(base64String);
-            const bytes = new Uint8Array(binaryString.length);
-            // Use Uint8Array.set for better performance
-            for (let i = 0; i < binaryString.length; i++) {
-              bytes[i] = binaryString.charCodeAt(i);
-            }
-            return bytes.buffer;
-          } catch (expoError: any) {
-            // Fall through to fetch if expo-file-system fails
-            console.warn('expo-file-system failed, using fetch fallback:', expoError.message);
-          }
+        // Use expo-file-system to read base64 directly (Expo 54 unified API)
+        try {
+          const FileSystem = await import('expo-file-system');
+          const FileSystemModule = FileSystem.default || FileSystem;
+          const encoding = (FileSystemModule as any).EncodingType?.Base64 || 'base64';
+          return await FileSystemModule.readAsStringAsync(uri, { encoding });
+        } catch (error: any) {
+          throw new Error(`Failed to read file from URI: ${error.message || 'Unknown error'}`);
         }
-        
-        // Fallback: use fetch API
-        const response = await fetch(uri);
-        if (!response.ok) {
-          throw new Error(`Failed to fetch file from URI: ${response.statusText || 'HTTP ' + response.status}`);
-        }
-        return await response.arrayBuffer();
       }
       
-      // Final fallback: create blob URL for web Blobs without URI
+      // For files without URI (web Blobs), convert to base64 using fetch
       const blobUrl = URL.createObjectURL(file);
       try {
         const response = await fetch(blobUrl);
         if (!response.ok) {
-          throw new Error(`Failed to fetch file from blob URL: ${response.statusText || 'HTTP ' + response.status}`);
+          throw new Error(`Failed to fetch file: ${response.statusText || 'HTTP ' + response.status}`);
+        }
+        const buffer = await response.arrayBuffer();
+        // Convert ArrayBuffer to base64 using chunked approach to avoid stack overflow
+        return this.arrayBufferToBase64Safe(buffer);
+      } finally {
+        URL.revokeObjectURL(blobUrl);
+      }
+    }
+
+    /**
+     * Convert File or Blob to ArrayBuffer - uses expo-file-system when URI available
+     */
+    async fileToArrayBuffer(file: File | Blob): Promise<ArrayBuffer> {
+      // Check for URI from DocumentPicker (Expo 54)
+      const uri = (file as any).uri;
+      if (uri && typeof uri === 'string') {
+        // Use expo-file-system to read and convert (Expo 54 unified API)
+        try {
+          const FileSystem = await import('expo-file-system');
+          const FileSystemModule = FileSystem.default || FileSystem;
+          const base64String = await FileSystemModule.readAsStringAsync(uri, {
+            encoding: (FileSystemModule as any).EncodingType?.Base64 || 'base64',
+          });
+          
+          // Convert Base64 to ArrayBuffer using safe chunked approach
+          return this.base64ToArrayBuffer(base64String);
+        } catch (error: any) {
+          throw new Error(`Failed to read file from URI: ${error.message || 'Unknown error'}`);
+        }
+      }
+      
+      // For files without URI, use native arrayBuffer if available, else fetch
+      if (typeof (file as File).arrayBuffer === 'function') {
+        return await (file as File).arrayBuffer();
+      }
+      
+      // Fallback: fetch via blob URL
+      const blobUrl = URL.createObjectURL(file);
+      try {
+        const response = await fetch(blobUrl);
+        if (!response.ok) {
+          throw new Error(`Failed to fetch file: ${response.statusText || 'HTTP ' + response.status}`);
         }
         return await response.arrayBuffer();
       } finally {
@@ -225,7 +242,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     }
 
     /**
-     * Convert ArrayBuffer to hex string (optimized)
+     * Convert ArrayBuffer to hex string
      */
     arrayBufferToHex(buffer: ArrayBuffer): string {
       const bytes = new Uint8Array(buffer);
@@ -233,51 +250,64 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     }
 
     /**
-     * Convert ArrayBuffer to base64 string (optimized)
+     * Convert base64 string to ArrayBuffer (safe for large files)
      */
-    arrayBufferToBase64(buffer: ArrayBuffer): string {
-      const bytes = new Uint8Array(buffer);
-      const binary = String.fromCharCode.apply(null, Array.from(bytes));
-      return typeof btoa !== 'undefined' ? btoa(binary) : Buffer.from(binary).toString('base64');
+    base64ToArrayBuffer(base64: string): ArrayBuffer {
+      const binaryString = atob(base64);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      return bytes.buffer;
     }
 
     /**
-     * Calculate SHA256 hash of file content - platform agnostic
-     * Uses crypto.subtle for web, expo-crypto for React Native/Expo
+     * Convert ArrayBuffer to base64 string (safe chunked approach to avoid stack overflow)
+     */
+    arrayBufferToBase64Safe(buffer: ArrayBuffer): string {
+      const bytes = new Uint8Array(buffer);
+      const chunkSize = 8192; // Process in chunks to avoid stack overflow
+      
+      // Use chunked approach for large buffers
+      if (bytes.length > chunkSize) {
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          const chunk = bytes.slice(i, i + chunkSize);
+          binary += String.fromCharCode.apply(null, Array.from(chunk));
+        }
+        return typeof btoa !== 'undefined' ? btoa(binary) : Buffer.from(binary, 'binary').toString('base64');
+      }
+      
+      // Small buffers can use direct conversion
+      const binary = String.fromCharCode.apply(null, Array.from(bytes));
+      return typeof btoa !== 'undefined' ? btoa(binary) : Buffer.from(binary, 'binary').toString('base64');
+    }
+
+    /**
+     * Calculate SHA256 hash of file content - uses expo-crypto (Expo 54 unified API)
      */
     async calculateSHA256(file: File | Blob): Promise<string> {
-      const buffer = await this.fileToArrayBuffer(file);
-      
-      // Try native crypto.subtle first (web and modern environments)
-      if (typeof crypto !== 'undefined' && crypto.subtle?.digest) {
-        try {
-          const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-          return this.arrayBufferToHex(hashBuffer);
-        } catch (error: any) {
-          console.warn('crypto.subtle failed, trying expo-crypto:', error.message);
-        }
-      }
-      
-      // Try expo-crypto (Expo/React Native) - optional dependency
+      // Use expo-crypto (works on all platforms with Expo 54)
       const CryptoModule = await import('expo-crypto' as any).catch(() => null);
-      if (CryptoModule) {
-        const Crypto = CryptoModule.default || CryptoModule;
-        if (Crypto?.digestStringAsync) {
-          try {
-            const base64 = this.arrayBufferToBase64(buffer);
-            const algorithm = (Crypto as any).CryptoDigestAlgorithm?.SHA256 || 'SHA256';
-            const encoding = (Crypto as any).CryptoEncoding?.BASE64 || 'base64';
-            return await Crypto.digestStringAsync(algorithm, base64, { encoding });
-          } catch (expoError: any) {
-            console.warn('expo-crypto failed:', expoError.message);
-          }
-        }
+      if (!CryptoModule) {
+        throw new Error('expo-crypto is not available. Install it with: npx expo install expo-crypto');
       }
-      
-      throw new Error(
-        'No crypto implementation available. ' +
-        'For React Native/Expo, install expo-crypto: npx expo install expo-crypto'
-      );
+
+      const Crypto = CryptoModule.default || CryptoModule;
+      if (!Crypto?.digestStringAsync) {
+        throw new Error('expo-crypto.digestStringAsync is not available');
+      }
+
+      try {
+        // Read file as base64 (uses expo-file-system if URI available, else converts)
+        const base64 = await this.getFileBase64(file);
+        const algorithm = (Crypto as any).CryptoDigestAlgorithm?.SHA256 || 'SHA256';
+        const encoding = (Crypto as any).CryptoEncoding?.BASE64 || 'base64';
+        return await Crypto.digestStringAsync(algorithm, base64, { encoding });
+      } catch (error: any) {
+        const errorMessage = error?.message || String(error) || 'Unknown error';
+        throw new Error(`Failed to calculate SHA256 hash: ${errorMessage}`);
+      }
     }
 
     /**
