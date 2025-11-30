@@ -14,7 +14,7 @@ const HEADER_BOTTOM_PADDING = 10;
 const HEADER_CONTENT_HEIGHT = 36;
 
 export function ScreenContentWrapper({ children }: ScreenContentWrapperProps) {
-  const { setIsScrolled } = useScrollContext();
+  const { setIsScrolled, scrollRef } = useScrollContext();
   const insets = useSafeAreaInsets();
 
   const handleScroll = (event: any) => {
@@ -29,6 +29,7 @@ export function ScreenContentWrapper({ children }: ScreenContentWrapperProps) {
 
   return (
     <ScrollView
+      ref={scrollRef}
       style={styles.scrollView}
       contentContainerStyle={[
         styles.contentContainer,

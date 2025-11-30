@@ -259,17 +259,6 @@ export default function HomeScreen() {
             </ThemedText>
             <View style={styles.signInButtonContainer}>
               <OxySignInButton />
-              {showBottomSheet && (
-                <TouchableOpacity
-                  style={[styles.alternativeSignInButton, { backgroundColor: colors.card, borderColor: colors.tint }]}
-                  onPressIn={handlePressIn}
-                  onPress={handleSignIn}
-                >
-                  <Text style={[styles.alternativeSignInText, { color: colors.tint }]}>
-                    Or sign in with username
-                  </Text>
-                </TouchableOpacity>
-              )}
             </View>
           </View>
         </View>
@@ -646,17 +635,5 @@ const styles = StyleSheet.create({
     width: '100%',
     gap: 12,
     marginTop: 8,
-  } as const,
-  alternativeSignInButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  } as const,
-  alternativeSignInText: {
-    fontSize: 14,
-    fontWeight: '500',
   } as const,
 });

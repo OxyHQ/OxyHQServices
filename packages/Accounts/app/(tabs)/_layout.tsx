@@ -29,6 +29,7 @@ export default function TabLayout() {
   const { toggleColorScheme } = useThemeContext();
 
   const { showBottomSheet, refreshSessions } = useOxy();
+  const { scrollRef } = useScrollContext();
 
   const handlePressIn = useHapticPress();
 
@@ -90,6 +91,7 @@ export default function TabLayout() {
           <View style={styles.desktopContentColumn}>
             <View style={styles.desktopContentWrapper}>
               <ScrollView
+                ref={scrollRef}
                 style={styles.desktopMain}
                 contentContainerStyle={styles.desktopMainContent}
                 showsVerticalScrollIndicator={false}
