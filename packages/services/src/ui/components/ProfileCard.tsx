@@ -6,6 +6,8 @@ import Avatar from './Avatar';
 import { useOxy } from '../context/OxyContext';
 import { useFileDownloadUrl } from '../hooks';
 import { fontFamilies } from '../styles/fonts';
+import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useColorScheme } from '../hooks/use-color-scheme';
 
 interface ProfileCardProps {
     user: {
@@ -27,11 +29,12 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
     onClosePress,
     showCloseButton = false,
 }) => {
-    const isDarkTheme = theme === 'dark';
+    const colorScheme = useColorScheme();
+    const themeStyles = useThemeStyles(theme, colorScheme);
     const { oxyServices } = useOxy();
     const { t } = useI18n();
-    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
-    const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#FFFFFF';
+    const textColor = themeStyles.textColor;
+    const secondaryBackgroundColor = themeStyles.secondaryBackgroundColor;
     const primaryColor = '#0066CC';
 
     const avatarUrl = useFileDownloadUrl(user?.avatar, { variant: 'thumb' }).url || undefined;
@@ -54,7 +57,7 @@ const ProfileCard: React.FC<ProfileCardProps> = ({
                     <View style={styles.userInfo}>
                         <Text style={[styles.userName, { color: textColor }]}>{user.username}</Text>
                         {user.email && (
-                            <Text style={[styles.userEmail, { color: isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                            <Text style={[styles.userEmail, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
                                 {user.email}
                             </Text>
                         )}

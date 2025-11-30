@@ -65,8 +65,6 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
         };
     }, [t]);
 
-    const themeStyles = useThemeStyles(theme);
-
     // If a specific document type is requested, open it directly
     React.useEffect(() => {
         if (documentType) {

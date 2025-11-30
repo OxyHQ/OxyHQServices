@@ -148,7 +148,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             primaryColor: baseThemeStyles.colors.tint,
         };
     }, [baseThemeStyles]);
-    
+
     // Extract colors for convenience
     const colors = baseThemeStyles.colors;
 

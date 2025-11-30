@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import OxyIcon from './icon/OxyIcon';
 import { fontFamilies } from '../styles/fonts';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { normalizeColorScheme } from '../utils/themeUtils';
 import { Colors } from '../constants/theme';
 
 // Calculate header height based on platform and variant
@@ -77,7 +78,7 @@ const Header: React.FC<HeaderProps> = ({
 }) => {
     // Use theme colors directly from Colors constant (like Accounts sidebar)
     // Ensure colorScheme is always 'light' or 'dark' with proper fallback chain
-    const colorScheme: 'light' | 'dark' = useColorScheme() ?? theme ?? 'light';
+    const colorScheme = normalizeColorScheme(useColorScheme(), theme);
     const colors = Colors[colorScheme];
     const insets = useSafeAreaInsets();
     const headerHeight = getHeaderHeight(variant, insets.top);

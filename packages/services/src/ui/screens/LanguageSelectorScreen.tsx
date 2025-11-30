@@ -8,7 +8,8 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
-import { Colors } from '../constants/theme';
+import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useColorScheme } from '../hooks/use-color-scheme';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { Header, GroupedSection } from '../components';
@@ -33,8 +34,9 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
 }) => {
     const { user, currentLanguage, setLanguage, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
-    // Add fallback to prevent crashes if theme is undefined or invalid
-    const themeColors = Colors[theme as 'light' | 'dark'] ?? Colors.light;
+    const colorScheme = useColorScheme();
+    const themeStyles = useThemeStyles(theme, colorScheme);
+    const themeColors = themeStyles.colors;
     const [isLoading, setIsLoading] = useState(false);
 
     // Memoize the language select handler to prevent recreation on every render
@@ -107,7 +109,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
                 ) : undefined,
             };
         }),
-        [currentLanguage, handleLanguageSelect, themeColors.tint]
+        [currentLanguage, handleLanguageSelect, themeColors]
     );
 
 

@@ -2,9 +2,10 @@ import React, { memo, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColorScheme } from '../hooks/use-color-scheme';
-import { Colors } from '../constants/theme';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useHapticPress } from '../hooks/use-haptic-press';
 import { darkenColor } from '../utils/colorUtils';
+import { normalizeColorScheme } from '../utils/themeUtils';
 
 /**
  * Maps Ionicons-style icon names to valid MaterialCommunityIcons names
@@ -66,8 +67,10 @@ const GroupedItemComponent = ({
     customContent,
     customIcon,
 }: GroupedItemProps) => {
-    const colorScheme = useColorScheme() ?? 'light';
-    const colors = Colors[colorScheme];
+    const hookColorScheme = useColorScheme();
+    const colorScheme = normalizeColorScheme(hookColorScheme);
+    const themeStyles = useThemeStyles(colorScheme, hookColorScheme);
+    const colors = themeStyles.colors;
     const finalIconColor = iconColor || colors.iconSecurity;
 
     const itemStyles = useMemo(

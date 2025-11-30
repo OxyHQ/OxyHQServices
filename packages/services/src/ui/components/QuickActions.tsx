@@ -1,6 +1,8 @@
 import type React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useColorScheme } from '../hooks/use-color-scheme';
 
 interface QuickAction {
     id: string;
@@ -16,9 +18,10 @@ interface QuickActionsProps {
 }
 
 const QuickActions: React.FC<QuickActionsProps> = ({ actions, theme }) => {
-    const isDarkTheme = theme === 'dark';
-    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
-    const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#FFFFFF';
+    const colorScheme = useColorScheme();
+    const themeStyles = useThemeStyles(theme, colorScheme);
+    const textColor = themeStyles.textColor;
+    const secondaryBackgroundColor = themeStyles.secondaryBackgroundColor;
 
     return (
         <View style={[
@@ -33,7 +36,7 @@ const QuickActions: React.FC<QuickActionsProps> = ({ actions, theme }) => {
                         <TouchableOpacity
                             style={[
                                 styles.quickActionCircle,
-                                { backgroundColor: isDarkTheme ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.03)' }
+                                { backgroundColor: themeStyles.isDarkTheme ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.03)' }
                             ]}
                             onPress={action.onPress}
                         >

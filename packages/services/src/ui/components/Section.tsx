@@ -2,6 +2,7 @@ import type React from 'react';
 import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import SectionTitle from './SectionTitle';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { normalizeColorScheme } from '../utils/themeUtils';
 
 interface SectionProps {
     title?: string;
@@ -18,7 +19,7 @@ const Section: React.FC<SectionProps> = ({
     isFirst = false,
     style
 }) => {
-    const colorScheme = useColorScheme() ?? theme ?? 'light';
+    const colorScheme = normalizeColorScheme(useColorScheme(), theme);
     
     return (
         <View style={[styles.section, isFirst && styles.firstSection, style]}>
