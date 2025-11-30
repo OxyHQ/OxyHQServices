@@ -336,7 +336,7 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
             style={styles.bottomSheetContainer}
             keyboardBehavior="interactive"
             keyboardBlurBehavior="restore"
-            android_keyboardInputMode="adjustPan"
+            android_keyboardInputMode="adjustResize"
             enableOverDrag={false}
             enableContentPanningGesture={true}
             enableHandlePanningGesture={true}
@@ -344,7 +344,7 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
             enableBlurKeyboardOnGesture={true}
             detached
             topInset={(insets?.top ?? 0) + (appInsets?.top ?? 0)}
-            bottomInset={((Platform.OS === 'android' ? (keyboardVisible ? keyboardHeight : 0) : 0)) + (appInsets?.bottom ?? 0)}
+            bottomInset={(keyboardVisible ? keyboardHeight : 0) + (appInsets?.bottom ?? 0)}
             onChange={(index) => { isOpenRef.current = index !== -1; }}
             onDismiss={() => { isOpenRef.current = false; }}
         >
