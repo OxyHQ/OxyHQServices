@@ -7,11 +7,22 @@ import {
     Platform,
     Animated,
 } from 'react-native';
+import { useMemo } from 'react';
+import AnimatedReanimated, { useAnimatedStyle, interpolate, Extrapolation } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import OxyIcon from './icon/OxyIcon';
 import { fontFamilies } from '../styles/fonts';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { Colors } from '../constants/theme';
+
+// Calculate header height based on platform and variant
+export const getHeaderHeight = (variant: HeaderProps['variant'] = 'default', safeAreaTop: number = 0): number => {
+    const paddingTop = Platform.OS === 'ios' ? Math.max(safeAreaTop, 50) : 16;
+    const paddingBottom = 12;
+    const contentHeight = variant === 'minimal' ? 36 : 40;
+    return paddingTop + contentHeight + paddingBottom;
+};
 
 export interface HeaderProps {
     title: string;
@@ -43,6 +54,7 @@ export interface HeaderProps {
     elevation?: 'none' | 'subtle' | 'prominent';
     subtitleVariant?: 'default' | 'small' | 'large' | 'muted';
     titleAlignment?: 'left' | 'center' | 'right';
+    scrollY?: AnimatedReanimated.SharedValue<number>; // For sticky behavior on native
 }
 
 const Header: React.FC<HeaderProps> = ({
@@ -61,10 +73,36 @@ const Header: React.FC<HeaderProps> = ({
     elevation = 'subtle',
     subtitleVariant = 'default',
     titleAlignment = 'left',
+    scrollY,
 }) => {
     // Use theme colors directly from Colors constant (like Accounts sidebar)
     const colorScheme = useColorScheme() ?? theme ?? 'light';
     const colors = Colors[colorScheme];
+    const insets = useSafeAreaInsets();
+    const headerHeight = getHeaderHeight(variant, insets.top);
+
+    // Animated style for sticky behavior on native
+    // Only create animated style if scrollY is provided and we're on native platform
+    const animatedHeaderStyle = useAnimatedStyle(() => {
+        if (Platform.OS === 'web' || !scrollY) {
+            return {};
+        }
+
+        // Sticky behavior: header scrolls with content initially, then sticks at top
+        // When scrollY = 0, translateY = 0 (header at normal position)
+        // When scrollY > 0, translateY becomes negative to keep header at top
+        // Clamp to prevent header from going above viewport
+        const translateY = interpolate(
+            scrollY.value,
+            [0, headerHeight],
+            [0, -headerHeight],
+            Extrapolation.CLAMP
+        );
+
+        return {
+            transform: [{ translateY }],
+        };
+    }, [scrollY, headerHeight]);
 
     const renderBackButton = () => {
         if (!showBackButton || !onBack) return null;
@@ -136,14 +174,14 @@ const Header: React.FC<HeaderProps> = ({
 
     const renderRightActions = () => {
         const actions: Array<NonNullable<HeaderProps['rightAction']>> = [];
-        
+
         // Add existing right actions
         if (rightActions?.length) {
             actions.push(...rightActions);
         } else if (rightAction) {
             actions.push(rightAction);
         }
-        
+
         // Add theme toggle button if enabled
         if (showThemeToggle && onThemeToggle) {
             actions.push({
@@ -152,9 +190,9 @@ const Header: React.FC<HeaderProps> = ({
                 key: 'theme-toggle',
             });
         }
-        
+
         if (actions.length === 0) return null;
-        
+
         if (actions.length > 1) {
             return (
                 <View style={styles.rightActionsRow}>
@@ -194,7 +232,7 @@ const Header: React.FC<HeaderProps> = ({
                 getTitleAlignment(),
                 variant === 'minimal' && styles.titleContainerMinimal
             ]}>
-                <Text style={[titleStyle,                 { color: colors.text }]}>
+                <Text style={[titleStyle, { color: colors.text }]}>
                     {title}
                 </Text>
                 {subtitle && (
@@ -263,12 +301,34 @@ const Header: React.FC<HeaderProps> = ({
         };
     };
 
+    const backgroundStyle = getBackgroundStyle();
+    const elevationStyle = getElevationStyle();
+
+    const containerStyle = useMemo(() => [
+        styles.container,
+        {
+            paddingTop: Platform.OS === 'ios' ? Math.max(insets.top, 50) : 16,
+        },
+        // When header is inside ScrollView (has scrollY), don't use absolute positioning
+        !scrollY && Platform.OS !== 'web' ? {
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+        } : {},
+        backgroundStyle,
+        elevationStyle,
+    ], [insets.top, backgroundStyle, elevationStyle, scrollY]);
+
+    const HeaderContainer = Platform.OS === 'web' || !scrollY ? View : AnimatedReanimated.View;
+    // Only apply animated styles when HeaderContainer is an animated component
+    const shouldUseAnimatedStyle = Platform.OS !== 'web' && scrollY !== undefined;
+    const headerStyle = shouldUseAnimatedStyle 
+        ? [containerStyle, animatedHeaderStyle] 
+        : containerStyle;
+
     return (
-        <View style={[
-            styles.container,
-            getBackgroundStyle(),
-            getElevationStyle(),
-        ]}>
+        <HeaderContainer style={headerStyle}>
             <View style={[
                 styles.content,
                 variant === 'minimal' && styles.contentMinimal
@@ -278,26 +338,23 @@ const Header: React.FC<HeaderProps> = ({
                 {renderRightActions()}
                 {renderCloseButton()}
             </View>
-        </View>
+        </HeaderContainer>
     );
 };
 
 const styles = StyleSheet.create({
     container: {
-        paddingTop: Platform.OS === 'ios' ? 50 : 16,
         paddingBottom: 12,
-        top: 0,
-        left: 0,
-        right: 0,
         zIndex: 1000,
         ...Platform.select({
             web: {
                 position: 'sticky' as any,
                 top: 0,
+                left: 0,
+                right: 0,
             },
             default: {
-                position: 'absolute',
-                top: 0,
+                // Position will be set dynamically based on scrollY prop
             },
         }),
     },

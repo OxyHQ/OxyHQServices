@@ -33,7 +33,8 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
 }) => {
     const { user, currentLanguage, setLanguage, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
-    const themeColors = Colors[theme];
+    // Add fallback to prevent crashes if theme is undefined or invalid
+    const themeColors = Colors[theme as 'light' | 'dark'] ?? Colors.light;
     const [isLoading, setIsLoading] = useState(false);
 
     // Memoize the language select handler to prevent recreation on every render

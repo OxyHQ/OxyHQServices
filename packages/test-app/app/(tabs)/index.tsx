@@ -1,14 +1,20 @@
 import { Image } from 'expo-image';
 import { useCallback, useMemo } from 'react';
 import { Alert, Pressable, StyleSheet } from 'react-native';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 
 import { OxySignInButton, useOxy } from '@oxyhq/services';
 
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { LogoIcon } from '@/assets/logo';
+import { Colors } from '@/constants/theme';
 
 export default function HomeScreen() {
+  const colorScheme = useColorScheme();
+  const colors = Colors[colorScheme ?? 'light'];
+  
   const { 
     isAuthenticated, 
     user, 
@@ -98,17 +104,22 @@ export default function HomeScreen() {
     });
   }, [showBottomSheet]);
 
+  // Use a lighter shade of pink for the header background
+  const headerBgLight = '#f0d4f5'; // Light pink background
+  const headerBgDark = '#6b2d7a'; // Darker purple-pink for dark mode
+  
   return (
     <ParallaxScrollView
-      headerBackgroundColor={{ light: '#A1CEDC', dark: '#1D3D47' }}
+      headerBackgroundColor={{ light: headerBgLight, dark: headerBgDark }}
       headerImage={
-        <Image
-          source={require('@/assets/images/partial-react-logo.png')}
-          style={styles.reactLogo}
+        <LogoIcon
+          height={171}
+          style={styles.oxyLogo}
+          useThemeColors={true}
         />
       }>
       <ThemedView style={styles.content}>
-        <ThemedText type="title">Oxy Services Playground</ThemedText>
+        <ThemedText type="title" style={styles.title}>Oxy Services Playground</ThemedText>
         <ThemedText>
           Use the button below to launch the full Oxy sign-in flow directly inside this test app.
         </ThemedText>
@@ -312,6 +323,13 @@ const styles = StyleSheet.create({
     gap: 16,
     marginBottom: 24,
   },
+  title: {
+    fontSize: 32,
+    fontWeight: '700',
+    lineHeight: 40,
+    letterSpacing: -0.5,
+    marginBottom: 4,
+  },
   authenticatedState: {
     gap: 12,
     paddingVertical: 12,
@@ -366,9 +384,7 @@ const styles = StyleSheet.create({
   languageButtonLabel: {
     color: '#ffffff',
   },
-  reactLogo: {
-    height: 178,
-    width: 290,
+  oxyLogo: {
     bottom: 0,
     left: 0,
     position: 'absolute',

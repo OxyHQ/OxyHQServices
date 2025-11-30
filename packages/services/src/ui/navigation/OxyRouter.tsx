@@ -79,19 +79,39 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
     // ========================================================================
     useEffect(() => {
         if (!navigationRef) return;
-        navigationRef.current = navigate;
-        if (__DEV__) console.log('OxyRouter: navigationRef set');
+        try {
+            navigationRef.current = navigate;
+            if (__DEV__) console.log('OxyRouter: navigationRef set');
+        } catch (error) {
+            if (__DEV__) console.warn('OxyRouter: Failed to set navigationRef', error);
+        }
         return () => {
-            navigationRef.current = null;
-            if (__DEV__) console.log('OxyRouter: navigationRef cleared');
+            if (navigationRef) {
+                try {
+                    navigationRef.current = null;
+                    if (__DEV__) console.log('OxyRouter: navigationRef cleared');
+                } catch (error) {
+                    if (__DEV__) console.warn('OxyRouter: Failed to clear navigationRef', error);
+                }
+            }
         };
     }, [navigate, navigationRef]);
 
     useEffect(() => {
         if (!routerRef) return;
-        routerRef.current = { goBack, canGoBack };
+        try {
+            routerRef.current = { goBack, canGoBack };
+        } catch (error) {
+            if (__DEV__) console.warn('OxyRouter: Failed to set routerRef', error);
+        }
         return () => {
-            routerRef.current = null;
+            if (routerRef) {
+                try {
+                    routerRef.current = null;
+                } catch (error) {
+                    if (__DEV__) console.warn('OxyRouter: Failed to clear routerRef', error);
+                }
+            }
         };
     }, [goBack, canGoBack, routerRef]);
 
@@ -176,7 +196,7 @@ const OxyRouter: React.FC<OxyRouterProps> = ({
                 </ErrorBoundary>
             </ThemeProvider>
         );
-    }, [currentRouteConfig, currentScreen, screenPropsWithDefaults, handleError]);
+    }, [currentRouteConfig, currentScreen, screenPropsWithDefaults, handleError, theme]);
 
     return (
         <View style={styles.container}>

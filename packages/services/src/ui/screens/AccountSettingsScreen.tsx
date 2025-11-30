@@ -149,6 +149,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         };
     }, [colorScheme, colors]);
 
+    // Memoize onBack handler to provide stable reference for Reanimated
+    const handleBack = useMemo(() => {
+        return goBack || onClose || undefined;
+    }, [goBack, onClose]);
+
     // Memoize animation function to prevent recreation on every render
     const animateSaveButton = useCallback((toValue: number, onComplete?: () => void) => {
         Animated.spring(saveButtonScale, {
@@ -1305,7 +1310,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 <Header
                     title={t('editProfile.title') || 'Edit Profile'}
                     theme={theme}
-                    onBack={goBack || onClose}
+                    onBack={handleBack}
                     rightAction={{
                         icon: 'checkmark',
                         onPress: handleSave,

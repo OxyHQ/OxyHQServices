@@ -72,7 +72,13 @@ const OxyProvider: FC<OxyProviderProps> = (props) => {
     // Mirror internal controller to external ref if provided (back-compat)
     useEffect(() => {
         if (props.bottomSheetRef) {
-            props.bottomSheetRef.current = internalBottomSheetRef.current;
+            try {
+                props.bottomSheetRef.current = internalBottomSheetRef.current;
+            } catch (error) {
+                if (__DEV__) {
+                    console.warn('OxyProvider: Failed to set bottomSheetRef', error);
+                }
+            }
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [props.bottomSheetRef]);

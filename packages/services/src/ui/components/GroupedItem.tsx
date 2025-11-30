@@ -103,7 +103,7 @@ const GroupedItemComponent = ({
         <View style={styles.groupedItemContent}>
             {customIcon ? (
                 <View style={styles.actionIcon}>{customIcon}</View>
-            ) : icon ? (
+            ) : icon && iconColor ? (
                 <View style={[styles.iconContainer, { backgroundColor: iconColor }]}>
                     <MaterialCommunityIcons name={mapIconName(icon) as any} size={22} color={darkenColor(iconColor)} />
                 </View>

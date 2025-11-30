@@ -30,7 +30,6 @@ const LoadingState: React.FC<LoadingStateProps> = ({
 
 const styles = StyleSheet.create({
     container: {
-        flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
         padding: 40,
