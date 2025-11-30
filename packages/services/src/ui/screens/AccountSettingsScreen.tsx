@@ -18,12 +18,17 @@ import Avatar from '../components/Avatar';
 import type { FileMetadata } from '../../models/interfaces';
 import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
+// @ts-ignore - MaterialCommunityIcons is available at runtime
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { fontFamilies } from '../styles/fonts';
 import { confirmAction } from '../utils/confirmAction';
 import { useAuthStore } from '../stores/authStore';
 import { Header, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
+import { useColorScheme } from '../hooks/use-color-scheme';
+import { Colors } from '../constants/theme';
+import { useHapticPress } from '../hooks/use-haptic-press';
 import QRCode from 'react-native-qrcode-svg';
 import { TTLCache, registerCacheForCleanup } from '../../utils/cache';
 
@@ -32,6 +37,7 @@ const linkMetadataCache = new TTLCache<any>(30 * 60 * 1000); // 30 minutes cache
 const locationSearchCache = new TTLCache<any[]>(60 * 60 * 1000); // 1 hour cache for location searches
 registerCacheForCleanup(linkMetadataCache);
 registerCacheForCleanup(locationSearchCache);
+
 
 const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string; initialSection?: string }> = ({
     onClose,
@@ -53,14 +59,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     const scrollViewRef = useRef<ScrollView>(null);
     const avatarSectionRef = useRef<View>(null);
     const [avatarSectionY, setAvatarSectionY] = useState<number | null>(null);
-    
+
     // Section refs for navigation
     const profilePictureSectionRef = useRef<View>(null);
     const basicInfoSectionRef = useRef<View>(null);
     const aboutSectionRef = useRef<View>(null);
     const quickActionsSectionRef = useRef<View>(null);
     const securitySectionRef = useRef<View>(null);
-    
+
     // Section Y positions for scrolling
     const [profilePictureSectionY, setProfilePictureSectionY] = useState<number | null>(null);
     const [basicInfoSectionY, setBasicInfoSectionY] = useState<number | null>(null);
@@ -128,15 +134,20 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     }>>([]);
     const [isSearchingLocations, setIsSearchingLocations] = useState(false);
 
+    // Get theme colors
+    const colorScheme = useColorScheme() ?? 'light';
+    const colors = Colors[colorScheme];
+    const handlePressIn = useHapticPress();
+
     // Memoize theme-related calculations to prevent unnecessary recalculations
     const themeStyles = useMemo(() => {
-        const isDarkTheme = theme === 'dark';
+        const isDarkTheme = colorScheme === 'dark';
         return {
             isDarkTheme,
-            backgroundColor: isDarkTheme ? '#121212' : '#f2f2f2',
-            primaryColor: '#007AFF',
+            backgroundColor: colors.background,
+            primaryColor: colors.tint,
         };
-    }, [theme]);
+    }, [colorScheme, colors]);
 
     // Memoize animation function to prevent recreation on every render
     const animateSaveButton = useCallback((toValue: number, onComplete?: () => void) => {
@@ -262,10 +273,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     const hasSetInitialFieldRef = useRef(false);
     const previousInitialFieldRef = useRef<string | undefined>(undefined);
     const initialFieldTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-    
+
     // Delay constant for scroll completion
     const SCROLL_DELAY_MS = 600;
-    
+
     // Helper to get current value for a field
     const getFieldCurrentValue = useCallback((field: string): string => {
         switch (field) {
@@ -290,7 +301,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     const hasScrolledToSectionRef = useRef(false);
     const previousInitialSectionRef = useRef<string | undefined>(undefined);
     const SCROLL_OFFSET = 100; // Offset to show section near top of viewport
-    
+
     // Map section names to their Y positions
     const sectionYPositions = useMemo(() => ({
         profilePicture: profilePictureSectionY,
@@ -299,7 +310,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         quickActions: quickActionsSectionY,
         security: securitySectionY,
     }), [profilePictureSectionY, basicInfoSectionY, aboutSectionY, quickActionsSectionY, securitySectionY]);
-    
+
     useEffect(() => {
         // If initialSection changed, reset the flag
         if (previousInitialSectionRef.current !== initialSection) {
@@ -310,7 +321,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         // Scroll to the specified section if initialSection is provided and we haven't scrolled yet
         if (initialSection && !hasScrolledToSectionRef.current) {
             const sectionY = sectionYPositions[initialSection as keyof typeof sectionYPositions];
-            
+
             if (sectionY !== null && sectionY !== undefined && scrollViewRef.current) {
                 requestAnimationFrame(() => {
                     requestAnimationFrame(() => {
@@ -503,13 +514,13 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             clearTimeout(initialFieldTimeoutRef.current);
             initialFieldTimeoutRef.current = null;
         }
-        
+
         // If initialField changed, reset the flag
         if (previousInitialFieldRef.current !== initialField) {
             hasSetInitialFieldRef.current = false;
             previousInitialFieldRef.current = initialField;
         }
-        
+
         // Set the editing field if initialField is provided and we haven't set it yet
         if (initialField && !hasSetInitialFieldRef.current) {
             // Special handling for avatar - open avatar picker directly
@@ -522,7 +533,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             } else {
                 // For other fields, get current value and start editing after scroll
                 const currentValue = getFieldCurrentValue(initialField);
-                
+
                 // Wait for section to be scrolled, then start editing
                 initialFieldTimeoutRef.current = setTimeout(() => {
                     startEditing(initialField, currentValue);
@@ -530,7 +541,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 }, SCROLL_DELAY_MS);
             }
         }
-        
+
         return () => {
             if (initialFieldTimeoutRef.current) {
                 clearTimeout(initialFieldTimeoutRef.current);
@@ -715,11 +726,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         if (type === 'twoFactor') {
             const enabled = !!user?.privacySettings?.twoFactorEnabled;
             return (
-                <View style={[styles.editingFieldContainer, { backgroundColor: themeStyles.backgroundColor }]}>
+                <View style={[styles.editingFieldContainer, { backgroundColor: colors.background }]}>
                     <View style={styles.editingFieldContent}>
                         <View style={styles.newValueSection}>
                             <View style={styles.editingFieldHeader}>
-                                <Text style={[styles.editingFieldLabel, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>Two‑Factor Authentication (TOTP)</Text>
+                                <Text style={[styles.editingFieldLabel, { color: colors.text }]}>Two‑Factor Authentication (TOTP)</Text>
                             </View>
 
                             {!enabled ? (
@@ -810,7 +821,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                         />
                                     </View>
                                     <TouchableOpacity
-                                        style={[styles.primaryButton, { backgroundColor: '#d9534f' }]}
+                                        style={[styles.primaryButton, { backgroundColor: colors.sidebarIconSharing }]}
                                         disabled={isTotpBusy || totpCode.length !== 6}
                                         onPress={async () => {
                                             if (!activeSessionId) { toast.error(t('editProfile.toasts.noActiveSession') || 'No active session'); return; }
@@ -839,11 +850,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         }
         if (type === 'displayName') {
             return (
-                <View style={[styles.editingFieldContainer, { backgroundColor: themeStyles.backgroundColor }]}>
+                <View style={[styles.editingFieldContainer, { backgroundColor: colors.background }]}>
                     <View style={styles.editingFieldContent}>
                         <View style={styles.newValueSection}>
                             <View style={styles.editingFieldHeader}>
-                                <Text style={[styles.editingFieldLabel, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>Edit Full Name</Text>
+                                <Text style={[styles.editingFieldLabel, { color: colors.text }]}>Edit Full Name</Text>
                             </View>
                             <View style={{ flexDirection: 'row', gap: 12 }}>
                                 <View style={{ flex: 1 }}>
@@ -853,7 +864,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                         value={tempDisplayName}
                                         onChangeText={setTempDisplayName}
                                         placeholder="Enter your first name"
-                                        placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                                        placeholderTextColor={colors.secondaryText}
                                         autoFocus
                                         selectionColor={themeStyles.primaryColor}
                                     />
@@ -865,7 +876,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                         value={tempLastName}
                                         onChangeText={setTempLastName}
                                         placeholder="Enter your last name"
-                                        placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                                        placeholderTextColor={colors.secondaryText}
                                         selectionColor={themeStyles.primaryColor}
                                     />
                                 </View>
@@ -878,11 +889,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
         if (type === 'location') {
             return (
-                <View style={[styles.editingFieldContainer, { backgroundColor: themeStyles.backgroundColor }]}>
+                <View style={[styles.editingFieldContainer, { backgroundColor: colors.background }]}>
                     <View style={styles.editingFieldContent}>
                         <View style={styles.newValueSection}>
                             <View style={styles.editingFieldHeader}>
-                                <Text style={[styles.editingFieldLabel, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>Manage Your Locations</Text>
+                                <Text style={[styles.editingFieldLabel, { color: colors.text }]}>Manage Your Locations</Text>
                             </View>
 
                             {/* Add new location section */}
@@ -903,7 +914,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                                 searchLocations(text);
                                             }}
                                             placeholder="Search for a location..."
-                                            placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                                            placeholderTextColor={colors.secondaryText}
                                             autoFocus
                                             selectionColor={themeStyles.primaryColor}
                                         />
@@ -1022,11 +1033,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
         if (type === 'links') {
             return (
-                <View style={[styles.editingFieldContainer, { backgroundColor: themeStyles.backgroundColor }]}>
+                <View style={[styles.editingFieldContainer, { backgroundColor: colors.background }]}>
                     <View style={styles.editingFieldContent}>
                         <View style={styles.newValueSection}>
                             <View style={styles.editingFieldHeader}>
-                                <Text style={[styles.editingFieldLabel, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#1A1A1A' }]}>Manage Your Links</Text>
+                                <Text style={[styles.editingFieldLabel, { color: colors.text }]}>Manage Your Links</Text>
                             </View>
 
                             <GroupedSection
@@ -1034,11 +1045,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                     // Add new link item
                                     ...(isAddingLink ? [{
                                         id: 'add-link-input',
-                                        icon: 'add',
-                                        iconColor: '#32D74B',
+                                        icon: 'plus',
+                                        iconColor: colors.sidebarIconSharing,
                                         title: 'Add New Link',
                                         subtitle: isFetchingMetadata ? 'Fetching metadata...' : 'Enter URL to add a new link',
-                                        multiRow: true,
                                         customContent: (
                                             <View style={styles.addLinkInputContainer}>
                                                 <TextInput
@@ -1046,7 +1056,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                                     value={newLinkUrl}
                                                     onChangeText={setNewLinkUrl}
                                                     placeholder="Enter URL (e.g., https://example.com)"
-                                                    placeholderTextColor={themeStyles.isDarkTheme ? '#aaa' : '#999'}
+                                                    placeholderTextColor={colors.secondaryText}
                                                     keyboardType="url"
                                                     autoFocus
                                                     selectionColor={themeStyles.primaryColor}
@@ -1077,8 +1087,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                         ),
                                     }] : [{
                                         id: 'add-link-trigger',
-                                        icon: 'add',
-                                        iconColor: '#32D74B',
+                                        icon: 'plus',
+                                        iconColor: colors.sidebarIconSharing,
                                         title: 'Add a new link',
                                         subtitle: 'Tap to add a new link to your profile',
                                         onPress: () => setIsAddingLink(true),
@@ -1086,13 +1096,13 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                     // Existing links
                                     ...tempLinksWithMetadata.map((link, index) => ({
                                         id: link.id,
-                                        image: link.image || undefined,
-                                        imageSize: 32,
-                                        icon: link.image ? undefined : 'link',
-                                        iconColor: '#32D74B',
+                                        customIcon: link.image ? (
+                                            <Image source={{ uri: link.image }} style={{ width: 36, height: 36, borderRadius: 18 }} />
+                                        ) : undefined,
+                                        icon: !link.image ? 'link-variant' : undefined,
+                                        iconColor: colors.sidebarIconSharing,
                                         title: link.title || link.url,
                                         subtitle: link.description && link.description !== link.title ? link.description : link.url,
-                                        multiRow: true,
                                         customContent: (
                                             <View style={styles.linkItemActions}>
                                                 <View style={styles.reorderButtons}>
@@ -1121,7 +1131,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                         ),
                                     })),
                                 ]}
-                                
+
                             />
                             {tempLinksWithMetadata.length > 0 && (
                                 <View style={styles.reorderHint}>
@@ -1169,11 +1179,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         };
 
         return (
-            <View style={[styles.editingFieldContainer, { backgroundColor: themeStyles.isDarkTheme ? '#000000' : '#FFFFFF' }]}>
+            <View style={[styles.editingFieldContainer, { backgroundColor: colors.background }]}>
                 <View style={styles.editingFieldContent}>
                     <View style={styles.newValueSection}>
                         <View style={styles.editingFieldHeader}>
-                            <Text style={[styles.editingFieldLabel, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#000000' }]}>
+                            <Text style={[styles.editingFieldLabel, { color: colors.text }]}>
                                 {config.label}
                             </Text>
                         </View>
@@ -1220,17 +1230,17 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             {/* Header */}
             {editingField ? (
                 <View style={[styles.editingHeader, {
-                    backgroundColor: themeStyles.isDarkTheme ? '#000000' : '#FFFFFF',
-                    borderBottomColor: themeStyles.isDarkTheme ? '#38383A' : '#E5E5EA'
+                    backgroundColor: colors.background,
+                    borderBottomColor: colors.border
                 }]}>
                     <View style={styles.editingHeaderContent}>
                         <TouchableOpacity
                             style={[styles.editingBackButton, {
-                                backgroundColor: themeStyles.isDarkTheme ? '#1C1C1E' : '#F2F2F7'
+                                backgroundColor: colors.card
                             }]}
                             onPress={cancelEditing}
                         >
-                            <Ionicons name="chevron-back" size={20} color={themeStyles.primaryColor} />
+                            <Ionicons name="chevron-back" size={20} color={colors.tint} />
                         </TouchableOpacity>
                         <View style={styles.editingTitleContainer}>
                         </View>
@@ -1239,49 +1249,49 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 styles.editingSaveButton,
                                 {
                                     opacity: isSaving ? 0.5 : 1,
-                                    backgroundColor: themeStyles.isDarkTheme ? '#1C1C1E' : '#F2F2F7'
+                                    backgroundColor: colors.card
                                 }
                             ]}
                             onPress={() => saveField(editingField)}
                             disabled={isSaving}
                         >
                             {isSaving ? (
-                                <ActivityIndicator size="small" color={themeStyles.primaryColor} />
+                                <ActivityIndicator size="small" color={colors.tint} />
                             ) : (
-                                <Text style={[styles.editingSaveButtonText, { color: themeStyles.primaryColor }]}>Save</Text>
+                                <Text style={[styles.editingSaveButtonText, { color: colors.tint }]}>Save</Text>
                             )}
                         </TouchableOpacity>
                     </View>
                     <View style={styles.editingHeaderBottom}>
                         <View style={[styles.editingIconContainer, {
-                            backgroundColor: editingField === 'displayName' ? '#007AFF20' :
-                                editingField === 'username' ? '#5856D620' :
-                                    editingField === 'email' ? '#FF950020' :
-                                        editingField === 'bio' ? '#34C75920' :
-                                            editingField === 'location' ? '#FF3B3020' :
-                                                editingField === 'links' ? '#32D74B20' : '#007AFF20'
+                            backgroundColor: editingField === 'displayName' ? `${colors.sidebarIconPersonalInfo}20` :
+                                editingField === 'username' ? `${colors.sidebarIconData}20` :
+                                    editingField === 'email' ? `${colors.sidebarIconSecurity}20` :
+                                        editingField === 'bio' ? `${colors.sidebarIconPersonalInfo}20` :
+                                            editingField === 'location' ? `${colors.sidebarIconSharing}20` :
+                                                editingField === 'links' ? `${colors.sidebarIconPersonalInfo}20` : `${colors.tint}20`
                         }]}>
-                            <Ionicons
+                            <MaterialCommunityIcons
                                 name={
-                                    editingField === 'displayName' ? 'person' as any :
+                                    editingField === 'displayName' ? 'account-outline' as any :
                                         editingField === 'username' ? 'at' as any :
-                                            editingField === 'email' ? 'mail' as any :
-                                                editingField === 'bio' ? 'document-text' as any :
-                                                    editingField === 'location' ? 'location' as any :
-                                                        editingField === 'links' ? 'link' as any : 'person' as any
+                                            editingField === 'email' ? 'email-outline' as any :
+                                                editingField === 'bio' ? 'text-box-outline' as any :
+                                                    editingField === 'location' ? 'map-marker-outline' as any :
+                                                        editingField === 'links' ? 'link-variant' as any : 'account-outline' as any
                                 }
                                 size={28}
                                 color={
-                                    editingField === 'displayName' ? '#007AFF' :
-                                        editingField === 'username' ? '#5856D6' :
-                                            editingField === 'email' ? '#FF9500' :
-                                                editingField === 'bio' ? '#34C759' :
-                                                    editingField === 'location' ? '#FF3B30' :
-                                                        editingField === 'links' ? '#32D74B' : '#007AFF'
+                                    editingField === 'displayName' ? colors.sidebarIconPersonalInfo :
+                                        editingField === 'username' ? colors.sidebarIconData :
+                                            editingField === 'email' ? colors.sidebarIconSecurity :
+                                                editingField === 'bio' ? colors.sidebarIconPersonalInfo :
+                                                    editingField === 'location' ? colors.sidebarIconSharing :
+                                                        editingField === 'links' ? colors.sidebarIconPersonalInfo : colors.tint
                                 }
                             />
                         </View>
-                        <Text style={[styles.editingBottomTitle, { color: themeStyles.isDarkTheme ? '#FFFFFF' : '#000000' }]}>
+                        <Text style={[styles.editingBottomTitle, { color: colors.text }]}>
                             {editingField === 'displayName' ? (t('editProfile.items.displayName.title') || 'Display Name') :
                                 editingField === 'username' ? (t('editProfile.items.username.title') || 'Username') :
                                     editingField === 'email' ? (t('editProfile.items.email.title') || 'Email') :
@@ -1294,7 +1304,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             ) : (
                 <Header
                     title={t('editProfile.title') || 'Edit Profile'}
-                    
+                    theme={theme}
                     onBack={goBack || onClose}
                     rightAction={{
                         icon: 'checkmark',
@@ -1309,6 +1319,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             <ScrollView
                 ref={scrollViewRef}
                 style={editingField ? styles.contentEditing : styles.content}
+                contentContainerStyle={!editingField ? { paddingTop: Platform.OS === 'ios' ? 100 : 80 } : undefined}
             >
                 {editingField ? (
                     // Show only the editing interface when editing
@@ -1366,7 +1377,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setProfilePictureSectionY(y);
                             }}
                         >
-                            <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
+                            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>
                                 {t('editProfile.sections.profilePicture') || 'PROFILE PICTURE'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
@@ -1374,58 +1385,59 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                     items={[
                                         {
                                             id: 'profile-photo',
-                                            icon: avatarFileId ? undefined : 'person',
-                                            iconColor: '#007AFF',
-                                            // Use optimistic avatar ID if available, otherwise use saved one
-                                            image: (optimisticAvatarId || avatarFileId) ? oxyServices.getFileDownloadUrl(optimisticAvatarId || avatarFileId, 'thumb') : undefined,
-                                            imageSize: 40,
+                                            customIcon: (optimisticAvatarId || avatarFileId) ? (
+                                                isUpdatingAvatar ? (
+                                                    <Animated.View style={{ position: 'relative', width: 36, height: 36 }}>
+                                                        <Animated.Image
+                                                            source={{ uri: oxyServices.getFileDownloadUrl(optimisticAvatarId || avatarFileId, 'thumb') }}
+                                                            style={{
+                                                                width: 36,
+                                                                height: 36,
+                                                                borderRadius: 18,
+                                                                opacity: 0.6
+                                                            }}
+                                                        />
+                                                        <View style={{
+                                                            position: 'absolute',
+                                                            top: 0,
+                                                            left: 0,
+                                                            right: 0,
+                                                            bottom: 0,
+                                                            justifyContent: 'center',
+                                                            alignItems: 'center',
+                                                            backgroundColor: colorScheme === 'dark' ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.7)',
+                                                            borderRadius: 18,
+                                                        }}>
+                                                            <ActivityIndicator size="small" color={colors.tint} />
+                                                        </View>
+                                                    </Animated.View>
+                                                ) : (
+                                                    <Image
+                                                        source={{ uri: oxyServices.getFileDownloadUrl(optimisticAvatarId || avatarFileId, 'thumb') }}
+                                                        style={{ width: 36, height: 36, borderRadius: 18 }}
+                                                    />
+                                                )
+                                            ) : undefined,
+                                            icon: !(optimisticAvatarId || avatarFileId) ? 'account-outline' : undefined,
+                                            iconColor: colors.sidebarIconPersonalInfo,
                                             title: 'Profile Photo',
                                             subtitle: isUpdatingAvatar
                                                 ? 'Updating profile picture...'
                                                 : (avatarFileId ? 'Tap to change your profile picture' : 'Tap to add a profile picture'),
                                             onPress: isUpdatingAvatar ? undefined : openAvatarPicker,
                                             disabled: isUpdatingAvatar,
-                                            customIcon: isUpdatingAvatar ? (
-                                                <Animated.View style={{ position: 'relative', width: 40, height: 40 }}>
-                                                    {(optimisticAvatarId || avatarFileId) && (
-                                                        <Animated.Image
-                                                            source={{ uri: oxyServices.getFileDownloadUrl(optimisticAvatarId || avatarFileId, 'thumb') }}
-                                                            style={{
-                                                                width: 40,
-                                                                height: 40,
-                                                                borderRadius: 22,
-                                                                opacity: 0.6
-                                                            }}
-                                                        />
-                                                    )}
-                                                    <View style={{
-                                                        position: 'absolute',
-                                                        top: 0,
-                                                        left: 0,
-                                                        right: 0,
-                                                        bottom: 0,
-                                                        justifyContent: 'center',
-                                                        alignItems: 'center',
-                                                        backgroundColor: themeStyles.isDarkTheme ? 'rgba(0, 0, 0, 0.4)' : 'rgba(255, 255, 255, 0.7)',
-                                                        borderRadius: 22,
-                                                    }}>
-                                                        <ActivityIndicator size="small" color={themeStyles.primaryColor} />
-                                                    </View>
-                                                </Animated.View>
-                                            ) : undefined,
                                         },
                                         ...(avatarFileId && !isUpdatingAvatar ? [
                                             {
                                                 id: 'remove-profile-photo',
-                                                icon: 'trash',
-                                                iconColor: '#FF3B30',
+                                                icon: 'delete-outline',
+                                                iconColor: colors.sidebarIconSharing,
                                                 title: 'Remove Photo',
                                                 subtitle: 'Delete current profile picture',
                                                 onPress: handleAvatarRemove,
                                             }
                                         ] : []),
                                     ]}
-                                    
                                 />
                             </View>
                         </View>
@@ -1439,7 +1451,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setBasicInfoSectionY(y);
                             }}
                         >
-                            <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
+                            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>
                                 {t('editProfile.sections.basicInfo') || 'BASIC INFORMATION'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
@@ -1447,8 +1459,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                     items={[
                                         {
                                             id: 'display-name',
-                                            icon: 'person',
-                                            iconColor: '#007AFF',
+                                            icon: 'account-outline',
+                                            iconColor: colors.sidebarIconPersonalInfo,
                                             title: t('editProfile.items.displayName.title') || 'Display Name',
                                             subtitle: [displayName, lastName].filter(Boolean).join(' ') || (t('editProfile.items.displayName.add') || 'Add your display name'),
                                             onPress: () => startEditing('displayName', ''),
@@ -1456,21 +1468,20 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                         {
                                             id: 'username',
                                             icon: 'at',
-                                            iconColor: '#5856D6',
+                                            iconColor: colors.sidebarIconData,
                                             title: t('editProfile.items.username.title') || 'Username',
                                             subtitle: username || (t('editProfile.items.username.choose') || 'Choose a username'),
                                             onPress: () => startEditing('username', username),
                                         },
                                         {
                                             id: 'email',
-                                            icon: 'mail',
-                                            iconColor: '#FF9500',
+                                            icon: 'email-outline',
+                                            iconColor: colors.sidebarIconSecurity,
                                             title: t('editProfile.items.email.title') || 'Email',
                                             subtitle: email || (t('editProfile.items.email.add') || 'Add your email address'),
                                             onPress: () => startEditing('email', email),
                                         },
                                     ]}
-                                    
                                 />
                             </View>
                         </View>
@@ -1484,7 +1495,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setAboutSectionY(y);
                             }}
                         >
-                            <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
+                            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>
                                 {t('editProfile.sections.about') || 'ABOUT YOU'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
@@ -1492,16 +1503,16 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                     items={[
                                         {
                                             id: 'bio',
-                                            icon: 'document-text',
-                                            iconColor: '#34C759',
+                                            icon: 'text-box-outline',
+                                            iconColor: colors.sidebarIconPersonalInfo,
                                             title: t('editProfile.items.bio.title') || 'Bio',
                                             subtitle: bio || (t('editProfile.items.bio.placeholder') || 'Tell people about yourself'),
                                             onPress: () => startEditing('bio', bio),
                                         },
                                         {
                                             id: 'locations',
-                                            icon: 'location',
-                                            iconColor: '#FF3B30',
+                                            icon: 'map-marker-outline',
+                                            iconColor: colors.sidebarIconSharing,
                                             title: t('editProfile.items.locations.title') || 'Locations',
                                             subtitle: tempLocations.length > 0
                                                 ? (tempLocations.length === 1
@@ -1509,39 +1520,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                                     : (t('editProfile.items.locations.count_plural', { count: tempLocations.length }) || `${tempLocations.length} locations added`))
                                                 : (t('editProfile.items.locations.add') || 'Add your locations'),
                                             onPress: () => startEditing('location', ''),
-                                            customContentBelow: tempLocations.length > 0 && (
-                                                <View style={styles.linksPreviewContainer}>
-                                                    {tempLocations.slice(0, 2).map((location, index) => (
-                                                        <View key={location.id || index} style={styles.linkPreviewItem}>
-                                                            <View style={styles.linkPreviewImage}>
-                                                                <Text style={styles.linkPreviewImageText}>
-                                                                    {location.name.charAt(0).toUpperCase()}
-                                                                </Text>
-                                                            </View>
-                                                            <View style={styles.linkPreviewContent}>
-                                                                <Text style={styles.linkPreviewTitle} numberOfLines={1}>
-                                                                    {location.name}
-                                                                </Text>
-                                                                {location.label && (
-                                                                    <Text style={styles.linkPreviewSubtitle}>
-                                                                        {location.label}
-                                                                    </Text>
-                                                                )}
-                                                            </View>
-                                                        </View>
-                                                    ))}
-                                                    {tempLocations.length > 2 && (
-                                                        <Text style={styles.linkPreviewMore}>
-                                                            +{tempLocations.length - 2} more
-                                                        </Text>
-                                                    )}
-                                                </View>
-                                            ),
                                         },
                                         {
                                             id: 'links',
-                                            icon: 'link',
-                                            iconColor: '#32D74B',
+                                            icon: 'link-variant',
+                                            iconColor: colors.sidebarIconSharing,
                                             title: t('editProfile.items.links.title') || 'Links',
                                             subtitle: tempLinksWithMetadata.length > 0
                                                 ? (tempLinksWithMetadata.length === 1
@@ -1549,35 +1532,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                                     : (t('editProfile.items.links.count_plural', { count: tempLinksWithMetadata.length }) || `${tempLinksWithMetadata.length} links added`))
                                                 : (t('editProfile.items.links.add') || 'Add your links'),
                                             onPress: () => startEditing('links', ''),
-                                            multiRow: true,
-                                            customContentBelow: tempLinksWithMetadata.length > 0 && (
-                                                <View style={styles.linksPreviewContainer}>
-                                                    {tempLinksWithMetadata.slice(0, 2).map((link, index) => (
-                                                        <View key={link.id || index} style={styles.linkPreviewItem}>
-                                                            {link.image ? (
-                                                                <Image source={{ uri: link.image }} style={styles.linkPreviewImage} />
-                                                            ) : (
-                                                                <View style={styles.linkPreviewImage}>
-                                                                    <Text style={styles.linkPreviewImageText}>
-                                                                        {link.title?.charAt(0).toUpperCase() || link.url.charAt(0).toUpperCase()}
-                                                                    </Text>
-                                                                </View>
-                                                            )}
-                                                            <Text style={styles.linkPreviewTitle} numberOfLines={1}>
-                                                                {link.title || link.url}
-                                                            </Text>
-                                                        </View>
-                                                    ))}
-                                                    {tempLinksWithMetadata.length > 2 && (
-                                                        <Text style={styles.linkPreviewMore}>
-                                                            +{tempLinksWithMetadata.length - 2} more
-                                                        </Text>
-                                                    )}
-                                                </View>
-                                            ),
                                         },
                                     ]}
-                                    
                                 />
                             </View>
                         </View>
@@ -1591,7 +1547,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setQuickActionsSectionY(y);
                             }}
                         >
-                            <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
+                            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>
                                 {t('editProfile.sections.quickActions') || 'QUICK ACTIONS'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
@@ -1599,30 +1555,29 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                     items={[
                                         {
                                             id: 'preview-profile',
-                                            icon: 'eye',
-                                            iconColor: '#007AFF',
+                                            icon: 'eye-outline',
+                                            iconColor: colors.sidebarIconHome,
                                             title: t('editProfile.items.previewProfile.title') || 'Preview Profile',
                                             subtitle: t('editProfile.items.previewProfile.subtitle') || 'See how your profile looks to others',
                                             onPress: () => navigate?.('Profile', { userId: user?.id }),
                                         },
                                         {
                                             id: 'privacy-settings',
-                                            icon: 'shield-checkmark',
-                                            iconColor: '#8E8E93',
+                                            icon: 'shield-check-outline',
+                                            iconColor: colors.sidebarIconSecurity,
                                             title: t('editProfile.items.privacySettings.title') || 'Privacy Settings',
                                             subtitle: t('editProfile.items.privacySettings.subtitle') || 'Control who can see your profile',
                                             onPress: () => navigate?.('PrivacySettings'),
                                         },
                                         {
                                             id: 'verify-account',
-                                            icon: 'checkmark-circle',
-                                            iconColor: '#30D158',
+                                            icon: 'check-circle-outline',
+                                            iconColor: colors.sidebarIconPersonalInfo,
                                             title: t('editProfile.items.verifyAccount.title') || 'Verify Account',
                                             subtitle: t('editProfile.items.verifyAccount.subtitle') || 'Get a verified badge',
                                             onPress: () => navigate?.('AccountVerification'),
                                         },
                                     ]}
-                                    
                                 />
                             </View>
                         </View>
@@ -1636,7 +1591,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 setSecuritySectionY(y);
                             }}
                         >
-                            <Text style={[styles.sectionTitle, { color: themeStyles.isDarkTheme ? '#8E8E93' : '#8E8E93' }]}>
+                            <Text style={[styles.sectionTitle, { color: colors.secondaryText }]}>
                                 {t('editProfile.sections.security') || 'SECURITY'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
@@ -1644,8 +1599,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                     items={[
                                         {
                                             id: 'two-factor',
-                                            icon: 'shield-checkmark',
-                                            iconColor: '#007AFF',
+                                            icon: 'shield-lock-outline',
+                                            iconColor: colors.sidebarIconSecurity,
                                             title: t('editProfile.items.twoFactor.title') || 'Two‑Factor Authentication',
                                             subtitle: user?.privacySettings?.twoFactorEnabled
                                                 ? (t('editProfile.items.twoFactor.enabled') || 'Enabled')
@@ -1653,7 +1608,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                             onPress: () => startEditing('twoFactor', ''),
                                         },
                                     ]}
-                                    
                                 />
                             </View>
                         </View>

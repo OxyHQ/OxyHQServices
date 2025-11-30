@@ -10,6 +10,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import OxyIcon from './icon/OxyIcon';
 import { fontFamilies } from '../styles/fonts';
+import { useColorScheme } from '../hooks/use-color-scheme';
+import { Colors } from '../constants/theme';
 
 export interface HeaderProps {
     title: string;
@@ -56,25 +58,9 @@ const Header: React.FC<HeaderProps> = ({
     subtitleVariant = 'default',
     titleAlignment = 'left',
 }) => {
-    const isDarkTheme = theme === 'dark';
-
-    // Modern color palette
-    const colors = {
-        background: isDarkTheme ? '#1C1C1E' : '#FFFFFF',
-        surface: isDarkTheme ? '#2C2C2E' : '#F8F9FA',
-        primary: '#007AFF',
-        secondary: isDarkTheme ? '#8E8E93' : '#6C757D',
-        text: {
-            primary: isDarkTheme ? '#FFFFFF' : '#1A1A1A',
-            secondary: isDarkTheme ? '#8E8E93' : '#6C757D',
-            tertiary: isDarkTheme ? '#636366' : '#ADB5BD',
-        },
-        border: isDarkTheme ? '#38383A' : '#E9ECEF',
-        accent: '#5856D6',
-        success: '#34C759',
-        warning: '#FF9500',
-        error: '#FF3B30',
-    };
+    // Use theme colors directly from Colors constant (like Accounts sidebar)
+    const colorScheme = useColorScheme() ?? theme ?? 'light';
+    const colors = Colors[colorScheme];
 
     const renderBackButton = () => {
         if (!showBackButton || !onBack) return null;
@@ -83,12 +69,12 @@ const Header: React.FC<HeaderProps> = ({
             <TouchableOpacity
                 style={[
                     styles.backButton,
-                    { backgroundColor: colors.surface }
+                    { backgroundColor: colors.card }
                 ]}
                 onPress={onBack}
                 activeOpacity={0.7}
             >
-                <OxyIcon name="chevron-back" size={18} color={colors.primary} />
+                <OxyIcon name="chevron-back" size={18} color={colors.tint} />
             </TouchableOpacity>
         );
     };
@@ -105,7 +91,7 @@ const Header: React.FC<HeaderProps> = ({
                 onPress={onClose}
                 activeOpacity={0.7}
             >
-                <Ionicons name="close" size={18} color={colors.text.primary} />
+                <Ionicons name="close" size={18} color={colors.text} />
             </TouchableOpacity>
         );
     };
@@ -119,7 +105,7 @@ const Header: React.FC<HeaderProps> = ({
                     styles.rightActionButton,
                     isTextAction ? styles.textActionButton : styles.iconActionButton,
                     {
-                        backgroundColor: isTextAction ? colors.primary : colors.surface,
+                        backgroundColor: isTextAction ? colors.tint : colors.card,
                         opacity: action.disabled ? 0.5 : 1
                     }
                 ]}
@@ -129,16 +115,16 @@ const Header: React.FC<HeaderProps> = ({
             >
                 {action.loading ? (
                     <View style={styles.loadingContainer}>
-                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? '#FFFFFF' : colors.primary }]} />
-                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? '#FFFFFF' : colors.primary }]} />
-                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? '#FFFFFF' : colors.primary }]} />
+                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? '#FFFFFF' : colors.tint }]} />
+                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? '#FFFFFF' : colors.tint }]} />
+                        <View style={[styles.loadingDot, { backgroundColor: isTextAction ? '#FFFFFF' : colors.tint }]} />
                     </View>
                 ) : isTextAction ? (
                     <Text style={[styles.actionText, { color: '#FFFFFF' }]}>
                         {action.text}
                     </Text>
                 ) : (
-                    <Ionicons name={action.icon as any} size={18} color={colors.primary} />
+                    <Ionicons name={action.icon as any} size={18} color={colors.tint} />
                 )}
             </TouchableOpacity>
         );
@@ -185,11 +171,11 @@ const Header: React.FC<HeaderProps> = ({
                 getTitleAlignment(),
                 variant === 'minimal' && styles.titleContainerMinimal
             ]}>
-                <Text style={[titleStyle, { color: colors.text.primary }]}>
+                <Text style={[titleStyle,                 { color: colors.text }]}>
                     {title}
                 </Text>
                 {subtitle && (
-                    <Text style={[subtitleStyle, { color: colors.text.secondary }]}>
+                    <Text style={[subtitleStyle, { color: colors.secondaryText }]}>
                         {subtitle}
                     </Text>
                 )}
@@ -198,20 +184,21 @@ const Header: React.FC<HeaderProps> = ({
     };
 
     const getElevationStyle = () => {
+        const isDark = colorScheme === 'dark';
         switch (elevation) {
             case 'none':
                 return {};
             case 'subtle':
                 return Platform.select({
                     web: {
-                        boxShadow: isDarkTheme
+                        boxShadow: isDark
                             ? '0 1px 3px rgba(0,0,0,0.3)'
                             : '0 1px 3px rgba(0,0,0,0.1)',
                     },
                     default: {
                         shadowColor: '#000000',
                         shadowOffset: { width: 0, height: 1 },
-                        shadowOpacity: isDarkTheme ? 0.3 : 0.1,
+                        shadowOpacity: isDark ? 0.3 : 0.1,
                         shadowRadius: 3,
                         elevation: 2,
                     },
@@ -219,14 +206,14 @@ const Header: React.FC<HeaderProps> = ({
             case 'prominent':
                 return Platform.select({
                     web: {
-                        boxShadow: isDarkTheme
+                        boxShadow: isDark
                             ? '0 4px 12px rgba(0,0,0,0.4)'
                             : '0 4px 12px rgba(0,0,0,0.15)',
                     },
                     default: {
                         shadowColor: '#000000',
                         shadowOffset: { width: 0, height: 4 },
-                        shadowOpacity: isDarkTheme ? 0.4 : 0.15,
+                        shadowOpacity: isDark ? 0.4 : 0.15,
                         shadowRadius: 12,
                         elevation: 8,
                     },
@@ -239,7 +226,7 @@ const Header: React.FC<HeaderProps> = ({
     const getBackgroundStyle = () => {
         if (variant === 'gradient') {
             return {
-                backgroundColor: isDarkTheme ? '#1C1C1E' : '#FFFFFF',
+                backgroundColor: colors.background,
                 // Add gradient overlay effect
                 borderBottomWidth: 1,
                 borderBottomColor: colors.border,
@@ -283,9 +270,11 @@ const styles = StyleSheet.create({
         ...Platform.select({
             web: {
                 position: 'sticky' as any,
+                top: 0,
             },
             default: {
                 position: 'absolute',
+                top: 0,
             },
         }),
     },

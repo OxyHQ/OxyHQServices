@@ -364,7 +364,7 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
             enableBlurKeyboardOnGesture={true}
             detached
             topInset={(insets?.top ?? 0) + (appInsets?.top ?? 0)}
-            bottomInset={(insets?.bottom ?? 0) + (appInsets?.bottom ?? 0)}
+            bottomInset={keyboardHeight > 0 ? keyboardHeight : 0}
             onChange={(index) => { isOpenRef.current = index !== -1; }}
             onDismiss={() => { isOpenRef.current = false; }}
         >
@@ -482,3 +482,4 @@ const styles = StyleSheet.create({
 });
 
 export default OxyProvider;
+
