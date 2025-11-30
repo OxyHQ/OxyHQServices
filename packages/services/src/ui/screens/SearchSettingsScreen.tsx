@@ -1,18 +1,15 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
     View,
-    Text,
-    TouchableOpacity,
     StyleSheet,
     ScrollView,
-    Switch,
-    ActivityIndicator,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { toast } from '../../lib/sonner';
-import { Header, Section, GroupedSection } from '../components';
+import { Header, Section, LoadingState, SettingRow } from '../components';
 import { useI18n } from '../hooks/useI18n';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 
 const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -96,29 +93,18 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
         }
     }, [user?.id, oxyServices, t]);
 
-    const themeStyles = useMemo(() => {
-        const isDarkTheme = theme === 'dark';
-        return {
-            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
-            backgroundColor: isDarkTheme ? '#121212' : '#FFFFFF',
-            secondaryBackgroundColor: isDarkTheme ? '#222222' : '#F5F5F5',
-            borderColor: isDarkTheme ? '#444444' : '#E0E0E0',
-        };
-    }, [theme]);
+    const themeStyles = useThemeStyles(theme);
 
     if (isLoading) {
         return (
             <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
                 <Header
                     title={t('searchSettings.title') || 'Search Settings'}
-                    
                     onBack={goBack || onClose}
                     variant="minimal"
                     elevation="subtle"
                 />
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={themeStyles.textColor} />
-                </View>
+                <LoadingState color={themeStyles.textColor} />
             </View>
         );
     }
@@ -135,45 +121,31 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {/* SafeSearch */}
-                <Section title={t('searchSettings.safeSearch.title') || 'SafeSearch'}  isFirst={true}>
-                    <View style={[styles.settingRow, { borderBottomColor: themeStyles.borderColor }]}>
-                        <View style={styles.settingInfo}>
-                            <Text style={[styles.settingTitle, { color: themeStyles.textColor }]}>
-                                {t('searchSettings.safeSearch.label') || 'Enable SafeSearch'}
-                            </Text>
-                            <Text style={[styles.settingDescription, { color: themeStyles.textColor }]}>
-                                {t('searchSettings.safeSearch.description') || 'Filter out explicit content from search results'}
-                            </Text>
-                        </View>
-                        <Switch
-                            value={safeSearch}
-                            onValueChange={handleSafeSearchToggle}
-                            disabled={isSaving}
-                            trackColor={{ false: '#767577', true: '#d169e5' }}
-                            thumbColor={safeSearch ? '#fff' : '#f4f3f4'}
-                        />
-                    </View>
+                <Section title={t('searchSettings.safeSearch.title') || 'SafeSearch'} isFirst={true}>
+                    <SettingRow
+                        title={t('searchSettings.safeSearch.label') || 'Enable SafeSearch'}
+                        description={t('searchSettings.safeSearch.description') || 'Filter out explicit content from search results'}
+                        value={safeSearch}
+                        onValueChange={handleSafeSearchToggle}
+                        disabled={isSaving}
+                        textColor={themeStyles.textColor}
+                        mutedTextColor={themeStyles.mutedTextColor}
+                        borderColor={themeStyles.borderColor}
+                    />
                 </Section>
 
                 {/* Search Personalization */}
-                <Section title={t('searchSettings.personalization.title') || 'Search Personalization'} >
-                    <View style={[styles.settingRow, { borderBottomColor: themeStyles.borderColor }]}>
-                        <View style={styles.settingInfo}>
-                            <Text style={[styles.settingTitle, { color: themeStyles.textColor }]}>
-                                {t('searchSettings.personalization.label') || 'Personalized Search'}
-                            </Text>
-                            <Text style={[styles.settingDescription, { color: themeStyles.textColor }]}>
-                                {t('searchSettings.personalization.description') || 'Use your activity to improve search results'}
-                            </Text>
-                        </View>
-                        <Switch
-                            value={searchPersonalization}
-                            onValueChange={handlePersonalizationToggle}
-                            disabled={isSaving}
-                            trackColor={{ false: '#767577', true: '#d169e5' }}
-                            thumbColor={searchPersonalization ? '#fff' : '#f4f3f4'}
-                        />
-                    </View>
+                <Section title={t('searchSettings.personalization.title') || 'Search Personalization'}>
+                    <SettingRow
+                        title={t('searchSettings.personalization.label') || 'Personalized Search'}
+                        description={t('searchSettings.personalization.description') || 'Use your activity to improve search results'}
+                        value={searchPersonalization}
+                        onValueChange={handlePersonalizationToggle}
+                        disabled={isSaving}
+                        textColor={themeStyles.textColor}
+                        mutedTextColor={themeStyles.mutedTextColor}
+                        borderColor={themeStyles.borderColor}
+                    />
                 </Section>
             </ScrollView>
         </View>
@@ -187,31 +159,6 @@ const styles = StyleSheet.create({
     content: {
         flex: 1,
         padding: 16,
-    },
-    loadingContainer: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    settingRow: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        paddingVertical: 16,
-        borderBottomWidth: 1,
-    },
-    settingInfo: {
-        flex: 1,
-        marginRight: 16,
-    },
-    settingTitle: {
-        fontSize: 16,
-        fontWeight: '500',
-        marginBottom: 4,
-    },
-    settingDescription: {
-        fontSize: 14,
-        opacity: 0.7,
     },
 });
 

@@ -3,21 +3,22 @@ import { View, Text, StyleSheet, ScrollView, Platform } from 'react-native';
 import type { BaseScreenProps } from '../../navigation/types';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
+import { useThemeStyles } from '../../hooks/useThemeStyles';
 
 const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const { t } = useI18n();
-    const isDarkTheme = theme === 'dark';
-    const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
-    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
+    const themeStyles = useThemeStyles(theme);
+    const backgroundColor = themeStyles.backgroundColor;
+    const textColor = themeStyles.textColor;
     const primaryColor = '#d169e5';
 
-    // Placeholder: In a real app, fetch rewards from API
+    // TODO: Implement API integration for rewards
+    // Should fetch rewards from oxyServices.getKarmaRewards() instead of using static content
     return (
         <View style={[styles.container, { backgroundColor }]}>
             <Header
                 title={t('karma.rewards.title') || 'Karma Rewards'}
                 subtitle={t('karma.rewards.subtitle') || 'Unlock special features and recognition'}
-                
                 onBack={goBack}
                 elevation="subtle"
             />

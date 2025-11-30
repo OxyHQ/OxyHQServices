@@ -1,17 +1,17 @@
-import React, { useState, useCallback, useMemo, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     View,
     Text,
     TouchableOpacity,
     StyleSheet,
     ScrollView,
-    ActivityIndicator,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { toast } from '../../lib/sonner';
-import { Header, Section, GroupedSection } from '../components';
+import { Header, Section, GroupedSection, LoadingState, EmptyState } from '../components';
 import { useI18n } from '../hooks/useI18n';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 
 interface SavedItem {
     id: string;
@@ -33,12 +33,23 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'saves' | 'collections'>('saves');
 
+    const themeStyles = useThemeStyles(theme);
+    const tabActiveColor = '#007AFF';
+    const tabInactiveColor = themeStyles.isDarkTheme ? '#888888' : '#666666';
+
+    // TODO: Implement API integration for saved items and collections
+    // Currently sets empty arrays. Should fetch from oxyServices.getSavedItems() and oxyServices.getCollections()
     // Load saved items and collections
     useEffect(() => {
         const loadData = async () => {
             try {
                 setIsLoading(true);
                 if (user?.id && oxyServices) {
+                    // TODO: Replace with actual API calls
+                    // const saved = await oxyServices.getSavedItems(user.id);
+                    // const cols = await oxyServices.getCollections(user.id);
+                    // setSavedItems(saved);
+                    // setCollections(cols);
                     setSavedItems([]);
                     setCollections([]);
                 }
@@ -52,18 +63,6 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
         loadData();
     }, [user?.id, oxyServices, t]);
 
-    const themeStyles = useMemo(() => {
-        const isDarkTheme = theme === 'dark';
-        return {
-            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
-            backgroundColor: isDarkTheme ? '#121212' : '#FFFFFF',
-            secondaryBackgroundColor: isDarkTheme ? '#222222' : '#F5F5F5',
-            borderColor: isDarkTheme ? '#444444' : '#E0E0E0',
-            tabActiveColor: '#007AFF',
-            tabInactiveColor: isDarkTheme ? '#888888' : '#666666',
-        };
-    }, [theme]);
-
     const formatDate = (date: Date) => {
         return date.toLocaleDateString();
     };
@@ -72,7 +71,6 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
                 title={t('saves.title') || 'Saves & Collections'}
-                
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
@@ -83,7 +81,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                 <TouchableOpacity
                     style={[
                         styles.tab,
-                        activeTab === 'saves' && { borderBottomColor: themeStyles.tabActiveColor },
+                        activeTab === 'saves' && { borderBottomColor: tabActiveColor },
                     ]}
                     onPress={() => setActiveTab('saves')}
                 >
@@ -91,7 +89,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                         style={[
                             styles.tabText,
                             {
-                                color: activeTab === 'saves' ? themeStyles.tabActiveColor : themeStyles.tabInactiveColor,
+                                color: activeTab === 'saves' ? tabActiveColor : tabInactiveColor,
                                 fontWeight: activeTab === 'saves' ? '600' : '400',
                             },
                         ]}
@@ -102,7 +100,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                 <TouchableOpacity
                     style={[
                         styles.tab,
-                        activeTab === 'collections' && { borderBottomColor: themeStyles.tabActiveColor },
+                        activeTab === 'collections' && { borderBottomColor: tabActiveColor },
                     ]}
                     onPress={() => setActiveTab('collections')}
                 >
@@ -110,7 +108,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                         style={[
                             styles.tabText,
                             {
-                                color: activeTab === 'collections' ? themeStyles.tabActiveColor : themeStyles.tabInactiveColor,
+                                color: activeTab === 'collections' ? tabActiveColor : tabInactiveColor,
                                 fontWeight: activeTab === 'collections' ? '600' : '400',
                             },
                         ]}
@@ -122,21 +120,18 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {isLoading ? (
-                    <View style={styles.loadingContainer}>
-                        <ActivityIndicator size="large" color={themeStyles.textColor} />
-                        <Text style={[styles.loadingText, { color: themeStyles.textColor }]}>
-                            {t('saves.loading') || 'Loading...'}
-                        </Text>
-                    </View>
+                    <LoadingState
+                        message={t('saves.loading') || 'Loading...'}
+                        color={themeStyles.textColor}
+                    />
                 ) : activeTab === 'saves' ? (
                     savedItems.length === 0 ? (
-                        <View style={styles.emptyContainer}>
-                            <Text style={[styles.emptyText, { color: themeStyles.textColor }]}>
-                                {t('saves.empty') || 'No saved items yet'}
-                            </Text>
-                        </View>
+                        <EmptyState
+                            message={t('saves.empty') || 'No saved items yet'}
+                            textColor={themeStyles.textColor}
+                        />
                     ) : (
-                        <Section title={t('saves.savedItems') || 'Saved Items'}  isFirst={true}>
+                        <Section title={t('saves.savedItems') || 'Saved Items'} isFirst={true}>
                             <GroupedSection
                                 items={savedItems.map((item) => ({
                                     id: item.id,
@@ -145,19 +140,17 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                                     title: item.title,
                                     subtitle: formatDate(item.savedAt),
                                 }))}
-                                
                             />
                         </Section>
                     )
                 ) : (
                     collections.length === 0 ? (
-                        <View style={styles.emptyContainer}>
-                            <Text style={[styles.emptyText, { color: themeStyles.textColor }]}>
-                                {t('saves.noCollections') || 'No collections yet'}
-                            </Text>
-                        </View>
+                        <EmptyState
+                            message={t('saves.noCollections') || 'No collections yet'}
+                            textColor={themeStyles.textColor}
+                        />
                     ) : (
-                        <Section title={t('saves.collections') || 'Collections'}  isFirst={true}>
+                        <Section title={t('saves.collections') || 'Collections'} isFirst={true}>
                             <GroupedSection
                                 items={collections.map((collection) => ({
                                     id: collection.id,
@@ -166,7 +159,6 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                                     title: collection.name,
                                     subtitle: `${collection.itemCount || 0} items`,
                                 }))}
-                                
                             />
                         </Section>
                     )
@@ -197,24 +189,6 @@ const styles = StyleSheet.create({
     content: {
         flex: 1,
         padding: 16,
-    },
-    loadingContainer: {
-        padding: 40,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    loadingText: {
-        marginTop: 12,
-        fontSize: 16,
-    },
-    emptyContainer: {
-        padding: 40,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    emptyText: {
-        fontSize: 16,
-        textAlign: 'center',
     },
 });
 

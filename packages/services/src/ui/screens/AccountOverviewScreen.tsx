@@ -22,6 +22,7 @@ import { confirmAction } from '../utils/confirmAction';
 import { Ionicons } from '@expo/vector-icons';
 import { Header, Section, GroupedSection, GroupedItem } from '../components';
 import { useI18n } from '../hooks/useI18n';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 
 /**
  * AccountOverviewScreen - Optimized for performance
@@ -45,19 +46,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     const [loadingAdditionalAccounts, setLoadingAdditionalAccounts] = useState(false);
 
     // Memoize theme-related calculations to prevent unnecessary recalculations
-    const themeStyles = useMemo(() => {
-        const isDarkTheme = theme === 'dark';
-        return {
-            isDarkTheme,
-            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
-            backgroundColor: isDarkTheme ? '#121212' : '#FFFFFF',
-            secondaryBackgroundColor: isDarkTheme ? '#222222' : '#F5F5F5',
-            borderColor: isDarkTheme ? '#444444' : '#E0E0E0',
-            primaryColor: '#d169e5',
-            dangerColor: '#D32F2F',
-            iconColor: isDarkTheme ? '#BBBBBB' : '#666666',
-        };
-    }, [theme]);
+    const baseThemeStyles = useThemeStyles(theme);
+    const themeStyles = useMemo(() => ({
+        ...baseThemeStyles,
+        primaryColor: '#d169e5',
+        dangerColor: '#D32F2F',
+        iconColor: baseThemeStyles.isDarkTheme ? '#BBBBBB' : '#666666',
+    }), [baseThemeStyles]);
 
     // Memoize additional accounts filtering to prevent recalculation on every render
     const additionalAccounts = useMemo(() =>
@@ -166,7 +161,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             try {
                                 toast.loading(t('accountOverview.items.downloadData.downloading') || 'Preparing download...');
                                 const blob = await oxyServices.downloadAccountData('json');
-                                
+
                                 // Create download link for web
                                 if (Platform.OS === 'web') {
                                     const url = URL.createObjectURL(blob);
@@ -194,7 +189,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                             try {
                                 toast.loading(t('accountOverview.items.downloadData.downloading') || 'Preparing download...');
                                 const blob = await oxyServices.downloadAccountData('csv');
-                                
+
                                 // Create download link for web
                                 if (Platform.OS === 'web') {
                                     const url = URL.createObjectURL(blob);
@@ -290,7 +285,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
             {/* Header */}
             <Header
                 title={t('accountOverview.title')}
-                
+
                 onBack={onClose}
                 variant="minimal"
                 elevation="subtle"
@@ -298,7 +293,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {/* User Profile Section */}
-                <Section title={t('accountOverview.sections.profile')}  isFirst={true}>
+                <Section title={t('accountOverview.sections.profile')} isFirst={true}>
                     <GroupedSection
                         items={[
                             {
@@ -315,7 +310,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                                 uri={user?.avatar ? oxyServices.getFileDownloadUrl(user.avatar as string, 'thumb') : undefined}
                                                 name={user?.name?.full}
                                                 size={40}
-                                                
+
                                             />
                                         </View>
                                         <TouchableOpacity
@@ -328,7 +323,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 ),
                             },
                         ]}
-                        
+
                     />
                 </Section>
 
@@ -377,7 +372,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 onPress: () => toast.info(t('accountOverview.items.billing.coming')),
                             }] : []),
                         ]}
-                        
+
                     />
                 </Section>
 
@@ -401,7 +396,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                         ),
                                     },
                                 ]}
-                                
+
                             />
                         ) : additionalAccountsData.length > 0 ? (
                             <GroupedSection
@@ -436,7 +431,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                         </>
                                     ),
                                 }))}
-                                
+
                             />
                         ) : (
                             <GroupedSection
@@ -449,7 +444,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                         subtitle: t('accountOverview.additional.noAccounts.subtitle') || 'Add another account to switch between them',
                                     },
                                 ]}
-                                
+
                             />
                         )}
                     </Section>
@@ -477,7 +472,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     onPress: handleSignOutAll,
                                 },
                             ]}
-                            
+
                         />
                     </Section>
                 )}
@@ -535,7 +530,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 onPress: handleDeleteAccount,
                             },
                         ]}
-                        
+
                     />
                 </Section>
 
@@ -608,7 +603,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 onPress: () => navigate?.('AppInfo'),
                             },
                         ]}
-                        
+
                     />
                 </Section>
 
@@ -619,7 +614,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                         iconColor="#FF3B30"
                         title={t('accountOverview.items.signOut.title')}
                         subtitle={t('accountOverview.items.signOut.subtitle')}
-                        
+
                         onPress={confirmLogout}
                         isFirst={true}
                         isLast={true}

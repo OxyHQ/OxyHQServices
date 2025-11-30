@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image, Linking } 
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../navigation/types';
 import { Header, GroupedSection } from '../components';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 
 interface UserLinksScreenProps extends BaseScreenProps {
     userId: string;
@@ -22,10 +23,9 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
     goBack,
     navigate
 }) => {
-    const isDarkTheme = theme === 'dark';
+    const baseThemeStyles = useThemeStyles(theme);
     const themeStyles = {
-        backgroundColor: isDarkTheme ? '#000' : '#f2f2f2',
-        textColor: isDarkTheme ? '#fff' : '#333',
+        ...baseThemeStyles,
         primaryColor: '#007AFF',
     };
 
@@ -54,7 +54,6 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
             <Header
                 title="Links"
                 subtitle={`${links.length} link${links.length !== 1 ? 's' : ''}`}
-                
                 onBack={goBack}
                 elevation="subtle"
             />

@@ -14,6 +14,7 @@ import { useOxy } from '../context/OxyContext';
 import { toast } from '../../lib/sonner';
 import { Header, Section } from '../components';
 import { useI18n } from '../hooks/useI18n';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 
 const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -26,19 +27,13 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
     const [evidence, setEvidence] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const themeStyles = useMemo(() => {
-        const isDarkTheme = theme === 'dark';
-        return {
-            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
-            backgroundColor: isDarkTheme ? '#121212' : '#FFFFFF',
-            secondaryBackgroundColor: isDarkTheme ? '#222222' : '#F5F5F5',
-            borderColor: isDarkTheme ? '#444444' : '#E0E0E0',
-            mutedTextColor: isDarkTheme ? '#8E8E93' : '#8E8E93',
-            inputBackgroundColor: isDarkTheme ? '#1C1C1E' : '#F2F2F7',
-            inputTextColor: isDarkTheme ? '#FFFFFF' : '#000000',
-            placeholderTextColor: isDarkTheme ? '#8E8E93' : '#8E8E93',
-        };
-    }, [theme]);
+    const baseThemeStyles = useThemeStyles(theme);
+    const themeStyles = useMemo(() => ({
+        ...baseThemeStyles,
+        inputBackgroundColor: baseThemeStyles.isDarkTheme ? '#1C1C1E' : '#F2F2F7',
+        inputTextColor: baseThemeStyles.textColor,
+        placeholderTextColor: baseThemeStyles.mutedTextColor,
+    }), [baseThemeStyles]);
 
     const handleSubmit = useCallback(async () => {
         if (!reason.trim()) {

@@ -27,6 +27,7 @@ import { toast } from 'sonner';
 import QRCode from 'react-native-qrcode-svg';
 
 import { GroupedSection } from '../components';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 
 // Restrict payment methods to Card, Oxy Pay, and FairCoin (QR)
 const PAYMENT_METHODS = [
@@ -647,6 +648,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                             )}
                             <View style={{ height: 18 }} />
                             <Text style={styles.faircoinWaiting}>Waiting for payment...</Text>
+                            {/* TODO: Integrate QR code generator for FAIRWallet payments */}
                             <Text style={styles.faircoinPlaceholder}>(This is a placeholder. Integrate with a QR code generator for production.)</Text>
                         </View>
                     </View>
@@ -807,14 +809,11 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     };
 
     // Memoize theme-related calculations to prevent unnecessary recalculations
-    const themeStyles = useMemo(() => {
-        const isDarkTheme = theme === 'dark';
-        return {
-            isDarkTheme,
-            backgroundColor: isDarkTheme ? '#121212' : '#f2f2f2',
-            primaryColor: '#007AFF',
-        };
-    }, [theme]);
+    const baseThemeStyles = useThemeStyles(theme);
+    const themeStyles = useMemo(() => ({
+        ...baseThemeStyles,
+        primaryColor: '#007AFF',
+    }), [baseThemeStyles]);
 
     return (
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>

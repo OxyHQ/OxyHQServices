@@ -1,18 +1,16 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
-    Text,
-    TouchableOpacity,
     StyleSheet,
     ScrollView,
-    ActivityIndicator,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
 import { useOxy } from '../context/OxyContext';
 import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';
-import { Header, Section, GroupedSection } from '../components';
+import { Header, Section, GroupedSection, LoadingState, EmptyState } from '../components';
 import { useI18n } from '../hooks/useI18n';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 
 interface HistoryItem {
     id: string;
@@ -72,13 +70,13 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
         }
     };
 
+    // TODO: Integrate with backend API for history storage
+    // Currently uses local storage only. Should fetch from backend API and sync across devices.
     // Load history from storage
     React.useEffect(() => {
         const loadHistory = async () => {
             try {
                 setIsLoading(true);
-                // In a real implementation, this would fetch from API or local storage
-                // For now, we'll use a mock implementation
                 const storage = await getStorage();
                 const historyKey = `history_${user?.id || 'guest'}`;
                 const stored = await storage.getItem(historyKey);
@@ -153,15 +151,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
         );
     }, [user?.id, t]);
 
-    const themeStyles = useMemo(() => {
-        const isDarkTheme = theme === 'dark';
-        return {
-            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
-            backgroundColor: isDarkTheme ? '#121212' : '#FFFFFF',
-            secondaryBackgroundColor: isDarkTheme ? '#222222' : '#F5F5F5',
-            borderColor: isDarkTheme ? '#444444' : '#E0E0E0',
-        };
-    }, [theme]);
+    const themeStyles = useThemeStyles(theme);
 
     const formatTime = (date: Date) => {
         const now = new Date();
@@ -181,7 +171,6 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
                 title={t('history.title') || 'History'}
-                
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
@@ -216,20 +205,17 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 {/* History List */}
-                <Section title={t('history.recent') || 'Recent History'} >
+                <Section title={t('history.recent') || 'Recent History'}>
                     {isLoading ? (
-                        <View style={styles.loadingContainer}>
-                            <ActivityIndicator size="large" color={themeStyles.textColor} />
-                            <Text style={[styles.loadingText, { color: themeStyles.textColor }]}>
-                                {t('history.loading') || 'Loading history...'}
-                            </Text>
-                        </View>
+                        <LoadingState
+                            message={t('history.loading') || 'Loading history...'}
+                            color={themeStyles.textColor}
+                        />
                     ) : history.length === 0 ? (
-                        <View style={styles.emptyContainer}>
-                            <Text style={[styles.emptyText, { color: themeStyles.textColor }]}>
-                                {t('history.empty') || 'No history yet'}
-                            </Text>
-                        </View>
+                        <EmptyState
+                            message={t('history.empty') || 'No history yet'}
+                            textColor={themeStyles.textColor}
+                        />
                     ) : (
                         <GroupedSection
                             items={history.map((item) => ({
@@ -239,7 +225,6 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
                                 title: item.query,
                                 subtitle: formatTime(item.timestamp),
                             }))}
-                            
                         />
                     )}
                 </Section>
@@ -255,24 +240,6 @@ const styles = StyleSheet.create({
     content: {
         flex: 1,
         padding: 16,
-    },
-    loadingContainer: {
-        padding: 40,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    loadingText: {
-        marginTop: 12,
-        fontSize: 16,
-    },
-    emptyContainer: {
-        padding: 40,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    emptyText: {
-        fontSize: 16,
-        textAlign: 'center',
     },
 });
 

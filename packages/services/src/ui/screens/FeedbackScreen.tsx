@@ -609,8 +609,9 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 } : undefined,
             };
 
-            // For now, we'll simulate the API call
-            // In a real implementation, you would call oxyServices.submitFeedback(feedbackPayload)
+            // TODO: Implement actual API integration
+            // Replace setTimeout simulation with actual API call: await oxyServices.submitFeedback(feedbackPayload)
+            // Currently simulates API call with setTimeout for development/testing purposes
             await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate API call
 
             setFeedbackState({ status: 'success', message: t('feedback.toasts.submitSuccess') || 'Feedback submitted successfully!' });

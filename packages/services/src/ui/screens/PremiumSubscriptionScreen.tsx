@@ -90,6 +90,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const warningColor = '#FF9500';
     const dangerColor = '#FF3B30';
 
+    // TODO: Replace mock data with actual API integration
+    // Should fetch plans from oxyServices.getSubscriptionPlans() and individual features from oxyServices.getIndividualFeatures()
     // Oxy+ subscription plans
     const mockPlans: SubscriptionPlan[] = [
         {

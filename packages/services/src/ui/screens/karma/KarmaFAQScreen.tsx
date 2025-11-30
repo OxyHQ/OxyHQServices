@@ -4,6 +4,7 @@ import type { BaseScreenProps } from '../../navigation/types';
 import { Ionicons } from '@expo/vector-icons';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
+import { useThemeStyles } from '../../hooks/useThemeStyles';
 
 const FAQ_KEYS = ['what', 'earn', 'lose', 'use', 'transfer', 'support'] as const;
 
@@ -22,18 +23,14 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const [search, setSearch] = useState('');
 
     // Memoize theme-related calculations to prevent unnecessary recalculations
-    const themeStyles = useMemo(() => {
-        const isDarkTheme = theme === 'dark';
-        return {
-            isDarkTheme,
-            backgroundColor: isDarkTheme ? '#121212' : '#FFFFFF',
-            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
-            cardColor: isDarkTheme ? '#23232b' : '#f7f7fa',
-            primaryColor: '#d169e5',
-            inputBg: isDarkTheme ? '#23232b' : '#f2f2f7',
-            inputBorder: isDarkTheme ? '#444' : '#e0e0e0',
-        };
-    }, [theme]);
+    const baseThemeStyles = useThemeStyles(theme);
+    const themeStyles = useMemo(() => ({
+        ...baseThemeStyles,
+        cardColor: baseThemeStyles.isDarkTheme ? '#23232b' : '#f7f7fa',
+        primaryColor: '#d169e5',
+        inputBg: baseThemeStyles.isDarkTheme ? '#23232b' : '#f2f2f7',
+        inputBorder: baseThemeStyles.borderColor,
+    }), [baseThemeStyles]);
 
     // Memoize filtered FAQs to prevent filtering on every render
     const faqs = useMemo(() => FAQ_KEYS.map(key => ({

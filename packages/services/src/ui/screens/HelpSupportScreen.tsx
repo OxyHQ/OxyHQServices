@@ -11,6 +11,7 @@ import type { BaseScreenProps } from '../navigation/types';
 import { toast } from '../../lib/sonner';
 import { Header, Section, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 
 const HelpSupportScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -26,27 +27,20 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
         });
     }, [t]);
 
+    const themeStyles = useThemeStyles(theme);
+
+    // TODO: Implement FAQ screen navigation
+    // Currently shows a placeholder toast. Should navigate to a dedicated FAQ screen or modal.
     const handleFAQ = useMemo(() => () => {
-        // In a real implementation, this would navigate to FAQ screen
         toast.info(t('help.faqComing') || 'FAQ coming soon');
     }, [t]);
 
     const handleReportBug = useMemo(() => () => {
-        // In a real implementation, this would open a bug report form
+        // TODO: Consider implementing a dedicated bug report form instead of just email
         Linking.openURL('mailto:bugs@oxy.so?subject=Bug Report').catch(() => {
             toast.error(t('help.reportError') || 'Failed to open email client');
         });
     }, [t]);
-
-    const themeStyles = useMemo(() => {
-        const isDarkTheme = theme === 'dark';
-        return {
-            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
-            backgroundColor: isDarkTheme ? '#121212' : '#FFFFFF',
-            secondaryBackgroundColor: isDarkTheme ? '#222222' : '#F5F5F5',
-            borderColor: isDarkTheme ? '#444444' : '#E0E0E0',
-        };
-    }, [theme]);
 
     return (
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>

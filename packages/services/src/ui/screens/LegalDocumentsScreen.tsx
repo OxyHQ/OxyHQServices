@@ -1,17 +1,15 @@
-import React, { useMemo, useState, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
     View,
-    Text,
-    TouchableOpacity,
     StyleSheet,
     ScrollView,
-    ActivityIndicator,
     Linking,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
 import { toast } from '../../lib/sonner';
-import { Header, Section, GroupedSection } from '../components';
+import { Header, Section, GroupedSection, LoadingState } from '../components';
 import { useI18n } from '../hooks/useI18n';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 
 const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -64,15 +62,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
         };
     }, [t]);
 
-    const themeStyles = useMemo(() => {
-        const isDarkTheme = theme === 'dark';
-        return {
-            textColor: isDarkTheme ? '#FFFFFF' : '#000000',
-            backgroundColor: isDarkTheme ? '#121212' : '#FFFFFF',
-            secondaryBackgroundColor: isDarkTheme ? '#222222' : '#F5F5F5',
-            borderColor: isDarkTheme ? '#444444' : '#E0E0E0',
-        };
-    }, [theme]);
+    const themeStyles = useThemeStyles(theme);
 
     // If a specific document type is requested, open it directly
     React.useEffect(() => {
@@ -101,17 +91,14 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
             <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
                 <Header
                     title={getPolicyTitle(documentType)}
-                    
                     onBack={goBack || onClose}
                     variant="minimal"
                     elevation="subtle"
                 />
-                <View style={styles.loadingContainer}>
-                    <ActivityIndicator size="large" color={themeStyles.textColor} />
-                    <Text style={[styles.loadingText, { color: themeStyles.textColor }]}>
-                        {t('legal.opening') || 'Opening document...'}
-                    </Text>
-                </View>
+                <LoadingState
+                    message={t('legal.opening') || 'Opening document...'}
+                    color={themeStyles.textColor}
+                />
             </View>
         );
     }
@@ -121,7 +108,6 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
                 title={t('legal.title') || 'Legal Documents'}
-                
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
@@ -203,16 +189,6 @@ const styles = StyleSheet.create({
     content: {
         flex: 1,
         padding: 16,
-    },
-    loadingContainer: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 16,
-    },
-    loadingText: {
-        fontSize: 16,
-        marginTop: 12,
     },
 });
 
