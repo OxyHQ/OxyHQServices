@@ -13,9 +13,29 @@ import {
 import type { BaseScreenProps } from '../../navigation/types';
 import { useOxy } from '../../context/OxyContext';
 import { fontFamilies } from '../../styles/fonts';
-import Avatar from '../../components/Avatar';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../../hooks/useI18n';
+
+/**
+ * Darkens a color by a specified factor
+ * Returns a darker version of the color
+ */
+const darkenColor = (color: string, factor: number = 0.6): string => {
+    // Remove # if present
+    const hex = color.replace('#', '');
+
+    // Convert to RGB
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+
+    // Darken by factor
+    const newR = Math.max(0, Math.round(r * (1 - factor)));
+    const newG = Math.max(0, Math.round(g * (1 - factor)));
+    const newB = Math.max(0, Math.round(b * (1 - factor)));
+
+    return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+};
 
 const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     theme,
@@ -74,48 +94,45 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor }]}>
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer}>
                 <View style={styles.walletHeader}>
-                    <Avatar
-                        uri={user?.avatar ? oxyServices.getFileDownloadUrl(user.avatar as string, 'thumb') : undefined}
-                        name={user?.username}
-                        size={60}
-                        
-                        style={styles.avatar}
-                    />
+                    <Text style={[styles.karmaAmount, { color: primaryColor }]}>{karmaTotal ?? 0}</Text>
                     <Text style={[styles.karmaLabel, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>
                         {t('karma.center.balance') || 'Karma Balance'}
                     </Text>
-                    <Text style={[styles.karmaAmount, { color: primaryColor }]}>{karmaTotal ?? 0}</Text>
-                    <View style={styles.actionRow}>
-                        <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaLeaderboard')}>
-                            <View style={[styles.actionIcon, { backgroundColor: '#E0E0E0' }]}>
-                                <Ionicons name="trophy-outline" size={28} color="#888" />
-                            </View>
-                            <Text style={styles.actionLabel}>{t('karma.center.actions.leaderboard') || 'Leaderboard'}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaRules')}>
-                            <View style={[styles.actionIcon, { backgroundColor: '#E0E0E0' }]}>
-                                <Ionicons name="document-text-outline" size={28} color="#888" />
-                            </View>
-                            <Text style={styles.actionLabel}>{t('karma.center.actions.rules') || 'Rules'}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('AboutKarma')}>
-                            <View style={[styles.actionIcon, { backgroundColor: '#E0E0E0' }]}>
-                                <Ionicons name="star-outline" size={28} color="#888" />
-                            </View>
-                            <Text style={styles.actionLabel}>{t('karma.center.actions.about') || 'About'}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaRewards')}>
-                            <View style={[styles.actionIcon, { backgroundColor: '#E0E0E0' }]}>
-                                <Ionicons name="gift-outline" size={28} color="#888" />
-                            </View>
-                            <Text style={styles.actionLabel}>{t('karma.center.actions.rewards') || 'Rewards'}</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaFAQ')}>
-                            <View style={[styles.actionIcon, { backgroundColor: '#E0E0E0' }]}>
-                                <Ionicons name="help-circle-outline" size={28} color="#888" />
-                            </View>
-                            <Text style={styles.actionLabel}>{t('karma.center.actions.faq') || 'FAQ'}</Text>
-                        </TouchableOpacity>
+                    <View style={styles.actionContainer}>
+                        <View style={styles.actionRow}>
+                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaLeaderboard')}>
+                                <View style={[styles.actionIcon, { backgroundColor: '#FFD700' }]}>
+                                    <Ionicons name="trophy-outline" size={28} color={darkenColor('#FFD700')} />
+                                </View>
+                                <Text style={styles.actionLabel}>{t('karma.center.actions.leaderboard') || 'Leaderboard'}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaRules')}>
+                                <View style={[styles.actionIcon, { backgroundColor: '#007AFF' }]}>
+                                    <Ionicons name="document-text-outline" size={28} color={darkenColor('#007AFF')} />
+                                </View>
+                                <Text style={styles.actionLabel}>{t('karma.center.actions.rules') || 'Rules'}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('AboutKarma')}>
+                                <View style={[styles.actionIcon, { backgroundColor: '#FFD700' }]}>
+                                    <Ionicons name="star-outline" size={28} color={darkenColor('#FFD700')} />
+                                </View>
+                                <Text style={styles.actionLabel}>{t('karma.center.actions.about') || 'About'}</Text>
+                            </TouchableOpacity>
+                        </View>
+                        <View style={styles.actionRow}>
+                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaRewards')}>
+                                <View style={[styles.actionIcon, { backgroundColor: '#FF9500' }]}>
+                                    <Ionicons name="gift-outline" size={28} color={darkenColor('#FF9500')} />
+                                </View>
+                                <Text style={styles.actionLabel}>{t('karma.center.actions.rewards') || 'Rewards'}</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaFAQ')}>
+                                <View style={[styles.actionIcon, { backgroundColor: '#30D158' }]}>
+                                    <Ionicons name="help-circle-outline" size={28} color={darkenColor('#30D158')} />
+                                </View>
+                                <Text style={styles.actionLabel}>{t('karma.center.actions.faq') || 'FAQ'}</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
                     <Text style={styles.infoText}>
                         {t('karma.center.info') || 'Karma can only be earned by positive actions in the Oxy Ecosystem. It cannot be sent or received directly.'}
@@ -169,32 +186,28 @@ const styles = StyleSheet.create({
         width: '100%',
         backgroundColor: 'transparent',
     },
-    avatar: {
-        marginBottom: 12,
-    },
     karmaLabel: {
         fontSize: 16,
-        marginBottom: 4,
+        marginBottom: 18,
         fontFamily: fontFamilies.phudu,
     },
     karmaAmount: {
         fontSize: 48,
         fontWeight: 'bold',
+        marginBottom: 4,
+        fontFamily: fontFamilies.phudu,
+    },
+    actionContainer: {
         marginBottom: 18,
-        fontFamily: fontFamilies.phuduBold,
+        gap: 8,
     },
     actionRow: {
         flexDirection: 'row',
         justifyContent: 'center',
-        marginBottom: 18,
-        flexWrap: 'wrap',
-        rowGap: 0,
-        columnGap: 0,
+        gap: 2,
     },
     actionIconWrapper: {
         alignItems: 'center',
-        marginHorizontal: 8,
-        marginVertical: 4,
         width: 72,
     },
     actionIcon: {
@@ -204,13 +217,12 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         marginBottom: 6,
-        opacity: 0.5,
     },
     actionIconText: {
         fontSize: 28,
     },
     actionLabel: {
-        fontSize: 13,
+        fontSize: 10,
         color: '#888',
     },
     infoText: {

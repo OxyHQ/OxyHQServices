@@ -36,6 +36,10 @@ const mapIconName = (iconName: string): string => {
         'person-outline': 'account-outline',
         'person-add': 'account-plus',
         'shield-checkmark': 'shield-check',
+        'shield-check': 'shield-check',
+        'eye': 'eye',
+        'check-circle': 'check-circle',
+        'shield-lock': 'shield-lock',
         'notifications': 'bell',
         'people': 'account-group',
         'time': 'clock',
@@ -103,7 +107,7 @@ const GroupedItemComponent = ({
         <View style={styles.groupedItemContent}>
             {customIcon ? (
                 <View style={styles.actionIcon}>{customIcon}</View>
-            ) : icon && iconColor ? (
+            ) : icon ? (
                 <View style={[styles.iconContainer, { backgroundColor: iconColor }]}>
                     <MaterialCommunityIcons name={mapIconName(icon) as any} size={22} color={darkenColor(iconColor)} />
                 </View>

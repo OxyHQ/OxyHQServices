@@ -76,7 +76,8 @@ const Header: React.FC<HeaderProps> = ({
     scrollY,
 }) => {
     // Use theme colors directly from Colors constant (like Accounts sidebar)
-    const colorScheme = useColorScheme() ?? theme ?? 'light';
+    // Ensure colorScheme is always 'light' or 'dark' with proper fallback chain
+    const colorScheme: 'light' | 'dark' = useColorScheme() ?? theme ?? 'light';
     const colors = Colors[colorScheme];
     const insets = useSafeAreaInsets();
     const headerHeight = getHeaderHeight(variant, insets.top);
