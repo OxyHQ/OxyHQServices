@@ -16,7 +16,7 @@ const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             <Header
                 title={t('karma.about.title') || 'About Karma'}
                 subtitle={t('karma.about.subtitle') || 'Learn about the karma system'}
-                theme={theme}
+                
                 onBack={goBack}
                 elevation="subtle"
             />

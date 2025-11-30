@@ -61,7 +61,7 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
             <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
                 <Section
                     title={t('signup.summary.sections.account') || t('signup.summary.sectionTitle') || 'Account Information'}
-                    theme={theme as 'light' | 'dark'}
+                    
                     isFirst={true}
                 >
                     <GroupedSection
@@ -91,13 +91,13 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
                                 showChevron: false,
                             },
                         ]}
-                        theme={theme as 'light' | 'dark'}
+                        
                     />
                 </Section>
 
                 <Section
                     title={t('signup.summary.sections.next') || 'Next Steps'}
-                    theme={theme as 'light' | 'dark'}
+                    
                 >
                     <GroupedSection
                         items={[
@@ -122,7 +122,7 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
                                 dense: true,
                             },
                         ]}
-                        theme={theme as 'light' | 'dark'}
+                        
                     />
                 </Section>
             </View>

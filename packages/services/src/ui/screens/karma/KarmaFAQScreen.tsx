@@ -62,7 +62,7 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
                 title={t('karma.faq.title') || 'Karma FAQ'}
                 subtitle={t('karma.faq.subtitle') || 'Frequently asked questions about karma'}
                 subtitleVariant="muted"
-                theme={theme}
+                
                 onBack={goBack}
                 elevation="subtle"
             />

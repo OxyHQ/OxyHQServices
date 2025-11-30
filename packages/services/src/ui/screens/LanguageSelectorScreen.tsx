@@ -136,7 +136,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
             <Header
                 title={t('language.title')}
                 subtitle={t('language.subtitle')}
-                theme={theme}
+                
                 onBack={onClose || goBack}
                 variant="minimal"
                 elevation="subtle"
@@ -149,29 +149,29 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
             >
                 {/* Current selection */}
                 {currentLanguage && currentLanguageItems.length > 0 && (
-                    <Section title={t('language.current')} theme={theme} isFirst={true}>
+                    <Section title={t('language.current')}  isFirst={true}>
                         <GroupedSection
                             items={currentLanguageItems}
-                            theme={theme}
+                            
                         />
                     </Section>
                 )}
 
                 {/* Available languages */}
-                <Section title={t('language.available')} theme={theme}>
+                <Section title={t('language.available')} >
                     <Text style={[styles.sectionDescription, { color: colors.secondaryText }]}>
                         {t('language.subtitle')}
                     </Text>
                     <View style={styles.languageList}>
                         <GroupedSection
                             items={languageItems}
-                            theme={theme}
+                            
                         />
                     </View>
                 </Section>
 
                 {/* Information */}
-                <Section theme={theme}>
+                <Section >
                     <View style={[styles.infoCard, {
                         backgroundColor: colors.inputBackground,
                         borderColor: colors.border

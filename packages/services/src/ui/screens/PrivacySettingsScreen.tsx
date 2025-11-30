@@ -219,7 +219,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         uri={avatarUri}
                         name={username}
                         size={40}
-                        theme={theme}
+                        
                     />
                     <View style={styles.userDetails}>
                         <Text style={[styles.username, { color: themeStyles.textColor }]}>
@@ -288,7 +288,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
             <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
                 <Header
                     title={t('privacySettings.title') || 'Privacy Settings'}
-                    theme={theme}
+                    
                     onBack={goBack || onClose}
                     variant="minimal"
                     elevation="subtle"
@@ -304,7 +304,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
                 title={t('privacySettings.title') || 'Privacy Settings'}
-                theme={theme}
+                
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
@@ -312,7 +312,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {/* Account Privacy */}
-                <Section title={t('privacySettings.sections.account') || 'ACCOUNT PRIVACY'} theme={theme} isFirst={true}>
+                <Section title={t('privacySettings.sections.account') || 'ACCOUNT PRIVACY'}  isFirst={true}>
                     <SettingRow
                         title={t('privacySettings.isPrivateAccount') || 'Private Account'}
                         description={t('privacySettings.isPrivateAccountDesc') || 'Only approved followers can see your posts'}
@@ -340,7 +340,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 {/* Interactions */}
-                <Section title={t('privacySettings.sections.interactions') || 'INTERACTIONS'} theme={theme}>
+                <Section title={t('privacySettings.sections.interactions') || 'INTERACTIONS'} >
                     <SettingRow
                         title={t('privacySettings.allowTagging') || 'Allow Tagging'}
                         description={t('privacySettings.allowTaggingDesc') || 'Let others tag you in posts'}
@@ -368,7 +368,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 {/* Activity & Data */}
-                <Section title={t('privacySettings.sections.activity') || 'ACTIVITY & DATA'} theme={theme}>
+                <Section title={t('privacySettings.sections.activity') || 'ACTIVITY & DATA'} >
                     <SettingRow
                         title={t('privacySettings.showActivity') || 'Show Activity Status'}
                         description={t('privacySettings.showActivityDesc') || 'Display your activity on your profile'}
@@ -396,7 +396,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 {/* Content & Safety */}
-                <Section title={t('privacySettings.sections.content') || 'CONTENT & SAFETY'} theme={theme}>
+                <Section title={t('privacySettings.sections.content') || 'CONTENT & SAFETY'} >
                     <SettingRow
                         title={t('privacySettings.sensitiveContent') || 'Show Sensitive Content'}
                         description={t('privacySettings.sensitiveContentDesc') || 'Allow sensitive or explicit content'}
@@ -424,7 +424,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 {/* Blocked Users */}
-                <Section title={t('privacySettings.sections.blockedUsers') || 'BLOCKED USERS'} theme={theme}>
+                <Section title={t('privacySettings.sections.blockedUsers') || 'BLOCKED USERS'} >
                     {isLoadingUsers ? (
                         <View style={styles.loadingUsersContainer}>
                             <ActivityIndicator size="small" color={themeStyles.textColor} />
@@ -453,7 +453,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 {/* Restricted Users */}
-                <Section title={t('privacySettings.sections.restrictedUsers') || 'RESTRICTED USERS'} theme={theme}>
+                <Section title={t('privacySettings.sections.restrictedUsers') || 'RESTRICTED USERS'} >
                     {isLoadingUsers ? (
                         <View style={styles.loadingUsersContainer}>
                             <ActivityIndicator size="small" color={themeStyles.textColor} />

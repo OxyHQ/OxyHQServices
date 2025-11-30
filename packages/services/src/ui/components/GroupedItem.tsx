@@ -1,179 +1,166 @@
-import type React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Image } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import React, { memo, useMemo } from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { useColorScheme } from '../hooks/use-color-scheme';
+import { Colors } from '../constants/theme';
+import { useHapticPress } from '../hooks/use-haptic-press';
+
+/**
+ * Darkens a color by a specified factor
+ * Returns a darker version of the color
+ */
+const darkenColor = (color: string, factor: number = 0.6): string => {
+    // Remove # if present
+    const hex = color.replace('#', '');
+
+    // Convert to RGB
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+
+    // Darken by factor
+    const newR = Math.max(0, Math.round(r * (1 - factor)));
+    const newG = Math.max(0, Math.round(g * (1 - factor)));
+    const newB = Math.max(0, Math.round(b * (1 - factor)));
+
+    return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
+};
 
 interface GroupedItemProps {
     icon?: string;
     iconColor?: string;
-    image?: string;
-    imageSize?: number;
     title: string;
     subtitle?: string;
-    theme: 'light' | 'dark';
     onPress?: () => void;
     isFirst?: boolean;
     isLast?: boolean;
     showChevron?: boolean;
     disabled?: boolean;
-    selected?: boolean;
     customContent?: React.ReactNode;
     customIcon?: React.ReactNode;
-    multiRow?: boolean;
-    customContentBelow?: React.ReactNode;
-    dense?: boolean; // reduces internal padding
 }
 
-const GroupedItem: React.FC<GroupedItemProps> = ({
+const GroupedItemComponent = ({
     icon,
     iconColor = '#007AFF',
-    image,
-    imageSize = 20,
     title,
     subtitle,
-    theme,
     onPress,
     isFirst = false,
     isLast = false,
-    showChevron = true,
+    showChevron = false,
     disabled = false,
-    selected = false,
     customContent,
     customIcon,
-    multiRow = false,
-    customContentBelow,
-    dense = false,
-}) => {
-    const isDarkTheme = theme === 'dark';
-    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
-    const secondaryBackgroundColor = isDarkTheme ? '#1C1C1E' : '#FFFFFF';
-    const selectedBackgroundColor = selected ? `${iconColor}15` : secondaryBackgroundColor;
+}: GroupedItemProps) => {
+    const colorScheme = useColorScheme() ?? 'light';
+    const colors = Colors[colorScheme];
 
-    const itemStyles = [
-        styles.groupedItem,
-        isFirst && styles.firstGroupedItem,
-        isLast && styles.lastGroupedItem,
-        {
-            backgroundColor: selected ? selectedBackgroundColor : secondaryBackgroundColor,
-        },
-    ];
+    const itemStyles = useMemo(
+        () => [
+            styles.groupedItem,
+            isFirst && styles.firstGroupedItem,
+            isLast && styles.lastGroupedItem,
+            {
+                backgroundColor: colors.card,
+                borderBottomWidth: isLast ? 0 : 1,
+                borderBottomColor: colors.border,
+            },
+        ],
+        [colors.border, colors.card, isFirst, isLast],
+    );
 
     const content = (
-        <View style={[
-            styles.groupedItemContent,
-            multiRow && styles.groupedItemContentMultiRow,
-            dense && styles.groupedItemContentDense,
-        ]}>
+        <View style={styles.groupedItemContent}>
             {customIcon ? (
-                <View style={styles.actionIcon}>
-                    {customIcon}
-                </View>
-            ) : image ? (
-                <Image
-                    source={{ uri: image }}
-                    style={[styles.actionImage, { width: imageSize, height: imageSize }]}
-                />
+                <View style={styles.actionIcon}>{customIcon}</View>
             ) : icon ? (
-                <View style={[styles.iconContainer, { backgroundColor: `${iconColor}20` }]}>
-                    <Ionicons name={icon as any} size={20} color={iconColor} />
+                <View style={[styles.iconContainer, { backgroundColor: iconColor }]}>
+                    <MaterialCommunityIcons name={icon as any} size={22} color={darkenColor(iconColor)} />
                 </View>
             ) : null}
-            <View style={[styles.actionTextContainer, multiRow && styles.actionTextContainerMultiRow]}>
-                <Text style={[styles.actionButtonText, { color: textColor }]}>{title}</Text>
+            <View style={styles.actionTextContainer}>
+                <Text style={[styles.actionButtonText, { color: colors.text }]}>{title}</Text>
                 {subtitle && (
-                    <Text style={[styles.actionButtonSubtext, { color: isDarkTheme ? '#98989D' : '#8E8E93' }]}>
+                    <Text style={[styles.actionButtonSubtext, { color: colors.secondaryText }]}>
                         {subtitle}
                     </Text>
                 )}
-                {customContentBelow}
             </View>
             {customContent}
-            {selected ? (
-                <Ionicons name="checkmark-circle" size={20} color={iconColor || '#007AFF'} />
-            ) : showChevron ? (
-                <Ionicons name="chevron-forward" size={16} color={isDarkTheme ? '#636366' : '#C7C7CC'} />
-            ) : null}
+            {showChevron && (
+                <Ionicons name="chevron-forward" size={20} color={colors.icon} />
+            )}
         </View>
     );
 
+    const handlePressIn = useHapticPress();
+
     if (onPress && !disabled) {
         return (
-            <TouchableOpacity style={itemStyles} onPress={onPress}>
+            <TouchableOpacity
+                style={itemStyles}
+                onPressIn={disabled ? undefined : handlePressIn}
+                onPress={onPress}
+                activeOpacity={0.7}
+            >
                 {content}
             </TouchableOpacity>
         );
     }
 
-    return (
-        <View style={itemStyles}>
-            {content}
-        </View>
-    );
+    return <View style={itemStyles}>{content}</View>;
 };
+
+GroupedItemComponent.displayName = 'GroupedItem';
+
+export const GroupedItem = memo(GroupedItemComponent);
 
 const styles = StyleSheet.create({
     groupedItem: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: StyleSheet.hairlineWidth,
         overflow: 'hidden',
         width: '100%',
     },
     firstGroupedItem: {
-        borderTopLeftRadius: 16,
-        borderTopRightRadius: 16,
+        borderTopLeftRadius: 12,
+        borderTopRightRadius: 12,
     },
     lastGroupedItem: {
-        borderBottomLeftRadius: 16,
-        borderBottomRightRadius: 16,
-        marginBottom: 0,
+        borderBottomLeftRadius: 12,
+        borderBottomRightRadius: 12,
     },
     groupedItemContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingVertical: 14,
-        paddingHorizontal: 16,
-        width: '100%',
-    },
-    groupedItemContentDense: {
         paddingVertical: 12,
-        paddingHorizontal: 16,
+        paddingHorizontal: 12,
+        width: '100%',
+        gap: 12,
     },
     actionIcon: {
-        marginRight: 12,
+        // marginRight handled by gap
     },
     iconContainer: {
-        width: 32,
-        height: 32,
-        borderRadius: 12,
+        width: 36,
+        height: 36,
+        borderRadius: 18,
         alignItems: 'center',
         justifyContent: 'center',
-        marginRight: 12,
-    },
-    actionImage: {
-        marginRight: 12,
-        borderRadius: 12,
+        // marginRight handled by gap
     },
     actionTextContainer: {
         flex: 1,
     },
     actionButtonText: {
-        fontSize: 17,
+        fontSize: 15,
         fontWeight: '400',
-        marginBottom: 2,
-        letterSpacing: -0.2,
     },
     actionButtonSubtext: {
-        fontSize: 15,
-        lineHeight: 20,
-        marginTop: 1,
-    },
-    groupedItemContentMultiRow: {
-        alignItems: 'flex-start',
-        paddingVertical: 12,
-    },
-    actionTextContainerMultiRow: {
-        alignItems: 'flex-start',
+        fontSize: 13,
+        marginTop: 2,
     },
 });
 

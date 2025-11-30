@@ -1,10 +1,11 @@
 import { useCallback, useRef, useState, useEffect, useMemo, forwardRef, useImperativeHandle, type FC } from 'react';
-import { View, Text, StyleSheet, Platform, Animated, StatusBar, AppState, Keyboard, BackHandler, type KeyboardEvent } from 'react-native';
+import { View, Text, StyleSheet, Platform, Animated, StatusBar, AppState, Keyboard, type KeyboardEvent } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import type { OxyProviderProps, BottomSheetController, OxyRouterController } from '../navigation/types';
+import type { OxyProviderProps, BottomSheetController, OxyRouterController, StepController } from '../navigation/types';
 import { OxyContextProvider, useOxy } from '../context/OxyContext';
 import OxyRouter from '../navigation/OxyRouter';
+import { useBackButtonHandler } from '../navigation/useBackButtonHandler';
 import { FontLoader, setupFonts } from './FontLoader';
 import { Toaster } from '../../lib/sonner';
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
@@ -143,24 +144,30 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
     showInternalToaster = true,
     appInsets,
 }, ref) => {
-    // Memoize native driver check (constant per platform, no need to recreate)
-    const shouldUseNativeDriver = useMemo(() => Platform.OS === 'ios', []);
-    // Get window dimensions for max height calculation
-    const { height: windowHeight } = useWindowDimensions();
-    // Get oxyServices from context if not provided as prop
-    const contextOxy = useOxy();
-    const oxyServices = providedOxyServices || contextOxy?.oxyServices;
-    // Use the internal ref (which is passed as a prop from OxyProvider)
+    // ========================================================================
+    // Refs & State
+    // ========================================================================
     const modalRef = useRef<BottomSheetModalRef>(null);
     const isOpenRef = useRef(false);
     const navigationRef = useRef<((screen: any, props?: Record<string, unknown>) => void) | null>(null);
     const routerRef = useRef<OxyRouterController | null>(null);
-
-    // Remove contentHeight, containerWidth, and snap point state/logic
-    // Animation values - keep for content fade/slide
+    const stepControllerRef = useRef<StepController | null>(null);
     const fadeAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 1 : 0)).current;
     const slideAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 0 : 50)).current;
-    // Expose a clean, typed imperative API
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+    // ========================================================================
+    // Computed Values
+    // ========================================================================
+    const shouldUseNativeDriver = useMemo(() => Platform.OS === 'ios', []);
+    const { height: windowHeight } = useWindowDimensions();
+    const insets = useSafeAreaInsets();
+    const contextOxy = useOxy();
+    const oxyServices = providedOxyServices || contextOxy?.oxyServices;
+
+    // ========================================================================
+    // Imperative Handle (Bottom Sheet API)
+    // ========================================================================
     useImperativeHandle(ref, () => ({
         present: () => {
             if (!isOpenRef.current) modalRef.current?.present?.();
@@ -202,12 +209,11 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
                 console.warn('OxyProvider: navigationRef not ready. Navigation may fail.');
             }
         }
-    }), [fadeAnim, slideAnim]);
-    const insets = useSafeAreaInsets();
+    }), [fadeAnim, slideAnim, shouldUseNativeDriver]);
 
-    // Track keyboard state for dynamic padding (not for bottomInset - library handles that)
-    const [keyboardHeight, setKeyboardHeight] = useState(0);
-
+    // ========================================================================
+    // Keyboard Handling
+    // ========================================================================
     useEffect(() => {
         const showSubscription = Keyboard.addListener(
             'keyboardDidShow',
@@ -228,14 +234,60 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
         };
     }, []);
 
-    // Calculate max height for dynamic sizing (screen height minus insets and margin)
-    // Note: keyboardBehavior="interactive" handles keyboard positioning automatically
+    // ========================================================================
+    // Layout & Sizing
+    // ========================================================================
     const maxHeight = useMemo(() => {
         const topInset = (insets?.top ?? 0) + (appInsets?.top ?? 0);
         const bottomInset = (insets?.bottom ?? 0) + (appInsets?.bottom ?? 0);
         return windowHeight - topInset - bottomInset - 20; // 20px margin
     }, [windowHeight, insets?.top, insets?.bottom, appInsets?.top, appInsets?.bottom]);
-    // Present the modal when component mounts, but only if autoPresent is true
+
+    // ========================================================================
+    // Event Handlers
+    // ========================================================================
+    const handleClose = useCallback(() => {
+        Animated.timing(fadeAnim, {
+            toValue: 0,
+            duration: Platform.OS === 'android' ? 100 : 200,
+            useNativeDriver: shouldUseNativeDriver,
+        }).start(() => {
+            modalRef.current?.dismiss();
+            if (onClose) {
+                setTimeout(() => {
+                    onClose();
+                }, Platform.OS === 'android' ? 150 : 100);
+            }
+        });
+    }, [onClose, fadeAnim, shouldUseNativeDriver]);
+
+    const handleAuthenticated = useCallback((user: any) => {
+        fadeAnim.stopAnimation();
+        slideAnim.stopAnimation();
+        if (onAuthenticated) {
+            onAuthenticated(user);
+        }
+        modalRef.current?.dismiss();
+        if (onClose) {
+            setTimeout(() => {
+                onClose();
+            }, 100);
+        }
+    }, [onAuthenticated, onClose, fadeAnim, slideAnim]);
+
+    // ========================================================================
+    // Back Button Handling
+    // ========================================================================
+    useBackButtonHandler({
+        stepControllerRef,
+        routerRef,
+        isOpenRef,
+        handleClose,
+    });
+
+    // ========================================================================
+    // Auto-Present Logic
+    // ========================================================================
     useEffect(() => {
         if (autoPresent && modalRef.current) {
             const timer = setTimeout(() => {
@@ -256,86 +308,11 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
             }, 100);
             return () => clearTimeout(timer);
         }
-    }, [modalRef, autoPresent]);
-    // Close the bottom sheet with animation (unchanged)
-    const handleClose = useCallback(() => {
-        Animated.timing(fadeAnim, {
-            toValue: 0,
-            duration: Platform.OS === 'android' ? 100 : 200,
-            useNativeDriver: shouldUseNativeDriver,
-        }).start(() => {
-            modalRef.current?.dismiss();
-            if (onClose) {
-                setTimeout(() => {
-                    onClose();
-                }, Platform.OS === 'android' ? 150 : 100);
-            }
-        });
-    }, [onClose]);
+    }, [autoPresent, fadeAnim, slideAnim, shouldUseNativeDriver]);
 
-    // Handle hardware back button (Android) and browser back button (Web)
-    // Prioritize Oxy bottom sheet router navigation over app router
-    useEffect(() => {
-        // Only handle back button on mobile platforms
-        if (Platform.OS === 'web') {
-            // For web, handle browser back button
-            const handlePopState = (event: PopStateEvent) => {
-                if (isOpenRef.current && routerRef.current) {
-                    event.preventDefault();
-                    if (routerRef.current.canGoBack()) {
-                        routerRef.current.goBack();
-                        // Push a new state to prevent browser navigation
-                        window.history.pushState(null, '', window.location.href);
-                    } else {
-                        handleClose();
-                    }
-                }
-            };
-
-            window.addEventListener('popstate', handlePopState);
-            return () => {
-                window.removeEventListener('popstate', handlePopState);
-            };
-        } else {
-            // For mobile (Android), handle hardware back button
-            const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-                if (isOpenRef.current && routerRef.current) {
-                    // Bottom sheet is open - prioritize router navigation
-                    if (routerRef.current.canGoBack()) {
-                        // Router has history - navigate back within router
-                        routerRef.current.goBack();
-                        return true; // Prevent default back behavior
-                    } else {
-                        // No router history - close bottom sheet
-                        handleClose();
-                        return true; // Prevent default back behavior
-                    }
-                }
-                // Bottom sheet is closed - let app handle back button
-                return false;
-            });
-
-            return () => {
-                backHandler.remove();
-            };
-        }
-    }, [handleClose]);
-
-    // Handle authentication success (unchanged)
-    const handleAuthenticated = useCallback((user: any) => {
-        fadeAnim.stopAnimation();
-        slideAnim.stopAnimation();
-        if (onAuthenticated) {
-            onAuthenticated(user);
-        }
-        modalRef.current?.dismiss();
-        if (onClose) {
-            setTimeout(() => {
-                onClose();
-            }, 100);
-        }
-    }, [onAuthenticated, onClose]);
-    // Backdrop rendering (unchanged)
+    // ========================================================================
+    // Render Helpers
+    // ========================================================================
     const renderBackdrop = useCallback(
         (props: BottomSheetBackdropProps) => (
             <BottomSheetBackdrop
@@ -426,6 +403,7 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
                                 theme={theme}
                                 navigationRef={navigationRef}
                                 routerRef={routerRef}
+                                stepControllerRef={stepControllerRef}
                                 containerWidth={800} // static, since dynamic sizing is used
                             />
                         ) : (

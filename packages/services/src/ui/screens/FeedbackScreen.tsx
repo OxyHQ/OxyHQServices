@@ -679,14 +679,14 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 </Text>
             </View>
             <View style={styles.fullBleed}>
-                <GroupedSection items={feedbackTypeItems} theme={theme as 'light' | 'dark'} />
+                <GroupedSection items={feedbackTypeItems}  />
             </View>
 
             {feedbackData.type && (
                 <View style={styles.categoryContainer}>
                     <Text style={[styles.modernLabel, { color: colors.secondaryText, marginBottom: 8 }]}>{t('feedback.category.label') || 'Category'}</Text>
                     <View style={styles.fullBleed}>
-                        <GroupedSection items={categoryItems} theme={theme as 'light' | 'dark'} />
+                        <GroupedSection items={categoryItems}  />
                     </View>
                 </View>
             )}
@@ -775,7 +775,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
             <View style={{ marginBottom: 24 }}>
                 <Text style={[styles.modernLabel, { color: colors.secondaryText, marginBottom: 8 }]}>{t('feedback.priority.label') || 'Priority Level'}</Text>
                 <View style={styles.fullBleed}>
-                    <GroupedSection items={priorityItems} theme={theme as 'light' | 'dark'} />
+                    <GroupedSection items={priorityItems}  />
                 </View>
             </View>
 

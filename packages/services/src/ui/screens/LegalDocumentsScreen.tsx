@@ -101,7 +101,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
             <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
                 <Header
                     title={getPolicyTitle(documentType)}
-                    theme={theme}
+                    
                     onBack={goBack || onClose}
                     variant="minimal"
                     elevation="subtle"
@@ -121,14 +121,14 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
                 title={t('legal.title') || 'Legal Documents'}
-                theme={theme}
+                
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
             />
 
             <ScrollView style={styles.content}>
-                <Section title={t('legal.policies') || 'Policies & Guidelines'} theme={theme} isFirst={true}>
+                <Section title={t('legal.policies') || 'Policies & Guidelines'}  isFirst={true}>
                     <GroupedSection
                         items={[
                             {
@@ -188,7 +188,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                                 onPress: handleOpenPolicy('cookie'),
                             },
                         ]}
-                        theme={theme}
+                        
                     />
                 </Section>
             </ScrollView>

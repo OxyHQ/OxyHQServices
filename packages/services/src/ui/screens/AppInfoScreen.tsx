@@ -165,7 +165,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
                 {/* Package Information */}
-                <Section title="Package Information" theme={theme}>
+                <Section title="Package Information" >
                     <GroupedSection
                         items={[
                             {
@@ -217,12 +217,11 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                                 onPress: () => copyToClipboard(packageInfo.types || 'N/A', 'Types entry'),
                             },
                         ]}
-                        theme={theme}
                     />
                 </Section>
 
                 {/* System Information */}
-                <Section title="System Information" theme={theme}>
+                <Section title="System Information" >
                     <GroupedSection
                         items={[
                             {
@@ -261,12 +260,11 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                                 subtitle: __DEV__ ? 'Development' : 'Production',
                             },
                         ]}
-                        theme={theme}
                     />
                 </Section>
 
                 {/* User Information */}
-                <Section title="User Information" theme={theme}>
+                <Section title="User Information" >
                     <GroupedSection
                         items={[
                             {
@@ -322,12 +320,11 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                                 subtitle: sessions?.length?.toString() || '0',
                             },
                         ]}
-                        theme={theme}
                     />
                 </Section>
 
                 {/* API Configuration */}
-                <Section title="API Configuration" theme={theme}>
+                <Section title="API Configuration" >
                     <GroupedSection
                         items={[
                             {
@@ -364,12 +361,11 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                                 },
                             },
                         ]}
-                        theme={theme}
                     />
                 </Section>
 
                 {/* Build Information */}
-                <Section title="Build Information" theme={theme}>
+                <Section title="Build Information" >
                     <GroupedSection
                         items={[
                             {
@@ -395,12 +391,11 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                                 subtitle: 'Hermes',
                             },
                         ]}
-                        theme={theme}
                     />
                 </Section>
 
                 {/* Quick Actions */}
-                <Section title="Quick Actions" theme={theme}>
+                <Section title="Quick Actions" >
                     <GroupedSection
                         items={[
                             {
@@ -426,7 +421,6 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                                 ) : null,
                             },
                         ]}
-                        theme={theme}
                     />
                 </Section>
             </ScrollView>

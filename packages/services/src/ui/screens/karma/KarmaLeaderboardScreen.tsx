@@ -33,7 +33,7 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
             <Header
                 title={t('karma.leaderboard.title') || 'Karma Leaderboard'}
                 subtitle={t('karma.leaderboard.subtitle') || 'Top contributors in the community'}
-                theme={theme}
+                
                 onBack={goBack}
                 elevation="subtle"
             />
@@ -54,7 +54,7 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
                                 activeOpacity={0.7}
                             >
                                 <Text style={[styles.rank, { color: primaryColor }]}>{idx + 1}</Text>
-                                <Avatar name={entry.username || 'User'} size={40} theme={theme} style={styles.avatar} />
+                                <Avatar name={entry.username || 'User'} size={40}  style={styles.avatar} />
                                 <Text style={[styles.username, { color: textColor }]}>{entry.username || entry.userId}</Text>
                                 <Text style={[styles.karma, { color: primaryColor }]}>{entry.total}</Text>
                             </TouchableOpacity>

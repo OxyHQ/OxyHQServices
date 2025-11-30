@@ -72,7 +72,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
                 title={t('saves.title') || 'Saves & Collections'}
-                theme={theme}
+                
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
@@ -136,7 +136,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                             </Text>
                         </View>
                     ) : (
-                        <Section title={t('saves.savedItems') || 'Saved Items'} theme={theme} isFirst={true}>
+                        <Section title={t('saves.savedItems') || 'Saved Items'}  isFirst={true}>
                             <GroupedSection
                                 items={savedItems.map((item) => ({
                                     id: item.id,
@@ -145,7 +145,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                                     title: item.title,
                                     subtitle: formatDate(item.savedAt),
                                 }))}
-                                theme={theme}
+                                
                             />
                         </Section>
                     )
@@ -157,7 +157,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                             </Text>
                         </View>
                     ) : (
-                        <Section title={t('saves.collections') || 'Collections'} theme={theme} isFirst={true}>
+                        <Section title={t('saves.collections') || 'Collections'}  isFirst={true}>
                             <GroupedSection
                                 items={collections.map((collection) => ({
                                     id: collection.id,
@@ -166,7 +166,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
                                     title: collection.name,
                                     subtitle: `${collection.itemCount || 0} items`,
                                 }))}
-                                theme={theme}
+                                
                             />
                         </Section>
                     )

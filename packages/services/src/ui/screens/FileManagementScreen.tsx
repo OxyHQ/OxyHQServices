@@ -2292,7 +2292,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     }
                 ] : undefined}
                 onBack={onClose || goBack}
-                theme={theme}
+                
                 showBackButton
                 variant="minimal"
                 elevation="none"
@@ -2538,7 +2538,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         </View>
                     ) : filteredFiles.length === 0 ? renderEmptyState() : (
                         <>
-                            <GroupedSection items={groupedFileItems} theme={theme as 'light' | 'dark'} />
+                            <GroupedSection items={groupedFileItems}  />
                             {paging.loadingMore && (
                                 <View style={styles.loadingMoreBar}>
                                     <ActivityIndicator size="small" color={themeStyles.primaryColor} />

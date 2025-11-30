@@ -78,7 +78,7 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                         uri={user?.avatar ? oxyServices.getFileDownloadUrl(user.avatar as string, 'thumb') : undefined}
                         name={user?.username}
                         size={60}
-                        theme={theme}
+                        
                         style={styles.avatar}
                     />
                     <Text style={[styles.karmaLabel, { color: isDarkTheme ? '#BBBBBB' : '#888888' }]}>

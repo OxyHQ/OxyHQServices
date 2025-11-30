@@ -111,7 +111,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
             <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
                 <Header
                     title={t('searchSettings.title') || 'Search Settings'}
-                    theme={theme}
+                    
                     onBack={goBack || onClose}
                     variant="minimal"
                     elevation="subtle"
@@ -127,7 +127,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
                 title={t('searchSettings.title') || 'Search Settings'}
-                theme={theme}
+                
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
@@ -135,7 +135,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {/* SafeSearch */}
-                <Section title={t('searchSettings.safeSearch.title') || 'SafeSearch'} theme={theme} isFirst={true}>
+                <Section title={t('searchSettings.safeSearch.title') || 'SafeSearch'}  isFirst={true}>
                     <View style={[styles.settingRow, { borderBottomColor: themeStyles.borderColor }]}>
                         <View style={styles.settingInfo}>
                             <Text style={[styles.settingTitle, { color: themeStyles.textColor }]}>
@@ -156,7 +156,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
                 </Section>
 
                 {/* Search Personalization */}
-                <Section title={t('searchSettings.personalization.title') || 'Search Personalization'} theme={theme}>
+                <Section title={t('searchSettings.personalization.title') || 'Search Personalization'} >
                     <View style={[styles.settingRow, { borderBottomColor: themeStyles.borderColor }]}>
                         <View style={styles.settingInfo}>
                             <Text style={[styles.settingTitle, { color: themeStyles.textColor }]}>

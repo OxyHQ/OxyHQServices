@@ -267,7 +267,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             <Header
                 title="Active Sessions"
                 subtitle="Manage your active sessions across all devices"
-                theme={theme}
+                
                 onBack={goBack || onClose}
                 elevation="subtle"
             />
@@ -288,11 +288,11 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                             <Text style={[styles.metaText, { color: isDarkTheme ? '#777' : '#777', marginBottom: 6 }]}>Last refreshed {formatRelative(lastRefreshed.toISOString())}</Text>
                         )}
                         <View style={styles.fullBleed}>
-                            <GroupedSection items={sessionItems} theme={theme as 'light' | 'dark'} />
+                            <GroupedSection items={sessionItems}  />
                         </View>
                         <View style={{ height: 12 }} />
                         <View style={styles.fullBleed}>
-                            <GroupedSection items={bulkItems} theme={theme as 'light' | 'dark'} />
+                            <GroupedSection items={bulkItems}  />
                         </View>
                     </>
                 ) : (

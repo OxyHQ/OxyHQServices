@@ -4,6 +4,54 @@ import type { ReactNode } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { RouteName } from './routes';
 
+// ============================================================================
+// Route Configuration
+// ============================================================================
+
+/**
+ * Route configuration for OxyRouter
+ */
+// Route config moved to routes.ts to avoid cycles; re-exported here if needed
+export { routes } from './routes';
+export type { RouteName } from './routes';
+
+// ============================================================================
+// Controller Interfaces
+// ============================================================================
+
+/**
+ * Router controller interface for accessing router state
+ */
+export interface OxyRouterController {
+  goBack: () => void;
+  canGoBack: () => boolean;
+}
+
+/**
+ * Step controller interface for screens with multiple steps (e.g., StepBasedScreen)
+ */
+export interface StepController {
+  canGoBack: () => boolean;
+  goBack: () => void;
+}
+
+/**
+ * Typed imperative controller for the bottom sheet UI
+ */
+export interface BottomSheetController {
+  present: () => void;
+  dismiss: () => void;
+  expand: () => void;
+  collapse: () => void;
+  snapToIndex: (index: number) => void;
+  snapToPosition: (position: number | string) => void;
+  navigate: (screen: RouteName | string, props?: Record<string, any>) => void;
+}
+
+// ============================================================================
+// Screen Props
+// ============================================================================
+
 /**
  * Base props for all screens in the Oxy UI system
  */
@@ -18,22 +66,12 @@ export interface BaseScreenProps {
   initialStep?: number;
   username?: string;
   userProfile?: User;
+  stepControllerRef?: React.MutableRefObject<StepController | null>;
 }
 
-/**
- * Route configuration for OxyRouter
- */
-// Route config moved to routes.ts to avoid cycles; re-exported here if needed
-export { routes } from './routes';
-export type { RouteName } from './routes';
-
-/**
- * Router controller interface for accessing router state
- */
-export interface OxyRouterController {
-  goBack: () => void;
-  canGoBack: () => boolean;
-}
+// ============================================================================
+// Component Props
+// ============================================================================
 
 /**
  * Props for OxyRouter component
@@ -47,6 +85,7 @@ export interface OxyRouterProps {
   adjustSnapPoints?: (snapPoints: string[]) => void;
   navigationRef?: React.MutableRefObject<((screen: RouteName, props?: Record<string, unknown>) => void) | null>;
   routerRef?: React.MutableRefObject<OxyRouterController | null>;
+  stepControllerRef?: React.MutableRefObject<StepController | null>;
   containerWidth?: number;
 }
 
@@ -161,13 +200,3 @@ export interface OxyProviderProps {
   };
 }
 
-// Typed imperative controller for the bottom sheet UI
-export interface BottomSheetController {
-  present: () => void;
-  dismiss: () => void;
-  expand: () => void;
-  collapse: () => void;
-  snapToIndex: (index: number) => void;
-  snapToPosition: (position: number | string) => void;
-  navigate: (screen: RouteName | string, props?: Record<string, any>) => void;
-}

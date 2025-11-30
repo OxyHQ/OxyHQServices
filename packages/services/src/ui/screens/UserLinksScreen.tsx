@@ -54,7 +54,7 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
             <Header
                 title="Links"
                 subtitle={`${links.length} link${links.length !== 1 ? 's' : ''}`}
-                theme={theme}
+                
                 onBack={goBack}
                 elevation="subtle"
             />
@@ -65,7 +65,7 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
 
                     <GroupedSection
                         items={groupedItems}
-                        theme={theme}
+                        
                     />
                 </View>
             </ScrollView>

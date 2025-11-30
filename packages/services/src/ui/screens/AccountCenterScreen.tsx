@@ -83,7 +83,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
             {user && (
                 <ProfileCard
                     user={user}
-                    theme={theme}
+                    
                     onEditPress={() => navigate('EditProfile', { activeTab: 'profile' })}
                     onClosePress={onClose}
                     showCloseButton={!!onClose}
@@ -92,7 +92,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
                 {/* Quick Actions */}
-                <Section title={t('accountCenter.sections.quickActions') || 'Quick Actions'} theme={theme} isFirst={true}>
+                <Section title={t('accountCenter.sections.quickActions') || 'Quick Actions'}  isFirst={true}>
                     <QuickActions
                         actions={useMemo(() => [
                             { id: 'overview', icon: 'person-circle', iconColor: '#007AFF', title: t('accountCenter.quickActions.overview') || 'Overview', onPress: () => navigate('AccountOverview') },
@@ -102,12 +102,12 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: '#34C759', title: t('accountCenter.quickActions.billing') || 'Billing', onPress: () => navigate('PaymentGateway') }] : []),
                             ...(sessions && sessions.length > 1 ? [{ id: 'switch', icon: 'swap-horizontal', iconColor: '#FF9500', title: t('accountCenter.quickActions.switch') || 'Switch', onPress: () => navigate('AccountSwitcher') }] : []),
                         ], [user?.isPremium, sessions, navigate, t])}
-                        theme={theme}
+                        
                     />
                 </Section>
 
                 {/* Account Management */}
-                <Section title={t('accountCenter.sections.accountManagement') || 'Account Management'} theme={theme}>
+                <Section title={t('accountCenter.sections.accountManagement') || 'Account Management'} >
                     <GroupedSection
                         items={useMemo(() => [
                             {
@@ -159,13 +159,13 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 onPress: () => navigate('PaymentGateway'),
                             }] : []),
                         ], [user?.isPremium, navigate, t])}
-                        theme={theme}
+                        
                     />
                 </Section>
 
                 {/* Multi-Account Management */}
                 {sessions && sessions.length > 1 && (
-                    <Section title={t('accountCenter.sections.multiAccount') || 'Multi-Account'} theme={theme}>
+                    <Section title={t('accountCenter.sections.multiAccount') || 'Multi-Account'} >
                         <GroupedSection
                             items={useMemo(() => [
                                 {
@@ -185,14 +185,14 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                     onPress: () => navigate('SignIn'),
                                 },
                             ], [sessions.length, navigate, t])}
-                            theme={theme}
+                            
                         />
                     </Section>
                 )}
 
                 {/* Single Account Setup */}
                 {(!sessions || sessions.length <= 1) && (
-                    <Section title={t('accountCenter.sections.addAccount') || 'Add Account'} theme={theme}>
+                    <Section title={t('accountCenter.sections.addAccount') || 'Add Account'} >
                         <GroupedSection
                             items={useMemo(() => [
                                 {
@@ -204,13 +204,13 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                     onPress: () => navigate('SignIn'),
                                 },
                             ], [navigate, t])}
-                            theme={theme}
+                            
                         />
                     </Section>
                 )}
 
                 {/* Additional Options */}
-                <Section title={t('accountCenter.sections.moreOptions') || 'More Options'} theme={theme}>
+                <Section title={t('accountCenter.sections.moreOptions') || 'More Options'} >
                     <GroupedSection
                         items={useMemo(() => [
                             ...(Platform.OS !== 'web' ? [{
@@ -246,17 +246,17 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 onPress: () => navigate('AppInfo'),
                             },
                         ], [navigate, t])}
-                        theme={theme}
+                        
                     />
                 </Section>
 
                 {/* Sign Out Section */}
-                <Section theme={theme}>
+                <Section >
                     <GroupedItem
                         icon="log-out"
                         iconColor={dangerColor}
                         title={isLoading ? (t('accountCenter.signingOut') || 'Signing out...') : (t('common.actions.signOut') || 'Sign Out')}
-                        theme={theme}
+                        
                         onPress={confirmLogout}
                         isFirst={true}
                         isLast={true}

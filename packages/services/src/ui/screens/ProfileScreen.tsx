@@ -177,7 +177,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                             uri={profile?.avatar ? oxyServices.getFileDownloadUrl(profile.avatar as string, 'thumb') : undefined}
                             name={profile?.username || username}
                             size={96}
-                            theme={theme}
+                            
                         />
                     </View>
                     {/* Conditional Action Button */}
@@ -192,7 +192,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         ) : (
                             <FollowButton
                                 userId={userId}
-                                theme={theme}
+                                
                                 onFollowChange={(isFollowing) => {
                                     // The follow button will automatically update counts via Zustand
                                     console.log(`Follow status changed: ${isFollowing}`);

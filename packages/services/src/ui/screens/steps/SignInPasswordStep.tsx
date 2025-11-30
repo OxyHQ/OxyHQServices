@@ -119,7 +119,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                         <Avatar
                             name={userProfile?.displayName || userProfile?.name || username}
                             size={100}
-                            theme={theme as 'light' | 'dark'}
+                            
                             backgroundColor={colors.primary + '20'}
                         uri={userProfile?.avatar && oxyServices ? oxyServices.getFileDownloadUrl(userProfile.avatar, 'thumb') : undefined}
                         />
@@ -188,7 +188,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     <Avatar
                         name={userProfile?.displayName || userProfile?.name || username}
                         size={100}
-                        theme={theme as 'light' | 'dark'}
+                        
                         backgroundColor={colors.primary + '20'}
                     uri={userProfile?.avatar && oxyServices ? oxyServices.getFileDownloadUrl(userProfile.avatar, 'thumb') : undefined}
                     />

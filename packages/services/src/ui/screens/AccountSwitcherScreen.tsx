@@ -305,7 +305,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             {/* Header */}
             <Header
                 title={t('accountSwitcher.title') || 'Account Switcher'}
-                theme={theme}
+                
                 onBack={goBack}
                 onClose={onClose}
                 showBackButton={true}
@@ -472,7 +472,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                         disabled: sessionsWithUsers.length === 0,
                                     },
                                 ]}
-                                theme={theme}
+                                
                             />
                         </View>
 
@@ -496,7 +496,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                 ),
                                             },
                                         ]}
-                                        theme={theme}
+                                        
                                     />
                                 ) : deviceSessions.length === 0 ? (
                                     <GroupedSection
@@ -510,7 +510,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                 disabled: true,
                                             },
                                         ]}
-                                        theme={theme}
+                                        
                                     />
                                 ) : (
                                     <GroupedSection
@@ -536,7 +536,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                 </TouchableOpacity>
                                             ) : undefined,
                                         }))}
-                                        theme={theme}
+                                        
                                     />
                                 )}
                             </View>
@@ -571,7 +571,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                             ),
                                         },
                                     ]}
-                                    theme={theme}
+                                    
                                 />
                             </View>
                         )}

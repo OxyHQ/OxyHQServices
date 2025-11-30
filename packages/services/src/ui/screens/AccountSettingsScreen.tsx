@@ -1121,7 +1121,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                         ),
                                     })),
                                 ]}
-                                theme={theme}
+                                
                             />
                             {tempLinksWithMetadata.length > 0 && (
                                 <View style={styles.reorderHint}>
@@ -1294,7 +1294,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             ) : (
                 <Header
                     title={t('editProfile.title') || 'Edit Profile'}
-                    theme={theme}
+                    
                     onBack={goBack || onClose}
                     rightAction={{
                         icon: 'checkmark',
@@ -1425,7 +1425,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                             }
                                         ] : []),
                                     ]}
-                                    theme={theme}
+                                    
                                 />
                             </View>
                         </View>
@@ -1470,7 +1470,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                             onPress: () => startEditing('email', email),
                                         },
                                     ]}
-                                    theme={theme}
+                                    
                                 />
                             </View>
                         </View>
@@ -1577,7 +1577,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                             ),
                                         },
                                     ]}
-                                    theme={theme}
+                                    
                                 />
                             </View>
                         </View>
@@ -1622,7 +1622,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                             onPress: () => navigate?.('AccountVerification'),
                                         },
                                     ]}
-                                    theme={theme}
+                                    
                                 />
                             </View>
                         </View>
@@ -1653,7 +1653,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                             onPress: () => startEditing('twoFactor', ''),
                                         },
                                     ]}
-                                    theme={theme}
+                                    
                                 />
                             </View>
                         </View>

@@ -17,7 +17,7 @@ import Animated, {
     type SharedValue,
 } from 'react-native-reanimated';
 import { useThemeColors, createAuthStyles } from '../styles';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps, StepController } from '../navigation/types';
 import type { RouteName } from '../navigation/routes';
 
 export interface StepConfig {
@@ -138,7 +138,20 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     onAuthenticated,
     theme,
     oxyServices,
+    stepControllerRef,
 }) => {
+    // ========================================================================
+    // State Management
+    // ========================================================================
+    const [state, setState] = useState<StepBasedScreenState>({
+        currentStep: initialStep,
+        stepData: stepData,
+        isTransitioning: false,
+    });
+
+    // ========================================================================
+    // Computed Values
+    // ========================================================================
     const colors = useThemeColors(theme);
     const styles = useMemo(() => ({
         ...createAuthStyles(colors, theme),
@@ -224,14 +237,24 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         },
     }), [colors, theme]);
 
-    // State management
-    const [state, setState] = useState<StepBasedScreenState>({
-        currentStep: initialStep,
-        stepData: stepData,
-        isTransitioning: false,
-    });
+    // ========================================================================
+    // Animation Values
+    // ========================================================================
+    const fadeAnim = useSharedValue(1);
+    const slideAnim = useSharedValue(0);
+    const scaleAnim = useSharedValue(1);
 
-    // Update state when stepData prop changes
+    // ========================================================================
+    // Refs for Callbacks
+    // ========================================================================
+    const onStepChangeRef = useRef(onStepChange);
+    const onCompleteRef = useRef(onComplete);
+    onStepChangeRef.current = onStepChange;
+    onCompleteRef.current = onComplete;
+
+    // ========================================================================
+    // Effects
+    // ========================================================================
     useEffect(() => {
         setState(prevState => ({
             ...prevState,
@@ -239,18 +262,9 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         }));
     }, [stepData]);
 
-    // Animation values
-    const fadeAnim = useSharedValue(1);
-    const slideAnim = useSharedValue(0);
-    const scaleAnim = useSharedValue(1);
-
-    // Refs for animation callbacks
-    const onStepChangeRef = useRef(onStepChange);
-    const onCompleteRef = useRef(onComplete);
-    onStepChangeRef.current = onStepChange;
-    onCompleteRef.current = onComplete;
-
-    // Update step data
+    // ========================================================================
+    // Step Data Management
+    // ========================================================================
     const updateStepData = useCallback((stepIndex: number, data: any) => {
         setState(prev => ({
             ...prev,
@@ -260,7 +274,9 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         }));
     }, []);
 
-    // Animation transition function
+    // ========================================================================
+    // Animation & Transitions
+    // ========================================================================
     const animateTransition = useCallback((nextStep: number) => {
         if (!enableAnimations) {
             setState(prev => ({ ...prev, currentStep: nextStep }));
@@ -296,7 +312,9 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         });
     }, [enableAnimations, steps.length, fadeAnim, scaleAnim, slideAnim]);
 
-    // Navigation functions
+    // ========================================================================
+    // Step Navigation
+    // ========================================================================
     const nextStep = useCallback(() => {
         if (state.isTransitioning) return;
 
@@ -358,17 +376,33 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         }
     }, [state.currentStep, state.isTransitioning, steps, animateTransition]);
 
-    // Get current step component
+    // ========================================================================
+    // Step Controller Exposure
+    // ========================================================================
+    useEffect(() => {
+        if (!stepControllerRef) return;
+
+        stepControllerRef.current = {
+            canGoBack: () => state.currentStep > 0,
+            goBack: prevStep,
+        };
+
+        return () => {
+            stepControllerRef.current = null;
+        };
+    }, [state.currentStep, prevStep, stepControllerRef]);
+
+    // ========================================================================
+    // Step Component & Props
+    // ========================================================================
     const currentStepConfig = steps[state.currentStep];
     const CurrentStepComponent = currentStepConfig?.component;
 
-    // Memoize updateStepData callback for current step to prevent recreation
     const updateCurrentStepData = useCallback(
         (data: any) => updateStepData(state.currentStep, data),
         [state.currentStep, updateStepData]
     );
 
-    // Memoize enhanced props for the step component to prevent unnecessary re-renders
     const stepProps = useMemo(() => ({
         ...currentStepConfig?.props,
         // Common props

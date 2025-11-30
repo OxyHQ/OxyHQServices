@@ -228,7 +228,7 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
             navigate={navigate}
             goBack={goBack}
             onAuthenticated={onAuthenticated}
-            theme={theme}
+            
             showProgressIndicator={true}
             enableAnimations={true}
             oxyServices={oxyServices}

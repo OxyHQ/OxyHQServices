@@ -17,7 +17,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             <Header
                 title={t('karma.rewards.title') || 'Karma Rewards'}
                 subtitle={t('karma.rewards.subtitle') || 'Unlock special features and recognition'}
-                theme={theme}
+                
                 onBack={goBack}
                 elevation="subtle"
             />

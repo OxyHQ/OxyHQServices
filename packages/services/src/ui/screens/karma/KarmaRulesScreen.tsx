@@ -32,7 +32,7 @@ const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             <Header
                 title={t('karma.rules.title') || 'Karma Rules'}
                 subtitle={t('karma.rules.subtitle') || 'How to earn karma points'}
-                theme={theme}
+                
                 onBack={goBack}
                 elevation="subtle"
             />

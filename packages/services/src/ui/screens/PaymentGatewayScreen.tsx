@@ -407,7 +407,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                                                 </Text>
                                             ),
                                         }))}
-                                        theme={theme}
+                                        
                                     />
                                 </View>
 
@@ -501,7 +501,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                             <FAIRWalletIcon size={20} />
                         ) : undefined,
                     }))}
-                    theme={theme}
+                    
                 />
             </View>
 
@@ -732,7 +732,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                             subtitle: 'Paid via QR',
                         }] : []),
                     ]}
-                    theme={theme}
+                    
                 />
             </View>
             <GroupedPillButtons

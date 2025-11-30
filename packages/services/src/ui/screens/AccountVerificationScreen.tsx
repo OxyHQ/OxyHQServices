@@ -86,20 +86,20 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
                 title={t('accountVerification.title') || 'Account Verification'}
-                theme={theme}
+                
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
             />
 
             <ScrollView style={styles.content}>
-                <Section theme={theme} isFirst={true}>
+                <Section  isFirst={true}>
                     <Text style={[styles.description, { color: themeStyles.mutedTextColor }]}>
                         {t('accountVerification.description') || 'Request a verified badge for your account. Verified accounts help establish authenticity and credibility.'}
                     </Text>
                 </Section>
 
-                <Section title={t('accountVerification.sections.request') || 'VERIFICATION REQUEST'} theme={theme}>
+                <Section title={t('accountVerification.sections.request') || 'VERIFICATION REQUEST'} >
                     <View style={styles.inputGroup}>
                         <Text style={[styles.label, { color: themeStyles.textColor }]}>
                             {t('accountVerification.reasonLabel') || 'Reason for Verification *'}
@@ -151,7 +151,7 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                     </View>
                 </Section>
 
-                <Section theme={theme}>
+                <Section >
                     <TouchableOpacity
                         style={[
                             styles.submitButton,
@@ -170,7 +170,7 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
                     </TouchableOpacity>
                 </Section>
 
-                <Section theme={theme}>
+                <Section >
                     <Text style={[styles.note, { color: themeStyles.mutedTextColor }]}>
                         {t('accountVerification.note') || 'Note: Verification requests are reviewed manually and may take several days. We will notify you once your request has been reviewed.'}
                     </Text>

@@ -235,7 +235,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                                     size={120} 
                                     name={currentUser?.name?.full || currentUser?.name?.first || currentUser?.username} 
                                     uri={avatarUri} 
-                                    theme={theme} 
+                                     
                                     backgroundColor={colors.primary + '20'}
                                     style={styles.avatar} 
                                 />

@@ -52,7 +52,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
                 title={t('help.title') || 'Help & Support'}
-                theme={theme}
+                
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
@@ -60,7 +60,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {/* Help Options */}
-                <Section title={t('help.options') || 'Get Help'} theme={theme} isFirst={true}>
+                <Section title={t('help.options') || 'Get Help'}  isFirst={true}>
                     <GroupedSection
                         items={[
                             {
@@ -88,12 +88,12 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                                 onPress: handleReportBug,
                             },
                         ]}
-                        theme={theme}
+                        
                     />
                 </Section>
 
                 {/* Resources */}
-                <Section title={t('help.resources') || 'Resources'} theme={theme}>
+                <Section title={t('help.resources') || 'Resources'} >
                     <GroupedSection
                         items={[
                             {
@@ -121,7 +121,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                                 },
                             },
                         ]}
-                        theme={theme}
+                        
                     />
                 </Section>
             </ScrollView>

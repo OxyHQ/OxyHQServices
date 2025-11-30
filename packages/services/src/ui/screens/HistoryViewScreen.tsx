@@ -181,7 +181,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
                 title={t('history.title') || 'History'}
-                theme={theme}
+                
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
@@ -189,7 +189,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {/* Actions */}
-                <Section title={t('history.actions') || 'Actions'} theme={theme} isFirst={true}>
+                <Section title={t('history.actions') || 'Actions'}  isFirst={true}>
                     <GroupedSection
                         items={[
                             {
@@ -211,12 +211,12 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
                                 disabled: isDeleting || history.length === 0,
                             },
                         ]}
-                        theme={theme}
+                        
                     />
                 </Section>
 
                 {/* History List */}
-                <Section title={t('history.recent') || 'Recent History'} theme={theme}>
+                <Section title={t('history.recent') || 'Recent History'} >
                     {isLoading ? (
                         <View style={styles.loadingContainer}>
                             <ActivityIndicator size="large" color={themeStyles.textColor} />
@@ -239,7 +239,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
                                 title: item.query,
                                 subtitle: formatTime(item.timestamp),
                             }))}
-                            theme={theme}
+                            
                         />
                     )}
                 </Section>

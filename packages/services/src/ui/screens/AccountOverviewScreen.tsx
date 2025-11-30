@@ -290,7 +290,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
             {/* Header */}
             <Header
                 title={t('accountOverview.title')}
-                theme={theme}
+                
                 onBack={onClose}
                 variant="minimal"
                 elevation="subtle"
@@ -298,7 +298,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {/* User Profile Section */}
-                <Section title={t('accountOverview.sections.profile')} theme={theme} isFirst={true}>
+                <Section title={t('accountOverview.sections.profile')}  isFirst={true}>
                     <GroupedSection
                         items={[
                             {
@@ -315,7 +315,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                                 uri={user?.avatar ? oxyServices.getFileDownloadUrl(user.avatar as string, 'thumb') : undefined}
                                                 name={user?.name?.full}
                                                 size={40}
-                                                theme={theme}
+                                                
                                             />
                                         </View>
                                         <TouchableOpacity
@@ -328,12 +328,12 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 ),
                             },
                         ]}
-                        theme={theme}
+                        
                     />
                 </Section>
 
                 {/* Account Settings */}
-                <Section title={t('accountOverview.sections.accountSettings')} theme={theme}>
+                <Section title={t('accountOverview.sections.accountSettings')} >
                     <GroupedSection
                         items={[
                             {
@@ -377,13 +377,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 onPress: () => toast.info(t('accountOverview.items.billing.coming')),
                             }] : []),
                         ]}
-                        theme={theme}
+                        
                     />
                 </Section>
 
                 {/* Additional Accounts */}
                 {showMoreAccounts && (
-                    <Section title={`${t('accountOverview.sections.additionalAccounts') || 'Additional Accounts'}${additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}`} theme={theme}>
+                    <Section title={`${t('accountOverview.sections.additionalAccounts') || 'Additional Accounts'}${additionalAccountsData.length > 0 ? ` (${additionalAccountsData.length})` : ''}`} >
                         {loadingAdditionalAccounts ? (
                             <GroupedSection
                                 items={[
@@ -401,7 +401,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                         ),
                                     },
                                 ]}
-                                theme={theme}
+                                
                             />
                         ) : additionalAccountsData.length > 0 ? (
                             <GroupedSection
@@ -436,7 +436,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                         </>
                                     ),
                                 }))}
-                                theme={theme}
+                                
                             />
                         ) : (
                             <GroupedSection
@@ -449,7 +449,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                         subtitle: t('accountOverview.additional.noAccounts.subtitle') || 'Add another account to switch between them',
                                     },
                                 ]}
-                                theme={theme}
+                                
                             />
                         )}
                     </Section>
@@ -457,7 +457,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
                 {/* Account Management */}
                 {showMoreAccounts && (
-                    <Section title={t('accountOverview.sections.accountManagement') || 'Account Management'} theme={theme}>
+                    <Section title={t('accountOverview.sections.accountManagement') || 'Account Management'} >
                         <GroupedSection
                             items={[
                                 {
@@ -477,13 +477,13 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     onPress: handleSignOutAll,
                                 },
                             ]}
-                            theme={theme}
+                            
                         />
                     </Section>
                 )}
 
                 {/* Quick Actions */}
-                <Section title={t('accountOverview.sections.quickActions')} theme={theme}>
+                <Section title={t('accountOverview.sections.quickActions')} >
                     <GroupedSection
                         items={[
                             {
@@ -535,12 +535,12 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 onPress: handleDeleteAccount,
                             },
                         ]}
-                        theme={theme}
+                        
                     />
                 </Section>
 
                 {/* Support & Settings */}
-                <Section title={t('accountOverview.sections.support')} theme={theme}>
+                <Section title={t('accountOverview.sections.support')} >
                     <GroupedSection
                         items={[
                             {
@@ -608,18 +608,18 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 onPress: () => navigate?.('AppInfo'),
                             },
                         ]}
-                        theme={theme}
+                        
                     />
                 </Section>
 
                 {/* Sign Out */}
-                <Section title={t('accountOverview.sections.actions')} theme={theme}>
+                <Section title={t('accountOverview.sections.actions')} >
                     <GroupedItem
                         icon="log-out"
                         iconColor="#FF3B30"
                         title={t('accountOverview.items.signOut.title')}
                         subtitle={t('accountOverview.items.signOut.subtitle')}
-                        theme={theme}
+                        
                         onPress={confirmLogout}
                         isFirst={true}
                         isLast={true}

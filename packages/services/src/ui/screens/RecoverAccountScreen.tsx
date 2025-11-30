@@ -128,7 +128,7 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
             onComplete={handleComplete}
             navigate={navigate}
             goBack={handleBack}
-            theme={theme}
+            
             oxyServices={oxyServices}
             showProgressIndicator={true}
             enableAnimations={true}
