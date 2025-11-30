@@ -30,8 +30,6 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
         });
     }, [t]);
 
-    const themeStyles = useThemeStyles(theme);
-
     // TODO: Implement FAQ screen navigation
     // Currently shows a placeholder toast. Should navigate to a dedicated FAQ screen or modal.
     const handleFAQ = useMemo(() => () => {

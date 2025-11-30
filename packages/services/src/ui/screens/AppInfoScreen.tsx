@@ -23,7 +23,7 @@ import OxyIcon from '../components/icon/OxyIcon';
 import { Ionicons } from '@expo/vector-icons';
 import OxyServicesLogo from '../../assets/icons/OxyServices';
 import { Section, GroupedSection } from '../components';
-import { Colors } from '../constants/theme';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
 
 
@@ -47,11 +47,11 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     const [isRunningSystemCheck, setIsRunningSystemCheck] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'unknown'>('unknown');
 
-    const isDarkTheme = theme === 'dark';
-    const backgroundColor = isDarkTheme ? '#121212' : '#f2f2f2';
-    const colorScheme = useColorScheme() ?? theme ?? 'light';
-    const colors = Colors[colorScheme];
-    const primaryColor = colors.iconSecurity;
+    const colorScheme = useColorScheme();
+    const themeStyles = useThemeStyles(theme, colorScheme);
+    // AppInfoScreen uses a slightly different light background
+    const backgroundColor = themeStyles.isDarkTheme ? themeStyles.backgroundColor : '#f2f2f2';
+    const primaryColor = themeStyles.colors.iconSecurity;
 
     useEffect(() => {
         const updateDimensions = () => {
@@ -175,7 +175,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'name',
                                 icon: 'information-circle',
-                                iconColor: colors.iconSecurity,
+                                iconColor: themeStyles.colors.iconSecurity,
                                 title: 'Name',
                                 subtitle: packageInfo.name,
                                 onPress: () => copyToClipboard(packageInfo.name, 'Package name'),
@@ -184,7 +184,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'version',
                                 icon: 'pricetag',
-                                iconColor: colors.iconData,
+                                iconColor: themeStyles.colors.iconData,
                                 title: 'Version',
                                 subtitle: packageInfo.version,
                                 onPress: () => copyToClipboard(packageInfo.version, 'Version'),
@@ -192,14 +192,14 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'description',
                                 icon: 'document-text',
-                                iconColor: colors.iconPersonalInfo,
+                                iconColor: themeStyles.colors.iconPersonalInfo,
                                 title: 'Description',
                                 subtitle: packageInfo.description || 'No description',
                             },
                             {
                                 id: 'main-entry',
                                 icon: 'code',
-                                iconColor: colors.iconStorage,
+                                iconColor: themeStyles.colors.iconStorage,
                                 title: 'Main Entry',
                                 subtitle: packageInfo.main || 'N/A',
                                 onPress: () => copyToClipboard(packageInfo.main || 'N/A', 'Main entry'),
@@ -207,7 +207,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'module-entry',
                                 icon: 'library',
-                                iconColor: colors.iconSharing,
+                                iconColor: themeStyles.colors.iconSharing,
                                 title: 'Module Entry',
                                 subtitle: packageInfo.module || 'N/A',
                                 onPress: () => copyToClipboard(packageInfo.module || 'N/A', 'Module entry'),
@@ -215,7 +215,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'types-entry',
                                 icon: 'construct',
-                                iconColor: colors.iconPersonalInfo,
+                                iconColor: themeStyles.colors.iconPersonalInfo,
                                 title: 'Types Entry',
                                 subtitle: packageInfo.types || 'N/A',
                                 onPress: () => copyToClipboard(packageInfo.types || 'N/A', 'Types entry'),
@@ -231,35 +231,35 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'platform',
                                 icon: 'phone-portrait',
-                                iconColor: colors.iconSecurity,
+                                iconColor: themeStyles.colors.iconSecurity,
                                 title: 'Platform',
                                 subtitle: Platform.OS,
                             },
                             {
                                 id: 'platform-version',
                                 icon: 'hardware-chip',
-                                iconColor: colors.iconData,
+                                iconColor: themeStyles.colors.iconData,
                                 title: 'Platform Version',
                                 subtitle: systemInfo?.version || 'Loading...',
                             },
                             {
                                 id: 'screen-width',
                                 icon: 'resize',
-                                iconColor: colors.iconStorage,
+                                iconColor: themeStyles.colors.iconStorage,
                                 title: 'Screen Width',
                                 subtitle: `${systemInfo?.screenDimensions.width || 0}px`,
                             },
                             {
                                 id: 'screen-height',
                                 icon: 'resize',
-                                iconColor: colors.iconSharing,
+                                iconColor: themeStyles.colors.iconSharing,
                                 title: 'Screen Height',
                                 subtitle: `${systemInfo?.screenDimensions.height || 0}px`,
                             },
                             {
                                 id: 'environment',
                                 icon: 'settings',
-                                iconColor: colors.iconPersonalInfo,
+                                iconColor: themeStyles.colors.iconPersonalInfo,
                                 title: 'Environment',
                                 subtitle: __DEV__ ? 'Development' : 'Production',
                             },
@@ -274,7 +274,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'auth-status',
                                 icon: 'shield-checkmark',
-                                iconColor: isAuthenticated ? colors.iconPersonalInfo : colors.iconSharing,
+                                iconColor: isAuthenticated ? themeStyles.colors.iconPersonalInfo : themeStyles.colors.iconSharing,
                                 title: 'Authentication Status',
                                 subtitle: isAuthenticated ? 'Authenticated' : 'Not Authenticated',
                             },
@@ -282,7 +282,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                                 {
                                     id: 'user-id',
                                     icon: 'person',
-                                    iconColor: colors.iconSecurity,
+                                    iconColor: themeStyles.colors.iconSecurity,
                                     title: 'User ID',
                                     subtitle: user.id,
                                     onPress: () => copyToClipboard(user.id, 'User ID'),
@@ -290,7 +290,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                                 {
                                     id: 'username',
                                     icon: 'at',
-                                    iconColor: colors.iconData,
+                                    iconColor: themeStyles.colors.iconData,
                                     title: 'Username',
                                     subtitle: user.username || 'N/A',
                                     onPress: () => {
@@ -304,7 +304,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                                 {
                                     id: 'email',
                                     icon: 'mail',
-                                    iconColor: colors.iconStorage,
+                                    iconColor: themeStyles.colors.iconStorage,
                                     title: 'Email',
                                     subtitle: user.email || 'N/A',
                                 },
@@ -319,7 +319,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'active-sessions',
                                 icon: 'people',
-                                iconColor: colors.iconPersonalInfo,
+                                iconColor: themeStyles.colors.iconPersonalInfo,
                                 title: 'Total Active Sessions',
                                 subtitle: sessions?.length?.toString() || '0',
                             },
@@ -334,7 +334,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'api-base-url',
                                 icon: 'server',
-                                iconColor: colors.iconSecurity,
+                                iconColor: themeStyles.colors.iconSecurity,
                                 title: 'API Base URL',
                                 subtitle: oxyServices?.getBaseURL() || 'Not configured',
                                 onPress: () => copyToClipboard(oxyServices?.getBaseURL() || 'Not configured', 'API Base URL'),
@@ -342,7 +342,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'connection-status',
                                 icon: connectionStatus === 'checking' ? 'sync' : connectionStatus === 'connected' ? 'wifi' : 'wifi-off',
-                                iconColor: connectionStatus === 'checking' ? colors.iconStorage : connectionStatus === 'connected' ? colors.iconPersonalInfo : colors.iconSharing,
+                                iconColor: connectionStatus === 'checking' ? themeStyles.colors.iconStorage : connectionStatus === 'connected' ? themeStyles.colors.iconPersonalInfo : themeStyles.colors.iconSharing,
                                 title: 'Connection Status',
                                 subtitle: connectionStatus === 'checking' ? 'Checking...' : connectionStatus === 'connected' ? 'Connected' : connectionStatus === 'disconnected' ? 'Disconnected' : 'Unknown',
                                 onPress: async () => {
@@ -375,7 +375,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'build-timestamp',
                                 icon: 'time',
-                                iconColor: colors.iconSecurity,
+                                iconColor: themeStyles.colors.iconSecurity,
                                 title: 'Build Timestamp',
                                 subtitle: systemInfo?.timestamp || 'Loading...',
                                 onPress: () => copyToClipboard(systemInfo?.timestamp || 'Loading...', 'Build timestamp'),
@@ -390,7 +390,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'js-engine',
                                 icon: 'flash',
-                                iconColor: colors.iconSharing,
+                                iconColor: themeStyles.colors.iconSharing,
                                 title: 'JavaScript Engine',
                                 subtitle: 'Hermes',
                             },
@@ -405,7 +405,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             {
                                 id: 'copy-full-report',
                                 icon: 'copy',
-                                iconColor: colors.iconSecurity,
+                                iconColor: themeStyles.colors.iconSecurity,
                                 title: 'Copy Full Report',
                                 subtitle: 'Copy complete application information to clipboard',
                                 onPress: handleCopyFullReport,

@@ -154,8 +154,6 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
         );
     }, [user?.id, t]);
 
-    const themeStyles = useThemeStyles(theme);
-
     const formatTime = (date: Date) => {
         const now = new Date();
         const diff = now.getTime() - date.getTime();
@@ -181,7 +179,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
 
             <ScrollView style={styles.content}>
                 {/* Actions */}
-                <Section title={t('history.actions') || 'Actions'}  isFirst={true}>
+                <Section title={t('history.actions') || 'Actions'} isFirst={true}>
                     <GroupedSection
                         items={[
                             {
@@ -203,7 +201,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
                                 disabled: isDeleting || history.length === 0,
                             },
                         ]}
-                        
+
                     />
                 </Section>
 

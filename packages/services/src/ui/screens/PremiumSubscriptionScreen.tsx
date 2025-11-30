@@ -20,6 +20,8 @@ import { confirmAction } from '../utils/confirmAction';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
 import { useI18n } from '../hooks/useI18n';
+import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useColorScheme } from '../hooks/use-color-scheme';
 
 interface SubscriptionPlan {
     id: string;
@@ -79,16 +81,12 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const [activeTab, setActiveTab] = useState<'plans' | 'features'>('plans');
     const [currentAppPackage, setCurrentAppPackage] = useState<string>('mention'); // Default to mention for demo
 
-    const isDarkTheme = theme === 'dark';
     const { t } = useI18n();
-    const textColor = isDarkTheme ? '#FFFFFF' : '#000000';
-    const backgroundColor = isDarkTheme ? '#121212' : '#FFFFFF';
-    const secondaryBackgroundColor = isDarkTheme ? '#222222' : '#F5F5F5';
-    const borderColor = isDarkTheme ? '#444444' : '#E0E0E0';
-    const primaryColor = '#007AFF';
-    const successColor = '#30D158';
+    const colorScheme = useColorScheme();
+    const themeStyles = useThemeStyles(theme, colorScheme);
+    // Extract commonly used colors for readability
+    const { textColor, backgroundColor, secondaryBackgroundColor, borderColor, primaryColor, successColor, dangerColor } = themeStyles;
     const warningColor = '#FF9500';
-    const dangerColor = '#FF3B30';
 
     // TODO: Replace mock data with actual API integration
     // Should fetch plans from oxyServices.getSubscriptionPlans() and individual features from oxyServices.getIndividualFeatures()

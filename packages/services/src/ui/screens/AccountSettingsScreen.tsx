@@ -26,6 +26,7 @@ import { confirmAction } from '../utils/confirmAction';
 import { useAuthStore } from '../stores/authStore';
 import { Header, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
+import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { Colors } from '../constants/theme';
 import { useHapticPress } from '../hooks/use-haptic-press';
@@ -134,20 +135,22 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     }>>([]);
     const [isSearchingLocations, setIsSearchingLocations] = useState(false);
 
-    // Get theme colors
-    const colorScheme = useColorScheme() ?? 'light';
-    const colors = Colors[colorScheme];
+    // Get theme colors using centralized hook
+    const colorScheme = useColorScheme();
+    const baseThemeStyles = useThemeStyles(theme, colorScheme);
     const handlePressIn = useHapticPress();
 
     // Memoize theme-related calculations to prevent unnecessary recalculations
     const themeStyles = useMemo(() => {
-        const isDarkTheme = colorScheme === 'dark';
         return {
-            isDarkTheme,
-            backgroundColor: colors.background,
-            primaryColor: colors.tint,
+            ...baseThemeStyles,
+            // AccountSettingsScreen uses colors.tint for primaryColor
+            primaryColor: baseThemeStyles.colors.tint,
         };
-    }, [colorScheme, colors]);
+    }, [baseThemeStyles]);
+    
+    // Extract colors for convenience
+    const colors = baseThemeStyles.colors;
 
     // Memoize onBack handler to provide stable reference for Reanimated
     const handleBack = useMemo(() => {
@@ -1148,7 +1151,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 </View>
             );
         }
-        const colors = Colors[colorScheme];
         const fieldConfig = {
             displayName: { label: 'Display Name', value: displayName, placeholder: 'Enter your display name', icon: 'person', color: colors.iconPersonalInfo, multiline: false, keyboardType: 'default' as const },
             username: { label: 'Username', value: username, placeholder: 'Choose a username', icon: 'at', color: colors.iconData, multiline: false, keyboardType: 'default' as const },
