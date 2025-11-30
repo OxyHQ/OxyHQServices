@@ -57,6 +57,7 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
     const hapticIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
     const hapticStartTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const hapticIntensityRef = useRef<number>(0);
+    const isLongPressActiveRef = useRef<boolean>(false);
 
     const displayName = useMemo(() => getDisplayName(user), [user]);
     const avatarUrl = useMemo(() => {
@@ -131,6 +132,7 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
     const handleLogoLongPressStart = useCallback(() => {
         clearPressTimeout();
         stopHapticFeedback();
+        isLongPressActiveRef.current = true;
 
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
@@ -150,6 +152,15 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
         }, HAPTIC_COMPLETION_DELAY_MS);
         router.push('/(tabs)/easter-egg' as any);
     }, [router, stopHapticFeedback]);
+
+    const handleLogoPressOut = useCallback(() => {
+        if (isLongPressActiveRef.current) {
+            isLongPressActiveRef.current = false;
+            handleLogoLongPress();
+        } else {
+            stopHapticFeedback();
+        }
+    }, [handleLogoLongPress, stopHapticFeedback]);
 
     const handlePressIn = useHapticPress();
 
@@ -208,11 +219,8 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
                     <TouchableOpacity
                         onPressIn={handleLogoPressIn}
                         onPress={handleLogoPress}
-                        onLongPress={() => {
-                            handleLogoLongPressStart();
-                            handleLogoLongPress();
-                        }}
-                        onPressOut={stopHapticFeedback}
+                        onLongPress={handleLogoLongPressStart}
+                        onPressOut={handleLogoPressOut}
                         activeOpacity={0.7}
                     >
                         <LogoIcon height={32} useThemeColors={true} />
@@ -243,11 +251,8 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
                     <TouchableOpacity
                         onPressIn={handleLogoPressIn}
                         onPress={handleLogoPress}
-                        onLongPress={() => {
-                            handleLogoLongPressStart();
-                            handleLogoLongPress();
-                        }}
-                        onPressOut={stopHapticFeedback}
+                        onLongPress={handleLogoLongPressStart}
+                        onPressOut={handleLogoPressOut}
                         activeOpacity={0.7}
                     >
                         <LogoIcon height={24} useThemeColors={true} />

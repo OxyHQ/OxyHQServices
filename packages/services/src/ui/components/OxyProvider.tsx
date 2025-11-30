@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, useEffect, useMemo, forwardRef, useImperativeHandle, type FC } from 'react';
-import { View, Text, StyleSheet, Platform, Animated, StatusBar, Keyboard, KeyboardEvent, AppState } from 'react-native';
+import { View, Text, StyleSheet, Platform, Animated, StatusBar, AppState, Keyboard, type KeyboardEvent } from 'react-native';
 import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import type { OxyProviderProps, BottomSheetController } from '../navigation/types';
@@ -156,7 +156,7 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
     const modalRef = useRef<BottomSheetModalRef>(null);
     const isOpenRef = useRef(false);
     const navigationRef = useRef<((screen: any, props?: Record<string, unknown>) => void) | null>(null);
-    
+
     // Remove contentHeight, containerWidth, and snap point state/logic
     // Animation values - keep for content fade/slide
     const fadeAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 1 : 0)).current;
@@ -188,59 +188,54 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
         snapToIndex: (index: number) => modalRef.current?.snapToIndex?.(index),
         snapToPosition: (position: number | string) => modalRef.current?.snapToPosition?.(position as any),
         navigate: (screen: any, props?: Record<string, any>) => {
+            // Prefer direct ref call (most efficient)
             if (navigationRef.current) {
                 navigationRef.current(screen, props);
                 return;
             }
+            // Fallback to DOM event for web environments
             if (typeof document !== 'undefined') {
                 const event = new CustomEvent('oxy:navigate', { detail: { screen, props } });
                 document.dispatchEvent(event);
-            } else {
-                (globalThis as any).oxyNavigateEvent = { screen, props };
+            } else if (__DEV__) {
+                // In React Native, navigationRef should always be available
+                // If it's not, this indicates a timing issue
+                console.warn('OxyProvider: navigationRef not ready. Navigation may fail.');
             }
         }
     }), [fadeAnim, slideAnim]);
-    // Keyboard handling (unchanged)
-    const [keyboardVisible, setKeyboardVisible] = useState(false);
-    const [keyboardHeight, setKeyboardHeight] = useState(0);
     const insets = useSafeAreaInsets();
-    
+
+    // Track keyboard state for dynamic padding (not for bottomInset - library handles that)
+    const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+    useEffect(() => {
+        const showSubscription = Keyboard.addListener(
+            'keyboardDidShow',
+            (e: KeyboardEvent) => {
+                setKeyboardHeight(e.endCoordinates.height);
+            }
+        );
+        const hideSubscription = Keyboard.addListener(
+            'keyboardDidHide',
+            () => {
+                setKeyboardHeight(0);
+            }
+        );
+
+        return () => {
+            showSubscription.remove();
+            hideSubscription.remove();
+        };
+    }, []);
+
     // Calculate max height for dynamic sizing (screen height minus insets and margin)
+    // Note: keyboardBehavior="interactive" handles keyboard positioning automatically
     const maxHeight = useMemo(() => {
         const topInset = (insets?.top ?? 0) + (appInsets?.top ?? 0);
         const bottomInset = (insets?.bottom ?? 0) + (appInsets?.bottom ?? 0);
         return windowHeight - topInset - bottomInset - 20; // 20px margin
     }, [windowHeight, insets?.top, insets?.bottom, appInsets?.top, appInsets?.bottom]);
-    useEffect(() => {
-        // Use 'did' events on iOS to avoid multiple intermediate willShow updates
-        const showEvent = Platform.OS === 'ios' ? 'keyboardDidShow' : 'keyboardDidShow';
-        const hideEvent = Platform.OS === 'ios' ? 'keyboardDidHide' : 'keyboardDidHide';
-        let lastH = 0;
-        let lastTs = 0;
-        const MIN_DELTA = 8;
-        const MIN_INTERVAL = 80; // ms
-        const onShow = (e: KeyboardEvent) => {
-            const h = e?.endCoordinates?.height ?? 0;
-            const now = Date.now();
-            if (Math.abs(h - lastH) < MIN_DELTA && now - lastTs < MIN_INTERVAL) return;
-            lastH = h;
-            lastTs = now;
-            setKeyboardVisible(true);
-            setKeyboardHeight(h);
-        };
-        const onHide = () => {
-            lastH = 0;
-            lastTs = Date.now();
-            setKeyboardVisible(false);
-            setKeyboardHeight(0);
-        };
-        const showSub = Keyboard.addListener(showEvent as any, onShow as any);
-        const hideSub = Keyboard.addListener(hideEvent as any, onHide as any);
-        return () => {
-            showSub.remove();
-            hideSub.remove();
-        };
-    }, []);
     // Present the modal when component mounts, but only if autoPresent is true
     useEffect(() => {
         if (autoPresent && modalRef.current) {
@@ -304,7 +299,7 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
         ),
         []
     );
-    
+
     // Modernized BottomSheetModal usage
     return (
         <BottomSheetModal
@@ -334,7 +329,7 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
                 right: 0,
             }}
             style={styles.bottomSheetContainer}
-            keyboardBehavior="interactive"
+            keyboardBehavior={Platform.OS === 'ios' ? 'extend' : 'interactive'}
             keyboardBlurBehavior="restore"
             android_keyboardInputMode="adjustResize"
             enableOverDrag={false}
@@ -344,23 +339,28 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
             enableBlurKeyboardOnGesture={true}
             detached
             topInset={(insets?.top ?? 0) + (appInsets?.top ?? 0)}
-            bottomInset={(keyboardVisible ? keyboardHeight : 0) + (appInsets?.bottom ?? 0)}
+            bottomInset={(insets?.bottom ?? 0) + (appInsets?.bottom ?? 0)}
             onChange={(index) => { isOpenRef.current = index !== -1; }}
             onDismiss={() => { isOpenRef.current = false; }}
         >
             <BottomSheetScrollView
                 style={[styles.contentContainer]}
-                contentContainerStyle={styles.scrollContentContainer}
+                contentContainerStyle={[
+                    styles.scrollContentContainer,
+                    { paddingBottom: keyboardHeight > 0 ? keyboardHeight : 0 }
+                ]}
                 showsVerticalScrollIndicator={true}
                 bounces={false}
                 nestedScrollEnabled={true}
-                >
-                    <Animated.View
-                        style={[
-                            styles.animatedContent,
-                            Platform.OS === 'android'
-                                ? { opacity: 1 }
-                                : { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+            >
+                <Animated.View
+                    style={[
+                        styles.animatedContent,
+                        Platform.OS === 'android'
+                            ? { opacity: 1 }
+                            : { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
                     ]}
                 >
                     <View
@@ -385,7 +385,7 @@ const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
                             </View>
                         )}
                     </View>
-                    </Animated.View>
+                </Animated.View>
             </BottomSheetScrollView>
             {showInternalToaster && (
                 <View style={styles.toasterContainer}>
@@ -410,6 +410,7 @@ const styles = StyleSheet.create({
     },
     scrollContentContainer: {
         // Content will size naturally, ScrollView handles overflow
+        // paddingBottom is set dynamically based on keyboard height
     },
     centeredContentWrapper: {
         width: '100%',
