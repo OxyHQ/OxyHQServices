@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useScrollContext } from '@/contexts/scroll-context';
@@ -6,6 +6,12 @@ import { useScrollContext } from '@/contexts/scroll-context';
 interface ScreenContentWrapperProps {
   children: React.ReactNode;
 }
+
+// Header dimensions - must match MobileHeader component
+const HEADER_TOP_PADDING = 4;
+const HEADER_BOTTOM_PADDING = 10;
+// Content height: menu button (24px icon + 6px padding top + 6px padding bottom = 36px) is tallest
+const HEADER_CONTENT_HEIGHT = 36;
 
 export function ScreenContentWrapper({ children }: ScreenContentWrapperProps) {
   const { setIsScrolled } = useScrollContext();
@@ -16,19 +22,17 @@ export function ScreenContentWrapper({ children }: ScreenContentWrapperProps) {
     setIsScrolled(offsetY > 10);
   };
 
-  // Header height: safe area top + header top padding (16) + content height (~56) + bottom padding (16)
-  // Content height: icons (24px) + avatar (36px) + button padding, roughly 56px
-  const headerContentHeight = 56; // Approximate height of header content row (icons + avatar)
-  const headerTopPadding = 16;
-  const headerBottomPadding = 16;
-  const headerTotalHeight = insets.top + headerTopPadding + headerContentHeight + headerBottomPadding;
+  // Calculate header height: safe area + header padding + content + bottom padding
+  const headerHeight = useMemo(() => {
+    return insets.top + HEADER_TOP_PADDING + HEADER_CONTENT_HEIGHT + HEADER_BOTTOM_PADDING;
+  }, [insets.top]);
 
   return (
     <ScrollView
       style={styles.scrollView}
       contentContainerStyle={[
         styles.contentContainer,
-        { paddingTop: headerTotalHeight }
+        { paddingTop: headerHeight }
       ]}
       showsVerticalScrollIndicator={false}
       onScroll={handleScroll}

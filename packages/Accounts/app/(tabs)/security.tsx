@@ -14,6 +14,7 @@ import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
 import type { ClientSession } from '@oxyhq/services';
+import { useThemeContext } from '@/contexts/theme-context';
 
 interface SecurityInfo {
     twoFactorEnabled: boolean;
@@ -29,6 +30,7 @@ export default function SecurityScreen() {
 
     const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
     const isDesktop = Platform.OS === 'web' && width >= 768;
+    const { toggleColorScheme } = useThemeContext();
 
     // OxyServices integration
     const { oxyServices, user, isAuthenticated, isLoading: oxyLoading, sessions, showBottomSheet } = useOxy();
@@ -419,6 +421,23 @@ export default function SecurityScreen() {
         return items;
     }, [devices, colors, getDeviceIcon, router]);
 
+    // Appearance items
+    const appearanceItems = useMemo(() => [
+        {
+            id: 'dark-mode',
+            icon: colorScheme === 'dark' ? 'sunny-outline' : 'moon-outline',
+            iconColor: colors.sidebarIconData,
+            title: 'Dark mode',
+            subtitle: colorScheme === 'dark' ? 'On' : 'Off',
+            customContent: (
+                <AppleSwitch
+                    value={colorScheme === 'dark'}
+                    onValueChange={toggleColorScheme}
+                />
+            ),
+        },
+    ], [colors, colorScheme, toggleColorScheme]);
+
     // Feature cards
     const featureCards = useMemo(() => [
         {
@@ -500,6 +519,12 @@ export default function SecurityScreen() {
                 <ThemedText style={styles.sectionSubtitle}>Make sure you can always access your Oxy Account by keeping this information up to date</ThemedText>
                 <AccountCard>
                     <GroupedSection items={signInItems} />
+                </AccountCard>
+            </Section>
+
+            <Section title="Appearance">
+                <AccountCard>
+                    <GroupedSection items={appearanceItems} />
                 </AccountCard>
             </Section>
 

@@ -1,20 +1,19 @@
 import { Slot } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
 import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
-import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, TextInput } from 'react-native';
+import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, TextInput, TouchableOpacity } from 'react-native';
 import { useRouter, usePathname, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { DesktopSidebar, DrawerContent, MobileHeader } from '@/components/ui';
-import { LogoIcon } from '@/assets/logo';
-import { UserAvatar } from '@/components/user-avatar';
-import { Ionicons } from '@expo/vector-icons';
+import { DesktopSidebar, DrawerContent } from '@/components/ui';
+import { Header } from '@/components/header';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useScrollContext } from '@/contexts/scroll-context';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useThemeContext } from '@/contexts/theme-context';
 import { useOxy } from '@oxyhq/services';
-import { getDisplayName } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+import { darkenColor } from '@/utils/color-utils';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -26,29 +25,29 @@ export default function TabLayout() {
   const isDesktop = Platform.OS === 'web' && width >= 768;
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
-  const { setIsScrolled } = useScrollContext();
+  const { setIsScrolled, isScrolled } = useScrollContext();
   const { toggleColorScheme } = useThemeContext();
 
-  // OxyServices integration for user data in header
-  const { user, oxyServices, showBottomSheet } = useOxy();
-
-  // Compute user data for headers
-  const displayName = useMemo(() => getDisplayName(user), [user]);
-  const avatarUrl = useMemo(() => {
-    if (user?.avatar && oxyServices) {
-      return oxyServices.getFileDownloadUrl(user.avatar, 'thumb');
-    }
-    return undefined;
-  }, [user?.avatar, oxyServices]);
-
-  // Handle avatar press in desktop header to open account overview
-  const handleHeaderAvatarPress = useCallback(() => {
-    if (showBottomSheet) {
-      showBottomSheet('AccountOverview');
-    }
-  }, [showBottomSheet]);
+  const { showBottomSheet, refreshSessions } = useOxy();
 
   const handlePressIn = useHapticPress();
+
+  const handleReload = useCallback(async () => {
+    if (!refreshSessions) return;
+    try {
+      await refreshSessions();
+    } catch (error) {
+      console.error('Failed to refresh sessions', error);
+    }
+  }, [refreshSessions]);
+
+  const handleDevices = useCallback(() => {
+    showBottomSheet?.('SessionManagement');
+  }, [showBottomSheet]);
+
+  const handleMenu = useCallback(() => {
+    showBottomSheet?.('AccountOverview');
+  }, [showBottomSheet]);
 
   const handleScroll = useCallback((event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
@@ -57,12 +56,9 @@ export default function TabLayout() {
 
   const handleSearchChange = (text: string) => {
     setSearchQuery(text);
-    // Always navigate to search screen, even when empty
     if (pathname === '/(tabs)/search') {
-      // If already on search screen, just update params
       router.setParams({ q: text || '' });
     } else {
-      // Navigate to search screen
       router.push({
         pathname: '/(tabs)/search',
         params: { q: text || '' },
@@ -70,50 +66,22 @@ export default function TabLayout() {
     }
   };
 
-  // Sync search query with route params when on search screen
   useEffect(() => {
     if (pathname === '/(tabs)/search') {
-      // Sync header input with route params
-      const queryFromParams = params.q || '';
-      setSearchQuery(queryFromParams);
+      setSearchQuery(params.q || '');
     } else {
-      // Clear search when navigating away from search screen
       setSearchQuery('');
     }
   }, [pathname, params.q]);
 
-  // Render desktop layout with sidebar
   if (isDesktop) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        {/* Top Header Bar */}
-        <View style={[styles.desktopTopBar, { backgroundColor: colors.background, borderBottomColor: colors.border }]}>
-          <View style={styles.topBarLeft}>
-            <LogoIcon height={32} useThemeColors={true} />
-          </View>
-          <View style={styles.searchBarContainer}>
-            <View style={[styles.searchBar, { backgroundColor: colors.card }]}>
-              <Ionicons name="search-outline" size={20} color={colors.text} style={styles.searchIcon} />
-              <TextInput
-                ref={searchInputRef}
-                style={[styles.searchInput, { color: colors.text }]}
-                placeholder="Search Oxy Account"
-                placeholderTextColor={colors.secondaryText}
-                value={searchQuery}
-                onChangeText={handleSearchChange}
-                returnKeyType="search"
-              />
-            </View>
-          </View>
-          <View style={styles.topBarRight}>
-            <TouchableOpacity style={styles.iconButton} onPressIn={handlePressIn} onPress={toggleColorScheme}>
-              <Ionicons name={colorScheme === 'dark' ? 'sunny-outline' : 'moon-outline'} size={22} color={colors.text} />
-            </TouchableOpacity>
-            <TouchableOpacity onPressIn={handlePressIn} onPress={handleHeaderAvatarPress} activeOpacity={0.7}>
-              <UserAvatar name={displayName} imageUrl={avatarUrl} size={36} />
-            </TouchableOpacity>
-          </View>
-        </View>
+        <Header
+          searchQuery={searchQuery}
+          onSearchChange={handleSearchChange}
+          searchInputRef={searchInputRef}
+        />
 
         <View style={styles.desktopBody}>
           <View style={styles.desktopSidebarColumn}>
@@ -125,28 +93,46 @@ export default function TabLayout() {
                 style={styles.desktopMain}
                 contentContainerStyle={styles.desktopMainContent}
                 showsVerticalScrollIndicator={false}
+                onScroll={handleScroll}
+                scrollEventThrottle={16}
               >
                 <Slot />
               </ScrollView>
             </View>
           </View>
         </View>
+
+        <View style={styles.desktopBottomActions}>
+          <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleReload}>
+            <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
+              <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleDevices}>
+            <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
+              <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
+            </View>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={toggleColorScheme}>
+            <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
+              <MaterialCommunityIcons name={colorScheme === 'dark' ? 'weather-sunny' : 'weather-night'} size={22} color={darkenColor(colors.sidebarIconData)} />
+            </View>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
-  // Mobile layout - use drawer
-  // Note: expo-router Drawer renders screens independently, so we can't have a single ScrollView
-  // Instead, we'll remove ScrollViews from screens and they should use ScreenContentWrapper
-  // OR we apply ScrollView via a custom solution
   return (
     <Drawer
       drawerContent={(props) => <DrawerContent {...props} />}
       screenOptions={{
         headerShown: true,
-        header: () => <MobileHeader />,
+        header: () => <Header searchQuery={searchQuery} onSearchChange={handleSearchChange} />,
+        headerTransparent: true,
         headerStyle: {
-          backgroundColor: colors.background,
+          backgroundColor: 'transparent',
+          height: 0,
         },
         drawerStyle: {
           backgroundColor: 'transparent',
@@ -248,52 +234,7 @@ export default function TabLayout() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  desktopTopBar: {
-    height: 64,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    borderBottomWidth: 1,
-  },
-  topBarLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    minWidth: 350,
-  },
-  searchBarContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 48,
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    gap: 12,
-    maxWidth: 600,
-    width: '100%',
-  },
-  searchIcon: {
-    opacity: 0.6,
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 16,
-    padding: 0,
-  },
-  topBarRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    justifyContent: 'flex-end',
-  },
-  iconButton: {
-    padding: 8,
-    borderRadius: 20,
+    position: 'relative',
   },
   desktopBody: {
     flex: 1,
@@ -317,5 +258,32 @@ const styles = StyleSheet.create({
   },
   desktopMainContent: {
     padding: 24,
+    paddingTop: 88,
+  },
+  desktopBottomActions: {
+    bottom: 24,
+    right: 24,
+    flexDirection: 'row',
+    gap: 16,
+    zIndex: 1000,
+    ...Platform.select({
+      web: {
+        position: 'fixed' as any,
+      },
+      default: {
+        position: 'absolute' as any,
+      },
+    }),
+  },
+  circleButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  menuIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
 });
