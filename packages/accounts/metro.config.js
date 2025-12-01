@@ -22,9 +22,12 @@ config.resolver.disableHierarchicalLookup = true;
 // 4. Enable better platform resolution
 config.resolver.platforms = ['native', 'android', 'ios', 'tsx', 'ts', 'web'];
 
-// 5. Resolve @/ alias to project root using extraNodeModules
-config.resolver.extraNodeModules = {
-  '@': projectRoot,
+// 5. Resolve @/ alias to project root
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  if (moduleName?.startsWith('@/')) {
+    moduleName = path.resolve(projectRoot, moduleName.replace('@/', ''));
+  }
+  return context.resolveRequest(context, moduleName, platform);
 };
 
 module.exports = config;
