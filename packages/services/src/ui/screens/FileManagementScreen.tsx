@@ -115,6 +115,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     const [fileContent, setFileContent] = useState<string | null>(null);
     const [loadingFileContent, setLoadingFileContent] = useState(false);
     const [showFileDetailsInViewer, setShowFileDetailsInViewer] = useState(false);
+    const [isPickingDocument, setIsPickingDocument] = useState(false);
     const [viewMode, setViewMode] = useState<'all' | 'photos' | 'videos' | 'documents' | 'audio'>('all');
     const [searchQuery, setSearchQuery] = useState('');
     const [sortBy, setSortBy] = useState<'date' | 'size' | 'name' | 'type'>('date');
@@ -737,7 +738,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
      * Expo 54 compatible - works on web, iOS, and Android
      */
     const handleFileUpload = async () => {
+        // Prevent concurrent document picker calls
+        if (isPickingDocument) {
+            toast.error('Please wait for the current file selection to complete');
+            return;
+        }
+
         try {
+            setIsPickingDocument(true);
+            
             // Dynamically import expo-document-picker (Expo 54 supports it on all platforms)
             const DocumentPicker = await import('expo-document-picker').catch(() => null);
 
@@ -754,10 +763,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             });
 
             if (result.canceled) {
+                setIsPickingDocument(false);
                 return;
             }
 
             if (!result.assets || result.assets.length === 0) {
+                setIsPickingDocument(false);
                 toast.error('No files were selected');
                 return;
             }
@@ -817,11 +828,18 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
             }
         } catch (error: any) {
             console.error('File upload error:', error);
-            if (error.message?.includes('expo-document-picker')) {
-                toast.error('File picker not available. Please install expo-document-picker');
+            if (error.message?.includes('expo-document-picker') || error.message?.includes('Different document picking in progress')) {
+                if (error.message?.includes('Different document picking in progress')) {
+                    toast.error('Please wait for the current file selection to complete');
+                } else {
+                    toast.error('File picker not available. Please install expo-document-picker');
+                }
             } else {
                 toast.error(error.message || 'Failed to select files');
             }
+        } finally {
+            // Always reset the picking state, even if there was an error
+            setIsPickingDocument(false);
         }
     };
 
@@ -1535,9 +1553,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         <TouchableOpacity
                             style={[fileManagementStyles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
                             onPress={handleFileUpload}
-                            disabled={uploading}
+                            disabled={uploading || isPickingDocument}
                         >
                             {uploading ? (
+                                <ActivityIndicator size="small" color="#FFFFFF" />
+                            ) : isPickingDocument ? (
                                 <ActivityIndicator size="small" color="#FFFFFF" />
                             ) : (
                                 <>
@@ -1628,9 +1648,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 <TouchableOpacity
                     style={[fileManagementStyles.emptyStateButton, { backgroundColor: themeStyles.primaryColor }]}
                     onPress={handleFileUpload}
-                    disabled={uploading}
+                    disabled={uploading || isPickingDocument}
                 >
                     {uploading ? (
+                        <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : isPickingDocument ? (
                         <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
                         <>
@@ -2059,7 +2081,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     <TouchableOpacity
                         style={[fileManagementStyles.uploadButton, { backgroundColor: themeStyles.primaryColor }]}
                         onPress={handleFileUpload}
-                        disabled={uploading}
+                        disabled={uploading || isPickingDocument}
                     >
                         {uploading ? (
                             <View style={fileManagementStyles.uploadProgress}>
@@ -2070,6 +2092,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                                     </Text>
                                 )}
                             </View>
+                        ) : isPickingDocument ? (
+                            <ActivityIndicator size="small" color="#FFFFFF" />
                         ) : (
                             <Ionicons name="add" size={22} color="#FFFFFF" />
                         )}

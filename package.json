@@ -4,12 +4,12 @@
   "description": "OxyHQ Monorepo containing services and API packages",
   "private": true,
   "workspaces": [
-    "packages/api",
-    "packages/accounts"
+    "packages/api"
   ],
   "scripts": {
     "build": "npm run build:all",
-    "build:all": "npm run build --workspaces",
+    "build:workspaces": "npm run build --workspaces",
+    "build:all": "npm run build --workspaces && npm run accounts:build",
     "start": "cd packages/api && npm start",
     "dev": "npm run dev --workspaces",
     "test": "npm run test --workspaces",
@@ -18,7 +18,7 @@
     "api:build": "npm run build -w @oxyhq/api",
     "api:dev": "npm run dev -w @oxyhq/api",
     "api:start": "npm run start -w @oxyhq/api",
-    "accounts:build": "npm run build -w accounts",
+    "accounts:build": "cd packages/accounts && npm run build",
     "services:build": "npm run build -w @oxyhq/services",
     "services:test": "npm run test -w @oxyhq/services",
     "heroku-postbuild": "npm run build:all"
