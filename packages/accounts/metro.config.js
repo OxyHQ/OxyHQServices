@@ -7,6 +7,9 @@ const monorepoRoot = path.resolve(projectRoot, '..', '..');
 
 const config = getDefaultConfig(projectRoot);
 
+// Explicitly set projectRoot
+config.projectRoot = projectRoot;
+
 // 1. Only watch the Accounts package (prevent watching entire monorepo)
 config.watchFolders = [projectRoot];
 
