@@ -71,7 +71,7 @@
   "scripts": {
     "typescript": "tsc --skipLibCheck --noEmit",
     "lint": "biome lint --error-on-warnings ./src",
-    "build": "bob build && npm run copy-assets && npm run copy-dts && npm run delete-dts.js && npm run delete-debug-view",
+    "build": "npx bob build && npm run copy-assets && npm run copy-dts && npm run delete-dts.js && npm run delete-debug-view",
     "test": "jest",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
