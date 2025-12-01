@@ -90,3 +90,4 @@ jspm_packages/
 # Allow library wrappers
 !/packages/services/src/lib/
 !/packages/services/src/lib/sonner.ts
+!/packages/accounts/lib/
