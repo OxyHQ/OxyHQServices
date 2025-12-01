@@ -9,7 +9,7 @@
   "scripts": {
     "build": "npm run build:all",
     "build:workspaces": "npm run build --workspaces",
-    "build:all": "npm run build --workspaces && npm run accounts:build",
+    "build:all": "npm run build --workspaces && npm run services:build && npm run accounts:build",
     "start": "cd packages/api && npm start",
     "dev": "npm run dev --workspaces",
     "test": "npm run test --workspaces",
@@ -18,7 +18,7 @@
     "api:build": "npm run build -w @oxyhq/api",
     "api:dev": "npm run dev -w @oxyhq/api",
     "api:start": "npm run start -w @oxyhq/api",
-    "accounts:build": "cd packages/accounts && npm install && npm run build",
+    "accounts:build": "cd packages/accounts && npm install --legacy-peer-deps && npm run build",
     "services:build": "npm run build -w @oxyhq/services",
     "services:test": "npm run test -w @oxyhq/services",
     "heroku-postbuild": "npm run build:all"
