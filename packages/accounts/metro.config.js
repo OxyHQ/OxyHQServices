@@ -19,13 +19,15 @@ config.resolver.nodeModulesPaths = [
 // 3. Force Metro to resolve (sub)dependencies in the workspace
 config.resolver.disableHierarchicalLookup = true;
 
-// 4. Enable better platform resolution
-config.resolver.platforms = ['native', 'android', 'ios', 'tsx', 'ts', 'web'];
+// 4. Ensure source extensions include TypeScript files
+config.resolver.sourceExts = [
+  ...config.resolver.sourceExts,
+  'ts',
+  'tsx',
+];
 
-// 5. Add alias resolver for @/ paths
-config.resolver.extraNodeModules = {
-  '@': projectRoot,
-};
+// 5. Enable better platform resolution
+config.resolver.platforms = ['native', 'android', 'ios', 'tsx', 'ts', 'web'];
 
 module.exports = config;
 
