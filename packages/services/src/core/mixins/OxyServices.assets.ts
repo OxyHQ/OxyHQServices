@@ -399,6 +399,28 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
           throw new Error(`Failed to complete upload for "${fileName}": ${error.message || 'Unknown error'}`);
         }
       } catch (error) {
+        // Log the original error for debugging
+        console.error('File upload error:', error);
+        
+        // Preserve original error message before passing to handleError
+        // This ensures we don't lose the error details
+        let errorMessage = 'File upload failed';
+        
+        if (error instanceof Error) {
+          errorMessage = error.message || errorMessage;
+        } else if (error && typeof error === 'object') {
+          // Try to extract message from various error formats
+          if ('message' in error) {
+            errorMessage = String((error as any).message) || errorMessage;
+          } else if ('error' in error && typeof (error as any).error === 'string') {
+            errorMessage = (error as any).error;
+          } else if ('data' in error && (error as any).data?.message) {
+            errorMessage = String((error as any).data.message);
+          }
+        } else if (error) {
+          errorMessage = String(error) || errorMessage;
+        }
+        
         // Add file context to error for better debugging
         const contextError = error as Error & { fileContext?: Record<string, unknown> };
         if (!contextError.fileContext) {
@@ -408,7 +430,22 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
             fileType,
           };
         }
-        throw this.handleError(contextError);
+        
+        // If the error already has a message, preserve it
+        if (error instanceof Error && error.message) {
+          // Pass through handleError but ensure message is preserved
+          const handledError = this.handleError(contextError);
+          // If handleError stripped the message, restore it
+          if (!handledError.message || handledError.message.trim() === 'An unexpected error occurred') {
+            handledError.message = errorMessage;
+          }
+          throw handledError;
+        }
+        
+        // For non-Error objects, create a new Error with the message
+        const newError = new Error(errorMessage);
+        (newError as any).fileContext = contextError.fileContext;
+        throw this.handleError(newError);
       }
     }
 

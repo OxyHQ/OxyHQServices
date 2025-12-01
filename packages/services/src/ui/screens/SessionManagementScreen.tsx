@@ -227,7 +227,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     }, [userSessions, activeSessionId, formatRelative, successColor, primaryColor, isDarkTheme, switchLoading, actionLoading, handleSwitchSession, handleLogoutSession, dangerColor]);
 
     // Memoized bulk action items - prevents unnecessary re-renders when dependencies haven't changed
-    const otherSessionsCount = useMemo(() => 
+    const otherSessionsCount = useMemo(() =>
         userSessions.filter(s => s.sessionId !== activeSessionId).length,
         [userSessions, activeSessionId]
     );
@@ -264,7 +264,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             <Header
                 title="Active Sessions"
                 subtitle="Manage your active sessions across all devices"
-                
+
                 onBack={goBack || onClose}
                 elevation="subtle"
             />
@@ -285,11 +285,11 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                             <Text style={[styles.metaText, { color: isDarkTheme ? '#777' : '#777', marginBottom: 6 }]}>Last refreshed {formatRelative(lastRefreshed.toISOString())}</Text>
                         )}
                         <View style={styles.fullBleed}>
-                            <GroupedSection items={sessionItems}  />
+                            <GroupedSection items={sessionItems} />
                         </View>
                         <View style={{ height: 12 }} />
                         <View style={styles.fullBleed}>
-                            <GroupedSection items={bulkItems}  />
+                            <GroupedSection items={bulkItems} />
                         </View>
                     </>
                 ) : (

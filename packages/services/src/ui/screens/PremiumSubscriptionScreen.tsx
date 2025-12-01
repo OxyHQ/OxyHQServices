@@ -85,7 +85,7 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     const colorScheme = useColorScheme();
     const themeStyles = useThemeStyles(theme, colorScheme);
     // Extract commonly used colors for readability
-    const { textColor, backgroundColor, secondaryBackgroundColor, borderColor, primaryColor, successColor, dangerColor } = themeStyles;
+    const { textColor, backgroundColor, secondaryBackgroundColor, borderColor, primaryColor, successColor, dangerColor, isDarkTheme } = themeStyles;
     const warningColor = '#FF9500';
 
     // TODO: Replace mock data with actual API integration

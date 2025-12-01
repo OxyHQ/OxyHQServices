@@ -9,7 +9,7 @@ import {
     Keyboard,
 } from 'react-native';
 import { useMemo } from 'react';
-import AnimatedReanimated, { useAnimatedStyle, interpolate, Extrapolation } from 'react-native-reanimated';
+import AnimatedReanimated, { useAnimatedStyle, interpolate, Extrapolation, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import OxyIcon from './icon/OxyIcon';
@@ -56,7 +56,7 @@ export interface HeaderProps {
     elevation?: 'none' | 'subtle' | 'prominent';
     subtitleVariant?: 'default' | 'small' | 'large' | 'muted';
     titleAlignment?: 'left' | 'center' | 'right';
-    scrollY?: AnimatedReanimated.SharedValue<number>; // For sticky behavior on native
+    scrollY?: SharedValue<number>; // For sticky behavior on native
 }
 
 const Header: React.FC<HeaderProps> = ({

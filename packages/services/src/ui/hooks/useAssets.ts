@@ -71,7 +71,7 @@ export const useAssets = () => {
       };
       
       // Upload with progress callback (visibility undefined, metadata, then onProgress)
-      const result = await oxyInstance.assetUpload(file, undefined, metadata, (percentage: number) => {
+      const result = await oxyInstance.assetUpload(file as any, undefined, metadata, (percentage: number) => {
         if (initialProgress.fileId) {
           setUploadProgress(initialProgress.fileId, {
             ...initialProgress,
