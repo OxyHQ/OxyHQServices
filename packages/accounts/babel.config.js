@@ -1,18 +1,15 @@
-module.exports = function(api) {
-  if (api) {
-    api.cache(true);
-  }
+module.exports = function (api) {
+  api.cache(true);
   return {
     presets: ['babel-preset-expo'],
     plugins: [
+      // resolver must come first for proper module resolution
       [
         'module-resolver',
         {
-          root: ['./'],
-          alias: {
-            '@': './',
-          },
-          extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
+          root: ['./'], // Ensure it resolves relative to package root
+          alias: { '@': './' },
+          extensions: ['.ts', '.tsx', '.js', '.jsx', '.json'],
         },
       ],
       'expo-router/babel',
