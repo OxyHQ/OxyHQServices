@@ -19,7 +19,7 @@
     "api:dev": "npm run dev -w @oxyhq/api",
     "api:start": "npm run start -w @oxyhq/api",
     "accounts:build": "cd packages/accounts && npm install --legacy-peer-deps && npm run build",
-    "services:build": "npm run build -w @oxyhq/services",
+    "services:build": "cd packages/services && npm run build",
     "services:test": "npm run test -w @oxyhq/services",
     "heroku-postbuild": "npm run build:all"
   },
