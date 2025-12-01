@@ -3,11 +3,15 @@ const path = require('path');
 
 // Find the project and services directories
 const projectRoot = __dirname;
+const monorepoRoot = path.resolve(projectRoot, '..');
 const servicesRoot = path.resolve(projectRoot, '..', 'services');
 const servicesSrc = path.resolve(servicesRoot, 'src');
 const servicesNodeModules = path.resolve(servicesRoot, 'node_modules');
 
 const config = getDefaultConfig(projectRoot);
+
+// Explicitly set projectRoot
+config.projectRoot = projectRoot;
 
 // 1. Watch the local services package (source + its node_modules)
 // Explicitly include the src directory to ensure hot reload works
@@ -20,6 +24,7 @@ config.watchFolders = [
 // 2. Let Metro know where to resolve packages and in what order
 config.resolver.nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
+  path.resolve(monorepoRoot, 'node_modules'),
   servicesNodeModules,
 ];
 
