@@ -1,7 +1,7 @@
-const path = require('path');
-
 module.exports = function(api) {
-  api.cache(true);
+  if (api) {
+    api.cache(true);
+  }
   return {
     presets: ['babel-preset-expo'],
     plugins: [
@@ -13,7 +13,6 @@ module.exports = function(api) {
             '@': './',
           },
           extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
-          cwd: 'babelrc',
         },
       ],
     ],
