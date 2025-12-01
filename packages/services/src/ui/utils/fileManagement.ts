@@ -103,15 +103,17 @@ export async function convertDocumentPickerAssetToFile(
                     return file;
                 }
 
-                // For mobile file URIs (file://, content://), use Expo 54 FileSystem API
-                const fileInstance = new ExpoFile(doc.uri);
-                const bytes = await fileInstance.bytes();
+                // For mobile file URIs (file://, content://), use fetch to get blob
+                // React Native's Blob doesn't support Uint8Array directly, so we use fetch
                 const fileName = doc.name || `file-${index + 1}`;
                 const fileType = doc.mimeType || 'application/octet-stream';
                 
-                // Convert Uint8Array to Blob, then to File
-                // Blob constructor accepts Uint8Array directly
-                const blob = new Blob([bytes], { type: fileType });
+                // Use fetch to get the file as a blob (works with file:// and content:// URIs in React Native)
+                const response = await fetch(doc.uri);
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch file: ${response.statusText}`);
+                }
+                const blob = await response.blob();
                 file = new globalThis.File([blob], fileName, { type: fileType });
                 // Preserve URI for preview (especially important for mobile)
                 (file as any).uri = doc.uri;

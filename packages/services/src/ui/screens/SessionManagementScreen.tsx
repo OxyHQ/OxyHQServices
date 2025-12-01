@@ -34,7 +34,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     // Use centralized theme styles hook for consistency
     const themeStyles = useThemeStyles(theme);
     // Extract commonly used colors for readability
-    const { textColor, backgroundColor, secondaryBackgroundColor, borderColor, primaryColor, dangerColor, successColor } = themeStyles;
+    const { textColor, backgroundColor, secondaryBackgroundColor, borderColor, primaryColor, dangerColor, successColor, isDarkTheme } = themeStyles;
 
     // Memoized load sessions function - prevents unnecessary re-renders
     const loadSessions = useCallback(async (isRefresh = false) => {

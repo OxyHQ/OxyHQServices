@@ -14,6 +14,9 @@ interface GroupedSectionItem {
     disabled?: boolean;
     customContent?: React.ReactNode;
     customIcon?: React.ReactNode;
+    multiRow?: boolean;
+    dense?: boolean;
+    customContentBelow?: React.ReactNode;
 }
 
 interface GroupedSectionProps {
