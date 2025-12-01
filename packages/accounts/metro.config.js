@@ -22,6 +22,11 @@ config.resolver.disableHierarchicalLookup = true;
 // 4. Enable better platform resolution
 config.resolver.platforms = ['native', 'android', 'ios', 'tsx', 'ts', 'web'];
 
+// 5. Add alias resolver for @/ paths
+config.resolver.extraNodeModules = {
+  '@': projectRoot,
+};
+
 module.exports = config;
 
 
