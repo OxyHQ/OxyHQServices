@@ -1,3 +1,5 @@
+const path = require('path');
+
 module.exports = function(api) {
   api.cache(true);
   return {
@@ -6,9 +8,9 @@ module.exports = function(api) {
       [
         'module-resolver',
         {
-          root: ['./'],
+          root: [path.resolve(__dirname)],
           alias: {
-            '@': './',
+            '@': path.resolve(__dirname),
           },
           extensions: ['.js', '.jsx', '.ts', '.tsx', '.json'],
         },
