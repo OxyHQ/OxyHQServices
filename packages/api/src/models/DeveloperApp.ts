@@ -1,6 +1,6 @@
 import mongoose, { Schema, Document } from 'mongoose';
 
-export interface IDeveloperApp extends Document {
+export interface IDeveloperApp extends Omit<Document, '_id'> {
   _id: string;
   name: string;
   description?: string;

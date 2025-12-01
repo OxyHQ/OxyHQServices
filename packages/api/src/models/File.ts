@@ -28,7 +28,7 @@ export interface IFileVariant {
   metadata?: Record<string, any>;
 }
 
-export interface IFile extends Document {
+export interface IFile extends Omit<Document, '_id'> {
   _id: string;
   sha256: string;
   size: number;

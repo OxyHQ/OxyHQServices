@@ -56,10 +56,10 @@ class SessionService {
 
       // Cache the session
       if (useCache) {
-        sessionCache.set(sessionId, session as ISession);
+        sessionCache.set(sessionId, session as unknown as ISession);
       }
 
-      return session as ISession;
+      return session as unknown as ISession;
     } catch (error) {
       logger.error('[SessionService] Failed to get session', error instanceof Error ? error : new Error(String(error)), {
         component: 'SessionService',
@@ -537,7 +537,7 @@ class SessionService {
       })
       .lean();
 
-      return sessions as ISession[];
+      return sessions as unknown as ISession[];
     } catch (error) {
       logger.error('[SessionService] Failed to get user active sessions', error instanceof Error ? error : new Error(String(error)), {
         component: 'SessionService',
