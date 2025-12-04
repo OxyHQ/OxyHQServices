@@ -57,7 +57,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     initialField,
     initialSection,
 }) => {
-    const { user: userFromContext, oxyServices, isLoading: authLoading, isAuthenticated, showBottomSheet, activeSessionId } = useOxy();
+    const { user: userFromContext, oxyServices, isLoading: authLoading, isAuthenticated, activeSessionId } = useOxy();
     const { t } = useI18n();
     const updateUser = useAuthStore((state) => state.updateUser);
     // Get user directly from store to ensure reactivity to avatar changes
@@ -504,92 +504,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     };
 
     const openAvatarPicker = useCallback(() => {
-        showBottomSheet?.({
-            screen: 'FileManagement',
-            props: {
-                selectMode: true,
-                multiSelect: false,
-                afterSelect: 'back',
-                onSelect: async (file: FileMetadata) => {
-                    if (!file.contentType.startsWith('image/')) {
-                        toast.error(t('editProfile.toasts.selectImage') || 'Please select an image file');
-                        return;
-                    }
-                    // If already selected, do nothing
-                    if (file.id === avatarFileId) {
-                        toast.info?.(t('editProfile.toasts.avatarUnchanged') || 'Avatar unchanged');
-                        return;
-                    }
-
-                    // Optimistically update UI immediately
-                    setOptimisticAvatarId(file.id);
-                    setAvatarFileId(file.id);
-
-                    // Auto-save avatar immediately (does not close edit profile screen)
-                    (async () => {
-                        try {
-                            setIsUpdatingAvatar(true);
-
-                            // Update file visibility to public for avatar
-                            try {
-                                await oxyServices.assetUpdateVisibility(file.id, 'public');
-                            } catch (visError) {
-                                // Continue with avatar update even if visibility update fails
-                            }
-
-                            // Update on server directly without using updateUser (which triggers fetchUser)
-                            // This prevents the entire component from re-rendering
-                            await oxyServices.updateProfile({ avatar: file.id });
-
-                            // Update the user object in store directly without triggering fetchUser
-                            // This prevents isLoading from being set to true, which would show loading screen
-                            const currentUser = useAuthStore.getState().user;
-                            if (currentUser) {
-                                useAuthStore.setState({
-                                    user: { ...currentUser, avatar: file.id },
-                                    // Don't update lastUserFetch to avoid cache issues
-                                });
-                            }
-
-                            // Update local state - keep avatarFileId set to the new value
-                            // Don't clear optimisticAvatarId yet - let it persist until user object updates
-                            // This ensures the avatar displays correctly
-                            setAvatarFileId(file.id);
-
-                            toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated');
-
-                            // Scroll to avatar section after a brief delay to ensure UI is updated
-                            requestAnimationFrame(() => {
-                                requestAnimationFrame(() => {
-                                    if (avatarSectionY !== null) {
-                                        scrollViewRef.current?.scrollTo({
-                                            y: Math.max(0, avatarSectionY - 100), // Offset to show section near top
-                                            animated: true,
-                                        });
-                                    } else {
-                                        // Fallback: scroll to approximate position
-                                        scrollViewRef.current?.scrollTo({
-                                            y: 200, // Approximate position of avatar section
-                                            animated: true,
-                                        });
-                                    }
-                                });
-                            });
-                        } catch (e: any) {
-                            // Revert optimistic update on error
-                            setAvatarFileId(typeof user?.avatar === 'string' ? user.avatar : '');
-                            setOptimisticAvatarId(null);
-                            toast.error(e.message || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
-                        } finally {
-                            setIsUpdatingAvatar(false);
-                        }
-                    })();
-                },
-                // Limit to images client-side by using photos view if later exposed
-                disabledMimeTypes: ['video/', 'audio/', 'application/pdf']
-            }
-        });
-    }, [showBottomSheet, oxyServices, avatarFileId, updateUser, user]);
+        toast.info?.(t('editProfile.toasts.avatarPickerUnavailable') || 'Avatar picker is not available in this build.');
+    }, [t]);
 
     // Handlers to open modals
     const handleOpenDisplayNameModal = useCallback(() => setShowEditDisplayNameModal(true), []);
@@ -608,7 +524,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         // after the modal's save operation updates the backend
         // Read from store directly (not from closure) to avoid stale data
         const currentUser = useAuthStore.getState().user;
-        
+
         // Reload user data to reflect changes
         if (currentUser) {
             const userDisplayName = typeof currentUser.name === 'string'

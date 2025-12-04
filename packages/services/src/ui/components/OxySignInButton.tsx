@@ -88,7 +88,7 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     screen = 'SignIn',
 }) => {
     // Get all needed values from context in a single call
-    const { isAuthenticated, showBottomSheet } = useOxy();
+    const { isAuthenticated } = useOxy();
 
     // Don't show the button if already authenticated (unless explicitly overridden)
     if (isAuthenticated && !showWhenAuthenticated) return null;
@@ -100,12 +100,9 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
             return;
         }
 
-        // Allow passing any screen name, including 'SignUp', 'AccountCenter', etc.
-        if (showBottomSheet) {
-            showBottomSheet(screen);
-        } else {
-            console.warn('OxySignInButton: showBottomSheet is not available. Either provide an onPress prop or ensure this component is used within an OxyProvider.');
-        }
+        console.warn(
+            `OxySignInButton: The built-in authentication bottom sheet has been removed. Provide an onPress handler to handle navigation (requested screen: ${screen}).`
+        );
     };
 
     // Determine the button style based on the variant

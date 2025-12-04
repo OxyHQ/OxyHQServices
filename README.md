@@ -16,29 +16,32 @@ Express.js API server with authentication, user management, real-time features u
 
 ### Prerequisites
 - Node.js >= 18.0.0
-- npm >= 9.0.0
+- pnpm >= 8.0.0
 
 ### Installation
 
 ```bash
+# Install pnpm globally if you haven't already
+npm install -g pnpm
+
 # Install all dependencies for all packages
-npm install
+pnpm install
 
 # Or install dependencies for all workspaces
-npm run install:all
+pnpm run install:all
 ```
 
 ### Development
 
 ```bash
 # Build all packages
-npm run build
+pnpm run build
 
 # Run tests for all packages
-npm run test
+pnpm run test
 
 # Clean all packages
-npm run clean
+pnpm run clean
 ```
 
 ### Package-specific Commands
@@ -46,22 +49,22 @@ npm run clean
 #### Services Package
 ```bash
 # Build services package
-npm run services:build
+pnpm run services:build
 
 # Test services package
-npm run services:test
+pnpm run services:test
 ```
 
 #### API Package
 ```bash
 # Start API in development mode
-npm run api:dev
+pnpm run api:dev
 
 # Build API
-npm run api:build
+pnpm run api:build
 
 # Start API in production mode
-npm run api:start
+pnpm run api:start
 ```
 
 ## 📁 Project Structure

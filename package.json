@@ -3,25 +3,22 @@
   "version": "1.0.1",
   "description": "OxyHQ Monorepo containing services and API packages",
   "private": true,
-  "workspaces": [
-    "packages/api"
-  ],
   "scripts": {
-    "build": "npm run build:all",
-    "build:workspaces": "npm run build --workspaces",
-    "build:all": "npm run build --workspaces && npm run accounts:build",
-    "start": "cd packages/api && npm start",
-    "dev": "npm run dev --workspaces",
-    "test": "npm run test --workspaces",
-    "clean": "npm run clean --workspaces",
-    "install:all": "npm install",
-    "api:build": "npm run build -w @oxyhq/api",
-    "api:dev": "npm run dev -w @oxyhq/api",
-    "api:start": "npm run start -w @oxyhq/api",
-    "accounts:build": "cd packages/accounts && npm install --legacy-peer-deps && npm run build",
+    "build": "pnpm run build:all",
+    "build:workspaces": "pnpm run build --recursive",
+    "build:all": "pnpm run build --recursive && pnpm run accounts:build",
+    "start": "cd packages/api && pnpm start",
+    "dev": "pnpm run dev --recursive",
+    "test": "pnpm run test --recursive",
+    "clean": "pnpm run clean --recursive",
+    "install:all": "pnpm install",
+    "api:build": "pnpm run build --filter @oxyhq/api",
+    "api:dev": "pnpm run dev --filter @oxyhq/api",
+    "api:start": "pnpm run start --filter @oxyhq/api",
+    "accounts:build": "cd packages/accounts && pnpm install --legacy-peer-deps && pnpm run build",
     "services:build": "echo 'Skipping services build' && exit 0",
-    "services:test": "npm run test -w @oxyhq/services",
-    "heroku-postbuild": "npm run build:all"
+    "services:test": "pnpm run test --filter @oxyhq/services",
+    "heroku-postbuild": "pnpm run build:all"
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
@@ -31,7 +28,7 @@
   },
   "engines": {
     "node": "18.x || 20.x",
-    "npm": ">=9.0.0"
+    "pnpm": ">=8.0.0"
   },
   "repository": {
     "type": "git",

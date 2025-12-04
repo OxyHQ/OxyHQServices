@@ -1,1 +1,1 @@
-web: cd packages/api && npm start
+web: cd packages/api && pnpm start

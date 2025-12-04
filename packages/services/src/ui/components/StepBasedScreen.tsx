@@ -2,12 +2,10 @@ import type React from 'react';
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import {
     View,
-    Text,
     KeyboardAvoidingView,
     ScrollView,
     StatusBar,
     Platform,
-    StyleSheet,
 } from 'react-native';
 import Animated, {
     useSharedValue,
@@ -103,15 +101,13 @@ const ProgressIndicator: React.FC<{
 const AnimatedStepContainer: React.FC<{
     children: React.ReactNode;
     fadeAnim: SharedValue<number>;
-    slideAnim: SharedValue<number>;
     scaleAnim: SharedValue<number>;
     styles: any;
     stepKey: string;
-}> = ({ children, fadeAnim, slideAnim, scaleAnim, styles, stepKey }) => {
+}> = ({ children, fadeAnim, scaleAnim, styles, stepKey }) => {
     const animatedStyle = useAnimatedStyle(() => ({
         opacity: fadeAnim.value,
         transform: [
-            { translateX: slideAnim.value },
             { scale: scaleAnim.value }
         ]
     }));
@@ -147,8 +143,8 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     // State Management
     // ========================================================================
     const [state, setState] = useState<StepBasedScreenState>({
-        currentStep: initialStep || 0,
-        stepData: stepData,
+        currentStep: initialStep,
+        stepData: [...stepData],
         isTransitioning: false,
     });
 
@@ -244,7 +240,6 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     // Animation Values
     // ========================================================================
     const fadeAnim = useSharedValue(1);
-    const slideAnim = useSharedValue(0);
     const scaleAnim = useSharedValue(1);
 
     // ========================================================================
@@ -261,7 +256,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     useEffect(() => {
         setState(prevState => ({
             ...prevState,
-            stepData: stepData,
+            stepData: [...stepData],
         }));
     }, [stepData]);
 
@@ -269,12 +264,14 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     // Step Data Management
     // ========================================================================
     const updateStepData = useCallback((stepIndex: number, data: any) => {
-        setState(prev => ({
-            ...prev,
-            stepData: prev.stepData.map((item, index) =>
-                index === stepIndex ? data : item
-            ),
-        }));
+        setState(prev => {
+            const nextStepData = prev.stepData.slice();
+            nextStepData[stepIndex] = data;
+            return {
+                ...prev,
+                stepData: nextStepData,
+            };
+        });
     }, []);
 
     // ========================================================================
@@ -311,7 +308,6 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
             // Prepare next step animation
             fadeAnim.value = 0;
             scaleAnim.value = 0.98;
-            slideAnim.value = 0;
 
             fadeAnim.value = withTiming(1, { duration: 220 });
             scaleAnim.value = withTiming(1, { duration: 220 });
@@ -324,7 +320,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
                 runOnJS(applyStepChange)(nextStep, steps.length);
             }
         });
-    }, [enableAnimations, steps.length, fadeAnim, scaleAnim, slideAnim]);
+    }, [enableAnimations, steps.length, fadeAnim, scaleAnim]);
 
     // Update step when initialStep prop changes (from router navigation)
     // All step navigation is managed by OxyRouter - this component just responds to prop changes
@@ -556,7 +552,6 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
 
         // Animation refs (for components that need direct access)
         fadeAnim,
-        slideAnim,
         scaleAnim,
     }), [
         currentStepConfig?.props,
@@ -576,14 +571,12 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         steps.length,
         updateCurrentStepData,
         fadeAnim,
-        slideAnim,
         scaleAnim,
     ]);
 
     return (
         <KeyboardAvoidingView
-            style={[styles.container]}
-            behavior={undefined}
+            style={styles.container}
         >
             <StatusBar
                 barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
@@ -597,7 +590,6 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
                 bounces={false}
                 alwaysBounceVertical={false}
                 overScrollMode="never"
-                removeClippedSubviews={true}
             >
                 {showProgressIndicator && steps.length > 1 && (
                     <ProgressIndicator
@@ -610,7 +602,6 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
 
                 <AnimatedStepContainer
                     fadeAnim={fadeAnim}
-                    slideAnim={slideAnim}
                     scaleAnim={scaleAnim}
                     styles={styles}
                     stepKey={`step-${state.currentStep}`}

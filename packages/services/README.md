@@ -23,7 +23,7 @@ A comprehensive TypeScript client library for the Oxy API providing authenticati
 
 - 🔐 **Zero-Config Authentication**: Automatic token management and refresh
 - 📱 **React Native First**: Optimized for React Native and Expo applications
-- 🎨 **UI Components**: Pre-built React Native components with built-in bottom sheet
+- 🎨 **UI Components**: Pre-built React Native components and router ready for custom presentation layers
 - 🔄 **Cross-Platform**: Works seamlessly in React Native, Expo, and Node.js
 - 📱 **Multi-Session Support**: Manage multiple user sessions simultaneously
 - 🔧 **TypeScript First**: Full type safety and IntelliSense support
@@ -158,8 +158,7 @@ function UserProfile() {
     user,           // Current user data
     isAuthenticated, // Authentication state
     login,          // Login method
-    logout,         // Logout method
-    showBottomSheet // UI methods
+    logout          // Logout method
   } = useOxy();
 
   const handleLogin = async () => {
@@ -168,10 +167,6 @@ function UserProfile() {
     } catch (error) {
       console.error('Login failed:', error);
     }
-  };
-
-  const openSignIn = () => {
-    showBottomSheet('SignIn');
   };
 
   return (
@@ -184,7 +179,7 @@ function UserProfile() {
           </TouchableOpacity>
         </View>
       ) : (
-        <TouchableOpacity onPress={openSignIn} style={styles.button}>
+        <TouchableOpacity onPress={handleLogin} style={styles.button}>
           <Text>Sign In</Text>
         </TouchableOpacity>
       )}
@@ -441,11 +436,7 @@ const {
   sessions,
   activeSessionId,
   switchSession,
-  removeSession,
-  
-  // UI methods
-  showBottomSheet,
-  hideBottomSheet
+  removeSession
 } = useOxy();
 ```
 
@@ -459,7 +450,6 @@ const {
   storageKeyPrefix="oxy_session"          // Storage key prefix
   onAuthStateChange={(user) => {}}        // Auth state callback
   onError={(error) => {}}                 // Error callback
-  bottomSheetRef={bottomSheetRef}         // Bottom sheet ref
 >
   {children}
 </OxyProvider>
@@ -540,31 +530,31 @@ const styles = StyleSheet.create({
 });
 ```
 
-### Bottom Sheet Integration
+### Using OxyRouter in Your Own UI
+
+> The legacy bottom sheet component has been removed. You can embed `OxyRouter`
+> inside your own modal, drawer, or screen to provide authentication flows.
 
 ```typescript
-import { useOxy } from '@oxyhq/services';
+import { Modal } from 'react-native';
+import { useOxy, OxyRouter } from '@oxyhq/services';
 
-function MyComponent() {
-  const { showBottomSheet } = useOxy();
-  
-  const openSignIn = () => {
-    showBottomSheet('SignIn');
-  };
-  
-  const openProfile = () => {
-    showBottomSheet('Profile');
-  };
-  
+function AuthModal({ visible, onRequestClose }: { visible: boolean; onRequestClose: () => void }) {
+  const { oxyServices } = useOxy();
+
+  if (!visible || !oxyServices) return null;
+
   return (
-    <View style={styles.container}>
-      <TouchableOpacity onPress={openSignIn} style={styles.button}>
-        <Text>Sign In</Text>
-      </TouchableOpacity>
-      <TouchableOpacity onPress={openProfile} style={styles.button}>
-        <Text>Profile</Text>
-      </TouchableOpacity>
-    </View>
+    <Modal visible onRequestClose={onRequestClose} animationType="slide">
+      <OxyRouter
+        oxyServices={oxyServices}
+        initialScreen="SignIn"
+        onClose={onRequestClose}
+        onAuthenticated={onRequestClose}
+        theme="light"
+        containerWidth={360}
+      />
+    </Modal>
   );
 }
 ```

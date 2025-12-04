@@ -1,49 +1,36 @@
-import { useCallback, useRef, useState, useEffect, useMemo, forwardRef, useImperativeHandle, type FC } from 'react';
-import { View, Text, StyleSheet, Platform, Animated, StatusBar, AppState, Keyboard, type KeyboardEvent } from 'react-native';
-import { SafeAreaProvider, useSafeAreaInsets } from 'react-native-safe-area-context';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import type { OxyProviderProps, BottomSheetController, OxyRouterController, StepController } from '../navigation/types';
-import { OxyContextProvider, useOxy } from '../context/OxyContext';
-import OxyRouter from '../navigation/OxyRouter';
-import { useBackButtonHandler } from '../navigation/useBackButtonHandler';
-import { FontLoader, setupFonts } from './FontLoader';
-import { Toaster } from '../../lib/sonner';
+import { useEffect, useRef, type FC } from 'react';
+import { AppState } from 'react-native';
+import type { OxyProviderProps } from '../navigation/types';
+import { OxyContextProvider } from '../context/OxyContext';
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
-
-// Import bottom sheet components directly - no longer a peer dependency
-import { BottomSheetModal, BottomSheetBackdrop, type BottomSheetBackdropProps, BottomSheetModalProvider, BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import type { BottomSheetModalMethods as BottomSheetModalRef } from '@gorhom/bottom-sheet/lib/typescript/types';
-import { useWindowDimensions } from 'react-native';
+import { setupFonts } from './FontLoader';
 
 // Initialize fonts automatically
 setupFonts();
 
 /**
- * Enhanced OxyProvider component
- * 
- * This component serves two purposes:
- * 1. As a context provider for authentication and session management across the app
- * 2. As a UI component for authentication and account management using a bottom sheet
+ * OxyProvider component
+ *
+ * Provides the authentication/session context used across the app.
+ * UI composition (e.g. OxyRouter inside a bottom sheet) can be added externally.
  */
-const OxyProvider: FC<OxyProviderProps> = (props) => {
-    const {
-        oxyServices,
-        children,
-        contextOnly = false,
-        onAuthStateChange,
-        storageKeyPrefix,
-        showInternalToaster = true,
-        baseURL, // Add support for baseURL
-        ...bottomSheetProps
-    } = props;
-
-    // Create typed internal bottom sheet controller ref
-    const internalBottomSheetRef = useRef<BottomSheetController>(null);
+const OxyProvider: FC<OxyProviderProps> = ({
+    oxyServices,
+    children,
+    contextOnly = false,
+    onAuthStateChange,
+    storageKeyPrefix,
+    baseURL,
+    queryClient,
+}) => {
+    // contextOnly is retained for backwards compatibility while the UI-only
+    // bottom sheet experience is removed. At the moment both modes behave the same.
+    void contextOnly;
 
     // Initialize React Query Client (use provided client or create a default one once)
     const queryClientRef = useRef<QueryClient | null>(null);
     if (!queryClientRef.current) {
-        queryClientRef.current = props.queryClient ?? new QueryClient({
+        queryClientRef.current = queryClient ?? new QueryClient({
             defaultOptions: {
                 queries: {
                     staleTime: 30_000,
@@ -69,37 +56,6 @@ const OxyProvider: FC<OxyProviderProps> = (props) => {
         };
     }, []);
 
-    // Mirror internal controller to external ref if provided (back-compat)
-    useEffect(() => {
-        if (props.bottomSheetRef) {
-            try {
-                props.bottomSheetRef.current = internalBottomSheetRef.current;
-            } catch (error) {
-                if (__DEV__) {
-                    console.warn('OxyProvider: Failed to set bottomSheetRef', error);
-                }
-            }
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [props.bottomSheetRef]);
-
-    // If contextOnly is true, we just provide the context without the bottom sheet UI
-    if (contextOnly) {
-        return (
-            <QueryClientProvider client={queryClientRef.current}>
-                <OxyContextProvider
-                    oxyServices={oxyServices}
-                    baseURL={baseURL}
-                    storageKeyPrefix={storageKeyPrefix}
-                    onAuthStateChange={onAuthStateChange}
-                >
-                    {children}
-                </OxyContextProvider>
-            </QueryClientProvider>
-        );
-    }
-
-    // Otherwise, provide both the context and the bottom sheet UI
     return (
         <QueryClientProvider client={queryClientRef.current}>
             <OxyContextProvider
@@ -107,433 +63,12 @@ const OxyProvider: FC<OxyProviderProps> = (props) => {
                 baseURL={baseURL}
                 storageKeyPrefix={storageKeyPrefix}
                 onAuthStateChange={onAuthStateChange}
-                bottomSheetRef={internalBottomSheetRef}
             >
-                <FontLoader>
-                    <GestureHandlerRootView style={styles.gestureHandlerRoot}>
-                        <BottomSheetModalProvider>
-                            <StatusBar translucent backgroundColor="transparent" />
-                            <SafeAreaProvider>
-                                <OxyBottomSheet {...bottomSheetProps} ref={internalBottomSheetRef} oxyServices={oxyServices} />
-                                {children}
-                            </SafeAreaProvider>
-                        </BottomSheetModalProvider>
-                        {/* Global Toaster for app-wide notifications outside of Modal contexts - only show if internal toaster is disabled */}
-                        {!showInternalToaster && (
-                            <View style={styles.toasterContainer}>
-                                <Toaster position="bottom-center" swipeToDismissDirection="left" offset={15} />
-                            </View>
-                        )}
-                    </GestureHandlerRootView>
-                </FontLoader>
+                {children}
             </OxyContextProvider>
         </QueryClientProvider>
     );
 };
 
-/**
- * OxyBottomSheet component - A bottom sheet-based authentication and account management UI
- * 
- * This is the original OxyProvider UI functionality, now extracted into its own component
- * and reimplemented using BottomSheetModal for better Android compatibility
- */
-type OxyBottomSheetProps = Omit<OxyProviderProps, 'children' | 'contextOnly' | 'queryClient' | 'bottomSheetRef'>;
-
-const OxyBottomSheet = forwardRef<BottomSheetController, OxyBottomSheetProps>(({
-    oxyServices: providedOxyServices,
-    initialScreen = 'SignIn',
-    onClose,
-    onAuthenticated,
-    theme = 'light',
-    customStyles = {},
-    autoPresent = false,
-    showInternalToaster = true,
-    appInsets,
-}, ref) => {
-    // ========================================================================
-    // Refs & State
-    // ========================================================================
-    const modalRef = useRef<BottomSheetModalRef>(null);
-    const isOpenRef = useRef(false);
-    const navigationRef = useRef<((screen: any, props?: Record<string, unknown>) => void) | null>(null);
-    const routerRef = useRef<OxyRouterController | null>(null);
-    const stepControllerRef = useRef<StepController | null>(null);
-    const fadeAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 1 : 0)).current;
-    const slideAnim = useRef(new Animated.Value(Platform.OS === 'android' ? 0 : 50)).current;
-    const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-    // ========================================================================
-    // Computed Values
-    // ========================================================================
-    const shouldUseNativeDriver = useMemo(() => Platform.OS === 'ios', []);
-    const { height: windowHeight } = useWindowDimensions();
-    const insets = useSafeAreaInsets();
-    const contextOxy = useOxy();
-    const oxyServices = providedOxyServices || contextOxy?.oxyServices;
-
-    // ========================================================================
-    // Imperative Handle (Bottom Sheet API)
-    // ========================================================================
-    useImperativeHandle(ref, () => ({
-        present: () => {
-            if (!isOpenRef.current) modalRef.current?.present?.();
-        },
-        dismiss: () => modalRef.current?.dismiss?.(),
-        expand: () => {
-            // Ensure presented, then animate content in
-            if (!isOpenRef.current) modalRef.current?.present?.();
-            Animated.parallel([
-                Animated.timing(fadeAnim, {
-                    toValue: 1,
-                    duration: 300,
-                    useNativeDriver: shouldUseNativeDriver,
-                }),
-                Animated.spring(slideAnim, {
-                    toValue: 0,
-                    friction: 8,
-                    tension: 40,
-                    useNativeDriver: shouldUseNativeDriver,
-                }),
-            ]).start();
-        },
-        collapse: () => modalRef.current?.collapse?.(),
-        snapToIndex: (index: number) => modalRef.current?.snapToIndex?.(index),
-        snapToPosition: (position: number | string) => modalRef.current?.snapToPosition?.(position as any),
-        navigate: (screen: any, props?: Record<string, any>) => {
-            // Prefer direct ref call (most efficient)
-            if (navigationRef.current) {
-                navigationRef.current(screen, props);
-                return;
-            }
-            // Fallback to DOM event for web environments
-            if (typeof document !== 'undefined') {
-                const event = new CustomEvent('oxy:navigate', { detail: { screen, props } });
-                document.dispatchEvent(event);
-            } else if (__DEV__) {
-                // In React Native, navigationRef should always be available
-                // If it's not, this indicates a timing issue
-                console.warn('OxyProvider: navigationRef not ready. Navigation may fail.');
-            }
-        }
-    }), [fadeAnim, slideAnim, shouldUseNativeDriver]);
-
-    // ========================================================================
-    // Keyboard Handling
-    // ========================================================================
-    useEffect(() => {
-        const showSubscription = Keyboard.addListener(
-            'keyboardDidShow',
-            (e: KeyboardEvent) => {
-                setKeyboardHeight(e.endCoordinates.height);
-            }
-        );
-        const hideSubscription = Keyboard.addListener(
-            'keyboardDidHide',
-            () => {
-                setKeyboardHeight(0);
-            }
-        );
-
-        return () => {
-            showSubscription.remove();
-            hideSubscription.remove();
-        };
-    }, []);
-
-    // ========================================================================
-    // Layout & Sizing
-    // ========================================================================
-    const maxHeight = useMemo(() => {
-        const topInset = (insets?.top ?? 0) + (appInsets?.top ?? 0);
-        const bottomInset = (insets?.bottom ?? 0) + (appInsets?.bottom ?? 0);
-        return windowHeight - topInset - bottomInset - 20; // 20px margin
-    }, [windowHeight, insets?.top, insets?.bottom, appInsets?.top, appInsets?.bottom]);
-
-    // ========================================================================
-    // Event Handlers
-    // ========================================================================
-    const handleClose = useCallback(() => {
-        Animated.timing(fadeAnim, {
-            toValue: 0,
-            duration: Platform.OS === 'android' ? 100 : 200,
-            useNativeDriver: shouldUseNativeDriver,
-        }).start(() => {
-            modalRef.current?.dismiss();
-            if (onClose) {
-                setTimeout(() => {
-                    onClose();
-                }, Platform.OS === 'android' ? 150 : 100);
-            }
-        });
-    }, [onClose, fadeAnim, shouldUseNativeDriver]);
-
-    const handleAuthenticated = useCallback((user: any) => {
-        fadeAnim.stopAnimation();
-        slideAnim.stopAnimation();
-        if (onAuthenticated) {
-            onAuthenticated(user);
-        }
-        modalRef.current?.dismiss();
-        if (onClose) {
-            setTimeout(() => {
-                onClose();
-            }, 100);
-        }
-    }, [onAuthenticated, onClose, fadeAnim, slideAnim]);
-
-    // ========================================================================
-    // Back Button Handling
-    // ========================================================================
-    useBackButtonHandler({
-        stepControllerRef,
-        routerRef,
-        isOpenRef,
-        handleClose,
-    });
-
-    // ========================================================================
-    // Gesture Handling for Back Navigation
-    // ========================================================================
-    // Track previous index to detect gesture start
-    const previousIndexRef = useRef<number>(0);
-    
-    const handleSheetChange = useCallback((index: number) => {
-        const previousIndex = previousIndexRef.current;
-        const wasOpen = previousIndex === 0; // Check if sheet was open before update
-        previousIndexRef.current = index;
-        isOpenRef.current = index !== -1;
-        
-        // Detect when gesture starts to dismiss (index decreasing from 0)
-        // Navigate immediately before keyboard can dismiss
-        // Check wasOpen instead of isOpenRef.current since we just set it to false when index < 0
-        if (wasOpen && index < 0) {
-            // Priority 1: Check if current screen has step history
-            if (stepControllerRef.current?.canGoBack()) {
-                // Navigate immediately - this happens before keyboard dismiss completes
-                stepControllerRef.current.goBack();
-                // Cancel the dismissal gesture by snapping back
-                requestAnimationFrame(() => {
-                    modalRef.current?.snapToIndex(0);
-                });
-                return;
-            }
-
-            // Priority 2: Check if router has navigation history
-            if (routerRef.current?.canGoBack()) {
-                // Navigate immediately - this happens before keyboard dismiss completes
-                routerRef.current.goBack();
-                // Cancel the dismissal gesture by snapping back
-                requestAnimationFrame(() => {
-                    modalRef.current?.snapToIndex(0);
-                });
-                return;
-            }
-        }
-    }, [stepControllerRef, routerRef]);
-
-    // ========================================================================
-    // Auto-Present Logic
-    // ========================================================================
-    useEffect(() => {
-        if (autoPresent && modalRef.current) {
-            const timer = setTimeout(() => {
-                modalRef.current?.present();
-                Animated.parallel([
-                    Animated.timing(fadeAnim, {
-                        toValue: 1,
-                        duration: 300,
-                        useNativeDriver: shouldUseNativeDriver,
-                    }),
-                    Animated.spring(slideAnim, {
-                        toValue: 0,
-                        friction: 8,
-                        tension: 40,
-                        useNativeDriver: shouldUseNativeDriver,
-                    }),
-                ]).start();
-            }, 100);
-            return () => clearTimeout(timer);
-        }
-    }, [autoPresent, fadeAnim, slideAnim, shouldUseNativeDriver]);
-
-    // ========================================================================
-    // Render Helpers
-    // ========================================================================
-    const renderBackdrop = useCallback(
-        (props: BottomSheetBackdropProps) => (
-            <BottomSheetBackdrop
-                {...props}
-                disappearsOnIndex={-1}
-                appearsOnIndex={0}
-                opacity={0.5}
-            />
-        ),
-        []
-    );
-
-    // Modernized BottomSheetModal usage
-    return (
-        <BottomSheetModal
-            ref={modalRef}
-            index={0}
-            enableDynamicSizing={true}
-            maxDynamicContentSize={maxHeight}
-            enablePanDownToClose
-            backdropComponent={renderBackdrop}
-            backgroundStyle={[
-                {
-                    borderBottomLeftRadius: 0,
-                    borderBottomRightRadius: 0,
-                    borderTopLeftRadius: 35,
-                    borderTopRightRadius: 35,
-                }
-            ]}
-            handleIndicatorStyle={{
-                backgroundColor: customStyles.handleColor || (theme === 'light' ? '#CCCCCC' : '#444444'),
-                width: 40,
-                height: 4,
-            }}
-            handleStyle={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-            }}
-            style={styles.bottomSheetContainer}
-            keyboardBehavior={Platform.OS === 'ios' ? 'extend' : 'interactive'}
-            keyboardBlurBehavior="restore"
-            android_keyboardInputMode="adjustResize"
-            enableOverDrag={false}
-            enableContentPanningGesture={true}
-            enableHandlePanningGesture={true}
-            overDragResistanceFactor={2.5}
-            enableBlurKeyboardOnGesture={false}
-            detached
-            topInset={(insets?.top ?? 0) + (appInsets?.top ?? 0)}
-            bottomInset={keyboardHeight > 0 ? keyboardHeight : 0}
-            onChange={handleSheetChange}
-            onAnimate={(fromIndex: number, toIndex: number) => {
-                // Initialize previousIndex when sheet animates to index 0 (presented)
-                if (toIndex === 0) {
-                    previousIndexRef.current = 0;
-                }
-            }}
-            onDismiss={() => { 
-                isOpenRef.current = false;
-                previousIndexRef.current = -1;
-            }}
-        >
-            <BottomSheetScrollView
-                style={[styles.contentContainer]}
-                contentContainerStyle={[
-                    styles.scrollContentContainer,
-                    { paddingBottom: keyboardHeight > 0 ? keyboardHeight : 0 }
-                ]}
-                showsVerticalScrollIndicator={true}
-                bounces={false}
-                nestedScrollEnabled={true}
-                keyboardShouldPersistTaps="handled"
-            >
-                <Animated.View
-                    style={[
-                        styles.animatedContent,
-                        Platform.OS === 'android'
-                            ? { opacity: 1 }
-                            : { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
-                    ]}
-                >
-                    <View
-                        style={[
-                            styles.centeredContentWrapper,
-                            { paddingBottom: (insets?.bottom ?? 0) + (appInsets?.bottom ?? 0) }
-                        ]}
-                    >
-                        {oxyServices ? (
-                            <OxyRouter
-                                oxyServices={oxyServices}
-                                initialScreen={initialScreen}
-                                onClose={handleClose}
-                                onAuthenticated={handleAuthenticated}
-                                theme={theme}
-                                navigationRef={navigationRef}
-                                routerRef={routerRef}
-                                stepControllerRef={stepControllerRef}
-                                containerWidth={800} // static, since dynamic sizing is used
-                            />
-                        ) : (
-                            <View style={styles.errorContainer}>
-                                <Text>OxyServices not available</Text>
-                            </View>
-                        )}
-                    </View>
-                </Animated.View>
-            </BottomSheetScrollView>
-            {showInternalToaster && (
-                <View style={styles.toasterContainer}>
-                    <Toaster position="bottom-center" swipeToDismissDirection="left" />
-                </View>
-            )}
-        </BottomSheetModal>
-    );
-});
-
-const styles = StyleSheet.create({
-    bottomSheetContainer: {
-        maxWidth: 800,
-        width: '100%',
-        alignSelf: 'center',
-        marginHorizontal: 'auto',
-    },
-    contentContainer: {
-        width: '100%',
-        borderTopLeftRadius: 35,
-        borderTopRightRadius: 35,
-    },
-    scrollContentContainer: {
-        // Content will size naturally, ScrollView handles overflow
-        // paddingBottom is set dynamically based on keyboard height
-    },
-    centeredContentWrapper: {
-        width: '100%',
-        alignSelf: 'center',
-    },
-    animatedContent: {
-        width: '100%',
-    },
-    indicator: {
-        width: 40,
-        height: 4,
-        marginTop: 8,
-        marginBottom: 8,
-        borderRadius: 35,
-    },
-    errorContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    gestureHandlerRoot: {
-        flex: 1,
-        position: 'relative',
-        backgroundColor: 'transparent',
-        ...Platform.select({
-            android: {
-                height: '100%',
-                width: '100%',
-            }
-        })
-    },
-    toasterContainer: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        zIndex: 9999,
-        elevation: 9999, // For Android
-        pointerEvents: 'box-none', // Allow touches to pass through to underlying components
-    },
-});
-
 export default OxyProvider;
-
+export { default as OxyRouter } from '../navigation/OxyRouter';

@@ -2,7 +2,6 @@ import type React from 'react';
 import { useState } from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyle, type StyleProp, type LayoutChangeEvent } from 'react-native';
 import { fontFamilies } from '../styles/fonts';
-import { useOxy } from '../context/OxyContext';
 import type { PaymentItem, PaymentGatewayResult } from '../screens/PaymentGatewayScreen';
 import OxyLogo from './OxyLogo';
 
@@ -43,19 +42,9 @@ const OxyPayButton: React.FC<OxyPayButtonProps> = ({
     color,
     variant = 'white',
 }) => {
-    const { showBottomSheet } = useOxy();
     const [buttonHeight, setButtonHeight] = useState<number>(52);
     const handlePress = () => {
-        showBottomSheet?.({
-            screen: 'PaymentGateway',
-            props: {
-                amount,
-                currency,
-                paymentItems,
-                description,
-                onPaymentResult,
-            },
-        });
+        console.warn('OxyPayButton: The bottom sheet payment flow has been removed. Provide a custom onPress handler.');
     };
     // Determine background and text color
     const backgroundColor = color || (variant === 'black' ? '#111' : '#fff');
