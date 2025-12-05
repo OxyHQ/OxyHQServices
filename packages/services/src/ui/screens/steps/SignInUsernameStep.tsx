@@ -15,7 +15,6 @@ import TextField from '../../components/internal/TextField';
 import { useI18n } from '../../hooks/useI18n';
 import { stepStyles } from '../../styles/spacing';
 import Avatar from '../../components/Avatar';
-import { useOxy } from '../../context/OxyContext';
 import { toast } from '../../../lib/sonner';
 import { useAccountStore, useAccounts, useAccountLoading, useAccountLoadingSession, type QuickAccount } from '../../stores/accountStore';
 import { fontFamilies } from '../../styles/fonts';
@@ -58,6 +57,12 @@ interface SignInUsernameStepProps {
     isInputFocused?: boolean;
     handleInputFocus?: () => void;
     handleInputBlur?: () => void;
+
+    // OxyContext values (instead of useOxy hook)
+    sessions?: any[];
+    activeSessionId?: string | null;
+    switchSession?: (sessionId: string) => Promise<void>;
+    oxyServices?: any;
 }
 
 const MAX_QUICK_ACCOUNTS = 3;
@@ -84,10 +89,14 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
     isInputFocused = false,
     handleInputFocus,
     handleInputBlur,
+    // OxyContext values from props (instead of useOxy hook)
+    sessions,
+    activeSessionId,
+    switchSession,
+    oxyServices,
 }) => {
     const inputRef = useRef<any>(null);
     const { t } = useI18n();
-    const { sessions, activeSessionId, switchSession, oxyServices } = useOxy();
     const baseStyles = stepStyles;
     const themeMode = getThemeMode(theme);
     const [switchingSessionId, setSwitchingSessionId] = useState<string | null>(null);

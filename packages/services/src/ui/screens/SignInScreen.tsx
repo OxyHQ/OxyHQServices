@@ -1,7 +1,6 @@
 import type React from 'react';
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import { useThemeColors } from '../styles';
 import { toast } from '../../lib/sonner';
 import StepBasedScreen, { type StepConfig } from '../components/StepBasedScreen';
@@ -18,6 +17,16 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     username: initialUsername,
     userProfile: initialUserProfile,
     currentScreen,
+    // OxyContext values from props (instead of useOxy hook)
+    login,
+    completeMfaLogin,
+    isLoading,
+    user,
+    isAuthenticated,
+    sessions,
+    activeSessionId,
+    oxyServices,
+    switchSession,
 }) => {
     // Form data states - sync with props when they change from router navigation
     const [username, setUsername] = useState(initialUsername || '');
@@ -92,7 +101,6 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     );
     const [existingSession, setExistingSession] = useState<any>(null);
 
-    const { login, completeMfaLogin, isLoading, user, isAuthenticated, sessions, oxyServices, switchSession } = useOxy();
     const colors = useThemeColors(theme);
 
     // Check if this should be treated as "Add Account" mode
@@ -356,6 +364,10 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             handleInputFocus,
             handleInputBlur,
             validateUsername, // Add validation function
+            // OxyContext values for step components (instead of useOxy hook)
+            sessions,
+            activeSessionId,
+            switchSession,
         },
         {
             password,
@@ -379,6 +391,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             username: currentUsername,
             mfaToken,
             completeMfaLogin,
+            onAuthenticated,
             errorMessage,
             setErrorMessage,
             isLoading,
@@ -386,9 +399,10 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     ], [
         currentUsername, currentUserProfile, password, errorMessage, validationStatus, mfaToken,
         isValidating, isInputFocused, isAddAccountMode, user, showPassword,
-        isLoading, handleUsernameChange, handlePasswordChange, handleInputFocus, handleInputBlur,
-        validateUsername, handleSignIn, completeMfaLogin, existingSession, handleContinueWithExistingAccount,
-        initialUsername, initialUserProfile // Include props in dependencies
+        isLoading,         handleUsernameChange, handlePasswordChange, handleInputFocus, handleInputBlur,
+        validateUsername, handleSignIn, completeMfaLogin, onAuthenticated, existingSession, handleContinueWithExistingAccount,
+        initialUsername, initialUserProfile, // Include props in dependencies
+        sessions, activeSessionId, switchSession // Include OxyContext values
     ]);
 
     return (

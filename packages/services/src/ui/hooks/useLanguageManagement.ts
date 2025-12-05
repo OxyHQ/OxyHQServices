@@ -6,7 +6,7 @@ import {
   getNativeLanguageName,
   normalizeLanguageCode,
   type LanguageMetadata,
-} from '../../../utils/languageUtils';
+} from '../../utils/languageUtils';
 import type { StorageInterface } from '../utils/storageHelpers';
 import { extractErrorMessage } from '../utils/errorHandlers';
 

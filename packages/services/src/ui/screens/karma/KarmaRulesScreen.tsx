@@ -2,14 +2,12 @@ import type React from 'react';
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
 import type { BaseScreenProps } from '../../navigation/types';
-import { useOxy } from '../../context/OxyContext';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
 import { useThemeStyles } from '../../hooks/useThemeStyles';
 import { useColorScheme } from '../../hooks/use-color-scheme';
 
-const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
-    const { oxyServices } = useOxy();
+const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme, oxyServices }) => {
     const { t } = useI18n();
     const [rules, setRules] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);

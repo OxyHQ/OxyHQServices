@@ -14,7 +14,6 @@ import {
     ActivityIndicator,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { packageInfo } from '../../constants/version';
 import { toast } from '../../lib/sonner';
@@ -41,8 +40,12 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     navigate,
+    // OxyContext values from props (instead of useOxy hook)
+    user,
+    sessions,
+    oxyServices,
+    isAuthenticated,
 }) => {
-    const { user, sessions, oxyServices, isAuthenticated } = useOxy();
     const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
     const [isRunningSystemCheck, setIsRunningSystemCheck] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'unknown'>('unknown');

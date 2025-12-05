@@ -13,7 +13,6 @@ import {
     Image,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import Avatar from '../components/Avatar';
 import type { FileMetadata } from '../../models/interfaces';
 import OxyIcon from '../components/icon/OxyIcon';
@@ -56,8 +55,13 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     navigate,
     initialField,
     initialSection,
+    // OxyContext values from props (instead of useOxy hook)
+    user: userFromContext,
+    oxyServices,
+    isLoading: authLoading,
+    isAuthenticated,
+    activeSessionId,
 }) => {
-    const { user: userFromContext, oxyServices, isLoading: authLoading, isAuthenticated, activeSessionId } = useOxy();
     const { t } = useI18n();
     const updateUser = useAuthStore((state) => state.updateUser);
     // Get user directly from store to ensure reactivity to avatar changes

@@ -124,10 +124,9 @@ export const fileManagementStyles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 14,
         paddingVertical: 10,
-        marginHorizontal: 16,
+        marginHorizontal: 12,
         marginTop: 12,
-        borderRadius: 10,
-        borderWidth: 1,
+        borderRadius: 18,
         gap: 10,
     },
     searchInput: {
@@ -146,10 +145,9 @@ export const fileManagementStyles = StyleSheet.create({
         flexDirection: 'row',
         paddingHorizontal: 14,
         paddingVertical: 10,
-        marginHorizontal: 16,
+        marginHorizontal: 12,
         marginTop: 12,
-        borderRadius: 10,
-        borderWidth: 1,
+        borderRadius: 18,
     },
     statItem: {
         flex: 1,
@@ -172,7 +170,6 @@ export const fileManagementStyles = StyleSheet.create({
     },
     scrollView: {
         flex: 1,
-        backgroundColor: '#e5f1ff',
     },
     scrollContainer: {
         padding: 12,
@@ -693,7 +690,7 @@ export const fileManagementStyles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        paddingHorizontal: 16,
+        paddingHorizontal: 12,
         paddingTop: 8,
         paddingBottom: 4,
         gap: 12,
@@ -704,7 +701,7 @@ export const fileManagementStyles = StyleSheet.create({
     },
     viewModeToggle: {
         flexDirection: 'row',
-        borderRadius: 24,
+        borderRadius: 18,
         padding: 3,
         overflow: 'hidden',
     },
@@ -723,8 +720,7 @@ export const fileManagementStyles = StyleSheet.create({
         justifyContent: 'center',
         paddingHorizontal: 12,
         paddingVertical: 10,
-        borderRadius: 20,
-        borderWidth: 1,
+        borderRadius: 18,
         minWidth: 44,
     },
     photoScrollContainer: {

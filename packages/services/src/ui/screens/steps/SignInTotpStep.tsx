@@ -25,6 +25,7 @@ interface SignInTotpStepProps {
 
   // Context actions
   completeMfaLogin?: (mfaToken: string, code: string) => Promise<any>;
+  onAuthenticated?: (user?: unknown) => void;
 
   // Error/loading
   errorMessage?: string;
@@ -41,6 +42,7 @@ const SignInTotpStep: React.FC<SignInTotpStepProps> = ({
   username,
   mfaToken,
   completeMfaLogin,
+  onAuthenticated,
   errorMessage,
   setErrorMessage,
   isLoading,
@@ -58,8 +60,11 @@ const SignInTotpStep: React.FC<SignInTotpStepProps> = ({
     }
     try {
       setErrorMessage?.('');
-      await completeMfaLogin?.(mfaToken, code);
-      // Login completed; higher-level navigation should continue automatically
+      const user = await completeMfaLogin?.(mfaToken, code);
+      // Login completed; call onAuthenticated to close bottom sheet
+      if (onAuthenticated && user) {
+        onAuthenticated(user);
+      }
     } catch (e: any) {
       setErrorMessage?.(e?.message || (t('signin.totp.invalidCode') || 'Invalid code. Please try again.'));
       setTimeout(() => inputRef.current?.focus(), 0);

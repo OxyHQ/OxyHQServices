@@ -24,6 +24,8 @@ import { useAuthOperations } from '../hooks/useAuthOperations';
 import { useDeviceManagement } from '../hooks/useDeviceManagement';
 import { getStorageKeys } from '../utils/storageHelpers';
 import { isInvalidSessionError } from '../utils/errorHandlers';
+import type { RouteName } from '../navigation/routes';
+import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetApi';
 
 export interface OxyContextState {
   user: User | null;
@@ -59,6 +61,7 @@ export interface OxyContextState {
   updateDeviceName: (deviceName: string) => Promise<void>;
   oxyServices: OxyServices;
   useFollow?: UseFollowHook;
+  showBottomSheet?: (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => void;
 }
 
 const OxyContext = createContext<OxyContextState | null>(null);
@@ -356,6 +359,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     [switchSession],
   );
 
+  // Create showBottomSheet function that uses the global function
+  const showBottomSheetForContext = useCallback(
+    (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => {
+      globalShowBottomSheet(screenOrConfig);
+    },
+    [],
+  );
+
   const contextValue: OxyContextState = useMemo(() => ({
     user,
     sessions,
@@ -382,6 +393,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     updateDeviceName,
     oxyServices,
     useFollow: useFollowHook,
+    showBottomSheet: showBottomSheetForContext,
   }), [
     activeSessionId,
     completeMfaLogin,
@@ -407,6 +419,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     useFollowHook,
     signUp,
     user,
+    showBottomSheetForContext,
   ]);
 
   return (

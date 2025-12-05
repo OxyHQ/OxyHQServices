@@ -10,7 +10,6 @@ import {
     Alert,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import { toast } from '../../lib/sonner';
 import { Header, Section } from '../components';
 import { useI18n } from '../hooks/useI18n';
@@ -20,8 +19,10 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     goBack,
+    // OxyContext values from props (instead of useOxy hook)
+    oxyServices,
+    user,
 }) => {
-    const { oxyServices, user } = useOxy();
     const { t } = useI18n();
     const [reason, setReason] = useState('');
     const [evidence, setEvidence] = useState('');

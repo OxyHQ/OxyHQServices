@@ -1,7 +1,6 @@
 import type React from 'react';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import { useThemeColors } from '../styles';
 import { toast } from '../../lib/sonner';
 import StepBasedScreen, { type StepConfig } from '../components/StepBasedScreen';
@@ -36,8 +35,10 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
     email: initialEmail,
     password: initialPassword,
     confirmPassword: initialConfirmPassword,
+    // OxyContext values from props (instead of useOxy hook)
+    signUp,
+    oxyServices,
 }) => {
-    const { signUp, oxyServices } = useOxy();
     const colors = useThemeColors(theme);
 
     // Form data state - sync with props when they change from router navigation

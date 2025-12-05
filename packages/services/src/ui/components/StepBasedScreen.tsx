@@ -15,8 +15,8 @@ import Animated, {
     type SharedValue,
 } from 'react-native-reanimated';
 import { useThemeColors, createAuthStyles } from '../styles';
-import type { BaseScreenProps, StepController } from '../navigation/types';
-import type { RouteName } from '../navigation/routes';
+import type { BaseScreenProps, StepController } from '../types/navigation';
+import type { RouteName } from '../types/navigation';
 
 export interface StepConfig {
     id: string;
@@ -459,11 +459,36 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         // Only navigate back if we're not on the first step
         // If we're on the first step, prevent back navigation to avoid closing the screen
         if (state.currentStep > 0) {
-            // All back navigation is managed by OxyRouter's goBack
-            // This will restore the previous step's props from router history
+            // For step navigation within the same screen, directly navigate to previous step
+            // This avoids going through the router's goBack which might check screen history first
+            const previousStep = state.currentStep - 1;
+            
+            // Extract props to preserve state
+            const navigationProps: Record<string, unknown> = { initialStep: previousStep };
+            
+            if (getNavigationProps) {
+                const extractedProps = getNavigationProps();
+                Object.assign(navigationProps, extractedProps);
+            } else {
+                // Preserve props from step 0 (where initial form data is usually stored)
+                const step0Data = stepData[0] || {};
+                if (step0Data.username) navigationProps.username = step0Data.username;
+                if (step0Data.userProfile) navigationProps.userProfile = step0Data.userProfile;
+                if (step0Data.email) navigationProps.email = step0Data.email;
+            }
+            
+            // Navigate to previous step within the same screen
+            if (currentScreen && navigate) {
+                navigate(currentScreen, navigationProps);
+            } else {
+                // Fallback to goBack if navigate is not available
+                goBack?.();
+            }
+        } else {
+            // On first step, use goBack to check screen history or close
             goBack?.();
         }
-    }, [state.isTransitioning, state.currentStep, goBack]);
+    }, [state.isTransitioning, state.currentStep, goBack, currentScreen, navigate, stepData, getNavigationProps]);
 
     const goToStep = useCallback((stepIndex: number) => {
         if (state.isTransitioning || stepIndex < 0 || stepIndex >= steps.length) return;

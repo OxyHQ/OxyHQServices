@@ -1,7 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { ApiError, User } from '../../../models/interfaces';
 import type { ClientSession } from '../../../models/session';
-import { mergeSessions, normalizeAndSortSessions, sessionsArraysEqual } from '../../../utils/sessionUtils';
+import { mergeSessions, normalizeAndSortSessions, sessionsArraysEqual } from '../../utils/sessionUtils';
 import { fetchSessionsWithFallback, mapSessionsToClient, validateSessionBatch } from '../utils/sessionHelpers';
 import { getStorageKeys, type StorageInterface } from '../utils/storageHelpers';
 import { handleAuthError, isInvalidSessionError } from '../utils/errorHandlers';

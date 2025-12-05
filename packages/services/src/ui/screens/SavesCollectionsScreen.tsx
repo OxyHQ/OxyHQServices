@@ -7,7 +7,6 @@ import {
     ScrollView,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import { toast } from '../../lib/sonner';
 import { Header, Section, GroupedSection, LoadingState, EmptyState } from '../components';
 import { useI18n } from '../hooks/useI18n';
@@ -26,8 +25,10 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     goBack,
+    // OxyContext values from props (instead of useOxy hook)
+    oxyServices,
+    user,
 }) => {
-    const { oxyServices, user } = useOxy();
     const { t } = useI18n();
     const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
     const [collections, setCollections] = useState<any[]>([]);

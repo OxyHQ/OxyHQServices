@@ -2,7 +2,6 @@ import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react'
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated, ScrollView } from 'react-native';
 import AnimatedReanimated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import Avatar from '../components/Avatar';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
@@ -57,8 +56,10 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     onAuthenticated,
     theme,
     newUser,
+    // OxyContext values from props (instead of useOxy hook)
+    user,
+    oxyServices,
 }) => {
-    const { user, oxyServices } = useOxy();
     const { t } = useI18n();
     const updateUser = useAuthStore(s => s.updateUser);
     const currentUser = user || newUser; // fallback

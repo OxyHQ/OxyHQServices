@@ -49,7 +49,7 @@ export interface OxySignInButtonProps {
      * Which screen to open in the bottom sheet
      * @default 'SignIn'
      */
-    screen?: string;
+    screen?: 'SignIn' | 'SignUp' | 'RecoverAccount';
 }
 
 /**
@@ -88,7 +88,7 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     screen = 'SignIn',
 }) => {
     // Get all needed values from context in a single call
-    const { isAuthenticated } = useOxy();
+    const { isAuthenticated, showBottomSheet } = useOxy();
 
     // Don't show the button if already authenticated (unless explicitly overridden)
     if (isAuthenticated && !showWhenAuthenticated) return null;
@@ -100,9 +100,16 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
             return;
         }
 
-        console.warn(
-            `OxySignInButton: The built-in authentication bottom sheet has been removed. Provide an onPress handler to handle navigation (requested screen: ${screen}).`
-        );
+        // Use the new bottom sheet system to show the sign-in screen
+        if (showBottomSheet) {
+            showBottomSheet(screen as any);
+        } else {
+            if (__DEV__) {
+                console.warn(
+                    `OxySignInButton: showBottomSheet is not available. Make sure OxyProvider is set up correctly.`
+                );
+            }
+        }
     };
 
     // Determine the button style based on the variant

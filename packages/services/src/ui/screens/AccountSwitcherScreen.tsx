@@ -13,7 +13,6 @@ import {
     Dimensions,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import type { ClientSession } from '../../models/session';
 import { fontFamilies } from '../styles/fonts';
 import type { User } from '../../models/interfaces';
@@ -48,18 +47,17 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     navigate,
     goBack,
     oxyServices,
+    // OxyContext values from props (instead of useOxy hook)
+    user,
+    sessions = [],
+    activeSessionId = null,
+    switchSession,
+    removeSession,
+    logoutAll,
+    refreshSessions,
+    isLoading = false,
+    isAuthenticated = false,
 }) => {
-    const {
-        user,
-        sessions,
-        activeSessionId,
-        switchSession,
-        removeSession,
-        logoutAll,
-        refreshSessions,
-        isLoading,
-        isAuthenticated
-    } = useOxy();
 
     const [sessionsWithUsers, setSessionsWithUsers] = useState<SessionWithUser[]>([]);
     const [switchingToUserId, setSwitchingToUserId] = useState<string | null>(null);
@@ -95,10 +93,10 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
     // Refresh sessions when screen loads
     useEffect(() => {
-        if (isAuthenticated && activeSessionId) {
+        if (isAuthenticated && activeSessionId && refreshSessions) {
             refreshSessions();
         }
-    }, [isAuthenticated, activeSessionId]);
+    }, [isAuthenticated, activeSessionId, refreshSessions]);
 
     // Memoize session IDs to prevent unnecessary re-renders
     const sessionIds = useMemo(() => sessions.map(s => s.sessionId).join(','), [sessions]);
@@ -124,7 +122,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             try {
                 const sessionIds = uniqueSessions.map(s => s.sessionId);
                 const batchResults = await oxyServices.getUsersBySessions(sessionIds);
-                
+
                 // Create a map for O(1) lookup
                 const userProfileMap = new Map<string, User | null>();
                 batchResults.forEach(({ sessionId, user }) => {
@@ -164,7 +162,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     }, [sessionIds, oxyServices, sessions]);
 
     const handleSwitchSession = useCallback(async (sessionId: string) => {
-        if (sessionId === activeSessionId) return; // Already active session
+        if (sessionId === (activeSessionId ?? null)) return; // Already active session
         if (switchingToUserId) return; // Already switching
 
         setSwitchingToUserId(sessionId);
@@ -229,11 +227,12 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
     // Device session management functions - optimized with useCallback
     const loadAllDeviceSessions = useCallback(async () => {
-        if (!oxyServices || !activeSessionId) return;
+        const currentActiveSessionId = activeSessionId ?? null;
+        if (!oxyServices || !currentActiveSessionId) return;
 
         setLoadingDeviceSessions(true);
         try {
-            const allSessions = await oxyServices.getDeviceSessions(activeSessionId);
+            const allSessions = await oxyServices.getDeviceSessions(currentActiveSessionId);
             setDeviceSessions(allSessions || []);
         } catch (error) {
             if (__DEV__) {
@@ -253,7 +252,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             async () => {
                 setRemoteLogoutSessionId(sessionId);
                 try {
-                    await oxyServices?.logoutSession(activeSessionId || '', sessionId);
+                    await oxyServices?.logoutSession((activeSessionId ?? null) || '', sessionId);
                     await loadAllDeviceSessions();
                     toast.success(t('accountSwitcher.toasts.remoteSignOutSuccess', { deviceName }) || `Signed out from ${deviceName} successfully!`);
                 } catch (error) {
@@ -283,7 +282,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             async () => {
                 setLoggingOutAllDevices(true);
                 try {
-                    await oxyServices?.logoutAllDeviceSessions(activeSessionId || '');
+                    await oxyServices?.logoutAllDeviceSessions((activeSessionId ?? null) || '');
                     await loadAllDeviceSessions();
                     toast.success(t('accountSwitcher.toasts.signOutOthersSuccess') || 'Signed out from all other devices successfully!');
                 } catch (error) {
@@ -300,7 +299,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
     // Memoize filtered sessions for performance
     const otherSessions = useMemo(
-        () => sessionsWithUsers.filter(s => s.sessionId !== activeSessionId),
+        () => sessionsWithUsers.filter(s => s.sessionId !== (activeSessionId ?? null)),
         [sessionsWithUsers, activeSessionId]
     );
 
@@ -309,7 +308,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
             {/* Header */}
             <Header
                 title={t('accountSwitcher.title') || 'Account Switcher'}
-                
+
                 onBack={goBack}
                 onClose={onClose}
                 showBackButton={true}
@@ -372,75 +371,75 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                 </Text>
 
                                 {otherSessions.map((sessionWithUser, index, filteredArray) => {
-                                        const isFirst = index === 0;
-                                        const isLast = index === filteredArray.length - 1;
-                                        const isSwitching = switchingToUserId === sessionWithUser.sessionId;
-                                        const isRemoving = removingUserId === sessionWithUser.sessionId;
-                                        const { userProfile, isLoadingProfile } = sessionWithUser;
+                                    const isFirst = index === 0;
+                                    const isLast = index === filteredArray.length - 1;
+                                    const isSwitching = switchingToUserId === sessionWithUser.sessionId;
+                                    const isRemoving = removingUserId === sessionWithUser.sessionId;
+                                    const { userProfile, isLoadingProfile } = sessionWithUser;
 
-                                        const displayName = typeof userProfile?.name === 'object'
-                                            ? userProfile.name.full || userProfile.name.first || userProfile.username
-                                            : userProfile?.name || userProfile?.username || 'Unknown User';
+                                    const displayName = typeof userProfile?.name === 'object'
+                                        ? userProfile.name.full || userProfile.name.first || userProfile.username
+                                        : userProfile?.name || userProfile?.username || 'Unknown User';
 
-                                        return (
-                                            <View
-                                                key={`session-${sessionWithUser.sessionId}-${index}`}
-                                                style={[
-                                                    styles.settingItem,
-                                                    isFirst && styles.firstSettingItem,
-                                                    isLast && styles.lastSettingItem,
-                                                ]}
-                                            >
-                                                <View style={styles.userIcon}>
-                                                    {isLoadingProfile ? (
-                                                        <View style={styles.accountAvatarFallback}>
-                                                            <ActivityIndicator size="small" color="#007AFF" />
-                                                        </View>
-                                                    ) : (typeof userProfile?.avatar === 'string' && userProfile.avatar) ? (
-                                                        <Image source={{ uri: oxyServices.getFileDownloadUrl(userProfile.avatar as string, 'thumb') }} style={styles.accountAvatarImage} />
-                                                    ) : (
-                                                        <View style={styles.accountAvatarFallback}>
-                                                            <Text style={styles.accountAvatarText}>
-                                                                {displayName.charAt(0).toUpperCase()}
-                                                            </Text>
-                                                        </View>
-                                                    )}
-                                                </View>
-                                                <View style={styles.settingInfo}>
-                                                    <View>
-                                                        <Text style={styles.settingLabel}>{displayName}</Text>
-                                                        <Text style={styles.settingDescription}>
-                                                            @{userProfile?.username || 'unknown'}
+                                    return (
+                                        <View
+                                            key={`session-${sessionWithUser.sessionId}-${index}`}
+                                            style={[
+                                                styles.settingItem,
+                                                isFirst && styles.firstSettingItem,
+                                                isLast && styles.lastSettingItem,
+                                            ]}
+                                        >
+                                            <View style={styles.userIcon}>
+                                                {isLoadingProfile ? (
+                                                    <View style={styles.accountAvatarFallback}>
+                                                        <ActivityIndicator size="small" color="#007AFF" />
+                                                    </View>
+                                                ) : (typeof userProfile?.avatar === 'string' && userProfile.avatar) ? (
+                                                    <Image source={{ uri: oxyServices.getFileDownloadUrl(userProfile.avatar as string, 'thumb') }} style={styles.accountAvatarImage} />
+                                                ) : (
+                                                    <View style={styles.accountAvatarFallback}>
+                                                        <Text style={styles.accountAvatarText}>
+                                                            {displayName.charAt(0).toUpperCase()}
                                                         </Text>
                                                     </View>
-                                                </View>
-                                                <View style={styles.accountActions}>
-                                                    <TouchableOpacity
-                                                        style={styles.switchButton}
-                                                        onPress={() => handleSwitchSession(sessionWithUser.sessionId)}
-                                                        disabled={isSwitching || isRemoving}
-                                                    >
-                                                        {isSwitching ? (
-                                                            <ActivityIndicator size="small" color="#007AFF" />
-                                                        ) : (
-                                                            <Text style={styles.switchButtonText}>Switch</Text>
-                                                        )}
-                                                    </TouchableOpacity>
-                                                    <TouchableOpacity
-                                                        style={styles.removeButton}
-                                                        onPress={() => handleRemoveSession(sessionWithUser.sessionId, displayName)}
-                                                        disabled={isSwitching || isRemoving}
-                                                    >
-                                                        {isRemoving ? (
-                                                            <ActivityIndicator size="small" color="#FF3B30" />
-                                                        ) : (
-                                                            <OxyIcon name="trash" size={16} color="#FF3B30" />
-                                                        )}
-                                                    </TouchableOpacity>
+                                                )}
+                                            </View>
+                                            <View style={styles.settingInfo}>
+                                                <View>
+                                                    <Text style={styles.settingLabel}>{displayName}</Text>
+                                                    <Text style={styles.settingDescription}>
+                                                        @{userProfile?.username || 'unknown'}
+                                                    </Text>
                                                 </View>
                                             </View>
-                                        );
-                                    })}
+                                            <View style={styles.accountActions}>
+                                                <TouchableOpacity
+                                                    style={styles.switchButton}
+                                                    onPress={() => handleSwitchSession(sessionWithUser.sessionId)}
+                                                    disabled={isSwitching || isRemoving}
+                                                >
+                                                    {isSwitching ? (
+                                                        <ActivityIndicator size="small" color="#007AFF" />
+                                                    ) : (
+                                                        <Text style={styles.switchButtonText}>Switch</Text>
+                                                    )}
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    style={styles.removeButton}
+                                                    onPress={() => handleRemoveSession(sessionWithUser.sessionId, displayName)}
+                                                    disabled={isSwitching || isRemoving}
+                                                >
+                                                    {isRemoving ? (
+                                                        <ActivityIndicator size="small" color="#FF3B30" />
+                                                    ) : (
+                                                        <OxyIcon name="trash" size={16} color="#FF3B30" />
+                                                    )}
+                                                </TouchableOpacity>
+                                            </View>
+                                        </View>
+                                    );
+                                })}
                             </View>
                         )}
 
@@ -476,7 +475,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                         disabled: sessionsWithUsers.length === 0,
                                     },
                                 ]}
-                                
+
                             />
                         </View>
 
@@ -500,7 +499,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                 ),
                                             },
                                         ]}
-                                        
+
                                     />
                                 ) : deviceSessions.length === 0 ? (
                                     <GroupedSection
@@ -514,7 +513,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                 disabled: true,
                                             },
                                         ]}
-                                        
+
                                     />
                                 ) : (
                                     <GroupedSection
@@ -540,7 +539,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                 </TouchableOpacity>
                                             ) : undefined,
                                         }))}
-                                        
+
                                     />
                                 )}
                             </View>
@@ -575,7 +574,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                             ),
                                         },
                                     ]}
-                                    
+
                                 />
                             </View>
                         )}

@@ -7,7 +7,7 @@ import { useThemeStyles } from '../hooks/useThemeStyles';
 
 interface UserLinksScreenProps extends BaseScreenProps {
     userId: string;
-    links: Array<{
+    links?: Array<{
         url: string;
         title?: string;
         description?: string;
@@ -18,7 +18,7 @@ interface UserLinksScreenProps extends BaseScreenProps {
 
 const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
     userId,
-    links,
+    links = [],
     theme,
     goBack,
     navigate

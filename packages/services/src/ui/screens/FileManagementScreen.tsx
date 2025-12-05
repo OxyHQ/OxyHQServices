@@ -15,7 +15,6 @@ import {
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 import type { FileMetadata } from '../../models/interfaces';
@@ -99,8 +98,10 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     allowUploadInSelectMode = true,
     defaultVisibility = 'private',
     linkContext,
+    // OxyContext values from props (instead of useOxy hook)
+    user,
+    oxyServices,
 }) => {
-    const { user, oxyServices } = useOxy();
     const files = useFiles();
     const uploading = useUploadingStore();
     const uploadProgress = useUploadAggregateProgress();
@@ -1333,15 +1334,62 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
         return sortedFiles.map((file) => {
             const isImage = file.contentType.startsWith('image/');
+            const isPDF = file.contentType.includes('pdf');
             const isVideo = file.contentType.startsWith('video/');
-            const hasPreview = isImage || isVideo;
-            const previewUrl = hasPreview ? (isVideo ? getSafeDownloadUrlCallback(file, 'poster') : getSafeDownloadUrlCallback(file, 'thumb')) : undefined;
+            const hasPreview = isImage || isPDF || isVideo;
             const isSelected = selectedIds.has(file.id);
+
+            // Create customIcon for preview thumbnails (36x36 to match GroupedItem iconContainer)
+            let customIcon: React.ReactNode | undefined;
+            if (hasPreview) {
+                if (isImage) {
+                    customIcon = (
+                        <View style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden' }}>
+                            <ExpoImage
+                                source={{ uri: getSafeDownloadUrlCallback(file, 'thumb') }}
+                                style={{ width: 36, height: 36 }}
+                                contentFit="cover"
+                                transition={120}
+                                cachePolicy="memory-disk"
+                                onError={() => {
+                                    // Image preview failed to load - will fallback to icon
+                                }}
+                                accessibilityLabel={file.filename}
+                            />
+                        </View>
+                    );
+                } else if (isVideo) {
+                    customIcon = (
+                        <View style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden', backgroundColor: '#000000', position: 'relative' }}>
+                            <ExpoImage
+                                source={{ uri: getSafeDownloadUrlCallback(file, 'thumb') }}
+                                style={{ width: 36, height: 36 }}
+                                contentFit="cover"
+                                transition={120}
+                                cachePolicy="memory-disk"
+                                onError={(_: any) => {
+                                    // If thumbnail not available, we still show icon overlay
+                                }}
+                                accessibilityLabel={file.filename + ' video thumbnail'}
+                            />
+                            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.25)' }}>
+                                <Ionicons name="play" size={16} color="#FFFFFF" />
+                            </View>
+                        </View>
+                    );
+                } else if (isPDF) {
+                    customIcon = (
+                        <View style={{ width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FF6B6B20' }}>
+                            <Ionicons name="document" size={20} color={themeStyles.primaryColor} />
+                        </View>
+                    );
+                }
+            }
+
             return {
                 id: file.id,
-                image: previewUrl,
-                imageSize: 44,
-                icon: !previewUrl ? getFileIcon(file.contentType) : undefined,
+                customIcon: customIcon,
+                icon: !hasPreview ? getFileIcon(file.contentType) : undefined,
                 iconColor: themeStyles.primaryColor,
                 title: file.filename,
                 subtitle: `${formatFileSize(file.length)} • ${new Date(file.uploadDate).toLocaleDateString()}`,
@@ -1404,7 +1452,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 ) : undefined,
             } as any;
         });
-    }, [filteredFiles, theme, themeStyles, deleting, handleFileDownload, handleFileDelete, handleFileOpen, getSafeDownloadUrl, selectMode, selectedIds]);
+    }, [filteredFiles, theme, themeStyles, deleting, handleFileDownload, handleFileDelete, handleFileOpen, getSafeDownloadUrlCallback, selectMode, selectedIds]);
 
     // Scroll to selected file after selection
     useEffect(() => {
@@ -1804,18 +1852,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
                 {/* Search Bar Skeleton */}
                 <View style={[fileManagementStyles.searchContainer, {
-                    backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF',
-                    borderColor: themeStyles.borderColor,
-                    borderWidth: StyleSheet.hairlineWidth,
+                    backgroundColor: themeStyles.colors.card,
                 }]}>
                     <SkeletonBox width="100%" height={44} borderRadius={12} />
                 </View>
 
                 {/* Stats Container Skeleton */}
                 <View style={[fileManagementStyles.statsContainer, {
-                    backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF',
-                    borderColor: themeStyles.borderColor,
-                    borderWidth: StyleSheet.hairlineWidth,
+                    backgroundColor: themeStyles.colors.card,
                 }]}>
                     {[1, 2, 3].map((i) => (
                         <View key={i} style={fileManagementStyles.statItem}>
@@ -1832,10 +1876,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     showsVerticalScrollIndicator={false}
                 >
                     <View style={{
-                        backgroundColor: themeStyles.isDarkTheme ? '#121212' : '#FFFFFF',
-                        borderRadius: 12,
+                        backgroundColor: themeStyles.colors.card,
+                        borderRadius: 18,
                         overflow: 'hidden',
-                        marginHorizontal: 16,
                         marginTop: 8,
                     }}>
                         {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
@@ -1972,9 +2015,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     <View style={[
                         fileManagementStyles.viewModeToggle,
                         {
-                            backgroundColor: themeStyles.isDarkTheme ? '#181818' : '#FFFFFF',
-                            borderWidth: 1,
-                            borderColor: themeStyles.isDarkTheme ? '#2A2A2A' : '#E8E9EA',
+                            backgroundColor: themeStyles.colors.card,
                         }
                     ]}>
                         <TouchableOpacity
@@ -2046,8 +2087,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </ScrollView>
                 <TouchableOpacity
                     style={[fileManagementStyles.sortButton, {
-                        backgroundColor: themeStyles.isDarkTheme ? '#181818' : '#FFFFFF',
-                        borderColor: themeStyles.isDarkTheme ? '#2A2A2A' : '#E8E9EA',
+                        backgroundColor: themeStyles.colors.card,
                     }]}
                     onPress={() => {
                         // Cycle through sort options: date -> size -> name -> type -> date
@@ -2106,15 +2146,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 <View style={[
                     fileManagementStyles.searchContainer,
                     {
-                        backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF',
-                        borderColor: themeStyles.isDarkTheme ? '#3A3A3A' : '#E8E9EA',
+                        backgroundColor: themeStyles.colors.card,
                     }
                 ]}>
-                    <Ionicons name="search" size={22} color={themeStyles.isDarkTheme ? '#888888' : '#666666'} />
+                    <Ionicons name="search" size={22} color={themeStyles.colors.icon} />
                     <TextInput
                         style={[fileManagementStyles.searchInput, { color: themeStyles.textColor }]}
                         placeholder={viewMode === 'photos' ? 'Search photos...' : 'Search files...'}
-                        placeholderTextColor={themeStyles.isDarkTheme ? '#888888' : '#999999'}
+                        placeholderTextColor={themeStyles.colors.secondaryText}
                         value={searchQuery}
                         onChangeText={setSearchQuery}
                     />
@@ -2123,7 +2162,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             onPress={() => setSearchQuery('')}
                             style={fileManagementStyles.searchClearButton}
                         >
-                            <Ionicons name="close-circle" size={22} color={themeStyles.isDarkTheme ? '#888888' : '#666666'} />
+                            <Ionicons name="close-circle" size={22} color={themeStyles.colors.icon} />
                         </TouchableOpacity>
                     )}
                 </View>
@@ -2134,13 +2173,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 <View style={[
                     fileManagementStyles.statsContainer,
                     {
-                        backgroundColor: themeStyles.isDarkTheme ? '#1A1A1A' : '#FFFFFF',
-                        borderColor: themeStyles.isDarkTheme ? '#3A3A3A' : '#E8E9EA',
+                        backgroundColor: themeStyles.colors.card,
                     }
                 ]}>
                     <View style={fileManagementStyles.statItem}>
                         <Text style={[fileManagementStyles.statValue, { color: themeStyles.textColor }]}>{filteredFiles.length}</Text>
-                        <Text style={[fileManagementStyles.statLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[fileManagementStyles.statLabel, { color: themeStyles.colors.secondaryText }]}>
                             {searchQuery.length > 0 ? 'Found' : (filteredFiles.length === 1 ? (viewMode === 'photos' ? 'Photo' : 'File') : (viewMode === 'photos' ? 'Photos' : 'Files'))}
                         </Text>
                     </View>
@@ -2148,14 +2186,14 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         <Text style={[fileManagementStyles.statValue, { color: themeStyles.textColor }]}>
                             {formatFileSize(filteredFiles.reduce((total, file) => total + file.length, 0))}
                         </Text>
-                        <Text style={[fileManagementStyles.statLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[fileManagementStyles.statLabel, { color: themeStyles.colors.secondaryText }]}>
                             {searchQuery.length > 0 ? 'Size' : 'Total Size'}
                         </Text>
                     </View>
                     {searchQuery.length > 0 && (
                         <View style={fileManagementStyles.statItem}>
                             <Text style={[fileManagementStyles.statValue, { color: themeStyles.textColor }]}>{files.length}</Text>
-                            <Text style={[fileManagementStyles.statLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                            <Text style={[fileManagementStyles.statLabel, { color: themeStyles.colors.secondaryText }]}>
                                 Total
                             </Text>
                         </View>

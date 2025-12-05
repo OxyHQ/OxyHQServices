@@ -13,7 +13,6 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import OxyLogo from '../components/OxyLogo';
 import Avatar from '../components/Avatar';
 import OxyIcon from '../components/icon/OxyIcon';
@@ -59,8 +58,15 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     navigate,
+    // OxyContext values from props (instead of useOxy hook)
+    user,
+    logout,
+    isLoading,
+    sessions,
+    activeSessionId,
+    oxyServices,
+    isAuthenticated,
 }) => {
-    const { user, logout, isLoading, sessions, activeSessionId, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
     const [showMoreAccounts, setShowMoreAccounts] = useState(false);
     const [additionalAccountsData, setAdditionalAccountsData] = useState<any[]>([]);

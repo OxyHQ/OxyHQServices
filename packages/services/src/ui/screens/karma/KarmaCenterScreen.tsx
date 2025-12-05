@@ -11,7 +11,6 @@ import {
     Platform,
 } from 'react-native';
 import type { BaseScreenProps } from '../../navigation/types';
-import { useOxy } from '../../context/OxyContext';
 import { fontFamilies } from '../../styles/fonts';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../../hooks/useI18n';
@@ -23,8 +22,11 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     theme,
     navigate,
     goBack,
+    // OxyContext values from props (instead of useOxy hook)
+    user,
+    oxyServices,
+    isAuthenticated,
 }) => {
-    const { user, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
     const [karmaTotal, setKarmaTotal] = useState<number | null>(null);
     const [karmaHistory, setKarmaHistory] = useState<any[]>([]);

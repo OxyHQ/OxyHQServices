@@ -530,10 +530,47 @@ const styles = StyleSheet.create({
 });
 ```
 
-### Using OxyRouter in Your Own UI
+### Bottom Sheet Routing System
 
-> The legacy bottom sheet component has been removed. You can embed `OxyRouter`
-> inside your own modal, drawer, or screen to provide authentication flows.
+The bottom sheet routing system provides a clean, professional way to display authentication screens, account management, and other UI flows within a modal bottom sheet.
+
+**Quick Example:**
+
+```typescript
+import { useOxy } from '@oxyhq/services';
+
+function MyComponent() {
+  const { showBottomSheet } = useOxy();
+
+  return (
+    <Button
+      onPress={() => showBottomSheet('SignIn')}
+      title="Sign In"
+    />
+  );
+}
+```
+
+**Features:**
+- ✅ Full navigation history with back button support
+- ✅ Step-based screen navigation (multi-step flows)
+- ✅ Keyboard-aware (automatically adjusts for keyboard)
+- ✅ Dynamic sizing (fits content automatically)
+- ✅ Type-safe route names
+- ✅ 25+ pre-built screens available
+
+**Available Screens:**
+- `SignIn`, `SignUp`, `RecoverAccount`
+- `AccountOverview`, `AccountSettings`, `AccountCenter`
+- `Profile`, `SessionManagement`, `PaymentGateway`
+- And many more...
+
+**Documentation:**
+For complete documentation, see [Bottom Sheet Routing Guide](./docs/BOTTOM_SHEET_ROUTING.md).
+
+### Using OxyRouter in Your Own UI (Legacy)
+
+> The legacy bottom sheet component has been removed. Use the new `showBottomSheet()` API instead (see above).
 
 ```typescript
 import { Modal } from 'react-native';

@@ -11,7 +11,6 @@ import {
 } from 'react-native';
 import { useCallback, useMemo } from 'react';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import { packageInfo } from '../../constants/version';
 import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';
@@ -32,8 +31,13 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     navigate,
+    // OxyContext values from props (instead of useOxy hook)
+    user,
+    logout,
+    isLoading,
+    sessions,
+    isAuthenticated,
 }) => {
-    const { user, logout, isLoading, sessions, isAuthenticated } = useOxy();
     const { t } = useI18n();
     const colorScheme = useColorScheme();
     const themeStyles = useThemeStyles(theme || 'light', colorScheme);

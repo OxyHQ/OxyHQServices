@@ -15,7 +15,6 @@ import {
     Dimensions,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import { useThemeColors } from '../styles';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
@@ -511,8 +510,10 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
     goBack,
     onClose,
     theme,
+    // OxyContext values from props (instead of useOxy hook)
+    user,
+    oxyServices,
 }) => {
-    const { user, oxyServices } = useOxy();
     const colors = useThemeColors(theme);
     const { t } = useI18n();
 
@@ -680,14 +681,14 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
                 </Text>
             </View>
             <View style={styles.fullBleed}>
-                <GroupedSection items={feedbackTypeItems}  />
+                <GroupedSection items={feedbackTypeItems} />
             </View>
 
             {feedbackData.type && (
                 <View style={styles.categoryContainer}>
                     <Text style={[styles.modernLabel, { color: colors.secondaryText, marginBottom: 8 }]}>{t('feedback.category.label') || 'Category'}</Text>
                     <View style={styles.fullBleed}>
-                        <GroupedSection items={categoryItems}  />
+                        <GroupedSection items={categoryItems} />
                     </View>
                 </View>
             )}
@@ -776,7 +777,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
             <View style={{ marginBottom: 24 }}>
                 <Text style={[styles.modernLabel, { color: colors.secondaryText, marginBottom: 8 }]}>{t('feedback.priority.label') || 'Priority Level'}</Text>
                 <View style={styles.fullBleed}>
-                    <GroupedSection items={priorityItems}  />
+                    <GroupedSection items={priorityItems} />
                 </View>
             </View>
 

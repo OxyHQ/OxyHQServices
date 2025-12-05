@@ -1,9 +1,10 @@
-import { Image } from 'expo-image';
 import { useCallback, useMemo } from 'react';
 import { Alert, Pressable, StyleSheet } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
 import { OxySignInButton, useOxy } from '@oxyhq/services';
+import Section from '@/components/section';
+import { GroupedSection } from '@/components/grouped-section';
 
 import ParallaxScrollView from '@/components/parallax-scroll-view';
 import { ThemedText } from '@/components/themed-text';
@@ -14,11 +15,11 @@ import { Colors } from '@/constants/theme';
 export default function HomeScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? 'light'];
-  
-  const { 
-    isAuthenticated, 
-    user, 
-    logout, 
+
+  const {
+    isAuthenticated,
+    user,
+    logout,
     showBottomSheet,
     currentLanguage,
     currentLanguageName,
@@ -107,7 +108,7 @@ export default function HomeScreen() {
   // Use a lighter shade of pink for the header background
   const headerBgLight = '#f0d4f5'; // Light pink background
   const headerBgDark = '#6b2d7a'; // Darker purple-pink for dark mode
-  
+
   return (
     <ParallaxScrollView
       headerBackgroundColor={{ light: headerBgLight, dark: headerBgDark }}
@@ -145,8 +146,8 @@ export default function HomeScreen() {
               {currentLanguageMetadata.flag}
             </ThemedText>
           )}
-          <Pressable 
-            style={styles.languageButton} 
+          <Pressable
+            style={styles.languageButton}
             onPress={() => showBottomSheet?.('LanguageSelector')}
           >
             <ThemedText type="defaultSemiBold" style={styles.languageButtonLabel}>
@@ -157,460 +158,356 @@ export default function HomeScreen() {
 
         {isAuthenticated && (
           <>
-          <ThemedView style={styles.authenticatedState}>
-            <ThemedText type="subtitle">Signed in as</ThemedText>
-            <ThemedText type="defaultSemiBold">{displayName}</ThemedText>
+            <ThemedView style={styles.authenticatedState}>
+              <ThemedText type="subtitle">Signed in as</ThemedText>
+              <ThemedText type="defaultSemiBold">{displayName}</ThemedText>
 
-            <Pressable style={styles.settingsButton} onPress={handleOpenAccountSettings}>
-              <ThemedText type="defaultSemiBold" style={styles.settingsLabel}>
-                Account settings
-              </ThemedText>
-            </Pressable>
-
-            <Pressable style={styles.logoutButton} onPress={handleLogout}>
-              <ThemedText type="defaultSemiBold" style={styles.logoutLabel}>
-                Sign out
-              </ThemedText>
-            </Pressable>
-          </ThemedView>
-
-            {/* Account Overview & New Features */}
-            <ThemedView style={styles.featuresSection}>
-              <ThemedText type="subtitle">Account Overview & Features</ThemedText>
-              <ThemedText type="default" style={styles.sectionDescription}>
-                Test all the new account features
-              </ThemedText>
-
-              <Pressable 
-                style={styles.featureButton} 
-                onPress={() => handleOpenScreen('AccountOverview')}
-              >
-                <ThemedText type="defaultSemiBold" style={styles.featureButtonLabel}>
-                  📱 Account Overview
+              <Pressable style={styles.settingsButton} onPress={handleOpenAccountSettings}>
+                <ThemedText type="defaultSemiBold" style={styles.settingsLabel}>
+                  Account settings
                 </ThemedText>
-                <ThemedText type="default" style={styles.featureButtonSubtext}>
-                  Main account screen with all features
+              </Pressable>
+
+              <Pressable style={styles.logoutButton} onPress={handleLogout}>
+                <ThemedText type="defaultSemiBold" style={styles.logoutLabel}>
+                  Sign out
                 </ThemedText>
               </Pressable>
             </ThemedView>
 
+            {/* Account Overview & New Features */}
+            <Section title="Account Overview & Features" isFirst={true}>
+              <GroupedSection
+                items={[
+                  {
+                    id: 'account-overview',
+                    icon: 'phone-portrait',
+                    iconColor: colors.iconHome,
+                    title: 'Account Overview',
+                    subtitle: 'Main account screen with all features',
+                    onPress: () => handleOpenScreen('AccountOverview'),
+                    showChevron: true,
+                  },
+                ]}
+              />
+            </Section>
+
             {/* Authentication Screens */}
-            <ThemedView style={styles.featuresSection}>
-              <ThemedText type="subtitle">Authentication</ThemedText>
-              <ThemedText type="default" style={styles.sectionDescription}>
-                Sign in, sign up, and account recovery
-              </ThemedText>
-
-              <ThemedView style={styles.featureGrid}>
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('SignIn')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    🔐 Sign In
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Sign in screen
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('SignUp')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    ✍️ Sign Up
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Create new account
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('RecoverAccount')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    🔑 Recover
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Account recovery
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('WelcomeNewUser')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    👋 Welcome
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    New user welcome
-                  </ThemedText>
-                </Pressable>
-              </ThemedView>
-            </ThemedView>
+            <Section title="Authentication">
+              <GroupedSection
+                items={[
+                  {
+                    id: 'sign-in',
+                    icon: 'enter',
+                    iconColor: colors.iconSecurity,
+                    title: 'Sign In',
+                    subtitle: 'Sign in screen',
+                    onPress: () => handleOpenScreen('SignIn'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'sign-up',
+                    icon: 'person-add',
+                    iconColor: colors.iconSecurity,
+                    title: 'Sign Up',
+                    subtitle: 'Create new account',
+                    onPress: () => handleOpenScreen('SignUp'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'recover-account',
+                    icon: 'key',
+                    iconColor: colors.iconSecurity,
+                    title: 'Recover Account',
+                    subtitle: 'Account recovery',
+                    onPress: () => handleOpenScreen('RecoverAccount'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'welcome-new-user',
+                    icon: 'hand-left-outline',
+                    iconColor: colors.iconSecurity,
+                    title: 'Welcome New User',
+                    subtitle: 'New user welcome',
+                    onPress: () => handleOpenScreen('WelcomeNewUser'),
+                    showChevron: true,
+                  },
+                ]}
+              />
+            </Section>
 
             {/* Account Management */}
-            <ThemedView style={styles.featuresSection}>
-              <ThemedText type="subtitle">Account Management</ThemedText>
-              <ThemedText type="default" style={styles.sectionDescription}>
-                Account settings, switching, and sessions
-              </ThemedText>
-
-              <ThemedView style={styles.featureGrid}>
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('AccountCenter')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    🏠 Account Center
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Main account hub
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('AccountSwitcher')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    🔄 Switch Account
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Switch between accounts
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('SessionManagement')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    📱 Sessions
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Manage device sessions
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('AccountVerification')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    ✅ Verification
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Account verification
-                  </ThemedText>
-                </Pressable>
-              </ThemedView>
-            </ThemedView>
+            <Section title="Account Management">
+              <GroupedSection
+                items={[
+                  {
+                    id: 'account-center',
+                    icon: 'home',
+                    iconColor: colors.iconHome,
+                    title: 'Account Center',
+                    subtitle: 'Main account hub',
+                    onPress: () => handleOpenScreen('AccountCenter'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'account-switcher',
+                    icon: 'people',
+                    iconColor: colors.iconData,
+                    title: 'Switch Account',
+                    subtitle: 'Switch between accounts',
+                    onPress: () => handleOpenScreen('AccountSwitcher'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'session-management',
+                    icon: 'phone-portrait',
+                    iconColor: colors.iconSecurity,
+                    title: 'Sessions',
+                    subtitle: 'Manage device sessions',
+                    onPress: () => handleOpenScreen('SessionManagement'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'account-verification',
+                    icon: 'checkmark-circle',
+                    iconColor: colors.iconSuccess,
+                    title: 'Verification',
+                    subtitle: 'Account verification',
+                    onPress: () => handleOpenScreen('AccountVerification'),
+                    showChevron: true,
+                  },
+                ]}
+              />
+            </Section>
 
             {/* Profile & Settings */}
-            <ThemedView style={styles.featuresSection}>
-              <ThemedText type="subtitle">Profile & Settings</ThemedText>
-              <ThemedText type="default" style={styles.sectionDescription}>
-                Profile, links, privacy, and preferences
-              </ThemedText>
-
-              <ThemedView style={styles.featureGrid}>
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('Profile')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    👤 Profile
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    User profile
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('UserLinks')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    🔗 Links
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    User links
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('PrivacySettings')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    🔒 Privacy
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Privacy settings
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('LanguageSelector')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    🌐 Language
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Change language
-                  </ThemedText>
-                </Pressable>
-              </ThemedView>
-            </ThemedView>
+            <Section title="Profile & Settings">
+              <GroupedSection
+                items={[
+                  {
+                    id: 'profile',
+                    icon: 'person',
+                    iconColor: colors.iconPersonalInfo,
+                    title: 'Profile',
+                    subtitle: 'User profile',
+                    onPress: () => handleOpenScreen('Profile'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'user-links',
+                    icon: 'link',
+                    iconColor: colors.iconSharing,
+                    title: 'Links',
+                    subtitle: 'User links',
+                    onPress: () => handleOpenScreen('UserLinks'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'privacy-settings',
+                    icon: 'lock-closed',
+                    iconColor: colors.iconSecurity,
+                    title: 'Privacy',
+                    subtitle: 'Privacy settings',
+                    onPress: () => handleOpenScreen('PrivacySettings'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'language-selector',
+                    icon: 'language',
+                    iconColor: colors.iconPersonalInfo,
+                    title: 'Language',
+                    subtitle: 'Change language',
+                    onPress: () => handleOpenScreen('LanguageSelector'),
+                    showChevron: true,
+                  },
+                ]}
+              />
+            </Section>
 
             {/* Content & Features */}
-            <ThemedView style={styles.featuresSection}>
-              <ThemedText type="subtitle">Content & Features</ThemedText>
-              <ThemedText type="default" style={styles.sectionDescription}>
-                History, saves, search, and files
-              </ThemedText>
-
-              <ThemedView style={styles.featureGrid}>
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('HistoryView')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    ⏱️ History
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    View & manage history
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('SavesCollections')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    🔖 Saves
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Saved items & collections
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('SearchSettings')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    🔍 Search
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    SafeSearch & settings
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('FileManagement')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    📁 Files
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    File management
-                  </ThemedText>
-                </Pressable>
-              </ThemedView>
-            </ThemedView>
+            <Section title="Content & Features">
+              <GroupedSection
+                items={[
+                  {
+                    id: 'history-view',
+                    icon: 'time',
+                    iconColor: colors.iconSecurity,
+                    title: 'History',
+                    subtitle: 'View & manage history',
+                    onPress: () => handleOpenScreen('HistoryView'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'saves-collections',
+                    icon: 'bookmark',
+                    iconColor: colors.iconStorage,
+                    title: 'Saves',
+                    subtitle: 'Saved items & collections',
+                    onPress: () => handleOpenScreen('SavesCollections'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'search-settings',
+                    icon: 'search',
+                    iconColor: colors.iconSecurity,
+                    title: 'Search',
+                    subtitle: 'SafeSearch & settings',
+                    onPress: () => handleOpenScreen('SearchSettings'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'file-management',
+                    icon: 'folder',
+                    iconColor: colors.iconData,
+                    title: 'Files',
+                    subtitle: 'File management',
+                    onPress: () => handleOpenScreen('FileManagement'),
+                    showChevron: true,
+                  },
+                ]}
+              />
+            </Section>
 
             {/* Karma System */}
-            <ThemedView style={styles.featuresSection}>
-              <ThemedText type="subtitle">Karma System</ThemedText>
-              <ThemedText type="default" style={styles.sectionDescription}>
-                Karma center, leaderboard, rewards, and info
-              </ThemedText>
-
-              <ThemedView style={styles.featureGrid}>
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('KarmaCenter')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    ⭐ Karma Center
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Main karma hub
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('KarmaLeaderboard')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    🏆 Leaderboard
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Karma rankings
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('KarmaRewards')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    🎁 Rewards
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Karma rewards
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('KarmaRules')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    📋 Rules
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Karma rules
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('AboutKarma')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    ℹ️ About
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    About karma
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('KarmaFAQ')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    ❓ FAQ
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Karma FAQ
-                  </ThemedText>
-                </Pressable>
-              </ThemedView>
-            </ThemedView>
+            <Section title="Karma System">
+              <GroupedSection
+                items={[
+                  {
+                    id: 'karma-center',
+                    icon: 'star',
+                    iconColor: colors.iconPayments,
+                    title: 'Karma Center',
+                    subtitle: 'Main karma hub',
+                    onPress: () => handleOpenScreen('KarmaCenter'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'karma-leaderboard',
+                    icon: 'trophy',
+                    iconColor: colors.iconPayments,
+                    title: 'Leaderboard',
+                    subtitle: 'Karma rankings',
+                    onPress: () => handleOpenScreen('KarmaLeaderboard'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'karma-rewards',
+                    icon: 'gift-outline',
+                    iconColor: colors.iconStorage,
+                    title: 'Rewards',
+                    subtitle: 'Karma rewards',
+                    onPress: () => handleOpenScreen('KarmaRewards'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'karma-rules',
+                    icon: 'document-text',
+                    iconColor: colors.iconSecurity,
+                    title: 'Rules',
+                    subtitle: 'Karma rules',
+                    onPress: () => handleOpenScreen('KarmaRules'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'about-karma',
+                    icon: 'information-circle',
+                    iconColor: colors.iconPersonalInfo,
+                    title: 'About',
+                    subtitle: 'About karma',
+                    onPress: () => handleOpenScreen('AboutKarma'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'karma-faq',
+                    icon: 'help-circle',
+                    iconColor: colors.iconPersonalInfo,
+                    title: 'FAQ',
+                    subtitle: 'Karma FAQ',
+                    onPress: () => handleOpenScreen('KarmaFAQ'),
+                    showChevron: true,
+                  },
+                ]}
+              />
+            </Section>
 
             {/* Payments & Subscriptions */}
-            <ThemedView style={styles.featuresSection}>
-              <ThemedText type="subtitle">Payments & Subscriptions</ThemedText>
-              <ThemedText type="default" style={styles.sectionDescription}>
-                Payment gateway and premium subscriptions
-              </ThemedText>
-
-              <ThemedView style={styles.featureGrid}>
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={handleOpenPaymentGateway}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    💳 Payment
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Test payment flow
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={handleOpenPaymentGatewayWithProducts}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    🛒 Products
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Test with products
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('PremiumSubscription')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    ⭐ Premium
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Premium subscription
-                  </ThemedText>
-                </Pressable>
-              </ThemedView>
-            </ThemedView>
+            <Section title="Payments & Subscriptions">
+              <GroupedSection
+                items={[
+                  {
+                    id: 'payment-gateway',
+                    icon: 'card',
+                    iconColor: colors.iconPayments,
+                    title: 'Payment',
+                    subtitle: 'Test payment flow',
+                    onPress: handleOpenPaymentGateway,
+                    showChevron: true,
+                  },
+                  {
+                    id: 'payment-gateway-products',
+                    icon: 'cart',
+                    iconColor: colors.iconPayments,
+                    title: 'Products',
+                    subtitle: 'Test with products',
+                    onPress: handleOpenPaymentGatewayWithProducts,
+                    showChevron: true,
+                  },
+                  {
+                    id: 'premium-subscription',
+                    icon: 'star',
+                    iconColor: colors.iconPayments,
+                    title: 'Premium',
+                    subtitle: 'Premium subscription',
+                    onPress: () => handleOpenScreen('PremiumSubscription'),
+                    showChevron: true,
+                  },
+                ]}
+              />
+            </Section>
 
             {/* Support & Legal */}
-            <ThemedView style={styles.featuresSection}>
-              <ThemedText type="subtitle">Support & Legal</ThemedText>
-              <ThemedText type="default" style={styles.sectionDescription}>
-                Help, feedback, legal documents, and app info
-              </ThemedText>
-
-              <ThemedView style={styles.featureGrid}>
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('HelpSupport')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    ❓ Help
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Support & resources
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('Feedback')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    💬 Feedback
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Send feedback
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('LegalDocuments')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    📄 Legal
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    Privacy & Terms
-                  </ThemedText>
-                </Pressable>
-
-                <Pressable 
-                  style={styles.featureCard} 
-                  onPress={() => handleOpenScreen('AppInfo')}
-                >
-                  <ThemedText type="defaultSemiBold" style={styles.featureCardTitle}>
-                    ℹ️ App Info
-                  </ThemedText>
-                  <ThemedText type="default" style={styles.featureCardSubtext}>
-                    App information
-                  </ThemedText>
-                </Pressable>
-              </ThemedView>
-            </ThemedView>
+            <Section title="Support & Legal">
+              <GroupedSection
+                items={[
+                  {
+                    id: 'help-support',
+                    icon: 'help-circle',
+                    iconColor: colors.iconPersonalInfo,
+                    title: 'Help',
+                    subtitle: 'Support & resources',
+                    onPress: () => handleOpenScreen('HelpSupport'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'feedback',
+                    icon: 'chatbubble-ellipses-outline',
+                    iconColor: colors.iconPersonalInfo,
+                    title: 'Feedback',
+                    subtitle: 'Send feedback',
+                    onPress: () => handleOpenScreen('Feedback'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'legal-documents',
+                    icon: 'document-text',
+                    iconColor: colors.iconSecurity,
+                    title: 'Legal',
+                    subtitle: 'Privacy & Terms',
+                    onPress: () => handleOpenScreen('LegalDocuments'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'app-info',
+                    icon: 'information-circle',
+                    iconColor: '#8E8E93',
+                    title: 'App Info',
+                    subtitle: 'App information',
+                    onPress: () => handleOpenScreen('AppInfo'),
+                    showChevron: true,
+                  },
+                ]}
+              />
+            </Section>
           </>
         )}
       </ThemedView>
@@ -688,62 +585,5 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     position: 'absolute',
-  },
-  featuresSection: {
-    gap: 12,
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: '#8b5cf6',
-    backgroundColor: 'rgba(139, 92, 246, 0.08)',
-    marginTop: 8,
-  },
-  sectionDescription: {
-    opacity: 0.7,
-    fontSize: 13,
-  },
-  featureButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderRadius: 8,
-    backgroundColor: '#8b5cf6',
-    marginTop: 4,
-  },
-  featureButtonLabel: {
-    color: '#ffffff',
-    fontSize: 16,
-    marginBottom: 4,
-  },
-  featureButtonSubtext: {
-    color: '#ffffff',
-    opacity: 0.9,
-    fontSize: 12,
-  },
-  featureGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 8,
-  },
-  featureCard: {
-    flex: 1,
-    minWidth: '47%',
-    paddingHorizontal: 12,
-    paddingVertical: 12,
-    borderRadius: 8,
-    backgroundColor: '#7c3aed',
-    borderWidth: 1,
-    borderColor: '#8b5cf6',
-  },
-  featureCardTitle: {
-    color: '#ffffff',
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  featureCardSubtext: {
-    color: '#ffffff',
-    opacity: 0.85,
-    fontSize: 11,
   },
 });

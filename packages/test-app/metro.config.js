@@ -1,5 +1,6 @@
 const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
+const fs = require('fs');
 
 // Find the project and services directories
 const projectRoot = __dirname;
@@ -15,21 +16,26 @@ config.projectRoot = projectRoot;
 
 // 1. Watch the local services package (source + its node_modules)
 // Explicitly include the src directory to ensure hot reload works
-config.watchFolders = [
-  servicesRoot,
-  servicesSrc,
-  servicesNodeModules,
-];
+// Only add directories that exist to avoid ENOENT errors
+const watchFolders = [servicesRoot, servicesSrc];
+if (fs.existsSync(servicesNodeModules)) {
+  watchFolders.push(servicesNodeModules);
+}
+config.watchFolders = watchFolders;
 
 // 2. Let Metro know where to resolve packages and in what order
-config.resolver.nodeModulesPaths = [
+const nodeModulesPaths = [
   path.resolve(projectRoot, 'node_modules'),
   path.resolve(monorepoRoot, 'node_modules'),
-  servicesNodeModules,
 ];
+if (fs.existsSync(servicesNodeModules)) {
+  nodeModulesPaths.push(servicesNodeModules);
+}
+config.resolver.nodeModulesPaths = nodeModulesPaths;
 
-// 3. Force Metro to resolve (sub)dependencies in the workspace
-config.resolver.disableHierarchicalLookup = true;
+// 3. Configure hierarchical lookup for proper dependency resolution
+// Set to false to allow Metro to find dependencies in parent node_modules
+config.resolver.disableHierarchicalLookup = false;
 
 // 4. Ensure source extensions include TypeScript files
 config.resolver.sourceExts = [

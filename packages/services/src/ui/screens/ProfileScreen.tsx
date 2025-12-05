@@ -2,7 +2,6 @@ import type React from 'react';
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, Image } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import { useThemeColors } from '../styles';
 import Avatar from '../components/Avatar';
 import { FollowButton } from '../components';
@@ -15,8 +14,7 @@ interface ProfileScreenProps extends BaseScreenProps {
     username?: string;
 }
 
-const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, goBack, navigate }) => {
-    const { oxyServices, user: currentUser } = useOxy();
+const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, goBack, navigate, oxyServices, user: currentUser }) => {
     const [profile, setProfile] = useState<any>(null);
     const [karmaTotal, setKarmaTotal] = useState<number | null>(null);
     const [postsCount, setPostsCount] = useState<number | null>(null);

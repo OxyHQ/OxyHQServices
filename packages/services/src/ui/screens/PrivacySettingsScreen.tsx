@@ -8,7 +8,6 @@ import {
     TouchableOpacity,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import { toast } from '../../lib/sonner';
 import { Header, Section, Avatar, SettingRow, LoadingState, EmptyState, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
@@ -42,8 +41,10 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     goBack,
+    // OxyContext values from props (instead of useOxy hook)
+    oxyServices,
+    user,
 }) => {
-    const { oxyServices, user } = useOxy();
     const { t } = useI18n();
     const [settings, setSettings] = useState<PrivacySettings>({
         isPrivateAccount: false,

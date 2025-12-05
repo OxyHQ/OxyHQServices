@@ -7,7 +7,6 @@ import {
     ScrollView,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,11 +27,16 @@ interface LanguageSelectorScreenProps extends BaseScreenProps { }
  */
 const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     goBack,
+    // OxyContext values from props (instead of useOxy hook)
+    user,
+    currentLanguage,
+    setLanguage,
+    oxyServices,
+    isAuthenticated,
     onClose,
     theme,
     navigate,
 }) => {
-    const { user, currentLanguage, setLanguage, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
     const colorScheme = useColorScheme();
     const themeStyles = useThemeStyles(theme, colorScheme);

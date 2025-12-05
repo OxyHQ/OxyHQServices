@@ -13,7 +13,6 @@ import {
     Dimensions,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';
@@ -69,8 +68,10 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     theme,
     navigate,
     goBack,
+    // OxyContext values from props (instead of useOxy hook)
+    user,
+    oxyServices,
 }) => {
-    const { user, oxyServices } = useOxy();
     const [loading, setLoading] = useState(true);
     const [subscription, setSubscription] = useState<UserSubscription | null>(null);
     const [plans, setPlans] = useState<SubscriptionPlan[]>([]);

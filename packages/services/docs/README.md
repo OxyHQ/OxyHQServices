@@ -11,6 +11,7 @@ Welcome to the Oxy developer documentation! This guide will help you integrate O
 ### Core Documentation
 - **[API Reference](./API_REFERENCE.md)** - Complete API method documentation with examples
 - **[Integration Guide](./INTEGRATION_GUIDE.md)** - Platform-specific integration guides (React Native, Expo, Next.js, etc.)
+- **[Bottom Sheet Routing](./BOTTOM_SHEET_ROUTING.md)** - Complete guide to the bottom sheet routing system
 
 ### Examples & Best Practices
 - **[Code Examples](./EXAMPLES.md)** - Complete working examples for common use cases
@@ -54,6 +55,7 @@ docs/
 ├── QUICK_REFERENCE.md      # Quick cheat sheet for common operations
 ├── API_REFERENCE.md        # Complete API documentation
 ├── INTEGRATION_GUIDE.md    # Platform-specific guides
+├── BOTTOM_SHEET_ROUTING.md # Bottom sheet routing system guide
 ├── EXAMPLES.md             # Working code examples
 └── BEST_PRACTICES.md       # Production patterns and tips
 ```
@@ -97,6 +99,7 @@ Read **[Best Practices](./BEST_PRACTICES.md)** for:
 
 - **Authentication**: [Getting Started](./GETTING_STARTED.md#authentication) | [API Reference - Auth](./API_REFERENCE.md#authentication)
 - **User Management**: [API Reference - Users](./API_REFERENCE.md#user-management) | [Examples](./EXAMPLES.md#user-management-examples)
+- **Bottom Sheet Routing**: [Bottom Sheet Routing Guide](./BOTTOM_SHEET_ROUTING.md) - Complete guide to the routing system
 - **File Uploads**: [API Reference - Files](./API_REFERENCE.md#file--asset-management) | [Examples](./EXAMPLES.md#file-upload-examples)
 - **Social Features**: [API Reference - Social](./API_REFERENCE.md#social-features) | [Examples](./EXAMPLES.md#social-features-examples)
 - **Privacy**: [API Reference - Privacy](./API_REFERENCE.md#privacy--security)
@@ -112,6 +115,7 @@ Read **[Best Practices](./BEST_PRACTICES.md)** for:
 
 ### I want to...
 - **Add authentication to my app** → [Getting Started](./GETTING_STARTED.md#authentication)
+- **Use bottom sheet screens** → [Bottom Sheet Routing Guide](./BOTTOM_SHEET_ROUTING.md)
 - **Upload images** → [File Upload Examples](./EXAMPLES.md#file-upload-examples)
 - **Show user profiles** → [User Management Examples](./EXAMPLES.md#user-management-examples)
 - **Implement follow/unfollow** → [Social Features Examples](./EXAMPLES.md#social-features-examples)

@@ -5,7 +5,6 @@ import {
     ScrollView,
 } from 'react-native';
 import type { BaseScreenProps } from '../navigation/types';
-import { useOxy } from '../context/OxyContext';
 import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';
 import { Header, Section, GroupedSection, LoadingState, EmptyState } from '../components';
@@ -24,8 +23,9 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     goBack,
+    // OxyContext values from props (instead of useOxy hook)
+    user,
 }) => {
-    const { user } = useOxy();
     const { t } = useI18n();
     const colorScheme = useColorScheme();
     const themeStyles = useThemeStyles(theme || 'light', colorScheme);
