@@ -31,7 +31,13 @@ export type RouteName =
     | 'UserLinks'
     | 'HistoryView'
     | 'SavesCollections'
-    | 'EditProfile'; // For backward compatibility, maps to AccountSettings
+    | 'EditProfile' // For backward compatibility, maps to AccountSettings
+    | 'KarmaCenter'
+    | 'KarmaLeaderboard'
+    | 'KarmaRewards'
+    | 'KarmaRules'
+    | 'AboutKarma'
+    | 'KarmaFAQ';
 
 // Lazy screen loaders - functions that return screen components on-demand
 // This breaks the require cycle by deferring imports until screens are actually needed
@@ -62,6 +68,13 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     SavesCollections: () => require('../screens/SavesCollectionsScreen').default,
     // Backward compatibility - EditProfile maps to AccountSettings
     EditProfile: () => require('../screens/AccountSettingsScreen').default,
+    // Karma screens
+    KarmaCenter: () => require('../screens/karma/KarmaCenterScreen').default,
+    KarmaLeaderboard: () => require('../screens/karma/KarmaLeaderboardScreen').default,
+    KarmaRewards: () => require('../screens/karma/KarmaRewardsScreen').default,
+    KarmaRules: () => require('../screens/karma/KarmaRulesScreen').default,
+    AboutKarma: () => require('../screens/karma/KarmaAboutScreen').default,
+    KarmaFAQ: () => require('../screens/karma/KarmaFAQScreen').default,
 };
 
 // Cache loaded components to avoid re-requiring
