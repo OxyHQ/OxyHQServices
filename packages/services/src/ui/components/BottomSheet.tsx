@@ -55,7 +55,7 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
             backgroundStyle,
             handleStyle,
             handleIndicatorStyle,
-            enableOverDrag = true,
+            enableOverDrag = false,
             enableHandlePanningGesture = true,
             animateOnMount = true,
         },
@@ -207,12 +207,20 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
                 animateOnMount={animateOnMount}
                 enableDynamicSizing={enableDynamicSizing}
                 style={styles.container}
+                handleStyle={[
+                    { position: 'absolute', top: 0, left: 0, right: 0, height: 4 },
+                    handleStyle,
+                ]}
+                handleIndicatorStyle={[
+                    { backgroundColor: colors.border, width: 40, height: 4, borderRadius: 2 },
+                    handleIndicatorStyle,
+                ]}
+
             >
                 <BottomSheetView
                     style={contentContainerStyle}
                     contentContainerStyle={contentContainerStyle}
                 >
-                    <View style={[styles.handleIndicatorContainer, { backgroundColor: colors.border }, handleIndicatorStyle]} />
                     {children}
                 </BottomSheetView>
             </BottomSheetModal>
@@ -233,17 +241,6 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
         overflow: 'hidden',
-    },
-    handleIndicatorContainer: {
-        position: 'absolute',
-        top: 0,
-        left: '50%',
-        marginLeft: -20,
-        width: 40,
-        height: 4,
-        borderRadius: 2,
-        marginTop: 4,
-        zIndex: 1,
     },
     contentContainer: {
         flex: 1,
