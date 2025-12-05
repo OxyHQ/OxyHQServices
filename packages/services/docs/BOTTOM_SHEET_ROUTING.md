@@ -330,6 +330,25 @@ const MyScreen: React.FC<BaseScreenProps> = ({ goBack }) => {
   - Adds current screen to history
   - Uses `navigate(differentScreen, props)`
 
+### Hardware Back Button (Android)
+
+On Android devices, the hardware back button is automatically intercepted when the bottom sheet is open. The back button follows the same priority logic as the `goBack()` function:
+
+1. **Screen History**: If there's navigation history, navigate back to the previous screen
+2. **Step Navigation**: If on a step-based screen and not on step 0, navigate to the previous step
+3. **Close Sheet**: If no history exists and on step 0, close the bottom sheet
+
+**How It Works:**
+
+- The `BottomSheetRouter` component registers a `BackHandler` listener when the bottom sheet is open
+- When the hardware back button is pressed, it calls the internal `goBack()` function
+- If `goBack()` returns `true` (navigation occurred), the default back behavior is prevented
+- If `goBack()` returns `false` (no navigation, sheet should close), the default behavior is allowed
+
+This ensures that users can navigate back through the bottom sheet's internal navigation stack before the sheet closes, providing a consistent navigation experience across both UI back buttons and hardware back buttons.
+
+**Note:** This behavior only applies when the bottom sheet is open. When the sheet is closed, the back button behaves normally for the rest of the app.
+
 ## Step-Based Screens
 
 Some screens use a multi-step flow (e.g., SignIn, SignUp, RecoverAccount). The router handles step navigation automatically.

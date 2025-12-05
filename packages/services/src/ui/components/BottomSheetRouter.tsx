@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
+import { BackHandler } from 'react-native';
 import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import BottomSheet, { type BottomSheetRef } from './BottomSheet';
 import type { RouteName } from '../navigation/routes';
@@ -12,7 +13,6 @@ import {
     subscribeToBottomSheetState,
     managerShowBottomSheet,
     managerCloseBottomSheet,
-    managerNavigateToStep,
     managerGoBack,
     type BottomSheetRouterState,
 } from '../navigation/bottomSheetManager';
@@ -40,7 +40,7 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
     });
     const sheetRef = useRef<BottomSheetRef>(null);
     const colorScheme = useColorScheme();
-    
+
     // Extract all OxyContext values to pass as props
     // This eliminates the need for screens to import useOxy() directly
     const {
@@ -117,26 +117,26 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
 
         // Check if navigating to the same screen (step navigation within same screen)
         const isSameScreen = screen === state.currentScreen;
-        
+
         // Only add to history if navigating to a different screen
         // Same-screen navigation is for step changes and shouldn't pollute history
-        managerShowBottomSheet(screen, props, { 
-            addToHistory: !isSameScreen 
+        managerShowBottomSheet(screen, props, {
+            addToHistory: !isSameScreen
         });
     }, [state.currentScreen]);
 
     // Track current step for step-based screens
     const currentStepRef = useRef<number | undefined>(state.currentStep ?? state.screenProps?.initialStep);
-    
+
     useEffect(() => {
         currentStepRef.current = state.currentStep ?? state.screenProps?.initialStep;
     }, [state.currentStep, state.screenProps?.initialStep]);
-    
+
     // Check if current screen is step-based (has initialStep prop)
     const isStepBasedScreen = useMemo(() => {
         return state.screenProps?.initialStep !== undefined || state.currentStep !== undefined;
     }, [state.screenProps?.initialStep, state.currentStep]);
-    
+
     // Callback to track step changes from StepBasedScreen
     const handleStepChange = useCallback((step: number, totalSteps: number) => {
         updateBottomSheetState({
@@ -144,24 +144,24 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
         });
         currentStepRef.current = step;
     }, []);
-    
+
     const goBack = useCallback(() => {
         // Priority 1: Check if there's screen history (navigate to previous screen)
         // This takes precedence over step navigation
         if (state.navigationHistory.length > 0) {
             const wentBack = managerGoBack();
             if (wentBack) {
-                return; // Successfully navigated back to previous screen
+                return true; // Successfully navigated back to previous screen
             }
         }
-        
+
         // Priority 2: If on a step-based screen and not on first step, go to previous step
         // Use the most up-to-date step value from state or ref
         const currentStep = state.currentStep ?? currentStepRef.current ?? state.screenProps?.initialStep ?? 0;
-        
+
         if (isStepBasedScreen && currentStep > 0) {
             const previousStep = currentStep - 1;
-            
+
             // Navigate to previous step by updating the screen props
             // This will trigger StepBasedScreen to update via initialStep prop
             updateBottomSheetState({
@@ -171,16 +171,33 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
                 },
                 currentStep: previousStep,
             });
-            
+
             // Also update the ref immediately
             currentStepRef.current = previousStep;
-            
-            return;
+
+            return true; // Successfully navigated to previous step
         }
-        
+
         // Priority 3: No history and on step 0 (or not step-based) - close the sheet
         managerCloseBottomSheet();
+        return false; // No navigation occurred, sheet will close
     }, [isStepBasedScreen, state.screenProps, state.currentStep, state.navigationHistory.length]);
+
+    // Handle Android hardware back button
+    useEffect(() => {
+        if (!state.isOpen) {
+            return;
+        }
+
+        const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
+            // Return true to prevent default if navigation occurred, false to allow closing
+            return goBack();
+        });
+
+        return () => {
+            backHandler.remove();
+        };
+    }, [state.isOpen, goBack]);
 
     const handleClose = useCallback(() => {
         managerCloseBottomSheet();
@@ -200,17 +217,17 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
             goBack,
             onClose: handleClose,
             onAuthenticated: handleAuthenticated,
-            
+
             // Theme props
             theme: colorScheme ?? 'light',
             currentScreen: state.currentScreen ?? undefined,
-            
+
             // Step navigation - pass initialStep from state if available
             initialStep: state.currentStep ?? state.screenProps?.initialStep,
-            
+
             // Step change callback for step-based screens
             onStepChange: handleStepChange,
-            
+
             // OxyContext values - injected as props
             user,
             sessions,
@@ -235,9 +252,9 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
             logoutAllDeviceSessions,
             updateDeviceName,
             oxyServices,
-            
+
             // Screen-specific props from navigation (but don't override initialStep if state.currentStep is set)
-            ...(state.currentStep !== undefined 
+            ...(state.currentStep !== undefined
                 ? { ...state.screenProps, initialStep: state.currentStep }
                 : state.screenProps
             ),
