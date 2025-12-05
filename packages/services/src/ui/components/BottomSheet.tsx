@@ -174,11 +174,14 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
                 styles.contentContainer,
                 {
                     paddingTop: 0,
+                    paddingBottom: 0,
+                    paddingVertical: 0,
                     marginTop: 0,
-                    paddingBottom: Math.max(insets.bottom, 16) + keyboardHeight,
+                    marginBottom: 0,
+                    marginVertical: 0,
                 },
             ],
-            [insets.bottom, keyboardHeight],
+            [],
         );
 
         return (
@@ -238,7 +241,11 @@ const styles = StyleSheet.create({
     contentContainer: {
         flex: 1,
         paddingTop: 0,
+        paddingBottom: 0,
+        paddingVertical: 0,
         marginTop: 0,
+        marginBottom: 0,
+        marginVertical: 0,
     },
 });
 
