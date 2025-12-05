@@ -2128,20 +2128,19 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         }
                     }}
                 >
-                    <Ionicons
-                        name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'}
-                        size={18}
-                        color={themeStyles.textColor}
-                    />
-                    <Ionicons
+                    <MaterialCommunityIcons
                         name={
                             sortBy === 'date' ? 'calendar' :
-                                sortBy === 'size' ? 'resize' :
-                                    sortBy === 'name' ? 'text' : 'document'
+                                sortBy === 'size' ? 'sort-numeric-variant' :
+                                    sortBy === 'name' ? 'sort-alphabetical-variant' : 'file-document-outline'
                         }
                         size={16}
                         color={themeStyles.textColor}
-                        style={{ marginLeft: 4 }}
+                    />
+                    <MaterialCommunityIcons
+                        name={sortOrder === 'asc' ? 'arrow-up' : 'arrow-down'}
+                        size={14}
+                        color={themeStyles.colors.secondaryText}
                     />
                 </TouchableOpacity>
                 {user?.id === targetUserId && (!selectMode || (selectMode && allowUploadInSelectMode)) && (

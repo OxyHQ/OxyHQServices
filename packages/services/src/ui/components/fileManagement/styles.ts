@@ -125,8 +125,9 @@ export const fileManagementStyles = StyleSheet.create({
         paddingHorizontal: 14,
         paddingVertical: 10,
         marginHorizontal: 12,
-        marginTop: 12,
-        borderRadius: 18,
+        marginTop: 0,
+        marginBottom: 12,
+        borderRadius: 999,
         gap: 10,
     },
     searchInput: {
@@ -146,7 +147,8 @@ export const fileManagementStyles = StyleSheet.create({
         paddingHorizontal: 14,
         paddingVertical: 10,
         marginHorizontal: 12,
-        marginTop: 12,
+        marginTop: 0,
+        marginBottom: 12,
         borderRadius: 18,
     },
     statItem: {
@@ -172,7 +174,9 @@ export const fileManagementStyles = StyleSheet.create({
         flex: 1,
     },
     scrollContainer: {
-        padding: 12,
+        paddingHorizontal: 12,
+        paddingTop: 0,
+        paddingBottom: 12,
     },
     fileItem: {
         flexDirection: 'row',
@@ -691,8 +695,8 @@ export const fileManagementStyles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'space-between',
         paddingHorizontal: 12,
-        paddingTop: 8,
-        paddingBottom: 4,
+        paddingTop: 12,
+        paddingBottom: 12,
         gap: 12,
     },
     viewModeScroll: {
