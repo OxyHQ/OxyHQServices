@@ -43,7 +43,9 @@ export const FileViewer: React.FC<FileViewerProps> = ({
     const isVideo = file.contentType.startsWith('video/');
     const isAudio = file.contentType.startsWith('audio/');
 
-    const backgroundColor = themeStyles.backgroundColor;
+    const backgroundColor = isImage && fileContent
+        ? 'transparent'
+        : themeStyles.backgroundColor;
     const borderColor = themeStyles.borderColor;
 
     const fileDetailItems = useMemo(() => {
@@ -101,31 +103,36 @@ export const FileViewer: React.FC<FileViewerProps> = ({
 
     return (
         <View style={[fileManagementStyles.fileViewerContainer, { backgroundColor }]}>
-            {/* File Viewer Header */}
-            <View style={[fileManagementStyles.fileViewerHeader, { borderBottomColor: borderColor }]}>
-                <TouchableOpacity
-                    style={fileManagementStyles.backButton}
-                    onPress={onClose}
-                >
-                    <MaterialCommunityIcons name="arrow-left" size={24} color={themeStyles.textColor} />
-                </TouchableOpacity>
-                <View style={fileManagementStyles.fileViewerTitleContainer}>
-                    <Text style={[fileManagementStyles.fileViewerTitle, { color: themeStyles.textColor }]} numberOfLines={1}>
-                        {file.filename}
-                    </Text>
-                    <Text style={[fileManagementStyles.fileViewerSubtitle, { color: themeStyles.colors.secondaryText }]}>
-                        {formatFileSize(file.length)} • {file.contentType}
-                    </Text>
-                </View>
-                <View style={fileManagementStyles.fileViewerActions}>
-                    <TouchableOpacity
-                        style={[fileManagementStyles.actionButton, { backgroundColor: themeStyles.colors.card }]}
-                        onPress={() => onDownload(file.id, file.filename)}
-                    >
-                        <MaterialCommunityIcons name="download" size={18} color={themeStyles.primaryColor} />
-                    </TouchableOpacity>
-                </View>
-            </View>
+            {/* Blurred Background Image - only for images */}
+            {isImage && fileContent && (
+                <>
+                    <ExpoImage
+                        source={{ uri: fileContent }}
+                        style={fileManagementStyles.backgroundImage}
+                        contentFit="cover"
+                        blurRadius={50}
+                        transition={120}
+                        cachePolicy="memory-disk"
+                    />
+                    <View style={[fileManagementStyles.backgroundOverlay, { backgroundColor: themeStyles.isDarkTheme ? 'rgba(0, 0, 0, 0.6)' : 'rgba(255, 255, 255, 0.85)' }]} />
+                </>
+            )}
+
+            {/* Floating Back Button */}
+            <TouchableOpacity
+                style={[fileManagementStyles.floatingBackButton, { backgroundColor: themeStyles.colors.card }]}
+                onPress={onClose}
+            >
+                <MaterialCommunityIcons name="arrow-left" size={20} color={themeStyles.textColor} />
+            </TouchableOpacity>
+
+            {/* Floating Download Button */}
+            <TouchableOpacity
+                style={[fileManagementStyles.floatingDownloadButton, { backgroundColor: themeStyles.colors.card }]}
+                onPress={() => onDownload(file.id, file.filename)}
+            >
+                <MaterialCommunityIcons name="download" size={20} color={themeStyles.primaryColor} />
+            </TouchableOpacity>
 
             {/* File Content */}
             <ScrollView
@@ -143,7 +150,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                     <View style={fileManagementStyles.imageContainer}>
                         <ExpoImage
                             source={{ uri: fileContent }}
-                            style={{ width: '100%', height: 400 }}
+                            style={fileManagementStyles.previewImage}
                             contentFit="contain"
                             transition={120}
                             cachePolicy="memory-disk"
@@ -276,16 +283,8 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             <GroupedSection items={fileDetailItems} />
                         </View>
 
-                        <View style={fileManagementStyles.fileDetailsActions}>
-                            <TouchableOpacity
-                                style={[fileManagementStyles.fileDetailsActionButton, { backgroundColor: themeStyles.primaryColor }]}
-                                onPress={() => onDownload(file.id, file.filename)}
-                            >
-                                <MaterialCommunityIcons name="download" size={16} color="#FFFFFF" />
-                                <Text style={fileManagementStyles.fileDetailsActionText}>Download</Text>
-                            </TouchableOpacity>
-
-                            {isOwner && (
+                        {isOwner && (
+                            <View style={fileManagementStyles.fileDetailsActions}>
                                 <TouchableOpacity
                                     style={[fileManagementStyles.fileDetailsActionButton, { backgroundColor: themeStyles.dangerColor }]}
                                     onPress={() => {
@@ -296,8 +295,8 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                                     <MaterialCommunityIcons name="delete" size={16} color="#FFFFFF" />
                                     <Text style={fileManagementStyles.fileDetailsActionText}>Delete</Text>
                                 </TouchableOpacity>
-                            )}
-                        </View>
+                            </View>
+                        )}
                     </>
                 )}
             </View>
