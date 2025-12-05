@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
+import React, { useMemo, useState, useEffect } from 'react';
+import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { FileMetadata } from '../../../models/interfaces';
@@ -47,6 +47,58 @@ export const FileViewer: React.FC<FileViewerProps> = ({
         ? 'transparent'
         : themeStyles.backgroundColor;
     const borderColor = themeStyles.borderColor;
+
+    const [containerWidth, setContainerWidth] = useState<number>(0);
+    const [imageDimensions, setImageDimensions] = useState<{ width: number; height: number } | null>(null);
+
+    // Load image dimensions when image content is available
+    useEffect(() => {
+        if (isImage && fileContent) {
+            Image.getSize(
+                fileContent,
+                (width, height) => {
+                    setImageDimensions({ width, height });
+                },
+                () => {
+                    // Fallback if dimensions can't be loaded
+                    setImageDimensions({ width: 400, height: 400 });
+                }
+            );
+        } else {
+            setImageDimensions(null);
+        }
+    }, [isImage, fileContent]);
+
+    // Calculate display size based on natural dimensions and max constraints
+    // Use natural size when smaller, scale down when larger
+    const imageDisplaySize = useMemo(() => {
+        if (!imageDimensions || !containerWidth) {
+            // Return default size while loading
+            return { width: 400, height: 400 };
+        }
+        
+        const maxWidth = containerWidth - 24; // Account for padding
+        const maxHeight = 500;
+        const aspectRatio = imageDimensions.width / imageDimensions.height;
+        
+        // Start with natural dimensions
+        let displayWidth = imageDimensions.width;
+        let displayHeight = imageDimensions.height;
+        
+        // Only scale down if exceeds max width
+        if (displayWidth > maxWidth) {
+            displayWidth = maxWidth;
+            displayHeight = displayWidth / aspectRatio;
+        }
+        
+        // Only scale down if exceeds max height
+        if (displayHeight > maxHeight) {
+            displayHeight = maxHeight;
+            displayWidth = displayHeight * aspectRatio;
+        }
+        
+        return { width: displayWidth, height: displayHeight };
+    }, [imageDimensions, containerWidth]);
 
     const fileDetailItems = useMemo(() => {
         const items = [
@@ -147,18 +199,39 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                         </Text>
                     </View>
                 ) : isImage && fileContent ? (
-                    <View style={fileManagementStyles.imageContainer}>
-                        <ExpoImage
-                            source={{ uri: fileContent }}
-                            style={fileManagementStyles.previewImage}
-                            contentFit="contain"
-                            transition={120}
-                            cachePolicy="memory-disk"
-                            onError={() => {
-                                // Image failed to load
-                            }}
-                            accessibilityLabel={file.filename}
-                        />
+                    <View 
+                        style={fileManagementStyles.imageContainer}
+                        onLayout={(e) => {
+                            const width = e.nativeEvent.layout.width;
+                            if (width > 0) {
+                                setContainerWidth(width);
+                            }
+                        }}
+                    >
+                        <View 
+                            style={[
+                                fileManagementStyles.imageWrapper,
+                                {
+                                    width: imageDisplaySize.width,
+                                    height: imageDisplaySize.height,
+                                }
+                            ]}
+                        >
+                            <ExpoImage
+                                source={{ uri: fileContent }}
+                                style={{
+                                    width: imageDisplaySize.width,
+                                    height: imageDisplaySize.height,
+                                }}
+                                contentFit="contain"
+                                transition={120}
+                                cachePolicy="memory-disk"
+                                onError={() => {
+                                    // Image failed to load
+                                }}
+                                accessibilityLabel={file.filename}
+                            />
+                        </View>
                     </View>
                 ) : isText && fileContent ? (
                     <View style={[fileManagementStyles.textContainer, { backgroundColor: themeStyles.colors.card }]}>
