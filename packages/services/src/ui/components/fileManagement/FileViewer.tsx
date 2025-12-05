@@ -1,11 +1,12 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import { Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { FileMetadata } from '../../../models/interfaces';
-import { formatFileSize, getFileIcon } from '../../utils/fileManagement';
+import { formatFileSize } from '../../utils/fileManagement';
 import { fileManagementStyles } from './styles';
 import type { ThemeStyles } from '../../hooks/useThemeStyles';
+import { GroupedSection } from '../GroupedSection';
 
 interface FileViewerProps {
     file: FileMetadata;
@@ -45,6 +46,59 @@ export const FileViewer: React.FC<FileViewerProps> = ({
     const backgroundColor = themeStyles.backgroundColor;
     const borderColor = themeStyles.borderColor;
 
+    const fileDetailItems = useMemo(() => {
+        const items = [
+            {
+                id: 'filename',
+                icon: 'document-text',
+                iconColor: themeStyles.colors.iconSecurity,
+                title: 'File Name',
+                subtitle: file.filename,
+            },
+            {
+                id: 'size',
+                icon: 'server',
+                iconColor: themeStyles.colors.iconStorage,
+                title: 'Size',
+                subtitle: formatFileSize(file.length),
+            },
+            {
+                id: 'type',
+                icon: 'code',
+                iconColor: themeStyles.colors.iconData,
+                title: 'Type',
+                subtitle: file.contentType,
+            },
+            {
+                id: 'uploaded',
+                icon: 'time',
+                iconColor: themeStyles.colors.iconPersonalInfo,
+                title: 'Uploaded',
+                subtitle: new Date(file.uploadDate).toLocaleString(),
+            },
+        ];
+
+        if (file.metadata?.description) {
+            items.push({
+                id: 'description',
+                icon: 'text',
+                iconColor: themeStyles.colors.iconData,
+                title: 'Description',
+                subtitle: file.metadata.description,
+            });
+        }
+
+        items.push({
+            id: 'fileId',
+            icon: 'key',
+            iconColor: themeStyles.colors.iconSecurity,
+            title: 'File ID',
+            subtitle: file.id,
+        });
+
+        return items;
+    }, [file, themeStyles.colors]);
+
     return (
         <View style={[fileManagementStyles.fileViewerContainer, { backgroundColor }]}>
             {/* File Viewer Header */}
@@ -53,147 +107,29 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                     style={fileManagementStyles.backButton}
                     onPress={onClose}
                 >
-                    <Ionicons name="arrow-back" size={24} color={themeStyles.textColor} />
+                    <MaterialCommunityIcons name="arrow-left" size={24} color={themeStyles.textColor} />
                 </TouchableOpacity>
                 <View style={fileManagementStyles.fileViewerTitleContainer}>
                     <Text style={[fileManagementStyles.fileViewerTitle, { color: themeStyles.textColor }]} numberOfLines={1}>
                         {file.filename}
                     </Text>
-                    <Text style={[fileManagementStyles.fileViewerSubtitle, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                    <Text style={[fileManagementStyles.fileViewerSubtitle, { color: themeStyles.colors.secondaryText }]}>
                         {formatFileSize(file.length)} • {file.contentType}
                     </Text>
                 </View>
                 <View style={fileManagementStyles.fileViewerActions}>
                     <TouchableOpacity
-                        style={[fileManagementStyles.actionButton, { backgroundColor: themeStyles.isDarkTheme ? '#333333' : '#F0F0F0' }]}
+                        style={[fileManagementStyles.actionButton, { backgroundColor: themeStyles.colors.card }]}
                         onPress={() => onDownload(file.id, file.filename)}
                     >
-                        <Ionicons name="download" size={20} color={themeStyles.primaryColor} />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[
-                            fileManagementStyles.actionButton,
-                            {
-                                backgroundColor: showFileDetailsInViewer
-                                    ? themeStyles.primaryColor
-                                    : (themeStyles.isDarkTheme ? '#333333' : '#F0F0F0')
-                            }
-                        ]}
-                        onPress={onToggleDetails}
-                    >
-                        <Ionicons
-                            name={showFileDetailsInViewer ? "chevron-up" : "information-circle"}
-                            size={20}
-                            color={showFileDetailsInViewer ? "#FFFFFF" : themeStyles.primaryColor}
-                        />
+                        <MaterialCommunityIcons name="download" size={18} color={themeStyles.primaryColor} />
                     </TouchableOpacity>
                 </View>
             </View>
 
-            {/* File Details Section */}
-            {showFileDetailsInViewer && (
-                <View style={[fileManagementStyles.fileDetailsSection, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }]}>
-                    <View style={fileManagementStyles.fileDetailsSectionHeader}>
-                        <Text style={[fileManagementStyles.fileDetailsSectionTitle, { color: themeStyles.textColor }]}>
-                            File Details
-                        </Text>
-                        <TouchableOpacity
-                            style={fileManagementStyles.fileDetailsSectionToggle}
-                            onPress={onToggleDetails}
-                        >
-                            <Ionicons name="chevron-up" size={20} color={themeStyles.isDarkTheme ? '#BBBBBB' : '#666666'} />
-                        </TouchableOpacity>
-                    </View>
-
-                    <View style={fileManagementStyles.fileDetailInfo}>
-                        <View style={fileManagementStyles.detailRow}>
-                            <Text style={[fileManagementStyles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                File Name:
-                            </Text>
-                            <Text style={[fileManagementStyles.detailValue, { color: themeStyles.textColor }]}>
-                                {file.filename}
-                            </Text>
-                        </View>
-
-                        <View style={fileManagementStyles.detailRow}>
-                            <Text style={[fileManagementStyles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                Size:
-                            </Text>
-                            <Text style={[fileManagementStyles.detailValue, { color: themeStyles.textColor }]}>
-                                {formatFileSize(file.length)}
-                            </Text>
-                        </View>
-
-                        <View style={fileManagementStyles.detailRow}>
-                            <Text style={[fileManagementStyles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                Type:
-                            </Text>
-                            <Text style={[fileManagementStyles.detailValue, { color: themeStyles.textColor }]}>
-                                {file.contentType}
-                            </Text>
-                        </View>
-
-                        <View style={fileManagementStyles.detailRow}>
-                            <Text style={[fileManagementStyles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                Uploaded:
-                            </Text>
-                            <Text style={[fileManagementStyles.detailValue, { color: themeStyles.textColor }]}>
-                                {new Date(file.uploadDate).toLocaleString()}
-                            </Text>
-                        </View>
-
-                        {file.metadata?.description && (
-                            <View style={fileManagementStyles.detailRow}>
-                                <Text style={[fileManagementStyles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                    Description:
-                                </Text>
-                                <Text style={[fileManagementStyles.detailValue, { color: themeStyles.textColor }]}>
-                                    {file.metadata.description}
-                                </Text>
-                            </View>
-                        )}
-
-                        <View style={fileManagementStyles.detailRow}>
-                            <Text style={[fileManagementStyles.detailLabel, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
-                                File ID:
-                            </Text>
-                            <Text style={[fileManagementStyles.detailValue, { color: themeStyles.textColor, fontSize: 12, fontFamily: 'monospace' }]}>
-                                {file.id}
-                            </Text>
-                        </View>
-                    </View>
-
-                    <View style={fileManagementStyles.fileDetailsActions}>
-                        <TouchableOpacity
-                            style={[fileManagementStyles.fileDetailsActionButton, { backgroundColor: themeStyles.primaryColor }]}
-                            onPress={() => onDownload(file.id, file.filename)}
-                        >
-                            <Ionicons name="download" size={16} color="#FFFFFF" />
-                            <Text style={fileManagementStyles.fileDetailsActionText}>Download</Text>
-                        </TouchableOpacity>
-
-                        {isOwner && (
-                            <TouchableOpacity
-                                style={[fileManagementStyles.fileDetailsActionButton, { backgroundColor: themeStyles.dangerColor }]}
-                                onPress={() => {
-                                    onClose();
-                                    onDelete(file.id, file.filename);
-                                }}
-                            >
-                                <Ionicons name="trash" size={16} color="#FFFFFF" />
-                                <Text style={fileManagementStyles.fileDetailsActionText}>Delete</Text>
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                </View>
-            )}
-
             {/* File Content */}
             <ScrollView
-                style={[
-                    fileManagementStyles.fileViewerContent,
-                    showFileDetailsInViewer && fileManagementStyles.fileViewerContentWithDetails
-                ]}
+                style={fileManagementStyles.fileViewerContent}
                 contentContainerStyle={fileManagementStyles.fileViewerContentContainer}
             >
                 {loadingFileContent ? (
@@ -207,7 +143,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                     <View style={fileManagementStyles.imageContainer}>
                         <ExpoImage
                             source={{ uri: fileContent }}
-                            style={{ width: '100%', height: 400, borderRadius: 8 }}
+                            style={{ width: '100%', height: 400 }}
                             contentFit="contain"
                             transition={120}
                             cachePolicy="memory-disk"
@@ -218,7 +154,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                         />
                     </View>
                 ) : isText && fileContent ? (
-                    <View style={[fileManagementStyles.textContainer, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor }]}>
+                    <View style={[fileManagementStyles.textContainer, { backgroundColor: themeStyles.colors.card }]}>
                         <ScrollView style={{ flex: 1 }} nestedScrollEnabled>
                             <Text style={[fileManagementStyles.textContent, { color: themeStyles.textColor }]}>
                                 {fileContent}
@@ -227,15 +163,15 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                     </View>
                 ) : isPDF && fileContent ? (
                     <View style={fileManagementStyles.unsupportedFileContainer}>
-                        <Ionicons
-                            name={getFileIcon(file.contentType) as any}
+                        <MaterialCommunityIcons
+                            name="file-pdf-box"
                             size={64}
-                            color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'}
+                            color={themeStyles.colors.secondaryText}
                         />
                         <Text style={[fileManagementStyles.unsupportedFileTitle, { color: themeStyles.textColor }]}>
                             PDF Preview Not Available
                         </Text>
-                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: themeStyles.colors.secondaryText }]}>
                             PDF files cannot be previewed in this viewer.{'\n'}
                             Download the file to view its contents.
                         </Text>
@@ -243,21 +179,21 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             style={[fileManagementStyles.downloadButtonLarge, { backgroundColor: themeStyles.primaryColor }]}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
-                            <Ionicons name="download" size={20} color="#FFFFFF" />
+                            <MaterialCommunityIcons name="download" size={18} color="#FFFFFF" />
                             <Text style={fileManagementStyles.downloadButtonText}>Download PDF</Text>
                         </TouchableOpacity>
                     </View>
                 ) : isVideo && fileContent ? (
                     <View style={fileManagementStyles.unsupportedFileContainer}>
-                        <Ionicons
-                            name="videocam"
+                        <MaterialCommunityIcons
+                            name="video-outline"
                             size={64}
-                            color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'}
+                            color={themeStyles.colors.secondaryText}
                         />
                         <Text style={[fileManagementStyles.unsupportedFileTitle, { color: themeStyles.textColor }]}>
                             Video Playback Not Available
                         </Text>
-                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: themeStyles.colors.secondaryText }]}>
                             Video playback is not supported in this viewer.{'\n'}
                             Download the file to view it.
                         </Text>
@@ -265,21 +201,21 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             style={[fileManagementStyles.downloadButtonLarge, { backgroundColor: themeStyles.primaryColor }]}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
-                            <Ionicons name="download" size={20} color="#FFFFFF" />
+                            <MaterialCommunityIcons name="download" size={18} color="#FFFFFF" />
                             <Text style={fileManagementStyles.downloadButtonText}>Download Video</Text>
                         </TouchableOpacity>
                     </View>
                 ) : isAudio && fileContent ? (
                     <View style={fileManagementStyles.unsupportedFileContainer}>
-                        <Ionicons
-                            name="musical-notes"
+                        <MaterialCommunityIcons
+                            name="music-note-outline"
                             size={64}
-                            color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'}
+                            color={themeStyles.colors.secondaryText}
                         />
                         <Text style={[fileManagementStyles.unsupportedFileTitle, { color: themeStyles.textColor }]}>
                             Audio Playback Not Available
                         </Text>
-                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: themeStyles.colors.secondaryText }]}>
                             Audio playback is not supported in this viewer.{'\n'}
                             Download the file to listen to it.
                         </Text>
@@ -287,21 +223,21 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             style={[fileManagementStyles.downloadButtonLarge, { backgroundColor: themeStyles.primaryColor }]}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
-                            <Ionicons name="download" size={20} color="#FFFFFF" />
+                            <MaterialCommunityIcons name="download" size={18} color="#FFFFFF" />
                             <Text style={fileManagementStyles.downloadButtonText}>Download Audio</Text>
                         </TouchableOpacity>
                     </View>
                 ) : (
                     <View style={fileManagementStyles.unsupportedFileContainer}>
-                        <Ionicons
-                            name={getFileIcon(file.contentType) as any}
+                        <MaterialCommunityIcons
+                            name="file-outline"
                             size={64}
-                            color={themeStyles.isDarkTheme ? '#666666' : '#CCCCCC'}
+                            color={themeStyles.colors.secondaryText}
                         />
                         <Text style={[fileManagementStyles.unsupportedFileTitle, { color: themeStyles.textColor }]}>
                             Preview Not Available
                         </Text>
-                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: themeStyles.isDarkTheme ? '#BBBBBB' : '#666666' }]}>
+                        <Text style={[fileManagementStyles.unsupportedFileDescription, { color: themeStyles.colors.secondaryText }]}>
                             This file type cannot be previewed.{'\n'}
                             Download the file to view its contents.
                         </Text>
@@ -309,12 +245,62 @@ export const FileViewer: React.FC<FileViewerProps> = ({
                             style={[fileManagementStyles.downloadButtonLarge, { backgroundColor: themeStyles.primaryColor }]}
                             onPress={() => onDownload(file.id, file.filename)}
                         >
-                            <Ionicons name="download" size={20} color="#FFFFFF" />
+                            <MaterialCommunityIcons name="download" size={18} color="#FFFFFF" />
                             <Text style={fileManagementStyles.downloadButtonText}>Download File</Text>
                         </TouchableOpacity>
                     </View>
                 )}
             </ScrollView>
+
+            {/* File Details Section - at bottom */}
+            <View style={[fileManagementStyles.fileDetailsSection, { backgroundColor: themeStyles.colors.card }]}>
+                <View style={fileManagementStyles.fileDetailsSectionHeader}>
+                    <Text style={[fileManagementStyles.fileDetailsSectionTitle, { color: themeStyles.textColor }]}>
+                        File Details
+                    </Text>
+                    <TouchableOpacity
+                        style={fileManagementStyles.fileDetailsSectionToggle}
+                        onPress={onToggleDetails}
+                    >
+                        <MaterialCommunityIcons
+                            name={showFileDetailsInViewer ? "chevron-up" : "chevron-down"}
+                            size={20}
+                            color={themeStyles.colors.secondaryText}
+                        />
+                    </TouchableOpacity>
+                </View>
+
+                {showFileDetailsInViewer && (
+                    <>
+                        <View style={fileManagementStyles.fileDetailsSectionContent}>
+                            <GroupedSection items={fileDetailItems} />
+                        </View>
+
+                        <View style={fileManagementStyles.fileDetailsActions}>
+                            <TouchableOpacity
+                                style={[fileManagementStyles.fileDetailsActionButton, { backgroundColor: themeStyles.primaryColor }]}
+                                onPress={() => onDownload(file.id, file.filename)}
+                            >
+                                <MaterialCommunityIcons name="download" size={16} color="#FFFFFF" />
+                                <Text style={fileManagementStyles.fileDetailsActionText}>Download</Text>
+                            </TouchableOpacity>
+
+                            {isOwner && (
+                                <TouchableOpacity
+                                    style={[fileManagementStyles.fileDetailsActionButton, { backgroundColor: themeStyles.dangerColor }]}
+                                    onPress={() => {
+                                        onClose();
+                                        onDelete(file.id, file.filename);
+                                    }}
+                                >
+                                    <MaterialCommunityIcons name="delete" size={16} color="#FFFFFF" />
+                                    <Text style={fileManagementStyles.fileDetailsActionText}>Delete</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    </>
+                )}
+            </View>
         </View>
     );
 };

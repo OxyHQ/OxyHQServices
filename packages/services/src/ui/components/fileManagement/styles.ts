@@ -35,7 +35,7 @@ export const fileManagementStyles = StyleSheet.create({
     },
     backButton: {
         padding: 12,
-        borderRadius: 12,
+        borderRadius: 999,
         alignItems: 'center',
         justifyContent: 'center',
         minWidth: 44,
@@ -310,12 +310,9 @@ export const fileManagementStyles = StyleSheet.create({
     actionButton: {
         width: 36,
         height: 36,
-        borderRadius: 18,
+        borderRadius: 999,
         alignItems: 'center',
         justifyContent: 'center',
-        borderWidth: 1,
-        borderColor: '#E0E0E0',
-        backgroundColor: 'transparent',
     },
     emptyState: {
         alignItems: 'center',
@@ -541,13 +538,13 @@ export const fileManagementStyles = StyleSheet.create({
     fileViewerHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
         borderBottomWidth: 1,
     },
     fileViewerTitleContainer: {
         flex: 1,
-        marginHorizontal: 16,
+        marginHorizontal: 12,
     },
     fileViewerTitle: {
         fontSize: 18,
@@ -570,7 +567,8 @@ export const fileManagementStyles = StyleSheet.create({
     },
     fileViewerContentContainer: {
         flexGrow: 1,
-        padding: 14,
+        padding: 12,
+        paddingBottom: 8,
     },
     fileViewerLoading: {
         flex: 1,
@@ -585,11 +583,13 @@ export const fileManagementStyles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         flex: 1,
+        borderRadius: 24,
+        overflow: 'hidden',
     },
     textContainer: {
         flex: 1,
-        borderRadius: 10,
-        borderWidth: 1,
+        borderRadius: 18,
+        borderWidth: 0,
         padding: 12,
         minHeight: 180,
         maxHeight: '80%',
@@ -603,7 +603,7 @@ export const fileManagementStyles = StyleSheet.create({
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        paddingVertical: 40,
+        paddingVertical: 32,
         paddingHorizontal: 24,
     },
     unsupportedFileTitle: {
@@ -625,7 +625,7 @@ export const fileManagementStyles = StyleSheet.create({
         alignItems: 'center',
         paddingHorizontal: 18,
         paddingVertical: 12,
-        borderRadius: 20,
+        borderRadius: 999,
         gap: 8,
     },
     downloadButtonText: {
@@ -650,11 +650,17 @@ export const fileManagementStyles = StyleSheet.create({
         fontStyle: 'italic',
     },
     fileDetailsSection: {
-        margin: 12,
-        marginTop: 0,
-        padding: 14,
-        borderRadius: 10,
-        borderWidth: 1,
+        marginHorizontal: 12,
+        marginTop: 8,
+        marginBottom: 12,
+        padding: 0,
+        borderRadius: 18,
+        borderWidth: 0,
+        overflow: 'hidden',
+    },
+    fileDetailsSectionContent: {
+        paddingHorizontal: 12,
+        paddingBottom: 8,
     },
     fileDetailsSectionTitle: {
         fontSize: 18,
@@ -666,7 +672,9 @@ export const fileManagementStyles = StyleSheet.create({
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 16,
+        paddingHorizontal: 12,
+        paddingTop: 10,
+        paddingBottom: 6,
     },
     fileDetailsSectionToggle: {
         padding: 4,
@@ -674,7 +682,9 @@ export const fileManagementStyles = StyleSheet.create({
     fileDetailsActions: {
         flexDirection: 'row',
         gap: 12,
-        marginTop: 16,
+        marginTop: 8,
+        paddingHorizontal: 12,
+        paddingBottom: 10,
     },
     fileDetailsActionButton: {
         flex: 1,
@@ -682,7 +692,7 @@ export const fileManagementStyles = StyleSheet.create({
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: 12,
-        borderRadius: 8,
+        borderRadius: 999,
         gap: 6,
     },
     fileDetailsActionText: {
