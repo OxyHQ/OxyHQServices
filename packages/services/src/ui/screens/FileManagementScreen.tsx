@@ -16,7 +16,7 @@ import {
 import { Image as ExpoImage } from 'expo-image';
 import type { BaseScreenProps } from '../navigation/types';
 import { toast } from '../../lib/sonner';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import type { FileMetadata } from '../../models/interfaces';
 import { useFileStore, useFiles, useUploading as useUploadingStore, useUploadAggregateProgress, useDeleting as useDeletingStore } from '../stores/fileStore';
 import Header from '../components/Header';
@@ -39,6 +39,58 @@ import { fileManagementStyles } from '../components/fileManagement/styles';
 
 // Exporting props & callback types so external callers (e.g. showBottomSheet config objects) can annotate
 export type OnConfirmFileSelection = (files: FileMetadata[]) => void;
+
+// Animated button component for smooth transitions
+const AnimatedButton: React.FC<{
+    isSelected: boolean;
+    onPress: () => void;
+    icon: string;
+    primaryColor: string;
+    textColor: string;
+    style: any;
+}> = ({ isSelected, onPress, icon, primaryColor, textColor, style }) => {
+    const animatedValue = useRef(new Animated.Value(isSelected ? 1 : 0)).current;
+
+    useEffect(() => {
+        Animated.timing(animatedValue, {
+            toValue: isSelected ? 1 : 0,
+            duration: 200,
+            easing: Easing.out(Easing.ease),
+            useNativeDriver: false,
+        }).start();
+    }, [isSelected, animatedValue]);
+
+    const backgroundColor = animatedValue.interpolate({
+        inputRange: [0, 1],
+        outputRange: ['transparent', primaryColor],
+    });
+
+    const iconColor = animatedValue.interpolate({
+        inputRange: [0, 1],
+        outputRange: [textColor, '#FFFFFF'],
+    });
+
+    return (
+        <TouchableOpacity onPress={onPress} activeOpacity={0.7}>
+            <Animated.View
+                style={[
+                    style,
+                    {
+                        backgroundColor,
+                    },
+                ]}
+            >
+                <Animated.View>
+                    <MaterialCommunityIcons
+                        name={icon as any}
+                        size={16}
+                        color={isSelected ? '#FFFFFF' : textColor}
+                    />
+                </Animated.View>
+            </Animated.View>
+        </TouchableOpacity>
+    );
+};
 
 export interface FileManagementScreenProps extends BaseScreenProps {
     userId?: string;
@@ -2018,71 +2070,46 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             backgroundColor: themeStyles.colors.card,
                         }
                     ]}>
-                        <TouchableOpacity
-                            style={[
-                                fileManagementStyles.viewModeButton,
-                                viewMode === 'all' && { backgroundColor: themeStyles.primaryColor }
-                            ]}
+                        <AnimatedButton
+                            isSelected={viewMode === 'all'}
                             onPress={() => setViewMode('all')}
-                        >
-                            <Ionicons
-                                name="folder"
-                                size={18}
-                                color={viewMode === 'all' ? '#FFFFFF' : themeStyles.textColor}
-                            />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[
-                                fileManagementStyles.viewModeButton,
-                                viewMode === 'photos' && { backgroundColor: themeStyles.primaryColor }
-                            ]}
+                            icon={viewMode === 'all' ? 'folder' : 'folder-outline'}
+                            primaryColor={themeStyles.primaryColor}
+                            textColor={themeStyles.textColor}
+                            style={fileManagementStyles.viewModeButton}
+                        />
+                        <AnimatedButton
+                            isSelected={viewMode === 'photos'}
                             onPress={() => setViewMode('photos')}
-                        >
-                            <Ionicons
-                                name="images"
-                                size={18}
-                                color={viewMode === 'photos' ? '#FFFFFF' : themeStyles.textColor}
-                            />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[
-                                fileManagementStyles.viewModeButton,
-                                viewMode === 'videos' && { backgroundColor: themeStyles.primaryColor }
-                            ]}
+                            icon={viewMode === 'photos' ? 'image-multiple' : 'image-multiple-outline'}
+                            primaryColor={themeStyles.primaryColor}
+                            textColor={themeStyles.textColor}
+                            style={fileManagementStyles.viewModeButton}
+                        />
+                        <AnimatedButton
+                            isSelected={viewMode === 'videos'}
                             onPress={() => setViewMode('videos')}
-                        >
-                            <Ionicons
-                                name="videocam"
-                                size={18}
-                                color={viewMode === 'videos' ? '#FFFFFF' : themeStyles.textColor}
-                            />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[
-                                fileManagementStyles.viewModeButton,
-                                viewMode === 'documents' && { backgroundColor: themeStyles.primaryColor }
-                            ]}
+                            icon={viewMode === 'videos' ? 'video' : 'video-outline'}
+                            primaryColor={themeStyles.primaryColor}
+                            textColor={themeStyles.textColor}
+                            style={fileManagementStyles.viewModeButton}
+                        />
+                        <AnimatedButton
+                            isSelected={viewMode === 'documents'}
                             onPress={() => setViewMode('documents')}
-                        >
-                            <Ionicons
-                                name="document-text"
-                                size={18}
-                                color={viewMode === 'documents' ? '#FFFFFF' : themeStyles.textColor}
-                            />
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[
-                                fileManagementStyles.viewModeButton,
-                                viewMode === 'audio' && { backgroundColor: themeStyles.primaryColor }
-                            ]}
+                            icon={viewMode === 'documents' ? 'file-document' : 'file-document-outline'}
+                            primaryColor={themeStyles.primaryColor}
+                            textColor={themeStyles.textColor}
+                            style={fileManagementStyles.viewModeButton}
+                        />
+                        <AnimatedButton
+                            isSelected={viewMode === 'audio'}
                             onPress={() => setViewMode('audio')}
-                        >
-                            <Ionicons
-                                name="musical-notes"
-                                size={18}
-                                color={viewMode === 'audio' ? '#FFFFFF' : themeStyles.textColor}
-                            />
-                        </TouchableOpacity>
+                            icon={viewMode === 'audio' ? 'music-note' : 'music-note-outline'}
+                            primaryColor={themeStyles.primaryColor}
+                            textColor={themeStyles.textColor}
+                            style={fileManagementStyles.viewModeButton}
+                        />
                     </View>
                 </ScrollView>
                 <TouchableOpacity

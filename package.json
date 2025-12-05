@@ -47,5 +47,8 @@
   ],
   "author": "OxyHQ",
   "license": "MIT",
-  "dependencies": {}
+  "dependencies": {},
+  "overrides": {
+    "send": "0.19.1"
+  }
 }
