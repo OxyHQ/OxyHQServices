@@ -382,14 +382,26 @@ const MyStepScreen: React.FC<BaseScreenProps> = ({ initialStep = 0 }) => {
 
 ## Keyboard Handling
 
-The bottom sheet automatically adjusts its bottom padding when the keyboard appears, ensuring content is never obscured.
+The bottom sheet automatically adjusts its content padding when the keyboard appears, ensuring content is never obscured while maintaining scrollability.
 
 ### How It Works
 
 1. **Keyboard Detection**: Listens to keyboard show/hide events
-2. **Dynamic Padding**: Adds keyboard height to bottom padding
-3. **Safe Area**: Respects device safe area insets
+2. **Dynamic Padding**: Injects keyboard height + safe area insets into scroll view's bottom padding
+3. **Scroll Support**: Uses `BottomSheetScrollView` for proper scrolling behavior
 4. **Platform Support**: Works on both iOS and Android
+
+### Implementation
+
+The `BottomSheet` component:
+- Tracks keyboard height via keyboard event listeners
+- Calculates total bottom padding (safe area insets + keyboard height)
+- Injects padding into child scroll view's `contentContainerStyle`
+
+This ensures:
+- Content remains scrollable at all times
+- Bottom padding adjusts dynamically when keyboard opens/closes
+- No overlap between content and keyboard
 
 ### Configuration
 

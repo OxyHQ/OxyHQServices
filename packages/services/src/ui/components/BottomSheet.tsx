@@ -2,7 +2,6 @@ import React, { forwardRef, useMemo, useCallback, useImperativeHandle, useState,
 import { View, StyleSheet, Keyboard, Platform } from 'react-native';
 import {
     BottomSheetModal,
-    BottomSheetView,
     BottomSheetBackdrop,
 } from '@gorhom/bottom-sheet';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -70,18 +69,13 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
 
         // Listen to keyboard show/hide events
         useEffect(() => {
-            // Use keyboardDidShow/keyboardDidHide for better accuracy
             const showSubscription = Keyboard.addListener(
                 Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-                (e) => {
-                    setKeyboardHeight(e.endCoordinates.height);
-                }
+                (e) => setKeyboardHeight(e.endCoordinates.height)
             );
             const hideSubscription = Keyboard.addListener(
                 Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-                () => {
-                    setKeyboardHeight(0);
-                }
+                () => setKeyboardHeight(0)
             );
 
             return () => {
@@ -127,16 +121,6 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
             },
         }));
 
-        const handleDismiss = useCallback(() => {
-            onDismiss?.();
-        }, [onDismiss]);
-
-        const handleAnimate = useCallback(
-            (fromIndex: number, toIndex: number) => {
-                onAnimate?.(fromIndex, toIndex);
-            },
-            [onAnimate],
-        );
 
         // Backdrop component
         const renderBackdrop = useCallback(
@@ -168,25 +152,27 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
             [colors, backgroundStyle],
         );
 
-        // Content container style with safe area insets and keyboard height
-        const contentContainerStyle = useMemo(
-            () => [
-                styles.contentContainer,
-                {
-                    padding: 0,
-                    paddingTop: 0,
-                    paddingBottom: insets.bottom + keyboardHeight,
-                    paddingVertical: 0,
-                    paddingHorizontal: 0,
-                    margin: 0,
-                    marginTop: 0,
-                    marginBottom: 0,
-                    marginVertical: 0,
-                    marginHorizontal: 0,
-                },
-            ],
-            [],
+        // Calculate bottom padding for keyboard
+        const bottomPadding = useMemo(
+            () => insets.bottom + keyboardHeight,
+            [insets.bottom, keyboardHeight],
         );
+
+        // Clone children and inject padding if it's a BottomSheetScrollView
+        const childrenWithPadding = useMemo(() => {
+            return React.Children.map(children, (child) => {
+                if (React.isValidElement(child)) {
+                    // Inject bottom padding into the child's contentContainerStyle
+                    return React.cloneElement(child as React.ReactElement<any>, {
+                        contentContainerStyle: [
+                            (child.props as any).contentContainerStyle,
+                            { paddingBottom: bottomPadding },
+                        ],
+                    });
+                }
+                return child;
+            });
+        }, [children, bottomPadding]);
 
         return (
             <BottomSheetModal
@@ -194,8 +180,8 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
                 {...(snapPoints ? { snapPoints } : {})}
                 enablePanDownToClose={enablePanDownToClose}
                 enableDismissOnClose={enableDismissOnClose}
-                onDismiss={handleDismiss}
-                onAnimate={handleAnimate}
+                onDismiss={onDismiss}
+                onAnimate={onAnimate}
                 index={index}
                 keyboardBehavior={keyboardBehavior}
                 keyboardBlurBehavior={keyboardBlurBehavior}
@@ -217,12 +203,7 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
                 ]}
 
             >
-                <BottomSheetView
-                    style={contentContainerStyle}
-                    contentContainerStyle={contentContainerStyle}
-                >
-                    {children}
-                </BottomSheetView>
+                {childrenWithPadding}
             </BottomSheetModal>
         );
     },
@@ -241,19 +222,6 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
         overflow: 'hidden',
-    },
-    contentContainer: {
-        flex: 1,
-        padding: 0,
-        paddingTop: 0,
-        paddingBottom: 0,
-        paddingVertical: 0,
-        paddingHorizontal: 0,
-        margin: 0,
-        marginTop: 0,
-        marginBottom: 0,
-        marginVertical: 0,
-        marginHorizontal: 0,
     },
 });
 

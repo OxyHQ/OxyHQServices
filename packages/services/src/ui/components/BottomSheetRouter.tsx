@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import BottomSheet, { type BottomSheetRef } from './BottomSheet';
 import type { RouteName } from '../navigation/routes';
 import { getScreenComponent, isValidRoute } from '../navigation/routes';
@@ -294,27 +294,15 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
             keyboardBlurBehavior="restore"
             android_keyboardInputMode="adjustResize"
         >
-            <View style={styles.screenContainer}>
+            <BottomSheetScrollView>
                 <ScreenComponent {...screenProps} />
-            </View>
+            </BottomSheetScrollView>
         </BottomSheet>
     );
 };
 
 const BottomSheetRouter = React.memo(BottomSheetRouterComponent);
 BottomSheetRouter.displayName = 'BottomSheetRouter';
-
-const styles = StyleSheet.create({
-    screenContainer: {
-        flex: 1,
-        paddingVertical: 0,
-        paddingTop: 0,
-        paddingBottom: 0,
-        marginVertical: 0,
-        marginTop: 0,
-        marginBottom: 0,
-    },
-});
 
 export default BottomSheetRouter;
 
