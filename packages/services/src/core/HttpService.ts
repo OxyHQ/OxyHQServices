@@ -36,6 +36,7 @@ export interface RequestOptions {
   maxRetries?: number;
   timeout?: number;
   signal?: AbortSignal;
+  headers?: Record<string, string>;
 }
 
 interface RequestConfig extends RequestOptions {
@@ -132,6 +133,38 @@ export class HttpService {
   }
 
   /**
+   * Robust FormData detection that works in browser and Node.js environments
+   * Checks multiple conditions to handle different FormData implementations
+   */
+  private isFormData(data: unknown): boolean {
+    if (!data) {
+      return false;
+    }
+
+    // Primary check: instanceof FormData (works in browser and Node.js with proper polyfills)
+    if (data instanceof FormData) {
+      return true;
+    }
+
+    // Fallback: Check constructor name (handles Node.js polyfills like form-data)
+    if (typeof data === 'object' && data !== null) {
+      const constructorName = data.constructor?.name;
+      if (constructorName === 'FormData' || constructorName === 'FormDataImpl') {
+        return true;
+      }
+
+      // Additional check: Look for FormData-like methods
+      if (typeof (data as any).append === 'function' && 
+          typeof (data as any).get === 'function' &&
+          typeof (data as any).has === 'function') {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  /**
    * Main request method - handles everything in one place
    */
   async request<T = unknown>(config: RequestConfig): Promise<T> {
@@ -173,8 +206,8 @@ export class HttpService {
         // Get auth token (with auto-refresh)
         const authHeader = await this.getAuthHeader();
 
-        // Determine if data is FormData
-        const isFormData = data instanceof FormData;
+        // Determine if data is FormData using robust detection
+        const isFormData = this.isFormData(data);
 
         // Make fetch request
         const controller = new AbortController();
@@ -184,7 +217,7 @@ export class HttpService {
           signal.addEventListener('abort', () => controller.abort());
         }
 
-        // Build headers
+        // Build headers - start with defaults
         const headers: Record<string, string> = {
           'Accept': 'application/json',
         };
@@ -194,8 +227,22 @@ export class HttpService {
           headers['Content-Type'] = 'application/json';
         }
 
+        // Add authorization header if available
         if (authHeader) {
           headers['Authorization'] = authHeader;
+        }
+
+        // Merge custom headers if provided
+        if (config.headers) {
+          Object.entries(config.headers).forEach(([key, value]) => {
+            // For FormData, explicitly remove Content-Type if user tries to set it
+            // The browser/fetch API will set it automatically with the boundary
+            if (isFormData && key.toLowerCase() === 'content-type') {
+              this.logger.debug('Ignoring Content-Type header for FormData - will be set automatically');
+              return;
+            }
+            headers[key] = value;
+          });
         }
 
         const response = await fetch(fullUrl, {
@@ -440,21 +487,63 @@ export class HttpService {
   }
 
   // Convenience methods (for backward compatibility)
+  /**
+   * GET request convenience method
+   */
   async get<T = unknown>(url: string, config?: Omit<RequestConfig, 'method' | 'url'>): Promise<{ data: T }> {
     const result = await this.request<T>({ method: 'GET', url, ...config });
     return { data: result as T };
   }
 
+  /**
+   * POST request convenience method
+   * Supports FormData uploads - Content-Type will be set automatically for FormData
+   * @param url - Request URL
+   * @param data - Request body (can be FormData for file uploads)
+   * @param config - Request configuration including optional headers
+   * @example
+   * ```typescript
+   * const formData = new FormData();
+   * formData.append('file', file);
+   * await api.post('/upload', formData, { headers: { 'X-Custom-Header': 'value' } });
+   * ```
+   */
   async post<T = unknown>(url: string, data?: unknown, config?: Omit<RequestConfig, 'method' | 'url' | 'data'>): Promise<{ data: T }> {
     const result = await this.request<T>({ method: 'POST', url, data, ...config });
     return { data: result as T };
   }
 
+  /**
+   * PUT request convenience method
+   * Supports FormData uploads - Content-Type will be set automatically for FormData
+   * @param url - Request URL
+   * @param data - Request body (can be FormData for file uploads)
+   * @param config - Request configuration including optional headers
+   * @example
+   * ```typescript
+   * const formData = new FormData();
+   * formData.append('file', file);
+   * await api.put('/upload', formData, { headers: { 'X-Custom-Header': 'value' } });
+   * ```
+   */
   async put<T = unknown>(url: string, data?: unknown, config?: Omit<RequestConfig, 'method' | 'url' | 'data'>): Promise<{ data: T }> {
     const result = await this.request<T>({ method: 'PUT', url, data, ...config });
     return { data: result as T };
   }
 
+  /**
+   * PATCH request convenience method
+   * Supports FormData uploads - Content-Type will be set automatically for FormData
+   * @param url - Request URL
+   * @param data - Request body (can be FormData for file uploads)
+   * @param config - Request configuration including optional headers
+   * @example
+   * ```typescript
+   * const formData = new FormData();
+   * formData.append('file', file);
+   * await api.patch('/upload', formData, { headers: { 'X-Custom-Header': 'value' } });
+   * ```
+   */
   async patch<T = unknown>(url: string, data?: unknown, config?: Omit<RequestConfig, 'method' | 'url' | 'data'>): Promise<{ data: T }> {
     const result = await this.request<T>({ method: 'PATCH', url, data, ...config });
     return { data: result as T };
