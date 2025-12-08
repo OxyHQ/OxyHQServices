@@ -1,5 +1,12 @@
 import React, { useRef, useEffect, useCallback } from 'react';
 import { BackHandler, View, StyleSheet, ScrollView, Keyboard, Platform, type StyleProp, type ViewStyle } from 'react-native';
+import Animated, {
+    useSharedValue,
+    useAnimatedStyle,
+    withTiming,
+    runOnJS,
+    type SharedValue,
+} from 'react-native-reanimated';
 import type { RouteName } from '../navigation/routes';
 import { getScreenComponent, isValidRoute } from '../navigation/routes';
 import type { BaseScreenProps } from '../types/navigation';
@@ -41,10 +48,40 @@ export type { BottomSheetRef };
  * - Android back button handling
  * - Minimal props passing (screens use useOxy() for context)
  */
+// Animated screen container for smooth transitions
+const AnimatedScreenContainer: React.FC<{
+    children: React.ReactNode;
+    fadeAnim: SharedValue<number>;
+    scaleAnim: SharedValue<number>;
+    screenKey: string;
+}> = ({ children, fadeAnim, scaleAnim, screenKey }) => {
+    const animatedStyle = useAnimatedStyle(() => ({
+        opacity: fadeAnim.value,
+        transform: [
+            { scale: scaleAnim.value }
+        ]
+    }));
+
+    return (
+        <Animated.View
+            key={screenKey}
+            style={[{ flex: 1 }, animatedStyle]}
+        >
+            {children}
+        </Animated.View>
+    );
+};
+
 const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreenChange, onDismiss }) => {
     const bottomSheetRef = useRef<BottomSheetRef>(null);
     const colorScheme = useColorScheme();
     const colors = Colors[colorScheme ?? 'light'];
+
+    // Animation values for screen transitions
+    const fadeAnim = useSharedValue(1);
+    const scaleAnim = useSharedValue(1);
+    const previousScreenRef = useRef<RouteName | null>(null);
+    const isTransitioningRef = useRef(false);
 
     // Create stable ref object for manager compatibility
     // Manager expects: { current: { present: () => void; dismiss: () => void } | null } | null
@@ -58,11 +95,76 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
     // Single source of truth - subscribe to manager state
     const [state, setState] = React.useState<BottomSheetRouterState>(() => getBottomSheetState());
 
+    // Animate screen transition when screen changes
+    const animateScreenTransition = useCallback((newScreen: RouteName | null, newState: BottomSheetRouterState) => {
+        if (isTransitioningRef.current) {
+            // If already transitioning, queue this state update
+            setTimeout(() => {
+                setState(newState);
+                onScreenChange?.(newScreen);
+            }, 400); // Wait for current transition to complete
+            return;
+        }
+
+        const previousScreen = previousScreenRef.current;
+        const isScreenChange = previousScreen !== null && previousScreen !== newScreen && newScreen !== null;
+
+        if (!isScreenChange) {
+            // First screen or no screen - just set to visible and update state immediately
+            fadeAnim.value = 1;
+            scaleAnim.value = 1;
+            previousScreenRef.current = newScreen;
+            setState(newState);
+            onScreenChange?.(newScreen);
+            return;
+        }
+
+        isTransitioningRef.current = true;
+
+        const applyScreenChange = () => {
+            // Update state after fade-out completes
+            setState(newState);
+            onScreenChange?.(newScreen);
+            previousScreenRef.current = newScreen;
+
+            // Prepare new screen animation
+            fadeAnim.value = 0;
+            scaleAnim.value = 0.98;
+
+            // Animate new screen in
+            fadeAnim.value = withTiming(1, { duration: 220 });
+            scaleAnim.value = withTiming(1, { duration: 220 }, (finished) => {
+                if (finished) {
+                    runOnJS(() => {
+                        isTransitioningRef.current = false;
+                    })();
+                }
+            });
+        };
+
+        // Animate current screen out
+        scaleAnim.value = withTiming(0.98, { duration: 180 });
+        fadeAnim.value = withTiming(0, { duration: 180 }, (finished) => {
+            if (finished) {
+                runOnJS(applyScreenChange)();
+            }
+        });
+    }, [fadeAnim, scaleAnim, onScreenChange]);
+
     // Subscribe to state changes from manager
     useEffect(() => {
         const unsubscribe = subscribeToBottomSheetState((newState) => {
-            setState(newState);
-            onScreenChange?.(newState.currentScreen);
+            const previousScreen = previousScreenRef.current;
+            const newScreen = newState.currentScreen;
+
+            // Animate transition if screen changed
+            if (previousScreen !== newScreen) {
+                animateScreenTransition(newScreen, newState);
+            } else {
+                // Same screen, just update state (e.g., props changed)
+                setState(newState);
+                onScreenChange?.(newScreen);
+            }
         });
 
         setManagerRef(managerRefObject.current);
@@ -71,7 +173,7 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
             unsubscribe();
             setManagerRef(null);
         };
-    }, [onScreenChange]);
+    }, [animateScreenTransition, onScreenChange]);
 
     // Handle explicit dismiss - only update state, don't call dismiss again
     const handleDismiss = useCallback(() => {
@@ -258,7 +360,13 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
                 keyboardShouldPersistTaps="handled"
                 showsVerticalScrollIndicator={false}
             >
-                <ScreenComponent {...screenProps} />
+                <AnimatedScreenContainer
+                    fadeAnim={fadeAnim}
+                    scaleAnim={scaleAnim}
+                    screenKey={state.currentScreen}
+                >
+                    <ScreenComponent {...screenProps} />
+                </AnimatedScreenContainer>
             </ScrollView>
         </BottomSheet>
     );
