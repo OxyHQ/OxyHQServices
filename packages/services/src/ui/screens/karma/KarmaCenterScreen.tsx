@@ -17,16 +17,15 @@ import { useI18n } from '../../hooks/useI18n';
 import { useThemeStyles } from '../../hooks/useThemeStyles';
 import { useColorScheme } from '../../hooks/use-color-scheme';
 import { darkenColor } from '../../utils/colorUtils';
+import { useOxy } from '../../context/OxyContext';
 
 const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     theme,
     navigate,
     goBack,
-    // OxyContext values from props (instead of useOxy hook)
-    user,
-    oxyServices,
-    isAuthenticated,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const { user, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
     const [karmaTotal, setKarmaTotal] = useState<number | null>(null);
     const [karmaHistory, setKarmaHistory] = useState<any[]>([]);

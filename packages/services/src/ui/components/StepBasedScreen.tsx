@@ -2,9 +2,6 @@ import type React from 'react';
 import { useState, useRef, useCallback, useMemo, useEffect } from 'react';
 import {
     View,
-    KeyboardAvoidingView,
-    ScrollView,
-    StatusBar,
     Platform,
 } from 'react-native';
 import Animated, {
@@ -151,9 +148,12 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     // ========================================================================
     // Computed Values
     // ========================================================================
-    const colors = useThemeColors(theme);
+    // Narrow theme type with default value
+    const themeValue = (theme === 'light' || theme === 'dark') ? theme : 'light';
+    const themeString = typeof theme === 'string' ? theme : 'light';
+    const colors = useThemeColors(themeValue);
     const styles = useMemo(() => ({
-        ...createAuthStyles(colors, theme),
+        ...createAuthStyles(colors, themeString),
         // Additional styles for step components
         modernHeader: {
             alignItems: 'flex-start' as const,
@@ -225,7 +225,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
             width: '100%',
             justifyContent: 'center' as const,
             marginTop: 24, // Space for bottom sheet handle (~20px) + small buffer
-            marginBottom: 24, // Equal spacing below dots
+            marginBottom: 0, // BottomSheet handles all bottom spacing
         },
         progressDot: {
             height: 6,
@@ -437,8 +437,8 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
                 }
             }
 
-            if (currentScreen && navigate) {
-                navigate(currentScreen, navigationProps);
+            if (currentScreen && navigate && typeof currentScreen === 'string') {
+                navigate(currentScreen as RouteName, navigationProps);
             } else {
                 if (__DEV__) {
                     console.warn('StepBasedScreen: navigate function not available', {
@@ -462,10 +462,10 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
             // For step navigation within the same screen, directly navigate to previous step
             // This avoids going through the router's goBack which might check screen history first
             const previousStep = state.currentStep - 1;
-            
+
             // Extract props to preserve state
             const navigationProps: Record<string, unknown> = { initialStep: previousStep };
-            
+
             if (getNavigationProps) {
                 const extractedProps = getNavigationProps();
                 Object.assign(navigationProps, extractedProps);
@@ -476,17 +476,21 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
                 if (step0Data.userProfile) navigationProps.userProfile = step0Data.userProfile;
                 if (step0Data.email) navigationProps.email = step0Data.email;
             }
-            
+
             // Navigate to previous step within the same screen
-            if (currentScreen && navigate) {
-                navigate(currentScreen, navigationProps);
+            if (currentScreen && navigate && typeof currentScreen === 'string') {
+                navigate(currentScreen as RouteName, navigationProps);
             } else {
                 // Fallback to goBack if navigate is not available
-                goBack?.();
+                if (typeof goBack === 'function') {
+                    goBack();
+                }
             }
         } else {
             // On first step, use goBack to check screen history or close
-            goBack?.();
+            if (typeof goBack === 'function') {
+                goBack();
+            }
         }
     }, [state.isTransitioning, state.currentStep, goBack, currentScreen, navigate, stepData, getNavigationProps]);
 
@@ -510,8 +514,8 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
                 if (step0Data.email) navigationProps.email = step0Data.email;
             }
 
-            if (currentScreen && navigate) {
-                navigate(currentScreen, navigationProps);
+            if (currentScreen && navigate && typeof currentScreen === 'string') {
+                navigate(currentScreen as RouteName, navigationProps);
             } else {
                 if (__DEV__) {
                     console.warn('StepBasedScreen: navigate function not available');
@@ -524,7 +528,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     // Step Controller Exposure
     // ========================================================================
     useEffect(() => {
-        if (!stepControllerRef) return;
+        if (!stepControllerRef || typeof stepControllerRef !== 'object' || !('current' in stepControllerRef)) return;
 
         stepControllerRef.current = {
             canGoBack: () => state.currentStep > 0,
@@ -532,7 +536,9 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         };
 
         return () => {
-            stepControllerRef.current = null;
+            if (stepControllerRef && typeof stepControllerRef === 'object' && 'current' in stepControllerRef) {
+                stepControllerRef.current = null;
+            }
         };
     }, [state.currentStep, prevStep, stepControllerRef]);
 
@@ -599,44 +605,30 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         scaleAnim,
     ]);
 
+    // Pure content wrapper - all layout is handled by BottomSheetRouter
+    // This component only renders content, no layout calculations
     return (
-        <KeyboardAvoidingView
-            style={styles.container}
-        >
-            <StatusBar
-                barStyle={theme === 'dark' ? 'light-content' : 'dark-content'}
-                backgroundColor={colors.background}
-            />
-
-            <ScrollView
-                contentContainerStyle={styles.scrollContent}
-                showsVerticalScrollIndicator={false}
-                keyboardShouldPersistTaps="handled"
-                bounces={false}
-                alwaysBounceVertical={false}
-                overScrollMode="never"
-            >
-                {showProgressIndicator && steps.length > 1 && (
-                    <ProgressIndicator
-                        currentStep={state.currentStep}
-                        totalSteps={steps.length}
-                        colors={colors}
-                        styles={styles}
-                    />
-                )}
-
-                <AnimatedStepContainer
-                    fadeAnim={fadeAnim}
-                    scaleAnim={scaleAnim}
+        <>
+            {showProgressIndicator && steps.length > 1 && (
+                <ProgressIndicator
+                    currentStep={state.currentStep}
+                    totalSteps={steps.length}
+                    colors={colors}
                     styles={styles}
-                    stepKey={`step-${state.currentStep}`}
-                >
-                    {CurrentStepComponent && (
-                        <CurrentStepComponent {...stepProps} />
-                    )}
-                </AnimatedStepContainer>
-            </ScrollView>
-        </KeyboardAvoidingView>
+                />
+            )}
+
+            <AnimatedStepContainer
+                fadeAnim={fadeAnim}
+                scaleAnim={scaleAnim}
+                styles={styles}
+                stepKey={`step-${state.currentStep}`}
+            >
+                {CurrentStepComponent && (
+                    <CurrentStepComponent {...stepProps} />
+                )}
+            </AnimatedStepContainer>
+        </>
     );
 };
 

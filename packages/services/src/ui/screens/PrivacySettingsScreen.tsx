@@ -13,6 +13,7 @@ import { Header, Section, Avatar, SettingRow, LoadingState, EmptyState, GroupedS
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import type { BlockedUser, RestrictedUser } from '../../models/interfaces';
+import { useOxy } from '../context/OxyContext';
 
 interface PrivacySettings {
     isPrivateAccount: boolean;
@@ -41,10 +42,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     goBack,
-    // OxyContext values from props (instead of useOxy hook)
-    oxyServices,
-    user,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const { oxyServices, user } = useOxy();
     const { t } = useI18n();
     const [settings, setSettings] = useState<PrivacySettings>({
         isPrivateAccount: false,

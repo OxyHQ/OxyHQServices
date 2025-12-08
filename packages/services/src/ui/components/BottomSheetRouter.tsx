@@ -1,12 +1,11 @@
-import React, { useState, useCallback, useMemo, useRef, useEffect } from 'react';
-import { BackHandler } from 'react-native';
-import { BottomSheetScrollView } from '@gorhom/bottom-sheet';
-import BottomSheet, { type BottomSheetRef } from './BottomSheet';
+import React, { useRef, useEffect, useCallback } from 'react';
+import { BackHandler, View, StyleSheet, ScrollView, Keyboard, Platform, type StyleProp, type ViewStyle } from 'react-native';
 import type { RouteName } from '../navigation/routes';
 import { getScreenComponent, isValidRoute } from '../navigation/routes';
 import type { BaseScreenProps } from '../types/navigation';
-import { useOxy } from '../context/OxyContext';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { Colors } from '../constants/theme';
+import BottomSheet, { type BottomSheetRef } from './BottomSheet';
 import {
     setBottomSheetRef as setManagerRef,
     updateBottomSheetState,
@@ -15,6 +14,7 @@ import {
     managerCloseBottomSheet,
     managerGoBack,
     type BottomSheetRouterState,
+    getBottomSheetState,
 } from '../navigation/bottomSheetManager';
 
 export interface BottomSheetRouterProps {
@@ -22,62 +22,50 @@ export interface BottomSheetRouterProps {
     onDismiss?: () => void;
 }
 
-// Re-export the public API for backward compatibility
-// The actual implementation is in bottomSheetApi.ts to avoid require cycles
-export { showBottomSheet, closeBottomSheet } from '../navigation/bottomSheetApi';
-
-// Re-export types and functions for backward compatibility
+// Re-export types for backward compatibility
 export type { BottomSheetRouterState };
 export { subscribeToBottomSheetState };
 
+// Re-export BottomSheetRef for backward compatibility
+export type { BottomSheetRef };
+
+/**
+ * BottomSheetRouter - Manages navigation within bottom sheet modals
+ * 
+ * Uses custom BottomSheet component built with react-native-reanimated v4.
+ * State is managed by bottomSheetManager (single source of truth).
+ * 
+ * Features:
+ * - Screen navigation with history stack
+ * - Step-based navigation for multi-step screens
+ * - Android back button handling
+ * - Minimal props passing (screens use useOxy() for context)
+ */
 const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreenChange, onDismiss }) => {
-    const [state, setState] = useState<BottomSheetRouterState>({
-        currentScreen: null,
-        screenProps: {},
-        currentStep: undefined,
-        navigationHistory: [],
-        isOpen: false,
-    });
-    const sheetRef = useRef<BottomSheetRef>(null);
+    const bottomSheetRef = useRef<BottomSheetRef>(null);
     const colorScheme = useColorScheme();
+    const colors = Colors[colorScheme ?? 'light'];
 
-    // Extract all OxyContext values to pass as props
-    // This eliminates the need for screens to import useOxy() directly
-    const {
-        user,
-        sessions,
-        activeSessionId,
-        isAuthenticated,
-        isLoading,
-        isTokenReady,
-        error,
-        currentLanguage,
-        currentLanguageName,
-        currentNativeLanguageName,
-        login,
-        logout,
-        logoutAll,
-        signUp,
-        completeMfaLogin,
-        switchSession,
-        removeSession,
-        refreshSessions,
-        setLanguage,
-        getDeviceSessions,
-        logoutAllDeviceSessions,
-        updateDeviceName,
-        oxyServices,
-    } = useOxy();
+    // Create stable ref object for manager compatibility
+    // Manager expects: { current: { present: () => void; dismiss: () => void } | null } | null
+    const managerRefObject = useRef({
+        current: {
+            present: () => bottomSheetRef.current?.present(),
+            dismiss: () => bottomSheetRef.current?.dismiss(),
+        },
+    });
 
-    // Subscribe to global state changes
+    // Single source of truth - subscribe to manager state
+    const [state, setState] = React.useState<BottomSheetRouterState>(() => getBottomSheetState());
+
+    // Subscribe to state changes from manager
     useEffect(() => {
         const unsubscribe = subscribeToBottomSheetState((newState) => {
             setState(newState);
             onScreenChange?.(newState.currentScreen);
         });
 
-        // Set the ref so showBottomSheet can access it
-        setManagerRef(sheetRef);
+        setManagerRef(managerRefObject.current);
 
         return () => {
             unsubscribe();
@@ -85,85 +73,64 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
         };
     }, [onScreenChange]);
 
-    // Present bottom sheet when state becomes open and screen is set
-    useEffect(() => {
-        if (state.isOpen && state.currentScreen && sheetRef.current) {
-            sheetRef.current.present();
-        }
-    }, [state.isOpen, state.currentScreen]);
-
-    // Handle sheet dismiss
+    // Handle explicit dismiss - only update state, don't call dismiss again
     const handleDismiss = useCallback(() => {
-        managerCloseBottomSheet();
+        // Only update state, don't call dismiss() as it's already being dismissed
+        updateBottomSheetState({
+            currentScreen: null,
+            screenProps: {},
+            currentStep: undefined,
+            navigationHistory: [],
+            isOpen: false,
+        });
         onDismiss?.();
     }, [onDismiss]);
 
-    // Get the current screen component
-    const ScreenComponent = useMemo(() => {
-        if (!state.currentScreen) {
-            return null;
-        }
-        return getScreenComponent(state.currentScreen);
-    }, [state.currentScreen]);
+    // Get current screen component (lazy-loaded)
+    const ScreenComponent = state.currentScreen ? getScreenComponent(state.currentScreen) : null;
 
-    // Navigation functions for screens
+    // Navigation handler - validates route and updates manager state
     const navigate = useCallback((screen: RouteName, props?: Record<string, unknown>) => {
         if (!isValidRoute(screen)) {
             if (__DEV__) {
-                console.warn(`[BottomSheetRouter] Invalid route in navigate: ${screen}`);
+                console.warn(`[BottomSheetRouter] Invalid route: ${screen}`);
             }
             return;
         }
 
-        // Check if navigating to the same screen (step navigation within same screen)
         const isSameScreen = screen === state.currentScreen;
-
-        // Only add to history if navigating to a different screen
-        // Same-screen navigation is for step changes and shouldn't pollute history
         managerShowBottomSheet(screen, props, {
-            addToHistory: !isSameScreen
+            addToHistory: !isSameScreen,
         });
     }, [state.currentScreen]);
 
-    // Track current step for step-based screens
-    const currentStepRef = useRef<number | undefined>(state.currentStep ?? state.screenProps?.initialStep);
-
-    useEffect(() => {
-        currentStepRef.current = state.currentStep ?? state.screenProps?.initialStep;
-    }, [state.currentStep, state.screenProps?.initialStep]);
-
-    // Check if current screen is step-based (has initialStep prop)
-    const isStepBasedScreen = useMemo(() => {
-        return state.screenProps?.initialStep !== undefined || state.currentStep !== undefined;
-    }, [state.screenProps?.initialStep, state.currentStep]);
-
-    // Callback to track step changes from StepBasedScreen
-    const handleStepChange = useCallback((step: number, totalSteps: number) => {
-        updateBottomSheetState({
-            currentStep: step,
-        });
-        currentStepRef.current = step;
+    // Step change handler for step-based screens
+    const handleStepChange = useCallback((step: number, _totalSteps?: number) => {
+        updateBottomSheetState({ currentStep: step });
     }, []);
 
+    // Go back handler with priority:
+    // 1. Screen history (navigate to previous screen)
+    // 2. Step navigation (navigate to previous step)
+    // 3. Close sheet (no history/step available)
     const goBack = useCallback(() => {
-        // Priority 1: Check if there's screen history (navigate to previous screen)
-        // This takes precedence over step navigation
+        // Priority 1: Screen history
         if (state.navigationHistory.length > 0) {
             const wentBack = managerGoBack();
             if (wentBack) {
-                return true; // Successfully navigated back to previous screen
+                return true;
             }
         }
 
-        // Priority 2: If on a step-based screen and not on first step, go to previous step
-        // Use the most up-to-date step value from state or ref
-        const currentStep = state.currentStep ?? currentStepRef.current ?? state.screenProps?.initialStep ?? 0;
+        // Priority 2: Step navigation
+        const initialStep = typeof state.screenProps?.initialStep === 'number'
+            ? state.screenProps.initialStep
+            : undefined;
+        const currentStep = state.currentStep ?? initialStep ?? 0;
+        const isStepBased = initialStep !== undefined || state.currentStep !== undefined;
 
-        if (isStepBasedScreen && currentStep > 0) {
+        if (isStepBased && typeof currentStep === 'number' && currentStep > 0) {
             const previousStep = currentStep - 1;
-
-            // Navigate to previous step by updating the screen props
-            // This will trigger StepBasedScreen to update via initialStep prop
             updateBottomSheetState({
                 screenProps: {
                     ...state.screenProps,
@@ -171,26 +138,21 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
                 },
                 currentStep: previousStep,
             });
-
-            // Also update the ref immediately
-            currentStepRef.current = previousStep;
-
-            return true; // Successfully navigated to previous step
+            return true;
         }
 
-        // Priority 3: No history and on step 0 (or not step-based) - close the sheet
+        // Priority 3: Close sheet
         managerCloseBottomSheet();
-        return false; // No navigation occurred, sheet will close
-    }, [isStepBasedScreen, state.screenProps, state.currentStep, state.navigationHistory.length]);
+        return false;
+    }, [state.navigationHistory.length, state.currentStep, state.screenProps]);
 
-    // Handle Android hardware back button
+    // Android hardware back button handler
     useEffect(() => {
         if (!state.isOpen) {
             return;
         }
 
         const backHandler = BackHandler.addEventListener('hardwareBackPress', () => {
-            // Return true to prevent default if navigation occurred, false to allow closing
             return goBack();
         });
 
@@ -199,121 +161,105 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
         };
     }, [state.isOpen, goBack]);
 
-    const handleClose = useCallback(() => {
-        managerCloseBottomSheet();
-    }, []);
+    // Present modal when state changes to open
+    // This must be before any early returns to follow rules of hooks
+    useEffect(() => {
+        if (state.isOpen && bottomSheetRef.current) {
+            bottomSheetRef.current.present();
+        }
+    }, [state.isOpen]);
 
-    // Handle authentication - close bottom sheet when user successfully authenticates
-    const handleAuthenticated = useCallback((user?: unknown) => {
-        managerCloseBottomSheet();
-    }, []);
+    // Handle keyboard visibility - update padding instantly
+    useEffect(() => {
+        if (!state.isOpen) {
+            bottomSheetRef.current?.updateKeyboardPadding(0);
+            return;
+        }
 
-    // Prepare screen props with all OxyContext values
-    // This allows screens to receive everything via props instead of importing useOxy()
-    const screenProps: BaseScreenProps = useMemo(
-        () => ({
-            // Navigation props
-            navigate,
-            goBack,
-            onClose: handleClose,
-            onAuthenticated: handleAuthenticated,
+        const showSubscription = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
+            (e) => {
+                bottomSheetRef.current?.updateKeyboardPadding(e.endCoordinates.height);
+            },
+        );
 
-            // Theme props
-            theme: colorScheme ?? 'light',
-            currentScreen: state.currentScreen ?? undefined,
+        const hideSubscription = Keyboard.addListener(
+            Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
+            () => {
+                bottomSheetRef.current?.updateKeyboardPadding(0);
+            },
+        );
 
-            // Step navigation - pass initialStep from state if available
-            initialStep: state.currentStep ?? state.screenProps?.initialStep,
+        return () => {
+            showSubscription.remove();
+            hideSubscription.remove();
+        };
+    }, [state.isOpen]);
 
-            // Step change callback for step-based screens
-            onStepChange: handleStepChange,
+    // Minimal screen props - only navigation-specific
+    // Screens should use useOxy() hook for OxyContext values (user, sessions, etc.)
+    // Calculate initialStep first, ensuring it's always a number or undefined
+    const calculatedInitialStep = typeof state.currentStep === 'number'
+        ? state.currentStep
+        : (typeof state.screenProps?.initialStep === 'number'
+            ? state.screenProps.initialStep
+            : undefined);
 
-            // OxyContext values - injected as props
-            user,
-            sessions,
-            activeSessionId,
-            isAuthenticated,
-            isLoading,
-            isTokenReady,
-            error,
-            currentLanguage,
-            currentLanguageName,
-            currentNativeLanguageName,
-            login,
-            logout,
-            logoutAll,
-            signUp,
-            completeMfaLogin,
-            switchSession,
-            removeSession,
-            refreshSessions,
-            setLanguage,
-            getDeviceSessions,
-            logoutAllDeviceSessions,
-            updateDeviceName,
-            oxyServices,
+    // Extract screenProps without initialStep to avoid conflicts
+    const { initialStep: _, ...otherScreenProps } = state.screenProps;
 
-            // Screen-specific props from navigation (but don't override initialStep if state.currentStep is set)
-            ...(state.currentStep !== undefined
-                ? { ...state.screenProps, initialStep: state.currentStep }
-                : state.screenProps
-            ),
-        }),
-        [
-            navigate,
-            goBack,
-            handleClose,
-            handleAuthenticated,
-            colorScheme,
-            state.currentScreen,
-            state.currentStep,
-            state.screenProps,
-            handleStepChange,
-            user,
-            sessions,
-            activeSessionId,
-            isAuthenticated,
-            isLoading,
-            isTokenReady,
-            error,
-            currentLanguage,
-            currentLanguageName,
-            currentNativeLanguageName,
-            login,
-            logout,
-            logoutAll,
-            signUp,
-            completeMfaLogin,
-            switchSession,
-            removeSession,
-            refreshSessions,
-            setLanguage,
-            getDeviceSessions,
-            logoutAllDeviceSessions,
-            updateDeviceName,
-            oxyServices,
-        ],
-    );
+    const screenProps: BaseScreenProps = {
+        navigate,
+        goBack,
+        onClose: () => managerCloseBottomSheet(),
+        onAuthenticated: () => managerCloseBottomSheet(),
+        theme: colorScheme ?? 'light',
+        currentScreen: state.currentScreen ?? undefined,
+        initialStep: calculatedInitialStep,
+        onStepChange: handleStepChange,
+        ...otherScreenProps,
+    };
 
     // Don't render if no screen is set
     if (!ScreenComponent || !state.currentScreen) {
         return null;
     }
 
+    const renderBackground = useCallback(
+        (props: { style?: StyleProp<ViewStyle> }) => (
+            <View
+                style={[
+                    styles.background,
+                    { backgroundColor: colors.background },
+                    props.style,
+                ]}
+            />
+        ),
+        [colors.background],
+    );
+
     return (
         <BottomSheet
-            ref={sheetRef}
-            enableDynamicSizing={true}
+            ref={bottomSheetRef}
             enablePanDownToClose={true}
-            enableDismissOnClose={true}
+            backgroundComponent={renderBackground}
+            enableHandlePanningGesture={true}
+            style={styles.container}
+            handleStyle={styles.handleStyle}
+            handleIndicatorStyle={[
+                styles.handleIndicatorStyle,
+                { backgroundColor: colors.border },
+            ]}
             onDismiss={handleDismiss}
-            keyboardBehavior="interactive"
-            keyboardBlurBehavior="restore"
-            android_keyboardInputMode="adjustResize"
         >
-            <BottomSheetScrollView>
+            <ScrollView
+                style={styles.scrollView}
+                contentContainerStyle={styles.scrollContent}
+                keyboardShouldPersistTaps="handled"
+                showsVerticalScrollIndicator={false}
+            >
                 <ScreenComponent {...screenProps} />
-            </BottomSheetScrollView>
+            </ScrollView>
         </BottomSheet>
     );
 };
@@ -321,5 +267,36 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
 const BottomSheetRouter = React.memo(BottomSheetRouterComponent);
 BottomSheetRouter.displayName = 'BottomSheetRouter';
 
-export default BottomSheetRouter;
+const styles = StyleSheet.create({
+    container: {
+        maxWidth: 800,
+        width: '100%',
+        alignSelf: 'center',
+        marginHorizontal: 'auto',
+    },
+    background: {
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        overflow: 'hidden',
+    },
+    handleStyle: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: 20,
+    },
+    handleIndicatorStyle: {
+        width: 40,
+        height: 4,
+        borderRadius: 2,
+    },
+    scrollView: {
+        flex: 1,
+    },
+    scrollContent: {
+        flexGrow: 1,
+    },
+});
 
+export default BottomSheetRouter;

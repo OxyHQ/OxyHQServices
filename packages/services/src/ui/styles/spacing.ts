@@ -10,16 +10,20 @@ export const STEP_INNER_GAP = 12; // Gap within sections (headers, cards, etc.) 
 
 /**
  * Reusable stylesheet for step components
- * All step components should use these base styles for consistency
+ * NOTE: Layout styles (container, sectionSpacing) removed - all layout is handled by BottomSheetRouter
+ * Step components should NOT use these for layout, only for content-specific styling
  */
 export const stepStyles = StyleSheet.create({
     container: {
+        // Layout removed - use only for content width constraints if needed
         width: '100%',
         maxWidth: 420,
         alignSelf: 'center',
     },
     sectionSpacing: {
-        marginBottom: STEP_GAP,
+        // Layout removed - do NOT use for spacing, use explicit marginBottom: 0
+        // This is kept for backward compatibility but should not add margins
+        marginBottom: 0,
     },
     header: {
         alignItems: 'flex-start',

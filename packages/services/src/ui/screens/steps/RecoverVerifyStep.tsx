@@ -6,7 +6,7 @@ import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import PinInput from '../../components/internal/PinInput';
 import { toast } from '../../../lib/sonner';
 import { useI18n } from '../../hooks/useI18n';
-import { STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
+import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
 interface RecoverVerifyStepProps {
     // Common props from StepBasedScreen
@@ -68,12 +68,12 @@ const RecoverVerifyStep: React.FC<RecoverVerifyStepProps> = ({
 
     return (
         <>
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP }, baseStyles.header]}>
                 <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('recover.verify.title')}</Text>
                 <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>{t('recover.enterCode')}</Text>
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP }]}>
                 <View style={stylesheet.pinInputWrapper}>
                     <PinInput
                         value={verificationCode}
@@ -110,7 +110,7 @@ const RecoverVerifyStep: React.FC<RecoverVerifyStepProps> = ({
                 )}
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+            <View style={[baseStyles.container, { marginBottom: 0 }, baseStyles.buttonContainer]}>
                 <GroupedPillButtons
                     buttons={[
                         {

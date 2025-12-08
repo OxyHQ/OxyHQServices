@@ -15,18 +15,12 @@ export interface AuthThemeColors {
 }
 
 export const createAuthStyles = (colors: AuthThemeColors, theme: string) => StyleSheet.create({
-  // Container styles
-  container: {
-    flex: 1,
-  },
-  scrollContent: {
-    flexGrow: 1,
-    paddingHorizontal: 24,
-    paddingTop: 0,
-    paddingBottom: 32,
-  },
+  // Container and scrollContent styles removed entirely
+  // All layout is handled by BottomSheetRouter's BottomSheetScrollView
+  // StepBasedScreen and step components are pure content renderers
   stepContainer: {
-    flex: 1,
+    // Removed flex: 1 - BottomSheetScrollView handles all layout
+    // This prevents unnecessary expansion that can cause spacing issues
     justifyContent: 'flex-start',
     alignItems: 'flex-start',
   },

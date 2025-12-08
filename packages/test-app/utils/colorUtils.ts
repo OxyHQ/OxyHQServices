@@ -23,3 +23,5 @@ export const darkenColor = (color: string, factor: number = 0.6): string => {
     return `#${newR.toString(16).padStart(2, '0')}${newG.toString(16).padStart(2, '0')}${newB.toString(16).padStart(2, '0')}`;
 };
 
+
+

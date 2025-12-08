@@ -25,6 +25,7 @@ import { Header, GroupedSection, LoadingState } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { useOxy } from '../context/OxyContext';
 
 interface SessionWithUser extends ClientSession {
     userProfile?: User;
@@ -46,18 +47,20 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     theme,
     navigate,
     goBack,
-    oxyServices,
-    // OxyContext values from props (instead of useOxy hook)
-    user,
-    sessions = [],
-    activeSessionId = null,
-    switchSession,
-    removeSession,
-    logoutAll,
-    refreshSessions,
-    isLoading = false,
-    isAuthenticated = false,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const {
+        oxyServices,
+        user,
+        sessions = [],
+        activeSessionId = null,
+        switchSession,
+        removeSession,
+        logoutAll,
+        refreshSessions,
+        isLoading = false,
+        isAuthenticated = false,
+    } = useOxy();
 
     const [sessionsWithUsers, setSessionsWithUsers] = useState<SessionWithUser[]>([]);
     const [switchingToUserId, setSwitchingToUserId] = useState<string | null>(null);

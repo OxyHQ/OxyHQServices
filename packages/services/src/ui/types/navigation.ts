@@ -37,41 +37,10 @@ export interface BaseScreenProps {
     confirmPassword?: string;
     userProfile?: unknown;
     
-    // OxyContext values - injected by BottomSheetRouter
-    // These replace the need for screens to import useOxy()
-    user?: User | null;
-    sessions?: ClientSession[];
-    activeSessionId?: string | null;
-    isAuthenticated?: boolean;
-    isLoading?: boolean;
-    isTokenReady?: boolean;
-    error?: string | null;
-    currentLanguage?: string;
-    currentLanguageName?: string;
-    currentNativeLanguageName?: string;
-    login?: (username: string, password: string, deviceName?: string) => Promise<User>;
-    logout?: (targetSessionId?: string) => Promise<void>;
-    logoutAll?: () => Promise<void>;
-    signUp?: (username: string, email: string, password: string) => Promise<User>;
-    completeMfaLogin?: (mfaToken: string, code: string) => Promise<User>;
-    switchSession?: (sessionId: string) => Promise<void>;
-    removeSession?: (sessionId: string) => Promise<void>;
-    refreshSessions?: () => Promise<void>;
-    setLanguage?: (languageId: string) => Promise<void>;
-    getDeviceSessions?: () => Promise<
-        Array<{
-            sessionId: string;
-            deviceId: string;
-            deviceName?: string;
-            lastActive?: string;
-            expiresAt?: string;
-        }>
-    >;
-    logoutAllDeviceSessions?: () => Promise<void>;
-    updateDeviceName?: (deviceName: string) => Promise<void>;
-    oxyServices?: unknown;
+    // Note: OxyContext values (user, sessions, login, etc.) should be accessed via useOxy() hook
+    // This keeps props minimal and follows React best practices
     
-    // Allow additional props
+    // Allow additional props for screen-specific data
     [key: string]: unknown;
 }
 

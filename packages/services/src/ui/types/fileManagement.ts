@@ -1,4 +1,4 @@
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from './navigation';
 import type { FileMetadata } from '../../models/interfaces';
 
 // Exporting props & callback types so external callers (e.g. showBottomSheet config objects) can annotate

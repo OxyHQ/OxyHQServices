@@ -6,12 +6,12 @@ A comprehensive routing system for displaying screens within a bottom sheet moda
 
 The bottom sheet routing system provides a clean, professional way to display authentication screens, account management screens, and other UI flows within a modal bottom sheet. It includes:
 
-- **Reusable Bottom Sheet Component**: Built with `@gorhom/bottom-sheet` v5+
+- **Reusable Bottom Sheet Component**: Custom implementation using `react-native-reanimated` v4 and `react-native-gesture-handler`
 - **Navigation History**: Full back navigation support with history stack
 - **Step-Based Navigation**: Support for multi-step screens (e.g., sign-in flows)
-- **Keyboard Awareness**: Automatic padding adjustment when keyboard appears
 - **Dynamic Sizing**: Bottom sheet automatically sizes to content
 - **Type-Safe**: Full TypeScript support with proper types
+- **Professional Patterns**: Follows React best practices and leverages library callbacks
 
 ## Table of Contents
 
@@ -21,7 +21,6 @@ The bottom sheet routing system provides a clean, professional way to display au
 - [Usage Examples](#usage-examples)
 - [Navigation History](#navigation-history)
 - [Step-Based Screens](#step-based-screens)
-- [Keyboard Handling](#keyboard-handling)
 - [Advanced Topics](#advanced-topics)
 
 ## Quick Start
@@ -74,23 +73,28 @@ closeBottomSheet();
 
 ```
 OxyProvider
-  └── BottomSheetModalProvider (from @gorhom/bottom-sheet)
+  └── BottomSheetProvider (custom provider)
       └── BottomSheetRouter
-          └── BottomSheet (reusable component)
+          └── BottomSheet (custom reusable component)
               └── Screen Component (dynamically loaded)
 ```
 
 ### Key Components
 
 1. **BottomSheet** (`packages/services/src/ui/components/BottomSheet.tsx`)
-   - Reusable bottom sheet component using `@gorhom/bottom-sheet` v5
-   - Handles keyboard avoidance and dynamic sizing
-   - Provides imperative API via ref
+   - Custom bottom sheet component built with `react-native-reanimated` v4
+   - Uses `react-native-gesture-handler` for smooth pan gestures
+   - Provides imperative API via ref (`present()`, `dismiss()`)
+   - Dynamic sizing - automatically measures and adjusts to content height
+   - Smooth spring animations for open/close
+   - Pan-down-to-close gesture support
 
 2. **BottomSheetRouter** (`packages/services/src/ui/components/BottomSheetRouter.tsx`)
    - Manages navigation state and history
    - Renders appropriate screen based on current route
    - Handles step navigation and back navigation
+   - Subscribes to state changes from `bottomSheetManager`
+   - Minimal props passing - screens use `useOxy()` for context values
 
 3. **Screen Registry** (`packages/services/src/ui/navigation/routes.ts`)
    - Lazy-loaded screen registry
@@ -101,6 +105,17 @@ OxyProvider
    - Pure state management (no React dependencies)
    - Manages navigation history stack
    - Tracks current screen, props, and step
+   - Handles sheet presentation automatically
+   - Single source of truth for navigation state
+
+### Design Principles
+
+- **Single Source of Truth**: State managed by `bottomSheetManager`, components subscribe to changes
+- **Custom Implementation**: Built with `react-native-reanimated` v4 for smooth, performant animations
+- **Minimal Re-renders**: Only essential memoization, React handles optimization
+- **Clean Separation**: Navigation logic separate from UI components
+- **Type Safety**: Full TypeScript support throughout
+- **Professional Code**: Clean, maintainable implementation without external bottom sheet dependencies
 
 ## API Reference
 
@@ -256,26 +271,24 @@ function PrefillSignIn() {
 }
 ```
 
-### Example 4: Handling Authentication Callbacks
+### Example 4: Using Context Values in Screens
 
 ```typescript
-function CustomSignInScreen() {
-  const { showBottomSheet } = useOxy();
+import { useOxy } from '@oxyhq/services';
+import type { BaseScreenProps } from '@oxyhq/services';
 
-  const handleSignIn = () => {
-    showBottomSheet({
-      screen: 'SignIn',
-      props: {
-        onAuthenticated: (user) => {
-          console.log('User signed in:', user);
-          // Handle successful authentication
-        },
-      },
-    });
-  };
+const MyScreen: React.FC<BaseScreenProps> = ({ navigate, goBack }) => {
+  // Use useOxy() hook for context values
+  const { user, isAuthenticated, login, logout } = useOxy();
 
-  return <Button onPress={handleSignIn} title="Sign In" />;
-}
+  return (
+    <View>
+      <Text>Welcome, {user?.username}</Text>
+      <Button onPress={() => navigate('AccountSettings')} title="Settings" />
+      <Button onPress={goBack} title="Back" />
+    </View>
+  );
+};
 ```
 
 ## Navigation History
@@ -399,62 +412,91 @@ const MyStepScreen: React.FC<BaseScreenProps> = ({ initialStep = 0 }) => {
 };
 ```
 
-## Keyboard Handling
-
-The bottom sheet automatically adjusts its content padding when the keyboard appears, ensuring content is never obscured while maintaining scrollability.
-
-### How It Works
-
-1. **Keyboard Detection**: Listens to keyboard show/hide events
-2. **Dynamic Padding**: Injects keyboard height + safe area insets into scroll view's bottom padding
-3. **Scroll Support**: Uses `BottomSheetScrollView` for proper scrolling behavior
-4. **Platform Support**: Works on both iOS and Android
-
-### Implementation
-
-The `BottomSheet` component:
-- Tracks keyboard height via keyboard event listeners
-- Calculates total bottom padding (safe area insets + keyboard height)
-- Injects padding into child scroll view's `contentContainerStyle`
-
-This ensures:
-- Content remains scrollable at all times
-- Bottom padding adjusts dynamically when keyboard opens/closes
-- No overlap between content and keyboard
-
-### Configuration
-
-The bottom sheet uses these keyboard-related props:
-
-```typescript
-<BottomSheet
-  keyboardBehavior="interactive"        // iOS: keyboard moves sheet
-  keyboardBlurBehavior="restore"        // Restore position when keyboard hides
-  android_keyboardInputMode="adjustResize" // Android: resize when keyboard shows
-/>
-```
-
-### Customization
-
-You can customize keyboard behavior by modifying the `BottomSheet` component props in `BottomSheetRouter.tsx`.
-
 ## Advanced Topics
 
-### Custom Screen Props
+### Accessing Context Values in Screens
 
-Screens receive all `OxyContext` values as props (dependency injection pattern):
+Screens should use the `useOxy()` hook to access OxyContext values instead of receiving them as props. This follows React best practices and keeps props minimal.
 
+**Recommended Pattern:**
 ```typescript
-const MyScreen: React.FC<BaseScreenProps> = ({
-  user,
-  isAuthenticated,
-  login,
-  logout,
-  // ... all OxyContext values
-}) => {
-  // Use props directly, no need to call useOxy()
+import { useOxy } from '@oxyhq/services';
+import type { BaseScreenProps } from '@oxyhq/services';
+
+const MyScreen: React.FC<BaseScreenProps> = ({ navigate, goBack, theme }) => {
+  // Use useOxy() for context values
+  const { user, isAuthenticated, login, logout, sessions } = useOxy();
+
+  return (
+    <View>
+      <Text>Welcome, {user?.username}</Text>
+      {/* Use context values */}
+    </View>
+  );
 };
 ```
+
+**Screen Props (Minimal):**
+- `navigate` - Navigate to another screen
+- `goBack` - Navigate back or close sheet
+- `onClose` - Close the sheet
+- `onAuthenticated` - Callback when authentication succeeds
+- `theme` - Current theme ('light' | 'dark')
+- `currentScreen` - Current screen route name
+- `initialStep` - Initial step for step-based screens
+- `onStepChange` - Callback for step changes
+- Screen-specific props passed via `showBottomSheet()`
+
+### ScrollView Usage
+
+**Important:** Screens can use regular `ScrollView` or `FlatList` inside bottom sheets. The custom `BottomSheet` component handles gesture conflicts properly and works seamlessly with standard React Native scroll components.
+
+**Why?**
+- The custom bottom sheet implementation properly handles gesture conflicts
+- Standard `ScrollView` components work correctly within the bottom sheet
+- Safe area insets and keyboard padding are handled automatically
+
+**Correct Pattern:**
+```typescript
+import { ScrollView, View, Text } from 'react-native';
+import type { BaseScreenProps } from '@oxyhq/services';
+
+const MyScreen: React.FC<BaseScreenProps> = ({ navigate, goBack }) => {
+  // ✅ Correct: Use standard ScrollView - it works properly with the custom bottom sheet
+  return (
+    <ScrollView>
+      <Text>Screen Content</Text>
+    </ScrollView>
+  );
+};
+```
+
+**For Lists:**
+You can use standard `FlatList` or `SectionList` from React Native:
+
+```typescript
+import { FlatList, Text } from 'react-native';
+import type { BaseScreenProps } from '@oxyhq/services';
+
+const MyListScreen: React.FC<BaseScreenProps> = () => {
+  const data = ['Item 1', 'Item 2', 'Item 3'];
+
+  return (
+    <FlatList
+      data={data}
+      renderItem={({ item }) => <Text>{item}</Text>}
+      keyExtractor={(item) => item}
+    />
+  );
+};
+```
+
+**Layout and Padding:**
+- The custom bottom sheet automatically handles all safe area insets (top, bottom, left, right) and keyboard padding
+- The router only adds minimal horizontal padding for content spacing (not for safe area handling)
+- Screens should focus on content, not layout management
+- Use `marginBottom: 0` on the last element if needed to prevent extra spacing
+- **Do not manually add safe area insets or keyboard padding** - the library handles this automatically
 
 ### Lazy Loading
 
@@ -468,9 +510,13 @@ Screens are lazy-loaded to prevent require cycles:
 
 The router uses a pure state management approach:
 
-- `bottomSheetManager.ts`: Pure state management (no React)
-- `bottomSheetApi.ts`: Public API layer
+- `bottomSheetManager.ts`: Pure state management (no React dependencies)
+  - Single source of truth for navigation state
+  - Handles sheet presentation automatically
+  - Manages navigation history stack
 - `BottomSheetRouter.tsx`: React component that subscribes to state
+  - Uses library callbacks (`onChange`) for lifecycle
+  - Minimal re-renders, React handles optimization
 
 This architecture prevents require cycles and keeps the codebase clean.
 
@@ -531,17 +577,53 @@ showBottomSheet({
 - Check that `goBack()` is being called, not `closeBottomSheet()`
 - Verify history is being populated (check `state.navigationHistory.length`)
 
-### Keyboard Covers Content
-
-- Ensure `keyboardBehavior` and `keyboardBlurBehavior` are set correctly
-- Check that `enableDynamicSizing` is enabled
-- Verify safe area insets are being applied
-
 ### Step Navigation Issues
 
 - Ensure `initialStep` prop is being passed correctly
 - Check that `StepBasedScreen` is being used for multi-step screens
 - Verify `onStepChange` callback is working
+
+### Context Values Not Available
+
+- Use `useOxy()` hook in your screen component to access context values
+- Ensure `OxyProvider` is properly set up
+- Check that you're not trying to access context values from props (they're no longer passed)
+
+### ScrollView Usage
+
+- **You can use standard `ScrollView` or `FlatList`** inside bottom sheet screens
+- The custom bottom sheet implementation properly handles gesture conflicts
+- Standard React Native scroll components work seamlessly with the bottom sheet
+- No special scroll components needed
+
+## Migration Guide
+
+### For Existing Screens
+
+If you have screens that were receiving OxyContext values as props, update them to use the `useOxy()` hook:
+
+**Before:**
+```typescript
+const MyScreen: React.FC<BaseScreenProps> = ({ user, login, logout }) => {
+  // Use props directly
+};
+```
+
+**After:**
+```typescript
+import { useOxy } from '@oxyhq/services';
+
+const MyScreen: React.FC<BaseScreenProps> = ({ navigate, goBack }) => {
+  const { user, login, logout } = useOxy();
+  // Use hook values
+};
+```
+
+This change:
+- Reduces prop drilling
+- Follows React best practices
+- Makes screens more maintainable
+- Keeps props minimal and focused
 
 ## Related Documentation
 
@@ -549,4 +631,3 @@ showBottomSheet({
 - [Integration Guide](./INTEGRATION_GUIDE.md) - Platform-specific guides
 - [Examples](./EXAMPLES.md) - More code examples
 - [Best Practices](./BEST_PRACTICES.md) - Production patterns
-

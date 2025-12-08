@@ -118,14 +118,14 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
     if (existingSession && handleContinueWithExistingAccount) {
         return (
             <>
-                <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.userProfileContainer]}>
-                        <Avatar
-                            name={userProfile?.displayName || userProfile?.name || username}
-                            size={100}
-                            
-                            backgroundColor={colors.primary + '20'}
+                <View style={[baseStyles.container, { marginBottom: STEP_GAP }, stylesheet.userProfileContainer]}>
+                    <Avatar
+                        name={userProfile?.displayName || userProfile?.name || username}
+                        size={100}
+
+                        backgroundColor={colors.primary + '20'}
                         uri={userProfile?.avatar && oxyServices ? oxyServices.getFileDownloadUrl(userProfile.avatar, 'thumb') : undefined}
-                        />
+                    />
                     <Text style={[styles.modernUserDisplayName, stylesheet.displayName, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>
                         {userProfile?.displayName || userProfile?.name || username}
                     </Text>
@@ -134,7 +134,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     </Text>
                 </View>
 
-                <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.alreadySignedInContainer]}>
+                <View style={[baseStyles.container, { marginBottom: STEP_GAP }, stylesheet.alreadySignedInContainer]}>
                     <View style={[stylesheet.alreadySignedInCard, { backgroundColor: `${colors.primary}08`, borderColor: `${colors.primary}25` }]}>
                         <View style={stylesheet.alreadySignedInContent}>
                             <View style={[stylesheet.alreadySignedInIconWrapper, { backgroundColor: `${colors.primary}20` }]}>
@@ -153,14 +153,14 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                 </View>
 
                 {errorMessage && (
-                    <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
+                    <View style={[baseStyles.container, { marginBottom: STEP_GAP }]}>
                         <Text style={[stylesheet.errorText, { color: colors.error }]}>
                             {errorMessage}
                         </Text>
                     </View>
                 )}
 
-                <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+                <View style={[baseStyles.container, { marginBottom: 0 }, baseStyles.buttonContainer]}>
                     <GroupedPillButtons
                         buttons={[
                             {
@@ -187,14 +187,14 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
 
     return (
         <>
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.userProfileContainer]}>
-                    <Avatar
-                        name={userProfile?.displayName || userProfile?.name || username}
-                        size={100}
-                        
-                        backgroundColor={colors.primary + '20'}
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP }, stylesheet.userProfileContainer]}>
+                <Avatar
+                    name={userProfile?.displayName || userProfile?.name || username}
+                    size={100}
+
+                    backgroundColor={colors.primary + '20'}
                     uri={userProfile?.avatar && oxyServices ? oxyServices.getFileDownloadUrl(userProfile.avatar, 'thumb') : undefined}
-                    />
+                />
                 <Text style={[styles.modernUserDisplayName, stylesheet.displayName, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>
                     {userProfile?.displayName || userProfile?.name || username}
                 </Text>
@@ -203,7 +203,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                 </Text>
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.inputSection]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP }, stylesheet.inputSection]}>
                 <TextField
                     ref={inputRef}
                     label={t('common.labels.password')}
@@ -235,7 +235,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                 </View>
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+            <View style={[baseStyles.container, { marginBottom: 0 }, baseStyles.buttonContainer]}>
                 <GroupedPillButtons
                     buttons={[
                         {
@@ -257,7 +257,7 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                 />
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.securityNotice, { marginTop: 0 }]}>
+            <View style={[baseStyles.container, stylesheet.securityNotice, { marginTop: 0, marginBottom: 0 }]}>
                 <Ionicons name="shield-checkmark" size={14} color={colors.secondaryText} />
                 <Text style={[styles.securityText, { color: colors.secondaryText }]}>
                     {t('signin.security.dataSecure') || 'Your data is encrypted and secure'}

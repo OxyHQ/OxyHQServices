@@ -4,7 +4,7 @@ import { View, Text } from 'react-native';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import { Section, GroupedSection } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
-import { stepStyles } from '../../styles/spacing';
+import { STEP_GAP, stepStyles } from '../../styles/spacing';
 
 interface SignUpSummaryStepProps {
     // Common props from StepBasedScreen
@@ -49,7 +49,7 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
 
     return (
         <>
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP }, baseStyles.header]}>
                 <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>
                     {t('signup.summary.title')}
                 </Text>
@@ -58,7 +58,7 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
                 </Text>
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP }]}>
                 <Section
                     title={t('signup.summary.sections.account') || t('signup.summary.sectionTitle') || 'Account Information'}
                     
@@ -127,7 +127,7 @@ const SignUpSummaryStep: React.FC<SignUpSummaryStepProps> = ({
                 </Section>
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+            <View style={[baseStyles.container, { marginBottom: 0 }, baseStyles.buttonContainer]}>
                 <GroupedPillButtons
                     buttons={[
                         {

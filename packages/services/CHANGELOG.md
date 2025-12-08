@@ -7,17 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+#### Custom Bottom Sheet Implementation
+
+- **Removed `@gorhom/bottom-sheet` dependency**
+  - Replaced with custom bottom sheet implementation using `react-native-reanimated` v4
+  - Built with `react-native-gesture-handler` for smooth pan gestures
+  - Maintains same API (`present()`, `dismiss()`) for backward compatibility
+  - Improved performance with native animations
+  - Cleaner codebase without external bottom sheet library
+
+- **Updated Components**
+  - `BottomSheet.tsx` - New custom implementation
+  - `BottomSheetProvider.tsx` - New provider component (API compatibility)
+  - `BottomSheetRouter.tsx` - Updated to use custom BottomSheet
+  - `OxyProvider.tsx` - Updated to use custom BottomSheetProvider
+
 ### Added
 
 #### Bottom Sheet Routing System
 
 - **Reusable Bottom Sheet Component** (`packages/services/src/ui/components/BottomSheet.tsx`)
-  - Built with `@gorhom/bottom-sheet` v5+ for modern bottom sheet functionality
-  - Dynamic content sizing - automatically adjusts height to fit content
-  - Keyboard-aware padding - adds bottom padding equal to keyboard height
-  - Support for custom snap points or dynamic sizing
+  - Custom implementation built with `react-native-reanimated` v4
+  - Uses `react-native-gesture-handler` for smooth pan gestures
+  - Dynamic content sizing - automatically measures and adjusts height to fit content
+  - Smooth spring animations for open/close transitions
+  - Pan-down-to-close gesture support
   - Customizable backdrop, handle, and background styles
-  - Platform-specific keyboard handling (iOS and Android)
+  - Safe area insets and keyboard handling
 
 - **Bottom Sheet Router** (`packages/services/src/ui/components/BottomSheetRouter.tsx`)
   - Complete routing system for bottom sheet screens
@@ -154,10 +172,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Dependencies
 
-- `@gorhom/bottom-sheet` v5+ - Bottom sheet component library
 - `react-native-gesture-handler` v2+ - Required for bottom sheet gestures
 - `react-native-safe-area-context` - Safe area insets
-- `react-native-reanimated` - Animations (peer dependency)
+- `react-native-reanimated` v4+ - Animations (peer dependency, used for custom bottom sheet)
 
 ### Migration Guide
 

@@ -26,18 +26,15 @@ import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { Colors } from '../constants/theme';
 import { normalizeColorScheme } from '../utils/themeUtils';
+import { useOxy } from '../context/OxyContext';
 
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     navigate,
-    // OxyContext values from props (instead of useOxy hook)
-    user,
-    logout,
-    isLoading,
-    sessions,
-    isAuthenticated,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const { user, logout, isLoading, sessions, isAuthenticated } = useOxy();
     const { t } = useI18n();
     const colorScheme = useColorScheme();
     const themeStyles = useThemeStyles(theme || 'light', colorScheme);

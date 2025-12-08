@@ -13,7 +13,7 @@ import HighFive from '../../../assets/illustrations/HighFive';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
 import { useI18n } from '../../hooks/useI18n';
-import { stepStyles } from '../../styles/spacing';
+import { STEP_GAP, stepStyles } from '../../styles/spacing';
 import Avatar from '../../components/Avatar';
 import { toast } from '../../../lib/sonner';
 import { useAccountStore, useAccounts, useAccountLoading, useAccountLoadingSession, type QuickAccount } from '../../stores/accountStore';
@@ -221,7 +221,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
 
     return (
         <>
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, { alignItems: 'flex-start', position: 'relative' }]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP, alignItems: 'flex-start', position: 'relative' }]}>
                 <HighFive width={100} height={100} />
                 <TouchableOpacity
                     style={[stylesheet.languageButton, { backgroundColor: colors.inputBackground }]}
@@ -231,7 +231,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                     <Ionicons name="globe-outline" size={20} color={colors.primary} />
                 </TouchableOpacity>
             </View>
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP }, baseStyles.header]}>
                 <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>
                     {t('signin.title')}
                 </Text>
@@ -240,7 +240,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                 </Text>
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP }]}>
                 <TextField
                     ref={inputRef}
                     label={t('common.labels.username')}
@@ -268,7 +268,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
             </View>
 
             {accountsForDisplay.length > 0 && !isInputFocused && (
-                <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.dividerContainer]}>
+                <View style={[baseStyles.container, { marginBottom: STEP_GAP }, stylesheet.dividerContainer]}>
                     <View style={[stylesheet.dividerLine, { backgroundColor: colors.border }]} />
                     <Text style={[stylesheet.dividerText, { color: colors.secondaryText }]}>
                         {t('signin.or') || 'or'}
@@ -278,7 +278,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
             )}
 
             {accountsForDisplay.length > 0 && !isInputFocused ? (
-                <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
+                <View style={[baseStyles.container, { marginBottom: STEP_GAP }]}>
                     <TouchableOpacity
                         style={[
                             stylesheet.toggleButton,
@@ -424,7 +424,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                 </View>
             ) : null}
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+            <View style={[baseStyles.container, { marginBottom: 0 }, baseStyles.buttonContainer]}>
                 <GroupedPillButtons
                     buttons={[
                         {

@@ -21,6 +21,7 @@ import Avatar from '../components/Avatar';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { useOxy } from '../context/OxyContext';
 
 interface SubscriptionPlan {
     id: string;
@@ -68,10 +69,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
     theme,
     navigate,
     goBack,
-    // OxyContext values from props (instead of useOxy hook)
-    user,
-    oxyServices,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const { user, oxyServices } = useOxy();
     const [loading, setLoading] = useState(true);
     const [subscription, setSubscription] = useState<UserSubscription | null>(null);
     const [plans, setPlans] = useState<SubscriptionPlan[]>([]);

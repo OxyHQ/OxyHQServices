@@ -32,7 +32,7 @@ const SignUpWelcomeStep: React.FC<SignUpWelcomeStepProps> = ({
 
     return (
         <>
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, { alignItems: 'flex-start', position: 'relative' }]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP, alignItems: 'flex-start', position: 'relative' }]}>
                 <HighFive width={100} height={100} />
                 <TouchableOpacity
                     style={[localStyles.languageButton, { backgroundColor: colors.inputBackground }]}
@@ -42,12 +42,12 @@ const SignUpWelcomeStep: React.FC<SignUpWelcomeStepProps> = ({
                     <Ionicons name="globe-outline" size={20} color={colors.primary} />
                 </TouchableOpacity>
             </View>
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP }, baseStyles.header]}>
                 <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('signup.welcome.title')}</Text>
                 <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>{t('signup.welcome.subtitle')}</Text>
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
+            <View style={[baseStyles.container, { marginBottom: 0 }]}>
                 <View
                     style={[
                         localStyles.actionCard,

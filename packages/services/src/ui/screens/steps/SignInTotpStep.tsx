@@ -73,14 +73,14 @@ const SignInTotpStep: React.FC<SignInTotpStepProps> = ({
 
   return (
     <>
-      <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+      <View style={[baseStyles.container, { marginBottom: STEP_GAP }, baseStyles.header]}>
         <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('signin.totp.title') || 'Two‑Factor Code'}</Text>
         <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}> 
           {t('signin.totp.subtitle', { username }) || `Enter the 6‑digit code from your authenticator app for @${username}`}
         </Text>
       </View>
 
-      <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.inputSection]}>
+      <View style={[baseStyles.container, { marginBottom: STEP_GAP }, stylesheet.inputSection]}>
         <View style={stylesheet.pinInputWrapper}>
           <PinInput
             ref={inputRef}
@@ -110,7 +110,7 @@ const SignInTotpStep: React.FC<SignInTotpStepProps> = ({
         ) : null}
       </View>
 
-      <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+      <View style={[baseStyles.container, { marginBottom: STEP_GAP }, baseStyles.buttonContainer]}>
         <GroupedPillButtons
           buttons={[
             { text: t('common.actions.back'), onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
@@ -120,7 +120,7 @@ const SignInTotpStep: React.FC<SignInTotpStepProps> = ({
         />
       </View>
 
-      <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.footerContainer]}>
+      <View style={[baseStyles.container, stylesheet.footerContainer, { marginBottom: 0 }]}>
         <Text style={[styles.footerText, { color: colors.secondaryText }]}>{t('signin.totp.noAccess') || 'No access to your authenticator?'}</Text>
         <View style={stylesheet.footerLinks}>
           <TouchableOpacity onPress={() => navigate('RecoverAccount', { prefillUsername: username })}>

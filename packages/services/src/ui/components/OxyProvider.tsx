@@ -1,12 +1,12 @@
 import { useEffect, useRef, type FC } from 'react';
 import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { BottomSheetModalProvider } from '@gorhom/bottom-sheet';
 import type { OxyProviderProps } from '../types/navigation';
 import { OxyContextProvider } from '../context/OxyContext';
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { setupFonts } from './FontLoader';
 import BottomSheetRouter from './BottomSheetRouter';
+import BottomSheetProvider from './BottomSheetProvider';
 
 // Initialize fonts automatically
 setupFonts();
@@ -69,18 +69,18 @@ const OxyProvider: FC<OxyProviderProps> = ({
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <QueryClientProvider client={client}>
-            <OxyContextProvider
+                <OxyContextProvider
                     oxyServices={oxyServices as any}
-                baseURL={baseURL}
-                storageKeyPrefix={storageKeyPrefix}
+                    baseURL={baseURL}
+                    storageKeyPrefix={storageKeyPrefix}
                     onAuthStateChange={onAuthStateChange as any}
-            >
-                    <BottomSheetModalProvider>
-                {children}
+                >
+                    <BottomSheetProvider>
+                        {children}
                         <BottomSheetRouter />
-                    </BottomSheetModalProvider>
-            </OxyContextProvider>
-        </QueryClientProvider>
+                    </BottomSheetProvider>
+                </OxyContextProvider>
+            </QueryClientProvider>
         </GestureHandlerRootView>
     );
 };

@@ -12,6 +12,7 @@ import { Header, Section, GroupedSection, LoadingState, EmptyState } from '../co
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { useOxy } from '../context/OxyContext';
 
 interface SavedItem {
     id: string;
@@ -25,10 +26,9 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     goBack,
-    // OxyContext values from props (instead of useOxy hook)
-    oxyServices,
-    user,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const { oxyServices, user } = useOxy();
     const { t } = useI18n();
     const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
     const [collections, setCollections] = useState<any[]>([]);

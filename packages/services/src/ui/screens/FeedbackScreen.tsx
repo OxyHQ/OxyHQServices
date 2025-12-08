@@ -21,6 +21,7 @@ import { toast } from '../../lib/sonner';
 import { packageInfo } from '../../constants/version';
 import { GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
+import { useOxy } from '../context/OxyContext';
 
 // Types for better type safety
 interface FeedbackData {
@@ -510,10 +511,9 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
     goBack,
     onClose,
     theme,
-    // OxyContext values from props (instead of useOxy hook)
-    user,
-    oxyServices,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const { user, oxyServices } = useOxy();
     const colors = useThemeColors(theme);
     const { t } = useI18n();
 

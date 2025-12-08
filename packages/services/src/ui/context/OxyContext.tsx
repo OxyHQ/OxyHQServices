@@ -25,7 +25,7 @@ import { useDeviceManagement } from '../hooks/useDeviceManagement';
 import { getStorageKeys } from '../utils/storageHelpers';
 import { isInvalidSessionError } from '../utils/errorHandlers';
 import type { RouteName } from '../navigation/routes';
-import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetApi';
+import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
 
 export interface OxyContextState {
   user: User | null;

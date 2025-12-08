@@ -1,4 +1,5 @@
 import type { RouteName } from './routes';
+import { isValidRoute } from './routes';
 
 /**
  * Bottom Sheet Manager - Pure state management module
@@ -59,6 +60,8 @@ export const updateBottomSheetState = (updates: Partial<BottomSheetRouterState>)
  */
 export const subscribeToBottomSheetState = (listener: (state: BottomSheetRouterState) => void) => {
     bottomSheetStateListeners.add(listener);
+    // Immediately call with current state
+    listener(bottomSheetState);
     return () => {
         bottomSheetStateListeners.delete(listener);
     };
@@ -74,7 +77,7 @@ export const getBottomSheetState = (): BottomSheetRouterState => {
 /**
  * Show the bottom sheet with a specific screen (internal - no route validation)
  * Note: Route validation should be done by the caller before calling this function
- * Use bottomSheetApi.showBottomSheet() for the public API with validation
+ * Use showBottomSheet() for the public API with validation
  * 
  * @param screen - The screen to navigate to
  * @param props - Props to pass to the screen
@@ -117,11 +120,16 @@ export const managerShowBottomSheet = (
         navigationHistory: bottomSheetState.navigationHistory,
         isOpen: true,
     });
+
+    // Present the sheet after state update
+    if (bottomSheetRef?.current) {
+        bottomSheetRef.current.present();
+    }
 };
 
 /**
  * Close the bottom sheet (internal)
- * Use bottomSheetApi.closeBottomSheet() for the public API
+ * Use closeBottomSheet() for the public API
  */
 export const managerCloseBottomSheet = (): void => {
     updateBottomSheetState({
@@ -135,19 +143,6 @@ export const managerCloseBottomSheet = (): void => {
     if (bottomSheetRef?.current) {
         bottomSheetRef.current.dismiss();
     }
-};
-
-/**
- * Navigate to a specific step within the current screen (for step-based screens)
- */
-export const managerNavigateToStep = (step: number): void => {
-    if (!bottomSheetState.currentScreen) {
-        return;
-    }
-    
-    updateBottomSheetState({
-        currentStep: step,
-    });
 };
 
 /**
@@ -177,5 +172,41 @@ export const managerGoBack = (): boolean => {
     }
     
     return false;
+};
+
+/**
+ * Public API for showing bottom sheets
+ * This function validates routes and calls the internal manager
+ * 
+ * @param screenOrConfig - Either a route name string or a configuration object
+ */
+export const showBottomSheet = (
+    screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> },
+): void => {
+    let screen: RouteName;
+    let props: Record<string, unknown> = {};
+
+    if (typeof screenOrConfig === 'string') {
+        screen = screenOrConfig;
+    } else {
+        screen = screenOrConfig.screen;
+        props = screenOrConfig.props || {};
+    }
+
+    if (!isValidRoute(screen)) {
+        if (__DEV__) {
+            console.warn(`[BottomSheetAPI] Invalid route: ${screen}`);
+        }
+        return;
+    }
+
+    managerShowBottomSheet(screen, props);
+};
+
+/**
+ * Public API for closing bottom sheets
+ */
+export const closeBottomSheet = (): void => {
+    managerCloseBottomSheet();
 };
 

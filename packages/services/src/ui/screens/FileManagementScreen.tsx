@@ -24,6 +24,7 @@ import JustifiedPhotoGrid from '../components/photogrid/JustifiedPhotoGrid';
 import { GroupedSection } from '../components';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { useOxy } from '../context/OxyContext';
 import {
     confirmAction,
     convertDocumentPickerAssetToFile,
@@ -150,10 +151,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     allowUploadInSelectMode = true,
     defaultVisibility = 'private',
     linkContext,
-    // OxyContext values from props (instead of useOxy hook)
-    user,
-    oxyServices,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const { user, oxyServices } = useOxy();
     const files = useFiles();
     const uploading = useUploadingStore();
     const uploadProgress = useUploadAggregateProgress();

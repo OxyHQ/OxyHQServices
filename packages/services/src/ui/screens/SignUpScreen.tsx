@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { BaseScreenProps } from '../navigation/types';
 import { useThemeColors } from '../styles';
 import { toast } from '../../lib/sonner';
+import { useOxy } from '../context/OxyContext';
 import StepBasedScreen, { type StepConfig } from '../components/StepBasedScreen';
 import SignUpWelcomeStep from './steps/SignUpWelcomeStep';
 import SignUpIdentityStep from './steps/SignUpIdentityStep';
@@ -35,10 +36,9 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
     email: initialEmail,
     password: initialPassword,
     confirmPassword: initialConfirmPassword,
-    // OxyContext values from props (instead of useOxy hook)
-    signUp,
-    oxyServices,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const { signUp, oxyServices } = useOxy();
     const colors = useThemeColors(theme);
 
     // Form data state - sync with props when they change from router navigation
@@ -309,10 +309,13 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
         validationState, errorMessage, validateEmail, validatePassword, isLoading
     ]);
 
+    // Ensure initialStep is a number (defensive check)
+    const safeInitialStep = typeof initialStep === 'number' ? initialStep : 0;
+
     return (
         <StepBasedScreen
             steps={steps}
-            initialStep={initialStep}
+            initialStep={safeInitialStep}
             stepData={stepData}
             onComplete={handleComplete}
             navigate={navigate}

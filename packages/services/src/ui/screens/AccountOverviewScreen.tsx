@@ -25,6 +25,7 @@ import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { getDisplayName, getShortDisplayName } from '../utils/user-utils';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { useOxy } from '../context/OxyContext';
 
 // Optional Lottie import - gracefully handle if not available
 let LottieView: any = null;
@@ -58,15 +59,17 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     navigate,
-    // OxyContext values from props (instead of useOxy hook)
-    user,
-    logout,
-    isLoading,
-    sessions,
-    activeSessionId,
-    oxyServices,
-    isAuthenticated,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const {
+        user,
+        logout,
+        isLoading,
+        sessions,
+        activeSessionId,
+        oxyServices,
+        isAuthenticated,
+    } = useOxy();
     const { t } = useI18n();
     const [showMoreAccounts, setShowMoreAccounts] = useState(false);
     const [additionalAccountsData, setAdditionalAccountsData] = useState<any[]>([]);
@@ -117,7 +120,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
     // Memoize additional accounts filtering to prevent recalculation on every render
     const additionalAccounts = useMemo(() =>
-        sessions.filter(session =>
+        (sessions || []).filter(session =>
             session.sessionId !== activeSessionId && session.userId !== user?.id
         ), [sessions, activeSessionId, user?.id]
     );

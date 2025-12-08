@@ -14,6 +14,7 @@ import { toast } from '../../lib/sonner';
 import { Header, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { SUPPORTED_LANGUAGES } from '../../utils/languageUtils';
+import { useOxy } from '../context/OxyContext';
 
 interface LanguageSelectorScreenProps extends BaseScreenProps { }
 
@@ -27,16 +28,11 @@ interface LanguageSelectorScreenProps extends BaseScreenProps { }
  */
 const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     goBack,
-    // OxyContext values from props (instead of useOxy hook)
-    user,
-    currentLanguage,
-    setLanguage,
-    oxyServices,
-    isAuthenticated,
     onClose,
     theme,
-    navigate,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const { user, currentLanguage, setLanguage, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
     const colorScheme = useColorScheme();
     const themeStyles = useThemeStyles(theme, colorScheme);

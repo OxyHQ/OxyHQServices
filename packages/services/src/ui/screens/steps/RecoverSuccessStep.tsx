@@ -4,7 +4,7 @@ import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import { useI18n } from '../../hooks/useI18n';
-import { STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
+import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
 interface RecoverSuccessStepProps {
     // Common props from StepBasedScreen
@@ -52,18 +52,18 @@ const RecoverSuccessStep: React.FC<RecoverSuccessStepProps> = ({
 
     return (
         <>
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, stylesheet.iconContainer]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP }, stylesheet.iconContainer]}>
                 <View style={[stylesheet.successIcon, { backgroundColor: colors.success + '20' }]}>
                     <Ionicons name="checkmark-circle" size={40} color={colors.success} />
                 </View>
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP }, baseStyles.header]}>
                 <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('recover.title')}</Text>
                 <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>{successMessage || t('recover.resetSuccess')}</Text>
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP }]}>
                 <View style={[stylesheet.infoCard, {
                     backgroundColor: colors.inputBackground,
                     borderColor: colors.border,
@@ -87,7 +87,7 @@ const RecoverSuccessStep: React.FC<RecoverSuccessStepProps> = ({
                 </View>
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+            <View style={[baseStyles.container, { marginBottom: 0 }, baseStyles.buttonContainer]}>
                 <GroupedPillButtons
                     buttons={[
                         {

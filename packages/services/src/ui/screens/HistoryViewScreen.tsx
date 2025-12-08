@@ -11,6 +11,7 @@ import { Header, Section, GroupedSection, LoadingState, EmptyState } from '../co
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { useOxy } from '../context/OxyContext';
 
 interface HistoryItem {
     id: string;
@@ -23,9 +24,9 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     goBack,
-    // OxyContext values from props (instead of useOxy hook)
-    user,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const { user } = useOxy();
     const { t } = useI18n();
     const colorScheme = useColorScheme();
     const themeStyles = useThemeStyles(theme || 'light', colorScheme);

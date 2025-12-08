@@ -1,5 +1,5 @@
 import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
 import AnimatedReanimated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
 import type { BaseScreenProps } from '../navigation/types';
 import Avatar from '../components/Avatar';
@@ -9,6 +9,7 @@ import { useAuthStore } from '../stores/authStore';
 import { useThemeColors } from '../styles';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
 import { useI18n } from '../hooks/useI18n';
+import { useOxy } from '../context/OxyContext';
 
 const GAP = 12;
 const INNER_GAP = 8;
@@ -56,10 +57,9 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     onAuthenticated,
     theme,
     newUser,
-    // OxyContext values from props (instead of useOxy hook)
-    user,
-    oxyServices,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const { user, oxyServices } = useOxy();
     const { t } = useI18n();
     const updateUser = useAuthStore(s => s.updateUser);
     const currentUser = user || newUser; // fallback
@@ -214,43 +214,41 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                 ))}
             </View>
             <Animated.View style={{ opacity: fadeAnim, transform: [{ translateX: slideAnim }] }}>
-                <ScrollView contentContainerStyle={styles.scrollInner} showsVerticalScrollIndicator={false}>
-                    <View style={styles.contentContainer}>
-                        <View style={[styles.header, styles.sectionSpacing]}>
-                            <Text style={[styles.title, { color: colors.text }]}>{step.title}</Text>
-                            {step.body && <Text style={[styles.body, { color: colors.secondaryText }]}>{step.body}</Text>}
-                        </View>
-                        {Array.isArray(step.bullets) && step.bullets.length > 0 && (
-                            <View style={[styles.bulletContainer, styles.sectionSpacing]}>
-                                {step.bullets.map(b => (
-                                    <View key={b} style={styles.bulletRow}>
-                                        <Ionicons name="ellipse" size={8} color={colors.primary} style={{ marginTop: 6 }} />
-                                        <Text style={[styles.bulletText, { color: colors.secondaryText }]}>{b}</Text>
-                                    </View>
-                                ))}
-                            </View>
-                        )}
-                        {step.showAvatar && (
-                            <View style={[styles.avatarSection, styles.sectionSpacing]}>
-                                <Avatar 
-                                    size={120} 
-                                    name={currentUser?.name?.full || currentUser?.name?.first || currentUser?.username} 
-                                    uri={avatarUri} 
-                                     
-                                    backgroundColor={colors.primary + '20'}
-                                    style={styles.avatar} 
-                                />
-                                <TouchableOpacity style={[styles.changeAvatarButton, { backgroundColor: colors.primary }]} onPress={openAvatarPicker}>
-                                    <Ionicons name="image-outline" size={18} color="#FFFFFF" />
-                                    <Text style={styles.changeAvatarText}>{avatarUri ? (t('welcomeNew.avatar.change') || 'Change Avatar') : (t('welcomeNew.avatar.add') || 'Add Avatar')}</Text>
-                                </TouchableOpacity>
-                            </View>
-                        )}
-                        <View style={styles.sectionSpacing}>
-                            <GroupedPillButtons buttons={pillButtons} colors={colors} />
-                        </View>
+                <View style={[styles.scrollInner, styles.contentContainer]}>
+                    <View style={[styles.header, styles.sectionSpacing]}>
+                        <Text style={[styles.title, { color: colors.text }]}>{step.title}</Text>
+                        {step.body && <Text style={[styles.body, { color: colors.secondaryText }]}>{step.body}</Text>}
                     </View>
-                </ScrollView>
+                    {Array.isArray(step.bullets) && step.bullets.length > 0 && (
+                        <View style={[styles.bulletContainer, styles.sectionSpacing]}>
+                            {step.bullets.map(b => (
+                                <View key={b} style={styles.bulletRow}>
+                                    <Ionicons name="ellipse" size={8} color={colors.primary} style={{ marginTop: 6 }} />
+                                    <Text style={[styles.bulletText, { color: colors.secondaryText }]}>{b}</Text>
+                                </View>
+                            ))}
+                        </View>
+                    )}
+                    {step.showAvatar && (
+                        <View style={[styles.avatarSection, styles.sectionSpacing]}>
+                            <Avatar 
+                                size={120} 
+                                name={currentUser?.name?.full || currentUser?.name?.first || currentUser?.username} 
+                                uri={avatarUri} 
+                                
+                                backgroundColor={colors.primary + '20'}
+                                style={styles.avatar} 
+                            />
+                            <TouchableOpacity style={[styles.changeAvatarButton, { backgroundColor: colors.primary }]} onPress={openAvatarPicker}>
+                                <Ionicons name="image-outline" size={18} color="#FFFFFF" />
+                                <Text style={styles.changeAvatarText}>{avatarUri ? (t('welcomeNew.avatar.change') || 'Change Avatar') : (t('welcomeNew.avatar.add') || 'Add Avatar')}</Text>
+                            </TouchableOpacity>
+                        </View>
+                    )}
+                    <View style={styles.sectionSpacing}>
+                        <GroupedPillButtons buttons={pillButtons} colors={colors} />
+                    </View>
+                </View>
             </Animated.View>
         </View>
     );
@@ -266,7 +264,6 @@ const createStyles = (theme: string) => {
             paddingHorizontal: 20,
         },
         scrollInner: {
-            paddingBottom: 12,
             paddingTop: 0,
         },
         contentContainer: {

@@ -8,13 +8,16 @@ import { FollowButton } from '../components';
 import { useFollow } from '../hooks/useFollow';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
+import { useOxy } from '../context/OxyContext';
 
 interface ProfileScreenProps extends BaseScreenProps {
     userId: string;
     username?: string;
 }
 
-const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, goBack, navigate, oxyServices, user: currentUser }) => {
+const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, goBack, navigate }) => {
+    // Use useOxy() hook for OxyContext values
+    const { oxyServices, user: currentUser } = useOxy();
     const [profile, setProfile] = useState<any>(null);
     const [karmaTotal, setKarmaTotal] = useState<number | null>(null);
     const [postsCount, setPostsCount] = useState<number | null>(null);

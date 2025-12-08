@@ -1,210 +1,302 @@
-import React, { forwardRef, useMemo, useCallback, useImperativeHandle, useState, useEffect } from 'react';
-import { View, StyleSheet, Keyboard, Platform } from 'react-native';
+import React, { forwardRef, useImperativeHandle, useRef, useEffect, useState, useCallback, useMemo } from 'react';
 import {
-    BottomSheetModal,
-    BottomSheetBackdrop,
-} from '@gorhom/bottom-sheet';
+    View,
+    StyleSheet,
+    Modal,
+    TouchableWithoutFeedback,
+    Dimensions,
+    type ViewStyle,
+    type StyleProp,
+} from 'react-native';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
+import Animated, {
+    useSharedValue,
+    useAnimatedStyle,
+    withSpring,
+    withTiming,
+    runOnJS,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColorScheme } from '../hooks/use-color-scheme';
-import { Colors } from '../constants/theme';
+
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
+const ANIMATION_CONFIG = {
+    spring: {
+        damping: 30,
+        stiffness: 300,
+        mass: 0.8,
+    },
+    timing: {
+        duration: 250,
+    },
+} as const;
+
+const GESTURE_CONFIG = {
+    dismissThreshold: 100,
+    dismissVelocity: 500,
+    opacityThreshold: 200,
+    activeOffsetY: 10,
+    failOffsetX: 20,
+} as const;
+
+const HIDDEN_BOTTOM = -SCREEN_HEIGHT;
+const VISIBLE_BOTTOM = 0;
+const BACKDROP_OPACITY = 0.5;
+const KEYBOARD_GAP = 40;
 
 export interface BottomSheetRef {
     present: () => void;
     dismiss: () => void;
     close: () => void;
-    snapToIndex: (index: number) => void;
     expand: () => void;
     collapse: () => void;
+    updateKeyboardPadding: (height: number) => void;
 }
 
 export interface BottomSheetProps {
     children: React.ReactNode;
-    snapPoints?: (string | number)[];
-    enablePanDownToClose?: boolean;
-    enableDismissOnClose?: boolean;
     onDismiss?: () => void;
-    onAnimate?: (fromIndex: number, toIndex: number) => void;
-    index?: number;
-    enableDynamicSizing?: boolean;
-    keyboardBehavior?: 'interactive' | 'fillParent' | 'extend';
-    keyboardBlurBehavior?: 'none' | 'restore';
-    android_keyboardInputMode?: 'adjustResize' | 'adjustPan';
-    backgroundStyle?: object;
-    handleStyle?: object;
-    handleIndicatorStyle?: object;
-    enableOverDrag?: boolean;
+    enablePanDownToClose?: boolean;
+    backgroundComponent?: (props: { style?: StyleProp<ViewStyle> }) => React.ReactElement | null;
+    backdropComponent?: (props: {
+        style?: StyleProp<ViewStyle>;
+        onPress?: () => void;
+    }) => React.ReactElement | null;
+    handleStyle?: StyleProp<ViewStyle>;
+    handleIndicatorStyle?: StyleProp<ViewStyle>;
+    style?: StyleProp<ViewStyle>;
     enableHandlePanningGesture?: boolean;
-    animateOnMount?: boolean;
 }
 
 const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
     (
         {
             children,
-            snapPoints: providedSnapPoints,
-            enablePanDownToClose = true,
-            enableDismissOnClose = true,
             onDismiss,
-            onAnimate,
-            index = 0,
-            enableDynamicSizing = false,
-            keyboardBehavior = 'interactive',
-            keyboardBlurBehavior = 'restore',
-            android_keyboardInputMode = 'adjustResize',
-            backgroundStyle,
+            enablePanDownToClose = true,
+            backgroundComponent,
+            backdropComponent,
             handleStyle,
             handleIndicatorStyle,
-            enableOverDrag = false,
+            style,
             enableHandlePanningGesture = true,
-            animateOnMount = true,
         },
         ref,
     ) => {
-        const colorScheme = useColorScheme();
         const insets = useSafeAreaInsets();
-        const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
+        const [isVisible, setIsVisible] = useState(false);
 
-        // Track keyboard height for padding calculation
-        const [keyboardHeight, setKeyboardHeight] = useState(0);
+        const bottom = useSharedValue(HIDDEN_BOTTOM);
+        const backdropOpacity = useSharedValue(0);
+        const isAnimating = useSharedValue(false);
+        const isMountedRef = useRef(true);
+        const paddingBottom = useSharedValue(0);
 
-        // Listen to keyboard show/hide events
+        const animateToPosition = useCallback(
+            (targetBottom: number, opacity: number) => {
+                bottom.value = withSpring(targetBottom, ANIMATION_CONFIG.spring);
+                backdropOpacity.value = withTiming(opacity, ANIMATION_CONFIG.timing);
+            },
+            [bottom, backdropOpacity],
+        );
+
+        const present = useCallback(() => {
+            setIsVisible(true);
+        }, []);
+
+        const handleDismissComplete = useCallback(() => {
+            if (!isMountedRef.current) return;
+            setIsVisible(false);
+            isAnimating.value = false;
+            setTimeout(() => {
+                if (isMountedRef.current) {
+                    onDismiss?.();
+                }
+            }, 0);
+        }, [onDismiss, isAnimating]);
+
+        const dismiss = useCallback(() => {
+            if (isAnimating.value || !isVisible || !isMountedRef.current) return;
+
+            isAnimating.value = true;
+            backdropOpacity.value = withTiming(0, ANIMATION_CONFIG.timing);
+            bottom.value = withSpring(HIDDEN_BOTTOM, ANIMATION_CONFIG.spring, () => {
+                runOnJS(handleDismissComplete)();
+            });
+        }, [isVisible, bottom, backdropOpacity, isAnimating, handleDismissComplete]);
+
+        const calculatePadding = useCallback((height: number) => {
+            return height > 0 
+                ? Math.max(insets.bottom, height + KEYBOARD_GAP)
+                : insets.bottom;
+        }, [insets.bottom]);
+
+        const updateKeyboardPadding = useCallback((height: number) => {
+            if (!isVisible) {
+                paddingBottom.value = 0;
+                return;
+            }
+            paddingBottom.value = calculatePadding(height);
+        }, [isVisible, calculatePadding, paddingBottom]);
+
+        useImperativeHandle(
+            ref,
+            () => ({
+                present,
+                dismiss,
+                close: dismiss,
+                expand: present,
+                collapse: dismiss,
+                updateKeyboardPadding,
+            }),
+            [present, dismiss, updateKeyboardPadding],
+        );
+
         useEffect(() => {
-            const showSubscription = Keyboard.addListener(
-                Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-                (e) => setKeyboardHeight(e.endCoordinates.height)
-            );
-            const hideSubscription = Keyboard.addListener(
-                Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-                () => setKeyboardHeight(0)
-            );
-
+            isMountedRef.current = true;
             return () => {
-                showSubscription.remove();
-                hideSubscription.remove();
+                isMountedRef.current = false;
             };
         }, []);
 
-        // Default snap points if not provided
-        const defaultSnapPoints = useMemo(() => ['25%', '50%', '90%'], []);
 
-        // Use dynamic sizing if enabled, otherwise use provided or default snap points
-        // When enableDynamicSizing is true, don't pass snapPoints (let it size to content)
-        const snapPoints = useMemo(() => {
-            if (enableDynamicSizing) {
-                // For dynamic sizing, return undefined to let the sheet size to content
-                return undefined;
+        useEffect(() => {
+            if (isVisible) {
+                bottom.value = HIDDEN_BOTTOM;
+                backdropOpacity.value = 0;
+                requestAnimationFrame(() => {
+                    if (isMountedRef.current) {
+                        animateToPosition(VISIBLE_BOTTOM, BACKDROP_OPACITY);
+                    }
+                });
+            } else {
+                bottom.value = HIDDEN_BOTTOM;
+                backdropOpacity.value = 0;
+                paddingBottom.value = 0;
             }
-            return providedSnapPoints || defaultSnapPoints;
-        }, [enableDynamicSizing, providedSnapPoints, defaultSnapPoints]);
+        }, [isVisible, animateToPosition, bottom, backdropOpacity, paddingBottom]);
 
-        const bottomSheetModalRef = React.useRef<BottomSheetModal>(null);
+        const panGesture = useMemo(
+            () =>
+                Gesture.Pan()
+                    .enabled(enablePanDownToClose)
+                    .activeOffsetY(GESTURE_CONFIG.activeOffsetY)
+                    .failOffsetX([-GESTURE_CONFIG.failOffsetX, GESTURE_CONFIG.failOffsetX])
+                    .onUpdate((event) => {
+                        'worklet';
+                        if (event.translationY > 0) {
+                            bottom.value = VISIBLE_BOTTOM - event.translationY;
+                            const progress = Math.min(event.translationY / GESTURE_CONFIG.opacityThreshold, 1);
+                            backdropOpacity.value = BACKDROP_OPACITY * (1 - progress);
+                        }
+                    })
+                    .onEnd((event) => {
+                        'worklet';
+                        const shouldDismiss =
+                            event.translationY > GESTURE_CONFIG.dismissThreshold ||
+                            event.velocityY > GESTURE_CONFIG.dismissVelocity;
 
-        // Expose methods via ref
-        useImperativeHandle(ref, () => ({
-            present: () => {
-                bottomSheetModalRef.current?.present();
-            },
-            dismiss: () => {
-                bottomSheetModalRef.current?.dismiss();
-            },
-            close: () => {
-                bottomSheetModalRef.current?.dismiss();
-            },
-            snapToIndex: (idx: number) => {
-                bottomSheetModalRef.current?.snapToIndex(idx);
-            },
-            expand: () => {
-                bottomSheetModalRef.current?.expand();
-            },
-            collapse: () => {
-                bottomSheetModalRef.current?.collapse();
-            },
-        }));
+                        if (shouldDismiss) {
+                            runOnJS(dismiss)();
+                        } else {
+                            bottom.value = withSpring(VISIBLE_BOTTOM, ANIMATION_CONFIG.spring);
+                            backdropOpacity.value = withTiming(BACKDROP_OPACITY, ANIMATION_CONFIG.timing);
+                        }
+                    }),
+            [enablePanDownToClose, bottom, backdropOpacity, dismiss],
+        );
 
-
-        // Backdrop component
-        const renderBackdrop = useCallback(
-            (props: any) => (
-                <BottomSheetBackdrop
-                    {...props}
-                    disappearsOnIndex={-1}
-                    appearsOnIndex={0}
-                    opacity={0.5}
-                    enableTouchThrough={false}
-                />
-            ),
+        const sheetAnimatedStyle = useAnimatedStyle(
+            () => ({
+                bottom: bottom.value,
+            }),
             [],
         );
 
-        // Custom background component with rounded corners
-        const renderBackground = useCallback(
-            (props: any) => (
-                <View
-                    {...props}
-                    style={[
-                        styles.background,
-                        { backgroundColor: colors.background },
-                        props.style,
-                        backgroundStyle,
-                    ]}
-                />
-            ),
-            [colors, backgroundStyle],
+        const paddingAnimatedStyle = useAnimatedStyle(
+            () => ({
+                paddingBottom: paddingBottom.value,
+            }),
+            [],
         );
 
-        // Calculate bottom padding for keyboard
-        const bottomPadding = useMemo(
-            () => insets.bottom + keyboardHeight,
-            [insets.bottom, keyboardHeight],
+        const backdropAnimatedStyle = useAnimatedStyle(
+            () => ({
+                opacity: backdropOpacity.value,
+            }),
+            [],
         );
 
-        // Clone children and inject padding if it's a BottomSheetScrollView
-        const childrenWithPadding = useMemo(() => {
-            return React.Children.map(children, (child) => {
-                if (React.isValidElement(child)) {
-                    // Inject bottom padding into the child's contentContainerStyle
-                    return React.cloneElement(child as React.ReactElement<any>, {
-                        contentContainerStyle: [
-                            (child.props as any).contentContainerStyle,
-                            { paddingBottom: bottomPadding },
-                        ],
-                    });
+        const handleBackdropPress = useCallback(() => {
+            if (enablePanDownToClose) {
+                dismiss();
+            }
+        }, [enablePanDownToClose, dismiss]);
+
+        const renderBackdrop = useCallback(
+            (props: { style?: StyleProp<ViewStyle>; onPress?: () => void }) => {
+                if (backdropComponent) {
+                    return backdropComponent(props);
                 }
-                return child;
-            });
-        }, [children, bottomPadding]);
+                return (
+                    <TouchableWithoutFeedback onPress={props.onPress}>
+                        <Animated.View style={[styles.backdrop, props.style]} />
+                    </TouchableWithoutFeedback>
+                );
+            },
+            [backdropComponent],
+        );
+
+        const renderBackground = useCallback(
+            (props: { style?: StyleProp<ViewStyle> }) => {
+                if (backgroundComponent) {
+                    return backgroundComponent(props);
+                }
+                return <View style={[styles.background, props.style]} />;
+            },
+            [backgroundComponent],
+        );
+
+        if (!isVisible) {
+            return null;
+        }
 
         return (
-            <BottomSheetModal
-                ref={bottomSheetModalRef}
-                {...(snapPoints ? { snapPoints } : {})}
-                enablePanDownToClose={enablePanDownToClose}
-                enableDismissOnClose={enableDismissOnClose}
-                onDismiss={onDismiss}
-                onAnimate={onAnimate}
-                index={index}
-                keyboardBehavior={keyboardBehavior}
-                keyboardBlurBehavior={keyboardBlurBehavior}
-                android_keyboardInputMode={android_keyboardInputMode}
-                backgroundComponent={renderBackground}
-                backdropComponent={renderBackdrop}
-                enableOverDrag={enableOverDrag}
-                enableHandlePanningGesture={enableHandlePanningGesture}
-                animateOnMount={animateOnMount}
-                enableDynamicSizing={enableDynamicSizing}
-                style={styles.container}
-                handleStyle={[
-                    { position: 'absolute', top: 0, left: 0, right: 0, height: 4 },
-                    handleStyle,
-                ]}
-                handleIndicatorStyle={[
-                    { backgroundColor: colors.border, width: 40, height: 4, borderRadius: 2 },
-                    handleIndicatorStyle,
-                ]}
-
+            <Modal
+                visible={isVisible}
+                transparent
+                animationType="none"
+                statusBarTranslucent
+                onRequestClose={dismiss}
             >
-                {childrenWithPadding}
-            </BottomSheetModal>
+                <GestureHandlerRootView style={styles.modalContainer}>
+                    <Animated.View style={[styles.backdropContainer, backdropAnimatedStyle]}>
+                        {renderBackdrop({ onPress: handleBackdropPress })}
+                    </Animated.View>
+
+                    <GestureDetector gesture={panGesture}>
+                        <Animated.View
+                            style={[
+                                styles.sheetContainer,
+                                sheetAnimatedStyle,
+                                style,
+                            ]}
+                        >
+                            <Animated.View style={[styles.backgroundContainer, paddingAnimatedStyle]}>
+                                {renderBackground({ style: styles.backgroundInner })}
+                                {enableHandlePanningGesture && (
+                                    <View style={[styles.handleContainer, handleStyle]}>
+                                        <View style={[styles.handleIndicator, handleIndicatorStyle]} />
+                                    </View>
+                                )}
+                                <View style={styles.content}>
+                                    {children}
+                                </View>
+                            </Animated.View>
+                        </Animated.View>
+                    </GestureDetector>
+                </GestureHandlerRootView>
+            </Modal>
         );
     },
 );
@@ -212,18 +304,59 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
 BottomSheet.displayName = 'BottomSheet';
 
 const styles = StyleSheet.create({
-    container: {
+    modalContainer: {
+        flex: 1,
+    },
+    backdropContainer: {
+        ...StyleSheet.absoluteFillObject,
+    },
+    backdrop: {
+        flex: 1,
+        backgroundColor: '#000',
+    },
+    sheetContainer: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
         maxWidth: 800,
         width: '100%',
         alignSelf: 'center',
-        marginHorizontal: 'auto',
+        maxHeight: '90%',
     },
-    background: {
+    backgroundContainer: {
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
         overflow: 'hidden',
+        position: 'relative',
+        flex: 1,
+        minHeight: '100%',
+    },
+    backgroundInner: {
+        ...StyleSheet.absoluteFillObject,
+    },
+    background: {
+        backgroundColor: '#fff',
+    },
+    handleContainer: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: 20,
+        alignItems: 'center',
+        justifyContent: 'center',
+        zIndex: 1,
+    },
+    handleIndicator: {
+        width: 40,
+        height: 4,
+        borderRadius: 2,
+        backgroundColor: '#ccc',
+        marginTop: 8,
+    },
+    content: {
+        width: '100%',
     },
 });
 
 export default BottomSheet;
-

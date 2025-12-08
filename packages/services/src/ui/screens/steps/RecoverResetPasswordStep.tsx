@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import TextField from '../../components/internal/TextField';
 import { useI18n } from '../../hooks/useI18n';
-import { STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
+import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
 interface RecoverResetPasswordStepProps {
   // Common props
@@ -89,12 +89,12 @@ const RecoverResetPasswordStep: React.FC<RecoverResetPasswordStepProps> = ({
 
   return (
     <>
-      <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+      <View style={[baseStyles.container, { marginBottom: STEP_GAP }, baseStyles.header]}>
         <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('recover.newPassword')}</Text>
         <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>{t('recover.title')} @{identifier}</Text>
       </View>
 
-      <View style={[baseStyles.container, baseStyles.sectionSpacing]}>
+      <View style={[baseStyles.container, { marginBottom: STEP_GAP }]}>
         <View style={[stylesheet.formCard, { backgroundColor: colors.inputBackground || colors.card || 'rgba(0,0,0,0.04)' }, webShadowReset]}>
           <TextField
             label={t('common.labels.password')}
@@ -126,7 +126,7 @@ const RecoverResetPasswordStep: React.FC<RecoverResetPasswordStepProps> = ({
         </View>
       </View>
 
-      <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+      <View style={[baseStyles.container, { marginBottom: 0 }, baseStyles.buttonContainer]}>
         <GroupedPillButtons
           buttons={[
             { text: t('common.actions.back'), onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },

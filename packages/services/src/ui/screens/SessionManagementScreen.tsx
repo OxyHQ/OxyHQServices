@@ -17,19 +17,22 @@ import type { ClientSession } from '../../models/session';
 import { confirmAction } from '../utils/confirmAction';
 import { Header, GroupedSection } from '../components';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useOxy } from '../context/OxyContext';
 
 const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     goBack,
-    // OxyContext values from props (instead of useOxy hook)
-    sessions: userSessions,
-    activeSessionId,
-    refreshSessions,
-    logout,
-    logoutAll,
-    switchSession,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const {
+        sessions: userSessions,
+        activeSessionId,
+        refreshSessions,
+        logout,
+        logoutAll,
+        switchSession,
+    } = useOxy();
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [actionLoading, setActionLoading] = useState<string | null>(null);

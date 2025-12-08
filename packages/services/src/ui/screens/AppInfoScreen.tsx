@@ -24,6 +24,7 @@ import OxyServicesLogo from '../../assets/icons/OxyServices';
 import { Section, GroupedSection } from '../components';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { useOxy } from '../context/OxyContext';
 
 
 interface SystemInfo {
@@ -40,12 +41,9 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     navigate,
-    // OxyContext values from props (instead of useOxy hook)
-    user,
-    sessions,
-    oxyServices,
-    isAuthenticated,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const { user, sessions, oxyServices, isAuthenticated } = useOxy();
     const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
     const [isRunningSystemCheck, setIsRunningSystemCheck] = useState(false);
     const [connectionStatus, setConnectionStatus] = useState<'checking' | 'connected' | 'disconnected' | 'unknown'>('unknown');

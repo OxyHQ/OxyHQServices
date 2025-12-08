@@ -9,15 +9,15 @@ import { toast } from '../../lib/sonner';
 import { Header, Section, LoadingState, SettingRow } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useOxy } from '../context/OxyContext';
 
 const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     goBack,
-    // OxyContext values from props (instead of useOxy hook)
-    oxyServices,
-    user,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const { oxyServices, user } = useOxy();
     const { t } = useI18n();
     const [safeSearch, setSafeSearch] = useState(false);
     const [searchPersonalization, setSearchPersonalization] = useState(true);

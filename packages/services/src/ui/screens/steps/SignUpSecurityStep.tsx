@@ -100,12 +100,12 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
 
     return (
         <>
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.header]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP }, baseStyles.header]}>
                 <Text style={[styles.modernTitle, baseStyles.title, { color: colors.text, marginBottom: 0, marginTop: 0 }]}>{t('signup.security.title')}</Text>
                 <Text style={[styles.modernSubtitle, baseStyles.subtitle, { color: colors.secondaryText, marginBottom: 0, marginTop: 0 }]}>{t('signup.security.subtitle')}</Text>
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, { gap: STEP_INNER_GAP }]}>
+            <View style={[baseStyles.container, { marginBottom: STEP_GAP, gap: STEP_INNER_GAP }]}>
                 <TextField
                     ref={passwordRef}
                     label={t('common.labels.password')}
@@ -170,7 +170,7 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
                 />
             </View>
 
-            <View style={[baseStyles.container, baseStyles.sectionSpacing, baseStyles.buttonContainer]}>
+            <View style={[baseStyles.container, { marginBottom: 0 }, baseStyles.buttonContainer]}>
                 <GroupedPillButtons
                     buttons={[
                         {

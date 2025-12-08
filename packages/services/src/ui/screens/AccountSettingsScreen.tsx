@@ -40,6 +40,7 @@ import { TwoFactorSetupModal } from '../components/profile/TwoFactorSetupModal';
 import { getDisplayName } from '../utils/user-utils';
 import { TTLCache, registerCacheForCleanup } from '../../utils/cache';
 import QRCode from 'react-native-qrcode-svg';
+import { useOxy } from '../context/OxyContext';
 
 // Caches for link metadata and location searches
 const linkMetadataCache = new TTLCache<any>(30 * 60 * 1000); // 30 minutes cache for link metadata
@@ -55,13 +56,15 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     navigate,
     initialField,
     initialSection,
-    // OxyContext values from props (instead of useOxy hook)
-    user: userFromContext,
-    oxyServices,
-    isLoading: authLoading,
-    isAuthenticated,
-    activeSessionId,
 }) => {
+    // Use useOxy() hook for OxyContext values
+    const {
+        user: userFromContext,
+        oxyServices,
+        isLoading: authLoading,
+        isAuthenticated,
+        activeSessionId,
+    } = useOxy();
     const { t } = useI18n();
     const updateUser = useAuthStore((state) => state.updateUser);
     // Get user directly from store to ensure reactivity to avatar changes
