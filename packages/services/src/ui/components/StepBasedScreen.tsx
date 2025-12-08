@@ -8,8 +8,6 @@ import Animated, {
     useSharedValue,
     useAnimatedStyle,
     withTiming,
-    runOnJS,
-    type SharedValue,
 } from 'react-native-reanimated';
 import { useThemeColors, createAuthStyles } from '../styles';
 import type { BaseScreenProps, StepController } from '../types/navigation';
@@ -38,9 +36,7 @@ export interface StepBasedScreenProps extends Omit<BaseScreenProps, 'navigate'> 
 }
 
 interface StepBasedScreenState {
-    currentStep: number;
     stepData: any[];
-    isTransitioning: boolean;
 }
 
 // Individual animated progress dot
@@ -94,30 +90,7 @@ const ProgressIndicator: React.FC<{
     </View>
 );
 
-// Step container with animations
-const AnimatedStepContainer: React.FC<{
-    children: React.ReactNode;
-    fadeAnim: SharedValue<number>;
-    scaleAnim: SharedValue<number>;
-    styles: any;
-    stepKey: string;
-}> = ({ children, fadeAnim, scaleAnim, styles, stepKey }) => {
-    const animatedStyle = useAnimatedStyle(() => ({
-        opacity: fadeAnim.value,
-        transform: [
-            { scale: scaleAnim.value }
-        ]
-    }));
-
-    return (
-        <Animated.View
-            key={stepKey}
-            style={[styles.stepContainer, animatedStyle]}
-        >
-            {children}
-        </Animated.View>
-    );
-};
+// Step container - animations are now handled by router
 
 const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     steps,
@@ -139,11 +112,13 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     // ========================================================================
     // State Management
     // ========================================================================
+    // Router now handles step navigation - we just track step data
     const [state, setState] = useState<StepBasedScreenState>({
-        currentStep: initialStep,
         stepData: [...stepData],
-        isTransitioning: false,
     });
+    
+    // Current step comes from router via initialStep prop
+    const currentStep = initialStep ?? 0;
 
     // ========================================================================
     // Computed Values
@@ -237,10 +212,8 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     }), [colors, theme]);
 
     // ========================================================================
-    // Animation Values
+    // Animation Values (removed - router handles animations now)
     // ========================================================================
-    const fadeAnim = useSharedValue(1);
-    const scaleAnim = useSharedValue(1);
 
     // ========================================================================
     // Refs for Callbacks
@@ -275,254 +248,113 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     }, []);
 
     // ========================================================================
-    // Animation & Transitions
+    // Step Change Effects
     // ========================================================================
-    const animateTransition = useCallback((nextStep: number) => {
-        if (!enableAnimations) {
-            setState(prev => ({ ...prev, currentStep: nextStep }));
-            onStepChangeRef.current?.(nextStep, steps.length);
-            // Call onEnter for new step when animations are disabled
-            if (nextStep >= 0 && nextStep < steps.length) {
-                const nextStepConfig = steps[nextStep];
-                nextStepConfig?.onEnter?.();
+    // Router handles all step navigation - we just respond to prop changes
+    useEffect(() => {
+        // Validate step
+        if (currentStep < 0 || currentStep >= steps.length) {
+            if (__DEV__) {
+                console.warn('StepBasedScreen: invalid step', currentStep);
             }
             return;
         }
 
-        setState(prev => ({ ...prev, isTransitioning: true }));
+        // Call onEnter for current step
+        const currentStepConfig = steps[currentStep];
+        currentStepConfig?.onEnter?.();
+        
+        // Notify parent of step change
+        onStepChangeRef.current?.(currentStep, steps.length);
 
-        const applyStepChange = (targetStep: number, totalSteps: number) => {
-            setState(prev => ({
-                ...prev,
-                currentStep: targetStep,
-                isTransitioning: false,
-            }));
-            onStepChangeRef.current?.(targetStep, totalSteps);
-
-            // Call onEnter for new step after state has updated
-            if (targetStep >= 0 && targetStep < steps.length) {
-                const newStepConfig = steps[targetStep];
-                newStepConfig?.onEnter?.();
+        // Cleanup: call onExit when step changes
+        return () => {
+            if (currentStepConfig?.onExit) {
+                currentStepConfig.onExit();
             }
-
-            // Prepare next step animation
-            fadeAnim.value = 0;
-            scaleAnim.value = 0.98;
-
-            fadeAnim.value = withTiming(1, { duration: 220 });
-            scaleAnim.value = withTiming(1, { duration: 220 });
         };
-
-        // Animate current step out
-        scaleAnim.value = withTiming(0.98, { duration: 180 });
-        fadeAnim.value = withTiming(0, { duration: 180 }, (finished) => {
-            if (finished) {
-                runOnJS(applyStepChange)(nextStep, steps.length);
-            }
-        });
-    }, [enableAnimations, steps.length, fadeAnim, scaleAnim]);
-
-    // Update step when initialStep prop changes (from router navigation)
-    // All step navigation is managed by OxyRouter - this component just responds to prop changes
-    useEffect(() => {
-        if (__DEV__) {
-            console.log('StepBasedScreen: initialStep prop changed', {
-                initialStep,
-                currentStep: state.currentStep,
-                isTransitioning: state.isTransitioning,
-            });
-        }
-
-        // Only update if prop actually changed and is different from current state
-        if (initialStep !== undefined && initialStep !== state.currentStep && !state.isTransitioning) {
-            const targetStep = initialStep;
-
-            // Only proceed if the target step is valid
-            if (targetStep < 0 || targetStep >= steps.length) {
-                if (__DEV__) {
-                    console.warn('StepBasedScreen: invalid target step', targetStep);
-                }
-                return;
-            }
-
-            if (__DEV__) {
-                console.log('StepBasedScreen: updating step', {
-                    from: state.currentStep,
-                    to: targetStep,
-                });
-            }
-
-            // Call onExit for current step before changing (if different)
-            if (state.currentStep >= 0 && state.currentStep < steps.length && state.currentStep !== targetStep) {
-                const currentStepConfig = steps[state.currentStep];
-                currentStepConfig?.onExit?.();
-            }
-
-            // Use animateTransition to handle animation and state update
-            // onEnter will be called by animateTransition when step change completes
-            animateTransition(targetStep);
-        }
-    }, [initialStep, state.currentStep, state.isTransitioning, steps, animateTransition]);
+    }, [currentStep, steps]);
 
     // ========================================================================
     // Step Navigation
     // ========================================================================
-    // All step navigation is managed by OxyRouter
+    // All step navigation is now handled by router - these functions use router's navigate/goBack
     const nextStep = useCallback(() => {
-        if (state.isTransitioning) return;
-
-        const currentStepConfig = steps[state.currentStep];
+        const currentStepConfig = steps[currentStep];
         if (currentStepConfig?.canProceed) {
-            const stepData = state.stepData[state.currentStep];
+            const stepData = state.stepData[currentStep];
             if (!currentStepConfig.canProceed(stepData)) {
                 return; // Step validation failed
             }
         }
 
-        if (state.currentStep < steps.length - 1) {
-            const nextStepIndex = state.currentStep + 1;
+        if (currentStep < steps.length - 1) {
+            const nextStepIndex = currentStep + 1;
 
-            // All navigation is managed by OxyRouter - just call navigate
             // Extract props to preserve them across navigation
             const navigationProps: Record<string, unknown> = { initialStep: nextStepIndex };
 
-            // Use extraction callback if provided (gets latest values directly from screen state)
-            // Otherwise fall back to extracting from stepData prop
+            // Use extraction callback if provided
             if (getNavigationProps) {
                 const extractedProps = getNavigationProps();
                 Object.assign(navigationProps, extractedProps);
-
-                if (__DEV__) {
-                    console.log('StepBasedScreen: nextStep navigation (using getNavigationProps)', {
-                        nextStepIndex,
-                        extractedProps,
-                        navigationProps,
-                    });
-                }
             } else {
-                // Fallback: Extract props from stepData prop (not state) to preserve state across navigation
-                // Priority: step 0 first (where initial form data is usually stored), then other steps
-                // This ensures username, userProfile, email, etc. are preserved when navigating between steps
+                // Fallback: Extract props from stepData
                 const step0Data = stepData[0] || {};
-                const currentStepData = stepData[state.currentStep] || {};
+                const currentStepData = stepData[currentStep] || {};
 
-                // Extract from step 0 first (has priority), then fallback to current step or other steps
-                if (step0Data.username) {
-                    navigationProps.username = step0Data.username;
-                } else if (currentStepData.username) {
-                    navigationProps.username = currentStepData.username;
+                if (step0Data.username || currentStepData.username) {
+                    navigationProps.username = step0Data.username || currentStepData.username;
                 }
-
-                if (step0Data.userProfile) {
-                    navigationProps.userProfile = step0Data.userProfile;
-                } else if (currentStepData.userProfile) {
-                    navigationProps.userProfile = currentStepData.userProfile;
+                if (step0Data.userProfile || currentStepData.userProfile) {
+                    navigationProps.userProfile = step0Data.userProfile || currentStepData.userProfile;
                 }
-
-                if (step0Data.email) {
-                    navigationProps.email = step0Data.email;
-                } else if (currentStepData.email) {
-                    navigationProps.email = currentStepData.email;
-                }
-
-                if (__DEV__) {
-                    console.log('StepBasedScreen: nextStep navigation (using stepData)', {
-                        nextStepIndex,
-                        step0Data: {
-                            hasUsername: !!step0Data.username,
-                            hasUserProfile: !!step0Data.userProfile
-                        },
-                        navigationProps,
-                    });
+                if (step0Data.email || currentStepData.email) {
+                    navigationProps.email = step0Data.email || currentStepData.email;
                 }
             }
 
+            // Router handles step navigation with animations
             if (currentScreen && navigate && typeof currentScreen === 'string') {
                 navigate(currentScreen as RouteName, navigationProps);
-            } else {
-                if (__DEV__) {
-                    console.warn('StepBasedScreen: navigate function not available', {
-                        currentScreen,
-                        hasNavigate: !!navigate,
-                    });
-                }
             }
         } else {
             // Final step - call onComplete
             onCompleteRef.current?.(state.stepData);
         }
-    }, [state.currentStep, state.isTransitioning, steps, currentScreen, navigate, stepData, getNavigationProps]); // Include getNavigationProps in dependencies
+    }, [currentStep, steps, currentScreen, navigate, state.stepData, getNavigationProps, stepData]);
 
     const prevStep = useCallback(() => {
-        if (state.isTransitioning) return;
-
-        // Only navigate back if we're not on the first step
-        // If we're on the first step, prevent back navigation to avoid closing the screen
-        if (state.currentStep > 0) {
-            // For step navigation within the same screen, directly navigate to previous step
-            // This avoids going through the router's goBack which might check screen history first
-            const previousStep = state.currentStep - 1;
-
-            // Extract props to preserve state
-            const navigationProps: Record<string, unknown> = { initialStep: previousStep };
-
-            if (getNavigationProps) {
-                const extractedProps = getNavigationProps();
-                Object.assign(navigationProps, extractedProps);
-            } else {
-                // Preserve props from step 0 (where initial form data is usually stored)
-                const step0Data = stepData[0] || {};
-                if (step0Data.username) navigationProps.username = step0Data.username;
-                if (step0Data.userProfile) navigationProps.userProfile = step0Data.userProfile;
-                if (step0Data.email) navigationProps.email = step0Data.email;
-            }
-
-            // Navigate to previous step within the same screen
-            if (currentScreen && navigate && typeof currentScreen === 'string') {
-                navigate(currentScreen as RouteName, navigationProps);
-            } else {
-                // Fallback to goBack if navigate is not available
-                if (typeof goBack === 'function') {
-                    goBack();
-                }
-            }
-        } else {
-            // On first step, use goBack to check screen history or close
-            if (typeof goBack === 'function') {
-                goBack();
-            }
+        // Use router's goBack - it handles step navigation automatically
+        if (currentStep > 0 && typeof goBack === 'function') {
+            goBack();
+        } else if (typeof goBack === 'function') {
+            // On first step, goBack will check screen history or close
+            goBack();
         }
-    }, [state.isTransitioning, state.currentStep, goBack, currentScreen, navigate, stepData, getNavigationProps]);
+    }, [currentStep, goBack]);
 
     const goToStep = useCallback((stepIndex: number) => {
-        if (state.isTransitioning || stepIndex < 0 || stepIndex >= steps.length) return;
+        if (stepIndex < 0 || stepIndex >= steps.length || stepIndex === currentStep) return;
 
-        if (stepIndex !== state.currentStep) {
-            // All navigation is managed by OxyRouter - just call navigate
-            // Extract props to preserve state across navigation
-            const navigationProps: Record<string, unknown> = { initialStep: stepIndex };
+        // Extract props to preserve state
+        const navigationProps: Record<string, unknown> = { initialStep: stepIndex };
 
-            // Use extraction callback if provided, otherwise fall back to stepData
-            if (getNavigationProps) {
-                const extractedProps = getNavigationProps();
-                Object.assign(navigationProps, extractedProps);
-            } else {
-                // Preserve props from step 0 (where initial form data is usually stored)
-                const step0Data = stepData[0] || {};
-                if (step0Data.username) navigationProps.username = step0Data.username;
-                if (step0Data.userProfile) navigationProps.userProfile = step0Data.userProfile;
-                if (step0Data.email) navigationProps.email = step0Data.email;
-            }
-
-            if (currentScreen && navigate && typeof currentScreen === 'string') {
-                navigate(currentScreen as RouteName, navigationProps);
-            } else {
-                if (__DEV__) {
-                    console.warn('StepBasedScreen: navigate function not available');
-                }
-            }
+        if (getNavigationProps) {
+            const extractedProps = getNavigationProps();
+            Object.assign(navigationProps, extractedProps);
+        } else {
+            const step0Data = stepData[0] || {};
+            if (step0Data.username) navigationProps.username = step0Data.username;
+            if (step0Data.userProfile) navigationProps.userProfile = step0Data.userProfile;
+            if (step0Data.email) navigationProps.email = step0Data.email;
         }
-    }, [state.currentStep, state.isTransitioning, steps, currentScreen, navigate, stepData, getNavigationProps]);
+
+        // Router handles step navigation with animations
+        if (currentScreen && navigate && typeof currentScreen === 'string') {
+            navigate(currentScreen as RouteName, navigationProps);
+        }
+    }, [currentStep, steps, currentScreen, navigate, stepData, getNavigationProps]);
 
     // ========================================================================
     // Step Controller Exposure
@@ -531,7 +363,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         if (!stepControllerRef || typeof stepControllerRef !== 'object' || !('current' in stepControllerRef)) return;
 
         stepControllerRef.current = {
-            canGoBack: () => state.currentStep > 0,
+            canGoBack: () => currentStep > 0,
             goBack: prevStep,
         };
 
@@ -540,17 +372,17 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
                 stepControllerRef.current = null;
             }
         };
-    }, [state.currentStep, prevStep, stepControllerRef]);
+    }, [currentStep, prevStep, stepControllerRef]);
 
     // ========================================================================
     // Step Component & Props
     // ========================================================================
-    const currentStepConfig = steps[state.currentStep];
+    const currentStepConfig = steps[currentStep];
     const CurrentStepComponent = currentStepConfig?.component;
 
     const updateCurrentStepData = useCallback(
-        (data: any) => updateStepData(state.currentStep, data),
-        [state.currentStep, updateStepData]
+        (data: any) => updateStepData(currentStep, data),
+        [currentStep, updateStepData]
     );
 
     const stepProps = useMemo(() => ({
@@ -568,22 +400,15 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         nextStep,
         prevStep,
         goToStep,
-        currentStep: state.currentStep,
+        currentStep: currentStep,
         totalSteps: steps.length,
 
         // Step data - spread the step data properties directly as props
-        ...state.stepData[state.currentStep],
+        ...state.stepData[currentStep],
 
         // Step data management
         updateStepData: updateCurrentStepData,
         allStepData: state.stepData,
-
-        // State
-        isTransitioning: state.isTransitioning,
-
-        // Animation refs (for components that need direct access)
-        fadeAnim,
-        scaleAnim,
     }), [
         currentStepConfig?.props,
         colors,
@@ -596,13 +421,10 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         nextStep,
         prevStep,
         goToStep,
-        state.currentStep,
+        currentStep,
         state.stepData,
-        state.isTransitioning,
         steps.length,
         updateCurrentStepData,
-        fadeAnim,
-        scaleAnim,
     ]);
 
     // Pure content wrapper - all layout is handled by BottomSheetRouter
@@ -611,23 +433,19 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         <>
             {showProgressIndicator && steps.length > 1 && (
                 <ProgressIndicator
-                    currentStep={state.currentStep}
+                    currentStep={currentStep}
                     totalSteps={steps.length}
                     colors={colors}
                     styles={styles}
                 />
             )}
 
-            <AnimatedStepContainer
-                fadeAnim={fadeAnim}
-                scaleAnim={scaleAnim}
-                styles={styles}
-                stepKey={`step-${state.currentStep}`}
-            >
+            {/* Router handles animations now - no need for AnimatedStepContainer */}
+            <View style={styles.stepContainer}>
                 {CurrentStepComponent && (
                     <CurrentStepComponent {...stepProps} />
                 )}
-            </AnimatedStepContainer>
+            </View>
         </>
     );
 };

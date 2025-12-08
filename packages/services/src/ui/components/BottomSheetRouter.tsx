@@ -192,6 +192,7 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
     const ScreenComponent = state.currentScreen ? getScreenComponent(state.currentScreen) : null;
 
     // Navigation handler - validates route and updates manager state
+    // For step-based screens, step changes are treated as navigation events (added to history)
     const navigate = useCallback((screen: RouteName, props?: Record<string, unknown>) => {
         if (!isValidRoute(screen)) {
             if (__DEV__) {
@@ -201,15 +202,34 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
         }
 
         const isSameScreen = screen === state.currentScreen;
+        const newStep = typeof props?.initialStep === 'number' ? props.initialStep : undefined;
+        const currentStep = state.currentStep ?? (typeof state.screenProps?.initialStep === 'number' ? state.screenProps.initialStep : undefined);
+
+        // For step-based screens: if same screen but different step, treat as navigation (add to history)
+        // This allows step navigation to be handled by router with animations
+        const isStepChange = isSameScreen && newStep !== undefined && newStep !== currentStep;
+
         managerShowBottomSheet(screen, props, {
-            addToHistory: !isSameScreen,
+            addToHistory: !isSameScreen || isStepChange, // Add to history if different screen OR step change
         });
-    }, [state.currentScreen]);
+    }, [state.currentScreen, state.currentStep, state.screenProps]);
 
     // Step change handler for step-based screens
+    // This is called by StepBasedScreen to notify router of step changes
+    // The router now handles step navigation through navigate/goBack, so this is mainly for compatibility
     const handleStepChange = useCallback((step: number, _totalSteps?: number) => {
-        updateBottomSheetState({ currentStep: step });
-    }, []);
+        // Step changes are now handled through navigate/goBack, but we still update currentStep
+        // for screens that might query it directly
+        if (state.currentScreen) {
+            updateBottomSheetState({
+                currentStep: step,
+                screenProps: {
+                    ...state.screenProps,
+                    initialStep: step,
+                }
+            });
+        }
+    }, [state.currentScreen, state.screenProps]);
 
     // Go back handler with priority:
     // 1. Screen history (navigate to previous screen)
@@ -322,11 +342,7 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
         ...otherScreenProps,
     };
 
-    // Don't render if no screen is set
-    if (!ScreenComponent || !state.currentScreen) {
-        return null;
-    }
-
+    // renderBackground must be called before any conditional returns (React hooks rule)
     const renderBackground = useCallback(
         (props: { style?: StyleProp<ViewStyle> }) => (
             <View
@@ -339,6 +355,11 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
         ),
         [colors.background],
     );
+
+    // Don't render if no screen is set
+    if (!ScreenComponent || !state.currentScreen) {
+        return null;
+    }
 
     return (
         <BottomSheet

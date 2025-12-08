@@ -7,7 +7,7 @@ interface ThemeContextType {
   isLoaded: boolean;
 }
 
-const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
+export const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 interface ThemeProviderProps {
   theme: 'light' | 'dark';
