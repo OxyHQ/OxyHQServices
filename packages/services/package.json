@@ -178,7 +178,6 @@
   "react-native-builder-bob": {
     "source": "src",
     "output": "lib",
-    "esm": true,
     "targets": [
       "commonjs",
       "module",
