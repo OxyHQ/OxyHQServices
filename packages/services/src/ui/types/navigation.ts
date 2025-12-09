@@ -30,6 +30,9 @@ export interface BaseScreenProps {
     // Screen identification
     currentScreen?: RouteName;
     
+    // Scroll control
+    scrollTo?: (y: number, animated?: boolean) => void;
+    
     // Form props (for sign in/up flows)
     username?: string;
     email?: string;

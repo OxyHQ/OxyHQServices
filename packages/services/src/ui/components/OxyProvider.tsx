@@ -1,12 +1,12 @@
 import { useEffect, useRef, type FC } from 'react';
 import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import type { OxyProviderProps } from '../types/navigation';
 import { OxyContextProvider } from '../context/OxyContext';
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
 import { setupFonts } from './FontLoader';
 import BottomSheetRouter from './BottomSheetRouter';
-import BottomSheetProvider from './BottomSheetProvider';
 import { Toaster } from '../../lib/sonner';
 
 // Initialize fonts automatically
@@ -68,22 +68,22 @@ const OxyProvider: FC<OxyProviderProps> = ({
     }
 
     return (
-        <GestureHandlerRootView style={{ flex: 1 }}>
-            <QueryClientProvider client={client}>
-                <OxyContextProvider
-                    oxyServices={oxyServices as any}
-                    baseURL={baseURL}
-                    storageKeyPrefix={storageKeyPrefix}
-                    onAuthStateChange={onAuthStateChange as any}
-                >
-                    <BottomSheetProvider>
+        <SafeAreaProvider>
+            <GestureHandlerRootView style={{ flex: 1 }}>
+                <QueryClientProvider client={client}>
+                    <OxyContextProvider
+                        oxyServices={oxyServices as any}
+                        baseURL={baseURL}
+                        storageKeyPrefix={storageKeyPrefix}
+                        onAuthStateChange={onAuthStateChange as any}
+                    >
                         {children}
                         <BottomSheetRouter />
                         <Toaster />
-                    </BottomSheetProvider>
-                </OxyContextProvider>
-            </QueryClientProvider>
-        </GestureHandlerRootView>
+                    </OxyContextProvider>
+                </QueryClientProvider>
+            </GestureHandlerRootView>
+        </SafeAreaProvider>
     );
 };
 

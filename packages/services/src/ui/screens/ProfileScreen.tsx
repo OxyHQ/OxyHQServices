@@ -39,7 +39,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
         isLoadingCounts,
     } = useFollow(userId);
 
-    const colors = useThemeColors(theme);
+    const colors = useThemeColors((theme as 'light' | 'dark') ?? 'light');
     const styles = createStyles(colors);
     const { t } = useI18n();
 
@@ -166,7 +166,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
     return (
         <View style={[styles.container, { backgroundColor: colors.background }]}>
-            <ScrollView contentContainerStyle={styles.scrollContainer}>
+            <ScrollView style={{ flex: 1 }} contentContainerStyle={styles.scrollContainer}>
                 {/* Banner Image */}
                 <View style={styles.bannerContainer}>
                     <View style={styles.bannerImage} />
@@ -178,7 +178,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                             uri={profile?.avatar ? oxyServices.getFileDownloadUrl(profile.avatar as string, 'thumb') : undefined}
                             name={profile?.username || username}
                             size={96}
-                            
+
                         />
                     </View>
                     {/* Conditional Action Button */}
@@ -193,7 +193,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         ) : (
                             <FollowButton
                                 userId={userId}
-                                
+
                                 onFollowChange={(isFollowing) => {
                                     // The follow button will automatically update counts via Zustand
                                     console.log(`Follow status changed: ${isFollowing}`);

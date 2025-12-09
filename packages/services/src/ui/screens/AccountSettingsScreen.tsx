@@ -56,6 +56,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     navigate,
     initialField,
     initialSection,
+    scrollTo,
 }) => {
     // Use useOxy() hook for OxyContext values
     const {
@@ -444,13 +445,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         if (initialSection && !hasScrolledToSectionRef.current) {
             const sectionY = sectionYPositions[initialSection as keyof typeof sectionYPositions];
 
-            if (sectionY !== null && sectionY !== undefined && scrollViewRef.current) {
+            if (sectionY !== null && sectionY !== undefined && scrollTo) {
                 requestAnimationFrame(() => {
                     requestAnimationFrame(() => {
-                        scrollViewRef.current?.scrollTo({
-                            y: Math.max(0, sectionY - SCROLL_OFFSET),
-                            animated: true,
-                        });
+                        scrollTo(Math.max(0, sectionY - SCROLL_OFFSET), true);
                         hasScrolledToSectionRef.current = true;
                     });
                 });
@@ -1336,11 +1334,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 </View>
             ) : null}
 
-            <ScrollView
-                ref={scrollViewRef}
+            <View
                 style={editingField ? styles.contentEditing : styles.content}
-                contentContainerStyle={!editingField ? styles.scrollContent : undefined}
-                showsVerticalScrollIndicator={false}
             >
                 {editingField ? (
                     // Show only the editing interface when editing
@@ -1644,7 +1639,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                         </View>
                     </>
                 )}
-            </ScrollView>
+            </View>
 
             {/* Modal Components */}
             <EditDisplayNameModal
@@ -1702,10 +1697,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
 const styles = StyleSheet.create({
     container: {
-        flex: 1,
+        flexShrink: 1,
+        width: '100%',
     },
     content: {
-        flex: 1,
+        flexShrink: 1,
+    },
+    scrollView: {
+        flexShrink: 1,
     },
     contentEditing: {
         flex: 1,
