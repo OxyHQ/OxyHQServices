@@ -5,6 +5,7 @@ import {
     Modal,
     TouchableWithoutFeedback,
     Dimensions,
+    Platform,
     type ViewStyle,
     type StyleProp,
 } from 'react-native';
@@ -15,6 +16,7 @@ import Animated, {
     withSpring,
     withTiming,
     runOnJS,
+    useAnimatedScrollHandler,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -66,6 +68,7 @@ export interface BottomSheetProps {
     handleIndicatorStyle?: StyleProp<ViewStyle>;
     style?: StyleProp<ViewStyle>;
     enableHandlePanningGesture?: boolean;
+    onDismissAttempt?: () => boolean;
 }
 
 const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
@@ -80,11 +83,14 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
             handleIndicatorStyle,
             style,
             enableHandlePanningGesture = true,
+            onDismissAttempt,
         },
         ref,
     ) => {
         const insets = useSafeAreaInsets();
         const [isVisible, setIsVisible] = useState(false);
+        const scrollViewRef = useRef<Animated.ScrollView>(null);
+        const scrollY = useSharedValue(0);
 
         const bottom = useSharedValue(HIDDEN_BOTTOM);
         const backdropOpacity = useSharedValue(0);
@@ -126,8 +132,9 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
         }, [isVisible, bottom, backdropOpacity, isAnimating, handleDismissComplete]);
 
         const calculatePadding = useCallback((height: number) => {
-            return height > 0 
-                ? Math.max(insets.bottom, height + KEYBOARD_GAP)
+            // Always include safe area bottom, add keyboard gap if keyboard is visible
+            return height > 0
+                ? insets.bottom + height + KEYBOARD_GAP
                 : insets.bottom;
         }, [insets.bottom]);
 
@@ -176,15 +183,46 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
             }
         }, [isVisible, animateToPosition, bottom, backdropOpacity, paddingBottom]);
 
+        const attemptDismiss = useCallback(() => {
+            if (onDismissAttempt) {
+                const canDismiss = onDismissAttempt();
+                if (canDismiss) {
+                    dismiss();
+                } else {
+                    // Reset position if dismissal was prevented
+                    bottom.value = withSpring(VISIBLE_BOTTOM, ANIMATION_CONFIG.spring);
+                    backdropOpacity.value = withTiming(BACKDROP_OPACITY, ANIMATION_CONFIG.timing);
+                }
+            } else {
+                dismiss();
+            }
+        }, [onDismissAttempt, dismiss, bottom, backdropOpacity]);
+
+        const handleDismissAttempt = useCallback(() => {
+            if (onDismissAttempt) {
+                const canDismiss = onDismissAttempt();
+                return canDismiss;
+            }
+            return true;
+        }, [onDismissAttempt]);
+
         const panGesture = useMemo(
             () =>
                 Gesture.Pan()
                     .enabled(enablePanDownToClose)
                     .activeOffsetY(GESTURE_CONFIG.activeOffsetY)
                     .failOffsetX([-GESTURE_CONFIG.failOffsetX, GESTURE_CONFIG.failOffsetX])
+                    .onTouchesDown((_event, state) => {
+                        'worklet';
+                        // Fail gesture immediately if scroll is not at top - allows ScrollView to handle it
+                        if (scrollY.value > 0) {
+                            state.fail();
+                        }
+                    })
                     .onUpdate((event) => {
                         'worklet';
-                        if (event.translationY > 0) {
+                        // Only allow pan gesture when scroll is at top (scrollY === 0)
+                        if (event.translationY > 0 && scrollY.value === 0) {
                             bottom.value = VISIBLE_BOTTOM - event.translationY;
                             const progress = Math.min(event.translationY / GESTURE_CONFIG.opacityThreshold, 1);
                             backdropOpacity.value = BACKDROP_OPACITY * (1 - progress);
@@ -192,19 +230,54 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
                     })
                     .onEnd((event) => {
                         'worklet';
-                        const shouldDismiss =
-                            event.translationY > GESTURE_CONFIG.dismissThreshold ||
-                            event.velocityY > GESTURE_CONFIG.dismissVelocity;
+                        // Only process dismiss if scroll is at top
+                        if (scrollY.value === 0) {
+                            const shouldDismiss =
+                                event.translationY > GESTURE_CONFIG.dismissThreshold ||
+                                event.velocityY > GESTURE_CONFIG.dismissVelocity;
 
-                        if (shouldDismiss) {
-                            runOnJS(dismiss)();
+                            if (shouldDismiss) {
+                                runOnJS(attemptDismiss)();
+                            } else {
+                                bottom.value = withSpring(VISIBLE_BOTTOM, ANIMATION_CONFIG.spring);
+                                backdropOpacity.value = withTiming(BACKDROP_OPACITY, ANIMATION_CONFIG.timing);
+                            }
                         } else {
+                            // Reset position if scroll is not at top
                             bottom.value = withSpring(VISIBLE_BOTTOM, ANIMATION_CONFIG.spring);
                             backdropOpacity.value = withTiming(BACKDROP_OPACITY, ANIMATION_CONFIG.timing);
                         }
                     }),
-            [enablePanDownToClose, bottom, backdropOpacity, dismiss],
+            [enablePanDownToClose, bottom, backdropOpacity, attemptDismiss, scrollY],
         );
+
+        const scrollHandler = useAnimatedScrollHandler({
+            onScroll: (event) => {
+                scrollY.value = event.contentOffset.y;
+            },
+        });
+
+        // Calculate max height for sheet container (90% of screen minus safe area top)
+        const sheetContainerMaxHeight = useMemo(() => {
+            const maxHeightPercent = 0.9;
+            return SCREEN_HEIGHT * maxHeightPercent - insets.top;
+        }, [insets.top]);
+
+        // Calculate ScrollView content padding
+        const scrollContentPadding = useMemo(() => {
+            const handleHeight = enableHandlePanningGesture ? 20 : 0;
+            const paddingTop = handleHeight + insets.top;
+            // paddingBottom will be handled by animated style (keyboard + safe area)
+            return {
+                paddingTop,
+            };
+        }, [enableHandlePanningGesture, insets.top]);
+
+        // Memoized style for sheet container with calculated max height
+        const sheetContainerStyle = useMemo(() => [
+            styles.sheetContainer,
+            { maxHeight: sheetContainerMaxHeight, height: sheetContainerMaxHeight },
+        ], [sheetContainerMaxHeight]);
 
         const sheetAnimatedStyle = useAnimatedStyle(
             () => ({
@@ -229,9 +302,13 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
 
         const handleBackdropPress = useCallback(() => {
             if (enablePanDownToClose) {
-                dismiss();
+                const canDismiss = handleDismissAttempt();
+                if (canDismiss) {
+                    dismiss();
+                }
+                // If canDismiss is false, do nothing (backdrop press is disabled)
             }
-        }, [enablePanDownToClose, dismiss]);
+        }, [enablePanDownToClose, dismiss, handleDismissAttempt]);
 
         const renderBackdrop = useCallback(
             (props: { style?: StyleProp<ViewStyle>; onPress?: () => void }) => {
@@ -277,7 +354,7 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
                     <GestureDetector gesture={panGesture}>
                         <Animated.View
                             style={[
-                                styles.sheetContainer,
+                                sheetContainerStyle,
                                 sheetAnimatedStyle,
                                 style,
                             ]}
@@ -289,9 +366,22 @@ const BottomSheet = forwardRef<BottomSheetRef, BottomSheetProps>(
                                         <View style={[styles.handleIndicator, handleIndicatorStyle]} />
                                     </View>
                                 )}
-                                <View style={styles.content}>
+                                <Animated.ScrollView
+                                    ref={scrollViewRef}
+                                    style={styles.scrollView}
+                                    contentContainerStyle={[
+                                        styles.scrollContent,
+                                        scrollContentPadding,
+                                    ]}
+                                    keyboardShouldPersistTaps="handled"
+                                    showsVerticalScrollIndicator={true}
+                                    bounces={true}
+                                    onScroll={scrollHandler}
+                                    scrollEventThrottle={16}
+                                    nestedScrollEnabled={Platform.OS === 'android'}
+                                >
                                     {children}
-                                </View>
+                                </Animated.ScrollView>
                             </Animated.View>
                         </Animated.View>
                     </GestureDetector>
@@ -318,10 +408,11 @@ const styles = StyleSheet.create({
         position: 'absolute',
         left: 0,
         right: 0,
+        bottom: 0,
         maxWidth: 800,
         width: '100%',
         alignSelf: 'center',
-        maxHeight: '90%',
+        // maxHeight will be set dynamically based on screen height and safe areas
     },
     backgroundContainer: {
         borderTopLeftRadius: 20,
@@ -329,7 +420,7 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         position: 'relative',
         flex: 1,
-        minHeight: '100%',
+        height: '100%',
     },
     backgroundInner: {
         ...StyleSheet.absoluteFillObject,
@@ -356,6 +447,13 @@ const styles = StyleSheet.create({
     },
     content: {
         width: '100%',
+    },
+    scrollView: {
+        flex: 1,
+    },
+    scrollContent: {
+        // Remove flexGrow to prevent content from expanding beyond container
+        // Content will scroll when it exceeds available space
     },
 });
 

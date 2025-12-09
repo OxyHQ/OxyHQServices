@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, Image } from 'react-native';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import { useThemeColors } from '../styles';
 import Avatar from '../components/Avatar';
 import { FollowButton } from '../components';

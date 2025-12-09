@@ -14,9 +14,11 @@ import {
     Alert,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import type { BaseScreenProps } from '../navigation/types';
+import type { FileManagementScreenProps } from '../types/fileManagement';
 import { toast } from '../../lib/sonner';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
+// @ts-ignore - MaterialCommunityIcons is available at runtime
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { FileMetadata } from '../../models/interfaces';
 import { useFileStore, useFiles, useUploading as useUploadingStore, useUploadAggregateProgress, useDeleting as useDeletingStore } from '../stores/fileStore';
 import Header from '../components/Header';
@@ -37,9 +39,7 @@ import { FileViewer } from '../components/fileManagement/FileViewer';
 import { FileDetailsModal } from '../components/fileManagement/FileDetailsModal';
 import { UploadPreview } from '../components/fileManagement/UploadPreview';
 import { fileManagementStyles } from '../components/fileManagement/styles';
-
-// Exporting props & callback types so external callers (e.g. showBottomSheet config objects) can annotate
-export type OnConfirmFileSelection = (files: FileMetadata[]) => void;
+import type { OnConfirmFileSelection } from '../types/fileManagement';
 
 // Animated button component for smooth transitions
 const AnimatedButton: React.FC<{
@@ -92,46 +92,6 @@ const AnimatedButton: React.FC<{
         </TouchableOpacity>
     );
 };
-
-export interface FileManagementScreenProps extends BaseScreenProps {
-    userId?: string;
-    // Enable selection mode (acts like a picker). When true, opening a file selects it instead of showing viewer
-    selectMode?: boolean;
-    // Allow selecting multiple files; only used if selectMode is true
-    multiSelect?: boolean;
-    // Callback when a file is selected (single select mode)
-    onSelect?: (file: FileMetadata) => void;
-    // Callback when confirm pressed in multi-select mode
-    onConfirmSelection?: OnConfirmFileSelection;
-    // Initial selected file IDs for multi-select
-    initialSelectedIds?: string[];
-    maxSelection?: number;
-    disabledMimeTypes?: string[];
-    /**
-     * What to do after a single selection (non-multiSelect) is made.
-     * 'close' (default) will dismiss the bottom sheet via onClose.
-     * 'back' will navigate back to the previous screen (e.g., return to AccountSettings without closing sheet).
-     * 'none' will keep the picker open (caller can manually close or navigate).
-     */
-    afterSelect?: 'close' | 'back' | 'none';
-    allowUploadInSelectMode?: boolean;
-    /**
-     * Default visibility for uploaded files in this screen
-     * Useful for third-party apps that want files to be public (e.g., GIF selector)
-     */
-    defaultVisibility?: 'private' | 'public' | 'unlisted';
-    /**
-     * Link context for tracking file usage by third-party apps
-     * When provided, selected files will be linked to this entity
-     */
-    linkContext?: {
-        app: string;           // App identifier (e.g., 'chat-app', 'post-composer')
-        entityType: string;    // Type of entity (e.g., 'message', 'post', 'profile')
-        entityId: string;      // Unique ID of the entity using this file
-        webhookUrl?: string;   // Optional webhook URL to receive file events
-    };
-}
-
 
 const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     onClose,

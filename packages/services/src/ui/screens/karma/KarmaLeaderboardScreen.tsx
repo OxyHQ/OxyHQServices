@@ -1,14 +1,17 @@
 import type React from 'react';
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, ActivityIndicator, TouchableOpacity } from 'react-native';
-import type { BaseScreenProps } from '../../navigation/types';
+import type { BaseScreenProps } from '../../types/navigation';
 import Avatar from '../../components/Avatar';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
 import { useThemeStyles } from '../../hooks/useThemeStyles';
 import { useColorScheme } from '../../hooks/use-color-scheme';
+import { useOxy } from '../../context/OxyContext';
 
-const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navigate, oxyServices }) => {
+const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navigate }) => {
+    // Use useOxy() hook for OxyContext values
+    const { oxyServices } = useOxy();
     const { t } = useI18n();
     const [leaderboard, setLeaderboard] = useState<any[]>([]);
     const [isLoading, setIsLoading] = useState(true);

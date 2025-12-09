@@ -14,7 +14,7 @@ import {
     Alert,
     Dimensions,
 } from 'react-native';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import { useThemeColors } from '../styles';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';

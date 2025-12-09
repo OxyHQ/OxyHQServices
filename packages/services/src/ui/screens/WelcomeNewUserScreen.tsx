@@ -1,7 +1,7 @@
 import React, { useCallback, useMemo, useRef, useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform, Animated } from 'react-native';
 import AnimatedReanimated, { useSharedValue, useAnimatedStyle, withTiming } from 'react-native-reanimated';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import Avatar from '../components/Avatar';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';

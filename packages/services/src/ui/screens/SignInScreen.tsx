@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import { useThemeColors } from '../styles';
 import { toast } from '../../lib/sonner';
 import { useOxy } from '../context/OxyContext';
@@ -66,8 +66,8 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     useEffect(() => {
         if (initialUserProfile !== undefined) {
             // Always sync if prop is provided to handle router navigation
-            const currentProfileId = userProfile?.id;
-            const newProfileId = initialUserProfile?.id;
+            const currentProfileId = (userProfile as any)?.id;
+            const newProfileId = (initialUserProfile as any)?.id;
             if (currentProfileId !== newProfileId || initialUserProfile !== userProfile) {
                 setUserProfile(initialUserProfile || null);
                 userProfileRef.current = initialUserProfile || null;
@@ -104,7 +104,9 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
     );
     const [existingSession, setExistingSession] = useState<any>(null);
 
-    const colors = useThemeColors(theme);
+    // Narrow theme type with default value
+    const themeValue = (theme === 'light' || theme === 'dark') ? theme : 'light';
+    const colors = useThemeColors(themeValue);
 
     // Check if this should be treated as "Add Account" mode
     const isAddAccountMode = useMemo(() =>
@@ -417,7 +419,7 @@ const SignInScreen: React.FC<BaseScreenProps> = ({
             initialStep={safeInitialStep}
             stepData={stepData}
             onComplete={handleComplete}
-            navigate={navigate}
+            navigate={navigate!}
             goBack={goBack}
             onAuthenticated={onAuthenticated}
             theme={theme}

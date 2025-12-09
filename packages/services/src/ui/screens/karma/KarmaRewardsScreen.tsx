@@ -1,6 +1,6 @@
 import type React from 'react';
 import { View, Text, StyleSheet, ScrollView, Platform } from 'react-native';
-import type { BaseScreenProps } from '../../navigation/types';
+import type { BaseScreenProps } from '../../types/navigation';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
 import { useThemeStyles } from '../../hooks/useThemeStyles';

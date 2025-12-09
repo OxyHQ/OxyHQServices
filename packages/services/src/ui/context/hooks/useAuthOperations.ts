@@ -1,6 +1,6 @@
 import { useCallback } from 'react';
 import type { ApiError, User } from '../../../models/interfaces';
-import type { AuthState } from '../stores/authStore';
+import type { AuthState } from '../../stores/authStore';
 import type { ClientSession, SessionLoginResponse } from '../../../models/session';
 import { DeviceManager } from '../../../utils/deviceManager';
 import { fetchSessionsWithFallback, mapSessionsToClient } from '../utils/sessionHelpers';

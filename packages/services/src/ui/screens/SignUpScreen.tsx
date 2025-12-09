@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import { useThemeColors } from '../styles';
 import { toast } from '../../lib/sonner';
 import { useOxy } from '../context/OxyContext';

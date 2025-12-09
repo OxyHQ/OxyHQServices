@@ -245,10 +245,14 @@ export class HttpService {
           });
         }
 
+        const bodyValue = method !== 'GET' && data 
+            ? (isFormData ? data : JSON.stringify(data)) 
+            : undefined;
+        
         const response = await fetch(fullUrl, {
           method,
           headers,
-          body: method !== 'GET' && data ? (isFormData ? data : JSON.stringify(data)) : undefined,
+          body: bodyValue as BodyInit | null | undefined,
           signal: controller.signal,
         });
 

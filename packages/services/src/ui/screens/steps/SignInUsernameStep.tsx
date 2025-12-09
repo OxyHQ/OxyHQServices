@@ -159,7 +159,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
             setSwitchingSessionId(sessionId);
             moveAccountToTopRef.current(sessionId);
 
-            switchSession(sessionId).catch((error) => {
+            switchSession?.(sessionId).catch((error) => {
                 if (__DEV__) console.error('Failed to switch account:', error);
                 const state = useAccountStore.getState();
                 const account = state.accounts[sessionId];

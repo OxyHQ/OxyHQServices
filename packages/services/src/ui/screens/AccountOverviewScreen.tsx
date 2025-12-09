@@ -12,7 +12,7 @@ import {
     TextStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import OxyLogo from '../components/OxyLogo';
 import Avatar from '../components/Avatar';
 import OxyIcon from '../components/icon/OxyIcon';

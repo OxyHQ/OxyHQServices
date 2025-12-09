@@ -10,7 +10,7 @@ import {
     Platform,
 } from 'react-native';
 import { useCallback, useMemo } from 'react';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import { packageInfo } from '../../constants/version';
 import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';

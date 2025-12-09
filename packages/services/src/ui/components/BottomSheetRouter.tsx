@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback } from 'react';
-import { BackHandler, View, StyleSheet, ScrollView, Keyboard, Platform, type StyleProp, type ViewStyle } from 'react-native';
+import { BackHandler, View, StyleSheet, Keyboard, Platform, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -231,6 +231,28 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
         }
     }, [state.currentScreen, state.screenProps]);
 
+    // Check if the bottom sheet can be dismissed (no navigation history or steps to go back to)
+    const canDismiss = useCallback((): boolean => {
+        // Check if there's navigation history
+        if (state.navigationHistory.length > 0) {
+            return false;
+        }
+
+        // Check if there are steps to go back to
+        const initialStep = typeof state.screenProps?.initialStep === 'number'
+            ? state.screenProps.initialStep
+            : undefined;
+        const currentStep = state.currentStep ?? initialStep ?? 0;
+        const isStepBased = initialStep !== undefined || state.currentStep !== undefined;
+
+        if (isStepBased && typeof currentStep === 'number' && currentStep > 0) {
+            return false;
+        }
+
+        // No history and on step 0 (or not step-based) - can dismiss
+        return true;
+    }, [state.navigationHistory.length, state.currentStep, state.screenProps]);
+
     // Go back handler with priority:
     // 1. Screen history (navigate to previous screen)
     // 2. Step navigation (navigate to previous step)
@@ -356,6 +378,17 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
         [colors.background],
     );
 
+    // Handle dismissal attempt - check if we can dismiss or need to go back
+    const handleDismissAttempt = useCallback((): boolean => {
+        if (!canDismiss()) {
+            // There's navigation history or steps to go back to - navigate back instead
+            goBack();
+            return false; // Prevent dismissal
+        }
+        // No history or steps - allow dismissal
+        return true;
+    }, [canDismiss, goBack]);
+
     // Don't render if no screen is set
     if (!ScreenComponent || !state.currentScreen) {
         return null;
@@ -374,21 +407,15 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
                 { backgroundColor: colors.border },
             ]}
             onDismiss={handleDismiss}
+            onDismissAttempt={handleDismissAttempt}
         >
-            <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={styles.scrollContent}
-                keyboardShouldPersistTaps="handled"
-                showsVerticalScrollIndicator={false}
+            <AnimatedScreenContainer
+                fadeAnim={fadeAnim}
+                scaleAnim={scaleAnim}
+                screenKey={state.currentScreen}
             >
-                <AnimatedScreenContainer
-                    fadeAnim={fadeAnim}
-                    scaleAnim={scaleAnim}
-                    screenKey={state.currentScreen}
-                >
-                    <ScreenComponent {...screenProps} />
-                </AnimatedScreenContainer>
-            </ScrollView>
+                <ScreenComponent {...screenProps} />
+            </AnimatedScreenContainer>
         </BottomSheet>
     );
 };
@@ -419,12 +446,6 @@ const styles = StyleSheet.create({
         width: 40,
         height: 4,
         borderRadius: 2,
-    },
-    scrollView: {
-        flex: 1,
-    },
-    scrollContent: {
-        flexGrow: 1,
     },
 });
 

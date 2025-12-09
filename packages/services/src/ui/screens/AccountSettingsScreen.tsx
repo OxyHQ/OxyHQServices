@@ -12,7 +12,7 @@ import {
     Platform,
     Image,
 } from 'react-native';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import Avatar from '../components/Avatar';
 import type { FileMetadata } from '../../models/interfaces';
 import OxyIcon from '../components/icon/OxyIcon';

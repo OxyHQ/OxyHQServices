@@ -16,7 +16,7 @@ import {
     Clipboard,
     useWindowDimensions,
 } from 'react-native';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import { fontFamilies, useThemeColors, createCommonStyles } from '../styles';
 import OxyLogo from '../components/OxyLogo';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';

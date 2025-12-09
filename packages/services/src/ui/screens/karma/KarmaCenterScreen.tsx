@@ -10,7 +10,7 @@ import {
     Alert,
     Platform,
 } from 'react-native';
-import type { BaseScreenProps } from '../../navigation/types';
+import type { BaseScreenProps } from '../../types/navigation';
 import { fontFamilies } from '../../styles/fonts';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../../hooks/useI18n';

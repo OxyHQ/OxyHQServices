@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Image } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
+// @ts-ignore - MaterialCommunityIcons is available at runtime
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { FileMetadata } from '../../../models/interfaces';
 import { formatFileSize } from '../../utils/fileManagement';

@@ -7,7 +7,7 @@ import {
     ScrollView,
     Linking,
 } from 'react-native';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
 import { Header, Section, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';

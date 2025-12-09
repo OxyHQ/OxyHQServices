@@ -616,9 +616,6 @@ export const fileManagementStyles = StyleSheet.create({
         overflow: 'hidden',
         alignSelf: 'center',
     },
-    previewImage: {
-        alignSelf: 'center',
-    },
     floatingBackButton: {
         position: 'absolute',
         top: 12,

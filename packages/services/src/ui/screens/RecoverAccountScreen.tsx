@@ -1,7 +1,7 @@
 import type React from 'react';
 import { useState, useRef, useCallback } from 'react';
 import { useI18n } from '../hooks/useI18n';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import { useThemeColors } from '../styles';
 import { useOxy } from '../context/OxyContext';
 import StepBasedScreen, { type StepConfig } from '../components/StepBasedScreen';

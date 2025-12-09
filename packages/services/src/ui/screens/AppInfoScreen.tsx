@@ -13,7 +13,7 @@ import {
     ScrollView,
     ActivityIndicator,
 } from 'react-native';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import { fontFamilies } from '../styles/fonts';
 import { packageInfo } from '../../constants/version';
 import { toast } from '../../lib/sonner';

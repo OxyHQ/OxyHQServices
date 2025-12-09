@@ -11,7 +11,7 @@ import {
     Platform,
     RefreshControl,
 } from 'react-native';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import { toast } from '../../lib/sonner';
 import type { ClientSession } from '../../models/session';
 import { confirmAction } from '../utils/confirmAction';

@@ -12,7 +12,7 @@ import {
     Image,
     Dimensions,
 } from 'react-native';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import type { ClientSession } from '../../models/session';
 import { fontFamilies } from '../styles/fonts';
 import type { User } from '../../models/interfaces';

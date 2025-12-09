@@ -116,7 +116,7 @@ export const managerShowBottomSheet = (
     updateBottomSheetState({
         currentScreen: screen,
         screenProps: props || {},
-        currentStep: newStep,
+        currentStep: newStep !== null && newStep !== undefined ? newStep : undefined,
         navigationHistory: bottomSheetState.navigationHistory,
         isOpen: true,
     });

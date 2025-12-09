@@ -12,7 +12,7 @@ import {
     Animated,
     Dimensions,
 } from 'react-native';
-import type { BaseScreenProps } from '../navigation/types';
+import type { BaseScreenProps } from '../types/navigation';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';

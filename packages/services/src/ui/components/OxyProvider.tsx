@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-
 import { setupFonts } from './FontLoader';
 import BottomSheetRouter from './BottomSheetRouter';
 import BottomSheetProvider from './BottomSheetProvider';
+import { Toaster } from '../../lib/sonner';
 
 // Initialize fonts automatically
 setupFonts();
@@ -78,6 +79,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
                     <BottomSheetProvider>
                         {children}
                         <BottomSheetRouter />
+                        <Toaster />
                     </BottomSheetProvider>
                 </OxyContextProvider>
             </QueryClientProvider>
