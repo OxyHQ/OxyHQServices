@@ -41,6 +41,14 @@ import { getDisplayName } from '../utils/user-utils';
 import { TTLCache, registerCacheForCleanup } from '../../utils/cache';
 import QRCode from 'react-native-qrcode-svg';
 import { useOxy } from '../context/OxyContext';
+import {
+    SCREEN_PADDING_HORIZONTAL,
+    SCREEN_PADDING_VERTICAL,
+    SECTION_GAP,
+    SECTION_GAP_LARGE,
+    COMPONENT_GAP,
+    HEADER_PADDING_TOP_SETTINGS,
+} from '../constants/spacing';
 
 // Caches for link metadata and location searches
 const linkMetadataCache = new TTLCache<any>(30 * 60 * 1000); // 30 minutes cache for link metadata
@@ -1334,8 +1342,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 </View>
             ) : null}
 
-            <View
+            <ScrollView
+                ref={scrollViewRef}
                 style={editingField ? styles.contentEditing : styles.content}
+                contentContainerStyle={styles.scrollContent}
+                showsVerticalScrollIndicator={false}
             >
                 {editingField ? (
                     // Show only the editing interface when editing
@@ -1639,7 +1650,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                         </View>
                     </>
                 )}
-            </View>
+            </ScrollView>
 
             {/* Modal Components */}
             <EditDisplayNameModal
@@ -1711,19 +1722,20 @@ const styles = StyleSheet.create({
         padding: 0,
     },
     scrollContent: {
-        padding: 16,
-        paddingTop: 40,
+        paddingHorizontal: SCREEN_PADDING_HORIZONTAL,
+        paddingVertical: SCREEN_PADDING_VERTICAL,
+        paddingTop: HEADER_PADDING_TOP_SETTINGS,
     },
     headerContainer: {
         width: '100%',
         maxWidth: 420,
         alignSelf: 'center',
-        marginBottom: 32,
+        marginBottom: SECTION_GAP_LARGE,
     },
     headerSection: {
         alignItems: 'flex-start',
         width: '100%',
-        gap: 12,
+        gap: COMPONENT_GAP,
     },
     modernTitle: {
         fontFamily: fontFamilies.phuduBold,
@@ -1742,7 +1754,7 @@ const styles = StyleSheet.create({
         opacity: 0.8,
     },
     section: {
-        marginBottom: 32,
+        marginBottom: SECTION_GAP_LARGE,
     },
     sectionTitle: {
         fontSize: 13,

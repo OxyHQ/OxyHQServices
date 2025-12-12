@@ -9,6 +9,21 @@ export const STEP_GAP = 12; // Vertical gap between ALL elements (illustration, 
 export const STEP_INNER_GAP = 12; // Gap within sections (headers, cards, etc.) - must match STEP_GAP for uniformity
 
 /**
+ * Re-export screen spacing constants from constants/spacing.ts
+ * This allows importing all spacing constants from a single location
+ */
+export {
+    SCREEN_PADDING_HORIZONTAL,
+    SCREEN_PADDING_VERTICAL,
+    SECTION_GAP,
+    SECTION_GAP_LARGE,
+    COMPONENT_GAP,
+    COMPONENT_GAP_SMALL,
+    HEADER_PADDING_TOP_OVERVIEW,
+    HEADER_PADDING_TOP_SETTINGS,
+} from '../constants/spacing';
+
+/**
  * Reusable stylesheet for step components
  * NOTE: Layout styles (container, sectionSpacing) removed - all layout is handled by BottomSheetRouter
  * Step components should NOT use these for layout, only for content-specific styling

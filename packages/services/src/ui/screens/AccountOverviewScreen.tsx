@@ -26,6 +26,11 @@ import { useThemeStyles } from '../hooks/useThemeStyles';
 import { getDisplayName, getShortDisplayName } from '../utils/user-utils';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { useOxy } from '../context/OxyContext';
+import {
+    SCREEN_PADDING_HORIZONTAL,
+    SECTION_GAP,
+    HEADER_PADDING_TOP_OVERVIEW,
+} from '../constants/spacing';
 
 // Optional Lottie import - gracefully handle if not available
 let LottieView: any = null;
@@ -714,12 +719,12 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     scrollContent: {
-        padding: 16,
+        padding: SCREEN_PADDING_HORIZONTAL,
     },
     headerSection: {
         alignItems: 'center',
-        marginBottom: 24,
-        paddingTop: 38,
+        marginBottom: SECTION_GAP,
+        paddingTop: HEADER_PADDING_TOP_OVERVIEW,
     },
     avatarSectionWrapper: {
         alignItems: 'center',
