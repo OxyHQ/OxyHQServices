@@ -27,6 +27,7 @@ import { useColorScheme } from '../hooks/use-color-scheme';
 import { Colors } from '../constants/theme';
 import { normalizeColorScheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
+import { screenContentStyle } from '../constants/spacing';
 
 const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     onClose,
@@ -290,10 +291,7 @@ const styles = StyleSheet.create({
     scrollView: {
         flex: 1,
     },
-    scrollContainer: {
-        padding: 16,
-        paddingBottom: 20,
-    },
+    scrollContainer: screenContentStyle,
     versionContainer: {
         alignItems: 'center',
         marginTop: 20,

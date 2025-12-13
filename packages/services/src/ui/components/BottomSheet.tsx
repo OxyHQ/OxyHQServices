@@ -3,49 +3,34 @@ import {
     View,
     StyleSheet,
     Modal,
-    TouchableWithoutFeedback,
+    Pressable,
     Dimensions,
+    ScrollView,
     Platform,
     type ViewStyle,
     type StyleProp,
 } from 'react-native';
-import { Gesture, GestureDetector, GestureHandlerRootView, NativeViewGestureHandler } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, NativeViewGestureHandler, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useKeyboardHandler } from 'react-native-keyboard-controller';
 import Animated, {
-    useSharedValue,
+    interpolate,
+    runOnJS,
     useAnimatedStyle,
+    useSharedValue,
     withSpring,
     withTiming,
-    runOnJS,
-    useAnimatedScrollHandler,
-    useAnimatedRef,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useColorScheme } from '../hooks/use-color-scheme';
+import { Colors } from '../constants/theme';
 
-const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const ANIMATION_CONFIG = {
-    spring: {
-        damping: 30,
-        stiffness: 300,
-        mass: 0.8,
-    },
-    timing: {
-        duration: 250,
-    },
-} as const;
-
-const GESTURE_CONFIG = {
-    dismissThreshold: 100,
-    dismissVelocity: 500,
-    opacityThreshold: 200,
-    activeOffsetY: 10,
-    failOffsetX: 20,
-} as const;
-
-const HIDDEN_BOTTOM = -SCREEN_HEIGHT;
-const VISIBLE_BOTTOM = 0;
-const BACKDROP_OPACITY = 0.5;
-const KEYBOARD_GAP = 40;
+const SPRING_CONFIG = {
+    damping: 25,
+    stiffness: 300,
+    mass: 0.8,
+};
 
 export interface BottomSheetRef {
     present: () => void;
@@ -53,7 +38,6 @@ export interface BottomSheetRef {
     close: () => void;
     expand: () => void;
     collapse: () => void;
-    updateKeyboardPadding: (height: number) => void;
     scrollTo: (y: number, animated?: boolean) => void;
 }
 
@@ -62,16 +46,11 @@ export interface BottomSheetProps {
     onDismiss?: () => void;
     enablePanDownToClose?: boolean;
     backgroundComponent?: (props: { style?: StyleProp<ViewStyle> }) => React.ReactElement | null;
-    backdropComponent?: (props: {
-        style?: StyleProp<ViewStyle>;
-        onPress?: () => void;
-    }) => React.ReactElement | null;
-    handleStyle?: StyleProp<ViewStyle>;
-    handleIndicatorStyle?: StyleProp<ViewStyle>;
+    backdropComponent?: (props: { style?: StyleProp<ViewStyle>; onPress?: () => void }) => React.ReactElement | null;
     style?: StyleProp<ViewStyle>;
     enableHandlePanningGesture?: boolean;
     onDismissAttempt?: () => boolean;
-    useScrollView?: boolean;
+    detached?: boolean; // If true, shows with margins and rounded corners. If false, full width with rounded top only.
 }
 
 const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef<BottomSheetRef>) => {
@@ -81,362 +60,223 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         enablePanDownToClose = true,
         backgroundComponent,
         backdropComponent,
-        handleStyle,
-        handleIndicatorStyle,
         style,
         enableHandlePanningGesture = true,
         onDismissAttempt,
-        useScrollView = true,
+        detached = false,
     } = props;
 
     const insets = useSafeAreaInsets();
-    const [isVisible, setIsVisible] = useState(false);
-    const [contentHeight, setContentHeight] = useState(0);
-
+    const colorScheme = useColorScheme();
+    const colors = Colors[colorScheme ?? 'light'];
+    const [visible, setVisible] = useState(false);
+    const scrollViewRef = useRef<ScrollView>(null);
     const nativeGestureRef = useRef<NativeViewGestureHandler>(null);
-    const scrollRef = useAnimatedRef<Animated.ScrollView>();
-    const scrollY = useSharedValue(0);
 
-    const bottom = useSharedValue(HIDDEN_BOTTOM);
-    const backdropOpacity = useSharedValue(0);
-    const isAnimating = useSharedValue(false);
-    const isMountedRef = useRef(true);
-    const paddingBottom = useSharedValue(0);
+    const translateY = useSharedValue(SCREEN_HEIGHT);
+    const opacity = useSharedValue(0);
+    const keyboardHeight = useSharedValue(0);
+    const context = useSharedValue({ y: 0 });
 
-    const animateToPosition = useCallback(
-        (targetBottom: number, opacity: number) => {
-            bottom.value = withSpring(targetBottom, ANIMATION_CONFIG.spring);
-            backdropOpacity.value = withTiming(opacity, ANIMATION_CONFIG.timing);
+    useKeyboardHandler({
+        onMove: (e) => {
+            'worklet';
+            keyboardHeight.value = e.height;
         },
-        [bottom, backdropOpacity],
-    );
-
-    const present = useCallback(() => {
-        setIsVisible(true);
+        onEnd: (e) => {
+            'worklet';
+            keyboardHeight.value = e.height;
+        },
     }, []);
 
-    const handleDismissComplete = useCallback(() => {
-        if (!isMountedRef.current) return;
-        setIsVisible(false);
-        isAnimating.value = false;
-        setTimeout(() => {
-            if (isMountedRef.current) {
-                onDismiss?.();
-            }
-        }, 0);
-    }, [onDismiss, isAnimating]);
-
-    const dismiss = useCallback(() => {
-        if (isAnimating.value || !isVisible || !isMountedRef.current) return;
-
-        isAnimating.value = true;
-        backdropOpacity.value = withTiming(0, ANIMATION_CONFIG.timing);
-        bottom.value = withSpring(HIDDEN_BOTTOM, ANIMATION_CONFIG.spring, () => {
-            runOnJS(handleDismissComplete)();
-        });
-    }, [isVisible, bottom, backdropOpacity, isAnimating, handleDismissComplete]);
-
-    const calculatePadding = useCallback((height: number) => {
-        return height > 0
-            ? insets.bottom + height + KEYBOARD_GAP
-            : insets.bottom;
-    }, [insets.bottom]);
-
-    const updateKeyboardPadding = useCallback((height: number) => {
-        if (!isVisible) {
-            paddingBottom.value = 0;
-            return;
+    useEffect(() => {
+        if (visible) {
+            opacity.value = withTiming(1, { duration: 250 });
+            translateY.value = withSpring(0, SPRING_CONFIG);
+        } else {
+            opacity.value = withTiming(0, { duration: 200 });
+            translateY.value = withSpring(SCREEN_HEIGHT, { ...SPRING_CONFIG, stiffness: 250 });
         }
-        paddingBottom.value = calculatePadding(height);
-    }, [isVisible, calculatePadding, paddingBottom]);
+    }, [visible]);
+
+    // Apply web scrollbar styles when colors change
+    useEffect(() => {
+        if (Platform.OS === 'web') {
+            createWebScrollbarStyle(colors.border);
+        }
+    }, [colors.border]);
+
+    const safeClose = () => {
+        if (onDismissAttempt?.()) {
+            onDismiss?.();
+        } else if (!onDismissAttempt) {
+            onDismiss?.();
+        }
+    };
+
+    const present = useCallback(() => setVisible(true), []);
+    const dismiss = useCallback(() => {
+        setVisible(false);
+        safeClose();
+    }, [safeClose]);
 
     const scrollTo = useCallback((y: number, animated = true) => {
-        if (scrollRef.current) {
-            scrollRef.current.scrollTo({ y, animated });
-        }
-    }, [scrollRef]);
-
-    useImperativeHandle(
-        ref,
-        () => ({
-            present,
-            dismiss,
-            close: dismiss,
-            expand: present,
-            collapse: dismiss,
-            updateKeyboardPadding,
-            scrollTo,
-        }),
-        [present, dismiss, updateKeyboardPadding, scrollTo],
-    );
-
-    useEffect(() => {
-        isMountedRef.current = true;
-        return () => {
-            isMountedRef.current = false;
-        };
+        scrollViewRef.current?.scrollTo({ y, animated });
     }, []);
 
-    useEffect(() => {
-        if (isVisible) {
-            bottom.value = HIDDEN_BOTTOM;
-            backdropOpacity.value = 0;
-            requestAnimationFrame(() => {
-                if (isMountedRef.current) {
-                    animateToPosition(VISIBLE_BOTTOM, BACKDROP_OPACITY);
-                }
-            });
-        } else {
-            bottom.value = HIDDEN_BOTTOM;
-            backdropOpacity.value = 0;
-            paddingBottom.value = 0;
-        }
-    }, [isVisible, animateToPosition, bottom, backdropOpacity, paddingBottom]);
+    useImperativeHandle(ref, () => ({
+        present,
+        dismiss,
+        close: dismiss,
+        expand: present,
+        collapse: dismiss,
+        scrollTo,
+    }), [present, dismiss, scrollTo]);
 
-    const attemptDismiss = useCallback(() => {
-        if (onDismissAttempt) {
-            const canDismiss = onDismissAttempt();
-            if (canDismiss) {
-                dismiss();
+    const panGesture = Gesture.Pan()
+        .enabled(enablePanDownToClose)
+        .simultaneousWithExternalGesture(nativeGestureRef as any)
+        .onStart(() => {
+            'worklet';
+            context.value = { y: translateY.value };
+        })
+        .onUpdate((event) => {
+            'worklet';
+            const newTranslateY = context.value.y + event.translationY;
+            if (newTranslateY >= 0) {
+                translateY.value = newTranslateY;
+            } else if (detached) {
+                // Only allow overdrag (pulling up beyond top) when detached
+                translateY.value = newTranslateY * 0.3;
             } else {
-                bottom.value = withSpring(VISIBLE_BOTTOM, ANIMATION_CONFIG.spring);
-                backdropOpacity.value = withTiming(BACKDROP_OPACITY, ANIMATION_CONFIG.timing);
+                // In normal mode, prevent overdrag - clamp to 0
+                translateY.value = 0;
             }
-        } else {
-            dismiss();
-        }
-    }, [onDismissAttempt, dismiss, bottom, backdropOpacity]);
+        })
+        .onEnd((event) => {
+            'worklet';
+            const velocity = event.velocityY;
+            const shouldClose = velocity > 500 || (translateY.value > 100 && velocity > -200);
 
-    const handleDismissAttempt = useCallback(() => {
-        if (onDismissAttempt) {
-            const canDismiss = onDismissAttempt();
-            return canDismiss;
-        }
-        return true;
-    }, [onDismissAttempt]);
+            if (shouldClose) {
+                translateY.value = withSpring(SCREEN_HEIGHT, {
+                    ...SPRING_CONFIG,
+                    velocity: velocity,
+                });
+                opacity.value = withTiming(0, { duration: 200 });
+                runOnJS(safeClose)();
+            } else {
+                translateY.value = withSpring(0, {
+                    ...SPRING_CONFIG,
+                    velocity: velocity,
+                });
+            }
+        });
 
-    const handlePanGesture = useMemo(
-        () =>
-            Gesture.Pan()
-                .enabled(enablePanDownToClose && enableHandlePanningGesture)
-                .activeOffsetY(GESTURE_CONFIG.activeOffsetY)
-                .failOffsetX([-GESTURE_CONFIG.failOffsetX, GESTURE_CONFIG.failOffsetX])
-                .onUpdate((event) => {
-                    'worklet';
-                    if (event.translationY > 0) {
-                        bottom.value = VISIBLE_BOTTOM - event.translationY;
-                        const progress = Math.min(event.translationY / GESTURE_CONFIG.opacityThreshold, 1);
-                        backdropOpacity.value = BACKDROP_OPACITY * (1 - progress);
-                    }
-                })
-                .onEnd((event) => {
-                    'worklet';
-                    const shouldDismiss =
-                        event.translationY > GESTURE_CONFIG.dismissThreshold ||
-                        event.velocityY > GESTURE_CONFIG.dismissVelocity;
+    const backdropStyle = useAnimatedStyle(() => ({
+        opacity: opacity.value,
+    }));
 
-                    if (shouldDismiss) {
-                        runOnJS(attemptDismiss)();
-                    } else {
-                        bottom.value = withSpring(VISIBLE_BOTTOM, ANIMATION_CONFIG.spring);
-                        backdropOpacity.value = withTiming(BACKDROP_OPACITY, ANIMATION_CONFIG.timing);
-                    }
-                }),
-        [enablePanDownToClose, enableHandlePanningGesture, bottom, backdropOpacity, attemptDismiss],
-    );
-
-    const contentPanGesture = useMemo(
-        () =>
-            Gesture.Pan()
-                .enabled(enablePanDownToClose && useScrollView)
-                .activeOffsetY(GESTURE_CONFIG.activeOffsetY)
-                .failOffsetX([-GESTURE_CONFIG.failOffsetX, GESTURE_CONFIG.failOffsetX])
-                .simultaneousWithExternalGesture(nativeGestureRef as any)
-                .onUpdate((event) => {
-                    'worklet';
-                    if (scrollY.value <= 0 && event.translationY > 0) {
-                        bottom.value = VISIBLE_BOTTOM - event.translationY;
-                        const progress = Math.min(event.translationY / GESTURE_CONFIG.opacityThreshold, 1);
-                        backdropOpacity.value = BACKDROP_OPACITY * (1 - progress);
-                    }
-                })
-                .onEnd((event) => {
-                    'worklet';
-                    if (scrollY.value > 0) return;
-
-                    const shouldDismiss =
-                        event.translationY > GESTURE_CONFIG.dismissThreshold ||
-                        event.velocityY > GESTURE_CONFIG.dismissVelocity;
-
-                    if (shouldDismiss && event.translationY > 0) {
-                        runOnJS(attemptDismiss)();
-                    } else {
-                        bottom.value = withSpring(VISIBLE_BOTTOM, ANIMATION_CONFIG.spring);
-                        backdropOpacity.value = withTiming(BACKDROP_OPACITY, ANIMATION_CONFIG.timing);
-                    }
-                }),
-        [enablePanDownToClose, bottom, backdropOpacity, attemptDismiss, scrollY, useScrollView],
-    );
-
-    const scrollHandler = useAnimatedScrollHandler({
-        onScroll: (event) => {
-            scrollY.value = event.contentOffset.y;
-        },
+    const sheetStyle = useAnimatedStyle(() => {
+        const scale = interpolate(translateY.value, [0, SCREEN_HEIGHT], [1, 0.95]);
+        return {
+            transform: [
+                { translateY: translateY.value - keyboardHeight.value },
+                { scale },
+            ],
+        };
     });
 
-    const sheetContainerMaxHeight = useMemo(() => {
-        const percentCap = SCREEN_HEIGHT * 0.9;
-        const safeAreaCap = SCREEN_HEIGHT - insets.top - insets.bottom;
-        return Math.min(percentCap, safeAreaCap);
-    }, [insets.top, insets.bottom]);
+    const sheetHeightStyle = useAnimatedStyle(() => ({
+        maxHeight: SCREEN_HEIGHT - keyboardHeight.value - insets.top - (detached ? insets.bottom + 16 : 0),
+    }), [insets.top, insets.bottom, detached]);
 
-    const scrollContentPadding = useMemo(() => {
-        const handleHeight = enableHandlePanningGesture ? 20 : 0;
+    const sheetMarginStyle = useAnimatedStyle(() => {
+        // Only add margin when detached, otherwise extend behind safe area
+        if (detached) {
+            return {
+                marginBottom: keyboardHeight.value > 0 ? 16 : insets.bottom + 16,
+            };
+        }
         return {
-            paddingTop: handleHeight,
-            flexGrow: 1,
+            marginBottom: 0,
         };
-    }, [enableHandlePanningGesture]);
-
-    const sheetContainerStyle = useMemo(
-        () => [
-            styles.sheetContainer,
-            {
-                maxHeight: sheetContainerMaxHeight,
-                flexShrink: 1,
-            },
-        ],
-        [sheetContainerMaxHeight],
-    );
-
-    const sheetAnimatedStyle = useAnimatedStyle(
-        () => ({
-            bottom: bottom.value,
-        }),
-        [],
-    );
-
-    const paddingAnimatedStyle = useAnimatedStyle(
-        () => ({
-            paddingBottom: paddingBottom.value,
-        }),
-        [],
-    );
-
-    const backdropAnimatedStyle = useAnimatedStyle(
-        () => ({
-            opacity: backdropOpacity.value,
-        }),
-        [],
-    );
+    }, [insets.bottom, detached]);
 
     const handleBackdropPress = useCallback(() => {
         if (enablePanDownToClose) {
-            const canDismiss = handleDismissAttempt();
-            if (canDismiss) {
+            if (onDismissAttempt?.()) {
+                dismiss();
+            } else if (!onDismissAttempt) {
                 dismiss();
             }
         }
-    }, [enablePanDownToClose, dismiss, handleDismissAttempt]);
+    }, [enablePanDownToClose, onDismissAttempt, dismiss]);
 
-    const renderBackdrop = useCallback(
-        (props: { style?: StyleProp<ViewStyle>; onPress?: () => void }) => {
-            if (backdropComponent) {
-                return backdropComponent(props);
-            }
-            return (
-                <TouchableWithoutFeedback onPress={props.onPress}>
-                    <Animated.View style={[styles.backdrop, props.style]} />
-                </TouchableWithoutFeedback>
-            );
+    const dynamicStyles = useMemo(() => StyleSheet.create({
+        handle: {
+            ...styles.handle,
+            backgroundColor: colorScheme === 'dark' ? '#444' : '#C7C7CC',
         },
-        [backdropComponent],
-    );
-
-    const renderBackground = useCallback(
-        (props: { style?: StyleProp<ViewStyle> }) => {
-            if (backgroundComponent) {
-                return backgroundComponent(props);
-            }
-            return <View style={[styles.background, props.style]} />;
+        sheet: {
+            ...styles.sheet,
+            backgroundColor: colors.background,
+            ...(detached ? styles.sheetDetached : styles.sheetNormal),
         },
-        [backgroundComponent],
-    );
+        scrollContent: {
+            ...styles.scrollContent,
+            // In normal mode, don't add padding here - screens handle their own padding
+            // The sheet extends behind safe area, and screens add padding as needed
+        },
+    }), [colorScheme, colors.background, detached, insets.bottom]);
 
-    if (!isVisible) {
-        return null;
-    }
+    if (!visible) return null;
 
     return (
-        <Modal
-            visible={isVisible}
-            transparent
-            animationType="none"
-            statusBarTranslucent
-            onRequestClose={attemptDismiss}
-        >
-            <GestureHandlerRootView style={{ flex: 1 }}>
-                <View style={styles.modalContainer}>
-                    <Animated.View style={[styles.backdropContainer, backdropAnimatedStyle]}>
-                        {renderBackdrop({ onPress: handleBackdropPress })}
-                    </Animated.View>
+        <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={dismiss}>
+            <GestureHandlerRootView style={StyleSheet.absoluteFill}>
+                <Animated.View style={[styles.backdrop, backdropStyle]}>
+                    {backdropComponent ? (
+                        backdropComponent({ onPress: handleBackdropPress })
+                    ) : (
+                        <Pressable style={styles.backdropTouchable} onPress={handleBackdropPress}>
+                            <View style={StyleSheet.absoluteFill} />
+                        </Pressable>
+                    )}
+                </Animated.View>
 
-                    <Animated.View
-                        style={[
-                            sheetContainerStyle,
-                            sheetAnimatedStyle,
-                            style,
-                        ]}
-                    >
-                        <Animated.View style={[styles.backgroundContainer, paddingAnimatedStyle]}>
-                            {renderBackground({ style: styles.backgroundInner })}
-                            {enableHandlePanningGesture && (
-                                <GestureDetector gesture={handlePanGesture}>
-                                    <Animated.View style={[styles.handleContainer, handleStyle]}>
-                                        <View style={[styles.handleIndicator, handleIndicatorStyle]} />
-                                    </Animated.View>
-                                </GestureDetector>
-                            )}
-                            {useScrollView ? (
-                                <GestureDetector gesture={contentPanGesture}>
-                                    <NativeViewGestureHandler ref={nativeGestureRef}>
-                                        <Animated.ScrollView
-                                            ref={scrollRef}
-                                            style={[
-                                                styles.scrollView,
-                                                { height: contentHeight > 0 ? contentHeight : undefined }
-                                            ]}
-                                            contentContainerStyle={[
-                                                styles.scrollContent,
-                                                scrollContentPadding,
-                                                // Removed minHeight: '100%' to avoid forced overflow
-                                            ]}
-                                            keyboardShouldPersistTaps="handled"
-                                            showsVerticalScrollIndicator={contentHeight > sheetContainerMaxHeight}
-                                            bounces={true}
-                                            onScroll={scrollHandler}
-                                            scrollEventThrottle={16}
-                                            onContentSizeChange={(_, h) => setContentHeight(h)}
-                                            nestedScrollEnabled={true}
-                                        >
-                                            {children}
-                                        </Animated.ScrollView>
-                                    </NativeViewGestureHandler>
-                                </GestureDetector>
-                            ) : (
-                                <Animated.View
-                                    style={[
-                                        styles.scrollView,
-                                        scrollContentPadding,
-                                        { flexShrink: 1, overflow: 'hidden' }
-                                    ]}
-                                >
-                                    {children}
-                                </Animated.View>
-                            )}
-                        </Animated.View>
+                <GestureDetector gesture={panGesture}>
+                    <Animated.View style={[dynamicStyles.sheet, sheetMarginStyle, sheetStyle, sheetHeightStyle]}>
+                        {backgroundComponent?.({ style: styles.background })}
+
+                        <View style={dynamicStyles.handle} />
+
+                        <NativeViewGestureHandler ref={nativeGestureRef}>
+                            <ScrollView
+                                ref={scrollViewRef}
+                                style={[
+                                    styles.scrollView,
+                                    Platform.OS === 'web' && {
+                                        scrollbarWidth: 'thin' as const,
+                                        scrollbarColor: `${colors.border} transparent`,
+                                    } as any,
+                                ]}
+                                contentContainerStyle={dynamicStyles.scrollContent}
+                                showsVerticalScrollIndicator={false}
+                                keyboardShouldPersistTaps="handled"
+                                // @ts-ignore - Web className
+                                className={Platform.OS === 'web' ? 'bottom-sheet-scrollview' : undefined}
+                                onLayout={() => {
+                                    if (Platform.OS === 'web') {
+                                        createWebScrollbarStyle(colors.border);
+                                    }
+                                }}
+                            >
+                                {children}
+                            </ScrollView>
+                        </NativeViewGestureHandler>
                     </Animated.View>
-                </View>
+                </GestureDetector>
             </GestureHandlerRootView>
         </Modal>
     );
@@ -445,69 +285,86 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
 BottomSheet.displayName = 'BottomSheet';
 
 const styles = StyleSheet.create({
-    modalContainer: {
-        flex: 1,
-    },
-    backdropContainer: {
-        ...StyleSheet.absoluteFillObject,
-        zIndex: 1,
-    },
     backdrop: {
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor: 'rgba(0, 0, 0, 0.5)',
     },
-    sheetContainer: {
+    backdropTouchable: {
+        flex: 1,
+    },
+    sheet: {
         position: 'absolute',
+        bottom: 0,
+        overflow: 'hidden',
+        maxWidth: 800,
+        alignSelf: 'center',
+        marginHorizontal: 'auto',
+    },
+    sheetDetached: {
+        left: 16,
+        right: 16,
+        borderRadius: 24,
+    },
+    sheetNormal: {
         left: 0,
         right: 0,
-        bottom: 0,
-        maxWidth: 800,
-        width: '100%',
-        alignSelf: 'center',
-        flexShrink: 1,
-        zIndex: 2,
+        borderTopLeftRadius: 24,
+        borderTopRightRadius: 24,
     },
-    backgroundContainer: {
-        borderTopLeftRadius: 20,
-        borderTopRightRadius: 20,
-        overflow: 'hidden',
-        position: 'relative',
-        flexShrink: 1,
-        minHeight: 0,
-    },
-    backgroundInner: {
-        ...StyleSheet.absoluteFillObject,
+    handle: {
+        position: 'absolute',
+        top: 10,
+        left: '50%',
+        marginLeft: -18,
+        width: 36,
+        height: 5,
+        borderRadius: 3,
+        zIndex: 100,
     },
     background: {
-        backgroundColor: '#fff',
-    },
-    handleContainer: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 20,
-        alignItems: 'center',
-        justifyContent: 'center',
-        zIndex: 1,
-    },
-    handleIndicator: {
-        width: 40,
-        height: 4,
-        borderRadius: 2,
-        backgroundColor: '#ccc',
-        marginTop: 8,
-    },
-    content: {
-        width: '100%',
+        ...StyleSheet.absoluteFillObject,
     },
     scrollView: {
-        flexShrink: 1,
-        minHeight: 0,
+        flex: 1,
     },
     scrollContent: {
         flexGrow: 1,
     },
 });
+
+// Create web scrollbar styles dynamically based on theme
+const createWebScrollbarStyle = (borderColor: string) => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+
+    const styleId = 'bottom-sheet-scrollbar-style';
+    let styleElement = document.getElementById(styleId) as HTMLStyleElement;
+
+    if (!styleElement) {
+        styleElement = document.createElement('style');
+        styleElement.id = styleId;
+        document.head.appendChild(styleElement);
+    }
+
+    // Use theme border color for scrollbar
+    const scrollbarColor = borderColor;
+    const scrollbarHoverColor = borderColor === '#E5E5EA' ? '#C7C7CC' : '#555';
+
+    styleElement.textContent = `
+        .bottom-sheet-scrollview::-webkit-scrollbar {
+            width: 6px;
+        }
+        .bottom-sheet-scrollview::-webkit-scrollbar-track {
+            background: transparent;
+            border-radius: 10px;
+        }
+        .bottom-sheet-scrollview::-webkit-scrollbar-thumb {
+            background: ${scrollbarColor};
+            border-radius: 10px;
+        }
+        .bottom-sheet-scrollview::-webkit-scrollbar-thumb:hover {
+            background: ${scrollbarHoverColor};
+        }
+    `;
+};
 
 export default BottomSheet;

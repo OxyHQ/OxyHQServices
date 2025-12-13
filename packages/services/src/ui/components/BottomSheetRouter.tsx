@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useCallback } from 'react';
-import { BackHandler, View, StyleSheet, Keyboard, Platform, type StyleProp, type ViewStyle } from 'react-native';
+import { BackHandler, View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -306,32 +306,6 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
         }
     }, [state.isOpen]);
 
-    // Handle keyboard visibility - update padding instantly
-    useEffect(() => {
-        if (!state.isOpen) {
-            bottomSheetRef.current?.updateKeyboardPadding(0);
-            return;
-        }
-
-        const showSubscription = Keyboard.addListener(
-            Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow',
-            (e) => {
-                bottomSheetRef.current?.updateKeyboardPadding(e.endCoordinates.height);
-            },
-        );
-
-        const hideSubscription = Keyboard.addListener(
-            Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide',
-            () => {
-                bottomSheetRef.current?.updateKeyboardPadding(0);
-            },
-        );
-
-        return () => {
-            showSubscription.remove();
-            hideSubscription.remove();
-        };
-    }, [state.isOpen]);
 
     // Minimal screen props - only navigation-specific
     // Screens should use useOxy() hook for OxyContext values (user, sessions, etc.)
@@ -399,14 +373,8 @@ const BottomSheetRouterComponent: React.FC<BottomSheetRouterProps> = ({ onScreen
             backgroundComponent={renderBackground}
             enableHandlePanningGesture={true}
             style={styles.container}
-            handleStyle={styles.handleStyle}
-            handleIndicatorStyle={[
-                styles.handleIndicatorStyle,
-                { backgroundColor: colors.border },
-            ]}
             onDismiss={handleDismiss}
             onDismissAttempt={handleDismissAttempt}
-            useScrollView={true}
         >
             <AnimatedScreenContainer
                 fadeAnim={fadeAnim}
@@ -433,18 +401,6 @@ const styles = StyleSheet.create({
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
         overflow: 'hidden',
-    },
-    handleStyle: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: 20,
-    },
-    handleIndicatorStyle: {
-        width: 40,
-        height: 4,
-        borderRadius: 2,
     },
 });
 

@@ -30,6 +30,7 @@ import {
     SCREEN_PADDING_HORIZONTAL,
     SECTION_GAP,
     HEADER_PADDING_TOP_OVERVIEW,
+    createScreenContentStyle,
 } from '../constants/spacing';
 
 // Optional Lottie import - gracefully handle if not available
@@ -718,9 +719,7 @@ const styles = StyleSheet.create({
     content: {
         flex: 1,
     },
-    scrollContent: {
-        padding: SCREEN_PADDING_HORIZONTAL,
-    },
+    scrollContent: createScreenContentStyle(HEADER_PADDING_TOP_OVERVIEW),
     headerSection: {
         alignItems: 'center',
         marginBottom: SECTION_GAP,

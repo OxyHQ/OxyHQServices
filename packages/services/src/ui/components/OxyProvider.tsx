@@ -2,6 +2,7 @@ import { useEffect, useRef, type FC } from 'react';
 import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import type { OxyProviderProps } from '../types/navigation';
 import { OxyContextProvider } from '../context/OxyContext';
 import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
@@ -70,18 +71,20 @@ const OxyProvider: FC<OxyProviderProps> = ({
     return (
         <SafeAreaProvider>
             <GestureHandlerRootView style={{ flex: 1 }}>
-                <QueryClientProvider client={client}>
-                    <OxyContextProvider
-                        oxyServices={oxyServices as any}
-                        baseURL={baseURL}
-                        storageKeyPrefix={storageKeyPrefix}
-                        onAuthStateChange={onAuthStateChange as any}
-                    >
-                        {children}
-                        <BottomSheetRouter />
-                        <Toaster />
-                    </OxyContextProvider>
-                </QueryClientProvider>
+                <KeyboardProvider>
+                    <QueryClientProvider client={client}>
+                        <OxyContextProvider
+                            oxyServices={oxyServices as any}
+                            baseURL={baseURL}
+                            storageKeyPrefix={storageKeyPrefix}
+                            onAuthStateChange={onAuthStateChange as any}
+                        >
+                            {children}
+                            <BottomSheetRouter />
+                            <Toaster />
+                        </OxyContextProvider>
+                    </QueryClientProvider>
+                </KeyboardProvider>
             </GestureHandlerRootView>
         </SafeAreaProvider>
     );

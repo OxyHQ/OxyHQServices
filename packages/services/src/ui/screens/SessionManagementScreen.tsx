@@ -12,6 +12,7 @@ import {
     RefreshControl,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
+import { screenContentStyle } from '../constants/spacing';
 import { toast } from '../../lib/sonner';
 import type { ClientSession } from '../../models/session';
 import { confirmAction } from '../utils/confirmAction';
@@ -329,8 +330,8 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     scrollContainer: {
-        padding: 20,
-        paddingTop: 0,
+        ...screenContentStyle,
+        paddingTop: 0, // Header handles top spacing
     },
     // Removed legacy session card & bulk action styles (now using GroupedSection)
     sessionActionsRow: {

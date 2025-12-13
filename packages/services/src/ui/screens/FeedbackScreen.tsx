@@ -22,6 +22,7 @@ import { packageInfo } from '../../constants/version';
 import { GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
+import { screenContentStyle } from '../constants/spacing';
 
 // Types for better type safety
 interface FeedbackData {
@@ -72,9 +73,7 @@ const createStyles = (colors: any, theme: string) => StyleSheet.create({
     },
     scrollContent: {
         flexGrow: 1,
-        paddingHorizontal: 24,
-        paddingTop: 40,
-        paddingBottom: 20,
+        ...screenContentStyle,
     },
     stepContainer: {
         flex: 1,

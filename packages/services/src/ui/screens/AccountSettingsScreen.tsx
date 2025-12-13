@@ -48,6 +48,7 @@ import {
     SECTION_GAP_LARGE,
     COMPONENT_GAP,
     HEADER_PADDING_TOP_SETTINGS,
+    createScreenContentStyle,
 } from '../constants/spacing';
 
 // Caches for link metadata and location searches
@@ -1721,11 +1722,7 @@ const styles = StyleSheet.create({
         flex: 1,
         padding: 0,
     },
-    scrollContent: {
-        paddingHorizontal: SCREEN_PADDING_HORIZONTAL,
-        paddingVertical: SCREEN_PADDING_VERTICAL,
-        paddingTop: HEADER_PADDING_TOP_SETTINGS,
-    },
+    scrollContent: createScreenContentStyle(HEADER_PADDING_TOP_SETTINGS),
     headerContainer: {
         width: '100%',
         maxWidth: 420,

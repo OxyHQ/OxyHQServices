@@ -12,6 +12,8 @@ import Animated, {
 import { useThemeColors, createAuthStyles } from '../styles';
 import type { BaseScreenProps, StepController } from '../types/navigation';
 import type { RouteName } from '../types/navigation';
+import { screenContentStyle } from '../constants/spacing';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export interface StepConfig {
     id: string;
@@ -127,6 +129,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     const themeValue = (theme === 'light' || theme === 'dark') ? theme : 'light';
     const themeString = typeof theme === 'string' ? theme : 'light';
     const colors = useThemeColors(themeValue);
+    const insets = useSafeAreaInsets();
     const styles = useMemo(() => ({
         ...createAuthStyles(colors, themeString),
         // Additional styles for step components
@@ -429,8 +432,14 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
 
     // Pure content wrapper - all layout is handled by BottomSheetRouter
     // This component only renders content, no layout calculations
+    // Add safe area insets to bottom padding so content doesn't sit under safe area
+    const contentStyle = useMemo(() => ({
+        ...screenContentStyle,
+        paddingBottom: screenContentStyle.paddingBottom + insets.bottom,
+    }), [insets.bottom]);
+
     return (
-        <>
+        <View style={contentStyle}>
             {showProgressIndicator && steps.length > 1 && (
                 <ProgressIndicator
                     currentStep={currentStep}
@@ -446,7 +455,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
                     <CurrentStepComponent {...stepProps} />
                 )}
             </View>
-        </>
+        </View>
     );
 };
 
