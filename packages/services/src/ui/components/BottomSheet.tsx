@@ -5,16 +5,17 @@ import {
     Modal,
     Pressable,
     Dimensions,
-    ScrollView,
     Platform,
     type ViewStyle,
     type StyleProp,
+    ScrollView,
 } from 'react-native';
 import { Gesture, GestureDetector, NativeViewGestureHandler, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useKeyboardHandler } from 'react-native-keyboard-controller';
 import Animated, {
     interpolate,
     runOnJS,
+    useAnimatedScrollHandler,
     useAnimatedStyle,
     useSharedValue,
     withSpring,
@@ -70,11 +71,14 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     const colorScheme = useColorScheme();
     const colors = Colors[colorScheme ?? 'light'];
     const [visible, setVisible] = useState(false);
+    const [rendered, setRendered] = useState(false); // keep mounted for exit animation
     const scrollViewRef = useRef<ScrollView>(null);
     const nativeGestureRef = useRef<NativeViewGestureHandler>(null);
 
     const translateY = useSharedValue(SCREEN_HEIGHT);
     const opacity = useSharedValue(0);
+    const scrollOffsetY = useSharedValue(0);
+    const isScrollAtTop = useSharedValue(true);
     const keyboardHeight = useSharedValue(0);
     const context = useSharedValue({ y: 0 });
 
@@ -89,23 +93,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         },
     }, []);
 
-    useEffect(() => {
-        if (visible) {
-            opacity.value = withTiming(1, { duration: 250 });
-            translateY.value = withSpring(0, SPRING_CONFIG);
-        } else {
-            opacity.value = withTiming(0, { duration: 200 });
-            translateY.value = withSpring(SCREEN_HEIGHT, { ...SPRING_CONFIG, stiffness: 250 });
-        }
-    }, [visible]);
-
-    // Apply web scrollbar styles when colors change
-    useEffect(() => {
-        if (Platform.OS === 'web') {
-            createWebScrollbarStyle(colors.border);
-        }
-    }, [colors.border]);
-
+    // Dismiss callbacks
     const safeClose = () => {
         if (onDismissAttempt?.()) {
             onDismiss?.();
@@ -114,11 +102,39 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         }
     };
 
-    const present = useCallback(() => setVisible(true), []);
+    const finishClose = useCallback(() => {
+        safeClose();
+        setRendered(false);
+    }, [safeClose]);
+
+    useEffect(() => {
+        if (visible) {
+            opacity.value = withTiming(1, { duration: 250 });
+            translateY.value = withSpring(0, SPRING_CONFIG);
+        } else if (rendered) {
+            opacity.value = withTiming(0, { duration: 250 }, (finished) => {
+                if (finished) {
+                    runOnJS(finishClose)();
+                }
+            });
+            translateY.value = withSpring(SCREEN_HEIGHT, { ...SPRING_CONFIG, stiffness: 250 });
+        }
+    }, [visible, rendered, finishClose]);
+
+    // Apply web scrollbar styles when colors change
+    useEffect(() => {
+        if (Platform.OS === 'web') {
+            createWebScrollbarStyle(colors.border);
+        }
+    }, [colors.border]);
+
+    const present = useCallback(() => {
+        setRendered(true);
+        setVisible(true);
+    }, []);
     const dismiss = useCallback(() => {
         setVisible(false);
-        safeClose();
-    }, [safeClose]);
+    }, []);
 
     const scrollTo = useCallback((y: number, animated = true) => {
         scrollViewRef.current?.scrollTo({ y, animated });
@@ -139,10 +155,16 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         .onStart(() => {
             'worklet';
             context.value = { y: translateY.value };
+            isScrollAtTop.value = scrollOffsetY.value <= 0;
         })
         .onUpdate((event) => {
             'worklet';
             const newTranslateY = context.value.y + event.translationY;
+            // If user is scrolling down while content isn't at (or near) the top, let ScrollView handle it
+            const atTopOrNearTop = scrollOffsetY.value <= 8; // slightly larger tolerance for smoother handoff
+            if (event.translationY > 0 && !atTopOrNearTop) {
+                return;
+            }
             if (newTranslateY >= 0) {
                 translateY.value = newTranslateY;
             } else if (detached) {
@@ -156,15 +178,24 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         .onEnd((event) => {
             'worklet';
             const velocity = event.velocityY;
-            const shouldClose = velocity > 500 || (translateY.value > 100 && velocity > -200);
+            const distance = translateY.value;
+            // Require a deeper pull to close (more like native bottom sheets)
+            const closeThreshold = Math.max(140, SCREEN_HEIGHT * 0.25);
+            const fastSwipeThreshold = 900;
+            const shouldClose =
+                velocity > fastSwipeThreshold ||
+                (distance > closeThreshold && velocity > -300);
 
             if (shouldClose) {
                 translateY.value = withSpring(SCREEN_HEIGHT, {
                     ...SPRING_CONFIG,
                     velocity: velocity,
                 });
-                opacity.value = withTiming(0, { duration: 200 });
-                runOnJS(safeClose)();
+                opacity.value = withTiming(0, { duration: 250 }, (finished) => {
+                    if (finished) {
+                        runOnJS(finishClose)();
+                    }
+                });
             } else {
                 translateY.value = withSpring(0, {
                     ...SPRING_CONFIG,
@@ -213,6 +244,13 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         }
     }, [enablePanDownToClose, onDismissAttempt, dismiss]);
 
+    const scrollHandler = useAnimatedScrollHandler({
+        onScroll: (event) => {
+            scrollOffsetY.value = event.contentOffset.y;
+            isScrollAtTop.value = event.contentOffset.y <= 0;
+        },
+    });
+
     const dynamicStyles = useMemo(() => StyleSheet.create({
         handle: {
             ...styles.handle,
@@ -230,10 +268,10 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         },
     }), [colorScheme, colors.background, detached, insets.bottom]);
 
-    if (!visible) return null;
+    if (!rendered) return null;
 
     return (
-        <Modal visible={visible} transparent animationType="none" statusBarTranslucent onRequestClose={dismiss}>
+        <Modal visible={rendered} transparent animationType="none" statusBarTranslucent onRequestClose={dismiss}>
             <GestureHandlerRootView style={StyleSheet.absoluteFill}>
                 <Animated.View style={[styles.backdrop, backdropStyle]}>
                     {backdropComponent ? (
@@ -252,8 +290,8 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                         <View style={dynamicStyles.handle} />
 
                         <NativeViewGestureHandler ref={nativeGestureRef}>
-                            <ScrollView
-                                ref={scrollViewRef}
+                            <Animated.ScrollView
+                                ref={scrollViewRef as any}
                                 style={[
                                     styles.scrollView,
                                     Platform.OS === 'web' && {
@@ -264,6 +302,8 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                                 contentContainerStyle={dynamicStyles.scrollContent}
                                 showsVerticalScrollIndicator={false}
                                 keyboardShouldPersistTaps="handled"
+                                onScroll={scrollHandler}
+                                scrollEventThrottle={16}
                                 // @ts-ignore - Web className
                                 className={Platform.OS === 'web' ? 'bottom-sheet-scrollview' : undefined}
                                 onLayout={() => {
@@ -273,7 +313,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                                 }}
                             >
                                 {children}
-                            </ScrollView>
+                            </Animated.ScrollView>
                         </NativeViewGestureHandler>
                     </Animated.View>
                 </GestureDetector>
