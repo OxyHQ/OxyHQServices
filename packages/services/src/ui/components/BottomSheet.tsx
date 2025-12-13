@@ -10,7 +10,7 @@ import {
     type StyleProp,
     ScrollView,
 } from 'react-native';
-import { Gesture, GestureDetector, NativeViewGestureHandler, GestureHandlerRootView } from 'react-native-gesture-handler';
+import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useKeyboardHandler } from 'react-native-keyboard-controller';
 import Animated, {
     interpolate,
@@ -72,13 +72,15 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     const colors = Colors[colorScheme ?? 'light'];
     const [visible, setVisible] = useState(false);
     const [rendered, setRendered] = useState(false); // keep mounted for exit animation
+    const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const hasClosedRef = useRef(false);
     const scrollViewRef = useRef<ScrollView>(null);
-    const nativeGestureRef = useRef<NativeViewGestureHandler>(null);
 
     const translateY = useSharedValue(SCREEN_HEIGHT);
     const opacity = useSharedValue(0);
     const scrollOffsetY = useSharedValue(0);
     const isScrollAtTop = useSharedValue(true);
+    const allowPanClose = useSharedValue(true);
     const keyboardHeight = useSharedValue(0);
     const context = useSharedValue({ y: 0 });
 
@@ -103,12 +105,19 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     };
 
     const finishClose = useCallback(() => {
+        if (hasClosedRef.current) return;
+        hasClosedRef.current = true;
         safeClose();
         setRendered(false);
     }, [safeClose]);
 
     useEffect(() => {
         if (visible) {
+            if (closeTimeoutRef.current) {
+                clearTimeout(closeTimeoutRef.current);
+                closeTimeoutRef.current = null;
+            }
+            hasClosedRef.current = false;
             opacity.value = withTiming(1, { duration: 250 });
             translateY.value = withSpring(0, SPRING_CONFIG);
         } else if (rendered) {
@@ -118,6 +127,15 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                 }
             });
             translateY.value = withSpring(SCREEN_HEIGHT, { ...SPRING_CONFIG, stiffness: 250 });
+
+            // Fallback timer to ensure close completes (especially on web)
+            if (closeTimeoutRef.current) {
+                clearTimeout(closeTimeoutRef.current);
+            }
+            closeTimeoutRef.current = setTimeout(() => {
+                finishClose();
+                closeTimeoutRef.current = null;
+            }, 300);
         }
     }, [visible, rendered, finishClose]);
 
@@ -149,16 +167,22 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         scrollTo,
     }), [present, dismiss, scrollTo]);
 
+    const nativeGesture = useMemo(() => Gesture.Native(), []);
+
     const panGesture = Gesture.Pan()
         .enabled(enablePanDownToClose)
-        .simultaneousWithExternalGesture(nativeGestureRef as any)
+        .simultaneousWithExternalGesture(nativeGesture)
         .onStart(() => {
             'worklet';
             context.value = { y: translateY.value };
             isScrollAtTop.value = scrollOffsetY.value <= 0;
+            allowPanClose.value = scrollOffsetY.value <= 8;
         })
         .onUpdate((event) => {
             'worklet';
+            if (!allowPanClose.value) {
+                return;
+            }
             const newTranslateY = context.value.y + event.translationY;
             // If user is scrolling down while content isn't at (or near) the top, let ScrollView handle it
             const atTopOrNearTop = scrollOffsetY.value <= 8; // slightly larger tolerance for smoother handoff
@@ -177,6 +201,9 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         })
         .onEnd((event) => {
             'worklet';
+            if (!allowPanClose.value) {
+                return;
+            }
             const velocity = event.velocityY;
             const distance = translateY.value;
             // Require a deeper pull to close (more like native bottom sheets)
@@ -235,14 +262,12 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     }, [insets.bottom, detached]);
 
     const handleBackdropPress = useCallback(() => {
-        if (enablePanDownToClose) {
-            if (onDismissAttempt?.()) {
-                dismiss();
-            } else if (!onDismissAttempt) {
-                dismiss();
-            }
+        // Always animate close on backdrop press
+        if (onDismissAttempt && !onDismissAttempt()) {
+            return;
         }
-    }, [enablePanDownToClose, onDismissAttempt, dismiss]);
+        dismiss();
+    }, [onDismissAttempt, dismiss]);
 
     const scrollHandler = useAnimatedScrollHandler({
         onScroll: (event) => {
@@ -289,7 +314,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
 
                         <View style={dynamicStyles.handle} />
 
-                        <NativeViewGestureHandler ref={nativeGestureRef}>
+                        <GestureDetector gesture={nativeGesture}>
                             <Animated.ScrollView
                                 ref={scrollViewRef as any}
                                 style={[
@@ -314,7 +339,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
                             >
                                 {children}
                             </Animated.ScrollView>
-                        </NativeViewGestureHandler>
+                        </GestureDetector>
                     </Animated.View>
                 </GestureDetector>
             </GestureHandlerRootView>
