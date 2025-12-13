@@ -139,6 +139,14 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         }
     }, [visible, rendered, finishClose]);
 
+    // Clear pending timeout on unmount
+    useEffect(() => () => {
+        if (closeTimeoutRef.current) {
+            clearTimeout(closeTimeoutRef.current);
+            closeTimeoutRef.current = null;
+        }
+    }, []);
+
     // Apply web scrollbar styles when colors change
     useEffect(() => {
         if (Platform.OS === 'web') {
@@ -175,7 +183,6 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         .onStart(() => {
             'worklet';
             context.value = { y: translateY.value };
-            isScrollAtTop.value = scrollOffsetY.value <= 0;
             allowPanClose.value = scrollOffsetY.value <= 8;
         })
         .onUpdate((event) => {
