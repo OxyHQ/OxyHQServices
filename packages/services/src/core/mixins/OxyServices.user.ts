@@ -236,16 +236,6 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
       }
     }
 
-    /**
-     * Update user by ID (admin function)
-     */
-    async updateUser(userId: string, updates: Record<string, any>): Promise<User> {
-      try {
-        return await this.makeRequest<User>('PUT', `/api/users/${userId}`, updates, { cache: false });
-      } catch (error) {
-        throw this.handleError(error);
-      }
-    }
 
     /**
      * Follow a user

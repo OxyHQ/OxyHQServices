@@ -78,7 +78,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
                         const state = await NetInfo.default.fetch();
                         onlineManager.setOnline(state.isConnected ?? true);
                         
-                        const unsubscribe = NetInfo.default.addEventListener(state => {
+                        const unsubscribe = NetInfo.default.addEventListener((state: { isConnected: boolean | null }) => {
                             onlineManager.setOnline(state.isConnected ?? true);
                         });
                         

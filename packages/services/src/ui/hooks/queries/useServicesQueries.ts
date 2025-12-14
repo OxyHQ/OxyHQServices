@@ -51,9 +51,9 @@ export const useSession = (sessionId: string | null, options?: { enabled?: boole
       const now = new Date();
       return {
         sessionId,
-        deviceId: validation.session?.deviceId || '',
-        expiresAt: validation.session?.expiresAt || new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        lastActive: now.toISOString(),
+        deviceId: '', // Device ID not available from validation response
+        expiresAt: validation.expiresAt || new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+        lastActive: validation.lastActivity || now.toISOString(),
         userId: validation.user.id?.toString() ?? '',
         isCurrent: false,
       } as ClientSession;

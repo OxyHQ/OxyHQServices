@@ -74,6 +74,7 @@ export interface OxyContextState {
   >;
   logoutAllDeviceSessions: () => Promise<void>;
   updateDeviceName: (deviceName: string) => Promise<void>;
+  clearSessionState: () => Promise<void>;
   oxyServices: OxyServices;
   useFollow?: UseFollowHook;
   showBottomSheet?: (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => void;
@@ -540,6 +541,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     getDeviceSessions,
     logoutAllDeviceSessions,
     updateDeviceName,
+    clearSessionState,
     oxyServices,
     useFollow: useFollowHook,
     showBottomSheet: showBottomSheetForContext,
