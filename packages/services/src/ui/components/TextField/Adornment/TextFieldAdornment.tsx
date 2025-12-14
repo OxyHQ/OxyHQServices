@@ -10,8 +10,8 @@ import type {
 import type { ThemeProp } from 'src/types';
 
 import { AdornmentSide, AdornmentType, InputMode } from './enums';
-import TextInputAffix, { AffixAdornment } from './TextInputAffix';
-import TextInputIcon, { IconAdornment } from './TextInputIcon';
+import TextFieldAffix, { AffixAdornment } from './TextFieldAffix';
+import TextFieldIcon, { IconAdornment } from './TextFieldIcon';
 import type {
   AdornmentConfig,
   AdornmentStyleAdjustmentForNativeInput,
@@ -33,9 +33,9 @@ export function getAdornmentConfig({
     ].forEach(({ side, adornment }) => {
       if (adornment && React.isValidElement(adornment)) {
         let type;
-        if (adornment.type === TextInputAffix) {
+        if (adornment.type === TextFieldAffix) {
           type = AdornmentType.Affix;
-        } else if (adornment.type === TextInputIcon) {
+        } else if (adornment.type === TextFieldIcon) {
           type = AdornmentType.Icon;
         }
         adornmentConfig.push({
@@ -112,7 +112,7 @@ export function getAdornmentStyleAdjustmentForNativeInput({
 const captalize = (text: string) =>
   text.charAt(0).toUpperCase() + text.slice(1);
 
-export interface TextInputAdornmentProps {
+export interface TextFieldAdornmentProps {
   forceFocus: () => void;
   adornmentConfig: AdornmentConfig[];
   topPosition: {
@@ -137,7 +137,7 @@ export interface TextInputAdornmentProps {
   disabled?: boolean;
 }
 
-const TextInputAdornment: React.FunctionComponent<TextInputAdornmentProps> = ({
+const TextFieldAdornment: React.FunctionComponent<TextFieldAdornmentProps> = ({
   adornmentConfig,
   left,
   right,
@@ -205,4 +205,4 @@ const TextInputAdornment: React.FunctionComponent<TextInputAdornmentProps> = ({
   }
 };
 
-export default TextInputAdornment;
+export default TextFieldAdornment;

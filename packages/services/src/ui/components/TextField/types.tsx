@@ -14,14 +14,15 @@ import type {
 
 import type { $Omit, InternalTheme, ThemeProp } from '../types';
 
-export type TextInputLabelProp = string | React.ReactElement;
+export type TextFieldLabelProp = string | React.ReactElement;
+export type TextInputLabelProp = TextFieldLabelProp; // Alias for backward compatibility
 
 type TextInputProps = React.ComponentPropsWithRef<typeof NativeTextInput> & {
   mode?: 'flat' | 'outlined';
   left?: React.ReactNode;
   right?: React.ReactNode;
   disabled?: boolean;
-  label?: TextInputLabelProp;
+  label?: TextFieldLabelProp;
   placeholder?: string;
   error?: boolean;
   onChangeText?: Function;
@@ -116,7 +117,7 @@ export type LabelProps = {
   labelTranslationXOffset?: number;
   placeholderColor: string | null;
   backgroundColor?: ColorValue;
-  label?: TextInputLabelProp | null;
+  label?: TextFieldLabelProp | null;
   hasActiveOutline?: boolean | null;
   activeColor: string;
   errorColor?: string;
