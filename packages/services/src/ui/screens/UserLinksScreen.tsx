@@ -4,6 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
 import { Header, GroupedSection } from '../components';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { normalizeTheme } from '../utils/themeUtils';
 
 interface UserLinksScreenProps extends BaseScreenProps {
     userId: string;
@@ -63,7 +64,7 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
 
                     <GroupedSection
                         items={groupedItems}
-                        
+
                     />
                 </View>
             </ScrollView>

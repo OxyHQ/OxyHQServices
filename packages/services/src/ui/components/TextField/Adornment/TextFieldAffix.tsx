@@ -121,7 +121,7 @@ const AffixAdornment: React.FunctionComponent<
  * ```
  */
 
-const TextInputAffix = ({
+const TextFieldAffix = ({
   text,
   textStyle: labelStyle,
   theme: themeOverrides,
@@ -196,7 +196,7 @@ const TextInputAffix = ({
   );
 };
 
-TextInputAffix.displayName = 'TextInput.Affix';
+TextFieldAffix.displayName = 'TextField.Affix';
 
 const styles = StyleSheet.create({
   container: {
@@ -206,7 +206,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export default TextInputAffix;
+export default TextFieldAffix;
 
 // @component-docs ignore-next-line
-export { TextInputAffix, AffixAdornment };
+export { TextFieldAffix, AffixAdornment };

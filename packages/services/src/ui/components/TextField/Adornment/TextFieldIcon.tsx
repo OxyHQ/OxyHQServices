@@ -126,7 +126,7 @@ const IconAdornment: React.FunctionComponent<
  * ```
  */
 
-const TextInputIcon = ({
+const TextFieldIcon = ({
   icon,
   onPress,
   forceTextInputFocus = true,
@@ -174,7 +174,7 @@ const TextInputIcon = ({
     </View>
   );
 };
-TextInputIcon.displayName = 'TextInput.Icon';
+TextFieldIcon.displayName = 'TextField.Icon';
 
 const styles = StyleSheet.create({
   container: {
@@ -189,7 +189,7 @@ const styles = StyleSheet.create({
   },
 });
 
-export default TextInputIcon;
+export default TextFieldIcon;
 
 // @component-docs ignore-next-line
 export { IconAdornment };

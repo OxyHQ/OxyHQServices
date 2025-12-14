@@ -9,6 +9,7 @@ import { toast } from '../../lib/sonner';
 import { Header, Section, LoadingState, SettingRow } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 
 const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
@@ -33,7 +34,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
                     // Load from user's privacy settings
                     const userData = await oxyServices.getCurrentUser();
                     const privacySettings = (userData as any)?.privacySettings || {};
-                    
+
                     // SafeSearch is typically stored in privacySettings.autoFilter or a separate field
                     setSafeSearch(privacySettings.autoFilter ?? false);
                     setSearchPersonalization(privacySettings.dataSharing ?? true);
@@ -52,7 +53,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
         try {
             setIsSaving(true);
             setSafeSearch(value);
-            
+
             if (user?.id && oxyServices) {
                 // Update privacy settings
                 await oxyServices.updateProfile({
@@ -75,7 +76,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
         try {
             setIsSaving(true);
             setSearchPersonalization(value);
-            
+
             if (user?.id && oxyServices) {
                 // Update privacy settings
                 await oxyServices.updateProfile({
@@ -115,7 +116,7 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
             <Header
                 title={t('searchSettings.title') || 'Search Settings'}
-                
+
                 onBack={goBack || onClose}
                 variant="minimal"
                 elevation="subtle"
