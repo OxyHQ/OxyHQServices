@@ -14,11 +14,11 @@ import { useThemeColors } from '../../hooks/useThemeColors';
 
 import { Outline } from './Addons/Outline';
 import { AdornmentType, AdornmentSide } from './Adornment/enums';
-import TextInputAdornment, {
+import TextFieldAdornment, {
   getAdornmentConfig,
   getAdornmentStyleAdjustmentForNativeInput,
-  TextInputAdornmentProps,
-} from './Adornment/TextInputAdornment';
+  TextFieldAdornmentProps,
+} from './Adornment/TextFieldAdornment';
 import {
   MAXIMIZED_LABEL_FONT_SIZE,
   MINIMIZED_LABEL_FONT_SIZE,
@@ -325,7 +325,7 @@ const TextInputOutlined = ({
     [AdornmentSide.Right]: onRightAffixLayoutChange,
   };
 
-  let adornmentProps: TextInputAdornmentProps = {
+  let adornmentProps: TextFieldAdornmentProps = {
     adornmentConfig,
     forceFocus,
     topPosition: {
@@ -434,7 +434,7 @@ const TextInputOutlined = ({
           testID,
         } as RenderProps)}
       </View>
-      <TextInputAdornment {...adornmentProps} />
+      <TextFieldAdornment {...adornmentProps} />
     </View>
   );
 };

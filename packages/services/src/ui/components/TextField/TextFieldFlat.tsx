@@ -12,13 +12,13 @@ import { useThemeColors } from '../../hooks/useThemeColors';
 
 import { Underline } from './Addons/Underline';
 import { AdornmentSide, AdornmentType, InputMode } from './Adornment/enums';
-import TextInputAdornment, {
-  TextInputAdornmentProps,
-} from './Adornment/TextInputAdornment';
+import TextFieldAdornment, {
+  TextFieldAdornmentProps,
+} from './Adornment/TextFieldAdornment';
 import {
   getAdornmentConfig,
   getAdornmentStyleAdjustmentForNativeInput,
-} from './Adornment/TextInputAdornment';
+} from './Adornment/TextFieldAdornment';
 import {
   ADORNMENT_SIZE,
   LABEL_PADDING_TOP_DENSE,
@@ -325,7 +325,7 @@ const TextInputFlat = ({
     [AdornmentSide.Right]: onRightAffixLayoutChange,
   };
 
-  let adornmentProps: TextInputAdornmentProps = {
+  let adornmentProps: TextFieldAdornmentProps = {
     paddingHorizontal,
     adornmentConfig,
     forceFocus,
@@ -445,7 +445,7 @@ const TextInputFlat = ({
           testID,
         })}
       </View>
-      <TextInputAdornment {...adornmentProps} />
+      <TextFieldAdornment {...adornmentProps} />
     </View>
   );
 };
