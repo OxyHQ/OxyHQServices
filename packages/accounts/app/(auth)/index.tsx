@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -23,39 +23,57 @@ export default function AuthIndexScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { hasIdentity, isLoading } = useOxy();
+  const oxyContext = useOxy();
+  const { hasIdentity, isLoading } = oxyContext;
+  // @ts-ignore - isStorageReady may not be in type definition yet due to build cache
+  const isStorageReady = oxyContext.isStorageReady ?? false;
   const { signIn } = useBiometricSignIn();
 
   const [checking, setChecking] = useState(true);
   const [hasExistingIdentity, setHasExistingIdentity] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    checkIdentity();
-  }, []);
+  const checkIdentity = useCallback(
+    async () => {
+      try {
+        const exists = await hasIdentity();
+        setHasExistingIdentity(exists);
 
-  const checkIdentity = async () => {
-    try {
-      const exists = await hasIdentity();
-      setHasExistingIdentity(exists);
-
-      if (exists) {
-        // Try to auto sign in
-        try {
-          await signIn();
-          router.replace('/(tabs)');
-          return;
-        } catch (err) {
-          // Identity exists but sign in failed - show options
-          console.warn('Auto sign in failed:', err);
+        if (exists) {
+          // Try to auto sign in
+          try {
+            await signIn();
+            router.replace('/(tabs)');
+            return;
+          } catch (err) {
+            // Identity exists but sign in failed - show options
+            console.warn('Auto sign in failed:', err);
+          }
         }
+      } catch (err) {
+        console.error('Error checking identity:', err);
+      } finally {
+        setChecking(false);
       }
-    } catch (err) {
-      console.error('Error checking identity:', err);
-    } finally {
-      setChecking(false);
+    },
+    [hasIdentity, signIn, router]
+  );
+
+  useEffect(() => {
+    // Wait for storage to be ready before checking identity
+    if (isStorageReady) {
+      checkIdentity();
+    } else {
+      // If storage isn't ready after a reasonable time, stop checking to avoid infinite loading
+      // This handles cases where storage initialization fails
+      const timeout = setTimeout(() => {
+        console.warn('Storage not ready after timeout, stopping check');
+        setChecking(false);
+      }, 3000); // 3 second timeout
+
+      return () => clearTimeout(timeout);
     }
-  };
+  }, [isStorageReady, checkIdentity]);
 
   const handleSignIn = async () => {
     setError(null);

@@ -27,6 +27,7 @@ import { getDisplayName, getShortDisplayName } from '../utils/user-utils';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
+import { useUsersBySessions } from '../hooks/queries/useAccountQueries';
 import {
     SCREEN_PADDING_HORIZONTAL,
     SECTION_GAP,
@@ -133,53 +134,44 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
         ), [sessions, activeSessionId, user?.id]
     );
 
-    // Load user profiles for additional accounts
+    // Load user profiles for additional accounts using TanStack Query
+    const sessionIds = additionalAccounts.map(s => s.sessionId);
+    const { data: usersData, isLoading: isLoadingUsers } = useUsersBySessions(sessionIds, { 
+        enabled: additionalAccounts.length > 0 
+    });
+
     React.useEffect(() => {
-        const loadAdditionalAccountsData = async () => {
-            if (!oxyServices || additionalAccounts.length === 0) {
-                setAdditionalAccountsData([]);
-                return;
-            }
-
-            setLoadingAdditionalAccounts(true);
-            try {
-                const accountsData = await Promise.all(
-                    additionalAccounts.map(async (session) => {
-                        try {
-                            const userProfile = await oxyServices.getUserBySession(session.sessionId);
-                            return {
-                                id: session.sessionId,
-                                sessionId: session.sessionId,
-                                username: userProfile.username,
-                                email: userProfile.email,
-                                name: userProfile.name,
-                                avatar: userProfile.avatar,
-                                userProfile
-                            };
-                        } catch (error) {
-                            console.error(`Failed to load profile for session ${session.sessionId}:`, error);
-                            return {
-                                id: session.sessionId,
-                                sessionId: session.sessionId,
-                                username: 'Unknown User',
-                                email: 'No email available',
-                                avatar: null,
-                                userProfile: null
-                            };
-                        }
-                    })
-                );
-                setAdditionalAccountsData(accountsData);
-            } catch (error) {
-                console.error('Failed to load additional accounts:', error);
-                setAdditionalAccountsData([]);
-            } finally {
-                setLoadingAdditionalAccounts(false);
-            }
-        };
-
-        loadAdditionalAccountsData();
-    }, [sessions, activeSessionId, user?.id, oxyServices]);
+        if (usersData && usersData.length > 0) {
+            const accountsData = usersData.map(({ sessionId, user: userProfile }) => {
+                if (!userProfile) {
+                    return {
+                        id: sessionId,
+                        sessionId,
+                        username: 'Unknown User',
+                        email: 'No email available',
+                        avatar: null,
+                        userProfile: null
+                    };
+                }
+                return {
+                    id: sessionId,
+                    sessionId,
+                    username: userProfile.username,
+                    email: userProfile.email,
+                    name: userProfile.name,
+                    avatar: userProfile.avatar,
+                    userProfile
+                };
+            });
+            setAdditionalAccountsData(accountsData);
+            setLoadingAdditionalAccounts(false);
+        } else if (additionalAccounts.length === 0) {
+            setAdditionalAccountsData([]);
+            setLoadingAdditionalAccounts(false);
+        } else if (!isLoadingUsers) {
+            setLoadingAdditionalAccounts(false);
+        }
+    }, [usersData, additionalAccounts.length, isLoadingUsers]);
 
     // Feature settings (with mock values)
     const features = {

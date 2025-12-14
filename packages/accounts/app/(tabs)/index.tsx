@@ -253,6 +253,15 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, []);
 
+  // Redirect to auth flow if not authenticated
+  // Accounts app uses its own auth flow (create/import identity), not the bottom sheet
+  // IMPORTANT: This useEffect must be called before any early returns to maintain hook order
+  useEffect(() => {
+    if (!oxyLoading && !isAuthenticated) {
+      router.replace('/(auth)');
+    }
+  }, [oxyLoading, isAuthenticated, router]);
+
   // Show loading state while OxyServices is initializing
   if (oxyLoading) {
     return (
@@ -264,14 +273,6 @@ export default function HomeScreen() {
       </ScreenContentWrapper>
     );
   }
-
-  // Redirect to auth flow if not authenticated
-  // Accounts app uses its own auth flow (create/import identity), not the bottom sheet
-  useEffect(() => {
-    if (!oxyLoading && !isAuthenticated) {
-      router.replace('/(auth)');
-    }
-  }, [oxyLoading, isAuthenticated, router]);
 
   // Show loading while checking auth or redirecting
   if (!isAuthenticated) {

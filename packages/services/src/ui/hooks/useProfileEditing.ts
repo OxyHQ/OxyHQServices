@@ -1,8 +1,7 @@
-import { useState, useCallback } from 'react';
-import { useOxy } from '../context/OxyContext';
-import { useAuthStore } from '../stores/authStore';
-import { toast } from '../../lib/sonner';
+import { useCallback } from 'react';
 import { useI18n } from './useI18n';
+import { useUpdateProfile } from './mutations/useAccountMutations';
+import { useAuthStore } from '../stores/authStore';
 
 export interface ProfileUpdateData {
     displayName?: string;
@@ -33,74 +32,61 @@ export interface ProfileUpdateData {
  * Provides functions to update profile fields and handle saving
  */
 export const useProfileEditing = () => {
-    const { oxyServices, activeSessionId } = useOxy();
-    const updateUser = useAuthStore((state) => state.updateUser);
     const { t } = useI18n();
-    const [isSaving, setIsSaving] = useState(false);
+    const updateProfileMutation = useUpdateProfile();
 
     /**
-     * Save profile updates to the server
+     * Save profile updates to the server using TanStack Query
      */
     const saveProfile = useCallback(async (updates: ProfileUpdateData) => {
-        if (!oxyServices) {
-            toast.error(t('editProfile.toasts.serviceUnavailable') || 'Service not available');
-            return false;
+        // Prepare update object
+        const updateData: Record<string, any> = {};
+
+        if (updates.username !== undefined) {
+            updateData.username = updates.username;
+        }
+        if (updates.email !== undefined) {
+            updateData.email = updates.email;
+        }
+        if (updates.bio !== undefined) {
+            updateData.bio = updates.bio;
+        }
+        if (updates.location !== undefined || updates.locations !== undefined) {
+            updateData.location = updates.locations && updates.locations.length > 0 
+                ? updates.locations[0].name 
+                : updates.location || '';
+            if (updates.locations) {
+                updateData.locations = updates.locations;
+            }
+        }
+        if (updates.links !== undefined) {
+            updateData.links = updates.links;
+        }
+        if (updates.linksMetadata !== undefined) {
+            updateData.linksMetadata = updates.linksMetadata;
+        }
+        if (updates.avatar !== undefined) {
+            updateData.avatar = updates.avatar;
+        }
+
+        // Handle name field
+        if (updates.displayName !== undefined || updates.lastName !== undefined) {
+            const currentUser = useAuthStore.getState().user;
+            const currentName = currentUser?.name;
+            updateData.name = {
+                first: updates.displayName ?? (typeof currentName === 'object' ? currentName?.first : '') ?? '',
+                last: updates.lastName ?? (typeof currentName === 'object' ? currentName?.last : '') ?? '',
+            };
         }
 
         try {
-            setIsSaving(true);
-
-            // Prepare update object
-            const updateData: Record<string, any> = {};
-
-            if (updates.username !== undefined) {
-                updateData.username = updates.username;
-            }
-            if (updates.email !== undefined) {
-                updateData.email = updates.email;
-            }
-            if (updates.bio !== undefined) {
-                updateData.bio = updates.bio;
-            }
-            if (updates.location !== undefined || updates.locations !== undefined) {
-                updateData.location = updates.locations && updates.locations.length > 0 
-                    ? updates.locations[0].name 
-                    : updates.location || '';
-                if (updates.locations) {
-                    updateData.locations = updates.locations;
-                }
-            }
-            if (updates.links !== undefined) {
-                updateData.links = updates.links;
-            }
-            if (updates.linksMetadata !== undefined) {
-                updateData.linksMetadata = updates.linksMetadata;
-            }
-            if (updates.avatar !== undefined) {
-                updateData.avatar = updates.avatar;
-            }
-
-            // Handle name field
-            if (updates.displayName !== undefined || updates.lastName !== undefined) {
-                const currentUser = useAuthStore.getState().user;
-                const currentName = currentUser?.name;
-                updateData.name = {
-                    first: updates.displayName ?? (typeof currentName === 'object' ? currentName?.first : '') ?? '',
-                    last: updates.lastName ?? (typeof currentName === 'object' ? currentName?.last : '') ?? '',
-                };
-            }
-
-            await updateUser(updateData, oxyServices);
-            toast.success(t('editProfile.toasts.profileUpdated') || 'Profile updated successfully');
+            await updateProfileMutation.mutateAsync(updateData);
             return true;
         } catch (error: any) {
-            console.error('Failed to update profile:', error);
-            toast.error(error?.message || t('editProfile.toasts.updateFailed') || 'Failed to update profile');
+            // Error toast is handled by the mutation
             return false;
-        } finally {
-            setIsSaving(false);
         }
-    }, [oxyServices, updateUser, t]);
+    }, [updateProfileMutation, t]);
 
     /**
      * Update a single profile field
@@ -138,7 +124,7 @@ export const useProfileEditing = () => {
     return {
         saveProfile,
         updateField,
-        isSaving,
+        isSaving: updateProfileMutation.isPending,
     };
 };
 

@@ -36,7 +36,7 @@ export const EditDisplayNameModal: React.FC<EditDisplayNameModalProps> = ({
     const colorScheme = useColorScheme();
     const themeStyles = useThemeStyles(theme || 'light', colorScheme);
     const colors = themeStyles.colors;
-    const { updateField, isSaving } = useProfileEditing();
+    const { saveProfile, isSaving } = useProfileEditing();
 
     const [displayName, setDisplayName] = useState(initialDisplayName);
     const [lastName, setLastName] = useState(initialLastName);
@@ -47,8 +47,6 @@ export const EditDisplayNameModal: React.FC<EditDisplayNameModalProps> = ({
             setLastName(initialLastName);
         }
     }, [visible, initialDisplayName, initialLastName]);
-
-    const { saveProfile } = useProfileEditing();
 
     const handleSave = async () => {
         const updates = {

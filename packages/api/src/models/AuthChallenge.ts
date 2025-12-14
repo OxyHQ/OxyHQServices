@@ -19,7 +19,6 @@ const AuthChallengeSchema: Schema = new Schema(
     publicKey: {
       type: String,
       required: true,
-      index: true,
     },
     challenge: {
       type: String,
@@ -29,7 +28,6 @@ const AuthChallengeSchema: Schema = new Schema(
     expiresAt: {
       type: Date,
       required: true,
-      index: true,
     },
     used: {
       type: Boolean,

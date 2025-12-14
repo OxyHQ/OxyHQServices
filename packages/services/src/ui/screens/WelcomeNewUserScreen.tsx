@@ -11,6 +11,7 @@ import { normalizeTheme } from '../utils/themeUtils';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
+import { useUpdateProfile } from '../hooks/mutations/useAccountMutations';
 
 const GAP = 12;
 const INNER_GAP = 8;
@@ -62,7 +63,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     // Use useOxy() hook for OxyContext values
     const { user, oxyServices } = useOxy();
     const { t } = useI18n();
-    const updateUser = useAuthStore(s => s.updateUser);
+    const updateProfileMutation = useUpdateProfile();
     const currentUser = user || newUser; // fallback
     const normalizedTheme = normalizeTheme(theme);
     const colors = useThemeColors(normalizedTheme);
@@ -161,11 +162,11 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
 
                     // Update the avatar immediately in local state
                     setSelectedAvatarId(file.id);
-                    
-                    // Update user in store
-                    await updateUser({ avatar: file.id }, oxyServices);
+
+                    // Update user using TanStack Query mutation
+                    await updateProfileMutation.mutateAsync({ avatar: file.id });
                     toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated');
-                    
+
                     // Ensure we stay on the avatar step
                     if (avatarStepIndex >= 0 && currentStep !== avatarStepIndex) {
                         animateToStepCallback(avatarStepIndex);
@@ -175,7 +176,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                 }
             }
         });
-    }, [navigate, updateUser, oxyServices, currentStep, avatarStepIndex, animateToStepCallback, t]);
+    }, [navigate, updateProfileMutation, oxyServices, currentStep, avatarStepIndex, animateToStepCallback, t]);
 
     const step = steps[currentStep];
     const pillButtons = useMemo(() => {
@@ -233,13 +234,13 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                     )}
                     {step.showAvatar && (
                         <View style={[styles.avatarSection, styles.sectionSpacing]}>
-                            <Avatar 
-                                size={120} 
-                                name={currentUser?.name?.full || currentUser?.name?.first || currentUser?.username} 
-                                uri={avatarUri} 
-                                
+                            <Avatar
+                                size={120}
+                                name={currentUser?.name?.full || currentUser?.name?.first || currentUser?.username}
+                                uri={avatarUri}
+
                                 backgroundColor={colors.primary + '20'}
-                                style={styles.avatar} 
+                                style={styles.avatar}
                             />
                             <TouchableOpacity style={[styles.changeAvatarButton, { backgroundColor: colors.primary }]} onPress={openAvatarPicker}>
                                 <Ionicons name="image-outline" size={18} color="#FFFFFF" />

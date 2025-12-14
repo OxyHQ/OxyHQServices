@@ -20,7 +20,7 @@ export default function CreateIdentityScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { createIdentity, isLoading } = useOxy();
+  const { createIdentity, signIn, isLoading } = useOxy();
 
   const [step, setStep] = useState<Step>('intro');
   const [recoveryPhrase, setRecoveryPhrase] = useState<string[]>([]);
@@ -28,6 +28,7 @@ export default function CreateIdentityScreen() {
   const [userConfirmation, setUserConfirmation] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
+  const [isSigningIn, setIsSigningIn] = useState(false);
 
   const handleCreateIdentity = useCallback(async () => {
     setError(null);
@@ -66,7 +67,7 @@ export default function CreateIdentityScreen() {
     );
   }, []);
 
-  const handleConfirmPhrase = useCallback(() => {
+  const handleConfirmPhrase = useCallback(async () => {
     const isCorrect = confirmWords.every(
       (item, idx) => userConfirmation[idx]?.toLowerCase().trim() === item.word.toLowerCase()
     );
@@ -76,19 +77,34 @@ export default function CreateIdentityScreen() {
       return;
     }
 
-    // Success
-    if (isOffline) {
-      // Show offline success message
-      Alert.alert(
-        'Identity Created (Offline)',
-        'Your identity has been created and saved locally. When you connect to the internet, it will automatically sync with Oxy servers.',
-        [{ text: 'OK', onPress: () => router.replace('/(tabs)') }]
-      );
-    } else {
-      // Online - navigate directly
-      router.replace('/(tabs)');
+    // Phrase confirmed - now sign in (works offline)
+    setIsSigningIn(true);
+    setError(null);
+
+    try {
+      // Sign in (works offline - will create local session if offline)
+      await signIn();
+
+      // Successfully signed in - navigate to main app
+      if (isOffline) {
+        // Show offline success message
+        Alert.alert(
+          'Identity Created (Offline)',
+          'Your identity has been created and saved locally. When you connect to the internet, it will automatically sync with Oxy servers.',
+          [{ text: 'OK', onPress: () => router.replace('/(tabs)') }]
+        );
+      } else {
+        // Online - navigate directly
+        router.replace('/(tabs)');
+      }
+    } catch (err: any) {
+      const errorMessage = err?.message || 'Failed to sign in. Please try again.';
+      setError(errorMessage);
+      console.error('Sign-in error:', err);
+    } finally {
+      setIsSigningIn(false);
     }
-  }, [confirmWords, userConfirmation, router, isOffline]);
+  }, [confirmWords, userConfirmation, router, isOffline, signIn]);
 
   const renderIntroStep = () => (
     <View style={styles.stepContainer}>
@@ -211,8 +227,13 @@ export default function CreateIdentityScreen() {
       <TouchableOpacity
         style={[styles.button, { backgroundColor: colors.primary }]}
         onPress={handleConfirmPhrase}
+        disabled={isSigningIn}
       >
-        <Text style={styles.buttonText}>Confirm & Continue</Text>
+        {isSigningIn ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={styles.buttonText}>Confirm & Continue</Text>
+        )}
       </TouchableOpacity>
 
       <TouchableOpacity

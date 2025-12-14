@@ -39,6 +39,8 @@ import { EditLinksModal } from '../components/profile/EditLinksModal';
 import { getDisplayName } from '../utils/user-utils';
 import { TTLCache, registerCacheForCleanup } from '../../utils/cache';
 import { useOxy } from '../context/OxyContext';
+import { useCurrentUser } from '../hooks/queries/useAccountQueries';
+import { useUpdateProfile, useUploadAvatar } from '../hooks/mutations/useAccountMutations';
 import {
     SCREEN_PADDING_HORIZONTAL,
     SCREEN_PADDING_VERTICAL,
@@ -67,20 +69,24 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 }) => {
     // Use useOxy() hook for OxyContext values
     const {
-        user: userFromContext,
         oxyServices,
-        isLoading: authLoading,
         isAuthenticated,
         activeSessionId,
     } = useOxy();
     const { t } = useI18n();
     const normalizedTheme = normalizeTheme(theme);
-    const updateUser = useAuthStore((state) => state.updateUser);
-    // Get user directly from store to ensure reactivity to avatar changes
-    const user = useAuthStore((state) => state.user) || userFromContext;
+    
+    // Use TanStack Query for user data
+    const { data: user, isLoading: userLoading } = useCurrentUser({ enabled: isAuthenticated });
+    const updateProfileMutation = useUpdateProfile();
+    const uploadAvatarMutation = useUploadAvatar();
+    
+    // Fallback to store for backward compatibility
+    const userFromStore = useAuthStore((state) => state.user);
+    const finalUser = user || userFromStore;
     const [isLoading, setIsLoading] = useState(false);
-    const [isSaving, setIsSaving] = useState(false);
-    const [isUpdatingAvatar, setIsUpdatingAvatar] = useState(false);
+    const isSaving = updateProfileMutation.isPending;
+    const isUpdatingAvatar = uploadAvatarMutation.isPending;
     const [optimisticAvatarId, setOptimisticAvatarId] = useState<string | null>(null);
     const scrollViewRef = useRef<ScrollView>(null);
     const avatarSectionRef = useRef<View>(null);
@@ -202,9 +208,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
     // Load user data - only reset fields when user actually changes (not just avatar)
     useEffect(() => {
-        if (user) {
-            const currentUserId = user.id;
-            const currentAvatar = typeof user.avatar === 'string' ? user.avatar : '';
+        if (finalUser) {
+            const currentUserId = finalUser.id;
+            const currentAvatar = typeof finalUser.avatar === 'string' ? finalUser.avatar : '';
             const isNewUser = previousUserIdRef.current !== currentUserId;
             const isAvatarOnlyUpdate = !isNewUser && previousUserIdRef.current === currentUserId &&
                 previousAvatarRef.current !== currentAvatar &&
@@ -214,30 +220,30 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             // Only reset all fields if it's a new user or first load
             // Skip reset if it's just an avatar update
             if (shouldInitialize && !isAvatarOnlyUpdate) {
-                const userDisplayName = typeof user.name === 'string'
-                    ? user.name
-                    : user.name?.first || user.name?.full || '';
-                const userLastName = typeof user.name === 'object' ? user.name?.last || '' : '';
+                const userDisplayName = typeof finalUser.name === 'string'
+                    ? finalUser.name
+                    : finalUser.name?.first || finalUser.name?.full || '';
+                const userLastName = typeof finalUser.name === 'object' ? finalUser.name?.last || '' : '';
                 setDisplayName(userDisplayName);
                 setLastName(userLastName);
-                setUsername(user.username || '');
-                setEmail(user.email || '');
-                setBio(user.bio || '');
-                setLocation(user.location || '');
+                setUsername(finalUser.username || '');
+                setEmail(finalUser.email || '');
+                setBio(finalUser.bio || '');
+                setLocation(finalUser.location || '');
 
                 // Handle locations - convert single location to array format
-                if (user.locations && Array.isArray(user.locations)) {
-                    setLocations(user.locations.map((loc, index) => ({
+                if (finalUser.locations && Array.isArray(finalUser.locations)) {
+                    setLocations(finalUser.locations.map((loc, index) => ({
                         id: loc.id || `existing-${index}`,
                         name: loc.name,
                         label: loc.label,
                         coordinates: loc.coordinates
                     })));
-                } else if (user.location) {
+                } else if (finalUser.location) {
                     // Convert single location string to array format
                     setLocations([{
                         id: 'existing-0',
-                        name: user.location,
+                        name: finalUser.location,
                         label: 'Location'
                     }]);
                 } else {
@@ -245,16 +251,16 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 }
 
                 // Handle links - simple and direct like other fields
-                if (user.linksMetadata && Array.isArray(user.linksMetadata)) {
-                    const urls = user.linksMetadata.map(l => l.url);
+                if (finalUser.linksMetadata && Array.isArray(finalUser.linksMetadata)) {
+                    const urls = finalUser.linksMetadata.map(l => l.url);
                     setLinks(urls);
-                    const metadataWithIds = user.linksMetadata.map((link, index) => ({
+                    const metadataWithIds = finalUser.linksMetadata.map((link, index) => ({
                         ...link,
                         id: link.id || `existing-${index}`
                     }));
                     setLinksMetadata(metadataWithIds);
-                } else if (Array.isArray(user.links)) {
-                    const simpleLinks = user.links.map(l => typeof l === 'string' ? l : l.link).filter(Boolean);
+                } else if (Array.isArray(finalUser.links)) {
+                    const simpleLinks = finalUser.links.map(l => typeof l === 'string' ? l : l.link).filter(Boolean);
                     setLinks(simpleLinks);
                     const linksWithMetadata = simpleLinks.map((url, index) => ({
                         url,
@@ -264,12 +270,12 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                         id: `existing-${index}`
                     }));
                     setLinksMetadata(linksWithMetadata);
-                } else if (user.website) {
-                    setLinks([user.website]);
+                } else if (finalUser.website) {
+                    setLinks([finalUser.website]);
                     setLinksMetadata([{
-                        url: user.website,
-                        title: user.website.replace(/^https?:\/\//, '').replace(/\/$/, ''),
-                        description: `Link to ${user.website}`,
+                        url: finalUser.website,
+                        title: finalUser.website.replace(/^https?:\/\//, '').replace(/\/$/, ''),
+                        description: `Link to ${finalUser.website}`,
                         image: undefined,
                         id: 'existing-0'
                     }]);
@@ -298,7 +304,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             previousUserIdRef.current = currentUserId;
             previousAvatarRef.current = currentAvatar;
         }
-    }, [user, avatarFileId, isUpdatingAvatar, optimisticAvatarId]);
+    }, [finalUser, avatarFileId, isUpdatingAvatar, optimisticAvatarId]);
 
     // Set initial editing field if provided via props (e.g., from navigation)
     // Use a ref to track if we've already set the initial field to avoid loops
@@ -358,32 +364,31 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     const saveField = useCallback(async (field: string | null) => {
         if (!field) return;
 
-        setIsSaving(true);
         try {
             switch (field) {
                 case 'displayName':
-                    await updateUser({ name: { first: tempDisplayName, last: tempLastName } }, oxyServices);
+                    await updateProfileMutation.mutateAsync({ name: { first: tempDisplayName, last: tempLastName } });
                     setDisplayName(tempDisplayName);
                     setLastName(tempLastName);
                     break;
                 case 'username':
-                    await updateUser({ username: tempUsername }, oxyServices);
+                    await updateProfileMutation.mutateAsync({ username: tempUsername });
                     setUsername(tempUsername);
                     break;
                 case 'email':
-                    await updateUser({ email: tempEmail }, oxyServices);
+                    await updateProfileMutation.mutateAsync({ email: tempEmail });
                     setEmail(tempEmail);
                     break;
                 case 'bio':
-                    await updateUser({ bio: tempBio }, oxyServices);
+                    await updateProfileMutation.mutateAsync({ bio: tempBio });
                     setBio(tempBio);
                     break;
                 case 'location':
-                    await updateUser({ locations: tempLocations }, oxyServices);
+                    await updateProfileMutation.mutateAsync({ locations: tempLocations });
                     setLocations(tempLocations);
                     break;
                 case 'links':
-                    await updateUser({ linksMetadata: tempLinksWithMetadata }, oxyServices);
+                    await updateProfileMutation.mutateAsync({ linksMetadata: tempLinksWithMetadata });
                     setLinksMetadata(tempLinksWithMetadata);
                     setLinks(tempLinksWithMetadata.map(l => l.url));
                     break;
@@ -391,11 +396,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             setEditingField(null);
             toast.success(t('editProfile.toasts.saved') || 'Saved');
         } catch (error: any) {
-            toast.error(error?.message || (t('editProfile.toasts.saveFailed') || 'Failed to save'));
-        } finally {
-            setIsSaving(false);
+            // Error is already handled by mutation's onError
         }
-    }, [tempDisplayName, tempLastName, tempUsername, tempEmail, tempBio, tempLocations, tempLinksWithMetadata, updateUser, oxyServices, t]);
+    }, [tempDisplayName, tempLastName, tempUsername, tempEmail, tempBio, tempLocations, tempLinksWithMetadata, updateProfileMutation, t]);
 
     // Helper to get current value for a field
     const getFieldCurrentValue = useCallback((field: string): string => {
@@ -452,10 +455,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     }, [initialSection, sectionYPositions]);
 
     const handleSave = async () => {
-        if (!user) return;
+        if (!finalUser) return;
 
         try {
-            setIsSaving(true);
             animateSaveButton(0.95); // Scale down slightly for animation
 
             const updates: Record<string, any> = {
@@ -474,11 +476,11 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             }
 
             // Handle avatar
-            if (avatarFileId !== (typeof user.avatar === 'string' ? user.avatar : '')) {
+            if (avatarFileId !== (typeof finalUser.avatar === 'string' ? finalUser.avatar : '')) {
                 updates.avatar = avatarFileId;
             }
 
-            await updateUser(updates, oxyServices);
+            await updateProfileMutation.mutateAsync(updates);
             toast.success(t('editProfile.toasts.profileUpdated') || 'Profile updated successfully');
 
             animateSaveButton(1); // Scale back to normal
@@ -489,10 +491,8 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 goBack();
             }
         } catch (error: any) {
-            toast.error(error.message || t('editProfile.toasts.updateFailed') || 'Failed to update profile');
+            // Error is already handled by mutation's onError
             animateSaveButton(1); // Scale back to normal on error
-        } finally {
-            setIsSaving(false);
         }
     };
 
@@ -739,7 +739,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     };
 
     // Memoize display name for avatar
-    const displayNameForAvatar = useMemo(() => getDisplayName(user), [user]);
+    const displayNameForAvatar = useMemo(() => getDisplayName(finalUser), [finalUser]);
 
     // Legacy renderEditingField function (fallback)
     const renderEditingField = (type: string | null) => {
@@ -1110,7 +1110,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
 
 
-    if (isLoading || !isAuthenticated) {
+    if (userLoading || !isAuthenticated) {
         return (
             <View style={[styles.container, {
                 backgroundColor: themeStyles.backgroundColor,
@@ -1418,7 +1418,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                             iconColor: colors.sidebarIconHome,
                                             title: t('editProfile.items.previewProfile.title') || 'Preview Profile',
                                             subtitle: t('editProfile.items.previewProfile.subtitle') || 'See how your profile looks to others',
-                                            onPress: () => navigate?.('Profile', { userId: user?.id }),
+                                            onPress: () => navigate?.('Profile', { userId: finalUser?.id }),
                                         },
                                         {
                                             id: 'privacy-settings',

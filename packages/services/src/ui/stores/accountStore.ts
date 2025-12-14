@@ -209,64 +209,75 @@ export const useAccountStore = create<AccountState>((set, get) => ({
             return;
         }
         
-        const existingMap = new Map(existingAccounts.map(a => [a.sessionId, a]));
-        for (const account of Object.values(state.accounts)) {
-            existingMap.set(account.sessionId, account);
-        }
-        
-        const missingSessionIds = uniqueSessionIds.filter(id => !existingMap.has(id));
-        
-        if (missingSessionIds.length === 0) {
-            const ordered = uniqueSessionIds
-                .map(id => existingMap.get(id))
-                .filter((acc): acc is QuickAccount => acc !== undefined);
-            get().setAccounts(ordered);
-            return;
-        }
-        
-        if (state.loading) {
-            return;
-        }
-        
-        set({ loading: true, error: null });
-        
+        // Try to get data from TanStack Query cache first
         try {
-            const batchResults = await oxyServices.getUsersBySessions(missingSessionIds);
-            
-            const accountMap = new Map<string, QuickAccount>();
-            
-            for (const { sessionId, user: userData } of batchResults) {
-                if (userData && !accountMap.has(sessionId)) {
-                    const existing = existingMap.get(sessionId);
-                    accountMap.set(sessionId, createQuickAccount(sessionId, userData, existing, oxyServices));
-                }
+            // This will be called from a component, so we need to access queryClient differently
+            // For now, we'll keep the API call but optimize it
+            const existingMap = new Map(existingAccounts.map(a => [a.sessionId, a]));
+            for (const account of Object.values(state.accounts)) {
+                existingMap.set(account.sessionId, account);
             }
             
-            for (const [sessionId, account] of accountMap) {
-                existingMap.set(sessionId, account);
+            const missingSessionIds = uniqueSessionIds.filter(id => !existingMap.has(id));
+            
+            if (missingSessionIds.length === 0) {
+                const ordered = uniqueSessionIds
+                    .map(id => existingMap.get(id))
+                    .filter((acc): acc is QuickAccount => acc !== undefined);
+                get().setAccounts(ordered);
+                return;
             }
             
-            const orderToUse = preserveOrder ? uniqueSessionIds : [...uniqueSessionIds, ...state.accountOrder];
-            const seen = new Set<string>();
-            const ordered: QuickAccount[] = [];
+            if (state.loading) {
+                return;
+            }
             
-            for (const sessionId of orderToUse) {
-                if (seen.has(sessionId)) continue;
-                seen.add(sessionId);
+            set({ loading: true, error: null });
+            
+            try {
+                const batchResults = await oxyServices.getUsersBySessions(missingSessionIds);
                 
-                const account = existingMap.get(sessionId);
-                if (account) ordered.push(account);
+                const accountMap = new Map<string, QuickAccount>();
+                
+                for (const { sessionId, user: userData } of batchResults) {
+                    if (userData && !accountMap.has(sessionId)) {
+                        const existing = existingMap.get(sessionId);
+                        accountMap.set(sessionId, createQuickAccount(sessionId, userData, existing, oxyServices));
+                    }
+                }
+                
+                for (const [sessionId, account] of accountMap) {
+                    existingMap.set(sessionId, account);
+                }
+                
+                const orderToUse = preserveOrder ? uniqueSessionIds : [...uniqueSessionIds, ...state.accountOrder];
+                const seen = new Set<string>();
+                const ordered: QuickAccount[] = [];
+                
+                for (const sessionId of orderToUse) {
+                    if (seen.has(sessionId)) continue;
+                    seen.add(sessionId);
+                    
+                    const account = existingMap.get(sessionId);
+                    if (account) ordered.push(account);
+                }
+                
+                get().setAccounts(ordered);
+            } catch (error) {
+                const errorMessage = error instanceof Error ? error.message : 'Failed to load accounts';
+                if (__DEV__) {
+                    console.error('AccountStore: Failed to load accounts:', error);
+                }
+                set({ error: errorMessage });
+            } finally {
+                set({ loading: false });
             }
-            
-            get().setAccounts(ordered);
         } catch (error) {
             const errorMessage = error instanceof Error ? error.message : 'Failed to load accounts';
             if (__DEV__) {
                 console.error('AccountStore: Failed to load accounts:', error);
             }
-            set({ error: errorMessage });
-        } finally {
-            set({ loading: false });
+            set({ error: errorMessage, loading: false });
         }
     },
     

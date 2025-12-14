@@ -74,21 +74,31 @@ export class SessionController {
 
       await user.save();
 
-      // Create welcome notification
-      await new Notification({
-        recipientId: user._id,
-        actorId: user._id,
-        type: 'welcome',
-        entityId: user._id,
-        entityType: 'profile',
-        read: false
-      }).save();
+      // Create welcome notification (non-blocking - don't fail registration if this fails)
+      try {
+        await new Notification({
+          recipientId: user._id,
+          actorId: user._id,
+          type: 'welcome',
+          entityId: user._id,
+          entityType: 'profile',
+          read: false
+        }).save();
+      } catch (notificationError) {
+        // Log but don't fail registration if notification creation fails
+        // (e.g., duplicate notification, validation error, etc.)
+        logger.error('Failed to create welcome notification during registration', notificationError, {
+          component: 'SessionController',
+          method: 'register',
+          userId: user._id.toString(),
+        });
+      }
 
       return res.status(201).json({
         success: true,
         message: 'Identity registered successfully',
         user: {
-          id: user._id,
+          id: user.publicKey, // Use publicKey as id (per migration document)
           publicKey: user.publicKey,
           username: user.username,
           name: user.name,
@@ -97,6 +107,9 @@ export class SessionController {
       });
     } catch (error) {
       logger.error('Registration error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Internal server error';
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      logger.error('Registration error details:', { errorMessage, errorStack });
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -210,12 +223,13 @@ export class SessionController {
       });
 
       // Return session data
+      // Use publicKey as id (per migration document: publicKey is the primary identifier)
       const response: SessionAuthResponse = {
         sessionId: session.sessionId,
         deviceId: session.deviceId,
         expiresAt: session.expiresAt.toISOString(),
         user: {
-          id: user._id.toString(),
+          id: user.publicKey, // Use publicKey as id (per migration document)
           username: user.username,
           avatar: user.avatar
         }

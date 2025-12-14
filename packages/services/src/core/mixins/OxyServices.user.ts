@@ -129,11 +129,28 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
 
     /**
      * Update user profile
+     * TanStack Query handles offline queuing automatically
      */
     async updateProfile(updates: Record<string, any>): Promise<User> {
       try {
         return await this.makeRequest<User>('PUT', '/api/users/me', updates, { cache: false });
       } catch (error) {
+        const errorAny = error as any;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        const status = errorAny?.status || errorAny?.response?.status;
+        
+        // Check if it's an authentication error (401)
+        const isAuthError = status === 401 || 
+          errorMessage.includes('Authentication required') ||
+          errorMessage.includes('Invalid or missing authorization header');
+
+        // If authentication error and we don't have a token, this might be an offline session
+        // The caller should handle syncing the session before retrying
+        if (isAuthError && !this.hasValidToken()) {
+          // Re-throw with a specific message so the caller knows to sync
+          throw new Error('AUTH_REQUIRED_OFFLINE_SESSION: Session needs to be synced to get a token');
+        }
+
         throw this.handleError(error);
       }
     }

@@ -17,6 +17,9 @@ const ec = new EC('secp256k1');
 const STORAGE_KEYS = {
   PRIVATE_KEY: 'oxy_identity_private_key',
   PUBLIC_KEY: 'oxy_identity_public_key',
+  BACKUP_PRIVATE_KEY: 'oxy_identity_backup_private_key',
+  BACKUP_PUBLIC_KEY: 'oxy_identity_backup_public_key',
+  BACKUP_TIMESTAMP: 'oxy_identity_backup_timestamp',
 } as const;
 
 /**
@@ -183,12 +186,184 @@ export class KeyManager {
 
   /**
    * Delete the stored identity (both keys)
-   * Use with caution - this is irreversible without a recovery phrase
+   * Use with EXTREME caution - this is irreversible without a recovery phrase
+   * This should ONLY be called when explicitly requested by the user
+   * @param skipBackup - If true, skip backup before deletion (default: false)
+   * @param force - If true, skip confirmation checks (default: false)
+   * @param userConfirmed - If true, user has explicitly confirmed deletion (default: false)
    */
-  static async deleteIdentity(): Promise<void> {
+  static async deleteIdentity(
+    skipBackup: boolean = false, 
+    force: boolean = false,
+    userConfirmed: boolean = false
+  ): Promise<void> {
+    // CRITICAL SAFEGUARD: Require explicit user confirmation unless force is true
+    if (!force && !userConfirmed) {
+      throw new Error('Identity deletion requires explicit user confirmation. This is a safety measure to prevent accidental data loss.');
+    }
+
+    if (!force) {
+      const hasIdentity = await KeyManager.hasIdentity();
+      if (!hasIdentity) {
+        return; // Nothing to delete
+      }
+    }
+
     const store = await initSecureStore();
+    
+    // ALWAYS create backup before deletion unless explicitly skipped
+    if (!skipBackup) {
+      try {
+        const backupSuccess = await KeyManager.backupIdentity();
+        if (!backupSuccess && typeof __DEV__ !== 'undefined' && __DEV__) {
+          console.warn('[KeyManager] Failed to backup identity before deletion - proceeding anyway');
+        }
+      } catch (backupError) {
+        if (typeof __DEV__ !== 'undefined' && __DEV__) {
+          console.warn('[KeyManager] Failed to backup identity before deletion:', backupError);
+        }
+      }
+    }
+
     await store.deleteItemAsync(STORAGE_KEYS.PRIVATE_KEY);
     await store.deleteItemAsync(STORAGE_KEYS.PUBLIC_KEY);
+    
+    // Also clear backup if force deletion
+    if (force) {
+      try {
+        await store.deleteItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY);
+        await store.deleteItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY);
+        await store.deleteItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP);
+      } catch (error) {
+        // Ignore backup deletion errors
+      }
+    }
+  }
+
+  /**
+   * Backup identity to SecureStore (separate backup storage)
+   * This provides a recovery mechanism if primary storage fails
+   */
+  static async backupIdentity(): Promise<boolean> {
+    try {
+      const store = await initSecureStore();
+      const privateKey = await KeyManager.getPrivateKey();
+      const publicKey = await KeyManager.getPublicKey();
+
+      if (!privateKey || !publicKey) {
+        return false; // Nothing to backup
+      }
+
+      // Store backup in SecureStore (still secure, but separate from primary storage)
+      await store.setItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY, privateKey, {
+        keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      });
+      await store.setItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY, publicKey);
+      await store.setItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP, Date.now().toString());
+
+      return true;
+    } catch (error) {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.error('[KeyManager] Failed to backup identity:', error);
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Verify identity integrity - checks if keys are valid and accessible
+   */
+  static async verifyIdentityIntegrity(): Promise<boolean> {
+    try {
+      const privateKey = await KeyManager.getPrivateKey();
+      const publicKey = await KeyManager.getPublicKey();
+
+      if (!privateKey || !publicKey) {
+        return false;
+      }
+
+      // Validate private key format
+      if (!KeyManager.isValidPrivateKey(privateKey)) {
+        return false;
+      }
+
+      // Validate public key format
+      if (!KeyManager.isValidPublicKey(publicKey)) {
+        return false;
+      }
+
+      // Verify public key can be derived from private key
+      const derivedPublicKey = KeyManager.derivePublicKey(privateKey);
+      if (derivedPublicKey !== publicKey) {
+        return false; // Keys don't match
+      }
+
+      // Verify we can create a key pair object (tests elliptic curve operations)
+      const keyPair = await KeyManager.getKeyPairObject();
+      if (!keyPair) {
+        return false;
+      }
+
+      return true;
+    } catch (error) {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.error('[KeyManager] Identity integrity check failed:', error);
+      }
+      return false;
+    }
+  }
+
+  /**
+   * Restore identity from backup if primary storage is corrupted
+   */
+  static async restoreIdentityFromBackup(): Promise<boolean> {
+    try {
+      const store = await initSecureStore();
+      
+      // Check if backup exists
+      const backupPrivateKey = await store.getItemAsync(STORAGE_KEYS.BACKUP_PRIVATE_KEY);
+      const backupPublicKey = await store.getItemAsync(STORAGE_KEYS.BACKUP_PUBLIC_KEY);
+
+      if (!backupPrivateKey || !backupPublicKey) {
+        return false; // No backup available
+      }
+
+      // Verify backup integrity
+      if (!KeyManager.isValidPrivateKey(backupPrivateKey)) {
+        return false;
+      }
+
+      if (!KeyManager.isValidPublicKey(backupPublicKey)) {
+        return false;
+      }
+
+      // Verify keys match
+      const derivedPublicKey = KeyManager.derivePublicKey(backupPrivateKey);
+      if (derivedPublicKey !== backupPublicKey) {
+        return false; // Backup keys don't match
+      }
+
+      // Restore from backup
+      await store.setItemAsync(STORAGE_KEYS.PRIVATE_KEY, backupPrivateKey, {
+        keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+      });
+      await store.setItemAsync(STORAGE_KEYS.PUBLIC_KEY, backupPublicKey);
+
+      // Verify restoration was successful
+      const restored = await KeyManager.verifyIdentityIntegrity();
+      if (restored) {
+        // Update backup timestamp
+        await store.setItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP, Date.now().toString());
+        return true;
+      }
+
+      return false;
+    } catch (error) {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.error('[KeyManager] Failed to restore identity from backup:', error);
+      }
+      return false;
+    }
   }
 
   /**

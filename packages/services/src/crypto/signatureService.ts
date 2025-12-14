@@ -83,6 +83,36 @@ export interface AuthChallenge {
 
 export class SignatureService {
   /**
+   * Generate a random challenge string (for offline use)
+   * Uses expo-crypto in React Native, crypto.randomBytes in Node.js
+   */
+  static async generateChallenge(): Promise<string> {
+    if (isReactNative() || !isNodeJS()) {
+      // Use expo-crypto for React Native (expo-random is deprecated)
+      const Crypto = await initExpoCrypto();
+      const randomBytes = await Crypto.getRandomBytesAsync(32);
+      return Array.from(randomBytes)
+        .map((b: number) => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+    
+    // Node.js fallback
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval
+      const getCrypto = new Function('return require("crypto")');
+      const crypto = getCrypto();
+      return crypto.randomBytes(32).toString('hex');
+    } catch (error) {
+      // Fallback to expo-crypto if Node crypto fails
+      const Crypto = await initExpoCrypto();
+      const randomBytes = await Crypto.getRandomBytesAsync(32);
+      return Array.from(randomBytes)
+        .map((b: number) => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+  }
+
+  /**
    * Hash a message using SHA-256
    */
   static async hashMessage(message: string): Promise<string> {

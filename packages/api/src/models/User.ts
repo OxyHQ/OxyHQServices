@@ -156,7 +156,6 @@ const UserSchema: Schema = new Schema(
       unique: true,
       trim: true,
       select: true,
-      index: true,
     },
     refreshToken: {
       type: String,
@@ -276,22 +275,36 @@ const UserSchema: Schema = new Schema(
   }
 );
 
+// Virtual for id - use publicKey as the identifier (per migration document)
+UserSchema.virtual('id').get(function() {
+  return this.publicKey;
+});
+
 // Remove transforms and rely on select options
 UserSchema.set("toJSON", {
   virtuals: true,
   versionKey: false,
+  transform: function(doc, ret) {
+    // Ensure id is set to publicKey
+    ret.id = ret.publicKey || ret.id;
+    delete ret._id;
+    return ret;
+  },
 });
 
 UserSchema.set("toObject", {
   virtuals: true,
+  transform: function(doc, ret) {
+    // Ensure id is set to publicKey
+    ret.id = ret.publicKey || ret.id;
+    delete ret._id;
+    return ret;
+  },
 });
 
 // Indexes for frequently queried fields
 // Note: email and username already have unique indexes from schema definition
-// publicKey is the primary identifier for authentication
-
-// Public key index is already defined in schema, but ensure it's the primary lookup
-UserSchema.index({ publicKey: 1 });
+// publicKey already has a unique index from the unique: true constraint
 
 // Social graph indexes
 UserSchema.index({ following: 1 });

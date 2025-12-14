@@ -1,14 +1,16 @@
-import { useEffect, useRef, type FC } from 'react';
+import { useEffect, useRef, useState, type FC } from 'react';
 import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import type { OxyProviderProps } from '../types/navigation';
 import { OxyContextProvider } from '../context/OxyContext';
-import { QueryClient, QueryClientProvider, focusManager } from '@tanstack/react-query';
+import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { setupFonts } from './FontLoader';
 import BottomSheetRouter from './BottomSheetRouter';
 import { Toaster } from '../../lib/sonner';
+import { createQueryClient } from '../hooks/queryClient';
+import { useStorage } from '../hooks/useStorage';
 
 // Initialize fonts automatically
 setupFonts();
@@ -26,31 +28,32 @@ const OxyProvider: FC<OxyProviderProps> = ({
     onAuthStateChange,
     storageKeyPrefix,
     baseURL,
-    queryClient,
+    queryClient: providedQueryClient,
 }) => {
     // contextOnly is retained for backwards compatibility while the UI-only
     // bottom sheet experience is removed. At the moment both modes behave the same.
     void contextOnly;
 
-    // Initialize React Query Client (use provided client or create a default one once)
-    const queryClientRef = useRef<QueryClient | null>(null);
-    if (!queryClientRef.current) {
-        const defaultClient = new QueryClient({
-            defaultOptions: {
-                queries: {
-                    staleTime: 30_000,
-                    gcTime: 5 * 60_000,
-                    retry: 2,
-                    refetchOnReconnect: true,
-                    refetchOnWindowFocus: false,
-                },
-                mutations: {
-                    retry: 1,
-                },
-            },
-        });
-        queryClientRef.current = queryClient ?? defaultClient;
-    }
+    // Get storage for query persistence
+    const { storage, isReady: isStorageReady } = useStorage();
+    
+    // Initialize React Query Client with persistence
+    const queryClientRef = useRef<ReturnType<typeof createQueryClient> | null>(null);
+    const [queryClient, setQueryClient] = useState<ReturnType<typeof createQueryClient> | null>(null);
+
+    useEffect(() => {
+        if (providedQueryClient) {
+            queryClientRef.current = providedQueryClient;
+            setQueryClient(providedQueryClient);
+        } else if (isStorageReady) {
+            // Create query client with persistence once storage is ready
+            if (!queryClientRef.current) {
+                const client = createQueryClient(storage);
+                queryClientRef.current = client;
+                setQueryClient(client);
+            }
+        }
+    }, [providedQueryClient, isStorageReady, storage]);
 
     // Hook React Query focus manager into React Native AppState
     useEffect(() => {
@@ -62,28 +65,79 @@ const OxyProvider: FC<OxyProviderProps> = ({
         };
     }, []);
 
+    // Setup network status monitoring for offline detection
+    useEffect(() => {
+        let cleanup: (() => void) | undefined;
+
+        const setupNetworkMonitoring = async () => {
+            try {
+                // For React Native, try to use NetInfo
+                if (typeof window === 'undefined' || (typeof navigator !== 'undefined' && navigator.product === 'ReactNative')) {
+                    try {
+                        const NetInfo = await import('@react-native-community/netinfo');
+                        const state = await NetInfo.default.fetch();
+                        onlineManager.setOnline(state.isConnected ?? true);
+                        
+                        const unsubscribe = NetInfo.default.addEventListener(state => {
+                            onlineManager.setOnline(state.isConnected ?? true);
+                        });
+                        
+                        cleanup = () => unsubscribe();
+                    } catch {
+                        // NetInfo not available, default to online
+                        onlineManager.setOnline(true);
+                    }
+                } else {
+                    // For web, use navigator.onLine
+                    onlineManager.setOnline(navigator.onLine);
+                    const handleOnline = () => onlineManager.setOnline(true);
+                    const handleOffline = () => onlineManager.setOnline(false);
+                    
+                    window.addEventListener('online', handleOnline);
+                    window.addEventListener('offline', handleOffline);
+                    
+                    cleanup = () => {
+                        window.removeEventListener('online', handleOnline);
+                        window.removeEventListener('offline', handleOffline);
+                    };
+                }
+            } catch (error) {
+                // Default to online if detection fails
+                onlineManager.setOnline(true);
+            }
+        };
+
+        setupNetworkMonitoring();
+
+        return () => {
+            cleanup?.();
+        };
+    }, []);
+
     // Ensure we have a valid QueryClient
-    const client = queryClientRef.current;
-    if (!client) {
-        throw new Error('QueryClient initialization failed');
+    if (!queryClient) {
+        // Return loading state or fallback
+        return null;
     }
 
     return (
         <SafeAreaProvider>
             <GestureHandlerRootView style={{ flex: 1 }}>
                 <KeyboardProvider>
-                    <QueryClientProvider client={client}>
-                        <OxyContextProvider
-                            oxyServices={oxyServices as any}
-                            baseURL={baseURL}
-                            storageKeyPrefix={storageKeyPrefix}
-                            onAuthStateChange={onAuthStateChange as any}
-                        >
-                            {children}
-                            <BottomSheetRouter />
-                            <Toaster />
-                        </OxyContextProvider>
-                    </QueryClientProvider>
+                    {queryClient && (
+                        <QueryClientProvider client={queryClient}>
+                            <OxyContextProvider
+                                oxyServices={oxyServices as any}
+                                baseURL={baseURL}
+                                storageKeyPrefix={storageKeyPrefix}
+                                onAuthStateChange={onAuthStateChange as any}
+                            >
+                                {children}
+                                <BottomSheetRouter />
+                                <Toaster />
+                            </OxyContextProvider>
+                        </QueryClientProvider>
+                    )}
                 </KeyboardProvider>
             </GestureHandlerRootView>
         </SafeAreaProvider>

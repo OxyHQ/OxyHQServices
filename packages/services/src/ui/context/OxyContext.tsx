@@ -34,6 +34,7 @@ export interface OxyContextState {
   isAuthenticated: boolean;
   isLoading: boolean;
   isTokenReady: boolean;
+  isStorageReady: boolean;
   error: string | null;
   currentLanguage: string;
   currentLanguageMetadata: ReturnType<typeof useLanguageManagement>['metadata'];
@@ -182,7 +183,55 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const storageKeys = useMemo(() => getStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
 
-  const { storage } = useStorage({ onError, logger });
+  const { storage, isReady: isStorageReady } = useStorage({ onError, logger });
+
+  // Identity integrity check and auto-restore on startup
+  useEffect(() => {
+    if (!storage || !isStorageReady) return;
+
+    const checkAndRestoreIdentity = async () => {
+      try {
+        const { KeyManager } = await import('../../crypto/index.js');
+        // Check if identity exists and verify integrity
+        const hasIdentity = await KeyManager.hasIdentity();
+        if (hasIdentity) {
+          const isValid = await KeyManager.verifyIdentityIntegrity();
+          if (!isValid) {
+            // Try to restore from backup
+            const restored = await KeyManager.restoreIdentityFromBackup();
+            if (restored) {
+              if (__DEV__) {
+                logger('Identity restored from backup successfully');
+              }
+            } else {
+              if (__DEV__) {
+                logger('Identity integrity check failed - user may need to restore from recovery phrase');
+              }
+            }
+          } else {
+            // Identity is valid - ensure backup is up to date
+            await KeyManager.backupIdentity();
+          }
+        } else {
+          // No identity - try to restore from backup
+          const restored = await KeyManager.restoreIdentityFromBackup();
+          if (restored && __DEV__) {
+            logger('Identity restored from backup on startup');
+          }
+        }
+      } catch (error) {
+        if (__DEV__) {
+          logger('Error during identity integrity check', error);
+        }
+        // Don't block app startup - user can recover with recovery phrase
+      }
+    };
+
+    checkAndRestoreIdentity();
+  }, [storage, isStorageReady, logger]);
+
+  // Offline queuing is now handled by TanStack Query mutations
+  // No need for custom offline queue
 
   const {
     currentLanguage,
@@ -231,7 +280,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     hasIdentity,
     getPublicKey,
     isIdentitySynced,
-    syncIdentity,
+    syncIdentity: syncIdentityBase,
   } = useAuthOperations({
     oxyServices,
     storage,
@@ -253,6 +302,67 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     setSyncing,
     logger,
   });
+
+  // syncIdentity - TanStack Query handles offline mutations automatically
+  const syncIdentity = useCallback(async () => {
+    return await syncIdentityBase();
+  }, [syncIdentityBase]);
+
+  // Network reconnect sync - TanStack Query automatically retries mutations on reconnect
+  // We only need to sync identity if it's not synced
+  useEffect(() => {
+    if (!storage) return;
+
+    let wasOffline = false;
+    let checkInterval: NodeJS.Timeout | null = null;
+
+    const checkNetworkAndSync = async () => {
+      try {
+        // Try a lightweight health check to see if we're online
+        await oxyServices.healthCheck().catch(() => {
+          wasOffline = true;
+          return;
+        });
+
+        // If we were offline and now we're online, sync identity if needed
+        if (wasOffline) {
+          if (__DEV__ && logger) {
+            logger('Network reconnected, checking identity sync...');
+          }
+
+          // Sync identity first (if not synced)
+          try {
+            const isSynced = await storage.getItem('oxy_identity_synced');
+            if (isSynced === 'false') {
+              await syncIdentity();
+            }
+          } catch (syncError) {
+            if (__DEV__ && logger) {
+              logger('Error syncing identity on reconnect', syncError);
+            }
+          }
+
+          // TanStack Query will automatically retry pending mutations
+          wasOffline = false;
+        }
+      } catch (error) {
+        // Network check failed - we're offline
+        wasOffline = true;
+      }
+    };
+
+    // Check immediately
+    checkNetworkAndSync();
+
+    // Check periodically (every 10 seconds when app is active)
+    checkInterval = setInterval(checkNetworkAndSync, 10000);
+
+    return () => {
+      if (checkInterval) {
+        clearInterval(checkInterval);
+      }
+    };
+  }, [oxyServices, storage, syncIdentity, logger]);
 
   const { getDeviceSessions, logoutAllDeviceSessions, updateDeviceName } = useDeviceManagement({
     oxyServices,
@@ -404,6 +514,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     isAuthenticated,
     isLoading,
     isTokenReady: tokenReady,
+    isStorageReady,
     error,
     currentLanguage,
     currentLanguageMetadata,
@@ -460,6 +571,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     setLanguage,
     switchSessionForContext,
     tokenReady,
+    isStorageReady,
     updateDeviceName,
     useFollowHook,
     user,

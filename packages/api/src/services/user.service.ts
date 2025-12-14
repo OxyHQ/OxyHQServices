@@ -440,7 +440,11 @@ export class UserService {
    */
   formatUserResponse(user: IUser | UserProfile, stats?: UserStatistics): Record<string, unknown> {
     // Handle both IUser (Mongoose document) and UserData (plain object)
-    const userId = user._id;
+    // Use publicKey as id - publicKey is the primary identifier
+    const userId = (user as IUser).publicKey;
+    if (!userId) {
+      throw new Error('User must have a publicKey');
+    }
     const userAny = user as unknown as Record<string, unknown>;
     
     const response: Record<string, unknown> = {
