@@ -7,4 +7,11 @@ declare module '@expo/vector-icons' {
     color?: string;
     style?: Record<string, unknown>;
   }>;
+  
+  export const MaterialCommunityIcons: React.ComponentType<{
+    name: string;
+    size?: number;
+    color?: string;
+    style?: Record<string, unknown>;
+  }>;
 }

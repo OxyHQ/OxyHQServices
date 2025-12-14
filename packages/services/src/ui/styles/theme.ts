@@ -39,7 +39,7 @@ const lightColors: ThemeColors = {
 
 const darkColors: ThemeColors = {
   text: '#FFFFFF',
-  background: '#121212',
+  background: '#000000',
   inputBackground: '#333333',
   placeholder: '#AAAAAA',
   primary: '#d169e5',

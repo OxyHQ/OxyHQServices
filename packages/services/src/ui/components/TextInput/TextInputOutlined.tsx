@@ -10,6 +10,7 @@ import {
   ColorValue,
   LayoutChangeEvent,
 } from 'react-native';
+import { useThemeColors } from '../../hooks/useThemeColors';
 
 import { Outline } from './Addons/Outline';
 import { AdornmentType, AdornmentSide } from './Adornment/enums';
@@ -81,22 +82,26 @@ const TextInputOutlined = ({
 }: ChildTextInputProps) => {
   const adornmentConfig = getAdornmentConfig({ left, right });
 
-  const { colors, isV3, roundness } = theme;
-  const font = isV3 ? theme.fonts.bodyLarge : theme.fonts.regular;
+  const { isV3, roundness } = theme;
+  const font = isV3 ? theme.fonts.bodyLarge : theme.fonts.default;
   const hasActiveOutline = parentState.focused || error;
 
   const { INPUT_PADDING_HORIZONTAL, MIN_HEIGHT, ADORNMENT_OFFSET, MIN_WIDTH } =
     getConstants(isV3);
+
+  const themeColors = useThemeColors();
 
   const {
     fontSize: fontSizeStyle,
     fontWeight,
     lineHeight: lineHeightStyle,
     height,
-    backgroundColor = colors?.background,
+    backgroundColor: styleBackgroundColor,
     textAlign,
     ...viewStyle
   } = (StyleSheet.flatten(style) || {}) as TextStyle;
+
+  const backgroundColor = styleBackgroundColor ?? themeColors.background;
   const fontSize = fontSizeStyle || MAXIMIZED_LABEL_FONT_SIZE;
   // Always set a minimum lineHeight to prevent text cutoff
   // Use at least 1.4x fontSize for better text spacing
@@ -119,6 +124,10 @@ const TextInputOutlined = ({
     error,
     theme,
   });
+
+  // Override text color with theme color (unless custom textColor prop is provided)
+  // If disabled, keep the original inputTextColor which handles opacity correctly
+  const finalInputTextColor = textColor ?? (disabled ? inputTextColor : themeColors.text);
 
   const densePaddingTop = label ? LABEL_PADDING_TOP_DENSE : 0;
   const paddingTop = label ? LABEL_PADDING_TOP : 0;
@@ -406,7 +415,7 @@ const TextInputOutlined = ({
               fontSize,
               lineHeight,
               fontWeight,
-              color: inputTextColor,
+              color: finalInputTextColor,
               textAlignVertical: multiline ? 'top' : 'center',
               textAlign: textAlign
                 ? textAlign

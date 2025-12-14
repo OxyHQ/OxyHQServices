@@ -22,8 +22,7 @@ import Animated, {
     withTiming,
 } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { useColorScheme } from '../hooks/use-color-scheme';
-import { Colors } from '../constants/theme';
+import { useThemeColors } from '../hooks/useThemeColors';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 
@@ -68,8 +67,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     } = props;
 
     const insets = useSafeAreaInsets();
-    const colorScheme = useColorScheme();
-    const colors = Colors[colorScheme ?? 'light'];
+    const colors = useThemeColors();
     const [visible, setVisible] = useState(false);
     const [rendered, setRendered] = useState(false); // keep mounted for exit animation
     const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -283,22 +281,25 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
         },
     });
 
-    const dynamicStyles = useMemo(() => StyleSheet.create({
-        handle: {
-            ...styles.handle,
-            backgroundColor: colorScheme === 'dark' ? '#444' : '#C7C7CC',
-        },
-        sheet: {
-            ...styles.sheet,
-            backgroundColor: colors.background,
-            ...(detached ? styles.sheetDetached : styles.sheetNormal),
-        },
-        scrollContent: {
-            ...styles.scrollContent,
-            // In normal mode, don't add padding here - screens handle their own padding
-            // The sheet extends behind safe area, and screens add padding as needed
-        },
-    }), [colorScheme, colors.background, detached, insets.bottom]);
+    const dynamicStyles = useMemo(() => {
+        const isDark = colors.background === '#000000';
+        return StyleSheet.create({
+            handle: {
+                ...styles.handle,
+                backgroundColor: isDark ? '#444' : '#C7C7CC',
+            },
+            sheet: {
+                ...styles.sheet,
+                backgroundColor: colors.background,
+                ...(detached ? styles.sheetDetached : styles.sheetNormal),
+            },
+            scrollContent: {
+                ...styles.scrollContent,
+                // In normal mode, don't add padding here - screens handle their own padding
+                // The sheet extends behind safe area, and screens add padding as needed
+            },
+        });
+    }, [colors.background, detached, insets.bottom]);
 
     if (!rendered) return null;
 

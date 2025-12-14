@@ -244,20 +244,18 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                 <TextField
                     ref={inputRef}
                     label={t('common.labels.username')}
-                    leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
                     right={<TextField.Affix text="@oxy.so" />}
                     value={username}
-                    onChangeText={handleUsernameChange}
-                    formatValue={(text) => text.replace(/[^a-zA-Z0-9]/g, '')}
+                    onChangeText={(text: string) => {
+                        const formatted = text.replace(/[^a-zA-Z0-9]/g, '');
+                        handleUsernameChange(formatted);
+                    }}
                     maxLength={30}
                     autoCapitalize="none"
                     autoCorrect={false}
                     testID="username-input"
-                    variant="outlined"
-                    error={validationStatus === 'invalid' ? errorMessage : undefined}
-                    loading={validationStatus === 'validating'}
-                    success={validationStatus === 'valid'}
-                    helperText={t('signin.username.helper') || '3-30 characters, letters and numbers only'}
+                    mode="flat"
+                    error={validationStatus === 'invalid'}
                     onSubmitEditing={() => handleContinue()}
                     autoFocus
                     accessibilityLabel={t('common.labels.username')}

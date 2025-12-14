@@ -8,6 +8,7 @@ import {
   View,
   Animated,
 } from 'react-native';
+import { useThemeColors } from '../../hooks/useThemeColors';
 
 import { Underline } from './Addons/Underline';
 import { AdornmentSide, AdornmentType, InputMode } from './Adornment/enums';
@@ -78,8 +79,8 @@ const TextInputFlat = ({
   ...rest
 }: ChildTextInputProps) => {
   const isAndroid = Platform.OS === 'android';
-  const { colors, isV3, roundness } = theme;
-  const font = isV3 ? theme.fonts.bodyLarge : theme.fonts.regular;
+  const { isV3, roundness } = theme;
+  const font = isV3 ? theme.fonts.bodyLarge : theme.fonts.default;
   const hasActiveOutline = parentState.focused || error;
 
   const { LABEL_PADDING_TOP, FLAT_INPUT_OFFSET, MIN_HEIGHT, MIN_WIDTH } =
@@ -157,11 +158,17 @@ const TextInputFlat = ({
     theme,
   });
 
+  const themeColors = useThemeColors();
+
   const containerStyle = {
-    backgroundColor,
+    backgroundColor: themeColors.inputBackground,
     borderTopLeftRadius: theme.roundness,
     borderTopRightRadius: theme.roundness,
   };
+
+  // Override text color with theme color (unless custom textColor prop is provided)
+  // If disabled, keep the original inputTextColor which handles opacity correctly
+  const finalInputTextColor = textColor ?? (disabled ? inputTextColor : themeColors.text);
 
   const labelScale = MINIMIZED_LABEL_FONT_SIZE / fontSize;
   const fontScale = MAXIMIZED_LABEL_FONT_SIZE / fontSize;
@@ -349,7 +356,7 @@ const TextInputFlat = ({
         parentState={parentState}
         underlineColorCustom={underlineColorCustom}
         error={error}
-        colors={colors}
+        colors={{ error: errorColor }}
         activeColor={activeColor}
         theme={theme}
       />
@@ -420,7 +427,7 @@ const TextInputFlat = ({
               fontSize,
               lineHeight,
               fontWeight,
-              color: inputTextColor,
+              color: finalInputTextColor,
               textAlignVertical: multiline ? 'top' : 'center',
               textAlign: textAlign
                 ? textAlign

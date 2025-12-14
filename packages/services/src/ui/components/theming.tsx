@@ -24,7 +24,7 @@ export const useInternalTheme = (
     isV3: true,
     dark: theme === 'dark',
     mode: 'adaptive',
-    roundness: 4,
+    roundness: 10,
     animation: {
       scale: 1,
     },
