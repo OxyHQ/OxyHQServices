@@ -35,7 +35,6 @@ export default function HomeScreen() {
   // Compute user data
   const displayName = useMemo(() => getDisplayName(user), [user]);
   const shortDisplayName = useMemo(() => getShortDisplayName(user), [user]);
-  const userEmail = useMemo(() => user?.email || 'No email', [user?.email]);
   const accountCreatedDate = useMemo(() => formatDate(user?.createdAt), [user?.createdAt]);
   const avatarUrl = useMemo(() => {
     if (user?.avatar && oxyServices) {
@@ -61,22 +60,8 @@ export default function HomeScreen() {
     });
   }, [showBottomSheet]);
 
-  const handleUpdateEmail = useCallback(() => {
-    showBottomSheet?.({
-      screen: 'EditProfile',
-      props: { initialSection: 'basicInfo', initialField: 'email' }
-    });
-  }, [showBottomSheet]);
-
   const handleManageSubscription = useCallback(() => {
     showBottomSheet?.('PremiumSubscription');
-  }, [showBottomSheet]);
-
-  const handleSignInMethod = useCallback(() => {
-    showBottomSheet?.({
-      screen: 'EditProfile',
-      props: { initialSection: 'security' }
-    });
   }, [showBottomSheet]);
 
   const handleReload = useCallback(async () => {
@@ -96,10 +81,6 @@ export default function HomeScreen() {
     showBottomSheet?.('AccountOverview');
   }, [showBottomSheet]);
 
-  const handleScanQR = useCallback(() => {
-    router.push('/(tabs)/scan-qr');
-  }, [router]);
-
   const handleAboutIdentity = useCallback(() => {
     router.push('/(tabs)/about-identity');
   }, [router]);
@@ -114,18 +95,6 @@ export default function HomeScreen() {
       customContent: (
         <TouchableOpacity style={styles.button} onPressIn={handlePressIn} onPress={handleEditName}>
           <Text style={[styles.buttonText, { color: colors.text }]}>Edit name</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'email',
-      icon: 'email-outline' as any,
-      iconColor: colors.sidebarIconSecurity,
-      title: 'Email',
-      subtitle: userEmail,
-      customContent: (
-        <TouchableOpacity style={styles.button} onPressIn={handlePressIn} onPress={handleUpdateEmail}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Update email</Text>
         </TouchableOpacity>
       ),
     },
@@ -149,55 +118,7 @@ export default function HomeScreen() {
       title: 'Account created',
       subtitle: accountCreatedDate || 'Unknown',
     },
-  ], [colors.text, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconPayments, colors.sidebarIconData, displayName, userEmail, accountCreatedDate, handleEditName, handleUpdateEmail, handleManageSubscription]);
-
-  const signInMethods = useMemo(() => [
-    {
-      id: 'email',
-      customIcon: (
-        <View style={[styles.methodIcon, { backgroundColor: colors.sidebarIconSecurity }]}>
-          <MaterialCommunityIcons name="email-outline" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
-        </View>
-      ),
-      title: 'Email and password',
-      subtitle: 'Enable login with email',
-      customContent: (
-        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]} onPressIn={handlePressIn} onPress={handleSignInMethod}>
-          <Text style={[styles.methodButtonText, { color: colors.text }]}>Enable</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'x',
-      customIcon: (
-        <View style={[styles.methodIcon, { backgroundColor: colors.sidebarIconSharing }]}>
-          <MaterialCommunityIcons name="twitter" size={22} color={darkenColor(colors.sidebarIconSharing)} />
-        </View>
-      ),
-      title: 'X',
-      subtitle: 'NateIsern',
-      customContent: (
-        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]} onPressIn={handlePressIn} onPress={handleSignInMethod}>
-          <Text style={[styles.methodButtonText, { color: colors.text }]}>Disable</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'google',
-      customIcon: (
-        <View style={[styles.methodIcon, { backgroundColor: colors.sidebarIconPersonalInfo }]}>
-          <MaterialCommunityIcons name="google" size={22} color={darkenColor(colors.sidebarIconPersonalInfo)} />
-        </View>
-      ),
-      title: 'Google',
-      subtitle: 'nate.isern.alvarez@gmail.com',
-      customContent: (
-        <TouchableOpacity style={[styles.methodButton, { backgroundColor: colors.card }]} onPressIn={handlePressIn} onPress={handleSignInMethod}>
-          <Text style={[styles.methodButtonText, { color: colors.text }]}>Disable</Text>
-        </TouchableOpacity>
-      ),
-    },
-  ], [colors.card, colors.text, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo, handleSignInMethod]);
+  ], [colors.text, colors.sidebarIconPersonalInfo, colors.sidebarIconPayments, colors.sidebarIconData, displayName, accountCreatedDate, handleEditName, handleManageSubscription]);
 
   const identityItems = useMemo(() => [
     {
@@ -241,15 +162,8 @@ export default function HomeScreen() {
           <GroupedSection items={identityItems} />
         </AccountCard>
       </Section>
-
-      <Section title="Sign-in methods">
-        <ThemedText style={styles.subtitle}>Manage your ways of logging into Oxy.</ThemedText>
-        <AccountCard>
-          <GroupedSection items={signInMethods} />
-        </AccountCard>
-      </Section>
     </>
-  ), [accountItems, identityItems, isDesktop, signInMethods]);
+  ), [accountItems, identityItems]);
 
   const toggleColorScheme = useCallback(() => {
     // This would toggle between light and dark mode
@@ -366,11 +280,6 @@ export default function HomeScreen() {
 
           {/* Bottom action buttons */}
           <View style={styles.bottomActions}>
-            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleScanQR}>
-              <View style={[styles.menuIconContainer, { backgroundColor: colors.primary }]}>
-                <MaterialCommunityIcons name="qrcode-scan" size={22} color="#fff" />
-              </View>
-            </TouchableOpacity>
             <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleReload}>
               <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
                 <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
@@ -596,17 +505,6 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-  } as const,
-  methodButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
-  } as const,
-  methodButtonText: {
-    fontSize: 13,
-    fontWeight: '500',
   } as const,
   bottomActions: {
     flexDirection: 'row',

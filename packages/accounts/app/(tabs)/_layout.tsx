@@ -135,137 +135,152 @@ export default function TabLayout() {
   }
 
   return (
-    <Drawer
-      drawerContent={(props) => <DrawerContent {...props} />}
-      screenOptions={{
-        headerShown: true,
-        header: () => <Header searchQuery={searchQuery} onSearchChange={handleSearchChange} />,
-        headerTransparent: true,
-        headerStyle: {
-          backgroundColor: 'transparent',
-          height: 0,
-        },
-        drawerStyle: {
-          backgroundColor: 'transparent',
-        },
-      }}
-    >
-      <Drawer.Screen
-        name="index"
-        options={{
-          drawerLabel: 'Home',
-          title: 'Home',
+    <View style={[styles.mobileContainer, { backgroundColor: colors.background }]}>
+      <Drawer
+        drawerContent={(props) => <DrawerContent {...props} />}
+        screenOptions={{
+          headerShown: true,
+          header: () => <Header searchQuery={searchQuery} onSearchChange={handleSearchChange} />,
+          headerTransparent: true,
+          headerStyle: {
+            backgroundColor: 'transparent',
+            height: 0,
+          },
+          drawerStyle: {
+            backgroundColor: 'transparent',
+          },
         }}
-      />
-      <Drawer.Screen
-        name="personal-info"
-        options={{
-          drawerLabel: 'Personal info',
-          title: 'Personal info',
-        }}
-      />
-      <Drawer.Screen
-        name="security"
-        options={{
-          drawerLabel: 'Security & sign-in',
-          title: 'Security & sign-in',
-        }}
-      />
-      <Drawer.Screen
-        name="about-identity"
-        options={{
-          drawerLabel: 'About Your Identity',
-          title: 'About Your Identity',
-        }}
-      />
-      <Drawer.Screen
-        name="password-manager"
-        options={{
-          drawerLabel: 'Password Manager',
-          title: 'Password Manager',
-        }}
-      />
-      <Drawer.Screen
-        name="devices"
-        options={{
-          drawerLabel: 'Your devices',
-          title: 'Your devices',
-        }}
-      />
-      <Drawer.Screen
-        name="data"
-        options={{
-          drawerLabel: 'Data & privacy',
-          title: 'Data & privacy',
-        }}
-      />
-      <Drawer.Screen
-        name="sharing"
-        options={{
-          drawerLabel: 'People & sharing',
-          title: 'People & sharing',
-        }}
-      />
-      <Drawer.Screen
-        name="family"
-        options={{
-          drawerLabel: 'Family Group',
-          title: 'Family Group',
-        }}
-      />
-      <Drawer.Screen
-        name="payments"
-        options={{
-          drawerLabel: 'Payments & subscriptions',
-          title: 'Payments & subscriptions',
-        }}
-      />
-      <Drawer.Screen
-        name="storage"
-        options={{
-          drawerLabel: 'Oxy storage',
-          title: 'Oxy storage',
-        }}
-      />
-      <Drawer.Screen
-        name="explore"
-        options={{
-          drawerItemStyle: { display: 'none' },
-        }}
-      />
-      <Drawer.Screen
-        name="sessions"
-        options={{
-          drawerItemStyle: { display: 'none' },
-        }}
-      />
-      <Drawer.Screen
-        name="search"
-        options={{
-          drawerItemStyle: { display: 'none' },
-        }}
-      />
-      <Drawer.Screen
-        name="authorize"
-        options={{
-          drawerItemStyle: { display: 'none' },
-          title: 'Authorize',
-        }}
-      />
-      <Drawer.Screen
-        name="scan-qr"
-        options={{
-          drawerItemStyle: { display: 'none' },
-          title: 'Scan QR Code',
-          headerShown: false,
-        }}
-      />
-    </Drawer>
+      >
+        <Drawer.Screen
+          name="index"
+          options={{
+            drawerLabel: 'Home',
+            title: 'Home',
+          }}
+        />
+        <Drawer.Screen
+          name="personal-info"
+          options={{
+            drawerLabel: 'Personal info',
+            title: 'Personal info',
+          }}
+        />
+        <Drawer.Screen
+          name="security"
+          options={{
+            drawerLabel: 'Security & sign-in',
+            title: 'Security & sign-in',
+          }}
+        />
+        <Drawer.Screen
+          name="about-identity"
+          options={{
+            drawerLabel: 'About Your Identity',
+            title: 'About Your Identity',
+          }}
+        />
+        <Drawer.Screen
+          name="devices"
+          options={{
+            drawerLabel: 'Your devices',
+            title: 'Your devices',
+          }}
+        />
+        <Drawer.Screen
+          name="data"
+          options={{
+            drawerLabel: 'Data & privacy',
+            title: 'Data & privacy',
+          }}
+        />
+        <Drawer.Screen
+          name="sharing"
+          options={{
+            drawerLabel: 'People & sharing',
+            title: 'People & sharing',
+          }}
+        />
+        <Drawer.Screen
+          name="family"
+          options={{
+            drawerLabel: 'Family Group',
+            title: 'Family Group',
+          }}
+        />
+        <Drawer.Screen
+          name="payments"
+          options={{
+            drawerLabel: 'Payments & subscriptions',
+            title: 'Payments & subscriptions',
+          }}
+        />
+        <Drawer.Screen
+          name="storage"
+          options={{
+            drawerLabel: 'Oxy storage',
+            title: 'Oxy storage',
+          }}
+        />
+        <Drawer.Screen
+          name="explore"
+          options={{
+            drawerItemStyle: { display: 'none' },
+          }}
+        />
+        <Drawer.Screen
+          name="sessions"
+          options={{
+            drawerItemStyle: { display: 'none' },
+          }}
+        />
+        <Drawer.Screen
+          name="search"
+          options={{
+            drawerItemStyle: { display: 'none' },
+          }}
+        />
+        <Drawer.Screen
+          name="authorize"
+          options={{
+            drawerItemStyle: { display: 'none' },
+            title: 'Authorize',
+          }}
+        />
+        <Drawer.Screen
+          name="scan-qr"
+          options={{
+            drawerItemStyle: { display: 'none' },
+            title: 'Scan QR Code',
+            headerShown: false,
+          }}
+        />
+      </Drawer>
+
+      {/* FAB Button for QR Scan - Mobile - Fixed outside ScrollView */}
+      {!pathname.includes('scan-qr') && (
+        <View style={styles.fabButton}>
+          <TouchableOpacity
+            style={styles.circleButton}
+            onPressIn={handlePressIn}
+            onPress={handleScanQR}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.fabIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
+              <MaterialCommunityIcons name="qrcode-scan" size={26} color={darkenColor(colors.sidebarIconSecurity)} />
+            </View>
+          </TouchableOpacity>
+        </View>
+      )}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
+    flex: 1,
+    position: 'relative',
+  },
+  mobileContainer: {
     flex: 1,
     position: 'relative',
   },
@@ -316,6 +331,26 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fabButton: {
+    bottom: 32,
+    right: 32,
+    zIndex: 1000,
+    ...Platform.select({
+      web: {
+        position: 'fixed' as any,
+      },
+      default: {
+        position: 'absolute' as any,
+      },
+    }),
+  },
+  fabIconContainer: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     alignItems: 'center',
     justifyContent: 'center',
   },

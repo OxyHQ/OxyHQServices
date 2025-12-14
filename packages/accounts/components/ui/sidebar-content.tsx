@@ -21,7 +21,6 @@ export const menuItems: MenuItem[] = [
     { path: '/(tabs)/personal-info', icon: 'card-account-details-outline', label: 'Personal info', iconColor: 'sidebarIconPersonalInfo' },
     { path: '/(tabs)/about-identity', icon: 'shield-key', label: 'About Your Identity', iconColor: 'sidebarIconSecurity' },
     { path: '/(tabs)/security', icon: 'lock-outline', label: 'Security & sign-in', iconColor: 'sidebarIconSecurity' },
-    { path: '/(tabs)/password-manager', icon: 'key-outline', label: 'Password Manager', iconColor: 'sidebarIconPassword' },
     { path: '/(tabs)/devices', icon: 'desktop-classic', label: 'Your devices', iconColor: 'sidebarIconDevices' },
     { path: '/(tabs)/data', icon: 'toggle-switch-outline', label: 'Data & privacy', iconColor: 'sidebarIconData' },
     { path: '/(tabs)/sharing', icon: 'account-group-outline', label: 'People & sharing', iconColor: 'sidebarIconSharing' },

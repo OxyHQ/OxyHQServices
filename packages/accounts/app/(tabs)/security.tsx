@@ -34,7 +34,6 @@ export default function SecurityScreen() {
 
     // OxyServices integration
     const { oxyServices, user, isAuthenticated, isLoading: oxyLoading, sessions, showBottomSheet } = useOxy();
-    const [skipPassword, setSkipPassword] = useState(true);
     const [enhancedSafeBrowsing, setEnhancedSafeBrowsing] = useState(false);
     const [darkWebReport, setDarkWebReport] = useState(false);
     const [securityInfo, setSecurityInfo] = useState<SecurityInfo | null>(null);
@@ -291,30 +290,6 @@ export default function SecurityScreen() {
             });
         }
 
-        // Password
-        items.push({
-            id: 'password',
-            icon: 'dots-horizontal',
-            iconColor: colors.sidebarIconSecurity,
-            title: 'Password',
-            subtitle: user?.createdAt ? `Account created ${formatDate(user.createdAt)}` : 'Set a password',
-        });
-
-        // Skip password when possible
-        items.push({
-            id: 'skip-password',
-            icon: 'key-minus',
-            iconColor: colors.sidebarIconSecurity,
-            title: 'Skip password when possible',
-            subtitle: skipPassword ? 'On' : 'Off',
-            customContent: (
-                <AppleSwitch
-                    value={skipPassword}
-                    onValueChange={setSkipPassword}
-                />
-            ),
-        });
-
         // Authenticator (if TOTP is enabled)
         if (securityInfo?.twoFactorEnabled && securityInfo.totpCreatedAt) {
             items.push({
@@ -326,20 +301,15 @@ export default function SecurityScreen() {
             });
         }
 
-        // Recovery email
+        // Notification email (optional, not used for login)
         if (user?.email || securityInfo?.recoveryEmail) {
             const email = user?.email || securityInfo?.recoveryEmail;
             items.push({
-                id: 'recovery-email',
+                id: 'notification-email',
                 icon: 'email-outline',
                 iconColor: colors.sidebarIconSecurity,
-                title: 'Recovery email',
-                subtitle: email || 'Not set',
-                customContent: !email ? (
-                    <View style={styles.statusContainer}>
-                        <Ionicons name="warning" size={20} color="#FFC107" />
-                    </View>
-                ) : undefined,
+                title: 'Notification email',
+                subtitle: email || 'Not set (optional)',
             });
         }
 
@@ -357,7 +327,7 @@ export default function SecurityScreen() {
         }
 
         return items;
-    }, [colors, skipPassword, securityInfo, user, formatDate]);
+    }, [colors, securityInfo, user, formatDate]);
 
     // Device items grouped by type
     // Note: This groups the same devices shown on the devices screen by their type
