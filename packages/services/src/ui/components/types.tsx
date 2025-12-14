@@ -55,6 +55,10 @@ export type InternalTheme = {
       level4: string;
       level5: string;
     };
+    // Legacy properties for backward compatibility
+    text?: string;
+    disabled?: string;
+    placeholder?: string;
   };
   fonts: {
     displayLarge: any;
@@ -73,6 +77,8 @@ export type InternalTheme = {
     bodyMedium: any;
     bodySmall: any;
     default: any;
+    // Legacy property for backward compatibility
+    regular?: any;
   };
 };
 

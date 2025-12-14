@@ -20,7 +20,7 @@ import type { UseFollowHook } from '../hooks/useFollow.types';
 import { useStorage } from '../hooks/useStorage';
 import { useLanguageManagement } from '../hooks/useLanguageManagement';
 import { useSessionManagement } from '../hooks/useSessionManagement';
-import { useAuthOperations } from '../hooks/useAuthOperations';
+import { useAuthOperations } from './hooks/useAuthOperations';
 import { useDeviceManagement } from '../hooks/useDeviceManagement';
 import { getStorageKeys } from '../utils/storageHelpers';
 import { isInvalidSessionError } from '../utils/errorHandlers';
@@ -39,11 +39,17 @@ export interface OxyContextState {
   currentLanguageMetadata: ReturnType<typeof useLanguageManagement>['metadata'];
   currentLanguageName: string;
   currentNativeLanguageName: string;
-  login: (username: string, password: string, deviceName?: string) => Promise<User>;
+
+  // Identity management (public key authentication)
+  createIdentity: (username: string, email?: string) => Promise<{ user: User; recoveryPhrase: string[] }>;
+  importIdentity: (phrase: string, username?: string, email?: string) => Promise<User>;
+  signIn: (deviceName?: string) => Promise<User>;
+  hasIdentity: () => Promise<boolean>;
+  getPublicKey: () => Promise<string | null>;
+
+  // Session management
   logout: (targetSessionId?: string) => Promise<void>;
   logoutAll: () => Promise<void>;
-  signUp: (username: string, email: string, password: string) => Promise<User>;
-  completeMfaLogin?: (mfaToken: string, code: string) => Promise<User>;
   switchSession: (sessionId: string) => Promise<void>;
   removeSession: (sessionId: string) => Promise<void>;
   refreshSessions: () => Promise<void>;
@@ -199,11 +205,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   });
 
   const {
-    login,
+    createIdentity,
+    importIdentity,
+    signIn,
     logout,
     logoutAll,
-    signUp,
-    completeMfaLogin,
+    hasIdentity,
+    getPublicKey,
   } = useAuthOperations({
     oxyServices,
     storage,
@@ -379,11 +387,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     currentLanguageMetadata,
     currentLanguageName,
     currentNativeLanguageName,
-    login,
+    createIdentity,
+    importIdentity,
+    signIn,
+    hasIdentity,
+    getPublicKey,
     logout,
     logoutAll,
-    signUp,
-    completeMfaLogin,
     switchSession: switchSessionForContext,
     removeSession: logout,
     refreshSessions: refreshSessionsWithUser,
@@ -396,7 +406,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     showBottomSheet: showBottomSheetForContext,
   }), [
     activeSessionId,
-    completeMfaLogin,
+    createIdentity,
+    importIdentity,
+    signIn,
+    hasIdentity,
+    getPublicKey,
     currentLanguage,
     currentLanguageMetadata,
     currentLanguageName,
@@ -405,7 +419,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     getDeviceSessions,
     isAuthenticated,
     isLoading,
-    login,
     logout,
     logoutAll,
     logoutAllDeviceSessions,
@@ -417,7 +430,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     tokenReady,
     updateDeviceName,
     useFollowHook,
-    signUp,
     user,
     showBottomSheetForContext,
   ]);

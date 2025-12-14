@@ -95,7 +95,7 @@ io.use((socket: AuthenticatedSocket, next) => {
   }
 });
 
-// Socket connection handling
+// Socket connection handling for authenticated users
 io.on('connection', (socket: AuthenticatedSocket) => {
   logger.debug('Socket connected', { socketId: socket.id });
   
@@ -115,6 +115,43 @@ io.on('connection', (socket: AuthenticatedSocket) => {
       logger.debug('Socket event received', { socketId: socket.id, event, args });
     });
   }
+});
+
+// ============================================
+// Auth Session Socket Namespace (Unauthenticated)
+// Used for cross-app authentication via QR code
+// ============================================
+import { initAuthSessionNamespace } from './utils/authSessionSocket';
+
+const authSessionNamespace = io.of('/auth-session');
+initAuthSessionNamespace(authSessionNamespace);
+
+// No authentication required for this namespace
+authSessionNamespace.on('connection', (socket) => {
+  logger.debug('Auth session socket connected', { socketId: socket.id });
+  
+  // Client joins a room for their session token
+  socket.on('join', (sessionToken: string) => {
+    if (!sessionToken || typeof sessionToken !== 'string' || sessionToken.length < 10) {
+      socket.emit('error', { message: 'Invalid session token' });
+      return;
+    }
+    
+    const room = `auth:${sessionToken}`;
+    socket.join(room);
+    logger.debug('Client joined auth session room', { socketId: socket.id, room });
+    socket.emit('joined', { room: sessionToken });
+  });
+  
+  socket.on('leave', (sessionToken: string) => {
+    const room = `auth:${sessionToken}`;
+    socket.leave(room);
+    logger.debug('Client left auth session room', { socketId: socket.id, room });
+  });
+  
+  socket.on('disconnect', () => {
+    logger.debug('Auth session socket disconnected', { socketId: socket.id });
+  });
 });
 
 // Helper for emitting session_update

@@ -287,7 +287,7 @@ const TextField = forwardRef<TextFieldHandles, Props>(
       height: null,
     });
 
-    const timer = React.useRef<NodeJS.Timeout | undefined>(undefined);
+    const timer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
     const root = React.useRef<NativeTextInput | undefined | null>(null);
 
     const { scale } = theme.animation;
@@ -339,7 +339,7 @@ const TextField = forwardRef<TextFieldHandles, Props>(
           timer.current = setTimeout(
             () => setDisplayPlaceholder(true),
             50
-          ) as unknown as NodeJS.Timeout;
+          );
         }
       } else {
         // hidePlaceholder

@@ -325,6 +325,13 @@ import {
   OxyAuthenticationError,
   OxyAuthenticationTimeoutError
 } from '@oxyhq/services';
+
+// Crypto module (for identity management)
+import {
+  KeyManager,
+  SignatureService,
+  RecoveryPhraseService
+} from '@oxyhq/services/crypto';
 ```
 
 ### React Native Exports
@@ -342,10 +349,12 @@ import {
 ### OxyServices Methods
 
 ```typescript
-// Authentication
-await oxyClient.signIn(username, password);
-await oxyClient.signUp(username, email, password);
-await oxyClient.logout();
+// Authentication (Public Key Based)
+await oxyClient.register(publicKey, username, signature, timestamp, email?);
+await oxyClient.requestChallenge(publicKey);
+await oxyClient.verifyChallenge(publicKey, challenge, signature, timestamp, deviceName?, deviceFingerprint?);
+await oxyClient.checkPublicKeyRegistered(publicKey);
+await oxyClient.getUserByPublicKey(publicKey);
 
 // User Management
 const user = await oxyClient.getCurrentUser();                    // Get current user
@@ -427,10 +436,15 @@ const {
   isLoading,
   error,
   
-  // Authentication methods
-  login,
+  // Identity management (Public Key Authentication)
+  createIdentity,     // Create new identity with recovery phrase
+  importIdentity,     // Import identity from recovery phrase
+  signIn,             // Sign in with stored identity
+  hasIdentity,        // Check if identity exists on device
+  getPublicKey,       // Get stored public key
+  
+  // Session management
   logout,
-  signUp,
   
   // Session management
   sessions,
@@ -475,29 +489,64 @@ const oxy = new OxyServices({
 
 ## 🔐 Authentication
 
-### Automatic Token Management
+Oxy uses **public/private key cryptography** (ECDSA secp256k1) instead of passwords. Users manage their cryptographic identity in the **Oxy Accounts** app, and other apps can integrate "Sign in with Oxy" for seamless authentication.
 
-The library handles authentication automatically:
-
-- **Token Storage**: Secure storage across sessions
-- **Token Refresh**: Automatic refresh before expiration
-- **Session Management**: Multi-session support
-- **Error Handling**: Graceful handling of auth errors
-
-### Manual Token Management
+### Public Key Authentication
 
 ```typescript
-import { oxyClient } from '@oxyhq/services';
+import { useOxy } from '@oxyhq/services';
 
-// Set tokens manually
-oxyClient.setTokens(accessToken, refreshToken);
-
-// Clear tokens
-oxyClient.clearTokens();
-
-// Check authentication
-const isAuthenticated = oxyClient.hasValidToken();
+function AuthScreen() {
+  const { createIdentity, importIdentity, signIn, hasIdentity } = useOxy();
+  
+  // Create new identity (in Oxy Accounts app)
+  const handleCreate = async () => {
+    const { user, recoveryPhrase } = await createIdentity('username', 'email');
+    // Show recoveryPhrase to user - they must save it!
+  };
+  
+  // Import existing identity
+  const handleImport = async (phrase: string) => {
+    const user = await importIdentity(phrase, 'username', 'email');
+  };
+  
+  // Sign in with stored identity
+  const handleSignIn = async () => {
+    const user = await signIn();
+  };
+  
+  // Check if identity exists
+  const hasStoredIdentity = await hasIdentity();
+}
 ```
+
+### Cross-App Authentication (Sign in with Oxy)
+
+For third-party apps that want to allow users to sign in with their Oxy identity:
+
+```typescript
+import { OxySignInButton } from '@oxyhq/services';
+
+function LoginScreen() {
+  return <OxySignInButton variant="contained" />;
+}
+```
+
+This displays:
+- A QR code that users can scan with Oxy Accounts
+- A button to open Oxy Accounts directly via deep link
+
+### Documentation
+
+📖 **[Complete Public Key Authentication Guide](./docs/PUBLIC_KEY_AUTHENTICATION.md)**
+
+This guide covers:
+- Architecture and concepts
+- User flows (creating/importing identities)
+- Developer integration (cross-app auth)
+- Crypto module API reference
+- Security best practices
+- Migration from password auth
 
 ## 🎨 UI Components
 
@@ -544,8 +593,8 @@ function MyComponent() {
 
   return (
     <Button
-      onPress={() => showBottomSheet('SignIn')}
-      title="Sign In"
+      onPress={() => showBottomSheet('OxyAuth')}
+      title="Sign in with Oxy"
     />
   );
 }
@@ -560,7 +609,7 @@ function MyComponent() {
 - ✅ 25+ pre-built screens available
 
 **Available Screens:**
-- `SignIn`, `SignUp`, `RecoverAccount`
+- `OxyAuth` (Sign in with Oxy - for third-party apps)
 - `AccountOverview`, `AccountSettings`, `AccountCenter`
 - `Profile`, `SessionManagement`, `PaymentGateway`
 - And many more...

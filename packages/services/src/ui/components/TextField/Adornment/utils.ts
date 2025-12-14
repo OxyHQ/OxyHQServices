@@ -1,4 +1,4 @@
-import type { InternalTheme } from "../types";
+import type { InternalTheme } from "../../types";
 
 type BaseProps = {
   theme: InternalTheme;
@@ -55,7 +55,7 @@ export function getIconColor({
   }
 
   if (!theme.isV3) {
-    return theme.colors.text;
+    return theme.colors.text || theme.colors.onSurface;
   }
 
   if (disabled) {

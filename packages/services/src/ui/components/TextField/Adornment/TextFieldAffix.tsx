@@ -15,7 +15,7 @@ import {
 import { AdornmentSide } from './enums';
 import { getTextColor } from './utils';
 import { useInternalTheme } from '../../theming';
-import type { ThemeProp } from "../types";
+import type { ThemeProp } from "../../types";
 import { getConstants } from '../helpers';
 
 export type Props = {

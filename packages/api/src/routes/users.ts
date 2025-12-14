@@ -557,14 +557,14 @@ router.get(
     }
 
     const format = (req.query.format as string) || 'json';
-    const user = await User.findById(userId).select('+password').lean();
+    const user = await User.findById(userId).select('-refreshToken').lean();
 
     if (!user) {
       throw new NotFoundError('User not found');
     }
 
     // Remove sensitive fields
-    const { password, refreshToken, ...safeUserData } = user;
+    const { refreshToken, ...safeUserData } = user;
 
     let data: string;
     let contentType: string;
@@ -603,7 +603,8 @@ router.get(
  * 
  * Permanently delete the current user's account
  * 
- * @body {string} password - User password for confirmation
+ * @body {string} signature - Signature of "delete:{publicKey}:{timestamp}" for confirmation
+ * @body {number} timestamp - Timestamp when the signature was created
  * @body {string} confirmText - Confirmation text (usually username)
  * @returns {object} Confirmation message
  */
@@ -616,26 +617,34 @@ router.delete(
       throw new UnauthorizedError('Authentication required');
     }
 
-    const { password, confirmText } = req.body;
+    const { signature, timestamp, confirmText } = req.body;
     
-    if (!password) {
-      throw new BadRequestError('Password is required to delete account');
+    if (!signature || !timestamp) {
+      throw new BadRequestError('Signature and timestamp are required to delete account');
     }
 
     if (!confirmText) {
       throw new BadRequestError('Confirmation text is required');
     }
 
-    const user = await User.findById(userId).select('+password +username');
+    const user = await User.findById(userId).select('+publicKey +username');
     if (!user) {
       throw new NotFoundError('User not found');
     }
 
-    // Verify password
-    const bcrypt = require('bcryptjs');
-    const isValidPassword = await bcrypt.compare(password, user.password);
-    if (!isValidPassword) {
-      throw new UnauthorizedError('Invalid password');
+    // Verify signature using SignatureService
+    const SignatureService = require('../services/signature.service').default;
+    const message = `delete:${user.publicKey}:${timestamp}`;
+    const isValidSignature = SignatureService.verifySignature(message, signature, user.publicKey);
+    
+    // Check timestamp is recent (within 5 minutes)
+    const now = Date.now();
+    if (now - timestamp > 5 * 60 * 1000) {
+      throw new BadRequestError('Signature has expired. Please try again.');
+    }
+    
+    if (!isValidSignature) {
+      throw new UnauthorizedError('Invalid signature');
     }
 
     // Verify confirmation text matches username

@@ -1,0 +1,250 @@
+/**
+ * Key Manager - ECDSA secp256k1 Key Generation and Storage
+ * 
+ * Handles secure generation, storage, and retrieval of cryptographic keys.
+ * Private keys are stored securely using expo-secure-store and never leave the device.
+ */
+
+import { ec as EC } from 'elliptic';
+import type { ECKeyPair } from 'elliptic';
+
+// Lazy imports for React Native specific modules
+let SecureStore: typeof import('expo-secure-store') | null = null;
+let ExpoCrypto: typeof import('expo-crypto') | null = null;
+
+const ec = new EC('secp256k1');
+
+const STORAGE_KEYS = {
+  PRIVATE_KEY: 'oxy_identity_private_key',
+  PUBLIC_KEY: 'oxy_identity_public_key',
+} as const;
+
+/**
+ * Initialize React Native specific modules
+ * This allows the module to work in both Node.js and React Native environments
+ */
+async function initSecureStore(): Promise<typeof import('expo-secure-store')> {
+  if (!SecureStore) {
+    SecureStore = await import('expo-secure-store');
+  }
+  return SecureStore;
+}
+
+/**
+ * Check if we're in a React Native environment
+ */
+function isReactNative(): boolean {
+  return typeof navigator !== 'undefined' && navigator.product === 'ReactNative';
+}
+
+/**
+ * Check if we're in a Node.js environment
+ */
+function isNodeJS(): boolean {
+  return typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
+}
+
+async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
+  if (!ExpoCrypto) {
+    ExpoCrypto = await import('expo-crypto');
+  }
+  return ExpoCrypto;
+}
+
+/**
+ * Convert Uint8Array to hexadecimal string
+ * Works in both Node.js and React Native
+ */
+function uint8ArrayToHex(bytes: Uint8Array): string {
+  return Array.from(bytes)
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+/**
+ * Generate cryptographically secure random bytes
+ */
+async function getSecureRandomBytes(length: number): Promise<Uint8Array> {
+  // In React Native, always use expo-crypto
+  if (isReactNative() || !isNodeJS()) {
+    const Crypto = await initExpoCrypto();
+    return Crypto.getRandomBytes(length);
+  }
+  
+  // In Node.js, use Node's crypto module
+  // Use Function constructor to prevent Metro bundler from statically analyzing this require
+  // This ensures the require is only evaluated in Node.js runtime, not during Metro bundling
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval
+    const getCrypto = new Function('return require("crypto")');
+    const crypto = getCrypto();
+    return new Uint8Array(crypto.randomBytes(length));
+  } catch (error) {
+    // Fallback to expo-crypto if Node crypto fails
+    const Crypto = await initExpoCrypto();
+    return Crypto.getRandomBytes(length);
+  }
+}
+
+export interface KeyPair {
+  publicKey: string;
+  privateKey: string;
+}
+
+export class KeyManager {
+  /**
+   * Generate a new ECDSA secp256k1 key pair
+   * Returns the keys in hexadecimal format
+   */
+  static generateKeyPairSync(): KeyPair {
+    const keyPair = ec.genKeyPair();
+    return {
+      privateKey: keyPair.getPrivate('hex'),
+      publicKey: keyPair.getPublic('hex'),
+    };
+  }
+
+  /**
+   * Generate a new key pair using secure random bytes
+   */
+  static async generateKeyPair(): Promise<KeyPair> {
+    const randomBytes = await getSecureRandomBytes(32);
+    const privateKeyHex = uint8ArrayToHex(randomBytes);
+    const keyPair = ec.keyFromPrivate(privateKeyHex);
+    
+    return {
+      privateKey: keyPair.getPrivate('hex'),
+      publicKey: keyPair.getPublic('hex'),
+    };
+  }
+
+  /**
+   * Generate and securely store a new key pair on the device
+   * Returns only the public key (private key is stored securely)
+   */
+  static async createIdentity(): Promise<string> {
+    const store = await initSecureStore();
+    const { privateKey, publicKey } = await KeyManager.generateKeyPair();
+
+    // Store private key securely
+    await store.setItemAsync(STORAGE_KEYS.PRIVATE_KEY, privateKey, {
+      keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    });
+
+    // Store public key (for quick access without deriving)
+    await store.setItemAsync(STORAGE_KEYS.PUBLIC_KEY, publicKey);
+
+    return publicKey;
+  }
+
+  /**
+   * Import an existing key pair (e.g., from recovery phrase)
+   */
+  static async importKeyPair(privateKey: string): Promise<string> {
+    const store = await initSecureStore();
+    
+    // Derive public key from private key
+    const keyPair = ec.keyFromPrivate(privateKey);
+    const publicKey = keyPair.getPublic('hex');
+
+    // Store both keys
+    await store.setItemAsync(STORAGE_KEYS.PRIVATE_KEY, privateKey, {
+      keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    });
+    await store.setItemAsync(STORAGE_KEYS.PUBLIC_KEY, publicKey);
+
+    return publicKey;
+  }
+
+  /**
+   * Get the stored private key
+   * WARNING: Only use this for signing operations within the app
+   */
+  static async getPrivateKey(): Promise<string | null> {
+    const store = await initSecureStore();
+    return store.getItemAsync(STORAGE_KEYS.PRIVATE_KEY);
+  }
+
+  /**
+   * Get the stored public key
+   */
+  static async getPublicKey(): Promise<string | null> {
+    const store = await initSecureStore();
+    return store.getItemAsync(STORAGE_KEYS.PUBLIC_KEY);
+  }
+
+  /**
+   * Check if an identity (key pair) exists on this device
+   */
+  static async hasIdentity(): Promise<boolean> {
+    const privateKey = await KeyManager.getPrivateKey();
+    return privateKey !== null;
+  }
+
+  /**
+   * Delete the stored identity (both keys)
+   * Use with caution - this is irreversible without a recovery phrase
+   */
+  static async deleteIdentity(): Promise<void> {
+    const store = await initSecureStore();
+    await store.deleteItemAsync(STORAGE_KEYS.PRIVATE_KEY);
+    await store.deleteItemAsync(STORAGE_KEYS.PUBLIC_KEY);
+  }
+
+  /**
+   * Get the elliptic curve key object from the stored private key
+   * Used internally for signing operations
+   */
+  static async getKeyPairObject(): Promise<ECKeyPair | null> {
+    const privateKey = await KeyManager.getPrivateKey();
+    if (!privateKey) return null;
+    return ec.keyFromPrivate(privateKey);
+  }
+
+  /**
+   * Derive public key from a private key (without storing)
+   */
+  static derivePublicKey(privateKey: string): string {
+    const keyPair = ec.keyFromPrivate(privateKey);
+    return keyPair.getPublic('hex');
+  }
+
+  /**
+   * Validate that a string is a valid public key
+   */
+  static isValidPublicKey(publicKey: string): boolean {
+    try {
+      ec.keyFromPublic(publicKey, 'hex');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Validate that a string is a valid private key
+   */
+  static isValidPrivateKey(privateKey: string): boolean {
+    try {
+      const keyPair = ec.keyFromPrivate(privateKey);
+      // Verify it can derive a public key
+      keyPair.getPublic('hex');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Get a shortened version of the public key for display
+   * Format: first 8 chars...last 8 chars
+   */
+  static shortenPublicKey(publicKey: string): string {
+    if (publicKey.length <= 20) return publicKey;
+    return `${publicKey.slice(0, 8)}...${publicKey.slice(-8)}`;
+  }
+}
+
+export default KeyManager;
+
+

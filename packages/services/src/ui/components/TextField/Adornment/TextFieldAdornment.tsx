@@ -7,7 +7,7 @@ import type {
   DimensionValue,
 } from 'react-native';
 
-import type { ThemeProp } from 'src/types';
+import type { ThemeProp } from '../../types';
 
 import { AdornmentSide, AdornmentType, InputMode } from './enums';
 import TextFieldAffix, { AffixAdornment } from './TextFieldAffix';

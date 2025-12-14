@@ -70,7 +70,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     const colors = useThemeColors();
     const [visible, setVisible] = useState(false);
     const [rendered, setRendered] = useState(false); // keep mounted for exit animation
-    const closeTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const hasClosedRef = useRef(false);
     const scrollViewRef = useRef<ScrollView>(null);
 

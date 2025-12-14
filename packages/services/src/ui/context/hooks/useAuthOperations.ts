@@ -7,6 +7,7 @@ import { fetchSessionsWithFallback, mapSessionsToClient } from '../utils/session
 import { handleAuthError, isInvalidSessionError } from '../utils/errorHandlers';
 import type { StorageInterface } from '../utils/storageHelpers';
 import type { OxyServices } from '../../../core';
+import { KeyManager, SignatureService, RecoveryPhraseService } from '../../../crypto';
 
 export interface UseAuthOperationsOptions {
   oxyServices: OxyServices;
@@ -29,23 +30,30 @@ export interface UseAuthOperationsOptions {
 }
 
 export interface UseAuthOperationsResult {
-  login: (username: string, password: string, deviceName?: string) => Promise<User>;
-  signUp: (username: string, email: string, password: string) => Promise<User>;
-  completeMfaLogin: (mfaToken: string, code: string) => Promise<User>;
+  /** Create a new identity and register with the server */
+  createIdentity: (username: string, email?: string) => Promise<{ user: User; recoveryPhrase: string[] }>;
+  /** Import an existing identity from recovery phrase */
+  importIdentity: (phrase: string, username?: string, email?: string) => Promise<User>;
+  /** Sign in with existing identity on device */
+  signIn: (deviceName?: string) => Promise<User>;
+  /** Logout from current session */
   logout: (targetSessionId?: string) => Promise<void>;
+  /** Logout from all sessions */
   logoutAll: () => Promise<void>;
+  /** Check if device has an identity stored */
+  hasIdentity: () => Promise<boolean>;
+  /** Get the public key of the stored identity */
+  getPublicKey: () => Promise<string | null>;
 }
 
 const LOGIN_ERROR_CODE = 'LOGIN_ERROR';
-const MFA_ERROR_CODE = 'MFA_ERROR';
-const SIGNUP_ERROR_CODE = 'SIGNUP_ERROR';
+const REGISTER_ERROR_CODE = 'REGISTER_ERROR';
 const LOGOUT_ERROR_CODE = 'LOGOUT_ERROR';
 const LOGOUT_ALL_ERROR_CODE = 'LOGOUT_ALL_ERROR';
 
 /**
- * Encapsulate authentication flows, multi-session aware logout, and MFA handling.
- *
- * @param options - Auth operation configuration
+ * Authentication operations using public key cryptography.
+ * No passwords required - identity is based on ECDSA key pairs.
  */
 export const useAuthOperations = ({
   oxyServices,
@@ -66,86 +74,213 @@ export const useAuthOperations = ({
   setAuthState,
   logger,
 }: UseAuthOperationsOptions): UseAuthOperationsResult => {
-  const login = useCallback(
-    async (username: string, password: string, deviceName?: string): Promise<User> => {
+  
+  /**
+   * Create a new identity with recovery phrase
+   */
+  const createIdentity = useCallback(
+    async (username: string, email?: string): Promise<{ user: User; recoveryPhrase: string[] }> => {
       if (!storage) throw new Error('Storage not initialized');
 
       setAuthState({ isLoading: true, error: null });
 
       try {
-        const deviceFingerprint = DeviceManager.getDeviceFingerprint();
-        const deviceInfo = await DeviceManager.getDeviceInfo();
+        // Generate new identity with recovery phrase
+        const { phrase, words, publicKey } = await RecoveryPhraseService.generateIdentityWithRecovery();
 
-        const response = await oxyServices.signIn(
-          username,
-          password,
-          deviceName || deviceInfo.deviceName || DeviceManager.getDefaultDeviceName(),
-          deviceFingerprint,
-        );
+        // Create registration signature
+        const { signature, timestamp } = await SignatureService.createRegistrationSignature(username, email);
 
-        if (response && 'mfaRequired' in response && response.mfaRequired) {
-          const mfaError = new Error('Multi-factor authentication required') as Error & {
-            code: string;
-            mfaToken?: string;
-            expiresAt?: string;
-          };
-          mfaError.code = 'MFA_REQUIRED';
-          mfaError.mfaToken = (response as { mfaToken?: string }).mfaToken;
-          mfaError.expiresAt = (response as { expiresAt?: string }).expiresAt;
-          throw mfaError;
-        }
+        // Register with server
+        const { user } = await oxyServices.register(publicKey, username, signature, timestamp, email);
 
-        const sessionResponse = response as SessionLoginResponse;
-        await oxyServices.getTokenBySession(sessionResponse.sessionId);
+        // Now sign in to create a session
+        const fullUser = await performSignIn(publicKey);
 
-        const fullUser = await oxyServices.getUserBySession(sessionResponse.sessionId);
-        await applyLanguagePreference(fullUser);
-        loginSuccess(fullUser);
+        return {
+          user: fullUser,
+          recoveryPhrase: words,
+        };
+      } catch (error) {
+        // Clean up identity if registration failed
+        await KeyManager.deleteIdentity().catch(() => {});
+        
+        const message = handleAuthError(error, {
+          defaultMessage: 'Failed to create identity',
+          code: REGISTER_ERROR_CODE,
+          onError,
+          setAuthError: (msg) => setAuthState({ error: msg }),
+          logger,
+        });
+        loginFailure(message);
+        throw error;
+      } finally {
+        setAuthState({ isLoading: false });
+      }
+    },
+    [oxyServices, storage, setAuthState, loginFailure, onError, logger],
+  );
 
-        let allDeviceSessions: ClientSession[] = [];
-        try {
-          allDeviceSessions = await fetchSessionsWithFallback(oxyServices, sessionResponse.sessionId, {
-            fallbackDeviceId: sessionResponse.deviceId,
-            fallbackUserId: fullUser.id,
-            logger,
-          });
-        } catch (error) {
-          if (__DEV__) {
-            console.warn('Failed to fetch device sessions after login:', error);
+  /**
+   * Import identity from recovery phrase
+   */
+  const importIdentity = useCallback(
+    async (phrase: string, username?: string, email?: string): Promise<User> => {
+      if (!storage) throw new Error('Storage not initialized');
+
+      setAuthState({ isLoading: true, error: null });
+
+      try {
+        // Restore identity from phrase
+        const publicKey = await RecoveryPhraseService.restoreFromPhrase(phrase);
+
+        // Check if this identity is already registered
+        const { registered } = await oxyServices.checkPublicKeyRegistered(publicKey);
+
+        if (registered) {
+          // Identity exists, just sign in
+          return await performSignIn(publicKey);
+        } else {
+          // Need to register this identity
+          if (!username) {
+            throw new Error('Username is required for new registration');
           }
+
+          const { signature, timestamp } = await SignatureService.createRegistrationSignature(username, email);
+          await oxyServices.register(publicKey, username, signature, timestamp, email);
+          
+          return await performSignIn(publicKey);
         }
-
-        const existingSession = allDeviceSessions.find(
-          (session) =>
-            session.userId?.toString() === fullUser.id?.toString() &&
-            session.sessionId !== sessionResponse.sessionId,
-        );
-
-        if (existingSession) {
-          try {
-            await oxyServices.logoutSession(sessionResponse.sessionId, sessionResponse.sessionId);
-          } catch (logoutError) {
-            if (__DEV__) {
-              console.warn('Failed to logout duplicate session:', logoutError);
-            }
-          }
-          await switchSession(existingSession.sessionId);
-          updateSessions(
-            allDeviceSessions.filter((session) => session.sessionId !== sessionResponse.sessionId),
-            { merge: false },
-          );
-          onAuthStateChange?.(fullUser);
-          return fullUser;
-        }
-
-        setActiveSessionId(sessionResponse.sessionId);
-        await saveActiveSessionId(sessionResponse.sessionId);
-        updateSessions(allDeviceSessions, { merge: true });
-        onAuthStateChange?.(fullUser);
-        return fullUser;
       } catch (error) {
         const message = handleAuthError(error, {
-          defaultMessage: 'Login failed',
+          defaultMessage: 'Failed to import identity',
+          code: REGISTER_ERROR_CODE,
+          onError,
+          setAuthError: (msg) => setAuthState({ error: msg }),
+          logger,
+        });
+        loginFailure(message);
+        throw error;
+      } finally {
+        setAuthState({ isLoading: false });
+      }
+    },
+    [oxyServices, storage, setAuthState, loginFailure, onError, logger],
+  );
+
+  /**
+   * Internal function to perform challenge-response sign in
+   */
+  const performSignIn = useCallback(
+    async (publicKey: string): Promise<User> => {
+      const deviceFingerprintObj = DeviceManager.getDeviceFingerprint();
+      const deviceFingerprint = JSON.stringify(deviceFingerprintObj);
+      const deviceInfo = await DeviceManager.getDeviceInfo();
+      const deviceName = deviceInfo.deviceName || DeviceManager.getDefaultDeviceName();
+
+      // Request challenge
+      const { challenge } = await oxyServices.requestChallenge(publicKey);
+
+      // Sign the challenge
+      const { challenge: signature, timestamp } = await SignatureService.signChallenge(challenge);
+
+      // Verify and create session
+      const sessionResponse = await oxyServices.verifyChallenge(
+        publicKey,
+        challenge,
+        signature,
+        timestamp,
+        deviceName,
+        deviceFingerprint,
+      );
+
+      // Get token for the session
+      await oxyServices.getTokenBySession(sessionResponse.sessionId);
+
+      // Get full user data
+      const fullUser = await oxyServices.getUserBySession(sessionResponse.sessionId);
+      await applyLanguagePreference(fullUser);
+      loginSuccess(fullUser);
+
+      // Fetch device sessions
+      let allDeviceSessions: ClientSession[] = [];
+      try {
+        allDeviceSessions = await fetchSessionsWithFallback(oxyServices, sessionResponse.sessionId, {
+          fallbackDeviceId: sessionResponse.deviceId,
+          fallbackUserId: fullUser.id,
+          logger,
+        });
+      } catch (error) {
+        if (__DEV__) {
+          console.warn('Failed to fetch device sessions after login:', error);
+        }
+      }
+
+      // Check for existing session for same user
+      const existingSession = allDeviceSessions.find(
+        (session) =>
+          session.userId?.toString() === fullUser.id?.toString() &&
+          session.sessionId !== sessionResponse.sessionId,
+      );
+
+      if (existingSession) {
+        // Logout duplicate session
+        try {
+          await oxyServices.logoutSession(sessionResponse.sessionId, sessionResponse.sessionId);
+        } catch (logoutError) {
+          if (__DEV__) {
+            console.warn('Failed to logout duplicate session:', logoutError);
+          }
+        }
+        await switchSession(existingSession.sessionId);
+        updateSessions(
+          allDeviceSessions.filter((session) => session.sessionId !== sessionResponse.sessionId),
+          { merge: false },
+        );
+        onAuthStateChange?.(fullUser);
+        return fullUser;
+      }
+
+      setActiveSessionId(sessionResponse.sessionId);
+      await saveActiveSessionId(sessionResponse.sessionId);
+      updateSessions(allDeviceSessions, { merge: true });
+      onAuthStateChange?.(fullUser);
+      
+      return fullUser;
+    },
+    [
+      applyLanguagePreference,
+      logger,
+      loginSuccess,
+      onAuthStateChange,
+      oxyServices,
+      saveActiveSessionId,
+      setActiveSessionId,
+      switchSession,
+      updateSessions,
+    ],
+  );
+
+  /**
+   * Sign in with existing identity on device
+   */
+  const signIn = useCallback(
+    async (deviceName?: string): Promise<User> => {
+      if (!storage) throw new Error('Storage not initialized');
+
+      setAuthState({ isLoading: true, error: null });
+
+      try {
+        // Get stored public key
+        const publicKey = await KeyManager.getPublicKey();
+        if (!publicKey) {
+          throw new Error('No identity found on this device. Please create or import an identity.');
+        }
+
+        return await performSignIn(publicKey);
+      } catch (error) {
+        const message = handleAuthError(error, {
+          defaultMessage: 'Sign in failed',
           code: LOGIN_ERROR_CODE,
           onError,
           setAuthError: (msg) => setAuthState({ error: msg }),
@@ -157,108 +292,12 @@ export const useAuthOperations = ({
         setAuthState({ isLoading: false });
       }
     },
-    [
-      applyLanguagePreference,
-      logger,
-      loginFailure,
-      loginSuccess,
-      onAuthStateChange,
-      onError,
-      oxyServices,
-      saveActiveSessionId,
-      setActiveSessionId,
-      setAuthState,
-      storage,
-      switchSession,
-      updateSessions,
-    ],
+    [storage, setAuthState, performSignIn, loginFailure, onError, logger],
   );
 
-  const signUp = useCallback(
-    async (username: string, email: string, password: string): Promise<User> => {
-      if (!storage) throw new Error('Storage not initialized');
-      setAuthState({ isLoading: true, error: null });
-
-      try {
-        await oxyServices.signUp(username, email, password);
-        return await login(username, password);
-      } catch (error) {
-        const message = handleAuthError(error, {
-          defaultMessage: 'Sign up failed',
-          code: SIGNUP_ERROR_CODE,
-          onError,
-          setAuthError: (msg) => setAuthState({ error: msg }),
-          logger,
-        });
-        loginFailure(message);
-        throw error;
-      } finally {
-        setAuthState({ isLoading: false });
-      }
-    },
-    [login, logger, loginFailure, onError, oxyServices, setAuthState, storage],
-  );
-
-  const completeMfaLogin = useCallback(
-    async (mfaToken: string, code: string): Promise<User> => {
-      if (!storage) throw new Error('Storage not initialized');
-      setAuthState({ isLoading: true, error: null });
-
-      try {
-        const response = await oxyServices.verifyTotpLogin(mfaToken, code);
-
-        await oxyServices.getTokenBySession(response.sessionId);
-        const fullUser = await oxyServices.getUserBySession(response.sessionId);
-
-        setActiveSessionId(response.sessionId);
-        await saveActiveSessionId(response.sessionId);
-        loginSuccess(fullUser);
-        await applyLanguagePreference(fullUser);
-
-        try {
-          const deviceSessions = await fetchSessionsWithFallback(oxyServices, response.sessionId, {
-            fallbackUserId: fullUser.id,
-            logger,
-          });
-          updateSessions(deviceSessions, { merge: true });
-        } catch (error) {
-          if (__DEV__) {
-            console.warn('Failed to fetch sessions after MFA login:', error);
-          }
-        }
-
-        onAuthStateChange?.(fullUser);
-        return fullUser;
-      } catch (error) {
-        const message = handleAuthError(error, {
-          defaultMessage: 'MFA verification failed',
-          code: MFA_ERROR_CODE,
-          onError,
-          setAuthError: (msg) => setAuthState({ error: msg }),
-          logger,
-        });
-        loginFailure(message);
-        throw error;
-      } finally {
-        setAuthState({ isLoading: false });
-      }
-    },
-    [
-      applyLanguagePreference,
-      logger,
-      loginFailure,
-      loginSuccess,
-      onAuthStateChange,
-      onError,
-      oxyServices,
-      saveActiveSessionId,
-      setActiveSessionId,
-      setAuthState,
-      storage,
-      updateSessions,
-    ],
-  );
-
+  /**
+   * Logout from session
+   */
   const logout = useCallback(
     async (targetSessionId?: string): Promise<void> => {
       if (!activeSessionId) return;
@@ -300,18 +339,18 @@ export const useAuthOperations = ({
       activeSessionId,
       clearSessionState,
       logger,
-      logoutStore,
-      onAuthStateChange,
       onError,
       oxyServices,
       sessions,
-      setActiveSessionId,
       setAuthState,
       switchSession,
       updateSessions,
     ],
   );
 
+  /**
+   * Logout from all sessions
+   */
   const logoutAll = useCallback(async (): Promise<void> => {
     if (!activeSessionId) {
       const error = new Error('No active session found');
@@ -335,13 +374,27 @@ export const useAuthOperations = ({
     }
   }, [activeSessionId, clearSessionState, logger, onError, oxyServices, setAuthState]);
 
+  /**
+   * Check if device has an identity stored
+   */
+  const hasIdentity = useCallback(async (): Promise<boolean> => {
+    return KeyManager.hasIdentity();
+  }, []);
+
+  /**
+   * Get the public key of the stored identity
+   */
+  const getPublicKey = useCallback(async (): Promise<string | null> => {
+    return KeyManager.getPublicKey();
+  }, []);
+
   return {
-    login,
-    signUp,
-    completeMfaLogin,
+    createIdentity,
+    importIdentity,
+    signIn,
     logout,
     logoutAll,
+    hasIdentity,
+    getPublicKey,
   };
 };
-
-

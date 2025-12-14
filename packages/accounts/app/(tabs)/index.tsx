@@ -14,7 +14,7 @@ import lottieAnimation from '@/assets/lottie/welcomeheader_background_op1.json';
 import { darkenColor } from '@/utils/color-utils';
 import { AccountCard } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useOxy, OxySignInButton } from '@oxyhq/services';
+import { useOxy } from '@oxyhq/services';
 import { formatDate, getDisplayName, getShortDisplayName } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 
@@ -47,10 +47,6 @@ export default function HomeScreen() {
   const handlePressIn = useHapticPress();
 
   // Navigation handlers - defined before useMemo to avoid dependency issues
-  const handleSignIn = useCallback(() => {
-    showBottomSheet?.('SignIn');
-  }, [showBottomSheet]);
-
   const handleAvatarPress = useCallback(() => {
     showBottomSheet?.({
       screen: 'EditProfile',
@@ -99,6 +95,14 @@ export default function HomeScreen() {
   const handleMenu = useCallback(() => {
     showBottomSheet?.('AccountOverview');
   }, [showBottomSheet]);
+
+  const handleScanQR = useCallback(() => {
+    router.push('/(tabs)/scan-qr');
+  }, [router]);
+
+  const handleAboutIdentity = useCallback(() => {
+    router.push('/(tabs)/about-identity');
+  }, [router]);
 
   const accountItems = useMemo(() => [
     {
@@ -195,11 +199,46 @@ export default function HomeScreen() {
     },
   ], [colors.card, colors.text, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.sidebarIconPersonalInfo, handleSignInMethod]);
 
+  const identityItems = useMemo(() => [
+    {
+      id: 'self-custody',
+      customIcon: (
+        <View style={[styles.methodIcon, { backgroundColor: '#10B981' }]}>
+          <MaterialCommunityIcons name="shield-key" size={22} color={darkenColor('#10B981')} />
+        </View>
+      ),
+      title: 'Self-Custody Identity',
+      subtitle: 'You own your keys. No passwords needed.',
+      onPress: handleAboutIdentity,
+      showChevron: true,
+    },
+    {
+      id: 'public-key',
+      customIcon: (
+        <View style={[styles.methodIcon, { backgroundColor: '#8B5CF6' }]}>
+          <MaterialCommunityIcons name="key-variant" size={22} color={darkenColor('#8B5CF6')} />
+        </View>
+      ),
+      title: 'Your Public Key',
+      subtitle: 'View and share your unique identifier',
+      onPress: handleAboutIdentity,
+      showChevron: true,
+    },
+  ], [handleAboutIdentity]);
+
   const content = useMemo(() => (
     <>
       <Section title={undefined} isFirst>
         <AccountCard>
           <GroupedSection items={accountItems} />
+        </AccountCard>
+      </Section>
+
+      {/* Self-Custody Identity Section */}
+      <Section title="Your Identity">
+        <ThemedText style={styles.subtitle}>Your identity is secured by cryptography. You control your keys.</ThemedText>
+        <AccountCard>
+          <GroupedSection items={identityItems} />
         </AccountCard>
       </Section>
 
@@ -210,7 +249,7 @@ export default function HomeScreen() {
         </AccountCard>
       </Section>
     </>
-  ), [accountItems, isDesktop, signInMethods]);
+  ), [accountItems, identityItems, isDesktop, signInMethods]);
 
   const toggleColorScheme = useCallback(() => {
     // This would toggle between light and dark mode
@@ -244,23 +283,21 @@ export default function HomeScreen() {
     );
   }
 
-  // Show sign-in prompt if not authenticated
-  if (!isAuthenticated) {
+  // Redirect to auth flow if not authenticated
+  // Accounts app uses its own auth flow (create/import identity), not the bottom sheet
+  useEffect(() => {
+    if (!oxyLoading && !isAuthenticated) {
+      router.replace('/(auth)');
+    }
+  }, [oxyLoading, isAuthenticated, router]);
 
+  // Show loading while checking auth or redirecting
+  if (!isAuthenticated) {
     return (
       <ScreenContentWrapper>
-        <View style={[styles.container, styles.unauthenticatedContainer, { backgroundColor: colors.background }]}>
-          <View style={styles.unauthenticatedContent}>
-            <ThemedText style={[styles.unauthenticatedTitle, { color: colors.text }]}>
-              Welcome to Oxy Accounts
-            </ThemedText>
-            <ThemedText style={[styles.unauthenticatedSubtitle, { color: colors.text, opacity: 0.7 }]}>
-              Sign in to manage your account settings, view your sessions, and access your personal information.
-            </ThemedText>
-            <View style={styles.signInButtonContainer}>
-              <OxySignInButton />
-            </View>
-          </View>
+        <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.tint} />
+          <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading...</ThemedText>
         </View>
       </ScreenContentWrapper>
     );
@@ -329,6 +366,11 @@ export default function HomeScreen() {
 
           {/* Bottom action buttons */}
           <View style={styles.bottomActions}>
+            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleScanQR}>
+              <View style={[styles.menuIconContainer, { backgroundColor: colors.primary }]}>
+                <MaterialCommunityIcons name="qrcode-scan" size={22} color="#fff" />
+              </View>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleReload}>
               <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
                 <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />

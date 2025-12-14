@@ -1,29 +1,76 @@
 /**
  * Authentication Methods Mixin
+ * 
+ * Public key authentication using ECDSA signatures.
+ * No passwords required - authentication is done via challenge-response.
  */
 import type { User } from '../../models/interfaces';
 import type { SessionLoginResponse } from '../../models/session';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { OxyAuthenticationError } from '../OxyServices.errors';
 
+export interface ChallengeResponse {
+  challenge: string;
+  expiresAt: string;
+}
+
+export interface RegistrationRequest {
+  publicKey: string;
+  username: string;
+  email?: string;
+  signature: string;
+  timestamp: number;
+}
+
+export interface ChallengeVerifyRequest {
+  publicKey: string;
+  challenge: string;
+  signature: string;
+  timestamp: number;
+  deviceName?: string;
+  deviceFingerprint?: string;
+}
+
+export interface PublicKeyCheckResponse {
+  registered: boolean;
+  message: string;
+}
+
 export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
     constructor(...args: any[]) {
       super(...(args as [any]));
     }
+
     /**
-     * Sign up a new user
+     * Register a new user with public key authentication
+     * 
+     * @param publicKey - The user's ECDSA public key (hex)
+     * @param username - Desired username
+     * @param email - Optional email address
+     * @param signature - Signature of the registration request
+     * @param timestamp - Timestamp when the signature was created
      */
-    async signUp(username: string, email: string, password: string): Promise<{ message: string; token: string; user: User }> {
+    async register(
+      publicKey: string,
+      username: string,
+      signature: string,
+      timestamp: number,
+      email?: string
+    ): Promise<{ message: string; user: User }> {
       try {
-        const res = await this.makeRequest<{ message: string; token: string; user: User }>('POST', '/api/auth/signup', {
+        const res = await this.makeRequest<{ message: string; user: User }>('POST', '/api/auth/register', {
+          publicKey,
           username,
           email,
-          password
+          signature,
+          timestamp,
         }, { cache: false });
+
         if (!res || (typeof res === 'object' && Object.keys(res).length === 0)) {
-          throw new OxyAuthenticationError('Sign up failed', 'SIGNUP_FAILED', 400);
+          throw new OxyAuthenticationError('Registration failed', 'REGISTER_FAILED', 400);
         }
+
         return res;
       } catch (error) {
         throw this.handleError(error);
@@ -31,80 +78,15 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Request account recovery (send verification code)
+     * Request an authentication challenge
+     * The client must sign this challenge with their private key
+     * 
+     * @param publicKey - The user's public key
      */
-    async requestRecovery(identifier: string): Promise<{ delivery?: string; destination?: string }> {
+    async requestChallenge(publicKey: string): Promise<ChallengeResponse> {
       try {
-        return await this.makeRequest('POST', '/api/auth/recover/request', { identifier }, { cache: false });
-      } catch (error: any) {
-        throw this.handleError(error);
-      }
-    }
-
-    /**
-     * Verify recovery code
-     */
-    async verifyRecoveryCode(identifier: string, code: string): Promise<{ verified: boolean }> {
-      try {
-        return await this.makeRequest('POST', '/api/auth/recover/verify', { identifier, code }, { cache: false });
-      } catch (error: any) {
-        throw this.handleError(error);
-      }
-    }
-
-    /**
-     * Reset password using verified code
-     */
-    async resetPassword(identifier: string, code: string, newPassword: string): Promise<{ success: boolean }> {
-      try {
-        return await this.makeRequest('POST', '/api/auth/recover/reset', { identifier, code, newPassword }, { cache: false });
-      } catch (error: any) {
-        throw this.handleError(error);
-      }
-    }
-
-    /**
-     * Reset password using TOTP code (recommended recovery)
-     */
-    async resetPasswordWithTotp(identifier: string, code: string, newPassword: string): Promise<{ success: boolean }> {
-      try {
-        return await this.makeRequest('POST', '/api/auth/recover/totp/reset', { identifier, code, newPassword }, { cache: false });
-      } catch (error: any) {
-        throw this.handleError(error);
-      }
-    }
-
-    async resetPasswordWithBackupCode(identifier: string, backupCode: string, newPassword: string): Promise<{ success: boolean }> {
-      try {
-        return await this.makeRequest('POST', '/api/auth/recover/backup/reset', { identifier, backupCode, newPassword }, { cache: false });
-      } catch (error: any) {
-        throw this.handleError(error);
-      }
-    }
-
-    async resetPasswordWithRecoveryKey(identifier: string, recoveryKey: string, newPassword: string): Promise<{ success: boolean; nextRecoveryKey?: string }> {
-      try {
-        return await this.makeRequest('POST', '/api/auth/recover/recovery-key/reset', { identifier, recoveryKey, newPassword }, { cache: false });
-      } catch (error: any) {
-        throw this.handleError(error);
-      }
-    }
-
-    /**
-     * Sign in with device management
-     */
-    async signIn(
-      username: string,
-      password: string,
-      deviceName?: string,
-      deviceFingerprint?: any
-    ): Promise<SessionLoginResponse | { mfaRequired: true; mfaToken: string; expiresAt: string }> {
-      try {
-        return await this.makeRequest<SessionLoginResponse | { mfaRequired: true; mfaToken: string; expiresAt: string }>('POST', '/api/auth/login', {
-          username,
-          password,
-          deviceName,
-          deviceFingerprint
+        return await this.makeRequest<ChallengeResponse>('POST', '/api/auth/challenge', {
+          publicKey,
         }, { cache: false });
       } catch (error) {
         throw this.handleError(error);
@@ -112,11 +94,64 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Complete login by verifying TOTP with MFA token
+     * Verify a signed challenge and create a session
+     * 
+     * @param publicKey - The user's public key
+     * @param challenge - The challenge string from requestChallenge
+     * @param signature - Signature of the auth message
+     * @param timestamp - Timestamp when the signature was created
+     * @param deviceName - Optional device name
+     * @param deviceFingerprint - Optional device fingerprint
      */
-    async verifyTotpLogin(mfaToken: string, code: string): Promise<SessionLoginResponse> {
+    async verifyChallenge(
+      publicKey: string,
+      challenge: string,
+      signature: string,
+      timestamp: number,
+      deviceName?: string,
+      deviceFingerprint?: string
+    ): Promise<SessionLoginResponse> {
       try {
-        return await this.makeRequest<SessionLoginResponse>('POST', '/api/auth/totp/verify-login', { mfaToken, code }, { cache: false });
+        return await this.makeRequest<SessionLoginResponse>('POST', '/api/auth/verify', {
+          publicKey,
+          challenge,
+          signature,
+          timestamp,
+          deviceName,
+          deviceFingerprint,
+        }, { cache: false });
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Check if a public key is already registered
+     */
+    async checkPublicKeyRegistered(publicKey: string): Promise<PublicKeyCheckResponse> {
+      try {
+        return await this.makeRequest<PublicKeyCheckResponse>(
+          'GET',
+          `/api/auth/check-publickey/${encodeURIComponent(publicKey)}`,
+          undefined,
+          { cache: false }
+        );
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Get user by public key
+     */
+    async getUserByPublicKey(publicKey: string): Promise<User> {
+      try {
+        return await this.makeRequest<User>(
+          'GET',
+          `/api/auth/user/${encodeURIComponent(publicKey)}`,
+          undefined,
+          { cache: true, cacheTTL: 2 * 60 * 1000 }
+        );
       } catch (error) {
         throw this.handleError(error);
       }
@@ -129,7 +164,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       try {
         return await this.makeRequest<User>('GET', `/api/session/user/${sessionId}`, undefined, {
           cache: true,
-          cacheTTL: 2 * 60 * 1000, // 2 minutes cache for user data
+          cacheTTL: 2 * 60 * 1000,
         });
       } catch (error) {
         throw this.handleError(error);
@@ -137,8 +172,7 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Batch get multiple user profiles by session IDs (optimized for account switching)
-     * Returns array of { sessionId, user } objects
+     * Batch get multiple user profiles by session IDs
      */
     async getUsersBySessions(sessionIds: string[]): Promise<Array<{ sessionId: string; user: User | null }>> {
       try {
@@ -146,7 +180,6 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           return [];
         }
         
-        // Deduplicate and sort sessionIds for consistent cache keys
         const uniqueSessionIds = Array.from(new Set(sessionIds)).sort();
         
         return await this.makeRequest<Array<{ sessionId: string; user: User | null }>>(
@@ -155,8 +188,8 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
           { sessionIds: uniqueSessionIds },
           {
             cache: true,
-            cacheTTL: 2 * 60 * 1000, // 2 minutes cache
-            deduplicate: true, // Important for batch requests
+            cacheTTL: 2 * 60 * 1000,
+            deduplicate: true,
           }
         );
       } catch (error) {
@@ -165,16 +198,17 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Get access token by session ID and set it in the token store
+     * Get access token by session ID
      */
     async getTokenBySession(sessionId: string): Promise<{ accessToken: string; expiresAt: string }> {
       try {
-        const res = await this.makeRequest<{ accessToken: string; expiresAt: string }>('GET', `/api/session/token/${sessionId}`, undefined, {
-          cache: false,
-          retry: false,
-        });
+        const res = await this.makeRequest<{ accessToken: string; expiresAt: string }>(
+          'GET',
+          `/api/session/token/${sessionId}`,
+          undefined,
+          { cache: false, retry: false }
+        );
         
-        // Set the token in the centralized token store
         this.setTokens(res.accessToken);
         
         return res;
@@ -270,6 +304,36 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
         throw this.handleError(error);
       }
     }
+
+    // ==========================================
+    // Deprecated methods - kept for reference
+    // ==========================================
+
+    /**
+     * @deprecated Use register() with public key authentication instead
+     */
+    async signUp(username: string, email: string, password: string): Promise<{ message: string; token: string; user: User }> {
+      throw new OxyAuthenticationError(
+        'Password-based signup is no longer supported. Use register() with public key.',
+        'DEPRECATED',
+        410
+      );
+    }
+
+    /**
+     * @deprecated Use requestChallenge() and verifyChallenge() instead
+     */
+    async signIn(
+      username: string,
+      password: string,
+      deviceName?: string,
+      deviceFingerprint?: any
+    ): Promise<SessionLoginResponse | { mfaRequired: true; mfaToken: string; expiresAt: string }> {
+      throw new OxyAuthenticationError(
+        'Password-based login is no longer supported. Use challenge-response authentication.',
+        'DEPRECATED',
+        410
+      );
+    }
   };
 }
-

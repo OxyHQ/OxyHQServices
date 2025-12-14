@@ -216,7 +216,7 @@ export function createCache<T>(ttl: number = 5 * 60 * 1000): TTLCache<T> {
  * Global cache cleanup interval (runs every minute)
  * This helps prevent memory leaks from expired cache entries
  */
-let cleanupInterval: NodeJS.Timeout | null = null;
+let cleanupInterval: ReturnType<typeof setInterval> | null = null;
 const activeCaches = new Set<TTLCache<any>>();
 
 /**

@@ -329,10 +329,10 @@ const getInputTextColor = ({
   }
 
   if (disabled) {
-    return color(theme.colors.text).alpha(0.54).rgb().string();
+    return color(theme.colors.text || theme.colors.onSurface).alpha(0.54).rgb().string();
   }
 
-  return theme.colors.text;
+  return theme.colors.text || theme.colors.onSurface;
 };
 
 const getActiveColor = ({
@@ -364,7 +364,7 @@ const getActiveColor = ({
       return theme.colors.onSurfaceDisabled;
     }
 
-    return color(theme.colors.text).alpha(0.54).rgb().string();
+    return color(theme.colors.text || theme.colors.onSurface).alpha(0.54).rgb().string();
   }
 
   return theme.colors.primary;
@@ -380,10 +380,10 @@ const getPlaceholderColor = ({ theme, disabled }: BaseProps) => {
   }
 
   if (disabled) {
-    return theme.colors.disabled;
+    return theme.colors.disabled || theme.colors.onSurfaceDisabled;
   }
 
-  return theme.colors.placeholder;
+  return theme.colors.placeholder || theme.colors.onSurfaceVariant;
 };
 
 const getSelectionColor = ({
@@ -443,7 +443,7 @@ const getFlatUnderlineColor = ({
     return 'transparent';
   }
 
-  return theme.colors.disabled;
+  return theme.colors.disabled || theme.colors.onSurfaceVariant;
 };
 
 const getOutlinedOutlineInputColor = ({
@@ -472,9 +472,9 @@ const getOutlinedOutlineInputColor = ({
     if (isTransparent) {
       return customOutlineColor;
     }
-    return theme.colors.disabled;
+    return theme.colors.disabled || theme.colors.onSurfaceDisabled;
   }
-  return theme.colors.placeholder;
+  return theme.colors.placeholder || theme.colors.onSurfaceVariant;
 };
 
 export const getFlatInputColors = ({

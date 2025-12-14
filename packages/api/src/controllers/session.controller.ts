@@ -2,7 +2,7 @@ import { Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import Session from '../models/Session';
-import bcrypt from 'bcrypt';
+import AuthChallenge from '../models/AuthChallenge';
 import crypto from 'crypto';
 import { SessionAuthResponse, ClientSession } from '../types/session';
 import { 
@@ -11,27 +11,35 @@ import {
 } from '../utils/deviceUtils';
 import { emitSessionUpdate } from '../server';
 import Notification from '../models/Notification';
-import RecoveryCode from '../models/RecoveryCode';
-import Totp from '../models/Totp';
-import RecoveryFactors from '../models/RecoveryFactors';
-import { authenticator } from 'otplib';
+import SignatureService from '../services/signature.service';
 import sessionService from '../services/session.service';
 import sessionCache from '../utils/sessionCache';
 import { logger } from '../utils/logger';
 import { normalizeUser } from '../utils/userTransform';
 
-const MFA_TOKEN_SECRET: import('jsonwebtoken').Secret = (process.env.MFA_TOKEN_SECRET || process.env.REFRESH_TOKEN_SECRET!) as import('jsonwebtoken').Secret;
-const MFA_TOKEN_TTL_SECONDS: number = Number(process.env.MFA_TOKEN_TTL_SECONDS || 300); // default 5 minutes
+// Challenge expiration time (5 minutes)
+const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 
 export class SessionController {
   
-  // Register a new user account
+  /**
+   * Register a new user with public key authentication
+   * No passwords needed - identity is verified via signature
+   */
   static async register(req: Request, res: Response) {
     try {
-      let { username, email, password } = req.body;
+      let { publicKey, username, email, signature, timestamp } = req.body;
 
-      if (!username || !email || !password) {
-        return res.status(400).json({ error: 'Username, email, and password are required' });
+      // Validate required fields
+      if (!publicKey || !username || !signature || !timestamp) {
+        return res.status(400).json({ 
+          error: 'Public key, username, signature, and timestamp are required' 
+        });
+      }
+
+      // Validate public key format
+      if (!SignatureService.isValidPublicKey(publicKey)) {
+        return res.status(400).json({ error: 'Invalid public key format' });
       }
 
       // Sanitize username: only allow alphanumeric characters
@@ -39,36 +47,57 @@ export class SessionController {
 
       // Validate username format (alphanumeric only, 3-30 chars)
       if (!username || username.length < 3 || username.length > 30) {
-        return res.status(400).json({ error: 'Username must be between 3 and 30 characters long' });
+        return res.status(400).json({ 
+          error: 'Username must be between 3 and 30 characters long' 
+        });
       }
 
       if (!/^[a-zA-Z0-9]{3,30}$/.test(username)) {
-        return res.status(400).json({ error: 'Username can only contain letters and numbers' });
+        return res.status(400).json({ 
+          error: 'Username can only contain letters and numbers' 
+        });
+      }
+
+      // Verify the registration signature
+      const isValidSignature = SignatureService.verifyRegistrationSignature(
+        publicKey,
+        username,
+        email,
+        signature,
+        timestamp
+      );
+
+      if (!isValidSignature) {
+        return res.status(401).json({ 
+          error: 'Invalid signature. Please sign the registration request with your private key.' 
+        });
       }
 
       // Check if user already exists
       const existingUser = await User.findOne({
-        $or: [{ username }, { email }]
+        $or: [
+          { publicKey },
+          { username },
+          ...(email ? [{ email }] : [])
+        ]
       });
 
       if (existingUser) {
         return res.status(409).json({
           error: 'User already exists',
           details: {
+            publicKey: existingUser.publicKey === publicKey ? 'This identity is already registered' : null,
             username: existingUser.username === username ? 'Username is already taken' : null,
-            email: existingUser.email === email ? 'Email is already registered' : null
+            email: email && existingUser.email === email ? 'Email is already registered' : null
           }
         });
       }
 
-      // Hash password
-      const hashedPassword = await bcrypt.hash(password, 10);
-
       // Create new user
       const user = new User({
+        publicKey,
         username,
-        email,
-        password: hashedPassword,
+        email: email || undefined,
       });
 
       await user.save();
@@ -88,6 +117,7 @@ export class SessionController {
         message: 'User registered successfully',
         user: {
           id: user._id,
+          publicKey: user.publicKey,
           username: user.username,
           email: user.email,
           name: user.name,
@@ -99,87 +129,102 @@ export class SessionController {
       res.status(500).json({ error: 'Internal server error' });
     }
   }
-  
-  // Sign in that returns only session data
-  static async signIn(req: Request, res: Response) {
+
+  /**
+   * Request an authentication challenge
+   * The client will sign this challenge to prove ownership of the private key
+   */
+  static async requestChallenge(req: Request, res: Response) {
     try {
-      let { username, password, deviceName, deviceFingerprint, backupCode } = req.body;
+      const { publicKey } = req.body;
 
-      if (!username || !password) {
-        return res.status(400).json({ error: 'Username and password are required' });
+      if (!publicKey) {
+        return res.status(400).json({ error: 'Public key is required' });
       }
 
-      // Sanitize username for username lookup (remove special characters)
-      // Keep original for email lookup since email can contain special characters
-      const sanitizedUsername = username.replace(/[^a-zA-Z0-9]/g, '');
+      if (!SignatureService.isValidPublicKey(publicKey)) {
+        return res.status(400).json({ error: 'Invalid public key format' });
+      }
 
-      // Find user by username or email
-      const user = await User.findOne({
-        $or: [{ username: sanitizedUsername }, { email: username }]
-      }).select('+password'); // Explicitly select password field since it's set to select: false
-
+      // Check if user exists (optional - can allow challenges for unregistered keys)
+      const user = await User.findOne({ publicKey });
       if (!user) {
-        return res.status(401).json({ error: 'Invalid credentials' });
+        return res.status(404).json({ error: 'User not found. Please register first.' });
       }
 
-      if (!user.password) {
-        logger.error('User found but no password field:', user.username);
-        return res.status(500).json({ error: 'Server configuration error' });
+      // Generate challenge
+      const challenge = SignatureService.generateChallenge();
+      const expiresAt = new Date(Date.now() + CHALLENGE_TTL_MS);
+
+      // Store challenge in database
+      await AuthChallenge.create({
+        publicKey,
+        challenge,
+        expiresAt,
+        used: false,
+      });
+
+      return res.json({
+        challenge,
+        expiresAt: expiresAt.toISOString(),
+      });
+    } catch (error) {
+      logger.error('Request challenge error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
+   * Verify a signed challenge and create a session
+   * This is the main authentication endpoint
+   */
+  static async verifyChallenge(req: Request, res: Response) {
+    try {
+      const { publicKey, challenge, signature, timestamp, deviceName, deviceFingerprint } = req.body;
+
+      if (!publicKey || !challenge || !signature || !timestamp) {
+        return res.status(400).json({ 
+          error: 'Public key, challenge, signature, and timestamp are required' 
+        });
       }
 
-      if (!password) {
-        return res.status(400).json({ error: 'Password is required' });
+      // Find the challenge
+      const authChallenge = await AuthChallenge.findOne({
+        publicKey,
+        challenge,
+        used: false,
+        expiresAt: { $gt: new Date() }
+      });
+
+      if (!authChallenge) {
+        return res.status(401).json({ 
+          error: 'Invalid or expired challenge. Please request a new one.' 
+        });
       }
 
-      // Check password
-      const isPasswordValid = await bcrypt.compare(password, user.password);
-      if (!isPasswordValid) {
-        return res.status(401).json({ error: 'Invalid credentials' });
+      // Verify the signature
+      const isValid = SignatureService.verifyChallengeResponse(
+        publicKey,
+        challenge,
+        signature,
+        timestamp
+      );
+
+      if (!isValid) {
+        return res.status(401).json({ error: 'Invalid signature' });
       }
 
-      // If TOTP is enabled, require second factor unless a valid backup code is provided
-      if (user.privacySettings?.twoFactorEnabled) {
-        // Allow backup code as substitute
-        if (typeof backupCode === 'string' && backupCode.length > 0) {
-          const rf = await RecoveryFactors.findOne({ userId: user._id });
-          if (rf && rf.backupCodes && rf.backupCodes.length > 0) {
-            let matched = false;
-            for (const bc of rf.backupCodes) {
-              if (bc.used) continue;
-              const ok = await bcrypt.compare(backupCode, bc.codeHash);
-              if (ok) {
-                bc.used = true; bc.usedAt = new Date();
-                matched = true;
-                break;
-              }
-            }
-            if (matched) {
-              await rf.save();
-              // proceed without TOTP challenge
-            } else {
-              return res.status(401).json({ error: 'Invalid backup code' });
-            }
-          } else {
-            return res.status(400).json({ error: 'No backup codes configured' });
-          }
-        } else {
-          // Require TOTP challenge
-          const totp = await Totp.findOne({ userId: user._id }).select('+secret');
-          if (totp && totp.verified) {
-            const mfaPayload = {
-              userId: user._id.toString(),
-              username: user.username,
-              deviceName: deviceName || null,
-              deviceFingerprint: deviceFingerprint || null,
-              type: 'mfa'
-            };
-            const mfaToken = jwt.sign(mfaPayload, MFA_TOKEN_SECRET, { expiresIn: MFA_TOKEN_TTL_SECONDS });
-            return res.json({ mfaRequired: true, mfaToken, expiresAt: new Date(Date.now() + 5 * 60 * 1000).toISOString() });
-          }
-        }
+      // Mark challenge as used
+      authChallenge.used = true;
+      await authChallenge.save();
+
+      // Find the user
+      const user = await User.findOne({ publicKey });
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
       }
 
-      // Use session service to create or reuse session (handles device fingerprinting and caching)
+      // Create session
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
@@ -193,7 +238,7 @@ export class SessionController {
         deviceId: session.deviceId
       });
 
-      // Return session data (no tokens in response for security)
+      // Return session data
       const response: SessionAuthResponse = {
         sessionId: session.sessionId,
         deviceId: session.deviceId,
@@ -207,200 +252,20 @@ export class SessionController {
 
       res.json(response);
     } catch (error) {
-      logger.error('Login error:', error);
+      logger.error('Verify challenge error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
 
-  // Verify TOTP for login and create a session
-  static async verifyTotpForLogin(req: Request, res: Response) {
-    try {
-      const { mfaToken, code } = req.body || {};
-      if (!mfaToken || !code) {
-        return res.status(400).json({ error: 'mfaToken and code are required' });
-      }
-      let payload: any;
-      try {
-        payload = jwt.verify(mfaToken, MFA_TOKEN_SECRET) as any;
-      } catch (e) {
-        return res.status(401).json({ error: 'Invalid or expired MFA token' });
-      }
-
-      if (payload.type !== 'mfa' || !payload.userId) {
-        return res.status(400).json({ error: 'Invalid MFA token payload' });
-      }
-
-      const user = await User.findById(payload.userId).select('+password');
-      if (!user) {
-        return res.status(401).json({ error: 'Invalid user' });
-      }
-
-      // Load TOTP secret
-      const totp = await Totp.findOne({ userId: user._id }).select('+secret');
-      if (!totp || !totp.secret) {
-        return res.status(400).json({ error: 'TOTP not configured' });
-      }
-
-      // Verify code
-      const isValid = authenticator.verify({ token: code, secret: totp.secret });
-      if (!isValid) {
-        return res.status(401).json({ error: 'Invalid TOTP code' });
-      }
-
-      // Use session service to create session (handles device fingerprinting and caching)
-      const session = await sessionService.createSession(
-        user._id.toString(),
-        req,
-        { 
-          deviceName: payload.deviceName || undefined,
-          deviceFingerprint: payload.deviceFingerprint || undefined
-        }
-      );
-
-      emitSessionUpdate(user._id.toString(), {
-        type: 'session_created',
-        sessionId: session.sessionId,
-        deviceId: session.deviceId
-      });
-
-      const response: SessionAuthResponse = {
-        sessionId: session.sessionId,
-        deviceId: session.deviceId,
-        expiresAt: session.expiresAt.toISOString(),
-        user: {
-          id: user._id.toString(),
-          username: user.username,
-          avatar: user.avatar
-        }
-      };
-      return res.json(response);
-    } catch (error) {
-      logger.error('Verify TOTP for login error:', error);
-      return res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-
-  // Start TOTP enrollment: generate secret and return otpauth URL
-  static async startTotpEnrollment(req: Request, res: Response) {
-    try {
-      const sessionId = req.header('x-session-id') || req.body?.sessionId;
-      if (!sessionId) return res.status(400).json({ error: 'Session ID required' });
-
-      // Validate session using service
-      const result = await sessionService.validateSessionById(sessionId, false);
-      if (!result || !result.session) return res.status(401).json({ error: 'Invalid session' });
-      
-      // Fetch user with password field for TOTP operations
-      const user = await User.findById(result.session.userId).select('+password');
-      if (!user) return res.status(401).json({ error: 'User not found' });
-
-      // Generate secret
-      const secret = authenticator.generateSecret();
-      const issuer = process.env.TOTP_ISSUER || 'Oxy';
-      const label = `${issuer}:${user.username}`;
-      const otpauth = authenticator.keyuri(user.username, issuer, secret);
-
-      // Upsert Totp record (unverified)
-      await Totp.findOneAndUpdate(
-        { userId: user._id },
-        { secret, verified: false },
-        { upsert: true }
-      );
-
-      return res.json({ secret, otpauthUrl: otpauth, issuer, label });
-    } catch (error) {
-      logger.error('Start TOTP enrollment error:', error);
-      return res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-
-  // Verify TOTP enrollment: confirm code and enable 2FA
-  static async verifyTotpEnrollment(req: Request, res: Response) {
-    try {
-      const sessionId = req.header('x-session-id') || req.body?.sessionId;
-      const { code } = req.body || {};
-      if (!sessionId || !code) return res.status(400).json({ error: 'Session ID and code are required' });
-
-      // Validate session using service
-      const result = await sessionService.validateSessionById(sessionId, false);
-      if (!result || !result.session) return res.status(401).json({ error: 'Invalid session' });
-      
-      // Fetch user with password field for TOTP operations
-      const user = await User.findById(result.session.userId).select('+password');
-      if (!user) return res.status(401).json({ error: 'User not found' });
-
-      const totp = await Totp.findOne({ userId: user._id }).select('+secret');
-      if (!totp || !totp.secret) return res.status(400).json({ error: 'TOTP not initialized' });
-
-      const ok = authenticator.verify({ token: code, secret: totp.secret });
-      if (!ok) return res.status(401).json({ error: 'Invalid TOTP code' });
-
-      totp.verified = true;
-      await totp.save();
-
-      // Enable 2FA on user profile
-      user.privacySettings = user.privacySettings || {};
-      user.privacySettings.twoFactorEnabled = true;
-      await user.save();
-
-      // Generate backup codes and a recovery key (plaintext shown once)
-      const codes: string[] = [];
-      for (let i = 0; i < 10; i++) {
-        // Format: XXXX-XXXX (A-Z,0-9)
-        const raw = crypto.randomBytes(4).toString('hex').slice(0, 8).toUpperCase();
-        codes.push(`${raw.slice(0,4)}-${raw.slice(4)}`);
-      }
-      const backupCodeHashes = await Promise.all(codes.map(async (c) => ({
-        codeHash: await bcrypt.hash(c, 10), used: false, createdAt: new Date()
-      })));
-
-      // Recovery key format: oxy-xxxx-xxxx-xxxx (alnum lower)
-      const rkRaw = 'oxy-' + crypto.randomBytes(6).toString('hex').match(/.{1,4}/g)!.slice(0,3).join('-');
-      const recoveryKeyHash = await bcrypt.hash(rkRaw, 10);
-
-      await RecoveryFactors.findOneAndUpdate(
-        { userId: user._id },
-        { backupCodes: backupCodeHashes, recoveryKeyHash, lastRotatedAt: new Date() },
-        { upsert: true }
-      );
-
-      return res.json({ enabled: true, backupCodes: codes, recoveryKey: rkRaw });
-    } catch (error) {
-      logger.error('Verify TOTP enrollment error:', error);
-      return res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-
-  // Disable TOTP: require valid code
-  static async disableTotp(req: Request, res: Response) {
-    try {
-      const sessionId = req.header('x-session-id') || req.body?.sessionId;
-      const { code } = req.body || {};
-      if (!sessionId || !code) return res.status(400).json({ error: 'Session ID and code are required' });
-
-      // Validate session using service
-      const result = await sessionService.validateSessionById(sessionId, false);
-      if (!result || !result.session) return res.status(401).json({ error: 'Invalid session' });
-      
-      // Fetch user with password field for TOTP operations
-      const user = await User.findById(result.session.userId).select('+password');
-      if (!user) return res.status(401).json({ error: 'User not found' });
-
-      const totp = await Totp.findOne({ userId: user._id }).select('+secret');
-      if (!totp || !totp.secret) return res.status(400).json({ error: 'TOTP not configured' });
-
-      const ok = authenticator.verify({ token: code, secret: totp.secret });
-      if (!ok) return res.status(401).json({ error: 'Invalid TOTP code' });
-
-      await Totp.deleteOne({ userId: user._id });
-      user.privacySettings.twoFactorEnabled = false;
-      await user.save();
-
-      return res.json({ disabled: true });
-    } catch (error) {
-      logger.error('Disable TOTP error:', error);
-      return res.status(500).json({ error: 'Internal server error' });
-    }
+  /**
+   * Legacy signIn method - now redirects to challenge-response flow
+   * Kept for backwards compatibility during transition
+   */
+  static async signIn(req: Request, res: Response) {
+    return res.status(400).json({
+      error: 'Password authentication is no longer supported. Please use challenge-response authentication.',
+      hint: 'Use POST /auth/challenge to request a challenge, then POST /auth/verify to authenticate.'
+    });
   }
 
   // Get user data by session ID
@@ -593,7 +458,7 @@ export class SessionController {
     }
   }
 
-  // Validate session with user data included - automatically reads from header or URL param
+  // Validate session with user data included
   static async validateSession(req: Request, res: Response) {
     try {
       // Try to get session ID from header first, then fallback to URL parameter
@@ -614,12 +479,6 @@ export class SessionController {
           error: 'Invalid or expired session',
           sessionId: sessionId.substring(0, 8) + '...'
         });
-      }
-
-      // Optional: Log device fingerprint if provided
-      const deviceFingerprint = req.header('x-device-fingerprint');
-      if (deviceFingerprint) {
-        logger.debug(`Session ${sessionId.substring(0, 8)}... validated with device fingerprint: ${deviceFingerprint.substring(0, 16)}...`);
       }
 
       const userData = normalizeUser(result.user);
@@ -663,7 +522,6 @@ export class SessionController {
       if (deviceFingerprint && result.session.deviceInfo?.fingerprint) {
         if (deviceFingerprint !== result.session.deviceInfo.fingerprint) {
           logger.debug(`Device fingerprint mismatch for session ${sessionId.substring(0, 8)}...`);
-          // Don't reject the request, just log the mismatch
         }
       }
 
@@ -704,7 +562,7 @@ export class SessionController {
     }
   }
 
-  // Batch endpoint to get multiple user profiles by session IDs - optimized for speed
+  // Batch endpoint to get multiple user profiles by session IDs
   static async getUsersBySessions(req: Request, res: Response) {
     try {
       const { sessionIds } = req.body;
@@ -720,19 +578,17 @@ export class SessionController {
       const MAX_BATCH_SIZE = 20;
       const limitedSessionIds = uniqueSessionIds.slice(0, MAX_BATCH_SIZE);
 
-      // Use optimized batch query to get all sessions with users in one database call
-      // Uses compound index: { sessionId: 1, isActive: 1, expiresAt: 1 }
       const now = new Date();
       const sessions = await Session.find({
         sessionId: { $in: limitedSessionIds },
         isActive: true,
         expiresAt: { $gt: now }
       })
-      .populate('userId', 'username email avatar name')
+      .populate('userId', 'username email avatar name publicKey')
       .lean()
       .exec();
 
-      // Transform to user data format matching getUserBySession - optimized loop
+      // Transform to user data format
       const usersMap = new Map<string, any>();
       
       for (const session of sessions) {
@@ -828,271 +684,33 @@ export class SessionController {
     }
   }
 
-  // Request account recovery (send 6-digit code)
-  static async requestRecovery(req: Request, res: Response) {
+  /**
+   * Get user by public key
+   * Useful for looking up users without a session
+   */
+  static async getUserByPublicKey(req: Request, res: Response) {
     try {
-      const { identifier } = req.body || {};
-      if (!identifier || typeof identifier !== 'string') {
-        return res.status(400).json({ error: 'Identifier (email or username) is required' });
+      const { publicKey } = req.params;
+
+      if (!publicKey) {
+        return res.status(400).json({ error: 'Public key is required' });
       }
 
-      // Find user by email or username
-      const user = await User.findOne({
-        $or: [{ email: identifier }, { username: identifier }]
-      });
+      if (!SignatureService.isValidPublicKey(publicKey)) {
+        return res.status(400).json({ error: 'Invalid public key format' });
+      }
 
-      // Always respond 200 to prevent user enumeration; only proceed if user exists
+      const user = await User.findOne({ publicKey });
+
       if (!user) {
-        return res.json({ success: true });
+        return res.status(404).json({ error: 'User not found' });
       }
 
-      // Generate a 6-digit numeric code
-      const code = Math.floor(100000 + Math.random() * 900000).toString();
-
-      // Hash the code using bcrypt
-      const codeHash = await bcrypt.hash(code, 10);
-
-      // Create recovery record with 15-minute expiration
-      const expiresAt = new Date(Date.now() + 15 * 60 * 1000);
-      await RecoveryCode.create({
-        userId: user._id,
-        identifier,
-        codeHash,
-        expiresAt,
-        used: false,
-        attempts: 0,
-      });
-
-      // Log masked output for development visibility
-      const mask = (email: string) => {
-        const at = email.indexOf('@');
-        if (at > 1) return email[0] + '***' + email.slice(at - 1);
-        return '***';
-      };
-      const destination = user.email ? mask(user.email) : 'on-file';
-      logger.info(`[Recovery] Code for ${user.username}: ${code} (expires in 15m)`);
-
-      return res.json({ success: true, delivery: 'email', destination });
+      const userData = normalizeUser(user);
+      res.json(userData);
     } catch (error) {
-      logger.error('Request recovery error:', error);
-      return res.status(500).json({ error: 'Internal server error' });
-    }
-  }
-
-  // Verify recovery code (without changing password)
-  static async verifyRecoveryCode(req: Request, res: Response) {
-    try {
-      const { identifier, code } = req.body || {};
-      if (!identifier || !code) {
-        return res.status(400).json({ verified: false, error: 'Identifier and code are required' });
-      }
-
-      const user = await User.findOne({
-        $or: [{ email: identifier }, { username: identifier }]
-      });
-      if (!user) {
-        // Do not reveal if user exists
-        return res.json({ verified: false });
-      }
-
-      // Get the latest unused, unexpired code
-      const rec = await RecoveryCode.findOne({
-        userId: user._id,
-        used: false,
-        expiresAt: { $gt: new Date() }
-      }).sort({ createdAt: -1 });
-
-      if (!rec) {
-        return res.json({ verified: false });
-      }
-
-      // Compare code
-      const ok = await bcrypt.compare(code, rec.codeHash);
-      if (!ok) {
-        // Increment attempts but do not block
-        rec.attempts += 1;
-        await rec.save();
-        return res.json({ verified: false });
-      }
-
-      return res.json({ verified: true });
-    } catch (error) {
-      logger.error('Verify recovery code error:', error);
-      return res.status(500).json({ verified: false, error: 'Internal server error' });
-    }
-  }
-
-  // Reset password using identifier + code
-  static async resetPassword(req: Request, res: Response) {
-    try {
-      const { identifier, code, newPassword } = req.body || {};
-      if (!identifier || !code || !newPassword) {
-        return res.status(400).json({ success: false, error: 'Identifier, code and newPassword are required' });
-      }
-
-      const user = await User.findOne({
-        $or: [{ email: identifier }, { username: identifier }]
-      }).select('+password');
-      if (!user) {
-        // Do not reveal existence
-        return res.json({ success: true });
-      }
-
-      const rec = await RecoveryCode.findOne({
-        userId: user._id,
-        used: false,
-        expiresAt: { $gt: new Date() }
-      }).sort({ createdAt: -1 });
-
-      if (!rec) {
-        return res.status(401).json({ success: false, error: 'Invalid or expired code' });
-      }
-
-      const ok = await bcrypt.compare(code, rec.codeHash);
-      if (!ok) {
-        rec.attempts += 1;
-        await rec.save();
-        return res.status(401).json({ success: false, error: 'Invalid code' });
-      }
-
-      // Update password
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
-      user.password = hashedPassword as any;
-      await user.save();
-
-      // Mark code as used
-      rec.used = true;
-      await rec.save();
-
-      // Invalidate all active sessions for this user
-      await sessionService.deactivateAllUserSessions(user._id.toString());
-
-      logger.info(`Password reset for user ${user.username}. Active sessions invalidated.`);
-      return res.json({ success: true });
-    } catch (error) {
-      logger.error('Reset password error:', error);
-      return res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-  }
-
-  // Reset password using TOTP code (no email)
-  static async resetPasswordWithTotp(req: Request, res: Response) {
-    try {
-      const { identifier, code, newPassword } = req.body || {};
-      if (!identifier || !code || !newPassword) {
-        return res.status(400).json({ success: false, error: 'Identifier, code and newPassword are required' });
-      }
-
-      const user = await User.findOne({
-        $or: [{ email: identifier }, { username: identifier }]
-      }).select('+password');
-      if (!user) {
-        // do not reveal existence
-        return res.json({ success: true });
-      }
-
-      const totp = await Totp.findOne({ userId: user._id }).select('+secret');
-      if (!totp || !totp.secret || !totp.verified) {
-        return res.status(400).json({ success: false, error: 'TOTP is not configured for this account' });
-      }
-
-      const ok = authenticator.verify({ token: code, secret: totp.secret });
-      if (!ok) {
-        return res.status(401).json({ success: false, error: 'Invalid TOTP code' });
-      }
-
-      // Update password
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
-      user.password = hashedPassword as any;
-      await user.save();
-
-      // Invalidate all active sessions
-      await sessionService.deactivateAllUserSessions(user._id.toString());
-
-      return res.json({ success: true });
-    } catch (error) {
-      logger.error('Reset password with TOTP error:', error);
-      return res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-  }
-
-  // Reset with backup code
-  static async resetPasswordWithBackupCode(req: Request, res: Response) {
-    try {
-      const { identifier, backupCode, newPassword } = req.body || {};
-      if (!identifier || !backupCode || !newPassword) {
-        return res.status(400).json({ success: false, error: 'Identifier, backupCode and newPassword are required' });
-      }
-      const user = await User.findOne({ $or: [{ email: identifier }, { username: identifier }] }).select('+password');
-      if (!user) return res.json({ success: true });
-
-      const rf = await RecoveryFactors.findOne({ userId: user._id });
-      if (!rf || !rf.backupCodes || rf.backupCodes.length === 0) {
-        return res.status(400).json({ success: false, error: 'No backup codes configured' });
-      }
-      let matched = false;
-      for (const bc of rf.backupCodes) {
-        if (bc.used) continue;
-        const ok = await bcrypt.compare(backupCode, bc.codeHash);
-        if (ok) { bc.used = true; bc.usedAt = new Date(); matched = true; break; }
-      }
-      if (!matched) return res.status(401).json({ success: false, error: 'Invalid backup code' });
-
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
-      user.password = hashedPassword as any;
-      await user.save();
-
-      await rf.save();
-      await sessionService.deactivateAllUserSessions(user._id.toString());
-
-      // Force disabling TOTP to require re-enrollment later
-      user.privacySettings.twoFactorEnabled = false;
-      await user.save();
-      await Totp.deleteOne({ userId: user._id });
-
-      return res.json({ success: true });
-    } catch (error) {
-      logger.error('Reset password with backup code error:', error);
-      return res.status(500).json({ success: false, error: 'Internal server error' });
-    }
-  }
-
-  // Reset with recovery key
-  static async resetPasswordWithRecoveryKey(req: Request, res: Response) {
-    try {
-      const { identifier, recoveryKey, newPassword } = req.body || {};
-      if (!identifier || !recoveryKey || !newPassword) {
-        return res.status(400).json({ success: false, error: 'Identifier, recoveryKey and newPassword are required' });
-      }
-      const user = await User.findOne({ $or: [{ email: identifier }, { username: identifier }] }).select('+password');
-      if (!user) return res.json({ success: true });
-
-      const rf = await RecoveryFactors.findOne({ userId: user._id });
-      if (!rf || !rf.recoveryKeyHash) return res.status(400).json({ success: false, error: 'No recovery key configured' });
-      const ok = await bcrypt.compare(recoveryKey, rf.recoveryKeyHash);
-      if (!ok) return res.status(401).json({ success: false, error: 'Invalid recovery key' });
-
-      const hashedPassword = await bcrypt.hash(newPassword, 10);
-      user.password = hashedPassword as any;
-      await user.save();
-
-      // Rotate the recovery key (invalidate old); generate a new hash
-      const rkRaw = 'oxy-' + crypto.randomBytes(6).toString('hex').match(/.{1,4}/g)!.slice(0,3).join('-');
-      rf.recoveryKeyHash = await bcrypt.hash(rkRaw, 10);
-      rf.lastRotatedAt = new Date();
-      await rf.save();
-
-      await sessionService.deactivateAllUserSessions(user._id.toString());
-
-      // Force disabling TOTP to require re-enrollment later
-      user.privacySettings.twoFactorEnabled = false;
-      await user.save();
-      await Totp.deleteOne({ userId: user._id });
-
-      return res.json({ success: true, nextRecoveryKey: rkRaw });
-    } catch (error) {
-      logger.error('Reset password with recovery key error:', error);
-      return res.status(500).json({ success: false, error: 'Internal server error' });
+      logger.error('Get user by public key error:', error);
+      res.status(500).json({ error: 'Internal server error' });
     }
   }
 }

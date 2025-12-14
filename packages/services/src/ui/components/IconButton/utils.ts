@@ -124,7 +124,7 @@ const getIconColor = ({
     return customIconColor;
   }
 
-  return theme.colors.text;
+  return theme.colors.text || theme.colors.onSurface;
 };
 
 const getRippleColor = ({

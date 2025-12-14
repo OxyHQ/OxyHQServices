@@ -25,6 +25,7 @@ type IconProps = {
    */
   size: number;
   allowFontScaling?: boolean;
+  style?: any;
 };
 
 const isImageSource = (source: any) =>
@@ -124,7 +125,7 @@ const Icon = ({
       ? source.source
       : source;
   const iconColor =
-    color || (theme.isV3 ? theme.colors.onSurface : theme.colors.text);
+    color || (theme.isV3 ? theme.colors.onSurface : (theme.colors.text || theme.colors.onSurface));
 
   if (isImageSource(s)) {
     return (
@@ -150,6 +151,11 @@ const Icon = ({
   } else if (typeof s === 'string') {
     // String icons - use MaterialCommunityIcons from @expo/vector-icons
     // This is the default icon library used by react-native-paper
+    const styleArray = Array.isArray(rest.style)
+      ? rest.style
+      : rest.style
+        ? [rest.style]
+        : [];
     return (
       <MaterialCommunityIcons
         name={s as any}
@@ -159,8 +165,8 @@ const Icon = ({
           {
             transform: [{ scaleX: direction === 'rtl' ? -1 : 1 }],
           },
-          rest.style,
-        ]}
+          ...styleArray,
+        ] as any}
         testID={testID}
         {...accessibilityProps}
       />

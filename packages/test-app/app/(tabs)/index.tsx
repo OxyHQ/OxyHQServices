@@ -197,30 +197,12 @@ export default function HomeScreen() {
               <GroupedSection
                 items={[
                   {
-                    id: 'sign-in',
-                    icon: 'enter',
+                    id: 'oxy-auth',
+                    icon: 'qr-code',
                     iconColor: colors.iconSecurity,
-                    title: 'Sign In',
-                    subtitle: 'Sign in screen',
-                    onPress: () => handleOpenScreen('SignIn'),
-                    showChevron: true,
-                  },
-                  {
-                    id: 'sign-up',
-                    icon: 'person-add',
-                    iconColor: colors.iconSecurity,
-                    title: 'Sign Up',
-                    subtitle: 'Create new account',
-                    onPress: () => handleOpenScreen('SignUp'),
-                    showChevron: true,
-                  },
-                  {
-                    id: 'recover-account',
-                    icon: 'key',
-                    iconColor: colors.iconSecurity,
-                    title: 'Recover Account',
-                    subtitle: 'Account recovery',
-                    onPress: () => handleOpenScreen('RecoverAccount'),
+                    title: 'Sign in with Oxy',
+                    subtitle: 'QR code authentication flow',
+                    onPress: () => handleOpenScreen('OxyAuth'),
                     showChevron: true,
                   },
                   {

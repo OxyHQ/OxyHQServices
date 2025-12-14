@@ -256,6 +256,30 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     }
 
     /**
+     * Convert binary string to base64 (manual implementation for Node.js when btoa is not available)
+     */
+    binaryToBase64(binary: string): string {
+      const base64Chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
+      let result = '';
+      let i = 0;
+      
+      while (i < binary.length) {
+        const a = binary.charCodeAt(i++);
+        const b = i < binary.length ? binary.charCodeAt(i++) : 0;
+        const c = i < binary.length ? binary.charCodeAt(i++) : 0;
+        
+        const bitmap = (a << 16) | (b << 8) | c;
+        
+        result += base64Chars.charAt((bitmap >> 18) & 63);
+        result += base64Chars.charAt((bitmap >> 12) & 63);
+        result += i - 2 < binary.length ? base64Chars.charAt((bitmap >> 6) & 63) : '=';
+        result += i - 1 < binary.length ? base64Chars.charAt(bitmap & 63) : '=';
+      }
+      
+      return result;
+    }
+
+    /**
      * Convert ArrayBuffer to base64 string (safe chunked approach to avoid stack overflow)
      */
     arrayBufferToBase64Safe(buffer: ArrayBuffer): string {
@@ -269,12 +293,13 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
           const chunk = bytes.slice(i, i + chunkSize);
           binary += String.fromCharCode.apply(null, Array.from(chunk));
         }
-        return typeof btoa !== 'undefined' ? btoa(binary) : Buffer.from(binary, 'binary').toString('base64');
+        // Use btoa if available (browser/React Native), otherwise use manual encoding
+        return typeof btoa !== 'undefined' ? btoa(binary) : this.binaryToBase64(binary);
       }
       
       // Small buffers can use direct conversion
       const binary = String.fromCharCode.apply(null, Array.from(bytes));
-      return typeof btoa !== 'undefined' ? btoa(binary) : Buffer.from(binary, 'binary').toString('base64');
+      return typeof btoa !== 'undefined' ? btoa(binary) : this.binaryToBase64(binary);
     }
 
     /**

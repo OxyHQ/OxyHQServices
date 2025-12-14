@@ -591,7 +591,6 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         textShadowOffset: { width: 0, height: 2 },
         textShadowRadius: 4,
-        textShadowOpacity: 0.8,
         letterSpacing: -1,
     },
     rarityBadge: {

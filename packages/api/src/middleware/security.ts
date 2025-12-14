@@ -17,7 +17,7 @@ const rateLimiter = rateLimit({
 // Critical for preventing brute force attacks
 const authRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 50, // limit each IP to 50 requests per window for auth endpoints
+  max: process.env.NODE_ENV === 'development' ? 500 : 50, // limit each IP to 50 requests per window for auth endpoints (500 in dev)
   message: "Too many authentication attempts from this IP, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,

@@ -50,6 +50,10 @@ export default function TabLayout() {
     showBottomSheet?.('AccountOverview');
   }, [showBottomSheet]);
 
+  const handleScanQR = useCallback(() => {
+    router.push('/(tabs)/scan-qr');
+  }, [router]);
+
   const handleScroll = useCallback((event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     setIsScrolled(offsetY > 10);
@@ -105,6 +109,11 @@ export default function TabLayout() {
         </View>
 
         <View style={styles.desktopBottomActions}>
+          <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleScanQR}>
+            <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
+              <MaterialCommunityIcons name="qrcode-scan" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
+            </View>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleReload}>
             <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
               <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
@@ -160,6 +169,13 @@ export default function TabLayout() {
         options={{
           drawerLabel: 'Security & sign-in',
           title: 'Security & sign-in',
+        }}
+      />
+      <Drawer.Screen
+        name="about-identity"
+        options={{
+          drawerLabel: 'About Your Identity',
+          title: 'About Your Identity',
         }}
       />
       <Drawer.Screen
@@ -227,6 +243,21 @@ export default function TabLayout() {
         name="search"
         options={{
           drawerItemStyle: { display: 'none' },
+        }}
+      />
+      <Drawer.Screen
+        name="authorize"
+        options={{
+          drawerItemStyle: { display: 'none' },
+          title: 'Authorize',
+        }}
+      />
+      <Drawer.Screen
+        name="scan-qr"
+        options={{
+          drawerItemStyle: { display: 'none' },
+          title: 'Scan QR Code',
+          headerShown: false,
         }}
       />
     </Drawer>

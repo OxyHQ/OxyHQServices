@@ -42,6 +42,7 @@ const styles = StyleSheet.create({
         width: '100%',
     },
     fullScreenWrapper: {
+        flex: 1,
     },
     centeredWrapper: {
         maxWidth: 600,

@@ -6,9 +6,26 @@
  * - Backend: Core functionality only (UI components are no-ops)
  */
 
+// IMPORTANT: Import crypto module first to ensure polyfills are loaded
+// before any other code that might use Buffer or other polyfilled APIs
+import './crypto/polyfill';
+
+// Crypto/Identity exports (must be before core to ensure polyfills are available)
+export { 
+  KeyManager, 
+  SignatureService, 
+  RecoveryPhraseService 
+} from './crypto';
+
 // Core exports
 export { OxyServices, OxyAuthenticationError, OxyAuthenticationTimeoutError } from './core';
 export { OXY_CLOUD_URL, oxyClient } from './core';
+export type { 
+  KeyPair, 
+  SignedMessage, 
+  AuthChallenge, 
+  RecoveryPhraseResult 
+} from './crypto';
 
 // React context
 export { 

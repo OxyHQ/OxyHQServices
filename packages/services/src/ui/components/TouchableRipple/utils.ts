@@ -1,6 +1,6 @@
 import type { ColorValue } from 'react-native';
 
-import color from 'color';
+import colorUtil from 'color';
 
 import type { InternalTheme } from '../types';
 
@@ -40,9 +40,9 @@ const getRippleColor = ({
   }
 
   if (theme.dark) {
-    return colorUtil(theme.colors.onSurface || theme.colors.text).alpha(0.32).rgb().string();
+    return colorUtil(theme.colors.onSurface || theme.colors.text || '#000000').alpha(0.32).rgb().string();
   }
-  return colorUtil(theme.colors.text).alpha(0.2).rgb().string();
+  return colorUtil(theme.colors.text || theme.colors.onSurface || '#000000').alpha(0.2).rgb().string();
 };
 
 export const getTouchableRippleColors = ({

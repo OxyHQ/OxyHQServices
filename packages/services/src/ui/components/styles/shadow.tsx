@@ -20,7 +20,7 @@ function v2Shadow(elevation: number | Animated.Value = 0): ViewStyle | ShadowSty
       return {
         shadowColor: SHADOW_COLOR,
         shadowOffset: {
-          width: new Animated.Value(0),
+          width: 0,
           height: elevation.interpolate({
             inputRange,
             outputRange: [0, 0.5, 0.75, 2, 7, 23],
@@ -35,13 +35,13 @@ function v2Shadow(elevation: number | Animated.Value = 0): ViewStyle | ShadowSty
           inputRange,
           outputRange: [0, 0.75, 1.5, 3, 8, 24],
         }),
-      } as ShadowStyleIOS;
+      } as unknown as ShadowStyleIOS;
     } else {
       return {
         elevation: elevation.interpolate({
           inputRange,
           outputRange: [0, 1, 2, 3, 8, 24],
-        }),
+        }) as unknown as number,
       };
     }
   } else {
@@ -92,7 +92,7 @@ function v3Shadow(elevation: number | Animated.Value = 0): ViewStyle | ShadowSty
       return {
         shadowColor: MD3_SHADOW_COLOR,
         shadowOffset: {
-          width: new Animated.Value(0),
+          width: 0,
           height: elevation.interpolate({
             inputRange,
             outputRange: shadowHeight,
@@ -107,13 +107,13 @@ function v3Shadow(elevation: number | Animated.Value = 0): ViewStyle | ShadowSty
           inputRange,
           outputRange: shadowRadius,
         }),
-      } as ShadowStyleIOS;
+      } as unknown as ShadowStyleIOS;
     } else {
       return {
         elevation: elevation.interpolate({
           inputRange,
           outputRange: [0, 1, 2, 3, 4, 5],
-        }),
+        }) as unknown as number,
       };
     }
   } else {

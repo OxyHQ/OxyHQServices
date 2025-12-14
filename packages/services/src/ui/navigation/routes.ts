@@ -6,9 +6,9 @@ import type { BaseScreenProps } from '../types/navigation';
 // before OxyContext is fully initialized
 
 // Define all available route names
+// Note: SignIn has been replaced with OxyAuth for cross-app authentication via Oxy Accounts
 export type RouteName =
-    | 'SignIn'
-    | 'SignUp'
+    | 'OxyAuth'          // Sign in with Oxy (QR code / deep link to Accounts app)
     | 'AccountOverview'
     | 'AccountSettings'
     | 'AccountCenter'
@@ -26,7 +26,6 @@ export type RouteName =
     | 'LegalDocuments'
     | 'AppInfo'
     | 'PremiumSubscription'
-    | 'RecoverAccount'
     | 'WelcomeNewUser'
     | 'UserLinks'
     | 'HistoryView'
@@ -37,13 +36,16 @@ export type RouteName =
     | 'KarmaRewards'
     | 'KarmaRules'
     | 'AboutKarma'
-    | 'KarmaFAQ';
+    | 'KarmaFAQ'
+    // Legacy aliases for backward compatibility
+    | 'SignIn';  // Maps to OxyAuth
 
 // Lazy screen loaders - functions that return screen components on-demand
 // This breaks the require cycle by deferring imports until screens are actually needed
 const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
-    SignIn: () => require('../screens/SignInScreen').default,
-    SignUp: () => require('../screens/SignUpScreen').default,
+    OxyAuth: () => require('../screens/OxyAuthScreen').default,
+    // Legacy alias - SignIn now maps to OxyAuth
+    SignIn: () => require('../screens/OxyAuthScreen').default,
     AccountOverview: () => require('../screens/AccountOverviewScreen').default,
     AccountSettings: () => require('../screens/AccountSettingsScreen').default,
     AccountCenter: () => require('../screens/AccountCenterScreen').default,
@@ -61,7 +63,6 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     LegalDocuments: () => require('../screens/LegalDocumentsScreen').default,
     AppInfo: () => require('../screens/AppInfoScreen').default,
     PremiumSubscription: () => require('../screens/PremiumSubscriptionScreen').default,
-    RecoverAccount: () => require('../screens/RecoverAccountScreen').default,
     WelcomeNewUser: () => require('../screens/WelcomeNewUserScreen').default,
     UserLinks: () => require('../screens/UserLinksScreen').default,
     HistoryView: () => require('../screens/HistoryViewScreen').default,
@@ -110,4 +111,3 @@ export const getScreenComponent = (routeName: RouteName): ComponentType<BaseScre
 export const isValidRoute = (routeName: string): routeName is RouteName => {
     return routeName in screenLoaders;
 };
-

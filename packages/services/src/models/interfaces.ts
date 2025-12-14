@@ -23,6 +23,7 @@ export interface OxyConfig {
 
 export interface User {
   id: string;
+  publicKey: string;
   username: string;
   email?: string;
   // Avatar file id (asset id)

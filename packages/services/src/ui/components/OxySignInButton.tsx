@@ -2,7 +2,6 @@ import type React from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyle, type StyleProp, Platform } from 'react-native';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
-import { fontFamilies } from '../styles/fonts';
 
 export interface OxySignInButtonProps {
     /**
@@ -44,19 +43,13 @@ export interface OxySignInButtonProps {
      * @default false
      */
     showWhenAuthenticated?: boolean;
-
-    /**
-     * Which screen to open in the bottom sheet
-     * @default 'SignIn'
-     */
-    screen?: 'SignIn' | 'SignUp' | 'RecoverAccount';
 }
 
 /**
- * A pre-styled button component for signing in with Oxy services
+ * A pre-styled button component for signing in with Oxy identity
  * 
- * This component automatically integrates with the OxyProvider context
- * and will control the authentication bottom sheet when pressed.
+ * This component opens the Oxy Auth flow which allows users to authenticate
+ * using their Oxy Accounts identity (via QR code or deep link).
  * 
  * @example
  * ```tsx
@@ -85,7 +78,6 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     text = 'Sign in with Oxy',
     disabled = false,
     showWhenAuthenticated = false,
-    screen = 'SignIn',
 }) => {
     // Get all needed values from context in a single call
     const { isAuthenticated, showBottomSheet } = useOxy();
@@ -100,9 +92,9 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
             return;
         }
 
-        // Use the new bottom sheet system to show the sign-in screen
+        // Use the new bottom sheet system to show the OxyAuth screen
         if (showBottomSheet) {
-            showBottomSheet(screen as any);
+            showBottomSheet('OxyAuth');
         } else {
             if (__DEV__) {
                 console.warn(
@@ -135,9 +127,6 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
                 return [styles.textDefault, textStyle];
         }
     };
-
-    // This function was previously used for logo container styling
-    // Now removed as we're not using the container anymore
 
     return (
         <TouchableOpacity
@@ -203,7 +192,7 @@ const styles = StyleSheet.create({
     },
     text: {
         fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-SemiBold',
-        fontWeight: Platform.OS === 'web' ? '600' : undefined, // Only apply fontWeight on web
+        fontWeight: Platform.OS === 'web' ? '600' : undefined,
         fontSize: 16,
         marginLeft: 10,
     },

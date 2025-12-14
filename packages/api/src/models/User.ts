@@ -2,8 +2,8 @@ import mongoose, { Document, Schema } from "mongoose";
 
 export interface IUser extends Document {
   username: string;
-  email: string;
-  password: string;
+  email?: string;
+  publicKey: string; // ECDSA secp256k1 public key (hex) - primary identifier
   refreshToken?: string | null;
   following?: mongoose.Types.ObjectId[];
   followers?: mongoose.Types.ObjectId[];
@@ -144,16 +144,18 @@ const UserSchema: Schema = new Schema(
     },
     email: {
       type: String,
+      unique: true,
+      sparse: true, // Allows null/undefined values while maintaining uniqueness
+      trim: true,
+      select: true,
+    },
+    publicKey: {
+      type: String,
       required: true,
       unique: true,
       trim: true,
       select: true,
-    },
-    password: {
-      type: String,
-      required: true,
-      select: false,
-      set: (v: string) => v,
+      index: true,
     },
     refreshToken: {
       type: String,
@@ -274,15 +276,16 @@ UserSchema.set("toObject", {
 
 // Indexes for frequently queried fields
 // Note: email and username already have unique indexes from schema definition
-// For $or queries like { $or: [{ email: x }, { username: x }] }, MongoDB will use
-// the individual unique indexes on email and username, which is optimal.
+// publicKey is the primary identifier for authentication
+
+// Public key index is already defined in schema, but ensure it's the primary lookup
+UserSchema.index({ publicKey: 1 });
 
 // Social graph indexes
 UserSchema.index({ following: 1 });
 UserSchema.index({ followers: 1 });
 
-// Compound index for efficient user lookups (though individual unique indexes are used for $or queries)
-// This can help with queries that filter on both fields simultaneously
+// Compound index for efficient user lookups
 UserSchema.index({ email: 1, username: 1 }, { sparse: true });
 
 // Geospatial index for locations

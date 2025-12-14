@@ -568,7 +568,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                                     keyboardType="numeric"
                                     maxLength={19}
                                     style={styles.cardFieldContainer}
-                                    leading={<Ionicons name="card-outline" size={18} color={colors.primary} />}
+                                    left={<Ionicons name="card-outline" size={18} color={colors.primary} />}
                                 />
                                 <View style={styles.cardFieldRow}>
                                     <TextField
@@ -581,7 +581,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                                         placeholder="MM/YY"
                                         maxLength={5}
                                         style={styles.cardFieldHalfLeft}
-                                        leading={<Ionicons name="calendar-outline" size={16} color={colors.primary} />}
+                                        left={<Ionicons name="calendar-outline" size={16} color={colors.primary} />}
                                     />
                                     <TextField
                                         value={cardDetails.cvv}
@@ -594,7 +594,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                                         keyboardType="numeric"
                                         maxLength={4}
                                         style={styles.cardFieldHalfRight}
-                                        leading={<Ionicons name="lock-closed-outline" size={16} color={colors.primary} />}
+                                        left={<Ionicons name="lock-closed-outline" size={16} color={colors.primary} />}
                                     />
                                 </View>
                             </View>

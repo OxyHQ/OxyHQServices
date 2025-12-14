@@ -72,10 +72,10 @@ const AnimatedText = forwardRef<Text & HTMLElement, Props<never>>(
         />
       );
     } else {
-      const font = !theme.isV3 ? theme.fonts.regular : theme.fonts.bodyMedium;
+      const font = !theme.isV3 ? (theme.fonts.regular || theme.fonts.default) : theme.fonts.bodyMedium;
       const textStyle = {
         ...font,
-        color: theme.isV3 ? theme.colors.onSurface : theme.colors.text,
+        color: theme.isV3 ? theme.colors.onSurface : (theme.colors.text || theme.colors.onSurface),
       };
       return (
         <Animated.Text
@@ -102,6 +102,6 @@ const styles = StyleSheet.create({
 });
 
 export const customAnimatedText = <T,>() =>
-  AnimatedText as (props: Props<T>) => JSX.Element;
+  AnimatedText as (props: Props<T>) => React.ReactElement;
 
 export default AnimatedText;

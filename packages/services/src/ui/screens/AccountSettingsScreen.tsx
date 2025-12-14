@@ -314,7 +314,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     // Use a ref to track if we've already set the initial field to avoid loops
     const hasSetInitialFieldRef = useRef(false);
     const previousInitialFieldRef = useRef<string | undefined>(undefined);
-    const initialFieldTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const initialFieldTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
     // Delay constant for scroll completion
     const SCROLL_DELAY_MS = 600;

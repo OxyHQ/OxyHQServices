@@ -10,7 +10,7 @@ import {
 
 import { getIconColor } from './utils';
 import { useInternalTheme } from '../../theming';
-import type { $Omit, ThemeProp } from "../types";
+import type { $Omit, ThemeProp } from "../../types";
 import type { IconSource } from '../../Icon';
 import IconButton from '../../IconButton/IconButton';
 import { ICON_SIZE } from '../constants';
