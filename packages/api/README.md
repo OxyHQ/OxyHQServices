@@ -230,6 +230,12 @@ Health check endpoint:
 curl http://localhost:3001/health
 ```
 
+## Storage Usage
+
+The API exposes an authenticated endpoint to retrieve **account storage usage** aggregated from the Central Asset Service:
+
+- `GET /api/storage/usage`: returns total used bytes, plan limit bytes, and a category breakdown.
+
 Response:
 ```json
 {

@@ -27,7 +27,7 @@ const GroupedSectionComponent = ({ items }: GroupedSectionProps) => {
     return (
         <View style={{ width: '100%' }}>
             {items.map((item, index) => (
-                <View key={item.id} style={{ marginBottom: index < items.length - 1 ? 4 : 0 }}>
+                <View key={`${item.id}-${index}`} style={{ marginBottom: index < items.length - 1 ? 4 : 0 }}>
                     <GroupedItem
                         icon={item.icon}
                         iconColor={item.iconColor}

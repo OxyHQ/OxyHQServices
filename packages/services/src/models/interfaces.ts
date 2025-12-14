@@ -384,6 +384,29 @@ export interface AssetUpdateVisibilityResponse {
   };
 }
 
+/**
+ * Account storage usage (server-side usage, not local AsyncStorage)
+ */
+export interface AccountStorageCategoryUsage {
+  bytes: number;
+  count: number;
+}
+
+export interface AccountStorageUsageResponse {
+  plan: 'basic' | 'pro' | 'business';
+  totalUsedBytes: number;
+  totalLimitBytes: number;
+  categories: {
+    documents: AccountStorageCategoryUsage;
+    mail: AccountStorageCategoryUsage;
+    photosVideos: AccountStorageCategoryUsage;
+    recordings: AccountStorageCategoryUsage;
+    family: AccountStorageCategoryUsage;
+    other: AccountStorageCategoryUsage;
+  };
+  updatedAt: string;
+}
+
 export interface AssetUploadProgress {
   fileId: string;
   uploaded: number;

@@ -59,37 +59,14 @@ export default function AboutIdentityScreen() {
     const loadExportHistory = async () => {
       try {
         setIsLoadingHistory(true);
-        const historyKey = 'oxy_identity_export_history';
-        const oldHistoryKey = 'oxy_private_key_export_history';
-        
-        // Get new history
+        const historyKey = 'oxy_private_key_export_history';
         const stored = await AsyncStorage.getItem(historyKey);
-        let history: Array<{ timestamp: string; date: string }> = [];
-        
         if (stored) {
-          history = JSON.parse(stored);
+          const parsed = JSON.parse(stored);
+          setExportHistory(parsed);
+        } else {
+          setExportHistory([]);
         }
-        
-        // Migrate old history if it exists
-        const oldStored = await AsyncStorage.getItem(oldHistoryKey);
-        if (oldStored) {
-          const oldHistory = JSON.parse(oldStored);
-          // Merge old history with new history, removing duplicates
-          const allHistory = [...history, ...oldHistory];
-          const uniqueHistory = allHistory.filter((entry, index, self) =>
-            index === self.findIndex(e => e.timestamp === entry.timestamp)
-          );
-          // Sort by timestamp (newest first)
-          uniqueHistory.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-          // Keep last 50
-          history = uniqueHistory.slice(0, 50);
-          
-          // Save merged history and remove old key
-          await AsyncStorage.setItem(historyKey, JSON.stringify(history));
-          await AsyncStorage.removeItem(oldHistoryKey);
-        }
-        
-        setExportHistory(history);
       } catch (error) {
         console.error('Failed to load export history:', error);
         setExportHistory([]);
@@ -183,7 +160,7 @@ export default function AboutIdentityScreen() {
   // Save export history
   const saveExportHistory = useCallback(async (timestamp: string) => {
     try {
-      const historyKey = 'oxy_identity_export_history';
+      const historyKey = 'oxy_private_key_export_history';
       const newEntry = {
         timestamp,
         date: new Date(timestamp).toLocaleString(),
@@ -196,11 +173,11 @@ export default function AboutIdentityScreen() {
     }
   }, [exportHistory]);
 
-  // Export identity using expo-print
-  const handleExportIdentity = useCallback(async () => {
+  // Export private key using expo-print
+  const handleExportPrivateKey = useCallback(async () => {
     Alert.alert(
       'Security Warning',
-      'Exporting your identity will print all your identity information including your private key on paper. Anyone with access to this printed document can control your identity. Make sure you are in a secure location and will store the printed document safely.\n\nDo you want to continue?',
+      'Exporting your private key will print it on paper. Anyone with access to this printed key can control your identity. Make sure you are in a secure location and will store the printed document safely.\n\nDo you want to continue?',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -219,17 +196,6 @@ export default function AboutIdentityScreen() {
 
               // Get public key for reference
               const pk = publicKey || await KeyManager.getPublicKey() || 'Unknown';
-
-              // Get user information
-              const displayName = user?.name?.full || user?.name?.first || user?.username || 'Not set';
-              const username = user?.username || 'Not set';
-              const email = user?.email || 'Not set';
-              const accountCreated = user?.createdAt ? new Date(user.createdAt).toLocaleString() : 'Unknown';
-              const accountExpiration = user?.accountExpiresAfterInactivityDays 
-                ? (user.accountExpiresAfterInactivityDays === null 
-                    ? 'Never expires' 
-                    : `Expires after ${user.accountExpiresAfterInactivityDays} days of inactivity`)
-                : 'Not set';
 
               // Create HTML for printing
               const html = `
@@ -271,54 +237,22 @@ export default function AboutIdentityScreen() {
         margin-bottom: 10px;
         color: #856404;
       }
-      .section {
+      .key-section {
         margin: 30px 0;
         padding: 20px;
         background-color: #f8f9fa;
         border: 1px solid #dee2e6;
         border-radius: 8px;
       }
-      .section-title {
-        font-weight: bold;
-        font-size: 16px;
-        margin-bottom: 15px;
-        color: #212529;
-        border-bottom: 1px solid #dee2e6;
-        padding-bottom: 10px;
-      }
-      .info-row {
-        margin: 10px 0;
-        padding: 10px 0;
-        border-bottom: 1px dotted #ced4da;
-      }
-      .info-label {
-        font-weight: bold;
-        font-size: 12px;
-        margin-bottom: 5px;
-        color: #495057;
-      }
-      .info-value {
-        font-family: 'Courier New', monospace;
-        font-size: 12px;
-        color: #212529;
-        word-break: break-word;
-      }
-      .key-section {
-        margin: 30px 0;
-        padding: 20px;
-        background-color: #fff3cd;
-        border: 2px solid #ffc107;
-        border-radius: 8px;
-      }
       .key-label {
         font-weight: bold;
         font-size: 14px;
         margin-bottom: 10px;
-        color: #856404;
+        color: #495057;
       }
       .key-value {
         font-family: 'Courier New', monospace;
-        font-size: 11px;
+        font-size: 12px;
         word-break: break-all;
         background-color: #fff;
         padding: 15px;
@@ -336,13 +270,6 @@ export default function AboutIdentityScreen() {
         font-weight: bold;
         margin-bottom: 10px;
       }
-      .info-section ul {
-        margin: 10px 0;
-        padding-left: 20px;
-      }
-      .info-section li {
-        margin: 5px 0;
-      }
       .footer {
         margin-top: 40px;
         padding-top: 20px;
@@ -355,37 +282,13 @@ export default function AboutIdentityScreen() {
   </head>
   <body>
     <div class="header">
-      <h1>Oxy Identity - Complete Export</h1>
+      <h1>Oxy Identity - Private Key Export</h1>
       <p>Generated: ${new Date().toLocaleString()}</p>
     </div>
 
     <div class="warning">
       <div class="warning-title">⚠️ SECURITY WARNING</div>
-      <p>This document contains your complete identity information including your private key. Anyone with access to this document can control your identity. Store this document in a secure location, such as a safe or safety deposit box. Never share this document with anyone.</p>
-    </div>
-
-    <div class="section">
-      <div class="section-title">Account Information</div>
-      <div class="info-row">
-        <div class="info-label">Display Name:</div>
-        <div class="info-value">${displayName}</div>
-      </div>
-      <div class="info-row">
-        <div class="info-label">Username:</div>
-        <div class="info-value">${username}</div>
-      </div>
-      <div class="info-row">
-        <div class="info-label">Email:</div>
-        <div class="info-value">${email}</div>
-      </div>
-      <div class="info-row">
-        <div class="info-label">Account Created:</div>
-        <div class="info-value">${accountCreated}</div>
-      </div>
-      <div class="info-row">
-        <div class="info-label">Account Expiration:</div>
-        <div class="info-value">${accountExpiration}</div>
-      </div>
+      <p>This document contains your private key. Anyone with access to this key can control your identity. Store this document in a secure location, such as a safe or safety deposit box. Never share this key with anyone.</p>
     </div>
 
     <div class="key-section">
@@ -394,27 +297,24 @@ export default function AboutIdentityScreen() {
     </div>
 
     <div class="key-section">
-      <div class="key-label">Private Key (KEEP SECRET - DO NOT SHARE):</div>
+      <div class="key-label">Private Key (KEEP SECRET):</div>
       <div class="key-value">${privateKey}</div>
     </div>
 
     <div class="info-section">
       <div class="info-title">Important Information:</div>
       <ul>
-        <li>This document contains your complete identity information</li>
-        <li>Your private key is used to sign transactions and prove your identity</li>
+        <li>This private key is used to sign transactions and prove your identity</li>
         <li>If you lose this key and your recovery phrase, you will permanently lose access to your identity</li>
-        <li>Do not store this document digitally (screenshots, cloud storage, email, etc.)</li>
-        <li>Consider storing multiple copies in different secure physical locations</li>
+        <li>Do not store this document digitally (screenshots, cloud storage, etc.)</li>
+        <li>Consider storing multiple copies in different secure locations</li>
         <li>If this key is compromised, you should immediately create a new identity</li>
-        <li>Your recovery phrase is the primary backup method - this export is a secondary backup</li>
       </ul>
     </div>
 
     <div class="footer">
       <p>Oxy Identity - Self-Custody Cryptographic Identity</p>
       <p>This document was generated by the Oxy Accounts app</p>
-      <p>Export Date: ${new Date().toISOString()}</p>
     </div>
   </body>
 </html>
@@ -427,10 +327,10 @@ export default function AboutIdentityScreen() {
               const timestamp = new Date().toISOString();
               await saveExportHistory(timestamp);
 
-              Alert.alert('Success', 'Identity has been sent to printer');
+              Alert.alert('Success', 'Private key has been sent to printer');
             } catch (error: any) {
-              console.error('Failed to export identity:', error);
-              Alert.alert('Error', error?.message || 'Failed to export identity. Please try again.');
+              console.error('Failed to export private key:', error);
+              Alert.alert('Error', error?.message || 'Failed to export private key. Please try again.');
             } finally {
               setIsExporting(false);
             }
@@ -438,7 +338,7 @@ export default function AboutIdentityScreen() {
         },
       ]
     );
-  }, [publicKey, saveExportHistory, user]);
+  }, [publicKey, saveExportHistory]);
 
   // Self-custody features
   const selfCustodyItems = useMemo(() => [
@@ -630,12 +530,12 @@ export default function AboutIdentityScreen() {
                     showChevron: true,
                   },
                   {
-                    id: 'export-identity',
+                    id: 'export-private-key',
                     icon: 'printer',
                     iconColor: '#8B5CF6',
-                    title: 'Export Identity',
-                    subtitle: 'Print your complete identity for secure backup',
-                    onPress: handleExportIdentity,
+                    title: 'Export Private Key',
+                    subtitle: 'Print your private key for secure backup',
+                    onPress: handleExportPrivateKey,
                     showChevron: true,
                     disabled: isExporting,
                     customContent: isExporting ? (
@@ -663,7 +563,7 @@ export default function AboutIdentityScreen() {
           {/* Export History */}
           <Section title="Export History">
             <ThemedText style={styles.sectionDescription}>
-              View your identity export history for transparency and security auditing. All exports are logged locally on this device.
+              View your private key export history for transparency and security auditing.
             </ThemedText>
             <AccountCard>
               {isLoadingHistory ? (

@@ -100,7 +100,10 @@ export type {
   AssetDeleteSummary,
   AssetUploadProgress,
   AssetUpdateVisibilityRequest,
-  AssetUpdateVisibilityResponse
+  AssetUpdateVisibilityResponse,
+  // Account storage usage
+  AccountStorageCategoryUsage,
+  AccountStorageUsageResponse
 } from './models/interfaces';
 
 export type {

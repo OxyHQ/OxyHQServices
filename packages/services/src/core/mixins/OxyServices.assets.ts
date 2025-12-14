@@ -1,7 +1,7 @@
 /**
  * Asset & File Methods Mixin
  */
-import type { AssetInitResponse, AssetUrlResponse, AssetVariant } from '../../models/interfaces';
+import type { AccountStorageUsageResponse, AssetInitResponse, AssetUrlResponse, AssetVariant } from '../../models/interfaces';
 import type { OxyServicesBase } from '../OxyServices.base';
 import { File } from 'expo-file-system';
 
@@ -77,6 +77,21 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
         if (offset) paramsObj.offset = offset;
         return await this.makeRequest('GET', '/api/assets', paramsObj, {
           cache: false, // Don't cache file lists - always get fresh data
+        });
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Get account storage usage (server-side usage aggregated from assets)
+     *
+     * NOTE: This is NOT the same as `getStorage()` from the language mixin (which returns local storage).
+     */
+    async getAccountStorageUsage(): Promise<AccountStorageUsageResponse> {
+      try {
+        return await this.makeRequest<AccountStorageUsageResponse>('GET', '/api/storage/usage', undefined, {
+          cache: false,
         });
       } catch (error) {
         throw this.handleError(error);

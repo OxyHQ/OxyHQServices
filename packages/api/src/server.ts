@@ -19,6 +19,7 @@ import linkMetadataRoutes from './routes/linkMetadata';
 import locationSearchRoutes from './routes/locationSearch';
 import authRoutes from './routes/auth';
 import assetRoutes from './routes/assets';
+import storageRoutes from './routes/storage';
 import developerRoutes from './routes/developer';
 import devicesRouter from './routes/devices';
 import jwt from 'jsonwebtoken';
@@ -296,6 +297,7 @@ app.use(bruteForceProtection);
 // Apply stricter rate limiting to auth routes
 app.use("/api/auth", authRateLimiter, authRoutes);
 app.use("/api/assets", assetRoutes);
+app.use("/api/storage", userRateLimiter, storageRoutes);
 app.use("/api/search", searchRoutes);
 app.use("/api/profiles", profilesRouter);
 app.use("/api/users", userRateLimiter, usersRouter); // Per-user rate limiting for authenticated routes
