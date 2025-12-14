@@ -100,13 +100,10 @@ export function OxyServicesDevicesMixin<T extends typeof OxyServicesBase>(Base: 
     }
 
     /**
-     * Get security information (TOTP status, backup codes count)
+     * Get security information
      * @returns Security information object
      */
     async getSecurityInfo(): Promise<{
-      twoFactorEnabled: boolean;
-      totpCreatedAt: string | null;
-      backupCodesCount: number;
       recoveryEmail: string | null;
     }> {
       try {

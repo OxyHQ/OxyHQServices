@@ -26,14 +26,17 @@ export interface UseAuthOperationsOptions {
   loginFailure: (message: string) => void;
   logoutStore: () => void;
   setAuthState: (state: Partial<AuthState>) => void;
+  // Identity sync store actions
+  setIdentitySynced: (synced: boolean) => void;
+  setSyncing: (syncing: boolean) => void;
   logger?: (message: string, error?: unknown) => void;
 }
 
 export interface UseAuthOperationsResult {
-  /** Create a new identity and register with the server */
-  createIdentity: (username: string, email?: string) => Promise<{ user: User; recoveryPhrase: string[] }>;
+  /** Create a new identity locally (offline-first) and optionally sync with server */
+  createIdentity: () => Promise<{ recoveryPhrase: string[]; synced: boolean }>;
   /** Import an existing identity from recovery phrase */
-  importIdentity: (phrase: string, username?: string, email?: string) => Promise<User>;
+  importIdentity: (phrase: string) => Promise<{ synced: boolean }>;
   /** Sign in with existing identity on device */
   signIn: (deviceName?: string) => Promise<User>;
   /** Logout from current session */
@@ -44,6 +47,10 @@ export interface UseAuthOperationsResult {
   hasIdentity: () => Promise<boolean>;
   /** Get the public key of the stored identity */
   getPublicKey: () => Promise<string | null>;
+  /** Check if identity is synced with server */
+  isIdentitySynced: () => Promise<boolean>;
+  /** Sync local identity with server (when online) */
+  syncIdentity: () => Promise<User>;
 }
 
 const LOGIN_ERROR_CODE = 'LOGIN_ERROR';
@@ -71,103 +78,12 @@ export const useAuthOperations = ({
   loginSuccess,
   loginFailure,
   logoutStore,
-  setAuthState,
-  logger,
+    setAuthState,
+    setIdentitySynced,
+    setSyncing,
+    logger,
 }: UseAuthOperationsOptions): UseAuthOperationsResult => {
   
-  /**
-   * Create a new identity with recovery phrase
-   */
-  const createIdentity = useCallback(
-    async (username: string, email?: string): Promise<{ user: User; recoveryPhrase: string[] }> => {
-      if (!storage) throw new Error('Storage not initialized');
-
-      setAuthState({ isLoading: true, error: null });
-
-      try {
-        // Generate new identity with recovery phrase
-        const { phrase, words, publicKey } = await RecoveryPhraseService.generateIdentityWithRecovery();
-
-        // Create registration signature
-        const { signature, timestamp } = await SignatureService.createRegistrationSignature(username, email);
-
-        // Register with server
-        const { user } = await oxyServices.register(publicKey, username, signature, timestamp, email);
-
-        // Now sign in to create a session
-        const fullUser = await performSignIn(publicKey);
-
-        return {
-          user: fullUser,
-          recoveryPhrase: words,
-        };
-      } catch (error) {
-        // Clean up identity if registration failed
-        await KeyManager.deleteIdentity().catch(() => {});
-        
-        const message = handleAuthError(error, {
-          defaultMessage: 'Failed to create identity',
-          code: REGISTER_ERROR_CODE,
-          onError,
-          setAuthError: (msg) => setAuthState({ error: msg }),
-          logger,
-        });
-        loginFailure(message);
-        throw error;
-      } finally {
-        setAuthState({ isLoading: false });
-      }
-    },
-    [oxyServices, storage, setAuthState, loginFailure, onError, logger],
-  );
-
-  /**
-   * Import identity from recovery phrase
-   */
-  const importIdentity = useCallback(
-    async (phrase: string, username?: string, email?: string): Promise<User> => {
-      if (!storage) throw new Error('Storage not initialized');
-
-      setAuthState({ isLoading: true, error: null });
-
-      try {
-        // Restore identity from phrase
-        const publicKey = await RecoveryPhraseService.restoreFromPhrase(phrase);
-
-        // Check if this identity is already registered
-        const { registered } = await oxyServices.checkPublicKeyRegistered(publicKey);
-
-        if (registered) {
-          // Identity exists, just sign in
-          return await performSignIn(publicKey);
-        } else {
-          // Need to register this identity
-          if (!username) {
-            throw new Error('Username is required for new registration');
-          }
-
-          const { signature, timestamp } = await SignatureService.createRegistrationSignature(username, email);
-          await oxyServices.register(publicKey, username, signature, timestamp, email);
-          
-          return await performSignIn(publicKey);
-        }
-      } catch (error) {
-        const message = handleAuthError(error, {
-          defaultMessage: 'Failed to import identity',
-          code: REGISTER_ERROR_CODE,
-          onError,
-          setAuthError: (msg) => setAuthState({ error: msg }),
-          logger,
-        });
-        loginFailure(message);
-        throw error;
-      } finally {
-        setAuthState({ isLoading: false });
-      }
-    },
-    [oxyServices, storage, setAuthState, loginFailure, onError, logger],
-  );
-
   /**
    * Internal function to perform challenge-response sign in
    */
@@ -180,6 +96,10 @@ export const useAuthOperations = ({
 
       // Request challenge
       const { challenge } = await oxyServices.requestChallenge(publicKey);
+
+      // Note: Biometric authentication check should be handled by the app layer
+      // (e.g., accounts app) before calling signIn. The biometric preference is stored
+      // in local storage as 'oxy_biometric_enabled' and can be checked there.
 
       // Sign the challenge
       const { challenge: signature, timestamp } = await SignatureService.signChallenge(challenge);
@@ -259,6 +179,198 @@ export const useAuthOperations = ({
       switchSession,
       updateSessions,
     ],
+  );
+
+  /**
+   * Create a new identity with recovery phrase (offline-first)
+   * Identity is purely cryptographic - no username or email required
+   */
+  const createIdentity = useCallback(
+    async (): Promise<{ recoveryPhrase: string[]; synced: boolean }> => {
+      if (!storage) throw new Error('Storage not initialized');
+
+      setAuthState({ isLoading: true, error: null });
+
+      try {
+        // Generate new identity with recovery phrase (works offline)
+        const { phrase, words, publicKey } = await RecoveryPhraseService.generateIdentityWithRecovery();
+
+        // Mark as not synced
+        await storage.setItem('oxy_identity_synced', 'false');
+        setIdentitySynced(false);
+
+        // Try to sync with server (will succeed if online)
+        try {
+          const { signature, timestamp } = await SignatureService.createRegistrationSignature();
+          await oxyServices.register(publicKey, signature, timestamp);
+          
+          // Mark as synced (Zustand store + storage)
+          await storage.setItem('oxy_identity_synced', 'true');
+          setIdentitySynced(true);
+
+          return {
+            recoveryPhrase: words,
+            synced: true,
+          };
+        } catch (syncError) {
+          // Offline or server error - identity is created locally but not synced
+          if (__DEV__) {
+            console.log('[Auth] Identity created locally, will sync when online:', syncError);
+          }
+          
+          return {
+            recoveryPhrase: words,
+            synced: false,
+          };
+        }
+      } catch (error) {
+        // Clean up identity if generation failed
+        await KeyManager.deleteIdentity().catch(() => {});
+        await storage.removeItem('oxy_identity_synced').catch(() => {});
+        setIdentitySynced(true);
+        
+        const message = handleAuthError(error, {
+          defaultMessage: 'Failed to create identity',
+          code: REGISTER_ERROR_CODE,
+          onError,
+          setAuthError: (msg) => setAuthState({ error: msg }),
+          logger,
+        });
+        loginFailure(message);
+        throw error;
+      } finally {
+        setAuthState({ isLoading: false });
+      }
+    },
+    [oxyServices, storage, setAuthState, loginFailure, onError, logger, setIdentitySynced],
+  );
+
+  /**
+   * Check if identity is synced with server (reads from storage for persistence)
+   */
+  const isIdentitySyncedFn = useCallback(async (): Promise<boolean> => {
+    if (!storage) return true;
+    const synced = await storage.getItem('oxy_identity_synced');
+    const isSynced = synced !== 'false';
+    setIdentitySynced(isSynced);
+    return isSynced;
+  }, [storage, setIdentitySynced]);
+
+  /**
+   * Sync local identity with server (call when online)
+   */
+  const syncIdentity = useCallback(
+    async (): Promise<User> => {
+      if (!storage) throw new Error('Storage not initialized');
+
+      setAuthState({ isLoading: true, error: null });
+      setSyncing(true);
+
+      try {
+        const publicKey = await KeyManager.getPublicKey();
+        if (!publicKey) {
+          throw new Error('No identity found on this device');
+        }
+
+        // Check if already synced
+        const alreadySynced = await storage.getItem('oxy_identity_synced');
+        if (alreadySynced === 'true') {
+          // Already synced, just sign in
+          setIdentitySynced(true);
+          return await performSignIn(publicKey);
+        }
+
+        // Check if already registered on server
+        const { registered } = await oxyServices.checkPublicKeyRegistered(publicKey);
+
+        if (!registered) {
+          // Register with server (identity is just the publicKey)
+          const { signature, timestamp } = await SignatureService.createRegistrationSignature();
+          await oxyServices.register(publicKey, signature, timestamp);
+        }
+
+        // Mark as synced (Zustand store + storage)
+        await storage.setItem('oxy_identity_synced', 'true');
+        setIdentitySynced(true);
+
+        // Sign in
+        return await performSignIn(publicKey);
+      } catch (error) {
+        const message = handleAuthError(error, {
+          defaultMessage: 'Failed to sync identity',
+          code: REGISTER_ERROR_CODE,
+          onError,
+          setAuthError: (msg) => setAuthState({ error: msg }),
+          logger,
+        });
+        loginFailure(message);
+        throw error;
+      } finally {
+        setAuthState({ isLoading: false });
+        setSyncing(false);
+      }
+    },
+    [oxyServices, storage, setAuthState, performSignIn, loginFailure, onError, logger, setSyncing, setIdentitySynced],
+  );
+
+  /**
+   * Import identity from recovery phrase (offline-first)
+   */
+  const importIdentity = useCallback(
+    async (phrase: string): Promise<{ synced: boolean }> => {
+      if (!storage) throw new Error('Storage not initialized');
+
+      setAuthState({ isLoading: true, error: null });
+
+      try {
+        // Restore identity from phrase (works offline)
+        const publicKey = await RecoveryPhraseService.restoreFromPhrase(phrase);
+
+        // Mark as not synced
+        await storage.setItem('oxy_identity_synced', 'false');
+        setIdentitySynced(false);
+
+        // Try to sync with server
+        try {
+          // Check if this identity is already registered
+          const { registered } = await oxyServices.checkPublicKeyRegistered(publicKey);
+
+          if (registered) {
+            // Identity exists, mark as synced
+            await storage.setItem('oxy_identity_synced', 'true');
+            setIdentitySynced(true);
+            return { synced: true };
+          } else {
+            // Need to register this identity (identity is just the publicKey)
+            const { signature, timestamp } = await SignatureService.createRegistrationSignature();
+            await oxyServices.register(publicKey, signature, timestamp);
+            
+            await storage.setItem('oxy_identity_synced', 'true');
+            setIdentitySynced(true);
+            return { synced: true };
+          }
+        } catch (syncError) {
+          // Offline - identity restored locally but not synced
+          if (__DEV__) {
+            console.log('[Auth] Identity imported locally, will sync when online:', syncError);
+          }
+          return { synced: false };
+        }
+      } catch (error) {
+        const message = handleAuthError(error, {
+          defaultMessage: 'Failed to import identity',
+          code: REGISTER_ERROR_CODE,
+          onError,
+          setAuthError: (msg) => setAuthState({ error: msg }),
+          logger,
+        });
+        loginFailure(message);
+        throw error;
+      } finally {
+        setAuthState({ isLoading: false });
+      }
+    },
+    [oxyServices, storage, setAuthState, loginFailure, onError, logger, setIdentitySynced],
   );
 
   /**
@@ -396,5 +508,7 @@ export const useAuthOperations = ({
     logoutAll,
     hasIdentity,
     getPublicKey,
+    isIdentitySynced: isIdentitySyncedFn,
+    syncIdentity,
   };
 };

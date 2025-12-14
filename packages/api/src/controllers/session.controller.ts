@@ -28,12 +28,12 @@ export class SessionController {
    */
   static async register(req: Request, res: Response) {
     try {
-      let { publicKey, username, email, signature, timestamp } = req.body;
+      const { publicKey, signature, timestamp } = req.body;
 
       // Validate required fields
-      if (!publicKey || !username || !signature || !timestamp) {
+      if (!publicKey || !signature || !timestamp) {
         return res.status(400).json({ 
-          error: 'Public key, username, signature, and timestamp are required' 
+          error: 'Public key, signature, and timestamp are required' 
         });
       }
 
@@ -42,27 +42,9 @@ export class SessionController {
         return res.status(400).json({ error: 'Invalid public key format' });
       }
 
-      // Sanitize username: only allow alphanumeric characters
-      username = username.replace(/[^a-zA-Z0-9]/g, '');
-
-      // Validate username format (alphanumeric only, 3-30 chars)
-      if (!username || username.length < 3 || username.length > 30) {
-        return res.status(400).json({ 
-          error: 'Username must be between 3 and 30 characters long' 
-        });
-      }
-
-      if (!/^[a-zA-Z0-9]{3,30}$/.test(username)) {
-        return res.status(400).json({ 
-          error: 'Username can only contain letters and numbers' 
-        });
-      }
-
       // Verify the registration signature
       const isValidSignature = SignatureService.verifyRegistrationSignature(
         publicKey,
-        username,
-        email,
         signature,
         timestamp
       );
@@ -73,31 +55,21 @@ export class SessionController {
         });
       }
 
-      // Check if user already exists
-      const existingUser = await User.findOne({
-        $or: [
-          { publicKey },
-          { username },
-          ...(email ? [{ email }] : [])
-        ]
-      });
+      // Check if user already exists (by publicKey only - that's the identity)
+      const existingUser = await User.findOne({ publicKey });
 
       if (existingUser) {
         return res.status(409).json({
-          error: 'User already exists',
+          error: 'Identity already registered',
           details: {
-            publicKey: existingUser.publicKey === publicKey ? 'This identity is already registered' : null,
-            username: existingUser.username === username ? 'Username is already taken' : null,
-            email: email && existingUser.email === email ? 'Email is already registered' : null
+            publicKey: 'This identity is already registered'
           }
         });
       }
 
-      // Create new user
+      // Create new user (identity is just the publicKey)
       const user = new User({
         publicKey,
-        username,
-        email: email || undefined,
       });
 
       await user.save();
@@ -114,12 +86,11 @@ export class SessionController {
 
       return res.status(201).json({
         success: true,
-        message: 'User registered successfully',
+        message: 'Identity registered successfully',
         user: {
           id: user._id,
           publicKey: user.publicKey,
           username: user.username,
-          email: user.email,
           name: user.name,
           privacySettings: user.privacySettings
         }

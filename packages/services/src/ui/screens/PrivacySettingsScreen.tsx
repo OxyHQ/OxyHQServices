@@ -21,7 +21,6 @@ interface PrivacySettings {
     hideOnlineStatus: boolean;
     hideLastSeen: boolean;
     profileVisibility: boolean;
-    twoFactorEnabled: boolean;
     loginAlerts: boolean;
     blockScreenshots: boolean;
     login: boolean;
@@ -52,7 +51,6 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         hideOnlineStatus: false,
         hideLastSeen: false,
         profileVisibility: true,
-        twoFactorEnabled: false,
         loginAlerts: true,
         blockScreenshots: false,
         login: true,

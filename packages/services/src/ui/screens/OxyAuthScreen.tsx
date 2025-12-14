@@ -60,7 +60,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
 }) => {
   const themeValue = (theme === 'light' || theme === 'dark') ? theme : 'light';
   const colors = useThemeColors(themeValue);
-  const { oxyServices, signIn } = useOxy();
+  const { oxyServices, signIn, switchSession } = useOxy();
 
   const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -78,12 +78,19 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
     isProcessingRef.current = true;
 
     try {
-      // Get token and user data
-      await oxyServices.getTokenBySession(sessionId);
-      const user = await oxyServices.getUserBySession(sessionId);
-
-      if (onAuthenticated) {
-        onAuthenticated(user);
+      // Switch to the new session (this will get token, user data, and update state)
+      if (switchSession) {
+        const user = await switchSession(sessionId);
+        if (onAuthenticated) {
+          onAuthenticated(user);
+        }
+      } else {
+        // Fallback if switchSession not available (shouldn't happen, but for safety)
+        await oxyServices.getTokenBySession(sessionId);
+        const user = await oxyServices.getUserBySession(sessionId);
+        if (onAuthenticated) {
+          onAuthenticated(user);
+        }
       }
     } catch (err) {
       if (__DEV__) {
@@ -92,7 +99,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
       setError('Authorization successful but failed to complete sign in. Please try again.');
       isProcessingRef.current = false;
     }
-  }, [oxyServices, onAuthenticated]);
+  }, [oxyServices, switchSession, onAuthenticated]);
 
   // Connect to socket for real-time updates
   const connectSocket = useCallback((sessionToken: string) => {

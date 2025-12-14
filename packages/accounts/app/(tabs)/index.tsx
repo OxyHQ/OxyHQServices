@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback, useRef, useEffect } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import { Image } from 'expo-image';
 import LottieView from 'lottie-react-native';
 import { useRouter, usePathname } from 'expo-router';
@@ -27,7 +27,10 @@ export default function HomeScreen() {
   const hasPlayedRef = useRef(false);
 
   // OxyServices integration
-  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions } = useOxy();
+  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, isIdentitySynced, syncIdentity, identitySyncState } = useOxy();
+
+  // Use reactive state from Zustand store (with defaults)
+  const { isSynced, isSyncing } = identitySyncState || { isSynced: true, isSyncing: false };
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = useMemo(() => Platform.OS === 'web' && width >= 768, [width]);
@@ -64,6 +67,37 @@ export default function HomeScreen() {
     showBottomSheet?.('PremiumSubscription');
   }, [showBottomSheet]);
 
+  // Check sync status on mount and auto-sync if needed
+  useEffect(() => {
+    const checkAndSync = async () => {
+      if (isIdentitySynced) {
+        // This updates the Zustand store internally
+        const synced = await isIdentitySynced();
+
+        // Auto-sync if not synced (store will update isSyncing)
+        if (!synced && syncIdentity) {
+          try {
+            await syncIdentity();
+          } catch (err) {
+            // Silent fail - will try again later
+            console.log('[Home] Auto-sync failed:', err);
+          }
+        }
+      }
+    };
+    checkAndSync();
+  }, [isIdentitySynced, syncIdentity]);
+
+  const handleSyncNow = useCallback(async () => {
+    if (!syncIdentity) return;
+    try {
+      // syncIdentity updates the Zustand store (isSyncing, isSynced)
+      await syncIdentity();
+    } catch (err: any) {
+      Alert.alert('Sync Failed', err.message || 'Could not sync with server. Please check your internet connection.');
+    }
+  }, [syncIdentity]);
+
   const handleReload = useCallback(async () => {
     if (!refreshSessions) return;
     try {
@@ -82,7 +116,9 @@ export default function HomeScreen() {
   }, [showBottomSheet]);
 
   const handleAboutIdentity = useCallback(() => {
-    router.push('/(tabs)/about-identity');
+    if (Platform.OS !== 'web') {
+      router.push('/(tabs)/about-identity' as any);
+    }
   }, [router]);
 
   const accountItems = useMemo(() => [
@@ -120,35 +156,67 @@ export default function HomeScreen() {
     },
   ], [colors.text, colors.sidebarIconPersonalInfo, colors.sidebarIconPayments, colors.sidebarIconData, displayName, accountCreatedDate, handleEditName, handleManageSubscription]);
 
-  const identityItems = useMemo(() => [
-    {
-      id: 'self-custody',
-      customIcon: (
-        <View style={[styles.methodIcon, { backgroundColor: '#10B981' }]}>
-          <MaterialCommunityIcons name="shield-key" size={22} color={darkenColor('#10B981')} />
-        </View>
-      ),
-      title: 'Self-Custody Identity',
-      subtitle: 'You own your keys. No passwords needed.',
-      onPress: handleAboutIdentity,
-      showChevron: true,
-    },
-    {
-      id: 'public-key',
-      customIcon: (
-        <View style={[styles.methodIcon, { backgroundColor: '#8B5CF6' }]}>
-          <MaterialCommunityIcons name="key-variant" size={22} color={darkenColor('#8B5CF6')} />
-        </View>
-      ),
-      title: 'Your Public Key',
-      subtitle: 'View and share your unique identifier',
-      onPress: handleAboutIdentity,
-      showChevron: true,
-    },
-  ], [handleAboutIdentity]);
+  const identityItems = useMemo(() => {
+    // Only show identity items on native platforms
+    if (Platform.OS === 'web') {
+      return [];
+    }
+    return [
+      {
+        id: 'self-custody',
+        customIcon: (
+          <View style={[styles.methodIcon, { backgroundColor: '#10B981' }]}>
+            <MaterialCommunityIcons name="shield-key" size={22} color={darkenColor('#10B981')} />
+          </View>
+        ),
+        title: 'Self-Custody Identity',
+        subtitle: 'You own your keys. No passwords needed.',
+        onPress: handleAboutIdentity,
+        showChevron: true,
+      },
+      {
+        id: 'public-key',
+        customIcon: (
+          <View style={[styles.methodIcon, { backgroundColor: '#8B5CF6' }]}>
+            <MaterialCommunityIcons name="key-variant" size={22} color={darkenColor('#8B5CF6')} />
+          </View>
+        ),
+        title: 'Your Public Key',
+        subtitle: 'View and share your unique identifier',
+        onPress: handleAboutIdentity,
+        showChevron: true,
+      },
+    ];
+  }, [handleAboutIdentity]);
 
   const content = useMemo(() => (
     <>
+      {/* Sync Status Banner */}
+      {!isSynced && (
+        <View style={[styles.syncBanner, { backgroundColor: '#FEF3C7', borderColor: '#FCD34D' }]}>
+          <View style={styles.syncBannerContent}>
+            <MaterialCommunityIcons name="cloud-off-outline" size={24} color="#D97706" />
+            <View style={styles.syncBannerText}>
+              <Text style={[styles.syncBannerTitle, { color: '#92400E' }]}>Pending Sync</Text>
+              <Text style={[styles.syncBannerSubtitle, { color: '#B45309' }]}>
+                Your identity is stored locally. Connect to sync with Oxy servers.
+              </Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={[styles.syncButton, { backgroundColor: '#D97706' }]}
+            onPress={handleSyncNow}
+            disabled={isSyncing}
+          >
+            {isSyncing ? (
+              <ActivityIndicator size="small" color="#fff" />
+            ) : (
+              <Text style={styles.syncButtonText}>Sync Now</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+      )}
+
       <Section title={undefined} isFirst>
         <AccountCard>
           <GroupedSection items={accountItems} />
@@ -163,7 +231,7 @@ export default function HomeScreen() {
         </AccountCard>
       </Section>
     </>
-  ), [accountItems, identityItems]);
+  ), [accountItems, identityItems, isSynced, isSyncing, handleSyncNow]);
 
   const toggleColorScheme = useCallback(() => {
     // This would toggle between light and dark mode
@@ -575,5 +643,41 @@ const styles = StyleSheet.create({
     width: '100%',
     gap: 12,
     marginTop: 8,
+  } as const,
+  syncBanner: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  } as const,
+  syncBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  } as const,
+  syncBannerText: {
+    flex: 1,
+    marginLeft: 12,
+  } as const,
+  syncBannerTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  } as const,
+  syncBannerSubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
+  } as const,
+  syncButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  } as const,
+  syncButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   } as const,
 });

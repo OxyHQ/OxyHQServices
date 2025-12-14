@@ -46,14 +46,6 @@
     "status": {
       "accountSwitched": "Utilisation de {{name}}"
     },
-    "totp": {
-      "title": "Code à deux facteurs",
-      "subtitle": "Entrez le code à 6 chiffres de votre application d'authentification pour @{{username}}",
-      "invalidCode": "Code invalide. Veuillez réessayer.",
-      "noAccess": "Pas d'accès à votre authentificateur ?",
-      "useBackupCode": "Utiliser le code de sauvegarde",
-      "useRecoveryKey": "Utiliser la clé de récupération"
-    }
   },
   "signup": {
     "welcome": {
@@ -98,7 +90,7 @@
         "password": "Mot de passe"
       },
       "notSet": "Non défini",
-      "securityTip": "Pour une sécurité renforcée, activez l'authentification à deux facteurs (TOTP) dans les paramètres du compte après avoir créé votre compte.",
+      "securityTip": "Pour une sécurité renforcée, activez l'authentification biométrique dans les paramètres du compte après avoir créé votre compte.",
       "legalReminder": "En créant un compte, vous acceptez nos Conditions d'utilisation et notre Politique de confidentialité."
     }
   },

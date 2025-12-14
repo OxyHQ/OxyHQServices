@@ -77,11 +77,10 @@ export class SignatureService {
 
   /**
    * Verify a registration signature
+   * Signature format: oxy:register:{publicKey}:{timestamp}
    */
   static verifyRegistrationSignature(
     publicKey: string,
-    username: string,
-    email: string | undefined,
     signature: string,
     timestamp: number
   ): boolean {
@@ -91,7 +90,7 @@ export class SignatureService {
       return false;
     }
 
-    const message = `register:${publicKey}:${username}:${email || ''}:${timestamp}`;
+    const message = `oxy:register:${publicKey}:${timestamp}`;
     return SignatureService.verifySignature(message, signature, publicKey);
   }
 

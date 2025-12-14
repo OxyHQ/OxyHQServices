@@ -8,7 +8,6 @@
 import { OxyServicesBase } from '../OxyServices.base';
 import { OxyServicesAuthMixin } from './OxyServices.auth';
 import { OxyServicesUserMixin } from './OxyServices.user';
-import { OxyServicesTotpMixin } from './OxyServices.totp';
 import { OxyServicesPrivacyMixin } from './OxyServices.privacy';
 import { OxyServicesLanguageMixin } from './OxyServices.language';
 import { OxyServicesPaymentMixin } from './OxyServices.payment';
@@ -39,10 +38,8 @@ export function composeOxyServices() {
                 OxyServicesPaymentMixin(
                   OxyServicesLanguageMixin(
                     OxyServicesPrivacyMixin(
-                      OxyServicesTotpMixin(
-                        OxyServicesUserMixin(
-                          OxyServicesAuthMixin(OxyServicesBase)
-                        )
+                      OxyServicesUserMixin(
+                        OxyServicesAuthMixin(OxyServicesBase)
                       )
                     )
                   )

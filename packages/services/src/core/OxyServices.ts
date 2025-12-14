@@ -76,7 +76,6 @@ import { composeOxyServices } from './mixins';
  * - **Base**: Core infrastructure (HTTP client, request management, error handling)
  * - **Auth**: Authentication and session management
  * - **User**: User profiles, follow, notifications
- * - **TOTP**: Two-factor authentication enrollment
  * - **Privacy**: Blocked and restricted users
  * - **Language**: Language detection and metadata
  * - **Payment**: Payment processing

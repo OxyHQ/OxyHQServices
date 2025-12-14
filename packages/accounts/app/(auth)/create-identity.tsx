@@ -14,7 +14,7 @@ import { useOxy } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 
-type Step = 'username' | 'recovery' | 'confirm';
+type Step = 'intro' | 'recovery' | 'confirm';
 
 export default function CreateIdentityScreen() {
   const router = useRouter();
@@ -22,33 +22,23 @@ export default function CreateIdentityScreen() {
   const colors = Colors[colorScheme];
   const { createIdentity, isLoading } = useOxy();
 
-  const [step, setStep] = useState<Step>('username');
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
+  const [step, setStep] = useState<Step>('intro');
   const [recoveryPhrase, setRecoveryPhrase] = useState<string[]>([]);
   const [confirmWords, setConfirmWords] = useState<{ index: number; word: string }[]>([]);
   const [userConfirmation, setUserConfirmation] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [isOffline, setIsOffline] = useState(false);
 
   const handleCreateIdentity = useCallback(async () => {
-    if (!username.trim()) {
-      setError('Please enter a username');
-      return;
-    }
-
-    if (username.length < 3) {
-      setError('Username must be at least 3 characters');
-      return;
-    }
-
     setError(null);
 
     try {
-      const result = await createIdentity(username.trim(), email.trim() || undefined);
+      const result = await createIdentity();
       setRecoveryPhrase(result.recoveryPhrase);
+      setIsOffline(!result.synced);
 
       // Select 3 random words to confirm
-      const indices = [];
+      const indices: number[] = [];
       while (indices.length < 3) {
         const idx = Math.floor(Math.random() * result.recoveryPhrase.length);
         if (!indices.includes(idx)) {
@@ -63,7 +53,7 @@ export default function CreateIdentityScreen() {
     } catch (err: any) {
       setError(err.message || 'Failed to create identity');
     }
-  }, [username, email, createIdentity]);
+  }, [createIdentity]);
 
   const handleContinueToConfirm = useCallback(() => {
     Alert.alert(
@@ -86,11 +76,21 @@ export default function CreateIdentityScreen() {
       return;
     }
 
-    // Success - navigate to main app
-    router.replace('/(tabs)');
-  }, [confirmWords, userConfirmation, router]);
+    // Success
+    if (isOffline) {
+      // Show offline success message
+      Alert.alert(
+        'Identity Created (Offline)',
+        'Your identity has been created and saved locally. When you connect to the internet, it will automatically sync with Oxy servers.',
+        [{ text: 'OK', onPress: () => router.replace('/(tabs)') }]
+      );
+    } else {
+      // Online - navigate directly
+      router.replace('/(tabs)');
+    }
+  }, [confirmWords, userConfirmation, router, isOffline]);
 
-  const renderUsernameStep = () => (
+  const renderIntroStep = () => (
     <View style={styles.stepContainer}>
       <Text style={[styles.title, { color: colors.text }]}>Create Your Identity</Text>
       <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
@@ -104,37 +104,8 @@ export default function CreateIdentityScreen() {
           • A unique cryptographic key pair is generated on your device{'\n'}
           • Your private key never leaves this device{'\n'}
           • Your public key becomes your identity across all Oxy apps{'\n'}
-          • No passwords to remember or get hacked
-        </Text>
-      </View>
-
-      <View style={styles.inputContainer}>
-        <Text style={[styles.label, { color: colors.text }]}>Username</Text>
-        <TextInput
-          style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
-          placeholder="Choose a username"
-          placeholderTextColor={colors.textSecondary}
-          value={username}
-          onChangeText={setUsername}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </View>
-
-      <View style={styles.inputContainer}>
-        <Text style={[styles.label, { color: colors.text }]}>Email (optional)</Text>
-        <TextInput
-          style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
-          placeholder="your@email.com"
-          placeholderTextColor={colors.textSecondary}
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <Text style={[styles.inputHint, { color: colors.textSecondary }]}>
-          For account notifications only. Not used for login.
+          • No passwords to remember or get hacked{'\n'}
+          • Profile information (username, name, etc.) can be added later
         </Text>
       </View>
 
@@ -169,6 +140,15 @@ export default function CreateIdentityScreen() {
       <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
         These 12 words are the master key to your identity. Write them down and store them safely offline.
       </Text>
+
+      {/* Offline notice */}
+      {isOffline && (
+        <View style={[styles.offlineNotice, { backgroundColor: '#E0F2FE', borderColor: '#7DD3FC' }]}>
+          <Text style={[styles.offlineNoticeText, { color: '#0369A1' }]}>
+            📱 Created Offline — Your identity was created locally. It will sync automatically when you connect to the internet.
+          </Text>
+        </View>
+      )}
 
       <View style={[styles.phraseContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
         {recoveryPhrase.map((word, index) => (
@@ -251,7 +231,7 @@ export default function CreateIdentityScreen() {
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.contentContainer}
     >
-      {step === 'username' && renderUsernameStep()}
+      {step === 'intro' && renderIntroStep()}
       {step === 'recovery' && renderRecoveryStep()}
       {step === 'confirm' && renderConfirmStep()}
     </ScrollView>
@@ -367,6 +347,16 @@ const styles = StyleSheet.create({
   },
   warningText: {
     color: '#856404',
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  offlineNotice: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  offlineNoticeText: {
     fontSize: 14,
     lineHeight: 20,
   },

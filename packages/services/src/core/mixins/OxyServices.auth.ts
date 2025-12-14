@@ -43,26 +43,21 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
     }
 
     /**
-     * Register a new user with public key authentication
+     * Register a new identity with public key authentication
+     * Identity is purely cryptographic - username and profile data are optional
      * 
      * @param publicKey - The user's ECDSA public key (hex)
-     * @param username - Desired username
-     * @param email - Optional email address
      * @param signature - Signature of the registration request
      * @param timestamp - Timestamp when the signature was created
      */
     async register(
       publicKey: string,
-      username: string,
       signature: string,
-      timestamp: number,
-      email?: string
+      timestamp: number
     ): Promise<{ message: string; user: User }> {
       try {
         const res = await this.makeRequest<{ message: string; user: User }>('POST', '/api/auth/register', {
           publicKey,
-          username,
-          email,
           signature,
           timestamp,
         }, { cache: false });

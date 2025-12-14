@@ -16,7 +16,7 @@ export interface MenuItem {
     iconColor: string;
 }
 
-export const menuItems: MenuItem[] = [
+const baseMenuItems: MenuItem[] = [
     { path: '/(tabs)', icon: 'home-variant', label: 'Home', iconColor: 'sidebarIconHome' },
     { path: '/(tabs)/personal-info', icon: 'card-account-details-outline', label: 'Personal info', iconColor: 'sidebarIconPersonalInfo' },
     { path: '/(tabs)/about-identity', icon: 'shield-key', label: 'About Your Identity', iconColor: 'sidebarIconSecurity' },
@@ -28,6 +28,14 @@ export const menuItems: MenuItem[] = [
     { path: '/(tabs)/payments', icon: 'wallet-outline', label: 'Payments & subscriptions', iconColor: 'sidebarIconPayments' },
     { path: '/(tabs)/storage', icon: 'cloud-outline', label: 'Oxy storage', iconColor: 'sidebarIconStorage' },
 ];
+
+// Filter menu items based on platform - about-identity only on native
+export const menuItems: MenuItem[] = baseMenuItems.filter(item => {
+    if (item.path === '/(tabs)/about-identity') {
+        return Platform.OS !== 'web';
+    }
+    return true;
+});
 
 interface SidebarContentProps {
     onNavigate?: () => void;

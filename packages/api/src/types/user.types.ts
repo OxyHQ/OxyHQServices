@@ -41,6 +41,7 @@ export type ProfileUpdateInput = Partial<
     | 'linksMetadata'
     | 'locations'
     | 'language'
+    | 'accountExpiresAfterInactivityDays'
   >
 >;
 

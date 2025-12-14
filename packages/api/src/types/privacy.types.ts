@@ -12,7 +12,6 @@ export interface IPrivacySettings {
     hideOnlineStatus: boolean;
     hideLastSeen: boolean;
     profileVisibility: boolean;
-    twoFactorEnabled: boolean;
     loginAlerts: boolean;
     blockScreenshots: boolean;
     login: boolean;

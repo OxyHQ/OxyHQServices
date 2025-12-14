@@ -19,7 +19,7 @@ export interface SessionAuthResponse {
   expiresAt: string;
   user: {
     id: string;
-    username: string;
+    username?: string; // Optional - users may not have a username set
     avatar?: string; // file id
   };
 } 

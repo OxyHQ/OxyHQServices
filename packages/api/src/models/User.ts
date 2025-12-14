@@ -1,7 +1,7 @@
 import mongoose, { Document, Schema } from "mongoose";
 
 export interface IUser extends Document {
-  username: string;
+  username?: string;
   email?: string;
   publicKey: string; // ECDSA secp256k1 public key (hex) - primary identifier
   refreshToken?: string | null;
@@ -19,7 +19,6 @@ export interface IUser extends Document {
     hideOnlineStatus: boolean;
     hideLastSeen: boolean;
     profileVisibility: boolean;
-    twoFactorEnabled: boolean;
     loginAlerts: boolean;
     blockScreenshots: boolean;
     login: boolean;
@@ -80,6 +79,7 @@ export interface IUser extends Document {
     description: string;
     image?: string;
   }>;
+  accountExpiresAfterInactivityDays?: number | null; // Days of inactivity before account expires (null = never expire)
   _id: mongoose.Types.ObjectId;
   createdAt: Date;
   updatedAt: Date;
@@ -137,8 +137,9 @@ const UserSchema: Schema = new Schema(
   {
     username: {
       type: String,
-      required: true,
+      required: false,
       unique: true,
+      sparse: true, // Allows null/undefined values while maintaining uniqueness
       trim: true,
       select: true,
     },
@@ -192,7 +193,6 @@ const UserSchema: Schema = new Schema(
       hideOnlineStatus: { type: Boolean, default: false },
       hideLastSeen: { type: Boolean, default: false },
       profileVisibility: { type: Boolean, default: true },
-      twoFactorEnabled: { type: Boolean, default: false },
       loginAlerts: { type: Boolean, default: true },
       blockScreenshots: { type: Boolean, default: false },
       login: { type: Boolean, default: true },
@@ -256,6 +256,18 @@ const UserSchema: Schema = new Schema(
       description: { type: String, required: true },
       image: { type: String }
     }],
+    accountExpiresAfterInactivityDays: { 
+      type: mongoose.Schema.Types.Mixed, 
+      default: null,
+      validate: {
+        validator: function(value: number | null) {
+          if (value === null || value === undefined) return true;
+          if (typeof value !== 'number') return false;
+          return [30, 90, 180, 365].includes(value);
+        },
+        message: 'accountExpiresAfterInactivityDays must be 30, 90, 180, 365, or null'
+      }
+    },
   },
   {
     timestamps: true,
@@ -285,8 +297,8 @@ UserSchema.index({ publicKey: 1 });
 UserSchema.index({ following: 1 });
 UserSchema.index({ followers: 1 });
 
-// Compound index for efficient user lookups
-UserSchema.index({ email: 1, username: 1 }, { sparse: true });
+// Note: username and email are now optional, so we don't need compound index with username
+// Email already has sparse unique index in schema
 
 // Geospatial index for locations
 UserSchema.index({ "locations.coordinates": "2dsphere" });
@@ -326,6 +338,22 @@ UserSchema.virtual('primaryLocation').get(function() {
     return locations[0].name;
   }
   return '';
+});
+
+// Virtual for display name - returns username or truncated publicKey
+UserSchema.virtual('displayName').get(function() {
+  if (this.username && typeof this.username === 'string' && this.username.trim()) {
+    return this.username;
+  }
+  // Return truncated public key if no username
+  const publicKey = this.publicKey as string | undefined;
+  if (publicKey && typeof publicKey === 'string') {
+    if (publicKey.startsWith('0x')) {
+      return `0x${publicKey.slice(2, 8)}...${publicKey.slice(-6)}`;
+    }
+    return `${publicKey.slice(0, 6)}...${publicKey.slice(-6)}`;
+  }
+  return 'Anonymous';
 });
 
 // Instance method to add a location

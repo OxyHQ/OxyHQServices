@@ -46,14 +46,6 @@
     "status": {
       "accountSwitched": "Now using {{name}}"
     },
-    "totp": {
-      "title": "Two‑Factor Code",
-      "subtitle": "Enter the 6‑digit code from your authenticator app for @{{username}}",
-      "invalidCode": "Invalid code. Please try again.",
-      "noAccess": "No access to your authenticator?",
-      "useBackupCode": "Use backup code",
-      "useRecoveryKey": "Use recovery key"
-    }
   },
   "signup": {
     "welcome": {
@@ -98,7 +90,7 @@
         "password": "Password"
       },
       "notSet": "Not set",
-      "securityTip": "For stronger security, enable Two‑Factor Authentication (TOTP) from Account Settings after you create your account.",
+      "securityTip": "For stronger security, enable biometric authentication from Account Settings after you create your account.",
       "legalReminder": "By creating an account, you agree to our Terms of Service and Privacy Policy.",
       "sections": {
         "account": "Account Information",
@@ -245,7 +237,7 @@
     "enterCode": "Enter the 6‑digit code from your authenticator app.",
     "newPassword": "Set New Password",
     "resetSuccess": "Your password has been reset! You can now sign in.",
-    "noEmail": "We no longer send recovery emails. If you enabled Two‑Factor Authentication (TOTP), sign in with your username and password, then enter your authenticator code. Otherwise, contact support to regain access.",
+    "noEmail": "We no longer send recovery emails. Please use your recovery phrase to restore your identity. Contact support if you need assistance.",
     "password": {
       "minLength": "Password must be at least 8 characters long",
       "mismatch": "Passwords do not match",
@@ -589,11 +581,6 @@
         "title": "Verify Account",
         "subtitle": "Get a verified badge"
       },
-      "twoFactor": {
-        "title": "Two‑Factor Authentication",
-        "enabled": "Enabled",
-        "disabled": "Disabled (recommended)"
-      }
     },
     "confirms": {
       "removeAvatar": "Remove your profile picture?"
@@ -608,11 +595,6 @@
       "avatarUpdated": "Avatar updated",
       "updateAvatarFailed": "Failed to update avatar",
       "noActiveSession": "No active session",
-      "totpStartFailed": "Failed to start TOTP enrollment",
-      "twoFactorEnabled": "Two‑Factor Authentication enabled",
-      "invalidCode": "Invalid code",
-      "twoFactorDisabled": "Two‑Factor Authentication disabled",
-      "disableFailed": "Failed to disable"
     }
   },
   "accountOverview": {
@@ -663,7 +645,7 @@
       },
       "security": {
         "title": "Security & Privacy",
-        "subtitle": "Password, 2FA, and privacy settings"
+        "subtitle": "Security and privacy settings"
       },
       "notifications": {
         "title": "Notifications",

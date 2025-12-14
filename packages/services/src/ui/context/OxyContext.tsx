@@ -40,12 +40,20 @@ export interface OxyContextState {
   currentLanguageName: string;
   currentNativeLanguageName: string;
 
-  // Identity management (public key authentication)
-  createIdentity: (username: string, email?: string) => Promise<{ user: User; recoveryPhrase: string[] }>;
-  importIdentity: (phrase: string, username?: string, email?: string) => Promise<User>;
+  // Identity management (public key authentication - offline-first)
+  createIdentity: () => Promise<{ recoveryPhrase: string[]; synced: boolean }>;
+  importIdentity: (phrase: string) => Promise<{ synced: boolean }>;
   signIn: (deviceName?: string) => Promise<User>;
   hasIdentity: () => Promise<boolean>;
   getPublicKey: () => Promise<string | null>;
+  isIdentitySynced: () => Promise<boolean>;
+  syncIdentity: () => Promise<User>;
+
+  // Identity sync state (reactive, from Zustand store)
+  identitySyncState: {
+    isSynced: boolean;
+    isSyncing: boolean;
+  };
 
   // Session management
   logout: (targetSessionId?: string) => Promise<void>;
@@ -140,6 +148,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     loginSuccess,
     loginFailure,
     logoutStore,
+    // Identity sync state and actions
+    isIdentitySyncedStore,
+    isSyncing,
+    setIdentitySynced,
+    setSyncing,
   } = useAuthStore(
     useShallow((state: AuthState) => ({
       user: state.user,
@@ -149,6 +162,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       loginSuccess: state.loginSuccess,
       loginFailure: state.loginFailure,
       logoutStore: state.logout,
+      // Identity sync state and actions
+      isIdentitySyncedStore: state.isIdentitySynced,
+      isSyncing: state.isSyncing,
+      setIdentitySynced: state.setIdentitySynced,
+      setSyncing: state.setSyncing,
     })),
   );
 
@@ -212,6 +230,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     logoutAll,
     hasIdentity,
     getPublicKey,
+    isIdentitySynced,
+    syncIdentity,
   } = useAuthOperations({
     oxyServices,
     storage,
@@ -229,6 +249,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     loginFailure,
     logoutStore,
     setAuthState,
+    setIdentitySynced,
+    setSyncing,
     logger,
   });
 
@@ -392,6 +414,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     signIn,
     hasIdentity,
     getPublicKey,
+    isIdentitySynced,
+    syncIdentity,
+    identitySyncState: {
+      isSynced: isIdentitySyncedStore ?? true,
+      isSyncing: isSyncing ?? false,
+    },
     logout,
     logoutAll,
     switchSession: switchSessionForContext,
@@ -411,6 +439,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     signIn,
     hasIdentity,
     getPublicKey,
+    isIdentitySynced,
+    syncIdentity,
+    isIdentitySyncedStore,
+    isSyncing,
     currentLanguage,
     currentLanguageMetadata,
     currentLanguageName,

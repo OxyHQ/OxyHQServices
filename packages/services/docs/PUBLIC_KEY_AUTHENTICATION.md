@@ -7,7 +7,7 @@ Oxy uses **public/private key cryptography** (ECDSA secp256k1) for authenticatio
 ### Key Concepts
 
 - **Private Key**: Generated and stored securely on the user's device (never leaves the device)
-- **Public Key**: Serves as the unique identifier (username) across the Oxy ecosystem
+- **Public Key**: Serves as the unique identifier across the Oxy ecosystem (displayed as truncated public key if no username is set)
 - **Digital Signatures**: All actions are cryptographically signed to prove identity
 - **Recovery Phrase**: BIP39 mnemonic phrase (12 or 24 words) for backing up and restoring identities
 - **Oxy Accounts App**: The dedicated mobile app where users manage their cryptographic identity
@@ -29,24 +29,53 @@ Oxy uses **public/private key cryptography** (ECDSA secp256k1) for authenticatio
 └─────────────────┘
 ```
 
+### Offline-First Design
+
+The identity system is designed to work **completely offline**:
+
+1. **Identity Generation**: Cryptographic keys are generated locally on the device without any network request
+2. **Self-Custody**: The private key is stored securely on the device and never sent to any server
+3. **Sync When Online**: When internet is available, the identity syncs with Oxy servers for cross-device features
+4. **Works Without Internet**: Users can create and use their identity even without internet connectivity
+
+```typescript
+// Create identity (works offline) - no parameters needed!
+const result = await createIdentity();
+// result.synced = false if offline
+// result.recoveryPhrase = ['word1', 'word2', ...]
+
+// Import identity from recovery phrase
+const importResult = await importIdentity('word1 word2 ... word12');
+// importResult.synced = false if offline
+
+// Check sync status
+const isSynced = await isIdentitySynced();
+
+// Manually sync when online
+if (!isSynced) {
+  await syncIdentity();
+}
+```
+
 ## For End Users
 
 ### Creating an Identity
 
 1. Open the **Oxy Accounts** app
 2. Choose "Create New Identity"
-3. Enter a username (optional: email)
+3. Tap "Generate My Keys"
 4. Save your **12-word recovery phrase** securely
 5. Confirm a few words from the phrase to verify you saved it
 6. Your identity is ready!
+
+Your identity is purely cryptographic - just your public/private key pair. Profile information like username, name, etc. can be added later if desired.
 
 ### Importing an Identity
 
 1. Open the **Oxy Accounts** app
 2. Choose "Import Identity"
 3. Enter your **12-word recovery phrase**
-4. If the identity is already registered, you'll be signed in
-5. If new, you'll be prompted to register with a username
+4. Your identity is restored and will sync with the server when online
 
 ### Signing In to Other Apps
 
@@ -125,8 +154,10 @@ Response: { success, sessionId, user }
 
 // 4. User registration
 POST /api/auth/register
-Body: { publicKey, username, signature, timestamp, email? }
+Body: { publicKey, signature, timestamp }
 Response: { user, session }
+
+Note: Identity is purely cryptographic. Username and profile data are optional and can be added later via profile update endpoints.
 
 // 5. Challenge-request authentication
 POST /api/auth/challenge
@@ -144,31 +175,28 @@ Response: { sessionId, deviceId, user }
 import { KeyManager, SignatureService } from '@oxyhq/services/crypto';
 
 // Client-side (in Oxy Accounts app)
-async function registerUser(username: string, email?: string) {
+async function registerUser() {
   // 1. Generate key pair (or use existing)
   const publicKey = await KeyManager.createIdentity();
   
-  // 2. Create registration signature
-  const { signature, timestamp } = await SignatureService.createRegistrationSignature(
-    username,
-    email
-  );
+  // 2. Create registration signature (no username/email needed)
+  const { signature, timestamp } = await SignatureService.createRegistrationSignature();
   
-  // 3. Register with backend
+  // 3. Register with backend (identity is just the publicKey)
   const response = await fetch('https://api.oxy.so/api/auth/register', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       publicKey,
-      username,
       signature,
       timestamp,
-      email,
     }),
   });
   
   return response.json();
 }
+
+// Profile data (username, name, etc.) can be added later via profile update endpoints
 ```
 
 #### Example: Challenge-Response Login
@@ -362,11 +390,13 @@ await signUp('username', 'email', 'password');
 const { createIdentity, importIdentity, signIn } = useOxy();
 
 // For Oxy Accounts app:
-const { user, recoveryPhrase } = await createIdentity('username', 'email');
+const { recoveryPhrase, synced } = await createIdentity();
 // Show recovery phrase to user
+// synced = false if offline, will auto-sync when online
 
 // For importing:
-const user = await importIdentity(recoveryPhrase, 'username', 'email');
+const { synced } = await importIdentity('word1 word2 ... word12');
+// synced = false if offline, will auto-sync when online
 
 // For signing in:
 const user = await signIn();

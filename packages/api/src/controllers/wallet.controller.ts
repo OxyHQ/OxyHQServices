@@ -57,7 +57,7 @@ async function hasPermission(requestingUserId: string, resourceUserId: string): 
   }
 
   const requestingUser = await User.findById(requestingUserId);
-  return requestingUser?.username.includes('admin') ?? false;
+  return requestingUser?.username?.includes('admin') ?? false;
 }
 
 // =============================================================================

@@ -22,7 +22,6 @@ const privacySettingsSchema = z.object({
   hideOnlineStatus: z.boolean().optional(),
   hideLastSeen: z.boolean().optional(),
   profileVisibility: z.boolean().optional(),
-  twoFactorEnabled: z.boolean().optional(),
   loginAlerts: z.boolean().optional(),
   blockScreenshots: z.boolean().optional(),
       login: z.boolean().optional(),

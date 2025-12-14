@@ -36,10 +36,8 @@ import { EditEmailModal } from '../components/profile/EditEmailModal';
 import { EditBioModal } from '../components/profile/EditBioModal';
 import { EditLocationModal } from '../components/profile/EditLocationModal';
 import { EditLinksModal } from '../components/profile/EditLinksModal';
-import { TwoFactorSetupModal } from '../components/profile/TwoFactorSetupModal';
 import { getDisplayName } from '../utils/user-utils';
 import { TTLCache, registerCacheForCleanup } from '../../utils/cache';
-import QRCode from 'react-native-qrcode-svg';
 import { useOxy } from '../context/OxyContext';
 import {
     SCREEN_PADDING_HORIZONTAL,
@@ -102,13 +100,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     const [quickActionsSectionY, setQuickActionsSectionY] = useState<number | null>(null);
     const [securitySectionY, setSecuritySectionY] = useState<number | null>(null);
 
-    // Two-Factor (TOTP) state
-    const [totpSetupUrl, setTotpSetupUrl] = useState<string | null>(null);
-    const [totpCode, setTotpCode] = useState('');
-    const [isTotpBusy, setIsTotpBusy] = useState(false);
-    const [showRecoveryModal, setShowRecoveryModal] = useState(false);
-    const [generatedBackupCodes, setGeneratedBackupCodes] = useState<string[] | null>(null);
-    const [generatedRecoveryKey, setGeneratedRecoveryKey] = useState<string | null>(null);
 
     // Animation refs
     const saveButtonScale = useRef(new Animated.Value(1)).current;
@@ -130,7 +121,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     const [showEditBioModal, setShowEditBioModal] = useState(false);
     const [showEditLocationModal, setShowEditLocationModal] = useState(false);
     const [showEditLinksModal, setShowEditLinksModal] = useState(false);
-    const [showTwoFactorModal, setShowTwoFactorModal] = useState(false);
 
     // Location and links state (for display only - modals handle editing)
     const [locations, setLocations] = useState<Array<{
@@ -342,9 +332,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             case 'links':
                 setTempLinksWithMetadata([...linksMetadata]);
                 break;
-            case 'twoFactor':
-                // No temp state needed for twoFactor
-                break;
         }
     }, [displayName, lastName, username, email, bio, locations, linksMetadata]);
 
@@ -423,8 +410,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 return bio;
             case 'location':
             case 'links':
-            case 'twoFactor':
-                return '';
             default:
                 return '';
         }
@@ -529,7 +514,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     const handleOpenBioModal = useCallback(() => setShowEditBioModal(true), []);
     const handleOpenLocationModal = useCallback(() => setShowEditLocationModal(true), []);
     const handleOpenLinksModal = useCallback(() => setShowEditLinksModal(true), []);
-    const handleOpenTwoFactorModal = useCallback(() => setShowTwoFactorModal(true), []);
 
     // Handler to refresh data after modal saves
     // Note: Access user directly from store when invoked to get latest value,
@@ -610,9 +594,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                             break;
                         case 'links':
                             setShowEditLinksModal(true);
-                            break;
-                        case 'twoFactor':
-                            setShowTwoFactorModal(true);
                             break;
                     }
                 }, 300);
@@ -760,135 +741,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     // Memoize display name for avatar
     const displayNameForAvatar = useMemo(() => getDisplayName(user), [user]);
 
-    // Legacy renderEditingField function (still used for twoFactor and fallback)
+    // Legacy renderEditingField function (fallback)
     const renderEditingField = (type: string | null) => {
         if (!type) return null;
-
-        if (type === 'twoFactor') {
-            const enabled = !!user?.privacySettings?.twoFactorEnabled;
-            return (
-                <View style={[styles.editingFieldContainer, { backgroundColor: colors.background }]}>
-                    <View style={styles.editingFieldContent}>
-                        <View style={styles.newValueSection}>
-                            <View style={styles.editingFieldHeader}>
-                                <Text style={[styles.editingFieldLabel, { color: colors.text }]}>Two‑Factor Authentication (TOTP)</Text>
-                            </View>
-
-                            {!enabled ? (
-                                <>
-                                    <Text style={styles.editingFieldDescription}>
-                                        Protect your account with a 6‑digit code from an authenticator app. Scan the QR code then enter the code to enable.
-                                    </Text>
-                                    {!totpSetupUrl ? (
-                                        <TouchableOpacity
-                                            style={[styles.primaryButton, { backgroundColor: colors.iconSecurity }]}
-                                            disabled={isTotpBusy}
-                                            onPress={async () => {
-                                                if (!activeSessionId) { toast.error(t('editProfile.toasts.noActiveSession') || 'No active session'); return; }
-                                                setIsTotpBusy(true);
-                                                try {
-                                                    const { otpauthUrl } = await oxyServices.startTotpEnrollment(activeSessionId);
-                                                    setTotpSetupUrl(otpauthUrl);
-                                                } catch (e: any) {
-                                                    toast.error(e?.message || (t('editProfile.toasts.totpStartFailed') || 'Failed to start TOTP enrollment'));
-                                                } finally {
-                                                    setIsTotpBusy(false);
-                                                }
-                                            }}
-                                        >
-                                            <Ionicons name="shield-checkmark" size={18} color="#fff" />
-                                            <Text style={styles.primaryButtonText}>Generate QR Code</Text>
-                                        </TouchableOpacity>
-                                    ) : (
-                                        <View style={{ alignItems: 'center', gap: 16 }}>
-                                            <View style={{ padding: 16, backgroundColor: '#fff', borderRadius: 16 }}>
-                                                <QRCode value={totpSetupUrl} size={180} />
-                                            </View>
-                                            <View>
-                                                <Text style={styles.editingFieldLabel}>Enter 6‑digit code</Text>
-                                                <TextInput
-                                                    style={styles.editingFieldInput}
-                                                    keyboardType="number-pad"
-                                                    placeholder="123456"
-                                                    value={totpCode}
-                                                    onChangeText={setTotpCode}
-                                                    maxLength={6}
-                                                />
-                                            </View>
-                                            <TouchableOpacity
-                                                style={[styles.primaryButton, { backgroundColor: colors.iconSecurity }]}
-                                                disabled={isTotpBusy || totpCode.length !== 6}
-                                                onPress={async () => {
-                                                    if (!activeSessionId) { toast.error(t('editProfile.toasts.noActiveSession') || 'No active session'); return; }
-                                                    setIsTotpBusy(true);
-                                                    try {
-                                                        const result = await oxyServices.verifyTotpEnrollment(activeSessionId, totpCode);
-                                                        await updateUser({ privacySettings: { twoFactorEnabled: true } }, oxyServices);
-                                                        if (result?.backupCodes || result?.recoveryKey) {
-                                                            setGeneratedBackupCodes(result.backupCodes || null);
-                                                            setGeneratedRecoveryKey(result.recoveryKey || null);
-                                                            setShowRecoveryModal(true);
-                                                        } else {
-                                                            toast.success(t('editProfile.toasts.twoFactorEnabled') || 'Two‑Factor Authentication enabled');
-                                                            setEditingField(null);
-                                                        }
-                                                    } catch (e: any) {
-                                                        toast.error(e?.message || (t('editProfile.toasts.invalidCode') || 'Invalid code'));
-                                                    } finally {
-                                                        setIsTotpBusy(false);
-                                                    }
-                                                }}
-                                            >
-                                                <Ionicons name="checkmark-circle" size={18} color="#fff" />
-                                                <Text style={styles.primaryButtonText}>Verify & Enable</Text>
-                                            </TouchableOpacity>
-                                        </View>
-                                    )}
-                                </>
-                            ) : (
-                                <>
-                                    <Text style={styles.editingFieldDescription}>
-                                        Two‑Factor Authentication is currently enabled. To disable, enter a code from your authenticator app.
-                                    </Text>
-                                    <View>
-                                        <Text style={styles.editingFieldLabel}>Enter 6‑digit code</Text>
-                                        <TextInput
-                                            style={styles.editingFieldInput}
-                                            keyboardType="number-pad"
-                                            placeholder="123456"
-                                            value={totpCode}
-                                            onChangeText={setTotpCode}
-                                            maxLength={6}
-                                        />
-                                    </View>
-                                    <TouchableOpacity
-                                        style={[styles.primaryButton, { backgroundColor: colors.sidebarIconSharing }]}
-                                        disabled={isTotpBusy || totpCode.length !== 6}
-                                        onPress={async () => {
-                                            if (!activeSessionId) { toast.error(t('editProfile.toasts.noActiveSession') || 'No active session'); return; }
-                                            setIsTotpBusy(true);
-                                            try {
-                                                await oxyServices.disableTotp(activeSessionId, totpCode);
-                                                await updateUser({ privacySettings: { twoFactorEnabled: false } }, oxyServices);
-                                                toast.success(t('editProfile.toasts.twoFactorDisabled') || 'Two‑Factor Authentication disabled');
-                                                setEditingField(null);
-                                            } catch (e: any) {
-                                                toast.error(e?.message || t('editProfile.toasts.disableFailed') || 'Failed to disable');
-                                            } finally {
-                                                setIsTotpBusy(false);
-                                            }
-                                        }}
-                                    >
-                                        <Ionicons name="close-circle" size={18} color="#fff" />
-                                        <Text style={styles.primaryButtonText}>Disable 2FA</Text>
-                                    </TouchableOpacity>
-                                </>
-                            )}
-                        </View>
-                    </View>
-                </View>
-            );
-        }
         if (type === 'displayName') {
             return (
                 <View style={[styles.editingFieldContainer, { backgroundColor: colors.background }]}>
@@ -1368,41 +1223,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                             </Text>
                         </View>
 
-                        {showRecoveryModal && (
-                            <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.6)', zIndex: 50, padding: 16, justifyContent: 'center' }}>
-                                <View style={{ backgroundColor: '#fff', borderRadius: 20, padding: 20, maxHeight: '80%' }}>
-                                    <Text style={{ fontSize: 18, fontWeight: '700', marginBottom: 12 }}>Save These Codes Now</Text>
-                                    <Text style={{ fontSize: 14, color: '#444', marginBottom: 12 }}>
-                                        Backup codes and your Recovery Key are shown only once. Store them securely (paper or password manager).
-                                    </Text>
-                                    {generatedBackupCodes && generatedBackupCodes.length > 0 && (
-                                        <View style={{ marginBottom: 12 }}>
-                                            <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 8 }}>Backup Codes</Text>
-                                            <View style={{ backgroundColor: '#F8F9FA', borderRadius: 12, padding: 12 }}>
-                                                {generatedBackupCodes.map((c, idx) => (
-                                                    <Text key={idx} style={{ fontFamily: Platform.OS === 'web' ? 'monospace' as any : 'monospace', fontSize: 14, marginBottom: 4 }}>{c}</Text>
-                                                ))}
-                                            </View>
-                                        </View>
-                                    )}
-                                    {generatedRecoveryKey && (
-                                        <View style={{ marginBottom: 12 }}>
-                                            <Text style={{ fontSize: 16, fontWeight: '600', marginBottom: 8 }}>Recovery Key</Text>
-                                            <View style={{ backgroundColor: '#F8F9FA', borderRadius: 12, padding: 12 }}>
-                                                <Text style={{ fontFamily: Platform.OS === 'web' ? 'monospace' as any : 'monospace', fontSize: 14 }}>{generatedRecoveryKey}</Text>
-                                            </View>
-                                        </View>
-                                    )}
-                                    <TouchableOpacity
-                                        style={[styles.primaryButton, { backgroundColor: colors.iconSecurity, alignSelf: 'flex-end', marginTop: 8 }]}
-                                        onPress={() => { setShowRecoveryModal(false); setEditingField(null); toast.success(t('editProfile.toasts.twoFactorEnabled') || 'Two‑Factor Authentication enabled'); }}
-                                    >
-                                        <Ionicons name="checkmark" size={18} color="#fff" />
-                                        <Text style={styles.primaryButtonText}>I saved them</Text>
-                                    </TouchableOpacity>
-                                </View>
-                            </View>
-                        )}
                         {/* Profile Picture Section */}
                         <View
                             ref={(ref) => {
@@ -1634,20 +1454,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                                 {t('editProfile.sections.security') || 'SECURITY'}
                             </Text>
                             <View style={styles.groupedSectionWrapper}>
-                                <GroupedSection
-                                    items={[
-                                        {
-                                            id: 'two-factor',
-                                            icon: 'shield-lock',
-                                            iconColor: colors.sidebarIconSecurity,
-                                            title: t('editProfile.items.twoFactor.title') || 'Two‑Factor Authentication',
-                                            subtitle: user?.privacySettings?.twoFactorEnabled
-                                                ? (t('editProfile.items.twoFactor.enabled') || 'Enabled')
-                                                : (t('editProfile.items.twoFactor.disabled') || 'Disabled (recommended)'),
-                                            onPress: handleOpenTwoFactorModal,
-                                        },
-                                    ]}
-                                />
                             </View>
                         </View>
                     </>
@@ -1697,12 +1503,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 initialLinks={linksMetadata}
                 theme={normalizedTheme}
                 onSave={handleModalSave}
-            />
-            <TwoFactorSetupModal
-                visible={showTwoFactorModal}
-                onClose={() => setShowTwoFactorModal(false)}
-                isEnabled={!!user?.privacySettings?.twoFactorEnabled}
-                theme={normalizedTheme}
             />
         </View>
     );

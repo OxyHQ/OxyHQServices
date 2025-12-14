@@ -21,6 +21,17 @@ import { useThemeStyles } from '../hooks/useThemeStyles';
 import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 
+// Button background colors for session actions
+const SWITCH_BUTTON_BG = {
+    dark: '#1E2A38',
+    light: '#E6F2FF',
+} as const;
+
+const LOGOUT_BUTTON_BG = {
+    dark: '#3A1E1E',
+    light: '#FFEBEE',
+} as const;
+
 const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
@@ -45,7 +56,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     const normalizedTheme = normalizeTheme(theme);
     const themeStyles = useThemeStyles(normalizedTheme);
     // Extract commonly used colors for readability
-    const { textColor, backgroundColor, secondaryBackgroundColor, borderColor, primaryColor, dangerColor, successColor, isDarkTheme } = themeStyles;
+    const { textColor, backgroundColor, borderColor, primaryColor, dangerColor, successColor, isDarkTheme } = themeStyles;
 
     // Memoized load sessions function - prevents unnecessary re-renders
     const loadSessions = useCallback(async (isRefresh = false) => {
@@ -92,9 +103,14 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         });
     }, [logout, refreshSessions]);
 
+    // Memoized bulk action items - prevents unnecessary re-renders when dependencies haven't changed
+    const otherSessionsCount = useMemo(() =>
+        userSessions.filter(s => s.sessionId !== activeSessionId).length,
+        [userSessions, activeSessionId]
+    );
+
     // Memoized logout other sessions handler - prevents unnecessary re-renders
     const handleLogoutOtherSessions = useCallback(async () => {
-        const otherSessionsCount = userSessions.filter(s => s.sessionId !== activeSessionId).length;
         if (otherSessionsCount === 0) {
             toast.info('No other sessions to logout.');
             return;
@@ -119,7 +135,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 }
             }
         );
-    }, [userSessions, activeSessionId, logout, refreshSessions]);
+    }, [otherSessionsCount, userSessions, activeSessionId, logout, refreshSessions]);
 
     // Memoized logout all sessions handler - prevents unnecessary re-renders
     const handleLogoutAllSessions = useCallback(async () => {
@@ -132,6 +148,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 } catch (error) {
                     console.error('Logout all sessions failed:', error);
                     toast.error('Failed to logout all sessions. Please try again.');
+                } finally {
                     setActionLoading(null);
                 }
             }
@@ -171,22 +188,18 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         }
     }, [activeSessionId, switchSession]);
 
+    // Memoized refresh handler for pull-to-refresh
+    const handleRefresh = useCallback(() => {
+        loadSessions(true);
+    }, [loadSessions]);
+
     useEffect(() => {
         loadSessions();
     }, [loadSessions]);
 
-    if (loading) {
-        return (
-            <View style={[styles.container, styles.centerContent, { backgroundColor }]}>
-                <ActivityIndicator size="large" color={primaryColor} />
-                <Text style={[styles.loadingText, { color: textColor }]}>Loading sessions...</Text>
-            </View>
-        );
-    }
-
     // Memoized session items - prevents unnecessary re-renders when dependencies haven't changed
     const sessionItems = useMemo(() => {
-        return userSessions.map((session: ClientSession) => {
+        return userSessions.map((session) => {
             const isCurrent = session.sessionId === activeSessionId;
             const subtitleParts: string[] = [];
             if (session.deviceId) subtitleParts.push(`Device ${session.deviceId.substring(0, 10)}...`);
@@ -205,7 +218,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     <View style={styles.sessionActionsRow}>
                         <TouchableOpacity
                             onPress={() => handleSwitchSession(session.sessionId)}
-                            style={[styles.sessionPillButton, { backgroundColor: isDarkTheme ? '#1E2A38' : '#E6F2FF', borderColor: primaryColor }]}
+                            style={[styles.sessionPillButton, { backgroundColor: isDarkTheme ? SWITCH_BUTTON_BG.dark : SWITCH_BUTTON_BG.light, borderColor: primaryColor }]}
                             disabled={switchLoading === session.sessionId || actionLoading === session.sessionId}
                         >
                             {switchLoading === session.sessionId ? (
@@ -216,7 +229,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                         </TouchableOpacity>
                         <TouchableOpacity
                             onPress={() => handleLogoutSession(session.sessionId)}
-                            style={[styles.sessionPillButton, { backgroundColor: isDarkTheme ? '#3A1E1E' : '#FFEBEE', borderColor: dangerColor }]}
+                            style={[styles.sessionPillButton, { backgroundColor: isDarkTheme ? LOGOUT_BUTTON_BG.dark : LOGOUT_BUTTON_BG.light, borderColor: dangerColor }]}
                             disabled={actionLoading === session.sessionId || switchLoading === session.sessionId}
                         >
                             {actionLoading === session.sessionId ? (
@@ -236,12 +249,6 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             };
         });
     }, [userSessions, activeSessionId, formatRelative, successColor, primaryColor, isDarkTheme, switchLoading, actionLoading, handleSwitchSession, handleLogoutSession, dangerColor]);
-
-    // Memoized bulk action items - prevents unnecessary re-renders when dependencies haven't changed
-    const otherSessionsCount = useMemo(() =>
-        userSessions.filter(s => s.sessionId !== activeSessionId).length,
-        [userSessions, activeSessionId]
-    );
 
     const bulkItems = useMemo(() => [
         {
@@ -270,6 +277,15 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
         },
     ], [otherSessionsCount, primaryColor, dangerColor, handleLogoutOtherSessions, handleLogoutAllSessions, actionLoading]);
 
+    if (loading) {
+        return (
+            <View style={[styles.container, styles.centerContent, { backgroundColor }]}>
+                <ActivityIndicator size="large" color={primaryColor} />
+                <Text style={[styles.loadingText, { color: textColor }]}>Loading sessions...</Text>
+            </View>
+        );
+    }
+
     return (
         <View style={[styles.container, { backgroundColor }]}>
             <Header
@@ -285,7 +301,7 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 refreshControl={
                     <RefreshControl
                         refreshing={refreshing}
-                        onRefresh={() => loadSessions(true)}
+                        onRefresh={handleRefresh}
                         tintColor={primaryColor}
                     />
                 }
@@ -293,12 +309,12 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 {userSessions.length > 0 ? (
                     <>
                         {lastRefreshed && (
-                            <Text style={[styles.metaText, { color: isDarkTheme ? '#777' : '#777', marginBottom: 6 }]}>Last refreshed {formatRelative(lastRefreshed.toISOString())}</Text>
+                            <Text style={[styles.metaText, { color: '#777', marginBottom: 6 }]}>Last refreshed {formatRelative(lastRefreshed.toISOString())}</Text>
                         )}
                         <View style={styles.fullBleed}>
                             <GroupedSection items={sessionItems} />
                         </View>
-                        <View style={{ height: 12 }} />
+                        <View style={styles.sectionSpacer} />
                         <View style={styles.fullBleed}>
                             <GroupedSection items={bulkItems} />
                         </View>
@@ -326,8 +342,6 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
         alignItems: 'center',
     },
-
-
     scrollView: {
         flex: 1,
     },
@@ -375,6 +389,9 @@ const styles = StyleSheet.create({
     fullBleed: {
         width: '100%',
         alignSelf: 'stretch',
+    },
+    sectionSpacer: {
+        height: 12,
     },
     emptyState: {
         alignItems: 'center',

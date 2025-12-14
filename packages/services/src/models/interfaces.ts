@@ -30,7 +30,6 @@ export interface User {
   avatar?: string;
   // Privacy and security settings
   privacySettings?: {
-    twoFactorEnabled?: boolean;
     [key: string]: unknown;
   };
   name?: {
@@ -60,6 +59,7 @@ export interface User {
     followers?: number;
     following?: number;
   };
+  accountExpiresAfterInactivityDays?: number | null; // Days of inactivity before account expires (null = never expire)
   [key: string]: unknown;
 }
 

@@ -172,13 +172,15 @@ export default function TabLayout() {
             title: 'Security & sign-in',
           }}
         />
-        <Drawer.Screen
-          name="about-identity"
-          options={{
-            drawerLabel: 'About Your Identity',
-            title: 'About Your Identity',
-          }}
-        />
+        {Platform.OS !== 'web' && (
+          <Drawer.Screen
+            name="about-identity"
+            options={{
+              drawerLabel: 'About Your Identity',
+              title: 'About Your Identity',
+            }}
+          />
+        )}
         <Drawer.Screen
           name="devices"
           options={{

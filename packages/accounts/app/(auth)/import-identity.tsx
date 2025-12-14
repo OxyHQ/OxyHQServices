@@ -13,20 +13,14 @@ import { useOxy, RecoveryPhraseService } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 
-type Step = 'phrase' | 'username';
-
 export default function ImportIdentityScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { importIdentity, isLoading, oxyServices } = useOxy();
+  const { importIdentity, isLoading } = useOxy();
 
-  const [step, setStep] = useState<Step>('phrase');
   const [phraseWords, setPhraseWords] = useState<string[]>(new Array(12).fill(''));
-  const [username, setUsername] = useState('');
-  const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
-  const [needsRegistration, setNeedsRegistration] = useState(false);
 
   const handleWordChange = useCallback((index: number, word: string) => {
     setPhraseWords(prev => {
@@ -45,7 +39,7 @@ export default function ImportIdentityScreen() {
     }
   }, []);
 
-  const handleValidatePhrase = useCallback(async () => {
+  const handleImportPhrase = useCallback(async () => {
     const phrase = phraseWords.join(' ');
 
     // Validate the phrase
@@ -57,45 +51,13 @@ export default function ImportIdentityScreen() {
     setError(null);
 
     try {
-      // Derive public key and check if registered
-      const publicKey = await RecoveryPhraseService.derivePublicKeyFromPhrase(phrase);
-      const { registered } = await oxyServices.checkPublicKeyRegistered(publicKey);
-
-      if (registered) {
-        // Identity exists, import and sign in
-        await importIdentity(phrase);
-        router.replace('/(tabs)');
-      } else {
-        // Need to register
-        setNeedsRegistration(true);
-        setStep('username');
-      }
-    } catch (err: any) {
-      setError(err.message || 'Failed to validate phrase');
-    }
-  }, [phraseWords, importIdentity, oxyServices, router]);
-
-  const handleRegisterAndImport = useCallback(async () => {
-    if (!username.trim()) {
-      setError('Please enter a username');
-      return;
-    }
-
-    if (username.length < 3) {
-      setError('Username must be at least 3 characters');
-      return;
-    }
-
-    setError(null);
-
-    try {
-      const phrase = phraseWords.join(' ');
-      await importIdentity(phrase, username.trim(), email.trim() || undefined);
+      // Import identity (will auto-sync if online, or mark as unsynced if offline)
+      await importIdentity(phrase);
       router.replace('/(tabs)');
     } catch (err: any) {
       setError(err.message || 'Failed to import identity');
     }
-  }, [username, email, phraseWords, importIdentity, router]);
+  }, [phraseWords, importIdentity, router]);
 
   const renderPhraseStep = () => (
     <View style={styles.stepContainer}>
@@ -126,13 +88,13 @@ export default function ImportIdentityScreen() {
 
       <TouchableOpacity
         style={[styles.button, { backgroundColor: colors.primary }]}
-        onPress={handleValidatePhrase}
+        onPress={handleImportPhrase}
         disabled={isLoading}
       >
         {isLoading ? (
           <ActivityIndicator color="#fff" />
         ) : (
-          <Text style={styles.buttonText}>Continue</Text>
+          <Text style={styles.buttonText}>Import Identity</Text>
         )}
       </TouchableOpacity>
 
@@ -147,72 +109,12 @@ export default function ImportIdentityScreen() {
     </View>
   );
 
-  const renderUsernameStep = () => (
-    <View style={styles.stepContainer}>
-      <Text style={[styles.title, { color: colors.text }]}>Complete Registration</Text>
-      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-        This identity hasn't been registered yet. Choose a username to complete setup.
-      </Text>
-
-      <View style={styles.inputContainer}>
-        <Text style={[styles.label, { color: colors.text }]}>Username</Text>
-        <TextInput
-          style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
-          placeholder="Choose a username"
-          placeholderTextColor={colors.textSecondary}
-          value={username}
-          onChangeText={setUsername}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </View>
-
-      <View style={styles.inputContainer}>
-        <Text style={[styles.label, { color: colors.text }]}>Email (optional)</Text>
-        <TextInput
-          style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
-          placeholder="your@email.com"
-          placeholderTextColor={colors.textSecondary}
-          value={email}
-          onChangeText={setEmail}
-          keyboardType="email-address"
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-      </View>
-
-      {error && <Text style={styles.errorText}>{error}</Text>}
-
-      <TouchableOpacity
-        style={[styles.button, { backgroundColor: colors.primary }]}
-        onPress={handleRegisterAndImport}
-        disabled={isLoading}
-      >
-        {isLoading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Complete Setup</Text>
-        )}
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.linkButton}
-        onPress={() => setStep('phrase')}
-      >
-        <Text style={[styles.linkText, { color: colors.primary }]}>
-          Go back
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
-
   return (
     <ScrollView
       style={[styles.container, { backgroundColor: colors.background }]}
       contentContainerStyle={styles.contentContainer}
     >
-      {step === 'phrase' && renderPhraseStep()}
-      {step === 'username' && renderUsernameStep()}
+      {renderPhraseStep()}
     </ScrollView>
   );
 }

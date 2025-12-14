@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -15,13 +15,7 @@ import { useOxy } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
 import type { ClientSession } from '@oxyhq/services';
 import { useThemeContext } from '@/contexts/theme-context';
-
-interface SecurityInfo {
-    twoFactorEnabled: boolean;
-    totpCreatedAt: string | null;
-    backupCodesCount: number;
-    recoveryEmail: string | null;
-}
+import { useBiometricSettings } from '@/hooks/useBiometricSettings';
 
 export default function SecurityScreen() {
     const colorScheme = useColorScheme() ?? 'light';
@@ -33,101 +27,47 @@ export default function SecurityScreen() {
     const { toggleColorScheme } = useThemeContext();
 
     // OxyServices integration
-    const { oxyServices, user, isAuthenticated, isLoading: oxyLoading, sessions, showBottomSheet } = useOxy();
+    const { oxyServices, user, isAuthenticated, isLoading: oxyLoading, sessions } = useOxy();
     const [enhancedSafeBrowsing, setEnhancedSafeBrowsing] = useState(false);
     const [darkWebReport, setDarkWebReport] = useState(false);
-    const [securityInfo, setSecurityInfo] = useState<SecurityInfo | null>(null);
     const [devices, setDevices] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
-    // Fetch security data
+    // Biometric settings
+    const {
+        enabled: biometricEnabled,
+        canEnable: canEnableBiometric,
+        hasHardware: hasBiometricHardware,
+        isEnrolled: isBiometricEnrolled,
+        supportedTypes: biometricTypes,
+        isLoading: biometricLoading,
+        isSaving: biometricSaving,
+        toggleBiometricLogin,
+        refreshCapabilities,
+    } = useBiometricSettings();
+
+    // Fetch devices
     useEffect(() => {
-        const fetchSecurityData = async () => {
+        const fetchDevices = async () => {
             if (!isAuthenticated || !oxyServices) return;
 
             setLoading(true);
             setError(null);
 
-            // Handle each request independently so one failure doesn't block the other
-            // Try to get security info - use method if available, otherwise return default
-            const getSecurityInfoPromise = (() => {
-                try {
-                    if (typeof (oxyServices as any).getSecurityInfo === 'function') {
-                        return (oxyServices as any).getSecurityInfo();
-                    } else {
-                        console.warn('[Security Screen] getSecurityInfo method not available, using defaults');
-                        return Promise.resolve(null);
-                    }
-                } catch (err) {
-                    console.error('[Security Screen] Error calling getSecurityInfo:', err);
-                    return Promise.resolve(null);
-                }
-            })();
-
-            // Wrap getUserDevices in try-catch to handle synchronous exceptions
-            const getUserDevicesPromise = (() => {
-                try {
-                    return oxyServices.getUserDevices();
-                } catch (err) {
-                    console.error('[Security Screen] Error calling getUserDevices:', err);
-                    setError(err instanceof Error ? err.message : 'Failed to load devices');
-                    return Promise.resolve([]);
-                }
-            })();
-
-            const results = await Promise.allSettled([
-                getSecurityInfoPromise.catch((err: any) => {
-                    console.error('[Security Screen] Failed to fetch security info:', err);
-                    return null; // Return null on error so we can still show devices
-                }),
-                getUserDevicesPromise.catch((err: any) => {
-                    console.error('[Security Screen] Failed to fetch devices:', err);
-                    setError(err?.message || 'Failed to load devices');
-                    return []; // Return empty array on error
-                }),
-            ]);
-
-            // Extract results
-            const securityResult = results[0];
-            const devicesResult = results[1];
-
-            // Set security info (or null if failed)
-            if (securityResult.status === 'fulfilled' && securityResult.value) {
-                setSecurityInfo(securityResult.value);
-            } else {
-                // Set default/empty security info if request failed
-                setSecurityInfo({
-                    twoFactorEnabled: false,
-                    totpCreatedAt: null,
-                    backupCodesCount: 0,
-                    recoveryEmail: user?.email || null,
-                });
+            try {
+                const devicesData = await oxyServices.getUserDevices();
+                setDevices(devicesData || []);
+            } catch (err: any) {
+                console.error('[Security Screen] Failed to fetch devices:', err);
+                setError(err?.message || 'Failed to load devices');
+            } finally {
+                setLoading(false);
             }
-
-            // Set devices (or empty array if failed)
-            if (devicesResult.status === 'fulfilled') {
-                const devicesData = devicesResult.value || [];
-
-                // Debug logging to verify data consistency
-                console.log('[Security Screen] Fetched devices:', {
-                    count: devicesData.length,
-                    deviceIds: devicesData.map((d: any) => d.deviceId || d.id),
-                    devices: devicesData,
-                });
-
-                setDevices(devicesData);
-            } else {
-                // Error already set above, but ensure devices is empty array
-                setDevices([]);
-            }
-
-            setLoading(false);
         };
 
-        fetchSecurityData();
-    }, [isAuthenticated, oxyServices, user?.email]);
-
+        fetchDevices();
+    }, [isAuthenticated, oxyServices]);
 
     // Format relative time for dates
     const formatRelativeTime = useCallback((dateString?: string) => {
@@ -165,31 +105,18 @@ export default function SecurityScreen() {
     // Compute security recommendations
     const securityRecommendation = useMemo(() => {
         const recommendations: string[] = [];
-        let primaryAction: string | null = null;
 
-        if (!securityInfo?.twoFactorEnabled) {
-            recommendations.push('Enable 2-Step Verification');
-            primaryAction = 'twoFactor';
+        // Recommend biometric if available but not enabled
+        if (canEnableBiometric && !biometricEnabled && !biometricLoading) {
+            recommendations.push('Enable biometric authentication');
         }
-        if (securityInfo && securityInfo.backupCodesCount === 0 && securityInfo.twoFactorEnabled) {
-            recommendations.push('Generate backup codes');
-            // If 2FA is already enabled, backup codes would also be in the same screen
-            if (!primaryAction) primaryAction = 'twoFactor';
-        }
+
+        // Recommend recovery email
         if (!user?.email) {
             recommendations.push('Add a recovery email');
         }
 
         if (recommendations.length === 0) return [];
-
-        const handleRecommendationPress = () => {
-            if (primaryAction === 'twoFactor' && showBottomSheet) {
-                showBottomSheet({ screen: 'EditProfile', props: { initialField: 'twoFactor' } });
-            } else if (showBottomSheet) {
-                // Fallback: just open EditProfile screen
-                showBottomSheet({ screen: 'EditProfile' });
-            }
-        };
 
         return [{
             id: 'recommendation',
@@ -200,10 +127,15 @@ export default function SecurityScreen() {
             ),
             title: 'You have security recommendations',
             subtitle: recommendations.join(', '),
-            onPress: handleRecommendationPress,
-            showChevron: true,
+            onPress: () => {
+                // Scroll to biometric section or show email prompt
+                if (canEnableBiometric && !biometricEnabled) {
+                    // The toggle will be visible in the biometric section
+                }
+            },
+            showChevron: false,
         }];
-    }, [securityInfo, user, showBottomSheet]);
+    }, [canEnableBiometric, biometricEnabled, biometricLoading, user?.email]);
 
     // Recent activity from sessions - grouped by device to show unique sign-ins
     const recentActivity = useMemo(() => {
@@ -266,23 +198,42 @@ export default function SecurityScreen() {
         });
     }, [sessions, devices, colors, formatRelativeTime, getDeviceIcon, router]);
 
-    // Sign-in items with real data
+    // Sign-in items
     const signInItems = useMemo(() => {
         const items: any[] = [];
 
-        // 2-Step Verification
-        if (securityInfo) {
+        // Biometric authentication
+        if (Platform.OS !== 'web') {
+            let biometricSubtitle = '';
+            if (biometricLoading) {
+                biometricSubtitle = 'Checking...';
+            } else if (!hasBiometricHardware) {
+                biometricSubtitle = 'Not available on this device';
+            } else if (!isBiometricEnrolled) {
+                biometricSubtitle = 'Not set up - configure in device settings';
+            } else if (biometricEnabled) {
+                biometricSubtitle = biometricTypes.length > 0 
+                    ? `Enabled (${biometricTypes.join(', ')})`
+                    : 'Enabled';
+            } else {
+                biometricSubtitle = canEnableBiometric 
+                    ? 'Available - tap to enable'
+                    : 'Not available';
+            }
+
             items.push({
-                id: '2fa',
-                icon: 'shield-check-outline',
-                iconColor: colors.sidebarIconSecurity,
-                title: '2-Step Verification',
-                subtitle: securityInfo.twoFactorEnabled
-                    ? securityInfo.totpCreatedAt
-                        ? `On since ${formatDate(securityInfo.totpCreatedAt)}`
-                        : 'On'
-                    : 'Off',
-                customContent: securityInfo.twoFactorEnabled ? (
+                id: 'biometric',
+                icon: Platform.OS === 'ios' ? 'face-recognition' : 'fingerprint',
+                iconColor: biometricEnabled ? '#34C759' : colors.sidebarIconSecurity,
+                title: Platform.OS === 'ios' ? 'Face ID / Touch ID' : 'Biometric Authentication',
+                subtitle: biometricSubtitle,
+                customContent: canEnableBiometric ? (
+                    <AppleSwitch
+                        value={biometricEnabled}
+                        onValueChange={toggleBiometricLogin}
+                        disabled={biometricSaving || biometricLoading}
+                    />
+                ) : biometricEnabled ? (
                     <View style={styles.statusContainer}>
                         <Ionicons name="checkmark-circle" size={20} color="#34C759" />
                     </View>
@@ -290,63 +241,34 @@ export default function SecurityScreen() {
             });
         }
 
-        // Authenticator (if TOTP is enabled)
-        if (securityInfo?.twoFactorEnabled && securityInfo.totpCreatedAt) {
-            items.push({
-                id: 'authenticator',
-                icon: 'grid',
-                iconColor: colors.sidebarIconSecurity,
-                title: 'Authenticator',
-                subtitle: `Added ${formatDate(securityInfo.totpCreatedAt)}`,
-            });
-        }
-
         // Notification email (optional, not used for login)
-        if (user?.email || securityInfo?.recoveryEmail) {
-            const email = user?.email || securityInfo?.recoveryEmail;
+        if (user?.email) {
             items.push({
                 id: 'notification-email',
                 icon: 'email-outline',
                 iconColor: colors.sidebarIconSecurity,
                 title: 'Notification email',
-                subtitle: email || 'Not set (optional)',
-            });
-        }
-
-        // Backup codes
-        if (securityInfo && securityInfo.twoFactorEnabled) {
-            items.push({
-                id: 'backup-codes',
-                icon: 'grid',
-                iconColor: colors.sidebarIconSecurity,
-                title: 'Backup codes',
-                subtitle: securityInfo.backupCodesCount > 0
-                    ? `${securityInfo.backupCodesCount} codes available`
-                    : 'No codes available',
+                subtitle: user.email,
             });
         }
 
         return items;
-    }, [colors, securityInfo, user, formatDate]);
+    }, [
+        colors,
+        user,
+        biometricEnabled,
+        canEnableBiometric,
+        hasBiometricHardware,
+        isBiometricEnrolled,
+        biometricTypes,
+        biometricLoading,
+        biometricSaving,
+        toggleBiometricLogin,
+    ]);
 
     // Device items grouped by type
-    // Note: This groups the same devices shown on the devices screen by their type
-    // Both screens use the same API endpoint (/api/devices) and show the same devices, just organized differently:
-    // - Devices screen: Shows individual devices (one per deviceId)
-    // - Security screen: Groups devices by type for a summary view
     const deviceItems = useMemo(() => {
         if (!devices || devices.length === 0) return [];
-
-        // Debug: Log device data for comparison with devices screen
-        console.log('[Security Screen] Processing devices for grouping:', {
-            totalDevices: devices.length,
-            deviceDetails: devices.map((d: any) => ({
-                id: d.id || d.deviceId,
-                name: d.name || d.deviceName,
-                type: d.type || d.deviceType,
-                isCurrent: d.isCurrent,
-            })),
-        });
 
         // Group devices by type
         const deviceGroups = new Map<string, { count: number; names: string[]; deviceIds: string[] }>();
@@ -380,7 +302,6 @@ export default function SecurityScreen() {
                 id: `device-${type}`,
                 icon: icon as any,
                 iconColor: colors.sidebarIconDevices,
-                // Fixed: Show "devices" not "sessions" - these are actual devices, not session counts
                 title: `${group.count} device${group.count !== 1 ? 's' : ''} (${typeLabel})`,
                 subtitle,
                 onPress: () => router.push('/(tabs)/devices'),
@@ -395,7 +316,7 @@ export default function SecurityScreen() {
     const appearanceItems = useMemo(() => [
         {
             id: 'dark-mode',
-            icon: colorScheme === 'dark' ? 'sunny-outline' : 'moon-outline',
+            icon: colorScheme === 'dark' ? 'weather-sunny' : 'weather-night',
             iconColor: colors.sidebarIconData,
             title: 'Dark mode',
             subtitle: colorScheme === 'dark' ? 'On' : 'Off',

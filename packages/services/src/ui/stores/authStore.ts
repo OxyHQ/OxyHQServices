@@ -7,12 +7,21 @@ export interface AuthState {
   isLoading: boolean;
   error: string | null;
   lastUserFetch: number | null; // Timestamp of last user fetch for caching
+  
+  // Identity sync state (offline-first)
+  isIdentitySynced: boolean;
+  isSyncing: boolean;
+  
   loginSuccess: (user: User) => void;
   loginFailure: (error: string) => void;
   logout: () => void;
   fetchUser: (oxyServices: { getCurrentUser: () => Promise<User> }, forceRefresh?: boolean) => Promise<void>;
   updateUser: (updates: Partial<User>, oxyServices: { updateProfile: (updates: Partial<User>) => Promise<User>; getCurrentUser: () => Promise<User> }) => Promise<void>;
   setUser: (user: User) => void; // Direct user setter for caching
+  
+  // Identity sync actions
+  setIdentitySynced: (synced: boolean) => void;
+  setSyncing: (syncing: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) => void, get: () => AuthState) => ({
@@ -21,10 +30,30 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
   isLoading: false,
   error: null,
   lastUserFetch: null,
-  loginSuccess: (user: User) => set({ isLoading: false, isAuthenticated: true, user, lastUserFetch: Date.now() }),
+  
+  // Identity sync state (offline-first)
+  isIdentitySynced: true, // Assume synced until proven otherwise
+  isSyncing: false,
+  
+  loginSuccess: (user: User) => set({ 
+    isLoading: false, 
+    isAuthenticated: true, 
+    user, 
+    lastUserFetch: Date.now(),
+    isIdentitySynced: true, // If login succeeded, identity is synced
+  }),
   loginFailure: (error: string) => set({ isLoading: false, error }),
-  logout: () => set({ user: null, isAuthenticated: false, lastUserFetch: null }),
+  logout: () => set({ 
+    user: null, 
+    isAuthenticated: false, 
+    lastUserFetch: null,
+    // Keep identity sync state - user might still have local identity
+  }),
   setUser: (user: User) => set({ user, lastUserFetch: Date.now() }),
+  
+  // Identity sync actions
+  setIdentitySynced: (synced: boolean) => set({ isIdentitySynced: synced }),
+  setSyncing: (syncing: boolean) => set({ isSyncing: syncing }),
   fetchUser: async (oxyServices, forceRefresh = false) => {
     const state = get();
     const now = Date.now();

@@ -46,14 +46,6 @@
     "status": {
       "accountSwitched": "Ahora usando {{name}}"
     },
-    "totp": {
-      "title": "Código de dos factores",
-      "subtitle": "Introduce el código de 6 dígitos de tu app autenticadora para @{{username}}",
-      "invalidCode": "Código inválido. Inténtalo de nuevo.",
-      "noAccess": "¿Sin acceso a tu autenticador?",
-      "useBackupCode": "Usar código de respaldo",
-      "useRecoveryKey": "Usar clave de recuperación"
-    }
   },
   "signup": {
     "welcome": {
@@ -98,7 +90,7 @@
         "password": "Contraseña"
       },
       "notSet": "Sin definir",
-      "securityTip": "Para mayor seguridad, habilita la Autenticación de Dos Factores (TOTP) en Configuración de la cuenta después de crear tu cuenta.",
+      "securityTip": "Para mayor seguridad, habilita la autenticación biométrica en Configuración de la cuenta después de crear tu cuenta.",
       "legalReminder": "Al crear una cuenta, aceptas nuestros Términos de servicio y Política de privacidad."
     }
   },
@@ -133,7 +125,7 @@
     "enterCode": "Introduce el código de 6 dígitos de tu app de autenticación.",
     "newPassword": "Establecer nueva contraseña",
     "resetSuccess": "¡Tu contraseña ha sido restablecida! Ahora puedes iniciar sesión.",
-    "noEmail": "Ya no enviamos correos de recuperación. Si activaste la autenticación de dos factores (TOTP), inicia sesión con tu usuario y contraseña y luego introduce el código del autenticador. De lo contrario, contacta con soporte.",
+    "noEmail": "Ya no enviamos correos de recuperación. Por favor, usa tu frase de recuperación para restaurar tu identidad. Contacta con soporte si necesitas ayuda.",
     "password": {
       "minLength": "La contraseña debe tener al menos 8 caracteres",
       "mismatch": "Las contraseñas no coinciden",
@@ -196,11 +188,6 @@
         "subtitle": "Obtén una insignia verificada",
         "coming": "¡La verificación de cuenta estará disponible pronto!"
       },
-      "twoFactor": {
-        "title": "Autenticación de dos factores",
-        "enabled": "Activada",
-        "disabled": "Desactivada (recomendado)"
-      }
     },
     "confirms": {
       "removeAvatar": "¿Eliminar tu foto de perfil?"
@@ -215,11 +202,6 @@
       "avatarUpdated": "Avatar actualizado",
       "updateAvatarFailed": "Error al actualizar el avatar",
       "noActiveSession": "No hay sesión activa",
-      "totpStartFailed": "Error al iniciar el registro TOTP",
-      "twoFactorEnabled": "Autenticación de dos factores activada",
-      "invalidCode": "Código inválido",
-      "twoFactorDisabled": "Autenticación de dos factores desactivada",
-      "disableFailed": "Error al desactivar"
     }
   },
   "common": {
@@ -291,7 +273,7 @@
       },
       "security": {
         "title": "Seguridad y privacidad",
-        "subtitle": "Contraseña, 2FA y ajustes de privacidad"
+        "subtitle": "Seguridad y ajustes de privacidad"
       },
       "notifications": {
         "title": "Notificaciones",

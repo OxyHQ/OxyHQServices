@@ -46,14 +46,6 @@
     "status": {
       "accountSwitched": "Ara utilitzant {{name}}"
     },
-    "totp": {
-      "title": "Codi de dos factors",
-      "subtitle": "Introdueix el codi de 6 dígits de la teva app autenticadora per @{{username}}",
-      "invalidCode": "Codi invàlid. Torna-ho a intentar.",
-      "noAccess": "Sense accés al teu autenticador?",
-      "useBackupCode": "Utilitzar codi de còpia de seguretat",
-      "useRecoveryKey": "Utilitzar clau de recuperació"
-    }
   },
   "signup": {
     "welcome": {
@@ -98,7 +90,7 @@
         "password": "Contrasenya"
       },
       "notSet": "No definit",
-      "securityTip": "Per a una major seguretat, habilita l'Autenticació de Dos Factors (TOTP) des de Configuració del compte després de crear el teu compte.",
+      "securityTip": "Per a una major seguretat, habilita l'autenticació biomètrica des de Configuració del compte després de crear el teu compte.",
       "legalReminder": "En crear un compte, acceptes els nostres Termes de servei i Política de privacitat."
     }
   },

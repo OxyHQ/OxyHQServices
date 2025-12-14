@@ -237,18 +237,16 @@ export class SignatureService {
   /**
    * Create a registration signature
    * Used when registering a new identity with the server
+   * Format matches server expectation: oxy:register:{publicKey}:{timestamp}
    */
-  static async createRegistrationSignature(
-    username: string,
-    email?: string
-  ): Promise<{ signature: string; publicKey: string; timestamp: number }> {
+  static async createRegistrationSignature(): Promise<{ signature: string; publicKey: string; timestamp: number }> {
     const publicKey = await KeyManager.getPublicKey();
     if (!publicKey) {
       throw new Error('No identity found. Please create or import an identity first.');
     }
 
     const timestamp = Date.now();
-    const message = `register:${publicKey}:${username}:${email || ''}:${timestamp}`;
+    const message = `oxy:register:${publicKey}:${timestamp}`;
     const signature = await SignatureService.sign(message);
 
     return {

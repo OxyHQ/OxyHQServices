@@ -46,14 +46,6 @@
     "status": {
       "accountSwitched": "正在使用{{name}}"
     },
-    "totp": {
-      "title": "双因素验证码",
-      "subtitle": "输入@{{username}}的验证器应用中的6位数字代码",
-      "invalidCode": "无效的代码。请重试。",
-      "noAccess": "无法访问您的验证器？",
-      "useBackupCode": "使用备份代码",
-      "useRecoveryKey": "使用恢复密钥"
-    }
   },
   "signup": {
     "welcome": {
@@ -98,7 +90,7 @@
         "password": "密码"
       },
       "notSet": "未设置",
-      "securityTip": "为了更强的安全性，创建账户后，请在账户设置中启用双因素身份验证（TOTP）。",
+      "securityTip": "为了更强的安全性，创建账户后，请在账户设置中启用生物识别身份验证。",
       "legalReminder": "创建账户即表示您同意我们的服务条款和隐私政策。"
     }
   },

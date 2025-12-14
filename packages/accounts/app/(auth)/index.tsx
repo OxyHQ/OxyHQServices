@@ -11,6 +11,7 @@ import { useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { useBiometricSignIn } from '@/hooks/useBiometricSignIn';
 
 /**
  * Auth Index Screen
@@ -22,7 +23,8 @@ export default function AuthIndexScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { hasIdentity, signIn, isLoading } = useOxy();
+  const { hasIdentity, isLoading } = useOxy();
+  const { signIn } = useBiometricSignIn();
 
   const [checking, setChecking] = useState(true);
   const [hasExistingIdentity, setHasExistingIdentity] = useState(false);

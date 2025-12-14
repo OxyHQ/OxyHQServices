@@ -71,6 +71,7 @@ export class UserService {
       'linksMetadata',
       'locations',
       'language',
+      'accountExpiresAfterInactivityDays',
     ] as const;
 
     // Filter and validate updates
@@ -87,6 +88,16 @@ export class UserService {
           filteredUpdates.avatar = (value as { id?: string }).id || '';
         }
         continue;
+      }
+      
+      // Validate accountExpiresAfterInactivityDays
+      if (key === 'accountExpiresAfterInactivityDays') {
+        if (value !== null && value !== undefined) {
+          const validValues = [30, 90, 180, 365];
+          if (!validValues.includes(value as number)) {
+            throw new Error('accountExpiresAfterInactivityDays must be 30, 90, 180, 365, or null');
+          }
+        }
       }
       
       // Assign other fields

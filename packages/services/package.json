@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/services",
-  "version": "5.15.9",
+  "version": "5.16.0",
   "description": "Reusable OxyHQ module to handle authentication, user management, karma system, device-based session management and more 🚀",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
@@ -97,6 +97,7 @@
     "elliptic": "^6.6.1",
     "expo-blur": "~15.0.8",
     "expo-crypto": "~14.0.1",
+    "expo-print": "~15.0.8",
     "expo-secure-store": "~14.0.0",
     "invariant": "^2.2.4",
     "jwt-decode": "^4.0.0",
