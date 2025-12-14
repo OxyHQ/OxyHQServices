@@ -4,12 +4,14 @@ import type { BaseScreenProps } from '../../types/navigation';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
 import { useThemeStyles } from '../../hooks/useThemeStyles';
+import { normalizeTheme } from '../../utils/themeUtils';
 import { useColorScheme } from '../../hooks/use-color-scheme';
 
 const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const { t } = useI18n();
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme, colorScheme);
+    const normalizedTheme = normalizeTheme(theme);
+    const themeStyles = useThemeStyles(normalizedTheme, colorScheme);
     // Override primaryColor for Karma screens (purple instead of blue)
     const primaryColor = '#d169e5';
 

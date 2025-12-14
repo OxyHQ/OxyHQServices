@@ -6,6 +6,8 @@ export type OnConfirmFileSelection = (files: FileMetadata[]) => void;
 
 export interface FileManagementScreenProps extends BaseScreenProps {
     userId?: string;
+    // Container width for responsive layout calculations
+    containerWidth?: number;
     // Enable selection mode (acts like a picker). When true, opening a file selects it instead of showing viewer
     selectMode?: boolean;
     // Allow selecting multiple files; only used if selectMode is true

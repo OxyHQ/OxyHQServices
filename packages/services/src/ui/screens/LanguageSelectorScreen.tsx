@@ -9,6 +9,7 @@ import {
 import type { BaseScreenProps } from '../types/navigation';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { normalizeTheme } from '../utils/themeUtils';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { Header, GroupedSection } from '../components';
@@ -35,7 +36,8 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
     const { user, currentLanguage, setLanguage, oxyServices, isAuthenticated } = useOxy();
     const { t } = useI18n();
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme, colorScheme);
+    const normalizedTheme = normalizeTheme(theme);
+    const themeStyles = useThemeStyles(normalizedTheme, colorScheme);
     const themeColors = themeStyles.colors;
     const [isLoading, setIsLoading] = useState(false);
 
@@ -78,7 +80,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
 
             setIsLoading(false);
             // Close the bottom sheet if possible; otherwise, go back
-            if (onClose) onClose(); else goBack();
+            if (onClose) onClose(); else goBack?.();
 
         } catch (error) {
             // Only show error if local storage also failed
@@ -118,7 +120,7 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
             <Header
                 title=""
                 subtitle=""
-                theme={theme}
+                theme={normalizedTheme}
                 onBack={onClose || goBack}
                 variant="minimal"
                 elevation="none"

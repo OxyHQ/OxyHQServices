@@ -3,6 +3,7 @@ import { useState, useRef, useCallback } from 'react';
 import { useI18n } from '../hooks/useI18n';
 import type { BaseScreenProps } from '../types/navigation';
 import { useThemeColors } from '../styles';
+import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 import StepBasedScreen, { type StepConfig } from '../components/StepBasedScreen';
 import RecoverRequestStep from './steps/RecoverRequestStep';
@@ -23,7 +24,8 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
 }) => {
     // Use useOxy() hook for OxyContext values
     const { oxyServices } = useOxy();
-    const colors = useThemeColors(theme);
+    const normalizedTheme = normalizeTheme(theme);
+    const colors = useThemeColors(normalizedTheme);
     const { t } = useI18n();
 
     // Form state
@@ -37,7 +39,7 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
 
     // Handle back navigation
     const handleBack = useCallback(() => {
-        navigate('SignIn');
+        navigate?.('SignIn');
     }, [navigate]);
 
     // Step configurations
@@ -134,7 +136,7 @@ const RecoverAccountScreen: React.FC<BaseScreenProps> = ({
             initialStep={safeInitialStep}
             stepData={stepData}
             onComplete={handleComplete}
-            navigate={navigate}
+            navigate={navigate || (() => {})}
             goBack={handleBack}
             theme={theme}
             currentScreen={currentScreen}

@@ -3,7 +3,7 @@ import type { RouteName } from '../../navigation/routes';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
-import TextField from '../../components/internal/TextField';
+import TextField from '../../components/TextField';
 import { useI18n } from '../../hooks/useI18n';
 import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
@@ -130,13 +130,13 @@ const RecoverResetPasswordStep: React.FC<RecoverResetPasswordStepProps> = ({
         <GroupedPillButtons
           buttons={[
             { text: t('common.actions.back'), onPress: prevStep, icon: 'arrow-back', variant: 'transparent' },
-            { 
-              text: t('common.actions.resetPassword'), 
-              onPress: handleReset, 
-              icon: 'key-outline', 
-              variant: 'primary', 
-              loading: isLoading, 
-              disabled: isLoading || !password || password.length < 8 || password !== confirmPassword 
+            {
+              text: t('common.actions.resetPassword'),
+              onPress: handleReset,
+              icon: 'key-outline',
+              variant: 'primary',
+              loading: isLoading,
+              disabled: isLoading || !password || password.length < 8 || password !== confirmPassword
             },
           ]}
           colors={colors}

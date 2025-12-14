@@ -25,7 +25,8 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
 }) => {
     // Use centralized theme styles hook for consistency
     // primaryColor from hook (#007AFF) is already correct for this screen
-    const themeStyles = useThemeStyles(theme);
+    const normalizedTheme = normalizeTheme(theme);
+    const themeStyles = useThemeStyles(normalizedTheme);
 
     const handleLinkPress = async (url: string) => {
         try {

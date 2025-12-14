@@ -94,7 +94,8 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
         }
     }, [user?.id, oxyServices, t]);
 
-    const themeStyles = useThemeStyles(theme);
+    const normalizedTheme = normalizeTheme(theme);
+    const themeStyles = useThemeStyles(normalizedTheme);
 
     if (isLoading) {
         return (

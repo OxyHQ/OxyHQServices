@@ -1,5 +1,5 @@
-import type { OxyServices } from '../../../core';
-import type { ClientSession } from '../../../models/session';
+import type { OxyServices } from '../../core';
+import type { ClientSession } from '../../models/session';
 
 interface DeviceSession {
   sessionId: string;

@@ -4,10 +4,12 @@ import type { BaseScreenProps } from '../../types/navigation';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
 import { useThemeStyles } from '../../hooks/useThemeStyles';
+import { normalizeTheme } from '../../utils/themeUtils';
 
 const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const { t } = useI18n();
-    const themeStyles = useThemeStyles(theme);
+    const normalizedTheme = normalizeTheme(theme);
+    const themeStyles = useThemeStyles(normalizedTheme);
     const backgroundColor = themeStyles.backgroundColor;
     const textColor = themeStyles.textColor;
     const primaryColor = '#d169e5';

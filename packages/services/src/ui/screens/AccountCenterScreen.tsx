@@ -25,7 +25,7 @@ import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { Colors } from '../constants/theme';
-import { normalizeColorScheme } from '../utils/themeUtils';
+import { normalizeColorScheme, normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 import { screenContentStyle } from '../constants/spacing';
 
@@ -38,12 +38,13 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
     const { user, logout, isLoading, sessions, isAuthenticated } = useOxy();
     const { t } = useI18n();
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme || 'light', colorScheme);
+    const normalizedTheme = normalizeTheme(theme);
+    const themeStyles = useThemeStyles(normalizedTheme, colorScheme);
     // AccountCenterScreen uses a slightly different light background
     const backgroundColor = themeStyles.isDarkTheme ? themeStyles.backgroundColor : '#f2f2f2';
     // Extract commonly used colors for readability - ensure colors is always defined
     const { textColor, secondaryBackgroundColor, borderColor, primaryColor, dangerColor, colors: themeColors } = themeStyles;
-    const colors = themeColors || Colors[normalizeColorScheme(colorScheme, theme || 'light')];
+    const colors = themeColors || Colors[normalizeColorScheme(colorScheme, normalizedTheme)];
 
     // Memoized logout handler - prevents unnecessary re-renders
     const handleLogout = useCallback(async () => {
@@ -88,8 +89,8 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
             {user && (
                 <ProfileCard
                     user={user}
-                    theme={theme || 'light'}
-                    onEditPress={() => navigate('EditProfile', { activeTab: 'profile' })}
+                    theme={normalizedTheme}
+                    onEditPress={() => navigate?.('EditProfile', { activeTab: 'profile' })}
                     onClosePress={onClose}
                     showCloseButton={!!onClose}
                 />
@@ -99,14 +100,14 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 {/* Quick Actions */}
                 <Section title={t('accountCenter.sections.quickActions') || 'Quick Actions'} isFirst={true}>
                     <QuickActions
-                        theme={theme}
+                        theme={normalizedTheme}
                         actions={useMemo(() => [
-                            { id: 'overview', icon: 'person-circle', iconColor: colors.iconSecurity, title: t('accountCenter.quickActions.overview') || 'Overview', onPress: () => navigate('AccountOverview') },
-                            { id: 'settings', icon: 'settings', iconColor: colors.iconData, title: t('accountCenter.quickActions.editProfile') || 'Edit Profile', onPress: () => navigate('EditProfile') },
-                            { id: 'sessions', icon: 'shield-checkmark', iconColor: colors.iconSecurity, title: t('accountCenter.quickActions.sessions') || 'Sessions', onPress: () => navigate('SessionManagement') },
-                            { id: 'premium', icon: 'star', iconColor: colors.iconPayments, title: t('accountCenter.quickActions.premium') || 'Premium', onPress: () => navigate('PremiumSubscription') },
-                            ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: colors.iconPersonalInfo, title: t('accountCenter.quickActions.billing') || 'Billing', onPress: () => navigate('PaymentGateway') }] : []),
-                            ...(sessions && sessions.length > 1 ? [{ id: 'switch', icon: 'swap-horizontal', iconColor: colors.iconStorage, title: t('accountCenter.quickActions.switch') || 'Switch', onPress: () => navigate('AccountSwitcher') }] : []),
+                            { id: 'overview', icon: 'person-circle', iconColor: colors.iconSecurity, title: t('accountCenter.quickActions.overview') || 'Overview', onPress: () => navigate?.('AccountOverview') },
+                            { id: 'settings', icon: 'settings', iconColor: colors.iconData, title: t('accountCenter.quickActions.editProfile') || 'Edit Profile', onPress: () => navigate?.('EditProfile') },
+                            { id: 'sessions', icon: 'shield-checkmark', iconColor: colors.iconSecurity, title: t('accountCenter.quickActions.sessions') || 'Sessions', onPress: () => navigate?.('SessionManagement') },
+                            { id: 'premium', icon: 'star', iconColor: colors.iconPayments, title: t('accountCenter.quickActions.premium') || 'Premium', onPress: () => navigate?.('PremiumSubscription') },
+                            ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: colors.iconPersonalInfo, title: t('accountCenter.quickActions.billing') || 'Billing', onPress: () => navigate?.('PaymentGateway') }] : []),
+                            ...(sessions && sessions.length > 1 ? [{ id: 'switch', icon: 'swap-horizontal', iconColor: colors.iconStorage, title: t('accountCenter.quickActions.switch') || 'Switch', onPress: () => navigate?.('AccountSwitcher') }] : []),
                         ], [user?.isPremium, sessions, navigate, t, colors])}
 
                     />
@@ -122,7 +123,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: colors.iconSecurity,
                                 title: t('accountCenter.items.accountOverview.title') || 'Account Overview',
                                 subtitle: t('accountCenter.items.accountOverview.subtitle') || 'Complete account information',
-                                onPress: () => navigate('AccountOverview'),
+                                onPress: () => navigate?.('AccountOverview'),
                             },
                             {
                                 id: 'settings',
@@ -130,7 +131,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: colors.iconData,
                                 title: t('accountCenter.items.editProfile.title') || 'Edit Profile',
                                 subtitle: t('accountCenter.items.editProfile.subtitle') || 'Manage your profile and preferences',
-                                onPress: () => navigate('EditProfile'),
+                                onPress: () => navigate?.('EditProfile'),
                             },
                             {
                                 id: 'sessions',
@@ -138,7 +139,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: colors.iconSecurity,
                                 title: t('accountCenter.items.manageSessions.title') || 'Manage Sessions',
                                 subtitle: t('accountCenter.items.manageSessions.subtitle') || 'Security and active devices',
-                                onPress: () => navigate('SessionManagement'),
+                                onPress: () => navigate?.('SessionManagement'),
                             },
                             {
                                 id: 'files',
@@ -146,7 +147,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: colors.iconStorage,
                                 title: t('accountCenter.items.fileManagement.title') || 'File Management',
                                 subtitle: t('accountCenter.items.fileManagement.subtitle') || 'Upload, download, and manage your files',
-                                onPress: () => navigate('FileManagement'),
+                                onPress: () => navigate?.('FileManagement'),
                             },
                             {
                                 id: 'premium',
@@ -154,7 +155,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: colors.iconPayments,
                                 title: t('accountCenter.items.premium.title') || 'Oxy+ Subscriptions',
                                 subtitle: user?.isPremium ? (t('accountCenter.items.premium.manage') || 'Manage your premium plan') : (t('accountCenter.items.premium.upgrade') || 'Upgrade to premium features'),
-                                onPress: () => navigate('PremiumSubscription'),
+                                onPress: () => navigate?.('PremiumSubscription'),
                             },
                             ...(user?.isPremium ? [{
                                 id: 'billing',
@@ -162,7 +163,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: colors.iconPersonalInfo,
                                 title: t('accountCenter.items.billing.title') || 'Billing Management',
                                 subtitle: t('accountCenter.items.billing.subtitle') || 'Payment methods and invoices',
-                                onPress: () => navigate('PaymentGateway'),
+                                onPress: () => navigate?.('PaymentGateway'),
                             }] : []),
                         ], [user?.isPremium, navigate, t, colors])}
 
@@ -180,7 +181,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                     iconColor: colors.iconStorage,
                                     title: t('accountCenter.items.switchAccount.title') || 'Switch Account',
                                     subtitle: t('accountCenter.items.switchAccount.subtitle', { count: sessions.length }) || `${sessions.length} accounts available`,
-                                    onPress: () => navigate('AccountSwitcher'),
+                                    onPress: () => navigate?.('AccountSwitcher'),
                                 },
                                 {
                                     id: 'add',
@@ -188,7 +189,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                     iconColor: colors.iconPersonalInfo,
                                     title: t('accountCenter.items.addAccount.title') || 'Add Another Account',
                                     subtitle: t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account',
-                                    onPress: () => navigate('SignIn'),
+                                    onPress: () => navigate?.('SignIn'),
                                 },
                             ], [sessions.length, navigate, t, colors])}
 
@@ -207,7 +208,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                     iconColor: colors.iconPersonalInfo,
                                     title: t('accountCenter.items.addAccount.title') || 'Add Another Account',
                                     subtitle: t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account',
-                                    onPress: () => navigate('SignIn'),
+                                    onPress: () => navigate?.('SignIn'),
                                 },
                             ], [navigate, t, colors])}
 
@@ -233,7 +234,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: colors.iconPersonalInfo,
                                 title: t('language.title') || 'Language',
                                 subtitle: t('language.subtitle') || 'Choose your preferred language',
-                                onPress: () => navigate('LanguageSelector'),
+                                onPress: () => navigate?.('LanguageSelector'),
                             },
                             {
                                 id: 'help',
@@ -249,7 +250,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: '#8E8E93',
                                 title: t('accountCenter.items.appInfo.title') || 'App Information',
                                 subtitle: t('accountCenter.items.appInfo.subtitle') || 'Version and system details',
-                                onPress: () => navigate('AppInfo'),
+                                onPress: () => navigate?.('AppInfo'),
                             },
                         ], [navigate, t, colors, Platform.OS])}
 

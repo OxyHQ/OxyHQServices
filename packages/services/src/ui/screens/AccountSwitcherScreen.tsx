@@ -25,6 +25,7 @@ import { Header, GroupedSection, LoadingState } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 
 interface SessionWithUser extends ClientSession {
@@ -76,7 +77,8 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
     const screenWidth = Dimensions.get('window').width;
     const { t } = useI18n();
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme, colorScheme);
+    const normalizedTheme = normalizeTheme(theme);
+    const themeStyles = useThemeStyles(normalizedTheme, colorScheme);
 
     // Modern color scheme - memoized for performance
     // Uses themeStyles for base colors, with some custom additions for this screen

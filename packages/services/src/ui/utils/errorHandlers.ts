@@ -1,4 +1,4 @@
-import type { ApiError } from '../../../models/interfaces';
+import type { ApiError } from '../../models/interfaces';
 
 type ErrorWithMessage = {
   message?: string;

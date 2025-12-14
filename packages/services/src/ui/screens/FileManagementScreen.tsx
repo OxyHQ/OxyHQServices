@@ -26,6 +26,7 @@ import JustifiedPhotoGrid from '../components/photogrid/JustifiedPhotoGrid';
 import { GroupedSection } from '../components';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 import {
     confirmAction,
@@ -115,6 +116,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     // Use useOxy() hook for OxyContext values
     const { user, oxyServices } = useOxy();
     const files = useFiles();
+    // Ensure containerWidth is a number (TypeScript guard)
+    const safeContainerWidth: number = typeof containerWidth === 'number' ? containerWidth : 400;
     const uploading = useUploadingStore();
     const uploadProgress = useUploadAggregateProgress();
     const deleting = useDeletingStore();
@@ -330,7 +333,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
     // Use centralized theme styles hook for consistency
     const colorScheme = useColorScheme();
-    const baseThemeStyles = useThemeStyles(theme, colorScheme);
+    const normalizedTheme = normalizeTheme(theme);
+    const baseThemeStyles = useThemeStyles(normalizedTheme, colorScheme);
     // FileManagementScreen uses a slightly different light background
     const themeStyles = useMemo(() => ({
         ...baseThemeStyles,
@@ -1094,13 +1098,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
         // Calculate photo item width based on actual container size from bottom sheet
         let itemsPerRow = 3; // Default for mobile
-        if (containerWidth > 768) itemsPerRow = 4; // Desktop/tablet
-        else if (containerWidth > 480) itemsPerRow = 3; // Large mobile
+        if (safeContainerWidth > 768) itemsPerRow = 4; // Desktop/tablet
+        else if (safeContainerWidth > 480) itemsPerRow = 3; // Large mobile
 
         // Account for the photoScrollContainer padding (16px on each side = 32px total)
         const scrollContainerPadding = 32; // Total horizontal padding from photoScrollContainer
         const gaps = (itemsPerRow - 1) * 4; // Gap between items (4px)
-        const availableWidth = containerWidth - scrollContainerPadding;
+        const availableWidth = safeContainerWidth - scrollContainerPadding;
         const itemWidth = (availableWidth - gaps) / itemsPerRow;
 
         return (
@@ -1138,7 +1142,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 </View>
             </TouchableOpacity>
         );
-    }, [oxyServices, containerWidth, selectMode, selectedIds, themeStyles.primaryColor, themeStyles.textColor]);
+    }, [oxyServices, safeContainerWidth, selectMode, selectedIds, themeStyles.primaryColor, themeStyles.textColor]);
 
     const renderJustifiedPhotoItem = useCallback((photo: FileMetadata, width: number, height: number, isLast: boolean) => {
         const downloadUrl = getSafeDownloadUrlCallback(photo, 'thumb');
@@ -1514,12 +1518,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     // Estimate photo item height based on grid layout
                     // Calculate items per row
                     let itemsPerRow = 3;
-                    if (containerWidth > 768) itemsPerRow = 6;
-                    else if (containerWidth > 480) itemsPerRow = 4;
+                    if (safeContainerWidth > 768) itemsPerRow = 6;
+                    else if (safeContainerWidth > 480) itemsPerRow = 4;
 
                     const scrollContainerPadding = 32;
                     const gaps = (itemsPerRow - 1) * 4;
-                    const availableWidth = containerWidth - scrollContainerPadding;
+                    const availableWidth = safeContainerWidth - scrollContainerPadding;
                     const itemWidth = (availableWidth - gaps) / itemsPerRow;
 
                     // Calculate row and approximate scroll position
@@ -1539,7 +1543,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 }
             }
         }
-    }, [lastSelectedFileId, selectMode, viewMode, filteredFiles, containerWidth]);
+    }, [lastSelectedFileId, selectMode, viewMode, filteredFiles, safeContainerWidth]);
 
     // Clear selected file ID after scroll animation completes
     useEffect(() => {
@@ -1557,13 +1561,13 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
         // Calculate photo item width based on actual container size from bottom sheet
         let itemsPerRow = 3; // Default for mobile
-        if (containerWidth > 768) itemsPerRow = 6; // Tablet/Desktop
-        else if (containerWidth > 480) itemsPerRow = 4; // Large mobile
+        if (safeContainerWidth > 768) itemsPerRow = 6; // Tablet/Desktop
+        else if (safeContainerWidth > 480) itemsPerRow = 4; // Large mobile
 
         // Account for the photoScrollContainer padding (16px on each side = 32px total)
         const scrollContainerPadding = 32; // Total horizontal padding from photoScrollContainer
         const gaps = (itemsPerRow - 1) * 4; // Gap between items
-        const availableWidth = containerWidth - scrollContainerPadding;
+        const availableWidth = safeContainerWidth - scrollContainerPadding;
         const itemWidth = (availableWidth - gaps) / itemsPerRow;
 
         return (
@@ -1668,7 +1672,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     renderJustifiedPhotoItem={renderJustifiedPhotoItem}
                     renderSimplePhotoItem={renderPhotoItem}
                     textColor={themeStyles.textColor}
-                    containerWidth={containerWidth}
+                    containerWidth={safeContainerWidth}
                 />
             </ScrollView>
         );
@@ -1687,7 +1691,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         createJustifiedRows,
         renderJustifiedPhotoItem,
         renderPhotoItem,
-        containerWidth
+        safeContainerWidth
     ]);
 
     // Inline justified grid removed (moved to components/photogrid/JustifiedPhotoGrid.tsx)
@@ -1728,7 +1732,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
     // Professional Skeleton Loading Component with Advanced Shimmer Effect
     const SkeletonLoader = React.memo(() => {
         const shimmerAnim = useRef(new Animated.Value(0)).current;
-        const skeletonContainerWidth = containerWidth || 400;
+        const skeletonContainerWidth = safeContainerWidth;
 
         useEffect(() => {
             const shimmer = Animated.loop(

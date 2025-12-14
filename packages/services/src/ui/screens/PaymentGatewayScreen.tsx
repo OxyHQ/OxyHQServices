@@ -18,9 +18,10 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { fontFamilies, useThemeColors, createCommonStyles } from '../styles';
+import { normalizeTheme } from '../utils/themeUtils';
 import OxyLogo from '../components/OxyLogo';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
-import TextField from '../components/internal/TextField';
+import TextField from '../components/TextField';
 import { Ionicons } from '@expo/vector-icons';
 import { FAIRWalletIcon } from '../components/icon';
 import { toast } from 'sonner';
@@ -154,9 +155,10 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
     const scaleAnim = useRef(new Animated.Value(1)).current;
     const progressAnim = useRef(new Animated.Value(0.2)).current;
 
-    const colors = useThemeColors(theme);
-    const commonStyles = createCommonStyles(theme);
-    const styles = useMemo(() => createStyles(colors, theme), [colors, theme]);
+    const normalizedTheme = normalizeTheme(theme);
+    const colors = useThemeColors(normalizedTheme);
+    const commonStyles = createCommonStyles(normalizedTheme);
+    const styles = useMemo(() => createStyles(colors, normalizedTheme), [colors, normalizedTheme]);
 
     // Get symbol and name for currency
     const currencySymbol = CURRENCY_SYMBOLS[currency.toUpperCase()] || currency;
@@ -267,7 +269,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
         if (onPaymentResult) {
             onPaymentResult({ success: true });
         }
-        navigate('AccountOverview');
+        navigate?.('AccountOverview');
     }, [onPaymentResult, navigate]);
 
     // Handle close/cancel: return failure result if payment is not completed
@@ -299,7 +301,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                             variant: 'primary',
                         },
                     ]}
-                    colors={useThemeColors(theme)}
+                    colors={useThemeColors(normalizedTheme)}
                 />
             </View>
         );
@@ -408,7 +410,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                                                 </Text>
                                             ),
                                         }))}
-                                        
+
                                     />
                                 </View>
 
@@ -502,7 +504,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                             <FAIRWalletIcon size={20} />
                         ) : undefined,
                     }))}
-                    
+
                 />
             </View>
 
@@ -734,7 +736,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                             subtitle: 'Paid via QR',
                         }] : []),
                     ]}
-                    
+
                 />
             </View>
             <GroupedPillButtons
@@ -810,7 +812,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
 
     // Use centralized theme styles hook for consistency
     // primaryColor from hook (#007AFF) is already correct for this screen
-    const themeStyles = useThemeStyles(theme);
+    const themeStyles = useThemeStyles(normalizedTheme);
 
     return (
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>

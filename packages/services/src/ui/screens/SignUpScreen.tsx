@@ -2,6 +2,7 @@ import type React from 'react';
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import type { BaseScreenProps } from '../types/navigation';
 import { useThemeColors } from '../styles';
+import { normalizeTheme } from '../utils/themeUtils';
 import { toast } from '../../lib/sonner';
 import { useOxy } from '../context/OxyContext';
 import StepBasedScreen, { type StepConfig } from '../components/StepBasedScreen';
@@ -39,7 +40,8 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
 }) => {
     // Use useOxy() hook for OxyContext values
     const { signUp, oxyServices } = useOxy();
-    const colors = useThemeColors(theme);
+    const normalizedTheme = normalizeTheme(theme);
+    const colors = useThemeColors(normalizedTheme);
 
     // Form data state - sync with props when they change from router navigation
     const [username, setUsername] = useState(initialUsername || '');
@@ -232,7 +234,7 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
             toast.success('Account created successfully! Welcome to Oxy!');
 
             // Navigate to welcome screen or handle authentication
-            navigate('WelcomeNewUser', { newUser: user });
+            navigate?.('WelcomeNewUser', { newUser: user });
         } catch (error: any) {
             toast.error(error.message || 'Sign up failed');
         } finally {
@@ -318,7 +320,7 @@ const SignUpScreen: React.FC<BaseScreenProps> = ({
             initialStep={safeInitialStep}
             stepData={stepData}
             onComplete={handleComplete}
-            navigate={navigate}
+            navigate={navigate || (() => {})}
             goBack={goBack}
             onAuthenticated={onAuthenticated}
             theme={theme}

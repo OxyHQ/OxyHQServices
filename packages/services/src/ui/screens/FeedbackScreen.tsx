@@ -16,6 +16,7 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { useThemeColors } from '../styles';
+import { normalizeTheme } from '../utils/themeUtils';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { packageInfo } from '../../constants/version';
@@ -513,7 +514,8 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
 }) => {
     // Use useOxy() hook for OxyContext values
     const { user, oxyServices } = useOxy();
-    const colors = useThemeColors(theme);
+    const normalizedTheme = normalizeTheme(theme);
+    const colors = useThemeColors(normalizedTheme);
     const { t } = useI18n();
 
     // Form state
@@ -528,7 +530,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
     const slideAnim = useRef(new Animated.Value(0)).current;
 
     // Memoized styles
-    const styles = useMemo(() => createStyles(colors, theme), [colors, theme]);
+    const styles = useMemo(() => createStyles(colors, normalizedTheme), [colors, normalizedTheme]);
 
     // Animation functions
     const animateTransition = useCallback((nextStep: number) => {

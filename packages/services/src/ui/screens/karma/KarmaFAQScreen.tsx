@@ -5,6 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
 import { useThemeStyles } from '../../hooks/useThemeStyles';
+import { normalizeTheme } from '../../utils/themeUtils';
 
 const FAQ_KEYS = ['what', 'earn', 'lose', 'use', 'transfer', 'support'] as const;
 
@@ -23,7 +24,8 @@ const KarmaFAQScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const [search, setSearch] = useState('');
 
     // Memoize theme-related calculations to prevent unnecessary recalculations
-    const baseThemeStyles = useThemeStyles(theme);
+    const normalizedTheme = normalizeTheme(theme);
+    const baseThemeStyles = useThemeStyles(normalizedTheme);
     const themeStyles = useMemo(() => ({
         ...baseThemeStyles,
         cardColor: baseThemeStyles.isDarkTheme ? '#23232b' : '#f7f7fa',

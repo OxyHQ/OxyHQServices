@@ -25,6 +25,7 @@ import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { getDisplayName, getShortDisplayName } from '../utils/user-utils';
 import { useColorScheme } from '../hooks/use-color-scheme';
+import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 import {
     SCREEN_PADDING_HORIZONTAL,
@@ -86,7 +87,8 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
     // Use centralized theme styles hook for consistency
     const colorScheme = useColorScheme();
-    const baseThemeStyles = useThemeStyles(theme, colorScheme);
+    const normalizedTheme = normalizeTheme(theme);
+    const baseThemeStyles = useThemeStyles(normalizedTheme, colorScheme);
     const themeStyles = useMemo(() => ({
         ...baseThemeStyles,
         // AccountOverviewScreen uses a custom primary color (purple) instead of the default blue
@@ -381,7 +383,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                         uri={avatarUrl}
                                         name={displayName}
                                         size={100}
-                                        theme={theme}
+                                        theme={normalizedTheme}
                                     />
                                 </TouchableOpacity>
                             </View>

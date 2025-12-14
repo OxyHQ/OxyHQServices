@@ -6,6 +6,7 @@ import Avatar from '../../components/Avatar';
 import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
 import { useThemeStyles } from '../../hooks/useThemeStyles';
+import { normalizeTheme } from '../../utils/themeUtils';
 import { useColorScheme } from '../../hooks/use-color-scheme';
 import { useOxy } from '../../context/OxyContext';
 
@@ -18,7 +19,8 @@ const KarmaLeaderboardScreen: React.FC<BaseScreenProps> = ({ goBack, theme, navi
     const [error, setError] = useState<string | null>(null);
 
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme, colorScheme);
+    const normalizedTheme = normalizeTheme(theme);
+    const themeStyles = useThemeStyles(normalizedTheme, colorScheme);
     // Override primaryColor for Karma screens (purple instead of blue)
     const primaryColor = '#d169e5';
 

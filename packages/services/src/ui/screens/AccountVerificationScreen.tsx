@@ -14,6 +14,7 @@ import { toast } from '../../lib/sonner';
 import { Header, Section } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 
 const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
@@ -28,7 +29,8 @@ const AccountVerificationScreen: React.FC<BaseScreenProps> = ({
     const [evidence, setEvidence] = useState('');
     const [isSubmitting, setIsSubmitting] = useState(false);
 
-    const baseThemeStyles = useThemeStyles(theme);
+    const normalizedTheme = normalizeTheme(theme);
+    const baseThemeStyles = useThemeStyles(normalizedTheme);
     const themeStyles = useMemo(() => ({
         ...baseThemeStyles,
         inputBackgroundColor: baseThemeStyles.isDarkTheme ? '#1C1C1E' : '#F2F2F7',

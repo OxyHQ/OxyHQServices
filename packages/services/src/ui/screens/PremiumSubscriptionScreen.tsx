@@ -20,6 +20,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../components/Avatar';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { normalizeTheme } from '../utils/themeUtils';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { useOxy } from '../context/OxyContext';
 
@@ -84,7 +85,8 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
 
     const { t } = useI18n();
     const colorScheme = useColorScheme();
-    const themeStyles = useThemeStyles(theme, colorScheme);
+    const normalizedTheme = normalizeTheme(theme);
+    const themeStyles = useThemeStyles(normalizedTheme, colorScheme);
     // Extract commonly used colors for readability
     const { textColor, backgroundColor, secondaryBackgroundColor, borderColor, primaryColor, successColor, dangerColor, isDarkTheme } = themeStyles;
     const warningColor = '#FF9500';

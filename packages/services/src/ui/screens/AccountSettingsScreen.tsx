@@ -28,7 +28,7 @@ import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { Colors } from '../constants/theme';
-import { normalizeColorScheme } from '../utils/themeUtils';
+import { normalizeColorScheme, normalizeTheme } from '../utils/themeUtils';
 import { useHapticPress } from '../hooks/use-haptic-press';
 import { EditDisplayNameModal } from '../components/profile/EditDisplayNameModal';
 import { EditUsernameModal } from '../components/profile/EditUsernameModal';
@@ -76,6 +76,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         activeSessionId,
     } = useOxy();
     const { t } = useI18n();
+    const normalizedTheme = normalizeTheme(theme);
     const updateUser = useAuthStore((state) => state.updateUser);
     // Get user directly from store to ensure reactivity to avatar changes
     const user = useAuthStore((state) => state.user) || userFromContext;
@@ -1659,49 +1660,49 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 onClose={() => setShowEditDisplayNameModal(false)}
                 initialDisplayName={displayName}
                 initialLastName={lastName}
-                theme={theme}
+                theme={normalizedTheme}
                 onSave={handleModalSave}
             />
             <EditUsernameModal
                 visible={showEditUsernameModal}
                 onClose={() => setShowEditUsernameModal(false)}
                 initialValue={username}
-                theme={theme}
+                theme={normalizedTheme}
                 onSave={handleModalSave}
             />
             <EditEmailModal
                 visible={showEditEmailModal}
                 onClose={() => setShowEditEmailModal(false)}
                 initialValue={email}
-                theme={theme}
+                theme={normalizedTheme}
                 onSave={handleModalSave}
             />
             <EditBioModal
                 visible={showEditBioModal}
                 onClose={() => setShowEditBioModal(false)}
                 initialValue={bio}
-                theme={theme}
+                theme={normalizedTheme}
                 onSave={handleModalSave}
             />
             <EditLocationModal
                 visible={showEditLocationModal}
                 onClose={() => setShowEditLocationModal(false)}
                 initialLocations={locations}
-                theme={theme}
+                theme={normalizedTheme}
                 onSave={handleModalSave}
             />
             <EditLinksModal
                 visible={showEditLinksModal}
                 onClose={() => setShowEditLinksModal(false)}
                 initialLinks={linksMetadata}
-                theme={theme}
+                theme={normalizedTheme}
                 onSave={handleModalSave}
             />
             <TwoFactorSetupModal
                 visible={showTwoFactorModal}
                 onClose={() => setShowTwoFactorModal(false)}
                 isEnabled={!!user?.privacySettings?.twoFactorEnabled}
-                theme={theme}
+                theme={normalizedTheme}
             />
         </View>
     );

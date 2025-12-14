@@ -11,7 +11,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import HighFive from '../../../assets/illustrations/HighFive';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
-import TextField from '../../components/internal/TextField';
+import TextField from '../../components/TextField';
 import { useI18n } from '../../hooks/useI18n';
 import { STEP_GAP, stepStyles } from '../../styles/spacing';
 import Avatar from '../../components/Avatar';
@@ -245,6 +245,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                     ref={inputRef}
                     label={t('common.labels.username')}
                     leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
+                    right={<TextField.Affix text="@oxy.so" />}
                     value={username}
                     onChangeText={handleUsernameChange}
                     formatValue={(text) => text.replace(/[^a-zA-Z0-9]/g, '')}
@@ -252,7 +253,7 @@ const SignInUsernameStep: React.FC<SignInUsernameStepProps> = ({
                     autoCapitalize="none"
                     autoCorrect={false}
                     testID="username-input"
-                    variant="filled"
+                    variant="outlined"
                     error={validationStatus === 'invalid' ? errorMessage : undefined}
                     loading={validationStatus === 'validating'}
                     success={validationStatus === 'valid'}

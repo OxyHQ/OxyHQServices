@@ -1,12 +1,12 @@
 import { useCallback } from 'react';
-import type { ApiError, User } from '../../../models/interfaces';
+import type { ApiError, User } from '../../models/interfaces';
 import type { AuthState } from '../stores/authStore';
-import type { ClientSession, SessionLoginResponse } from '../../../models/session';
+import type { ClientSession, SessionLoginResponse } from '../../models/session';
 import { DeviceManager } from '../../utils/deviceManager';
 import { fetchSessionsWithFallback, mapSessionsToClient } from '../utils/sessionHelpers';
 import { handleAuthError, isInvalidSessionError } from '../utils/errorHandlers';
 import type { StorageInterface } from '../utils/storageHelpers';
-import type { OxyServices } from '../../../core';
+import type { OxyServices } from '../../core';
 
 export interface UseAuthOperationsOptions {
   oxyServices: OxyServices;

@@ -1,6 +1,8 @@
 import React, { memo, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
+// @ts-ignore - MaterialCommunityIcons is available at runtime
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { useHapticPress } from '../hooks/use-haptic-press';
 import { darkenColor } from '../utils/colorUtils';

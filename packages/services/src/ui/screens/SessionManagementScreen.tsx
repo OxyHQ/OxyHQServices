@@ -18,6 +18,7 @@ import type { ClientSession } from '../../models/session';
 import { confirmAction } from '../utils/confirmAction';
 import { Header, GroupedSection } from '../components';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 
 const SessionManagementScreen: React.FC<BaseScreenProps> = ({
@@ -41,7 +42,8 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
     const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
 
     // Use centralized theme styles hook for consistency
-    const themeStyles = useThemeStyles(theme);
+    const normalizedTheme = normalizeTheme(theme);
+    const themeStyles = useThemeStyles(normalizedTheme);
     // Extract commonly used colors for readability
     const { textColor, backgroundColor, secondaryBackgroundColor, borderColor, primaryColor, dangerColor, successColor, isDarkTheme } = themeStyles;
 

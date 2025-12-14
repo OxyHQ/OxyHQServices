@@ -4,7 +4,7 @@ import { View, Text, TouchableOpacity, Platform, StyleSheet, type ViewStyle, typ
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from '../../components/Avatar';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
-import TextField from '../../components/internal/TextField';
+import TextField from '../../components/TextField';
 import { useI18n } from '../../hooks/useI18n';
 import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
@@ -208,13 +208,14 @@ const SignInPasswordStep: React.FC<SignInPasswordStepProps> = ({
                     ref={inputRef}
                     label={t('common.labels.password')}
                     leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
+                    right={<TextField.Icon icon={showPassword ? "eye-off" : "eye"} onPress={togglePasswordVisibility} />}
                     value={password}
                     onChangeText={handlePasswordChange}
                     secureTextEntry={!showPassword}
                     autoCapitalize="none"
                     autoCorrect={false}
                     testID="password-input"
-                    variant="filled"
+                    variant="outlined"
                     error={errorMessage || undefined}
                     onSubmitEditing={handleSignInSubmit}
                     autoFocus

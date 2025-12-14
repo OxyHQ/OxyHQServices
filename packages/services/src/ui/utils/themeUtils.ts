@@ -3,6 +3,14 @@
  */
 
 /**
+ * Normalizes a theme value to ensure it's always 'light' | 'dark'
+ * @param theme - Theme value (may be 'light' | 'dark' | string | undefined)
+ * @returns Normalized 'light' | 'dark' theme (defaults to 'light')
+ */
+export const normalizeTheme = (theme?: string | null): 'light' | 'dark' => 
+    theme === 'light' || theme === 'dark' ? theme : 'light';
+
+/**
  * Normalizes a color scheme value to ensure it's always 'light' or 'dark'
  * Handles null/undefined cases with proper fallback chain
  * 

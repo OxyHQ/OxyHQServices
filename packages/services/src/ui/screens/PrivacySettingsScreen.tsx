@@ -12,6 +12,7 @@ import { toast } from '../../lib/sonner';
 import { Header, Section, Avatar, SettingRow, LoadingState, EmptyState, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { normalizeTheme } from '../utils/themeUtils';
 import type { BlockedUser, RestrictedUser } from '../../models/interfaces';
 import { useOxy } from '../context/OxyContext';
 
@@ -198,7 +199,8 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         return { userId, username, avatar };
     }, []);
 
-    const themeStyles = useThemeStyles(theme);
+    const normalizedTheme = normalizeTheme(theme);
+    const themeStyles = useThemeStyles(normalizedTheme);
 
     // Convert blocked users to GroupedSection items
     const blockedUserItems = useMemo(() => {

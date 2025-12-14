@@ -4,7 +4,7 @@ import { useRef, useState, useEffect, useCallback } from 'react';
 import { View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
-import TextField from '../../components/internal/TextField';
+import TextField from '../../components/TextField';
 import { useI18n } from '../../hooks/useI18n';
 import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
@@ -148,6 +148,7 @@ const SignUpIdentityStep: React.FC<SignUpIdentityStepProps> = ({
                     ref={usernameRef}
                     label={t('common.labels.username')}
                     leading={<Ionicons name="person-outline" size={24} color={colors.secondaryText} />}
+                    right={<TextField.Affix text="@oxy.so" />}
                     value={username}
                     onChangeText={handleUsernameChange}
                     formatValue={(text) => text.replace(/[^a-zA-Z0-9]/g, '')}

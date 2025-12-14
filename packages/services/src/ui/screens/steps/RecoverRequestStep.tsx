@@ -4,7 +4,7 @@ import { useRef } from 'react';
 import { View, Text } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import HighFive from '../../../assets/illustrations/HighFive';
-import TextField from '../../components/internal/TextField';
+import TextField from '../../components/TextField';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
 import { toast } from '../../../lib/sonner';
 import type { OxyServices } from '../../../core';

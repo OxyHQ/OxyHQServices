@@ -118,7 +118,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
     const [state, setState] = useState<StepBasedScreenState>({
         stepData: [...stepData],
     });
-    
+
     // Current step comes from router via initialStep prop
     const currentStep = initialStep ?? 0;
 
@@ -266,7 +266,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
         // Call onEnter for current step
         const currentStepConfig = steps[currentStep];
         currentStepConfig?.onEnter?.();
-        
+
         // Notify parent of step change
         onStepChangeRef.current?.(currentStep, steps.length);
 

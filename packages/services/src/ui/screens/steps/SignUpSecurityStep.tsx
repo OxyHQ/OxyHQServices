@@ -1,10 +1,10 @@
 import type React from 'react';
 import type { RouteName } from '../../navigation/routes';
 import { useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import GroupedPillButtons from '../../components/internal/GroupedPillButtons';
-import TextField from '../../components/internal/TextField';
+import TextField from '../../components/TextField';
 import { useI18n } from '../../hooks/useI18n';
 import { STEP_GAP, STEP_INNER_GAP, stepStyles } from '../../styles/spacing';
 
@@ -110,18 +110,7 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
                     ref={passwordRef}
                     label={t('common.labels.password')}
                     leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
-                    trailing={
-                        <TouchableOpacity
-                            onPress={() => setShowPassword(!showPassword)}
-                            style={stylesheet.iconButton}
-                        >
-                            <Ionicons
-                                name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                                size={20}
-                                color={colors.secondaryText}
-                            />
-                        </TouchableOpacity>
-                    }
+                    right={<TextField.Icon icon={showPassword ? "eye-off" : "eye"} onPress={() => setShowPassword(!showPassword)} />}
                     value={password}
                     onChangeText={handlePasswordChange}
                     secureTextEntry={!showPassword}
@@ -142,18 +131,7 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
                 <TextField
                     label={t('common.labels.confirmPassword')}
                     leading={<Ionicons name="lock-closed-outline" size={24} color={colors.secondaryText} />}
-                    trailing={
-                        <TouchableOpacity
-                            onPress={() => setShowConfirmPassword(!showConfirmPassword)}
-                            style={stylesheet.iconButton}
-                        >
-                            <Ionicons
-                                name={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
-                                size={20}
-                                color={colors.secondaryText}
-                            />
-                        </TouchableOpacity>
-                    }
+                    right={<TextField.Icon icon={showConfirmPassword ? "eye-off" : "eye"} onPress={() => setShowConfirmPassword(!showConfirmPassword)} />}
                     value={confirmPassword}
                     onChangeText={handleConfirmPasswordChange}
                     secureTextEntry={!showConfirmPassword}
@@ -197,9 +175,6 @@ const SignUpSecurityStep: React.FC<SignUpSecurityStepProps> = ({
 export default SignUpSecurityStep;
 
 const stylesheet = StyleSheet.create({
-    iconButton: {
-        padding: 4,
-    },
     helperText: {
         fontSize: 12,
         marginTop: 0,

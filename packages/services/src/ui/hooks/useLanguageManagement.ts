@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ApiError, User } from '../../../models/interfaces';
+import type { ApiError, User } from '../../models/interfaces';
 import {
   getLanguageMetadata,
   getLanguageName,

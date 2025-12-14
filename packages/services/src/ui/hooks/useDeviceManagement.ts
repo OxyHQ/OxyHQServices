@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
-import type { ApiError } from '../../../models/interfaces';
+import type { ApiError } from '../../models/interfaces';
 import { DeviceManager } from '../../utils/deviceManager';
-import type { OxyServices } from '../../../core';
+import type { OxyServices } from '../../core';
 import { handleAuthError } from '../utils/errorHandlers';
 
 export interface UseDeviceManagementOptions {

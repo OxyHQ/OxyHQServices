@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { useAuthStore } from '../stores/authStore';
 import { useThemeColors } from '../styles';
+import { normalizeTheme } from '../utils/themeUtils';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
@@ -63,8 +64,9 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
     const { t } = useI18n();
     const updateUser = useAuthStore(s => s.updateUser);
     const currentUser = user || newUser; // fallback
-    const colors = useThemeColors(theme);
-    const styles = useMemo(() => createStyles(theme), [theme]);
+    const normalizedTheme = normalizeTheme(theme);
+    const colors = useThemeColors(normalizedTheme);
+    const styles = useMemo(() => createStyles(normalizedTheme), [normalizedTheme]);
 
     // Animation state
     const fadeAnim = useRef(new Animated.Value(1)).current;
@@ -133,7 +135,7 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
             animateToStepCallback(avatarStepIndex);
         }
 
-        navigate('FileManagement', {
+        navigate?.('FileManagement', {
             selectMode: true,
             multiSelect: false,
             disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
