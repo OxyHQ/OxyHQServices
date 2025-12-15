@@ -14,7 +14,6 @@ import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, useUserDevices } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
 import type { ClientSession } from '@oxyhq/services';
-import { useThemeContext } from '@/contexts/theme-context';
 import { useBiometricSettings } from '@/hooks/useBiometricSettings';
 
 export default function SecurityScreen() {
@@ -24,10 +23,9 @@ export default function SecurityScreen() {
 
     const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
     const isDesktop = Platform.OS === 'web' && width >= 768;
-    const { toggleColorScheme } = useThemeContext();
 
     // OxyServices integration
-    const { user, isAuthenticated, isLoading: oxyLoading, sessions } = useOxy();
+    const { user, isAuthenticated, isLoading: oxyLoading, sessions, hasIdentity, getPublicKey } = useOxy();
     const [enhancedSafeBrowsing, setEnhancedSafeBrowsing] = useState(false);
     const [darkWebReport, setDarkWebReport] = useState(false);
 
@@ -221,6 +219,16 @@ export default function SecurityScreen() {
             });
         }
 
+        // Public key authentication info
+        items.push({
+            id: 'public-key-auth',
+            icon: 'key-outline',
+            iconColor: '#34C759',
+            title: 'Public key authentication',
+            subtitle: 'Your account uses cryptographic keys for secure sign-in',
+            showChevron: false,
+        });
+
         // Notification email (optional, not used for login)
         if (user?.email) {
             items.push({
@@ -229,6 +237,8 @@ export default function SecurityScreen() {
                 iconColor: colors.sidebarIconSecurity,
                 title: 'Notification email',
                 subtitle: user.email,
+                onPress: () => router.push('/(tabs)/personal-info'),
+                showChevron: true,
             });
         }
 
@@ -244,6 +254,7 @@ export default function SecurityScreen() {
         biometricLoading,
         biometricSaving,
         toggleBiometricLogin,
+        router,
     ]);
 
     // Device items grouped by type
@@ -291,23 +302,6 @@ export default function SecurityScreen() {
 
         return items;
     }, [devices, colors, getDeviceIcon, router]);
-
-    // Appearance items
-    const appearanceItems = useMemo(() => [
-        {
-            id: 'dark-mode',
-            icon: colorScheme === 'dark' ? 'weather-sunny' : 'weather-night',
-            iconColor: colors.sidebarIconData,
-            title: 'Dark mode',
-            subtitle: colorScheme === 'dark' ? 'On' : 'Off',
-            customContent: (
-                <AppleSwitch
-                    value={colorScheme === 'dark'}
-                    onValueChange={toggleColorScheme}
-                />
-            ),
-        },
-    ], [colors, colorScheme, toggleColorScheme]);
 
     // Feature cards
     const featureCards = useMemo(() => [
@@ -377,12 +371,27 @@ export default function SecurityScreen() {
                         <AccountCard>
                             <GroupedSection items={recentActivity} />
                         </AccountCard>
-                        <LinkButton text="Review security activity" />
+                        <View style={{ marginTop: -8 }}>
+                            <LinkButton text="Review security activity" />
+                        </View>
                     </>
                 ) : (
-                    <ThemedText style={[styles.emptyText, { color: colors.text }]}>
-                        No recent activity
-                    </ThemedText>
+                    <AccountCard>
+                        <View style={styles.emptyStateContainer}>
+                            <MaterialCommunityIcons 
+                                name="shield-check-outline" 
+                                size={40} 
+                                color={colors.text} 
+                                style={styles.emptyStateIcon}
+                            />
+                            <ThemedText style={[styles.emptyStateTitle, { color: colors.text }]}>
+                                No recent activity
+                            </ThemedText>
+                            <ThemedText style={[styles.emptyStateSubtitle, { color: colors.text }]}>
+                                Your recent sign-ins and security events will appear here
+                            </ThemedText>
+                        </View>
+                    </AccountCard>
                 )}
             </Section>
 
@@ -393,9 +402,49 @@ export default function SecurityScreen() {
                 </AccountCard>
             </Section>
 
-            <Section title="Appearance">
+            <Section title="Account recovery">
+                <ThemedText style={styles.sectionSubtitle}>Backup options to recover your account if you lose access</ThemedText>
                 <AccountCard>
-                    <GroupedSection items={appearanceItems} />
+                    <GroupedSection items={[
+                        {
+                            id: 'recovery-phrase',
+                            icon: 'shield-key-outline',
+                            iconColor: '#F59E0B',
+                            title: 'Recovery phrase',
+                            subtitle: 'View your 12-word backup phrase',
+                            onPress: () => {
+                                Alert.alert(
+                                    'Security Check',
+                                    'Make sure no one is looking at your screen before viewing your recovery phrase.',
+                                    [
+                                        { text: 'Cancel', style: 'cancel' },
+                                        { 
+                                            text: 'Continue', 
+                                            onPress: () => {
+                                                if (Platform.OS !== 'web') {
+                                                    router.push('/(tabs)/about-identity');
+                                                } else {
+                                                    Alert.alert('Info', 'Recovery phrase viewing is available in the mobile app.');
+                                                }
+                                            }
+                                        },
+                                    ]
+                                );
+                            },
+                            showChevron: true,
+                        },
+                        ...(user?.email ? [{
+                            id: 'recovery-email',
+                            icon: 'email-outline',
+                            iconColor: colors.sidebarIconSecurity,
+                            title: 'Recovery email',
+                            subtitle: user.email,
+                            onPress: () => {
+                                router.push('/(tabs)/personal-info');
+                            },
+                            showChevron: true,
+                        }] : []),
+                    ]} />
                 </AccountCard>
             </Section>
 
@@ -408,7 +457,7 @@ export default function SecurityScreen() {
                         <AccountCard>
                             <GroupedSection items={deviceItems} />
                         </AccountCard>
-                        <View style={styles.deviceActions}>
+                        <View style={{ marginTop: -8 }}>
                             <LinkButton
                                 text="Manage all devices"
                                 count={devices.length.toString()}
@@ -417,15 +466,30 @@ export default function SecurityScreen() {
                         </View>
                     </>
                 ) : (
-                    <ThemedText style={[styles.emptyText, { color: colors.text }]}>
-                        No devices found
-                    </ThemedText>
+                    <AccountCard>
+                        <View style={styles.emptyStateContainer}>
+                            <MaterialCommunityIcons 
+                                name="devices" 
+                                size={40} 
+                                color={colors.text} 
+                                style={styles.emptyStateIcon}
+                            />
+                            <ThemedText style={[styles.emptyStateTitle, { color: colors.text }]}>
+                                No devices found
+                            </ThemedText>
+                            <ThemedText style={[styles.emptyStateSubtitle, { color: colors.text }]}>
+                                Devices you sign in on will appear here
+                            </ThemedText>
+                        </View>
+                    </AccountCard>
                 )}
             </Section>
 
-            <AccountCard>
-                <GroupedSection items={featureCards} />
-            </AccountCard>
+            <Section title="Security features">
+                <AccountCard>
+                    <GroupedSection items={featureCards} />
+                </AccountCard>
+            </Section>
         </>
     );
 
@@ -488,11 +552,6 @@ const styles = StyleSheet.create({
     statusContainer: {
         marginLeft: 8,
     },
-    deviceActions: {
-        flexDirection: 'row',
-        gap: 24,
-        marginTop: 8,
-    },
     mobileContent: {
         padding: 16,
         paddingBottom: 120,
@@ -524,5 +583,27 @@ const styles = StyleSheet.create({
         opacity: 0.6,
         textAlign: 'center',
         paddingVertical: 20,
+    },
+    emptyStateContainer: {
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 32,
+        paddingHorizontal: 24,
+    },
+    emptyStateIcon: {
+        opacity: 0.4,
+        marginBottom: 12,
+    },
+    emptyStateTitle: {
+        fontSize: 15,
+        fontWeight: '600',
+        marginBottom: 6,
+        opacity: 0.8,
+    },
+    emptyStateSubtitle: {
+        fontSize: 13,
+        opacity: 0.6,
+        textAlign: 'center',
+        lineHeight: 18,
     },
 });
