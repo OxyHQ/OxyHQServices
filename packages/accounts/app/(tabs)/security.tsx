@@ -399,7 +399,7 @@ export default function SecurityScreen() {
                                 text="Review security activity" 
                                 onPress={() => {
                                     // TODO: Navigate to full security activity screen or show more items
-                                    alert.alert('Security Activity', 'Full security activity history will be available here.');
+                                    alert('Security Activity', 'Full security activity history will be available here.');
                                 }}
                             />
                         </View>

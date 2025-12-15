@@ -73,7 +73,7 @@ const SecurityActivitySchema: Schema = new Schema(
       type: Date,
       default: Date.now,
       required: true,
-      index: true,
+      // Index created explicitly below for TTL functionality
     },
     severity: {
       type: String,

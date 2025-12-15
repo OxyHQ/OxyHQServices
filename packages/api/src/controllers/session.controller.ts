@@ -219,21 +219,31 @@ export class SessionController {
         { deviceName, deviceFingerprint }
       );
 
-      // Log security event for sign-in
-      try {
-        await securityActivityService.logSignIn(
-          user._id.toString(),
-          req,
-          session.deviceId,
-          {
-            deviceName: deviceName || session.deviceInfo?.deviceName,
-            deviceType: session.deviceInfo?.deviceType,
-            platform: session.deviceInfo?.platform,
-          }
-        );
-      } catch (error) {
-        // Don't fail the sign-in if logging fails
-        logger.error('Failed to log security event for sign-in:', error);
+      // Log security event for sign-in only if this is a new session
+      // Check if session was just created by comparing createdAt and updatedAt
+      // For new sessions, createdAt and updatedAt are the same (or very close)
+      // For reused sessions, updatedAt is recent but createdAt is old
+      const createdAt = new Date(session.createdAt).getTime();
+      const updatedAt = new Date(session.updatedAt).getTime();
+      const timeDiff = Math.abs(updatedAt - createdAt);
+      const isNewSession = timeDiff < 5000; // If created/updated within 5 seconds, it's new
+
+      if (isNewSession) {
+        try {
+          await securityActivityService.logSignIn(
+            user._id.toString(),
+            req,
+            session.deviceId,
+            {
+              deviceName: deviceName || session.deviceInfo?.deviceName,
+              deviceType: session.deviceInfo?.deviceType,
+              platform: session.deviceInfo?.platform,
+            }
+          );
+        } catch (error) {
+          // Don't fail the sign-in if logging fails
+          logger.error('Failed to log security event for sign-in:', error);
+        }
       }
 
       // Emit session update for real-time updates
