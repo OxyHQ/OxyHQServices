@@ -503,43 +503,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         });
     };
 
-    const openAvatarPicker = useCallback(() => {
-        navigate?.('FileManagement', {
-            selectMode: true,
-            multiSelect: false,
-            disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
-            afterSelect: 'none', // Don't navigate away - stay on current screen
-            onSelect: async (file: any) => {
-                if (!file.contentType.startsWith('image/')) {
-                    toast.error(t('editProfile.toasts.selectImage') || 'Please select an image file');
-                    return;
-                }
-                try {
-                    // Update file visibility to public for avatar (skip if temporary asset ID)
-                    if (file.id && !file.id.startsWith('temp-')) {
-                        try {
-                            await oxyServices.assetUpdateVisibility(file.id, 'public');
-                            console.log('[AccountSettings] Avatar visibility updated to public');
-                        } catch (visError: any) {
-                            // Only log non-404 errors (404 means asset doesn't exist yet, which is OK)
-                            if (visError?.response?.status !== 404) {
-                                console.warn('[AccountSettings] Failed to update avatar visibility, continuing anyway:', visError);
-                            }
-                        }
-                    }
-
-                    // Update the avatar immediately in local state
-                    setAvatarFileId(file.id);
-
-                    // Update user using TanStack Query mutation
-                    await updateProfileMutation.mutateAsync({ avatar: file.id });
-                    toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated');
-                } catch (e: any) {
-                    toast.error(e.message || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
-                }
-            }
-        });
-    }, [navigate, updateProfileMutation, oxyServices, setAvatarFileId, t]);
+    const { openAvatarPicker } = useOxy();
 
     // Handlers to open modals
     const handleOpenDisplayNameModal = useCallback(() => setShowEditDisplayNameModal(true), []);

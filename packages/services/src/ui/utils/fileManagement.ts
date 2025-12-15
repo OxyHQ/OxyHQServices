@@ -1,6 +1,8 @@
 import { Alert } from 'react-native';
 import type { FileMetadata } from '../../models/interfaces';
 import { File as ExpoFile } from 'expo-file-system';
+import { toast } from '../../lib/sonner';
+import type { RouteName } from '../navigation/routes';
 
 /**
  * Format file size in bytes to human-readable string
@@ -186,5 +188,108 @@ export async function uploadFileRaw(
     visibility?: 'private' | 'public' | 'unlisted'
 ) {
     return await oxyServices.uploadRawFile(file, visibility);
+}
+
+/**
+ * Configuration for creating an avatar picker handler
+ */
+export interface AvatarPickerConfig {
+    /** Navigation function from BaseScreenProps */
+    navigate?: (screen: RouteName, props?: Record<string, unknown>) => void;
+    /** OxyServices instance */
+    oxyServices: any;
+    /** TanStack Query mutation for updating profile */
+    updateProfileMutation: {
+        mutateAsync: (updates: { avatar: string }) => Promise<any>;
+    };
+    /** Callback to update local avatar state */
+    onAvatarSelected?: (fileId: string) => void;
+    /** i18n translation function */
+    t: (key: string) => string | undefined;
+    /** Optional context name for logging (e.g., 'AccountSettings', 'WelcomeNewUser') */
+    contextName?: string;
+}
+
+/**
+ * Creates a reusable avatar picker handler function.
+ * 
+ * This function navigates to the FileManagement screen and handles:
+ * - Image file validation
+ * - File visibility update to public
+ * - Profile avatar update via mutation
+ * - Success/error toast notifications
+ * 
+ * @example
+ * ```tsx
+ * const openAvatarPicker = createAvatarPickerHandler({
+ *   navigate,
+ *   oxyServices,
+ *   updateProfileMutation,
+ *   onAvatarSelected: setAvatarFileId,
+ *   t,
+ *   contextName: 'AccountSettings'
+ * });
+ * 
+ * <TouchableOpacity onPress={openAvatarPicker}>
+ *   <Text>Change Avatar</Text>
+ * </TouchableOpacity>
+ * ```
+ */
+export function createAvatarPickerHandler(config: AvatarPickerConfig): () => void {
+    const {
+        navigate,
+        oxyServices,
+        updateProfileMutation,
+        onAvatarSelected,
+        t,
+        contextName = 'AvatarPicker'
+    } = config;
+
+    return () => {
+        if (!navigate) {
+            console.warn(`[${contextName}] navigate function is not available`);
+            return;
+        }
+
+        navigate('FileManagement', {
+            selectMode: true,
+            multiSelect: false,
+            disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
+            afterSelect: 'none', // Don't navigate away - stay on current screen
+            onSelect: async (file: any) => {
+                if (!file.contentType.startsWith('image/')) {
+                    toast.error(t('editProfile.toasts.selectImage') || 'Please select an image file');
+                    return;
+                }
+                
+                try {
+                    // Update file visibility to public for avatar (skip if temporary asset ID)
+                    if (file.id && !file.id.startsWith('temp-')) {
+                        try {
+                            await oxyServices.assetUpdateVisibility(file.id, 'public');
+                            console.log(`[${contextName}] Avatar visibility updated to public`);
+                        } catch (visError: any) {
+                            // Only log non-404 errors (404 means asset doesn't exist yet, which is OK)
+                            if (visError?.response?.status !== 404) {
+                                console.warn(`[${contextName}] Failed to update avatar visibility, continuing anyway:`, visError);
+                            }
+                        }
+                    }
+
+                    // Update local state if callback provided
+                    if (onAvatarSelected) {
+                        onAvatarSelected(file.id);
+                    }
+
+                    // Update user using TanStack Query mutation
+                    await updateProfileMutation.mutateAsync({ avatar: file.id });
+                    
+                    toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated');
+                } catch (e: any) {
+                    toast.error(e.message || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
+                }
+            }
+        });
+    };
 }
 

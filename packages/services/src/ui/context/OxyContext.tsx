@@ -30,6 +30,9 @@ import { useQueryClient } from '@tanstack/react-query';
 import { clearQueryCache } from '../hooks/queryClient';
 import { useAccountStore } from '../stores/accountStore';
 import { KeyManager } from '../../crypto/keyManager';
+import { translate } from '../../i18n';
+import { queryKeys } from '../hooks/queries/queryKeys';
+import { useUpdateProfile } from '../hooks/mutations/useAccountMutations';
 
 export interface OxyContextState {
   user: User | null;
@@ -84,6 +87,7 @@ export interface OxyContextState {
   oxyServices: OxyServices;
   useFollow?: UseFollowHook;
   showBottomSheet?: (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => void;
+  openAvatarPicker: () => void;
 }
 
 const OxyContext = createContext<OxyContextState | null>(null);
@@ -482,6 +486,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const useFollowHook = loadUseFollowHook();
 
+  // Create update profile mutation for avatar picker
+  const updateProfileMutation = useUpdateProfile();
+
   const restoreSessionsFromStorage = useCallback(async (): Promise<void> => {
     if (!storage) {
       return;
@@ -615,6 +622,46 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     [],
   );
 
+  // Create openAvatarPicker function
+  const openAvatarPicker = useCallback(() => {
+    showBottomSheetForContext({
+      screen: 'FileManagement' as RouteName,
+      props: {
+        selectMode: true,
+        multiSelect: false,
+        disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
+        afterSelect: 'none', // Don't navigate away - stay on current screen
+        onSelect: async (file: any) => {
+          if (!file.contentType.startsWith('image/')) {
+            toast.error(translate(currentLanguage, 'editProfile.toasts.selectImage') || 'Please select an image file');
+            return;
+          }
+          try {
+            // Update file visibility to public for avatar (skip if temporary asset ID)
+            if (file.id && !file.id.startsWith('temp-')) {
+              try {
+                await oxyServices.assetUpdateVisibility(file.id, 'public');
+                console.log('[OxyContext] Avatar visibility updated to public');
+              } catch (visError: any) {
+                // Only log non-404 errors (404 means asset doesn't exist yet, which is OK)
+                if (visError?.response?.status !== 404) {
+                  console.warn('[OxyContext] Failed to update avatar visibility, continuing anyway:', visError);
+                }
+              }
+            }
+
+            // Update user profile using mutation hook (provides optimistic updates, error handling, retry)
+            await updateProfileMutation.mutateAsync({ avatar: file.id });
+            
+            toast.success(translate(currentLanguage, 'editProfile.toasts.avatarUpdated') || 'Avatar updated');
+          } catch (e: any) {
+            toast.error(e.message || translate(currentLanguage, 'editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
+          }
+        },
+      },
+    });
+  }, [oxyServices, currentLanguage, showBottomSheetForContext, updateProfileMutation]);
+
   const contextValue: OxyContextState = useMemo(() => ({
     user,
     sessions,
@@ -654,6 +701,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     oxyServices,
     useFollow: useFollowHook,
     showBottomSheet: showBottomSheetForContext,
+    openAvatarPicker,
   }), [
     activeSessionId,
     createIdentity,
@@ -689,6 +737,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     useFollowHook,
     user,
     showBottomSheetForContext,
+    openAvatarPicker,
   ]);
 
   return (

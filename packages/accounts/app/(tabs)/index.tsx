@@ -27,7 +27,7 @@ export default function HomeScreen() {
   const hasPlayedRef = useRef(false);
 
   // OxyServices integration
-  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, isIdentitySynced, syncIdentity, identitySyncState } = useOxy();
+  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, isIdentitySynced, syncIdentity, identitySyncState, openAvatarPicker } = useOxy();
 
   // Use reactive state from Zustand store (with defaults)
   const { isSynced, isSyncing } = identitySyncState || { isSynced: true, isSyncing: false };
@@ -50,11 +50,8 @@ export default function HomeScreen() {
 
   // Navigation handlers - defined before useMemo to avoid dependency issues
   const handleAvatarPress = useCallback(() => {
-    showBottomSheet?.({
-      screen: 'EditProfile',
-      props: { initialSection: 'profilePicture', initialField: 'avatar' }
-    });
-  }, [showBottomSheet]);
+    openAvatarPicker();
+  }, [openAvatarPicker]);
 
   const handleEditName = useCallback(() => {
     showBottomSheet?.({
