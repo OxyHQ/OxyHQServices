@@ -222,6 +222,55 @@ router.post('/:id/upload-direct', upload.single('file'), asyncHandler(async (req
 }));
 
 /**
+ * @route POST /api/assets/upload
+ * @desc Upload file directly - backend calculates SHA256
+ * @access Private
+ */
+router.post('/upload', upload.single('file'), asyncHandler(async (req: AuthenticatedRequest, res: express.Response) => {
+  const user = req.user;
+  if (!user?._id) {
+    throw new UnauthorizedError('Authentication required');
+  }
+
+  if (!req.file) {
+    throw new BadRequestError('Missing file');
+  }
+
+  const visibility = (req.body.visibility as FileVisibility) || 'private';
+  const metadata = req.body.metadata ? JSON.parse(req.body.metadata) : undefined;
+
+  const file = await assetService.uploadFileDirect(
+    user._id,
+    req.file.buffer,
+    req.file.mimetype || 'application/octet-stream',
+    req.file.originalname || req.file.fieldname || 'upload',
+    visibility,
+    metadata
+  );
+
+  logger.info('File uploaded via direct endpoint', { 
+    userId: user._id, 
+    fileId: file._id,
+    sha256: file.sha256
+  });
+
+  sendSuccess(res, {
+    file: {
+      id: file._id.toString(),
+      sha256: file.sha256,
+      size: file.size,
+      mime: file.mime,
+      ext: file.ext,
+      originalName: file.originalName,
+      visibility: file.visibility,
+      metadata: file.metadata,
+      links: file.links,
+      variants: file.variants
+    }
+  });
+}));
+
+/**
  * @route POST /api/assets/:id/links
  * @desc Link file to an entity
  * @access Private

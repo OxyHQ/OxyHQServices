@@ -275,3 +275,208 @@ export const useUpdateAccountSettings = () => {
   });
 };
 
+/**
+ * Update privacy settings with optimistic updates and authentication handling
+ */
+export const useUpdatePrivacySettings = () => {
+  const { oxyServices, activeSessionId, user, syncIdentity } = useOxy();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ settings, userId }: { settings: Record<string, any>; userId?: string }) => {
+      const targetUserId = userId || user?.id;
+      if (!targetUserId) {
+        throw new Error('User ID is required');
+      }
+
+      // Ensure we have a valid token before making the request
+      if (!oxyServices.hasValidToken() && activeSessionId) {
+        try {
+          // Try to get token for the session
+          await oxyServices.getTokenBySession(activeSessionId);
+        } catch (tokenError) {
+          // If getting token fails, might be an offline session - try syncing
+          const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
+          if (errorMessage.includes('AUTH_REQUIRED_OFFLINE_SESSION') || errorMessage.includes('offline')) {
+            try {
+              await syncIdentity();
+              // Retry getting token after sync
+              await oxyServices.getTokenBySession(activeSessionId);
+            } catch (syncError) {
+              throw new Error('Session needs to be synced. Please try again.');
+            }
+          } else {
+            throw tokenError;
+          }
+        }
+      }
+
+      try {
+        return await oxyServices.updatePrivacySettings(settings, targetUserId);
+      } catch (error: any) {
+        const errorMessage = error?.message || '';
+        const status = error?.status || error?.response?.status;
+        
+        // Handle authentication errors
+        if (status === 401 || errorMessage.includes('Authentication required') || errorMessage.includes('Invalid or missing authorization header')) {
+          // Try to sync session and get token
+          if (activeSessionId) {
+            try {
+              await syncIdentity();
+              await oxyServices.getTokenBySession(activeSessionId);
+              // Retry the update after getting token
+              return await oxyServices.updatePrivacySettings(settings, targetUserId);
+            } catch (retryError) {
+              throw new Error('Authentication failed. Please sign in again.');
+            }
+          } else {
+            throw new Error('No active session. Please sign in.');
+          }
+        }
+        
+        // TanStack Query will automatically retry on network errors
+        throw error;
+      }
+    },
+    // Optimistic update
+    onMutate: async ({ settings, userId }) => {
+      const targetUserId = userId || user?.id;
+      if (!targetUserId) return;
+
+      // Cancel outgoing refetches
+      await queryClient.cancelQueries({ queryKey: queryKeys.privacy.settings(targetUserId) });
+      await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current() });
+
+      // Snapshot previous values
+      const previousPrivacySettings = queryClient.getQueryData(queryKeys.privacy.settings(targetUserId));
+      const previousUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
+
+      // Optimistically update privacy settings
+      if (previousPrivacySettings) {
+        queryClient.setQueryData(queryKeys.privacy.settings(targetUserId), {
+          ...previousPrivacySettings,
+          ...settings,
+        });
+      }
+
+      // Also update user query if available
+      if (previousUser) {
+        queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+          ...previousUser,
+          privacySettings: {
+            ...previousUser.privacySettings,
+            ...settings,
+          },
+        });
+      }
+
+      return { previousPrivacySettings, previousUser };
+    },
+    // On error, rollback
+    onError: (error, { userId }, context) => {
+      const targetUserId = userId || user?.id;
+      if (context?.previousPrivacySettings && targetUserId) {
+        queryClient.setQueryData(queryKeys.privacy.settings(targetUserId), context.previousPrivacySettings);
+      }
+      if (context?.previousUser) {
+        queryClient.setQueryData(queryKeys.accounts.current(), context.previousUser);
+      }
+      toast.error(error instanceof Error ? error.message : 'Failed to update privacy settings');
+    },
+    // On success, invalidate and refetch
+    onSuccess: (data, { userId }) => {
+      const targetUserId = userId || user?.id;
+      if (targetUserId) {
+        queryClient.setQueryData(queryKeys.privacy.settings(targetUserId), data);
+      }
+      // Also update account query if it contains privacy settings
+      const currentUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
+      if (currentUser) {
+        queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+          ...currentUser,
+          privacySettings: data,
+        });
+      }
+      invalidateAccountQueries(queryClient);
+    },
+    // Always refetch after error or success
+    onSettled: (data, error, { userId }) => {
+      const targetUserId = userId || user?.id;
+      if (targetUserId) {
+        queryClient.invalidateQueries({ queryKey: queryKeys.privacy.settings(targetUserId) });
+      }
+      queryClient.invalidateQueries({ queryKey: queryKeys.accounts.current() });
+    },
+  });
+};
+
+/**
+ * Upload file with authentication handling and progress tracking
+ */
+export const useUploadFile = () => {
+  const { oxyServices, activeSessionId, syncIdentity } = useOxy();
+
+  return useMutation({
+    mutationFn: async ({ 
+      file, 
+      visibility, 
+      metadata, 
+      onProgress 
+    }: { 
+      file: File; 
+      visibility?: 'private' | 'public' | 'unlisted'; 
+      metadata?: Record<string, any>;
+      onProgress?: (progress: number) => void;
+    }) => {
+      // Ensure we have a valid token before making the request
+      if (!oxyServices.hasValidToken() && activeSessionId) {
+        try {
+          // Try to get token for the session
+          await oxyServices.getTokenBySession(activeSessionId);
+        } catch (tokenError) {
+          // If getting token fails, might be an offline session - try syncing
+          const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
+          if (errorMessage.includes('AUTH_REQUIRED_OFFLINE_SESSION') || errorMessage.includes('offline')) {
+            try {
+              await syncIdentity();
+              // Retry getting token after sync
+              await oxyServices.getTokenBySession(activeSessionId);
+            } catch (syncError) {
+              throw new Error('Session needs to be synced. Please try again.');
+            }
+          } else {
+            throw tokenError;
+          }
+        }
+      }
+
+      try {
+        return await oxyServices.assetUpload(file as any, visibility, metadata, onProgress);
+      } catch (error: any) {
+        const errorMessage = error?.message || '';
+        const status = error?.status || error?.response?.status;
+        
+        // Handle authentication errors
+        if (status === 401 || errorMessage.includes('Authentication required') || errorMessage.includes('Invalid or missing authorization header')) {
+          // Try to sync session and get token
+          if (activeSessionId) {
+            try {
+              await syncIdentity();
+              await oxyServices.getTokenBySession(activeSessionId);
+              // Retry the upload after getting token
+              return await oxyServices.assetUpload(file as any, visibility, metadata, onProgress);
+            } catch (retryError) {
+              throw new Error('Authentication failed. Please sign in again.');
+            }
+          } else {
+            throw new Error('No active session. Please sign in.');
+          }
+        }
+        
+        // TanStack Query will automatically retry on network errors
+        throw error;
+      }
+    },
+  });
+};
+

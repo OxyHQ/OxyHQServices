@@ -14,6 +14,7 @@ import {
     Alert,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
+import * as DocumentPicker from 'expo-document-picker';
 import type { FileManagementScreenProps } from '../types/fileManagement';
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
@@ -28,13 +29,13 @@ import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
+import { useUploadFile } from '../hooks/mutations/useAccountMutations';
 import {
     confirmAction,
     convertDocumentPickerAssetToFile,
     formatFileSize,
     getFileIcon,
     getSafeDownloadUrl,
-    uploadFileRaw
 } from '../utils/fileManagement';
 import { FileViewer } from '../components/fileManagement/FileViewer';
 import { FileDetailsModal } from '../components/fileManagement/FileDetailsModal';
@@ -115,6 +116,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 }) => {
     // Use useOxy() hook for OxyContext values
     const { user, oxyServices } = useOxy();
+    const uploadFileMutation = useUploadFile();
     const files = useFiles();
     // Ensure containerWidth is a number (TypeScript guard)
     const safeContainerWidth: number = typeof containerWidth === 'number' ? containerWidth : 400;
@@ -528,7 +530,11 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     };
                     useFileStore.getState().addFile(optimisticFile, { prepend: true });
 
-                    const result = await uploadFileRaw(raw, targetUserId, oxyServices, defaultVisibility);
+                    // Use the mutation hook with authentication handling
+                    const result = await uploadFileMutation.mutateAsync({
+                        file: raw,
+                        visibility: defaultVisibility,
+                    });
 
                     // Attempt to refresh file list incrementally – fetch single file metadata if API allows
                     if (result?.file || result?.files?.[0]) {
@@ -764,15 +770,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         try {
             setIsPickingDocument(true);
             
-            // Dynamically import expo-document-picker (Expo 54 supports it on all platforms)
-            const DocumentPicker = await import('expo-document-picker').catch(() => null);
-
-            if (!DocumentPicker || !DocumentPicker.getDocumentAsync) {
-                toast.error('File picker not available. Please install expo-document-picker');
-                return;
-            }
-
-            // Use getDocumentAsync directly - it will handle platform availability
+            // Use expo-document-picker (works on all platforms including web)
+            // On web, it uses the native file input and provides File objects directly
             const result = await DocumentPicker.getDocumentAsync({
                 type: '*/*',
                 multiple: true,

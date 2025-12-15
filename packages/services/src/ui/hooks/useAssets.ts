@@ -58,43 +58,23 @@ export const useAssets = () => {
       clearErrors();
       setUploading(true);
       
-      // Calculate SHA256 for progress tracking
-      const sha256 = await oxyInstance.calculateSHA256(file);
-      
-      // Initialize progress tracking
-      const initialProgress: AssetUploadProgress = {
-        fileId: '', // Will be set after init
-        uploaded: 0,
-        total: file.size,
-        percentage: 0,
-        status: 'uploading'
-      };
-      
-      // Upload with progress callback (visibility undefined, metadata, then onProgress)
-      const result = await oxyInstance.assetUpload(file as any, undefined, metadata, (percentage: number) => {
-        if (initialProgress.fileId) {
-          setUploadProgress(initialProgress.fileId, {
-            ...initialProgress,
-            uploaded: Math.round((percentage / 100) * file.size),
-            percentage,
-            status: percentage < 100 ? 'uploading' : 'processing'
-          });
-        }
-      });
+      // Upload file (progress tracking simplified for now)
+      const result = await oxyInstance.assetUpload(file as any, undefined, metadata);
 
       // Update progress with final status
-      if (result.file && initialProgress.fileId) {
-        setUploadProgress(initialProgress.fileId, {
-          ...initialProgress,
-          fileId: result.file.id,
+      if (result?.file) {
+        const fileId = result.file.id;
+        setUploadProgress(fileId, {
+          fileId,
           uploaded: file.size,
+          total: file.size,
           percentage: 100,
           status: 'complete'
         });
         
         // Remove progress after a short delay
         setTimeout(() => {
-          removeUploadProgress(result.file.id);
+          removeUploadProgress(fileId);
         }, 2000);
       }
 

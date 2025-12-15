@@ -159,6 +159,81 @@ export class AssetService {
   }
 
   /**
+   * Upload file directly - calculates SHA256 on backend
+   */
+  async uploadFileDirect(
+    userId: string,
+    fileBuffer: Buffer,
+    mimeType: string,
+    originalName: string,
+    visibility?: FileVisibility,
+    metadata?: Record<string, any>
+  ): Promise<IFile> {
+    try {
+      // Calculate SHA256 hash on backend
+      const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+      const size = fileBuffer.length;
+
+      // Check if file already exists by SHA256
+      const existingFile = await File.findOne({ 
+        sha256, 
+        status: { $ne: 'deleted' } 
+      });
+
+      if (existingFile) {
+        logger.info('File already exists, returning existing', { 
+          sha256, 
+          fileId: existingFile._id 
+        });
+        
+        // File already exists, return existing file
+        return existingFile;
+      }
+
+      // Create new file record
+      const ext = this.getExtensionFromMime(mimeType);
+      const storageKey = this.generateStorageKey(sha256, mimeType);
+      
+      const file = new File({
+        sha256,
+        size,
+        mime: mimeType,
+        ext,
+        ownerUserId: userId,
+        status: 'active',
+        storageKey,
+        originalName,
+        visibility: visibility || 'private',
+        metadata: metadata || {},
+        links: [],
+        variants: []
+      });
+
+      await file.save();
+
+      // Upload to S3
+      await this.s3Service.uploadBuffer(storageKey, fileBuffer, {
+        contentType: mimeType
+      });
+
+      // Queue variant generation
+      this.queueVariantGeneration(file);
+
+      logger.info('File uploaded directly', { 
+        fileId: file._id, 
+        sha256,
+        size,
+        originalName
+      });
+
+      return file;
+    } catch (error) {
+      logger.error('Error uploading file directly:', error);
+      throw error;
+    }
+  }
+
+  /**
    * Complete file upload - commit metadata and trigger variant generation
    */
   async completeUpload(request: AssetCompleteRequest): Promise<IFile> {

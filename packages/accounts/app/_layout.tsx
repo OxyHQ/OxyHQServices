@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Platform } from 'react-native';
 import 'react-native-reanimated';
 import { OxyProvider } from '@oxyhq/services';
 
@@ -113,8 +114,11 @@ function RootLayoutContent() {
           <ScrollProvider>
             <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
               <Stack>
-                <Stack.Screen name="(auth)" options={{ headerShown: false }} />
                 <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                {/* Auth route is only available on native platforms */}
+                {Platform.OS !== 'web' && (
+                  <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                )}
                 <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
               </Stack>
               <StatusBar style="auto" />

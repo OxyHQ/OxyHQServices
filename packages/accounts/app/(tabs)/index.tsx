@@ -253,11 +253,12 @@ export default function HomeScreen() {
     return () => clearTimeout(timer);
   }, []);
 
-  // Redirect to auth flow if not authenticated
+  // Redirect to auth flow if not authenticated (native only)
   // Accounts app uses its own auth flow (create/import identity), not the bottom sheet
   // IMPORTANT: This useEffect must be called before any early returns to maintain hook order
+  // Note: Auth route is only available on native platforms, so we skip redirect on web
   useEffect(() => {
-    if (!oxyLoading && !isAuthenticated) {
+    if (!oxyLoading && !isAuthenticated && Platform.OS !== 'web') {
       router.replace('/(auth)');
     }
   }, [oxyLoading, isAuthenticated, router]);

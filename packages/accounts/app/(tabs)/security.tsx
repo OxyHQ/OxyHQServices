@@ -11,7 +11,7 @@ import { darkenColor } from '@/utils/color-utils';
 import { LinkButton, AccountCard, AppleSwitch, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
-import { useOxy } from '@oxyhq/services';
+import { useOxy, useUserDevices } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
 import type { ClientSession } from '@oxyhq/services';
 import { useThemeContext } from '@/contexts/theme-context';
@@ -27,12 +27,14 @@ export default function SecurityScreen() {
     const { toggleColorScheme } = useThemeContext();
 
     // OxyServices integration
-    const { oxyServices, user, isAuthenticated, isLoading: oxyLoading, sessions } = useOxy();
+    const { user, isAuthenticated, isLoading: oxyLoading, sessions } = useOxy();
     const [enhancedSafeBrowsing, setEnhancedSafeBrowsing] = useState(false);
     const [darkWebReport, setDarkWebReport] = useState(false);
-    const [devices, setDevices] = useState<any[]>([]);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState<string | null>(null);
+
+    // Fetch devices using TanStack Query hook
+    const { data: devices = [], isLoading: loading, error: devicesError } = useUserDevices({
+        enabled: isAuthenticated,
+    });
 
     // Biometric settings
     const {
@@ -46,28 +48,6 @@ export default function SecurityScreen() {
         toggleBiometricLogin,
         refreshCapabilities,
     } = useBiometricSettings();
-
-    // Fetch devices
-    useEffect(() => {
-        const fetchDevices = async () => {
-            if (!isAuthenticated || !oxyServices) return;
-
-            setLoading(true);
-            setError(null);
-
-            try {
-                const devicesData = await oxyServices.getUserDevices();
-                setDevices(devicesData || []);
-            } catch (err: any) {
-                console.error('[Security Screen] Failed to fetch devices:', err);
-                setError(err?.message || 'Failed to load devices');
-            } finally {
-                setLoading(false);
-            }
-        };
-
-        fetchDevices();
-    }, [isAuthenticated, oxyServices]);
 
     // Format relative time for dates
     const formatRelativeTime = useCallback((dateString?: string) => {

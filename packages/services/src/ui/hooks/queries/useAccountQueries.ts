@@ -124,3 +124,72 @@ export const useUsersBySessions = (sessionIds: string[], options?: { enabled?: b
   });
 };
 
+/**
+ * Get privacy settings for a user
+ */
+export const usePrivacySettings = (userId?: string, options?: { enabled?: boolean }) => {
+  const { oxyServices, activeSessionId, syncIdentity, user } = useOxy();
+  const targetUserId = userId || user?.id;
+
+  return useQuery({
+    queryKey: queryKeys.privacy.settings(userId),
+    queryFn: async () => {
+      if (!targetUserId) {
+        throw new Error('User ID is required');
+      }
+
+      // Ensure we have a valid token before making the request
+      if (!oxyServices.hasValidToken() && activeSessionId) {
+        try {
+          // Try to get token for the session
+          await oxyServices.getTokenBySession(activeSessionId);
+        } catch (tokenError) {
+          // If getting token fails, might be an offline session - try syncing
+          const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
+          if (errorMessage.includes('AUTH_REQUIRED_OFFLINE_SESSION') || errorMessage.includes('offline')) {
+            try {
+              await syncIdentity();
+              // Retry getting token after sync
+              await oxyServices.getTokenBySession(activeSessionId);
+            } catch (syncError) {
+              throw new Error('Session needs to be synced. Please try again.');
+            }
+          } else {
+            throw tokenError;
+          }
+        }
+      }
+
+      try {
+        return await oxyServices.getPrivacySettings(targetUserId);
+      } catch (error: any) {
+        const errorMessage = error?.message || '';
+        const status = error?.status || error?.response?.status;
+        
+        // Handle authentication errors
+        if (status === 401 || errorMessage.includes('Authentication required') || errorMessage.includes('Invalid or missing authorization header')) {
+          // Try to sync session and get token
+          if (activeSessionId) {
+            try {
+              await syncIdentity();
+              await oxyServices.getTokenBySession(activeSessionId);
+              // Retry the request after getting token
+              return await oxyServices.getPrivacySettings(targetUserId);
+            } catch (retryError) {
+              throw new Error('Authentication failed. Please sign in again.');
+            }
+          } else {
+            throw new Error('No active session. Please sign in.');
+          }
+        }
+        
+        // TanStack Query will automatically retry on network errors
+        throw error;
+      }
+    },
+    enabled: (options?.enabled !== false) && !!targetUserId,
+    staleTime: 2 * 60 * 1000, // 2 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes
+  });
+};
+

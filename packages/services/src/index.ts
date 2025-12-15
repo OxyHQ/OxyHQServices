@@ -112,12 +112,59 @@ export type {
   MinimalUserData
 } from './models/session';
 
-// UI components and hooks
+// UI hooks - Stores
 export { useAuthStore } from './ui/stores/authStore';
-export { useAssetStore, useAssets as useAssetsStore, useAsset, useUploadProgress, useAssetLoading, useAssetErrors, useAssetsByApp, useAssetsByEntity, useAssetUsageCount, useIsAssetLinked } from './ui/stores/assetStore';
+export { 
+  useAssetStore, 
+  useAssets as useAssetsStore, 
+  useAsset, 
+  useUploadProgress, 
+  useAssetLoading, 
+  useAssetErrors, 
+  useAssetsByApp, 
+  useAssetsByEntity, 
+  useAssetUsageCount, 
+  useIsAssetLinked 
+} from './ui/stores/assetStore';
+
+// UI hooks - Custom hooks
 export { useSessionSocket } from './ui/hooks/useSessionSocket';
 export { useAssets, setOxyAssetInstance } from './ui/hooks/useAssets';
 export { useFileDownloadUrl, setOxyFileUrlInstance } from './ui/hooks/useFileDownloadUrl';
+
+// UI hooks - Query hooks (TanStack Query)
+export {
+  // Account queries
+  useUserProfile,
+  useUserProfiles,
+  useCurrentUser,
+  useUserById,
+  useUserByUsername,
+  useUsersBySessions,
+  usePrivacySettings,
+  // Service queries
+  useSessions,
+  useSession,
+  useDeviceSessions,
+  useUserDevices,
+  useSecurityInfo,
+} from './ui/hooks/queries';
+
+// UI hooks - Mutation hooks (TanStack Query)
+export {
+  // Account mutations
+  useUpdateProfile,
+  useUploadAvatar,
+  useUpdateAccountSettings,
+  useUpdatePrivacySettings,
+  useUploadFile,
+  // Service mutations
+  useSwitchSession,
+  useLogoutSession,
+  useLogoutAll,
+  useUpdateDeviceName,
+  useRemoveDevice,
+} from './ui/hooks/mutations';
 
 // UI components
 export { OxySignInButton } from './ui/components/OxySignInButton';

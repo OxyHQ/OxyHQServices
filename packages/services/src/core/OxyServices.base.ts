@@ -321,7 +321,11 @@ export class OxyServicesBase {
     [key: string]: any 
   }> {
     try {
-      return await this.makeRequest('GET', '/health', undefined, { cache: false });
+      return await this.makeRequest('GET', '/health', undefined, { 
+        cache: false,
+        retry: false,
+        timeout: 5000
+      });
     } catch (error) {
       throw this.handleError(error);
     }

@@ -48,6 +48,12 @@ export const queryKeys = {
     details: () => [...queryKeys.devices.all, 'detail'] as const,
     detail: (deviceId: string) => [...queryKeys.devices.details(), deviceId] as const,
   },
+
+  // Privacy settings queries
+  privacy: {
+    all: ['privacy'] as const,
+    settings: (userId?: string) => [...queryKeys.privacy.all, 'settings', userId || 'current'] as const,
+  },
 } as const;
 
 /**

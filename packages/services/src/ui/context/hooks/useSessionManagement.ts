@@ -6,6 +6,8 @@ import { fetchSessionsWithFallback, mapSessionsToClient, validateSessionBatch } 
 import { getStorageKeys, type StorageInterface } from '../utils/storageHelpers';
 import { handleAuthError, isInvalidSessionError } from '../utils/errorHandlers';
 import type { OxyServices } from '../../../core';
+import type { QueryClient } from '@tanstack/react-query';
+import { clearQueryCache } from '../../hooks/queryClient.js';
 
 export interface UseSessionManagementOptions {
   oxyServices: OxyServices;
@@ -19,6 +21,7 @@ export interface UseSessionManagementOptions {
   setAuthError?: (message: string | null) => void;
   logger?: (message: string, error?: unknown) => void;
   setTokenReady?: (ready: boolean) => void;
+  queryClient?: QueryClient | null;
 }
 
 export interface UseSessionManagementResult {
@@ -55,6 +58,7 @@ export const useSessionManagement = ({
   setAuthError,
   logger,
   setTokenReady,
+  queryClient,
 }: UseSessionManagementOptions): UseSessionManagementResult => {
   const [sessions, setSessions] = useState<ClientSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
@@ -140,6 +144,8 @@ export const useSessionManagement = ({
     try {
       await storage.removeItem(storageKeys.activeSessionId);
       await storage.removeItem(storageKeys.sessionIds);
+      // Clear identity sync state
+      await storage.removeItem('oxy_identity_synced').catch(() => {});
     } catch (error) {
       handleAuthError(error, {
         defaultMessage: CLEAR_STORAGE_ERROR,
@@ -155,9 +161,26 @@ export const useSessionManagement = ({
     setSessions([]);
     setActiveSessionId(null);
     logoutStore();
+    
+    // Clear TanStack Query cache (in-memory)
+    if (queryClient) {
+      queryClient.clear();
+    }
+    
+    // Clear persisted query cache
+    if (storage) {
+      try {
+        await clearQueryCache(storage);
+      } catch (error) {
+        if (logger) {
+          logger('Failed to clear persisted query cache', error);
+        }
+      }
+    }
+    
     await clearSessionStorage();
     onAuthStateChange?.(null);
-  }, [clearSessionStorage, logoutStore, onAuthStateChange]);
+  }, [clearSessionStorage, logoutStore, onAuthStateChange, queryClient, storage, logger]);
 
   const activateSession = useCallback(
     async (sessionId: string, user: User): Promise<void> => {

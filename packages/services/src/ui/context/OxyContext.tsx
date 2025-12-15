@@ -26,6 +26,10 @@ import { getStorageKeys } from '../utils/storageHelpers';
 import { isInvalidSessionError } from '../utils/errorHandlers';
 import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
+import { useQueryClient } from '@tanstack/react-query';
+import { clearQueryCache } from '../hooks/queryClient';
+import { useAccountStore } from '../stores/accountStore';
+import { KeyManager } from '../../crypto/keyManager';
 
 export interface OxyContextState {
   user: User | null;
@@ -49,6 +53,7 @@ export interface OxyContextState {
   getPublicKey: () => Promise<string | null>;
   isIdentitySynced: () => Promise<boolean>;
   syncIdentity: () => Promise<User>;
+  deleteIdentityAndClearAccount: (skipBackup?: boolean, force?: boolean, userConfirmed?: boolean) => Promise<void>;
 
   // Identity sync state (reactive, from Zustand store)
   identitySyncState: {
@@ -75,6 +80,7 @@ export interface OxyContextState {
   logoutAllDeviceSessions: () => Promise<void>;
   updateDeviceName: (deviceName: string) => Promise<void>;
   clearSessionState: () => Promise<void>;
+  clearAllAccountData: () => Promise<void>;
   oxyServices: OxyServices;
   useFollow?: UseFollowHook;
   showBottomSheet?: (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => void;
@@ -248,6 +254,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     logger,
   });
 
+  const queryClient = useQueryClient();
+
   const {
     sessions,
     activeSessionId,
@@ -270,6 +278,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     setAuthError: (message) => setAuthState({ error: message }),
     logger,
     setTokenReady,
+    queryClient,
   });
 
   const {
@@ -309,21 +318,101 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     return await syncIdentityBase();
   }, [syncIdentityBase]);
 
+  // Clear all account data when identity is lost (for accounts app)
+  // In accounts app, identity = account, so losing identity means losing everything
+  const clearAllAccountData = useCallback(async (): Promise<void> => {
+    // Clear TanStack Query cache (in-memory)
+    queryClient.clear();
+    
+    // Clear persisted query cache
+    if (storage) {
+      try {
+        await clearQueryCache(storage);
+      } catch (error) {
+        if (logger) {
+          logger('Failed to clear persisted query cache', error);
+        }
+      }
+    }
+    
+    // Clear session state (sessions, activeSessionId, storage)
+    await clearSessionState();
+    
+    // Clear identity sync state from storage
+    if (storage) {
+      try {
+        await storage.removeItem('oxy_identity_synced');
+      } catch (error) {
+        if (logger) {
+          logger('Failed to clear identity sync state', error);
+        }
+      }
+    }
+    
+    // Reset auth store identity sync state
+    useAuthStore.getState().setIdentitySynced(false);
+    useAuthStore.getState().setSyncing(false);
+    
+    // Reset account store
+    useAccountStore.getState().reset();
+    
+    // Clear HTTP service cache
+    oxyServices.clearCache();
+  }, [queryClient, storage, clearSessionState, logger, oxyServices]);
+
+  // Delete identity and clear all account data
+  // In accounts app, deleting identity means losing the account completely
+  const deleteIdentityAndClearAccount = useCallback(async (
+    skipBackup: boolean = false,
+    force: boolean = false,
+    userConfirmed: boolean = false
+  ): Promise<void> => {
+    // First, clear all account data
+    await clearAllAccountData();
+    
+    // Then delete the identity keys
+    await KeyManager.deleteIdentity(skipBackup, force, userConfirmed);
+  }, [clearAllAccountData]);
+
   // Network reconnect sync - TanStack Query automatically retries mutations on reconnect
   // We only need to sync identity if it's not synced
   useEffect(() => {
     if (!storage) return;
 
     let wasOffline = false;
-    let checkInterval: NodeJS.Timeout | null = null;
+    let checkTimeout: NodeJS.Timeout | null = null;
+    
+    // Circuit breaker and exponential backoff state
+    const stateRef = {
+      consecutiveFailures: 0,
+      currentInterval: 10000, // Start with 10 seconds
+      baseInterval: 10000, // Base interval in milliseconds
+      maxInterval: 60000, // Maximum interval (60 seconds)
+      maxFailures: 5, // Circuit breaker threshold
+    };
+
+    const scheduleNextCheck = () => {
+      if (checkTimeout) {
+        clearTimeout(checkTimeout);
+      }
+      checkTimeout = setTimeout(() => {
+        checkNetworkAndSync();
+      }, stateRef.currentInterval);
+    };
 
     const checkNetworkAndSync = async () => {
       try {
         // Try a lightweight health check to see if we're online
         await oxyServices.healthCheck().catch(() => {
           wasOffline = true;
-          return;
+          throw new Error('Health check failed');
         });
+
+        // Health check succeeded - reset circuit breaker and backoff
+        if (stateRef.consecutiveFailures > 0) {
+          stateRef.consecutiveFailures = 0;
+          stateRef.currentInterval = stateRef.baseInterval;
+        }
 
         // If we were offline and now we're online, sync identity if needed
         if (wasOffline) {
@@ -349,18 +438,36 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       } catch (error) {
         // Network check failed - we're offline
         wasOffline = true;
+        
+        // Increment failure count and apply exponential backoff
+        stateRef.consecutiveFailures++;
+        
+        // Calculate new interval with exponential backoff, capped at maxInterval
+        const backoffMultiplier = Math.min(
+          Math.pow(2, stateRef.consecutiveFailures - 1),
+          stateRef.maxInterval / stateRef.baseInterval
+        );
+        stateRef.currentInterval = Math.min(
+          stateRef.baseInterval * backoffMultiplier,
+          stateRef.maxInterval
+        );
+        
+        // If we hit the circuit breaker threshold, use max interval
+        if (stateRef.consecutiveFailures >= stateRef.maxFailures) {
+          stateRef.currentInterval = stateRef.maxInterval;
+        }
+      } finally {
+        // Always schedule next check (will use updated interval)
+        scheduleNextCheck();
       }
     };
 
     // Check immediately
     checkNetworkAndSync();
 
-    // Check periodically (every 10 seconds when app is active)
-    checkInterval = setInterval(checkNetworkAndSync, 10000);
-
     return () => {
-      if (checkInterval) {
-        clearInterval(checkInterval);
+      if (checkTimeout) {
+        clearTimeout(checkTimeout);
       }
     };
   }, [oxyServices, storage, syncIdentity, logger]);
@@ -528,6 +635,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     getPublicKey,
     isIdentitySynced,
     syncIdentity,
+    deleteIdentityAndClearAccount,
     identitySyncState: {
       isSynced: isIdentitySyncedStore ?? true,
       isSyncing: isSyncing ?? false,
@@ -542,6 +650,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     logoutAllDeviceSessions,
     updateDeviceName,
     clearSessionState,
+    clearAllAccountData,
     oxyServices,
     useFollow: useFollowHook,
     showBottomSheet: showBottomSheetForContext,
@@ -554,6 +663,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     getPublicKey,
     isIdentitySynced,
     syncIdentity,
+    deleteIdentityAndClearAccount,
     isIdentitySyncedStore,
     isSyncing,
     currentLanguage,
@@ -575,6 +685,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     tokenReady,
     isStorageReady,
     updateDeviceName,
+    clearAllAccountData,
     useFollowHook,
     user,
     showBottomSheetForContext,

@@ -46,7 +46,9 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
     user: null, 
     isAuthenticated: false, 
     lastUserFetch: null,
-    // Keep identity sync state - user might still have local identity
+    // Reset identity sync state when logging out (for accounts app, identity = account)
+    isIdentitySynced: false,
+    isSyncing: false,
   }),
   setUser: (user: User) => set({ user, lastUserFetch: Date.now() }),
   
