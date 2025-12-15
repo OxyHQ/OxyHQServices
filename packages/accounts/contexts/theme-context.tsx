@@ -152,12 +152,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   const toggleColorScheme = useCallback(() => {
     setThemePreference((current) => {
-      // Cycle through: system -> light -> dark -> system
-      if (current === 'system') return 'light';
-      if (current === 'light') return 'dark';
-      return 'system';
+      // Toggle between light and dark based on the *resolved* theme.
+      // If current is system, use the system theme to decide the next value.
+      const isDark = current === 'dark' || (current === 'system' && systemTheme === 'dark');
+      return isDark ? 'light' : 'dark';
     });
-  }, []);
+  }, [systemTheme]);
 
   return (
     <ThemeContext.Provider

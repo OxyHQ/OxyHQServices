@@ -295,6 +295,25 @@ export default function TabLayout() {
         />
       </Drawer>
 
+      {/* Bottom actions - Mobile: keep parity with desktop quick actions */}
+      <View style={styles.mobileBottomActions}>
+        <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleReload}>
+          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
+            <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleDevices}>
+          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
+            <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
+          </View>
+        </TouchableOpacity>
+        <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={toggleColorScheme}>
+          <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
+            <MaterialCommunityIcons name={colorScheme === 'dark' ? 'weather-sunny' : 'weather-night'} size={22} color={darkenColor(colors.sidebarIconData)} />
+          </View>
+        </TouchableOpacity>
+      </View>
+
       {/* FAB Button - Mobile - Changes between Scan and Go to Top */}
       {Platform.OS !== 'web' && !pathname.includes('scan-qr') && (
         <View style={styles.fabButton}>
@@ -422,5 +441,20 @@ const styles = StyleSheet.create({
     position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  mobileBottomActions: {
+    bottom: 24,
+    right: 24,
+    flexDirection: 'row',
+    gap: 12,
+    zIndex: 1000,
+    ...Platform.select({
+      web: {
+        position: 'fixed' as any,
+      },
+      default: {
+        position: 'absolute' as any,
+      },
+    }),
   },
 });

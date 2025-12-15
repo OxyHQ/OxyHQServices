@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, useWindowDimensions } from 'react-native';
+import React from 'react';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { Colors } from '@/constants/theme';
@@ -22,20 +22,13 @@ interface AccountInfoGridProps {
 export function AccountInfoGrid({ cards, onPressIn }: AccountInfoGridProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { width } = useWindowDimensions();
-
-  const cardWidth = useMemo(() => {
-    const padding = 16;
-    const gap = 12;
-    return (width - padding * 2 - gap) / 2;
-  }, [width]);
 
   return (
     <View style={styles.gridContainer}>
       {cards.map((card) => (
         <TouchableOpacity
           key={card.id}
-          style={[styles.accountInfoCard, { width: cardWidth, backgroundColor: colors.card, borderColor: colors.border }]}
+          style={[styles.accountInfoCard, { backgroundColor: colors.card, borderColor: colors.border }]}
           onPressIn={onPressIn}
           onPress={card.onPress}
           activeOpacity={card.onPress ? 0.7 : 1}
@@ -59,6 +52,8 @@ const styles = StyleSheet.create({
     gap: 12,
   } as const,
   accountInfoCard: {
+    flex: 1,
+    minWidth: '48%',
     padding: 16,
     borderRadius: 16,
     borderWidth: 1,
