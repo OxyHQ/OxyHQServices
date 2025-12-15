@@ -213,20 +213,21 @@ export class SessionController {
       }
 
       // Create session
+      const sessionBeforeCreate = Date.now();
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
         { deviceName, deviceFingerprint }
       );
+      const sessionAfterCreate = Date.now();
 
       // Log security event for sign-in only if this is a new session
-      // Check if session was just created by comparing createdAt and updatedAt
-      // For new sessions, createdAt and updatedAt are the same (or very close)
-      // For reused sessions, updatedAt is recent but createdAt is old
-      const createdAt = new Date(session.createdAt).getTime();
-      const updatedAt = new Date(session.updatedAt).getTime();
-      const timeDiff = Math.abs(updatedAt - createdAt);
-      const isNewSession = timeDiff < 5000; // If created/updated within 5 seconds, it's new
+      // More reliable detection: check if session was created during this request
+      // New sessions will have createdAt very close to current time
+      // Reused sessions will have createdAt much older
+      const sessionCreatedAt = new Date(session.createdAt).getTime();
+      const sessionAge = sessionAfterCreate - sessionCreatedAt;
+      const isNewSession = sessionAge < 10000; // If session was created within last 10 seconds, it's new
 
       if (isNewSession) {
         try {
@@ -242,7 +243,11 @@ export class SessionController {
           );
         } catch (error) {
           // Don't fail the sign-in if logging fails
-          logger.error('Failed to log security event for sign-in:', error);
+          logger.error('Failed to log security event for sign-in', error instanceof Error ? error : new Error(String(error)), {
+            component: 'SessionController',
+            method: 'verifyChallenge',
+            userId: user._id.toString(),
+          });
         }
       }
 

@@ -1,5 +1,6 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { SecurityEventType, SecurityEventSeverity, SecurityActivity } from '@oxyhq/services';
+import { SECURITY_EVENT_SEVERITY_MAP } from '@oxyhq/services';
 
 /**
  * Get icon name for security event type
@@ -92,22 +93,6 @@ export function formatEventDescription(activity: SecurityActivity): string {
  * Get severity level for event
  */
 export function getEventSeverity(eventType: SecurityEventType): SecurityEventSeverity {
-  switch (eventType) {
-    case 'sign_in':
-    case 'sign_out':
-    case 'profile_updated':
-      return 'low';
-    case 'email_changed':
-    case 'device_added':
-    case 'device_removed':
-    case 'security_settings_changed':
-      return 'medium';
-    case 'account_recovery':
-      return 'high';
-    case 'suspicious_activity':
-      return 'critical';
-    default:
-      return 'low';
-  }
+  return SECURITY_EVENT_SEVERITY_MAP[eventType] || 'low';
 }
 

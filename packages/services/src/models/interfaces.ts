@@ -423,6 +423,22 @@ export type SecurityEventType =
 export type SecurityEventSeverity = 'low' | 'medium' | 'high' | 'critical';
 
 /**
+ * Security event severity mapping (single source of truth)
+ * Maps each event type to its default severity level
+ */
+export const SECURITY_EVENT_SEVERITY_MAP: Record<SecurityEventType, SecurityEventSeverity> = {
+  'sign_in': 'low',
+  'sign_out': 'low',
+  'profile_updated': 'low',
+  'email_changed': 'medium',
+  'device_added': 'medium',
+  'device_removed': 'medium',
+  'security_settings_changed': 'medium',
+  'account_recovery': 'high',
+  'suspicious_activity': 'critical',
+};
+
+/**
  * Security activity event
  */
 export interface SecurityActivity {

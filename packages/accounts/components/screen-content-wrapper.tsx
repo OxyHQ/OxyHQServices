@@ -27,16 +27,16 @@ export function ScreenContentWrapper({ children, refreshing = false, onRefresh }
     onScroll: (event) => {
       const currentY = event.contentOffset.y;
       const previousY = scrollY.value;
-      
+
       scrollY.value = currentY;
-      
+
       // Determine scroll direction
       if (currentY > previousY) {
         scrollDirection.value = 'down';
       } else if (currentY < previousY) {
         scrollDirection.value = 'up';
       }
-      
+
       // Update isScrolled state on JS thread
       if (currentY > 10 !== (previousY > 10)) {
         runOnJS(setIsScrolled)(currentY > 10);

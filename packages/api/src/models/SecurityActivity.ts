@@ -13,6 +13,32 @@ export type SecurityEventType =
 
 export type SecurityEventSeverity = 'low' | 'medium' | 'high' | 'critical';
 
+// Export event types array as constant (single source of truth)
+export const SECURITY_EVENT_TYPES: SecurityEventType[] = [
+  'sign_in',
+  'sign_out',
+  'email_changed',
+  'profile_updated',
+  'device_added',
+  'device_removed',
+  'account_recovery',
+  'security_settings_changed',
+  'suspicious_activity',
+];
+
+// Export severity mapping (single source of truth for backend and frontend)
+export const SECURITY_EVENT_SEVERITY_MAP: Record<SecurityEventType, SecurityEventSeverity> = {
+  'sign_in': 'low',
+  'sign_out': 'low',
+  'profile_updated': 'low',
+  'email_changed': 'medium',
+  'device_added': 'medium',
+  'device_removed': 'medium',
+  'security_settings_changed': 'medium',
+  'account_recovery': 'high',
+  'suspicious_activity': 'critical',
+};
+
 export interface ISecurityActivity extends Document {
   userId: mongoose.Types.ObjectId;
   eventType: SecurityEventType;
@@ -38,17 +64,7 @@ const SecurityActivitySchema: Schema = new Schema(
     eventType: {
       type: String,
       required: true,
-      enum: [
-        'sign_in',
-        'sign_out',
-        'email_changed',
-        'profile_updated',
-        'device_added',
-        'device_removed',
-        'account_recovery',
-        'security_settings_changed',
-        'suspicious_activity',
-      ],
+      enum: SECURITY_EVENT_TYPES,
       index: true,
     },
     eventDescription: {

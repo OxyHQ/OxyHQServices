@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { AuthRequest } from '../middleware/auth';
 import securityActivityService from '../services/securityActivityService';
-import { SecurityEventType } from '../models/SecurityActivity';
+import { SecurityEventType, SECURITY_EVENT_TYPES } from '../models/SecurityActivity';
 import { validatePagination } from '../utils/validation';
 import { sendPaginated } from '../utils/asyncHandler';
 import { logger } from '../utils/logger';
@@ -31,23 +31,9 @@ export const getSecurityActivity = async (req: AuthRequest, res: Response): Prom
     const eventType = req.query.eventType as SecurityEventType | undefined;
     
     // Validate event type if provided
-    if (eventType) {
-      const validEventTypes: SecurityEventType[] = [
-        'sign_in',
-        'sign_out',
-        'email_changed',
-        'profile_updated',
-        'device_added',
-        'device_removed',
-        'account_recovery',
-        'security_settings_changed',
-        'suspicious_activity',
-      ];
-      
-      if (!validEventTypes.includes(eventType)) {
-        res.status(400).json({ error: 'Invalid event type' });
-        return;
-      }
+    if (eventType && !SECURITY_EVENT_TYPES.includes(eventType)) {
+      res.status(400).json({ error: 'Invalid event type' });
+      return;
     }
 
     const result = await securityActivityService.getUserSecurityActivity(userId, {

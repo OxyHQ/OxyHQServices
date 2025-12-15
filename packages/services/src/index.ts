@@ -111,6 +111,9 @@ export type {
   SecurityActivityResponse
 } from './models/interfaces';
 
+// Export security constants
+export { SECURITY_EVENT_SEVERITY_MAP } from './models/interfaces';
+
 export type {
   SessionLoginResponse,
   ClientSession,
