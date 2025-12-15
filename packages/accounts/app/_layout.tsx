@@ -98,33 +98,32 @@ function RootLayoutContent() {
   }, [splashState.initializationComplete, splashState.fadeComplete, appIsReady]);
 
   // Memoize app content to prevent unnecessary re-renders
+  // OxyProvider must always be rendered so screens can use useOxy() hook
   const appContent = useMemo(() => {
-    if (!appIsReady) {
-      return (
-        <AppSplashScreen
-          startFade={splashState.startFade}
-          onFadeComplete={handleSplashFadeComplete}
-        />
-      );
-    }
-
     return (
       <OxyProvider baseURL={API_URL}>
-        <SafeAreaProvider>
-          <ScrollProvider>
-            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-              <Stack>
-                <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                {/* Auth route is only available on native platforms */}
-                {Platform.OS !== 'web' && (
-                  <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-                )}
-                <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-              </Stack>
-              <StatusBar style="auto" />
-            </ThemeProvider>
-          </ScrollProvider>
-        </SafeAreaProvider>
+        {!appIsReady ? (
+          <AppSplashScreen
+            startFade={splashState.startFade}
+            onFadeComplete={handleSplashFadeComplete}
+          />
+        ) : (
+          <SafeAreaProvider>
+            <ScrollProvider>
+              <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                <Stack>
+                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                  {/* Auth route is only available on native platforms */}
+                  {Platform.OS !== 'web' && (
+                    <Stack.Screen name="(auth)" options={{ headerShown: false }} />
+                  )}
+                  <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+                </Stack>
+                <StatusBar style="auto" />
+              </ThemeProvider>
+            </ScrollProvider>
+          </SafeAreaProvider>
+        )}
       </OxyProvider>
     );
   }, [

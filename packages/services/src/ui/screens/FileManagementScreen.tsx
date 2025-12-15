@@ -14,8 +14,20 @@ import {
     Alert,
 } from 'react-native';
 import { Image as ExpoImage } from 'expo-image';
-import * as DocumentPicker from 'expo-document-picker';
 import type { FileManagementScreenProps } from '../types/fileManagement';
+
+// Lazy load expo-document-picker (optional dependency)
+// This allows the screen to work even if expo-document-picker is not installed
+let DocumentPicker: typeof import('expo-document-picker') | null = null;
+const loadDocumentPicker = async () => {
+    if (DocumentPicker) return DocumentPicker;
+    try {
+        DocumentPicker = await import('expo-document-picker');
+        return DocumentPicker;
+    } catch (error) {
+        throw new Error('expo-document-picker is not installed. Please install it: npx expo install expo-document-picker');
+    }
+};
 import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 // @ts-ignore - MaterialCommunityIcons is available at runtime
@@ -770,9 +782,12 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         try {
             setIsPickingDocument(true);
 
+            // Lazy load expo-document-picker
+            const picker = await loadDocumentPicker();
+
             // Use expo-document-picker (works on all platforms including web)
             // On web, it uses the native file input and provides File objects directly
-            const result = await DocumentPicker.getDocumentAsync({
+            const result = await picker.getDocumentAsync({
                 type: '*/*',
                 multiple: true,
                 copyToCacheDirectory: true,
