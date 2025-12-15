@@ -4,6 +4,8 @@ import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
+import { Section } from '@/components/section';
+import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard, ScreenHeader, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
@@ -174,39 +176,41 @@ export default function DeviceDetailScreen() {
     return [
       {
         id: 'name',
-        icon: 'information-outline',
-        iconColor: colors.tint,
-        title: 'Device Name',
-        subtitle: deviceName,
+        icon: getDeviceIcon(deviceType) as any,
+        iconColor: isCurrent ? '#34C759' : colors.sidebarIconDevices,
+        title: deviceName,
+        subtitle: isCurrent ? 'Current Device' : 'Other Device',
+        customIcon: (
+          <View style={[styles.deviceIconBadge, { backgroundColor: isCurrent ? '#34C75920' : colors.sidebarIconDevices + '20' }]}>
+            <MaterialCommunityIcons
+              name={getDeviceIcon(deviceType) as any}
+              size={24}
+              color={isCurrent ? '#34C759' : colors.sidebarIconDevices}
+            />
+          </View>
+        ),
       },
       {
         id: 'type',
-        icon: getDeviceIcon(deviceType) as any,
+        icon: 'devices' as any,
         iconColor: colors.sidebarIconDevices,
         title: 'Device Type',
         subtitle: deviceType.charAt(0).toUpperCase() + deviceType.slice(1),
       },
       {
         id: 'lastActive',
-        icon: 'clock-outline',
+        icon: 'clock-outline' as any,
         iconColor: colors.sidebarIconDevices,
         title: 'Last Active',
         subtitle: lastActive ? formatRelativeTime(lastActive) : 'Unknown',
       },
       ...(createdAt ? [{
         id: 'createdAt',
-        icon: 'calendar-outline',
+        icon: 'calendar-outline' as any,
         iconColor: colors.sidebarIconDevices,
         title: 'First Seen',
         subtitle: formatDate(createdAt),
       }] : []),
-      {
-        id: 'status',
-        icon: isCurrent ? 'check-circle' : 'circle-outline',
-        iconColor: isCurrent ? '#34C759' : colors.sidebarIconDevices,
-        title: 'Status',
-        subtitle: isCurrent ? 'Current Device' : 'Other Device',
-      },
     ];
   }, [device, colors, formatRelativeTime, getDeviceIcon]);
 
@@ -241,102 +245,71 @@ export default function DeviceDetailScreen() {
         <View style={[styles.container, { backgroundColor: colors.background }]}>
           <View style={styles.mobileContent}>
             <ScreenHeader title="Device Details" subtitle="View and manage device information." />
-            <View style={styles.errorContainer}>
-              <ThemedText style={[styles.errorText, { color: colors.text }]}>
-                {error || 'Device not found'}
-              </ThemedText>
-              <TouchableOpacity
-                style={[styles.retryButton, { backgroundColor: colors.tint }]}
-                onPressIn={handlePressIn}
-                onPress={() => router.back()}
-              >
-                <Text style={[styles.retryButtonText, { color: '#FFFFFF' }]}>Go Back</Text>
-              </TouchableOpacity>
-            </View>
+            <AccountCard>
+              <View style={styles.emptyStateContainer}>
+                <MaterialCommunityIcons
+                  name="alert-circle-outline"
+                  size={40}
+                  color={colors.text}
+                  style={styles.emptyStateIcon}
+                />
+                <ThemedText style={[styles.emptyStateTitle, { color: colors.text }]}>
+                  {error || 'Device not found'}
+                </ThemedText>
+                <ThemedText style={[styles.emptyStateSubtitle, { color: colors.text }]}>
+                  The device you&apos;re looking for doesn&apos;t exist or has been removed
+                </ThemedText>
+                <TouchableOpacity
+                  style={[styles.backButton, { backgroundColor: colors.tint }]}
+                  onPressIn={handlePressIn}
+                  onPress={() => router.back()}
+                >
+                  <Text style={styles.backButtonText}>Go Back</Text>
+                </TouchableOpacity>
+              </View>
+            </AccountCard>
           </View>
         </View>
       </ScreenContentWrapper>
     );
   }
 
-  const deviceName = device.name || device.deviceName || 'Unknown Device';
-  const deviceType = device.type || device.deviceType || 'unknown';
-  const isCurrent = Boolean(device.isCurrent);
+  const renderContent = () => {
+    const isCurrent = Boolean(device?.isCurrent);
 
-  const renderContent = () => (
-    <>
-      <AccountCard>
-        <View style={styles.deviceHeader}>
-          <View style={[styles.deviceIconContainer, { backgroundColor: colors.card }]}>
-            <MaterialCommunityIcons 
-              name={getDeviceIcon(deviceType) as any} 
-              size={48} 
-              color={colors.tint} 
-            />
-          </View>
-          <View style={styles.deviceHeaderText}>
-            <ThemedText style={[styles.deviceName, { color: colors.text }]}>
-              {deviceName}
+    return (
+      <>
+        <Section title="Device Information">
+          <AccountCard>
+            <GroupedSection items={deviceInfoItems} />
+          </AccountCard>
+        </Section>
+
+        {!isCurrent && (
+          <Section title="Device Actions">
+            <ThemedText style={styles.sectionSubtitle}>
+              Manage this device and its active sessions
             </ThemedText>
-            {isCurrent && (
-              <View style={[styles.currentBadge, { backgroundColor: colors.tint }]}>
-                <Text style={[styles.currentBadgeText, { color: '#FFFFFF' }]}>Current Device</Text>
-              </View>
-            )}
-          </View>
-        </View>
-      </AccountCard>
-
-      <AccountCard>
-        <View style={styles.infoSection}>
-          <ThemedText style={[styles.sectionTitle, { color: colors.text }]}>Device Information</ThemedText>
-          {deviceInfoItems.map((item, index) => (
-            <View 
-              key={item.id} 
-              style={[
-                styles.infoItem,
-                index < deviceInfoItems.length - 1 && { borderBottomWidth: 1, borderBottomColor: colors.border }
-              ]}
-            >
-              <View style={styles.infoItemLeft}>
-                <View style={[styles.infoIconContainer, { backgroundColor: item.iconColor + '20' }]}>
-                  <MaterialCommunityIcons name={item.icon as any} size={20} color={item.iconColor} />
-                </View>
-                <View style={styles.infoItemText}>
-                  <ThemedText style={[styles.infoItemTitle, { color: colors.text }]}>
-                    {item.title}
-                  </ThemedText>
-                  <ThemedText style={[styles.infoItemSubtitle, { color: colors.secondaryText }]}>
-                    {item.subtitle}
-                  </ThemedText>
-                </View>
-              </View>
-            </View>
-          ))}
-        </View>
-      </AccountCard>
-
-      {!isCurrent && (
-        <View style={styles.actionSection}>
-          <TouchableOpacity
-            style={[styles.removeButton, { backgroundColor: '#FF3B30' }]}
-            onPressIn={handlePressIn}
-            onPress={handleRemoveDevice}
-            disabled={actionLoading}
-          >
-            {actionLoading ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <>
-                <MaterialCommunityIcons name="delete-outline" size={20} color="#FFFFFF" />
-                <Text style={styles.removeButtonText}>Remove Device</Text>
-              </>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
-    </>
-  );
+            <AccountCard>
+              <GroupedSection items={[{
+                id: 'remove-device',
+                icon: 'delete-outline',
+                iconColor: '#FF3B30',
+                title: 'Remove Device',
+                subtitle: 'Sign out all sessions on this device',
+                onPress: handleRemoveDevice,
+                showChevron: false,
+                disabled: actionLoading,
+                customContent: actionLoading ? (
+                  <ActivityIndicator size="small" color="#FF3B30" />
+                ) : undefined,
+              }]} />
+            </AccountCard>
+          </Section>
+        )}
+      </>
+    );
+  };
 
   if (isDesktop) {
     return (
@@ -377,116 +350,52 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 120,
   },
-  errorContainer: {
-    flex: 1,
-    justifyContent: 'center',
+  emptyStateContainer: {
     alignItems: 'center',
-    gap: 16,
-    paddingVertical: 40,
-  },
-  errorText: {
-    fontSize: 16,
-    textAlign: 'center',
-    opacity: 0.7,
-  },
-  retryButton: {
-    paddingVertical: 12,
+    justifyContent: 'center',
+    paddingVertical: 32,
     paddingHorizontal: 24,
-    borderRadius: 8,
-    marginTop: 16,
   },
-  retryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
+  emptyStateIcon: {
+    opacity: 0.4,
+    marginBottom: 12,
+  },
+  emptyStateTitle: {
+    fontSize: 15,
     fontWeight: '600',
+    marginBottom: 6,
+    opacity: 0.8,
+    textAlign: 'center',
   },
-  deviceHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 16,
-    padding: 16,
-  },
-  deviceIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  deviceHeaderText: {
-    flex: 1,
-    gap: 8,
-  },
-  deviceName: {
-    fontSize: 24,
-    fontWeight: '600',
-  },
-  currentBadge: {
-    alignSelf: 'flex-start',
-    paddingVertical: 4,
-    paddingHorizontal: 12,
-    borderRadius: 12,
-  },
-  currentBadgeText: {
-    color: '#FFFFFF',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  infoSection: {
-    padding: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: '600',
+  emptyStateSubtitle: {
+    fontSize: 13,
+    opacity: 0.6,
+    textAlign: 'center',
+    lineHeight: 18,
     marginBottom: 16,
   },
-  infoItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingVertical: 12,
+  backButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    marginTop: 8,
   },
-  infoItemLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    gap: 12,
+  backButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '600',
   },
-  infoIconContainer: {
+  sectionSubtitle: {
+    fontSize: 14,
+    opacity: 0.7,
+    marginBottom: 12,
+  },
+  deviceIconBadge: {
     width: 36,
     height: 36,
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  infoItemText: {
-    flex: 1,
-  },
-  infoItemTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    marginBottom: 2,
-  },
-  infoItemSubtitle: {
-    fontSize: 13,
-    opacity: 0.7,
-  },
-  actionSection: {
-    padding: 16,
-  },
-  removeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    gap: 8,
-  },
-  removeButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '600',
   },
 });
 

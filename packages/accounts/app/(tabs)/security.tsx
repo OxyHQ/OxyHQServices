@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions, Text, ActivityIndicator, TouchableOpacity, Alert } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, ActivityIndicator, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -8,7 +8,7 @@ import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
-import { LinkButton, AccountCard, AppleSwitch, ScreenHeader } from '@/components/ui';
+import { LinkButton, AccountCard, AppleSwitch, ScreenHeader, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, useUserDevices } from '@oxyhq/services';
@@ -25,9 +25,11 @@ export default function SecurityScreen() {
     const isDesktop = Platform.OS === 'web' && width >= 768;
 
     // OxyServices integration
-    const { user, isAuthenticated, isLoading: oxyLoading, sessions, hasIdentity, getPublicKey } = useOxy();
+    const { user, isAuthenticated, isLoading: oxyLoading, sessions, hasIdentity, getPublicKey, logoutAll, oxyServices } = useOxy();
+    const alert = useAlert();
     const [enhancedSafeBrowsing, setEnhancedSafeBrowsing] = useState(false);
     const [darkWebReport, setDarkWebReport] = useState(false);
+    const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
 
     // Fetch devices using TanStack Query hook
     const { data: devices = [], isLoading: loading, error: devicesError } = useUserDevices({
@@ -229,19 +231,6 @@ export default function SecurityScreen() {
             showChevron: false,
         });
 
-        // Notification email (optional, not used for login)
-        if (user?.email) {
-            items.push({
-                id: 'notification-email',
-                icon: 'email-outline',
-                iconColor: colors.sidebarIconSecurity,
-                title: 'Notification email',
-                subtitle: user.email,
-                onPress: () => router.push('/(tabs)/personal-info'),
-                showChevron: true,
-            });
-        }
-
         return items;
     }, [
         colors,
@@ -302,6 +291,57 @@ export default function SecurityScreen() {
 
         return items;
     }, [devices, colors, getDeviceIcon, router]);
+
+
+    // Handle logout all sessions
+    const handleLogoutAll = useCallback(async () => {
+        alert(
+            'Sign out of all devices?',
+            `This will sign you out of all ${sessions?.length || 0} active session${sessions?.length !== 1 ? 's' : ''} except this one. You&apos;ll need to sign in again on other devices.`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Sign out all',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            setIsLoggingOutAll(true);
+                            await logoutAll();
+                            alert('Success', 'Signed out of all other devices');
+                        } catch (error: any) {
+                            alert('Error', error?.message || 'Failed to sign out of all devices');
+                        } finally {
+                            setIsLoggingOutAll(false);
+                        }
+                    },
+                },
+            ]
+        );
+    }, [logoutAll, sessions?.length, alert]);
+
+
+    // Active sessions management
+    const activeSessionsItems = useMemo(() => {
+        const items: any[] = [];
+        const activeSessionsCount = sessions?.filter(s => s.isActive !== false).length || 0;
+
+        if (activeSessionsCount > 1) {
+            items.push({
+                id: 'logout-all',
+                icon: 'logout',
+                iconColor: '#FF3B30',
+                title: 'Sign out of all other devices',
+                subtitle: `Sign out of ${activeSessionsCount - 1} other active session${activeSessionsCount - 1 !== 1 ? 's' : ''}`,
+                onPress: handleLogoutAll,
+                showChevron: false,
+                customContent: isLoggingOutAll ? (
+                    <ActivityIndicator size="small" color="#FF3B30" />
+                ) : undefined,
+            });
+        }
+
+        return items;
+    }, [sessions, handleLogoutAll, isLoggingOutAll]);
 
     // Feature cards
     const featureCards = useMemo(() => [
@@ -402,51 +442,22 @@ export default function SecurityScreen() {
                 </AccountCard>
             </Section>
 
-            <Section title="Account recovery">
-                <ThemedText style={styles.sectionSubtitle}>Backup options to recover your account if you lose access</ThemedText>
-                <AccountCard>
-                    <GroupedSection items={[
-                        {
-                            id: 'recovery-phrase',
+            {Platform.OS !== 'web' && (
+                <Section title="Account recovery">
+                    <ThemedText style={styles.sectionSubtitle}>Manage your recovery options</ThemedText>
+                    <AccountCard>
+                        <GroupedSection items={[{
+                            id: 'manage-recovery',
                             icon: 'shield-key-outline',
                             iconColor: '#F59E0B',
-                            title: 'Recovery phrase',
-                            subtitle: 'View your 12-word backup phrase',
-                            onPress: () => {
-                                Alert.alert(
-                                    'Security Check',
-                                    'Make sure no one is looking at your screen before viewing your recovery phrase.',
-                                    [
-                                        { text: 'Cancel', style: 'cancel' },
-                                        { 
-                                            text: 'Continue', 
-                                            onPress: () => {
-                                                if (Platform.OS !== 'web') {
-                                                    router.push('/(tabs)/about-identity');
-                                                } else {
-                                                    Alert.alert('Info', 'Recovery phrase viewing is available in the mobile app.');
-                                                }
-                                            }
-                                        },
-                                    ]
-                                );
-                            },
+                            title: 'Recovery phrase & settings',
+                            subtitle: 'View recovery phrase and manage account settings',
+                            onPress: () => router.push('/(tabs)/about-identity'),
                             showChevron: true,
-                        },
-                        ...(user?.email ? [{
-                            id: 'recovery-email',
-                            icon: 'email-outline',
-                            iconColor: colors.sidebarIconSecurity,
-                            title: 'Recovery email',
-                            subtitle: user.email,
-                            onPress: () => {
-                                router.push('/(tabs)/personal-info');
-                            },
-                            showChevron: true,
-                        }] : []),
-                    ]} />
-                </AccountCard>
-            </Section>
+                        }]} />
+                    </AccountCard>
+                </Section>
+            )}
 
             <Section title="Your devices">
                 <ThemedText style={styles.sectionSubtitle}>
@@ -484,6 +495,17 @@ export default function SecurityScreen() {
                     </AccountCard>
                 )}
             </Section>
+
+            {activeSessionsItems.length > 0 && (
+                <Section title="Active sessions">
+                    <ThemedText style={styles.sectionSubtitle}>
+                        Manage your active sign-in sessions across all devices
+                    </ThemedText>
+                    <AccountCard>
+                        <GroupedSection items={activeSessionsItems} />
+                    </AccountCard>
+                </Section>
+            )}
 
             <Section title="Security features">
                 <AccountCard>

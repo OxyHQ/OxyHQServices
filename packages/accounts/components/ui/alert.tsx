@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect } from 'react';
 import {
   View,
   Text,
@@ -6,10 +6,12 @@ import {
   TouchableOpacity,
   Modal,
   Platform,
-  Animated,
   Dimensions,
+  ScrollView,
 } from 'react-native';
+import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
 import { BlurView } from 'expo-blur';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 
@@ -30,39 +32,39 @@ interface AlertProps {
 export function Alert({ visible, title, message, buttons = [], onDismiss }: AlertProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(0.95)).current;
+  const insets = useSafeAreaInsets();
+  const opacity = useSharedValue(0);
+  const scale = useSharedValue(0.95);
 
   useEffect(() => {
     if (visible) {
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 250,
-          useNativeDriver: true,
-        }),
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          tension: 65,
-          friction: 8,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      opacity.value = withTiming(1, {
+        duration: 250,
+        easing: Easing.out(Easing.ease),
+      });
+      scale.value = withTiming(1, {
+        duration: 250,
+        easing: Easing.out(Easing.ease),
+      });
     } else {
-      Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 0,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 0.95,
-          duration: 200,
-          useNativeDriver: true,
-        }),
-      ]).start();
+      opacity.value = withTiming(0, {
+        duration: 200,
+        easing: Easing.in(Easing.ease),
+      });
+      scale.value = withTiming(0.95, {
+        duration: 200,
+        easing: Easing.in(Easing.ease),
+      });
     }
-  }, [visible, fadeAnim, scaleAnim]);
+  }, [visible, opacity, scale]);
+
+  const overlayStyle = useAnimatedStyle(() => ({
+    opacity: opacity.value,
+  }));
+
+  const containerStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
 
   // Default buttons if none provided
   const alertButtons = buttons.length > 0 ? buttons : [{ text: 'OK', style: 'default' as const }];
@@ -80,51 +82,51 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
     onDismiss();
   };
 
+  const separatorColor = colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+
   const renderButton = (button: AlertButton, index: number, isLast: boolean, showBorder: boolean) => {
     const isDestructive = button.style === 'destructive';
     const isCancel = button.style === 'cancel';
     const isDefault = button.style === 'default' || !button.style;
-    const separatorColor = colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)';
+
+    // Add margin for gaps between buttons (consistent gap value)
+    const buttonGap = 12;
+    let marginStyle = {};
+    if (useHorizontalLayout) {
+      // Horizontal layout: add horizontal margin except for first button
+      if (index > 0) {
+        marginStyle = { marginLeft: buttonGap };
+      }
+    } else {
+      // Vertical layout: add vertical margin except for first button
+      if (index > 0) {
+        marginStyle = { marginTop: buttonGap };
+      }
+    }
 
     return (
-      <View key={index} style={useHorizontalLayout && styles.buttonWrapper}>
-        {showBorder && !useHorizontalLayout && (
-          <View
-            style={[
-              styles.buttonSeparator,
-              { backgroundColor: separatorColor },
-            ]}
-          />
-        )}
-        <TouchableOpacity
+      <TouchableOpacity
+        key={index}
+        style={[
+          styles.button,
+          useHorizontalLayout && styles.buttonHorizontal,
+          { borderRadius: 18 },
+          marginStyle,
+          isDestructive && { backgroundColor: '#FF3B30' },
+          (isCancel || isDefault) && { backgroundColor: colors.tint },
+        ]}
+        onPress={() => handleButtonPress(button)}
+        activeOpacity={0.8}
+      >
+        <Text
           style={[
-            styles.button,
-            useHorizontalLayout && styles.buttonHorizontal,
-            useHorizontalLayout && index === 0 && styles.buttonHorizontalFirst,
+            styles.buttonText,
+            { color: '#FFFFFF', fontWeight: '600' },
           ]}
-          onPress={() => handleButtonPress(button)}
-          activeOpacity={0.6}
         >
-          <Text
-            style={[
-              styles.buttonText,
-              isCancel && { color: colors.sidebarItemActiveText, fontWeight: '600' },
-              isDefault && { color: colors.sidebarItemActiveText, fontWeight: '600' },
-              isDestructive && { color: '#FF3B30', fontWeight: '600' },
-            ]}
-          >
-            {button.text}
-          </Text>
-        </TouchableOpacity>
-        {useHorizontalLayout && index === 0 && (
-          <View
-            style={[
-              styles.verticalSeparator,
-              { backgroundColor: separatorColor },
-            ]}
-          />
-        )}
-      </View>
+          {button.text}
+        </Text>
+      </TouchableOpacity>
     );
   };
 
@@ -138,9 +140,7 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
       <Animated.View
         style={[
           styles.overlay,
-          {
-            opacity: fadeAnim,
-          },
+          overlayStyle,
         ]}
       >
         <TouchableOpacity
@@ -152,8 +152,12 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
           style={[
             styles.alertContainer,
             {
-              transform: [{ scale: scaleAnim }],
+              marginTop: insets.top,
+              marginBottom: insets.bottom,
+              marginLeft: insets.left,
+              marginRight: insets.right,
             },
+            containerStyle,
           ]}
           pointerEvents="box-none"
         >
@@ -171,7 +175,12 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
             ]}
           >
             {/* Content Section */}
-            <View style={styles.contentSection}>
+            <ScrollView 
+              style={styles.contentScrollView}
+              contentContainerStyle={styles.contentSection}
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+            >
               {/* Title */}
               <Text style={[styles.title, { color: colors.text }]}>{title}</Text>
 
@@ -179,16 +188,13 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
               {message && (
                 <Text style={[styles.message, { color: colors.secondaryText }]}>{message}</Text>
               )}
-            </View>
+            </ScrollView>
 
             {/* Button Section */}
             <View
               style={[
                 styles.buttonSection,
                 useHorizontalLayout && styles.buttonSectionHorizontal,
-                {
-                  borderTopColor: colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
-                },
               ]}
             >
               {useHorizontalLayout ? (
@@ -214,12 +220,13 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
   );
 }
 
-const { width } = Dimensions.get('window');
+const { width, height } = Dimensions.get('window');
 const maxWidth = Math.min(width - 60, 320);
+const maxHeight = height * 0.7; // Max 70% of screen height
 
 const styles = StyleSheet.create({
   overlay: {
-    flex: 1,
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: 'rgba(0, 0, 0, 0.5)',
     justifyContent: 'center',
     alignItems: 'center',
@@ -227,6 +234,7 @@ const styles = StyleSheet.create({
   alertContainer: {
     width: maxWidth,
     maxWidth: '85%',
+    maxHeight: maxHeight,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
@@ -239,11 +247,17 @@ const styles = StyleSheet.create({
   alertContent: {
     borderRadius: 14,
     overflow: 'hidden',
+    maxHeight: maxHeight,
+    flexDirection: 'column',
+  },
+  contentScrollView: {
+    flexShrink: 1,
+    maxHeight: maxHeight - 120, // Reserve space for buttons and padding
   },
   contentSection: {
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 16,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
     alignItems: 'center',
   },
   title: {
@@ -252,6 +266,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
     textAlign: 'center',
     letterSpacing: -0.2,
+    width: '100%',
   },
   message: {
     fontSize: 13,
@@ -259,44 +274,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 18,
     letterSpacing: -0.1,
+    width: '100%',
+    flexShrink: 1,
   },
   buttonSection: {
-    borderTopWidth: StyleSheet.hairlineWidth,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 12,
+    flexDirection: 'column',
   },
   buttonSectionHorizontal: {
     flexDirection: 'row',
-    borderTopWidth: StyleSheet.hairlineWidth,
   },
   button: {
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+    paddingVertical: 8,
+    paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
-    minHeight: 44,
-  },
-  buttonWrapper: {
-    flex: 1,
-    position: 'relative',
+    minHeight: 36,
   },
   buttonHorizontal: {
     flex: 1,
   },
-  buttonHorizontalFirst: {
-    borderRightWidth: StyleSheet.hairlineWidth,
-  },
-  buttonSeparator: {
-    height: StyleSheet.hairlineWidth,
-    width: '100%',
-  },
-  verticalSeparator: {
-    position: 'absolute',
-    right: 0,
-    top: 0,
-    bottom: 0,
-    width: StyleSheet.hairlineWidth,
-  },
   buttonText: {
-    fontSize: 17,
+    fontSize: 15,
     letterSpacing: -0.2,
   },
 });
