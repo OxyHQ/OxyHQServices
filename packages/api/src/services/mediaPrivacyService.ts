@@ -5,6 +5,8 @@ import Restricted from '../models/Restricted';
 import { logger } from '../utils/logger';
 import { MediaAccessContext, MediaAccessResult } from '../types/mediaPrivacy.types';
 import mongoose from 'mongoose';
+import blockCache from '../utils/blockCache';
+import userCache from '../utils/userCache';
 
 export class MediaPrivacyService {
   /**
@@ -16,43 +18,49 @@ export class MediaPrivacyService {
     context?: MediaAccessContext
   ): Promise<MediaAccessResult> {
     try {
-      // Fast path: Public files without context - allow immediately
+      const ownerId = file.ownerUserId.toString();
+      const isOwner = viewerUserId && ownerId === viewerUserId;
+
+      if (isOwner) {
+        return { allowed: true, reason: 'owner' };
+      }
+
       if (file.visibility === 'public' && !context && !viewerUserId) {
         return { allowed: true, isPublic: true };
       }
 
-      // Owner always has access
-      if (viewerUserId && file.ownerUserId.toString() === viewerUserId) {
-        return { allowed: true, reason: 'owner' };
-      }
-
-      // Private files require authentication
       if (file.visibility === 'private' && !viewerUserId) {
         return { allowed: false, reason: 'authentication_required' };
       }
 
-      // Public files with viewer - check block status
-      if (file.visibility === 'public' && viewerUserId && !context) {
-        const isBlocked = await this.isUserBlocked(file.ownerUserId.toString(), viewerUserId);
+      if (viewerUserId) {
+        const isBlocked = await this.isUserBlocked(ownerId, viewerUserId);
         if (isBlocked) {
           return { allowed: false, reason: 'blocked' };
         }
-        return { allowed: true, isPublic: true };
-      }
 
-      // Check Block/Restricted status for non-public files
-      if (viewerUserId && file.visibility !== 'public') {
-        const isBlocked = await this.isUserBlocked(file.ownerUserId.toString(), viewerUserId);
-        if (isBlocked) {
-          return { allowed: false, reason: 'blocked' };
+        if (file.visibility === 'public' && !context) {
+          return { allowed: true, isPublic: true };
         }
       }
 
-      // Check Private Account logic (only for non-public files)
       if (file.visibility !== 'public' && file.visibility !== 'unlisted') {
-        const owner = await User.findById(file.ownerUserId).select('privacySettings followers').lean();
+        const ownerIdStr = ownerId;
+        let owner = userCache.get(ownerIdStr);
+        if (!owner) {
+          const ownerDoc = await User.findById(ownerIdStr).select('privacySettings followers').lean();
+          if (ownerDoc) {
+            owner = ownerDoc as any;
+            if (owner) {
+              userCache.set(ownerIdStr, owner);
+            }
+          }
+        }
+
         if (owner?.privacySettings?.isPrivateAccount) {
-          if (!viewerUserId) return { allowed: false, reason: 'private_account' };
+          if (!viewerUserId) {
+            return { allowed: false, reason: 'private_account' };
+          }
           
           const isFollowing = owner.followers?.some(id => id.toString() === viewerUserId);
           if (!isFollowing) {
@@ -61,7 +69,6 @@ export class MediaPrivacyService {
         }
       }
 
-      // Context-aware checks
       if (context) {
         const entityAccess = await this.checkEntityAccess(context, viewerUserId);
         if (!entityAccess.allowed) {
@@ -77,19 +84,20 @@ export class MediaPrivacyService {
     }
   }
 
-  /**
-   * Check if viewer is blocked by owner
-   */
   private async isUserBlocked(ownerId: string, viewerId: string): Promise<boolean> {
-    // Check if owner blocked viewer
-    const block = await Block.findOne({ userId: ownerId, blockedId: viewerId });
-    if (block) return true;
+    const cached = blockCache.get(ownerId, viewerId);
+    if (cached !== null) {
+      return cached;
+    }
 
-    // Check if viewer blocked owner (optional, usually we hide content both ways)
-    const reverseBlock = await Block.findOne({ userId: viewerId, blockedId: ownerId });
-    if (reverseBlock) return true;
+    const [block, reverseBlock] = await Promise.all([
+      Block.findOne({ userId: ownerId, blockedId: viewerId }).lean(),
+      Block.findOne({ userId: viewerId, blockedId: ownerId }).lean()
+    ]);
 
-    return false;
+    const isBlocked = !!(block || reverseBlock);
+    blockCache.set(ownerId, viewerId, isBlocked);
+    return isBlocked;
   }
 
   /**
