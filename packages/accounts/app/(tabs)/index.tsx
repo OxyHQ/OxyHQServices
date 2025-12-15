@@ -507,7 +507,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 0,
   } as const,
   avatarWrapper: {
     zIndex: 1,

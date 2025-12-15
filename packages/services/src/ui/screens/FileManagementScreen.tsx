@@ -769,7 +769,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
 
         try {
             setIsPickingDocument(true);
-            
+
             // Use expo-document-picker (works on all platforms including web)
             // On web, it uses the native file input and provides File objects directly
             const result = await DocumentPicker.getDocumentAsync({
