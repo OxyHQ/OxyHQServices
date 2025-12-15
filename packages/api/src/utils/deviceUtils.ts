@@ -95,28 +95,29 @@ export const generateDefaultDeviceName = (browser?: string, os?: string): string
  * This helps reuse device IDs for the same physical device
  */
 export const findExistingDeviceId = async (fingerprint: string, userId?: string): Promise<string | null> => {
+  if (!fingerprint) return null;
+
   try {
-    const query: any = {
+    const query: Record<string, unknown> = {
       'deviceInfo.fingerprint': fingerprint,
       isActive: true,
       expiresAt: { $gt: new Date() }
     };
     
-    // If userId provided, prefer devices used by this user
     if (userId) {
       query.userId = userId;
     }
     
-    const session = await Session.findOne(query).sort({ 'deviceInfo.lastActive': -1 });
+    const session = await Session.findOne(query)
+      .sort({ 'deviceInfo.lastActive': -1 })
+      .select('deviceId')
+      .lean()
+      .limit(1)
+      .exec();
     
-    if (session) {
-      logger.info(`[DeviceUtils] Found existing device ID for fingerprint: ${fingerprint.substring(0, 8)}...`);
-      return session.deviceId;
-    }
-    
-    return null;
+    return session?.deviceId || null;
   } catch (error) {
-    logger.error('[DeviceUtils] Error finding existing device ID:', error);
+    logger.error('[DeviceUtils] Error finding existing device ID', error instanceof Error ? error : new Error(String(error)));
     return null;
   }
 };

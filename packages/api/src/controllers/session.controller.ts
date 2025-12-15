@@ -172,13 +172,13 @@ export class SessionController {
         });
       }
 
-      // Find the challenge
+      // Find and validate the challenge (read-only query with .lean() for performance)
       const authChallenge = await AuthChallenge.findOne({
         publicKey,
         challenge,
         used: false,
         expiresAt: { $gt: new Date() }
-      });
+      }).lean();
 
       if (!authChallenge) {
         return res.status(401).json({ 
@@ -186,7 +186,7 @@ export class SessionController {
         });
       }
 
-      // Verify the signature
+      // Verify the cryptographic signature
       const isValid = SignatureService.verifyChallengeResponse(
         publicKey,
         challenge,
@@ -198,12 +198,15 @@ export class SessionController {
         return res.status(401).json({ error: 'Invalid signature' });
       }
 
-      // Mark challenge as used
-      authChallenge.used = true;
-      await authChallenge.save();
+      // Atomically mark challenge as used (prevents race conditions)
+      await AuthChallenge.findOneAndUpdate(
+        { _id: authChallenge._id },
+        { $set: { used: true } },
+        { new: false }
+      );
 
-      // Find the user
-      const user = await User.findOne({ publicKey });
+      // Find user by public key (read-only query with .lean() for performance)
+      const user = await User.findOne({ publicKey }).lean();
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }

@@ -87,6 +87,7 @@ SessionSchema.index({ deviceId: 1, isActive: 1, expiresAt: 1 }); // Optimized co
 SessionSchema.index({ accessToken: 1 }, { unique: true, sparse: true }); // Token-based lookups (sparse for performance)
 SessionSchema.index({ refreshToken: 1 }, { unique: true, sparse: true }); // Refresh token lookups (sparse for performance)
 SessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // Auto-cleanup expired sessions
+SessionSchema.index({ 'deviceInfo.fingerprint': 1, isActive: 1, expiresAt: 1 }); // Optimized for findExistingDeviceId queries
 
 // Update lastActive timestamp on session access
 SessionSchema.methods.updateLastActive = async function() {

@@ -1,118 +1,92 @@
 import { logger } from './logger';
-import { ISession } from '../models/Session';
+import { IUser } from '../models/User';
 
-interface CachedSession {
-  session: ISession;
-  userId?: string;
+interface CachedUser {
+  user: IUser;
   timestamp: number;
   ttl: number;
 }
 
-interface SessionCacheConfig {
+interface UserCacheConfig {
   maxSize: number;
   defaultTTL: number; // in milliseconds
   cleanupInterval: number; // in milliseconds
-  lastActiveUpdateThreshold: number; // Only update lastActive if this much time has passed (ms)
 }
 
-class SessionCache {
-  private cache: Map<string, CachedSession> = new Map();
-  private config: SessionCacheConfig;
+class UserCache {
+  private cache: Map<string, CachedUser> = new Map();
+  private config: UserCacheConfig;
   private cleanupTimer: NodeJS.Timeout | null = null;
-  private pendingLastActiveUpdates: Map<string, Date> = new Map();
 
-  constructor(config: Partial<SessionCacheConfig> = {}) {
+  constructor(config: Partial<UserCacheConfig> = {}) {
     this.config = {
-      maxSize: 5000,
+      maxSize: 10000,
       defaultTTL: 5 * 60 * 1000, // 5 minutes
       cleanupInterval: 60 * 1000, // 1 minute
-      lastActiveUpdateThreshold: 60 * 1000, // 1 minute
       ...config
     };
 
     this.startCleanupTimer();
   }
 
-  get(sessionId: string): ISession | null {
-    const cached = this.cache.get(sessionId);
+  /**
+   * Get user from cache
+   * 
+   * @param userId - The user ID to lookup
+   * @returns Cached user object or null if not found/expired
+   */
+  get(userId: string): IUser | null {
+    if (!userId) return null;
+
+    const cached = this.cache.get(userId);
 
     if (!cached) {
       return null;
     }
 
-    if (Date.now() - cached.timestamp > cached.ttl) {
-      this.cache.delete(sessionId);
+    const now = Date.now();
+    if (now - cached.timestamp > cached.ttl) {
+      this.cache.delete(userId);
       return null;
     }
 
-    return cached.session;
+    return cached.user;
   }
 
   /**
-   * Store session in cache
+   * Store user in cache
    * 
    * Optimized for high-scale usage with efficient eviction strategy.
+   * Automatically evicts oldest entries when cache is full.
+   * 
+   * @param userId - The user ID to use as cache key
+   * @param user - The user object to cache
+   * @param ttl - Optional custom TTL in milliseconds (defaults to config defaultTTL)
    */
-  set(sessionId: string, session: ISession, ttl?: number): void {
+  set(userId: string, user: IUser, ttl?: number): void {
+    if (!userId || !user) return;
+
     if (this.cache.size >= this.config.maxSize) {
       const evictCount = Math.max(1, Math.floor(this.config.maxSize * 0.1));
       this.evictOldest(evictCount);
     }
 
-    this.cache.set(sessionId, {
-      session,
-      userId: session.userId?.toString(),
+    this.cache.set(userId, {
+      user,
       timestamp: Date.now(),
       ttl: ttl || this.config.defaultTTL
     });
   }
 
   /**
-   * Invalidate session from cache
+   * Invalidate user from cache
+   * 
+   * @param userId - The user ID to invalidate from cache
    */
-  invalidate(sessionId: string): void {
-    this.cache.delete(sessionId);
-    this.pendingLastActiveUpdates.delete(sessionId);
-  }
-
-  /**
-   * Invalidate all sessions for a user
-   */
-  invalidateUserSessions(userId: string): void {
-    let count = 0;
-    for (const [key, cached] of this.cache.entries()) {
-      if (cached.userId === userId) {
-        this.cache.delete(key);
-        this.pendingLastActiveUpdates.delete(cached.session.sessionId);
-        count++;
-      }
+  invalidate(userId: string): void {
+    if (userId) {
+      this.cache.delete(userId);
     }
-  }
-
-  /**
-   * Track pending lastActive update to avoid excessive database writes
-   */
-  shouldUpdateLastActive(sessionId: string): boolean {
-    const lastUpdate = this.pendingLastActiveUpdates.get(sessionId);
-    if (!lastUpdate) {
-      this.pendingLastActiveUpdates.set(sessionId, new Date());
-      return true;
-    }
-
-    const timeSinceLastUpdate = Date.now() - lastUpdate.getTime();
-    if (timeSinceLastUpdate >= this.config.lastActiveUpdateThreshold) {
-      this.pendingLastActiveUpdates.set(sessionId, new Date());
-      return true;
-    }
-
-    return false;
-  }
-
-  /**
-   * Clear pending lastActive update tracking
-   */
-  clearPendingLastActive(sessionId: string): void {
-    this.pendingLastActiveUpdates.delete(sessionId);
   }
 
   /**
@@ -142,10 +116,6 @@ class SessionCache {
       }
 
       if (oldestKey) {
-        const cached = this.cache.get(oldestKey);
-        if (cached) {
-          this.pendingLastActiveUpdates.delete(cached.session.sessionId);
-        }
         this.cache.delete(oldestKey);
       }
     } else {
@@ -155,11 +125,9 @@ class SessionCache {
       entries.sort((a, b) => a[1].timestamp - b[1].timestamp);
       
       const toEvict = entries.slice(0, Math.min(count, entries.length));
-      for (const [key, cached] of toEvict) {
-        this.pendingLastActiveUpdates.delete(cached.session.sessionId);
+      for (const [key] of toEvict) {
         this.cache.delete(key);
       }
-      
     }
   }
 
@@ -173,11 +141,9 @@ class SessionCache {
     for (const [key, cached] of this.cache.entries()) {
       if (now - cached.timestamp > cached.ttl) {
         this.cache.delete(key);
-        this.pendingLastActiveUpdates.delete(cached.session.sessionId);
         cleaned++;
       }
     }
-
   }
 
   /**
@@ -198,17 +164,15 @@ class SessionCache {
    */
   clear(): void {
     this.cache.clear();
-    this.pendingLastActiveUpdates.clear();
   }
 
   /**
    * Get cache statistics
    */
-  getStats(): { size: number; maxSize: number; pendingUpdates: number } {
+  getStats(): { size: number; maxSize: number } {
     return {
       size: this.cache.size,
-      maxSize: this.config.maxSize,
-      pendingUpdates: this.pendingLastActiveUpdates.size
+      maxSize: this.config.maxSize
     };
   }
 
@@ -224,6 +188,6 @@ class SessionCache {
 }
 
 // Export singleton instance
-const sessionCache = new SessionCache();
-export default sessionCache;
+const userCache = new UserCache();
+export default userCache;
 

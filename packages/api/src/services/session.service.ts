@@ -2,7 +2,9 @@ import Session, { ISession } from '../models/Session';
 import { User } from '../models/User';
 import { logger } from '../utils/logger';
 import sessionCache from '../utils/sessionCache';
+import userCache from '../utils/userCache';
 import { isMongoConnected, getConnectionState } from '../utils/dbConnection';
+import { Types } from 'mongoose';
 import { 
   extractDeviceInfo, 
   generateDeviceFingerprint, 
@@ -22,6 +24,53 @@ import {
 const SESSION_EXPIRES_IN = 7 * 24 * 60 * 60 * 1000; // 7 days
 const ACCESS_TOKEN_EXPIRES_IN = '15m';
 const REFRESH_TOKEN_EXPIRES_IN = '7d';
+const OBJECT_ID_LENGTH = 24; // MongoDB ObjectId hex string length
+
+/**
+ * Extract userId string from various possible formats (ObjectId, populated object, string)
+ * Handles edge cases and corrupted cache entries gracefully
+ * 
+ * @param userIdValue - The userId value which could be ObjectId, populated object, or string
+ * @returns Extracted userId string or undefined if invalid
+ */
+function extractUserIdFromCache(userIdValue: unknown): string | undefined {
+  if (!userIdValue) return undefined;
+
+  try {
+    if (userIdValue instanceof Types.ObjectId) {
+      return userIdValue.toString();
+    }
+
+    if (typeof userIdValue === 'object' && userIdValue !== null && '_id' in userIdValue) {
+      const extractedId = (userIdValue as { _id?: unknown })._id;
+      if (extractedId instanceof Types.ObjectId) {
+        return extractedId.toString();
+      }
+      if (typeof extractedId === 'string' && Types.ObjectId.isValid(extractedId) && extractedId.length === OBJECT_ID_LENGTH) {
+        return extractedId;
+      }
+      return undefined;
+    }
+
+    if (typeof userIdValue === 'string') {
+      if (Types.ObjectId.isValid(userIdValue) && userIdValue.length === OBJECT_ID_LENGTH) {
+        return userIdValue;
+      }
+      return undefined;
+    }
+
+    if (typeof userIdValue === 'object' && userIdValue !== null && 'toString' in userIdValue) {
+      const idString = String(userIdValue);
+      if (Types.ObjectId.isValid(idString) && idString.length === OBJECT_ID_LENGTH) {
+        return idString;
+      }
+    }
+  } catch {
+    // Silently handle extraction errors
+  }
+
+  return undefined;
+}
 
 class SessionService {
   /**
@@ -103,42 +152,67 @@ class SessionService {
 
       const { useCache = true, select = '-password' } = options;
 
-      // Try cache first for session
+      // Try cache first for session (fast path)
       if (useCache) {
         const cached = sessionCache.get(sessionId);
         if (cached) {
-          // User data is not cached with session (keeps cache lean and user data fresh)
-          // This is a single indexed lookup, optimized for performance
-          const user = await User.findById(cached.userId).select(select);
-          if (user) {
-            return { session: cached, user };
+          // Extract userId from cached session (handles various formats)
+          const userId = extractUserIdFromCache(cached.userId);
+          
+          if (!userId) {
+            sessionCache.invalidate(sessionId);
+          } else {
+            const cachedUser = userCache.get(userId);
+            if (cachedUser) {
+              return { session: cached, user: cachedUser };
+            }
+            
+            const user = await User.findById(userId).select(select).lean();
+            if (user) {
+              userCache.set(userId, user as any);
+              return { session: cached, user };
+            }
+            
+            sessionCache.invalidate(sessionId);
+            return null;
           }
-          // If user not found, session is invalid - invalidate cache
-          sessionCache.invalidate(sessionId);
-          return null;
         }
       }
 
-      // Fallback to database with populate (single query, more efficient)
-      const session = await Session.findOne({
+      const sessionDoc = await Session.findOne({
         sessionId,
         isActive: true,
         expiresAt: { $gt: new Date() }
-      }).populate('userId', select);
+      }).lean();
 
-      if (!session || !session.userId) {
+      if (!sessionDoc?.userId) {
         return null;
       }
 
-      // Cache the session (user not cached to keep cache size manageable)
       if (useCache) {
-        sessionCache.set(sessionId, session);
+        sessionCache.set(sessionId, sessionDoc as unknown as ISession);
       }
 
-      return {
-        session,
-        user: typeof session.userId === 'object' ? session.userId : null
-      };
+      const userId = sessionDoc.userId.toString();
+      let user = userCache.get(userId);
+      
+      if (!user) {
+        const userDoc = await User.findById(userId).select(select).lean();
+        if (!userDoc) {
+          return null;
+        }
+        user = userDoc as any;
+        if (useCache && user) {
+          userCache.set(userId, user);
+        }
+      }
+
+      const session = {
+        ...sessionDoc,
+        userId: user
+      } as unknown as ISession;
+
+      return { session, user };
     } catch (error) {
       logger.error('[SessionService] Failed to get session with user', error instanceof Error ? error : new Error(String(error)), {
         component: 'SessionService',
@@ -163,57 +237,33 @@ class SessionService {
    */
   async validateSession(accessToken: string): Promise<SessionValidationResult | null> {
     try {
-      // First validate the token format with enhanced error handling
       const validationResult = validateAccessToken(accessToken);
-      if (!validationResult.valid || !validationResult.payload) {
-        // Log specific error type for better debugging
-        if (validationResult.error === 'expired') {
-          logger.debug('[SessionService] Access token expired');
-        } else if (validationResult.error === 'invalid') {
-          logger.debug('[SessionService] Access token invalid');
-        }
+      if (!validationResult.valid || !validationResult.payload?.sessionId) {
         return null;
       }
 
-      const payload = validationResult.payload;
-      if (!payload.sessionId) {
-        return null;
-      }
-
-      const sessionId = payload.sessionId;
-
-      // Get session (with cache)
+      const sessionId = validationResult.payload.sessionId;
       const result = await this.getSessionWithUser(sessionId, { useCache: true });
       if (!result) {
-        logger.debug('[SessionService] Session not found or expired');
         return null;
       }
 
       const { session } = result;
-
-      // Verify access token matches
       if (session.accessToken !== accessToken) {
-        logger.debug('[SessionService] Access token mismatch');
         sessionCache.invalidate(sessionId);
         return null;
       }
 
-      // Update last activity (batched/throttled)
       if (sessionCache.shouldUpdateLastActive(sessionId)) {
-        // Update in background without blocking
-        this.updateLastActivity(sessionId).catch(err => {
-          logger.error('[SessionService] Failed to update last activity', err instanceof Error ? err : new Error(String(err)), {
-            component: 'SessionService',
-            method: 'updateLastActivity',
-            sessionId,
-          });
+        this.updateLastActivity(sessionId).catch(() => {
+          // Silently fail - non-critical operation
         });
       }
 
       return {
         session,
         user: result.user,
-        payload
+        payload: validationResult.payload
       };
     } catch (error) {
       logger.error('[SessionService] Session validation failed', error instanceof Error ? error : new Error(String(error)), {
@@ -234,8 +284,6 @@ class SessionService {
     try {
       const now = new Date();
       
-      // Update in database (optimized query)
-      // Note: updateOne() doesn't return a document, so .lean() is not applicable
       await Session.updateOne(
         { sessionId, isActive: true },
         { 
@@ -246,14 +294,11 @@ class SessionService {
         }
       );
 
-      // Update cache if present
       const cached = sessionCache.get(sessionId);
       if (cached) {
         cached.deviceInfo.lastActive = now;
         sessionCache.set(sessionId, cached);
       }
-
-      logger.debug('[SessionService] Updated last activity for session', { sessionId: sessionId.substring(0, 8) });
     } catch (error) {
       logger.error('[SessionService] Failed to update last activity', error instanceof Error ? error : new Error(String(error)), {
         component: 'SessionService',
@@ -285,39 +330,34 @@ class SessionService {
   ): Promise<ISession> {
     try {
       const { deviceName, deviceFingerprint } = options;
-
-      // Extract and register device info
       let deviceInfo = extractDeviceInfo(req, undefined, deviceName);
       
       if (deviceFingerprint) {
-        const fingerprint = generateDeviceFingerprint(deviceFingerprint);
-        deviceInfo = await registerDevice(deviceInfo, fingerprint);
+        deviceInfo = await registerDevice(deviceInfo, generateDeviceFingerprint(deviceFingerprint));
       }
 
-      // Check for existing active session on this device
       const existingSession = await Session.findOne({
         userId,
         deviceId: deviceInfo.deviceId,
         isActive: true,
         expiresAt: { $gt: new Date() }
-      }).lean();
+      }).select('_id sessionId deviceInfo').lean();
 
       if (existingSession) {
-        // Reuse existing session - update and extend
         const sessionId = existingSession.sessionId;
-        
-        // Update device info and extend expiration
         const expiresAt = new Date(Date.now() + SESSION_EXPIRES_IN);
+        const now = new Date();
+        
         const updated = await Session.findOneAndUpdate(
           { _id: existingSession._id },
           {
             $set: {
               expiresAt,
-              'deviceInfo.lastActive': new Date(),
+              'deviceInfo.lastActive': now,
               'deviceInfo.deviceName': deviceName || existingSession.deviceInfo?.deviceName,
               'deviceInfo.ipAddress': deviceInfo.ipAddress,
               'deviceInfo.userAgent': deviceInfo.userAgent,
-              updatedAt: new Date()
+              updatedAt: now
             }
           },
           { new: true }
@@ -325,24 +365,16 @@ class SessionService {
 
         if (updated) {
           sessionCache.set(sessionId, updated as ISession);
-          logger.info(`[SessionService] Reused existing session for user: ${userId}`);
           return updated as ISession;
         }
       }
 
-      // Create new session
       const sessionId = crypto.randomUUID();
       const expiresAt = new Date(Date.now() + SESSION_EXPIRES_IN);
-      
-      // Generate tokens
-      const { accessToken, refreshToken } = generateSessionTokens(
-        userId, 
-        sessionId, 
-        deviceInfo.deviceId
-      );
+      const now = new Date();
+      const { accessToken, refreshToken } = generateSessionTokens(userId, sessionId, deviceInfo.deviceId);
 
-      // Create session document
-      const sessionData = {
+      const session = new Session({
         sessionId,
         userId,
         deviceId: deviceInfo.deviceId,
@@ -356,22 +388,17 @@ class SessionService {
           userAgent: deviceInfo.userAgent,
           location: deviceInfo.location,
           fingerprint: deviceInfo.fingerprint,
-          lastActive: new Date()
+          lastActive: now
         },
         accessToken,
         refreshToken,
         isActive: true,
         expiresAt,
-        lastRefresh: new Date()
-      };
+        lastRefresh: now
+      });
 
-      const session = new Session(sessionData);
       await session.save();
-
-      // Cache the session
       sessionCache.set(sessionId, session);
-
-      logger.info('[SessionService] Created new session', { userId, deviceId: deviceInfo.deviceId });
       return session;
     } catch (error) {
       logger.error('[SessionService] Failed to create session', error instanceof Error ? error : new Error(String(error)), {
@@ -394,26 +421,14 @@ class SessionService {
    */
   async refreshTokens(refreshToken: string): Promise<SessionRefreshResult | null> {
     try {
-      // Validate refresh token with enhanced error handling
       const validationResult = validateRefreshToken(refreshToken);
-      if (!validationResult.valid || !validationResult.payload) {
-        // Provide specific error information for better debugging
-        if (validationResult.error === 'expired') {
-          logger.debug('[SessionService] Refresh token expired');
-          throw new Error('Refresh token expired');
-        }
-        logger.debug('[SessionService] Invalid refresh token', { error: validationResult.error });
-        throw new Error('Invalid refresh token');
+      if (!validationResult.valid || !validationResult.payload?.sessionId) {
+        return null;
       }
 
       const payload = validationResult.payload;
-      if (!payload.sessionId) {
-        throw new Error('Invalid refresh token: missing sessionId');
-      }
-
       const sessionId = payload.sessionId;
 
-      // Get session (bypass cache for security - always check DB for token refresh)
       const session = await Session.findOne({
         sessionId,
         refreshToken,
@@ -422,28 +437,24 @@ class SessionService {
       });
 
       if (!session) {
-        throw new Error('Session not found or expired');
+        return null;
       }
 
-      // Generate new tokens
+      const now = new Date();
       const { accessToken: newAccessToken, refreshToken: newRefreshToken } = generateSessionTokens(
         payload.userId || session.userId.toString(),
         sessionId,
         payload.deviceId || session.deviceId
       );
 
-      // Update session with new tokens
       session.accessToken = newAccessToken;
       session.refreshToken = newRefreshToken;
-      session.lastRefresh = new Date();
-      session.deviceInfo.lastActive = new Date();
+      session.lastRefresh = now;
+      session.deviceInfo.lastActive = now;
       await session.save();
 
-      // Invalidate cache and re-cache with new tokens
       sessionCache.invalidate(sessionId);
       sessionCache.set(sessionId, session);
-
-      logger.info('[SessionService] Refreshed tokens for session', { sessionId: sessionId.substring(0, 8) });
       
       return {
         accessToken: newAccessToken,
