@@ -339,7 +339,7 @@ app.use((req: express.Request, res: express.Response) => {
 // Only call listen if this module is run directly
 const PORT = getEnvNumber('PORT', 3001);
 if (require.main === module) {
-  server.listen(PORT, () => {
+  server.listen(PORT, '0.0.0.0', () => {
     logger.info(`Server running on port ${PORT}`);
   });
 }
