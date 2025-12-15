@@ -500,13 +500,13 @@ router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, asyncH
   }
 
   if (file.visibility === 'public' && !variantType) {
-      try {
-          const url = await assetService.getFileUrl(fileId, undefined, 3600, file);
-          res.setHeader('Cache-Control', 'public, max-age=3600');
-          return res.redirect(url);
-      } catch (e) {
-          logger.warn('Failed to generate redirect URL for public file, falling back to stream', { fileId, error: e });
-      }
+    try {
+      const url = await s3Service.getPresignedDownloadUrl(file.storageKey, 3600);
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+      return res.redirect(url);
+    } catch (e) {
+      logger.warn('Failed to generate redirect URL for public file, falling back to stream', { fileId, error: e });
+    }
   }
 
   const originalKey = file.storageKey;

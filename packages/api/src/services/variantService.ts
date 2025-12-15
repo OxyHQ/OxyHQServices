@@ -1097,11 +1097,9 @@ export class VariantService {
    * Ensure a specific video poster variant exists, generate via FFmpeg if missing.
    */
   async ensureVideoPoster(file: IFile): Promise<IFileVariant> {
-    // Check if poster already exists and is valid
     const existing = file.variants.find(v => v.type === 'poster' && v.readyAt);
     if (existing) {
-      const ok = await this.s3Service.fileExists(existing.key);
-      if (ok) return existing;
+      return existing;
     }
 
     // Generate poster frame directly from S3 - no temp files
@@ -1153,11 +1151,9 @@ export class VariantService {
    * Ensure a specific image variant exists, generate via Sharp if missing.
    */
   async ensureImageVariant(file: IFile, variantType: string): Promise<IFileVariant> {
-    // If already present and object exists, return
     const existing = file.variants.find(v => v.type === variantType && v.readyAt);
     if (existing) {
-      const ok = await this.s3Service.fileExists(existing.key);
-      if (ok) return existing;
+      return existing;
     }
 
     // Map variantType to config
