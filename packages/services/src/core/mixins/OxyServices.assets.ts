@@ -168,7 +168,9 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       
       try {
         const formData = new FormData();
-        formData.append('file', file);
+        // In React Native, pass filename as third parameter to avoid read-only name property error
+        // This prevents "Cannot assign to property 'name' which has only a getter" error
+        formData.append('file', file as any, fileName);
         if (visibility) {
           formData.append('visibility', visibility);
         }
