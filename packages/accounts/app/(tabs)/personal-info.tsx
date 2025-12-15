@@ -1,27 +1,26 @@
-import React, { useMemo, useCallback } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
-import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard, ScreenHeader } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
 import { formatDate, getDisplayName } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+import { AccountInfoGrid, type AccountInfoCard } from '@/components/account-info-grid';
+import { Section } from '@/components/section';
+import { GroupedSection } from '@/components/grouped-section';
 
 export default function PersonalInfoScreen() {
   const colorScheme = useColorScheme() ?? 'light';
-  const { width } = useWindowDimensions();
 
   // OxyServices integration
   const { user, isLoading: oxyLoading, isAuthenticated } = useOxy();
 
-  const handlePressIn = useHapticPress();
-
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
-  const isDesktop = Platform.OS === 'web' && width >= 768;
+  const handlePressIn = useHapticPress();
 
   // Compute user data
   const displayName = useMemo(() => getDisplayName(user), [user]);
@@ -33,82 +32,85 @@ export default function PersonalInfoScreen() {
     return birthday ? formatDate(birthday) : null;
   }, [user]);
 
-  const personalInfoItems = useMemo(() => {
-    const items = [
-      {
-        id: 'name',
-        icon: 'account-outline',
-        iconColor: colors.sidebarIconPersonalInfo,
-        title: 'Full name',
-        subtitle: displayName || 'Not set',
-        customContent: (
-          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
-            <Text style={[styles.buttonText, { color: colors.text }]}>Edit</Text>
-          </TouchableOpacity>
-        ),
-      },
-      {
-        id: 'email',
-        icon: 'email-outline',
-        iconColor: colors.sidebarIconSecurity,
-        title: 'Email',
-        subtitle: userEmail,
-        customContent: (
-          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
-            <Text style={[styles.buttonText, { color: colors.text }]}>Update</Text>
-          </TouchableOpacity>
-        ),
-      },
-    ];
+  const personalInfoCards = useMemo<AccountInfoCard[]>(() => [
+    {
+      id: 'name',
+      icon: 'account-outline',
+      iconColor: colors.sidebarIconPersonalInfo,
+      title: 'Full name',
+      value: displayName || 'Not set',
+    },
+    {
+      id: 'email',
+      icon: 'email-outline',
+      iconColor: colors.sidebarIconSecurity,
+      title: 'Email',
+      value: userEmail,
+    },
+    {
+      id: 'phone',
+      icon: 'phone-outline',
+      iconColor: colors.sidebarIconPersonalInfo,
+      title: 'Phone number',
+      value: userPhone || 'Not set',
+    },
+    {
+      id: 'address',
+      icon: 'map-marker-outline',
+      iconColor: colors.sidebarIconData,
+      title: 'Address',
+      value: userAddress || 'Not set',
+    },
+    {
+      id: 'birthday',
+      icon: 'cake-outline',
+      iconColor: colors.sidebarIconFamily,
+      title: 'Birthday',
+      value: userBirthday || 'Not set',
+    },
+    {
+      id: 'created',
+      icon: 'calendar-outline',
+      iconColor: colors.sidebarIconData,
+      title: 'Account created',
+      value: user?.createdAt ? formatDate(user.createdAt) : 'Unknown',
+    },
+  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconData, colors.sidebarIconFamily, displayName, userEmail, userPhone, userAddress, userBirthday, user?.createdAt]);
 
-    // Only show optional fields if they exist
-    if (userPhone) {
-      items.push({
-        id: 'phone',
-        icon: 'phone-outline',
-        iconColor: colors.sidebarIconPersonalInfo,
-        title: 'Phone number',
-        subtitle: userPhone,
-        customContent: (
-          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
-            <Text style={[styles.buttonText, { color: colors.text }]}>Edit</Text>
-          </TouchableOpacity>
-        ),
-      });
-    }
-
-    if (userAddress) {
-      items.push({
-        id: 'address',
-        icon: 'map-marker-outline',
-        iconColor: colors.sidebarIconData,
-        title: 'Address',
-        subtitle: userAddress,
-        customContent: (
-          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
-            <Text style={[styles.buttonText, { color: colors.text }]}>Edit</Text>
-          </TouchableOpacity>
-        ),
-      });
-    }
-
-    if (userBirthday) {
-      items.push({
-        id: 'birthday',
-        icon: 'cake-outline',
-        iconColor: colors.sidebarIconFamily,
-        title: 'Birthday',
-        subtitle: userBirthday,
-        customContent: (
-          <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]} onPressIn={handlePressIn}>
-            <Text style={[styles.buttonText, { color: colors.text }]}>Edit</Text>
-          </TouchableOpacity>
-        ),
-      });
-    }
-
-    return items;
-  }, [colors, displayName, userEmail, userPhone, userAddress, userBirthday]);
+  const contactItems = useMemo(() => [
+    {
+      id: 'email',
+      icon: 'email-outline' as any,
+      iconColor: colors.sidebarIconSecurity,
+      title: 'Email',
+      subtitle: userEmail,
+      showChevron: false,
+    },
+    {
+      id: 'phone',
+      icon: 'phone-outline' as any,
+      iconColor: colors.sidebarIconPersonalInfo,
+      title: 'Phone number',
+      subtitle: userPhone || 'Not set',
+      showChevron: false,
+    },
+    {
+      id: 'address',
+      icon: 'map-marker-outline' as any,
+      iconColor: colors.sidebarIconData,
+      title: 'Address',
+      subtitle: userAddress || 'Not set',
+      showChevron: false,
+    },
+    {
+      id: 'birthday',
+      icon: 'cake-outline' as any,
+      iconColor: colors.sidebarIconFamily,
+      title: 'Birthday',
+      subtitle: userBirthday || 'Not set',
+      showChevron: false,
+    },
+  ], [colors.sidebarIconSecurity, colors.sidebarIconPersonalInfo, colors.sidebarIconData, colors.sidebarIconFamily, userEmail, userPhone, userAddress, userBirthday]);
 
   // Show loading state while OxyServices is initializing
   if (oxyLoading) {
@@ -134,26 +136,18 @@ export default function PersonalInfoScreen() {
     );
   }
 
-  // Desktop: layout handles sidebar and ScrollView, we just return content
-  if (isDesktop) {
-    return (
-      <>
-        <ScreenHeader title="Personal info" subtitle="Manage your personal information and profile details." />
-        <AccountCard>
-          <GroupedSection items={personalInfoItems} />
-        </AccountCard>
-      </>
-    );
-  }
-
-  // Mobile: use ScreenContentWrapper for consistent scrolling
   return (
     <ScreenContentWrapper>
-      <View style={styles.mobileContent}>
-      <ScreenHeader title="Personal info" subtitle="Manage your personal information and profile details." />
-      <AccountCard>
-        <GroupedSection items={personalInfoItems} />
-      </AccountCard>
+      <View style={styles.content}>
+        <ScreenHeader title="Personal info" subtitle="Manage your personal information and profile details." />
+        <Section title="Profile summary">
+          <AccountInfoGrid cards={personalInfoCards} onPressIn={handlePressIn} />
+        </Section>
+        <Section title="Contact & details">
+          <AccountCard>
+            <GroupedSection items={contactItems} />
+          </AccountCard>
+        </Section>
       </View>
     </ScreenContentWrapper>
   );
@@ -164,44 +158,9 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   content: {
-    padding: 20,
-  },
-  headerSection: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    opacity: 0.6,
-  },
-  button: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  buttonText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  mobileContent: {
     padding: 16,
     paddingBottom: 120,
-  },
-  mobileHeaderSection: {
-    marginBottom: 20,
-  },
-  mobileTitle: {
-    fontSize: 28,
-    fontWeight: '600',
-    marginBottom: 6,
-  },
-  mobileSubtitle: {
-    fontSize: 15,
-    opacity: 0.6,
+    gap: 16,
   },
   loadingContainer: {
     flex: 1,
