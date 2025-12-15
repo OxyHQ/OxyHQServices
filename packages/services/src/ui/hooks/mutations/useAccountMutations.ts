@@ -4,6 +4,7 @@ import { queryKeys, invalidateAccountQueries, invalidateUserQueries } from '../q
 import { useOxy } from '../../context/OxyContext';
 import { toast } from '../../../lib/sonner';
 import { refreshAvatarInStore } from '../../utils/avatarUtils';
+import { useAuthStore } from '../../stores/authStore';
 
 /**
  * Update user profile with optimistic updates and offline queue support
@@ -106,6 +107,9 @@ export const useUpdateProfile = () => {
       if (activeSessionId) {
         queryClient.setQueryData(queryKeys.users.profile(activeSessionId), data);
       }
+      
+      // Update authStore so frontend components see the changes immediately
+      useAuthStore.getState().setUser(data);
       
       // If avatar was updated, refresh accountStore with cache-busted URL
       if (updates.avatar && activeSessionId && oxyServices) {
@@ -220,6 +224,9 @@ export const useUploadAvatar = () => {
         queryClient.setQueryData(queryKeys.users.profile(activeSessionId), data);
       }
       
+      // Update authStore so frontend components see the changes immediately
+      useAuthStore.getState().setUser(data);
+      
       // Refresh accountStore with cache-busted URL if avatar was updated
       if (data?.avatar && activeSessionId && oxyServices) {
         refreshAvatarInStore(activeSessionId, data.avatar, oxyServices);
@@ -268,6 +275,10 @@ export const useUpdateAccountSettings = () => {
     },
     onSuccess: (data) => {
       queryClient.setQueryData(queryKeys.accounts.current(), data);
+      
+      // Update authStore so frontend components see the changes immediately
+      useAuthStore.getState().setUser(data);
+      
       invalidateAccountQueries(queryClient);
       toast.success('Settings updated successfully');
     },
@@ -394,10 +405,14 @@ export const useUpdatePrivacySettings = () => {
       // Also update account query if it contains privacy settings
       const currentUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
       if (currentUser) {
-        queryClient.setQueryData<User>(queryKeys.accounts.current(), {
+        const updatedUser = {
           ...currentUser,
           privacySettings: data,
-        });
+        };
+        queryClient.setQueryData<User>(queryKeys.accounts.current(), updatedUser);
+        
+        // Update authStore so frontend components see the changes immediately
+        useAuthStore.getState().setUser(updatedUser);
       }
       invalidateAccountQueries(queryClient);
     },

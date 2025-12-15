@@ -319,8 +319,9 @@ class SessionService {
       const { deviceName, deviceFingerprint } = options;
       let deviceInfo = extractDeviceInfo(req, undefined, deviceName);
       
+      // Pass userId to optimize device lookup - reduces Session collection scan
       if (deviceFingerprint) {
-        deviceInfo = await registerDevice(deviceInfo, generateDeviceFingerprint(deviceFingerprint));
+        deviceInfo = await registerDevice(deviceInfo, generateDeviceFingerprint(deviceFingerprint), userId);
       }
 
       const existingSession = await Session.findOne({

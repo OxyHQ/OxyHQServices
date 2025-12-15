@@ -117,8 +117,24 @@ export class MediaPrivacyService {
         if (authorId === viewerUserId) return { allowed: true };
         
         if (postVisibility === 'followers') {
-          const author = await User.findById(authorId).select('followers').lean();
-          const isFollowing = author?.followers?.some(id => id.toString() === viewerUserId);
+          // Use cache for author lookup to avoid repeated database queries
+          // Author data (followers list) rarely changes, so caching significantly improves performance
+          let author = userCache.get(authorId);
+          if (!author) {
+            const authorDoc = await User.findById(authorId).select('followers').lean();
+            if (authorDoc) {
+              author = authorDoc as any;
+              // Only cache if author exists (userCache.set requires non-null IUser)
+              if (author) {
+                userCache.set(authorId, author);
+              }
+            }
+          }
+          // Handle case where author doesn't exist (null check)
+          if (!author) {
+            return { allowed: false };
+          }
+          const isFollowing = author.followers?.some(id => id.toString() === viewerUserId);
           return { allowed: !!isFollowing };
         }
       }

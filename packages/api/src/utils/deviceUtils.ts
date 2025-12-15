@@ -124,12 +124,20 @@ export const findExistingDeviceId = async (fingerprint: string, userId?: string)
 
 /**
  * Register or update device information
+ * @param deviceInfo - Device information to register
+ * @param fingerprint - Optional device fingerprint for device reuse
+ * @param userId - Optional user ID to optimize device lookup queries
  */
-export const registerDevice = async (deviceInfo: DeviceInfo, fingerprint?: string): Promise<DeviceInfo> => {
+export const registerDevice = async (
+  deviceInfo: DeviceInfo, 
+  fingerprint?: string,
+  userId?: string
+): Promise<DeviceInfo> => {
   try {
     // If fingerprint provided, try to find existing device ID
+    // Pass userId to optimize query - reduces Session collection scan
     if (fingerprint) {
-      const existingDeviceId = await findExistingDeviceId(fingerprint);
+      const existingDeviceId = await findExistingDeviceId(fingerprint, userId);
       if (existingDeviceId) {
         deviceInfo.deviceId = existingDeviceId;
       }

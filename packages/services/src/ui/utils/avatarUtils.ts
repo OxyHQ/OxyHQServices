@@ -1,6 +1,7 @@
 import type { OxyServices } from '../../core';
 import type { User } from '../../models/interfaces';
 import { useAccountStore } from '../stores/accountStore';
+import { useAuthStore } from '../stores/authStore';
 import { QueryClient } from '@tanstack/react-query';
 import { queryKeys, invalidateUserQueries, invalidateAccountQueries } from '../hooks/queries/queryKeys';
 
@@ -102,6 +103,9 @@ export async function updateProfileWithAvatar(
     if (activeSessionId) {
       queryClient.setQueryData(queryKeys.users.profile(activeSessionId), data);
     }
+    
+    // Update authStore so frontend components see the changes immediately
+    useAuthStore.getState().setUser(data);
     
     // If avatar was updated, refresh accountStore with cache-busted URL
     if (updates.avatar && activeSessionId) {

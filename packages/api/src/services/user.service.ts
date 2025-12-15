@@ -110,15 +110,7 @@ export class UserService {
     // Handle language field separately to avoid MongoDB text index conflict
     const { language, ...otherUpdates } = filteredUpdates;
 
-    // Update other fields using $set if there are any
-    if (Object.keys(otherUpdates).length > 0) {
-      await User.updateOne(
-        { _id: userId },
-        { $set: otherUpdates }
-      );
-    }
-
-    // Handle language field separately (MongoDB interprets 'language' in $set as text index override)
+    // Fetch user document to update
     const user = await User.findById(userId).select('-password -refreshToken');
     if (!user) {
       throw new Error('User not found');
@@ -129,11 +121,12 @@ export class UserService {
       (user as any).language = language;
     }
 
-    // Update other fields directly
+    // Update other fields directly on the document
     Object.entries(otherUpdates).forEach(([key, value]) => {
       (user as any)[key] = value;
     });
 
+    // Save the document - this ensures all Mongoose middleware and validation runs
     await user.save();
 
     // Convert to plain object with virtuals
