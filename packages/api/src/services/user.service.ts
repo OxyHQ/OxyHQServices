@@ -9,6 +9,8 @@ import User, { IUser } from '../models/User';
 import Follow, { FollowType } from '../models/Follow';
 import { logger } from '../utils/logger';
 import { Types } from 'mongoose';
+import securityActivityService from './securityActivityService';
+import { Request } from 'express';
 import {
   PaginationParams,
   PaginatedResponse,
@@ -57,7 +59,8 @@ export class UserService {
    */
   async updateUserProfile(
     userId: string,
-    updates: ProfileUpdateInput
+    updates: ProfileUpdateInput,
+    req?: Request
   ): Promise<IUser> {
     // Allowed fields for updates
     const allowedFields = [
@@ -116,6 +119,10 @@ export class UserService {
       throw new Error('User not found');
     }
 
+    // Track email change for security logging
+    const oldEmail = user.email;
+    const emailChanged = otherUpdates.email && otherUpdates.email !== oldEmail;
+
     // Update language directly on document to avoid MongoDB conflict
     if (language !== undefined) {
       (user as any).language = language;
@@ -128,6 +135,34 @@ export class UserService {
 
     // Save the document - this ensures all Mongoose middleware and validation runs
     await user.save();
+
+    // Log security events
+    try {
+      const updatedFields = Object.keys(otherUpdates);
+      
+      // Log email change if it occurred
+      if (emailChanged && oldEmail && otherUpdates.email) {
+        await securityActivityService.logEmailChange(
+          userId,
+          oldEmail,
+          otherUpdates.email,
+          req
+        );
+      }
+      
+      // Log profile update (excluding email which is logged separately)
+      const profileFields = updatedFields.filter(field => field !== 'email');
+      if (profileFields.length > 0) {
+        await securityActivityService.logProfileUpdate(
+          userId,
+          profileFields,
+          req
+        );
+      }
+    } catch (error) {
+      // Don't fail the update if logging fails
+      logger.error('Failed to log security event for profile update:', error);
+    }
 
     // Convert to plain object with virtuals
     const userObj = user.toObject({ virtuals: true }) as IUser;

@@ -54,6 +54,15 @@ export const queryKeys = {
     all: ['privacy'] as const,
     settings: (userId?: string) => [...queryKeys.privacy.all, 'settings', userId || 'current'] as const,
   },
+
+  // Security activity queries
+  security: {
+    all: ['security'] as const,
+    activity: (limit?: number, offset?: number, eventType?: string) => 
+      [...queryKeys.security.all, 'activity', limit, offset, eventType] as const,
+    recent: (limit: number) => 
+      [...queryKeys.security.all, 'recent', limit] as const,
+  },
 } as const;
 
 /**

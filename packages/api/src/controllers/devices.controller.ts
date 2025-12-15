@@ -5,6 +5,7 @@ import { extractTokenFromRequest, decodeToken } from '../middleware/authUtils';
 import sessionService from '../services/session.service';
 import { AuthRequest } from '../middleware/auth';
 import { emitSessionUpdate } from '../server';
+import securityActivityService from '../services/securityActivityService';
 
 export class DevicesController {
   /**

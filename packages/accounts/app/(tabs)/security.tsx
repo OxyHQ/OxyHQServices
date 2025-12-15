@@ -11,10 +11,11 @@ import { darkenColor } from '@/utils/color-utils';
 import { LinkButton, AccountCard, AppleSwitch, ScreenHeader, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
-import { useOxy, useUserDevices } from '@oxyhq/services';
+import { useOxy, useUserDevices, useRecentSecurityActivity } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
-import type { ClientSession } from '@oxyhq/services';
+import type { ClientSession, SecurityActivity } from '@oxyhq/services';
 import { useBiometricSettings } from '@/hooks/useBiometricSettings';
+import { getEventIcon, getEventColor, formatEventDescription } from '@/utils/security-utils';
 
 export default function SecurityScreen() {
     const colorScheme = useColorScheme() ?? 'light';
@@ -117,66 +118,39 @@ export default function SecurityScreen() {
         }];
     }, [canEnableBiometric, biometricEnabled, biometricLoading, user?.email]);
 
-    // Recent activity from sessions - grouped by device to show unique sign-ins
+    // Fetch security activity
+    const { data: securityActivities = [], isLoading: securityActivityLoading } = useRecentSecurityActivity(10);
+
+    // Recent activity from security events
     const recentActivity = useMemo(() => {
-        if (!sessions || sessions.length === 0) return [];
+        if (!securityActivities || securityActivities.length === 0) return [];
 
-        // Group sessions by deviceId and get the most recent session per device
-        const deviceSessionsMap = new Map<string, ClientSession>();
+        return securityActivities.slice(0, 5).map((activity: SecurityActivity) => {
+            const eventIcon = getEventIcon(activity.eventType);
+            const eventColor = getEventColor(activity.eventType, colorScheme);
+            const description = formatEventDescription(activity);
+            const deviceId = activity.deviceId;
 
-        sessions.forEach((session: ClientSession) => {
-            if (!session.deviceId) return;
-
-            const existing = deviceSessionsMap.get(session.deviceId);
-            if (!existing) {
-                deviceSessionsMap.set(session.deviceId, session);
-            } else {
-                // Keep the most recent session for this device
-                const existingTime = new Date(existing.lastActive || 0).getTime();
-                const currentTime = new Date(session.lastActive || 0).getTime();
-                if (currentTime > existingTime) {
-                    deviceSessionsMap.set(session.deviceId, session);
-                }
-            }
-        });
-
-        // Get last 5 unique devices, sorted by most recent activity
-        const uniqueDeviceSessions = Array.from(deviceSessionsMap.values())
-            .sort((a, b) => {
-                const aTime = new Date(a.lastActive || 0).getTime();
-                const bTime = new Date(b.lastActive || 0).getTime();
-                return bTime - aTime;
-            })
-            .slice(0, 5);
-
-        return uniqueDeviceSessions.map((session: ClientSession) => {
-            // Match device by deviceId - try both d.deviceId and d.id
-            const device = devices.find((d: any) =>
-                (d.deviceId === session.deviceId) || (d.id === session.deviceId)
-            );
-
-            // Use device info if available, otherwise infer from session
-            const deviceType = device?.type || device?.deviceType || 'unknown';
-            const deviceName = device?.name || device?.deviceName || 'Unknown Device';
-            // Use device's lastActive if available (more accurate), otherwise session's lastActive
-            const lastActive = device?.lastActive || device?.createdAt || session.lastActive;
-            const deviceId = session.deviceId;
-
-            return {
-                id: `activity-${session.deviceId}`,
-                icon: getDeviceIcon(deviceType) as any,
-                iconColor: colors.sidebarIconDevices,
-                title: `New sign-in on ${deviceName}`,
-                subtitle: formatRelativeTime(lastActive),
-                onPress: () => {
+            // For device-related events, navigate to device details
+            const onPress = (deviceId && (activity.eventType === 'device_added' || activity.eventType === 'device_removed' || activity.eventType === 'sign_in'))
+                ? () => {
                     if (deviceId) {
                         router.push(`/(tabs)/devices/${deviceId}` as any);
                     }
-                },
-                showChevron: true,
+                }
+                : undefined;
+
+            return {
+                id: `activity-${activity.id}`,
+                icon: eventIcon as any,
+                iconColor: eventColor,
+                title: description,
+                subtitle: formatRelativeTime(activity.timestamp),
+                onPress,
+                showChevron: !!onPress,
             };
         });
-    }, [sessions, devices, colors, formatRelativeTime, getDeviceIcon, router]);
+    }, [securityActivities, colorScheme, formatRelativeTime, router]);
 
     // Sign-in items
     const signInItems = useMemo(() => {
@@ -406,13 +380,28 @@ export default function SecurityScreen() {
             )}
 
             <Section title="Recent security activity">
-                {recentActivity.length > 0 ? (
+                {securityActivityLoading ? (
+                    <AccountCard>
+                        <View style={styles.emptyStateContainer}>
+                            <ActivityIndicator size="small" color={colors.tint} />
+                            <ThemedText style={[styles.emptyStateSubtitle, { color: colors.text, marginTop: 12 }]}>
+                                Loading security activity...
+                            </ThemedText>
+                        </View>
+                    </AccountCard>
+                ) : recentActivity.length > 0 ? (
                     <>
                         <AccountCard>
                             <GroupedSection items={recentActivity} />
                         </AccountCard>
                         <View style={{ marginTop: -8 }}>
-                            <LinkButton text="Review security activity" />
+                            <LinkButton 
+                                text="Review security activity" 
+                                onPress={() => {
+                                    // TODO: Navigate to full security activity screen or show more items
+                                    alert.alert('Security Activity', 'Full security activity history will be available here.');
+                                }}
+                            />
                         </View>
                     </>
                 ) : (

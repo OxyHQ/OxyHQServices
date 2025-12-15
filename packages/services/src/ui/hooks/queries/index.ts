@@ -25,6 +25,12 @@ export {
   useSecurityInfo,
 } from './useServicesQueries';
 
+// Security activity query hooks
+export {
+  useSecurityActivity,
+  useRecentSecurityActivity,
+} from './useSecurityQueries';
+
 // Query keys and invalidation helpers (for advanced usage)
 export { queryKeys, invalidateAccountQueries, invalidateUserQueries, invalidateSessionQueries } from './queryKeys';
 

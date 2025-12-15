@@ -4,6 +4,7 @@ import { logger } from '../utils/logger';
 import sessionCache from '../utils/sessionCache';
 import userCache from '../utils/userCache';
 import { Types } from 'mongoose';
+import securityActivityService from './securityActivityService';
 import { 
   extractDeviceInfo, 
   generateDeviceFingerprint, 
@@ -324,6 +325,12 @@ class SessionService {
         deviceInfo = await registerDevice(deviceInfo, generateDeviceFingerprint(deviceFingerprint), userId);
       }
 
+      // Check if this is a new device for this user (no previous sessions on this device)
+      const isNewDevice = !(await Session.findOne({
+        userId,
+        deviceId: deviceInfo.deviceId,
+      }).select('_id').lean());
+
       const existingSession = await Session.findOne({
         userId,
         deviceId: deviceInfo.deviceId,
@@ -387,6 +394,22 @@ class SessionService {
 
       await session.save();
       sessionCache.set(sessionId, session);
+
+      // Log security event for new device (only if this is the first session on this device)
+      if (isNewDevice) {
+        try {
+          await securityActivityService.logDeviceAdded(
+            userId,
+            deviceInfo.deviceId,
+            deviceInfo.deviceName || 'Unknown Device',
+            req
+          );
+        } catch (error) {
+          // Don't fail session creation if logging fails
+          logger.error('Failed to log security event for device added:', error);
+        }
+      }
+
       return session;
     } catch (error) {
       logger.error('[SessionService] Failed to create session', error instanceof Error ? error : new Error(String(error)), {

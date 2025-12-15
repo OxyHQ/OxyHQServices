@@ -17,6 +17,7 @@ import { OxyServicesDeveloperMixin } from './OxyServices.developer';
 import { OxyServicesLocationMixin } from './OxyServices.location';
 import { OxyServicesAnalyticsMixin } from './OxyServices.analytics';
 import { OxyServicesDevicesMixin } from './OxyServices.devices';
+import { OxyServicesSecurityMixin } from './OxyServices.security';
 import { OxyServicesUtilityMixin } from './OxyServices.utility';
 
 /**
@@ -29,17 +30,19 @@ import { OxyServicesUtilityMixin } from './OxyServices.utility';
  */
 export function composeOxyServices() {
   return OxyServicesUtilityMixin(
-    OxyServicesDevicesMixin(
-      OxyServicesAnalyticsMixin(
-        OxyServicesLocationMixin(
-          OxyServicesDeveloperMixin(
-            OxyServicesAssetsMixin(
-              OxyServicesKarmaMixin(
-                OxyServicesPaymentMixin(
-                  OxyServicesLanguageMixin(
-                    OxyServicesPrivacyMixin(
-                      OxyServicesUserMixin(
-                        OxyServicesAuthMixin(OxyServicesBase)
+    OxyServicesSecurityMixin(
+      OxyServicesDevicesMixin(
+        OxyServicesAnalyticsMixin(
+          OxyServicesLocationMixin(
+            OxyServicesDeveloperMixin(
+              OxyServicesAssetsMixin(
+                OxyServicesKarmaMixin(
+                  OxyServicesPaymentMixin(
+                    OxyServicesLanguageMixin(
+                      OxyServicesPrivacyMixin(
+                        OxyServicesUserMixin(
+                          OxyServicesAuthMixin(OxyServicesBase)
+                        )
                       )
                     )
                   )

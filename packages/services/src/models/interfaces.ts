@@ -403,6 +403,53 @@ export interface AccountStorageUsageResponse {
   updatedAt: string;
 }
 
+/**
+ * Security activity event types
+ */
+export type SecurityEventType = 
+  | 'sign_in'
+  | 'sign_out'
+  | 'email_changed'
+  | 'profile_updated'
+  | 'device_added'
+  | 'device_removed'
+  | 'account_recovery'
+  | 'security_settings_changed'
+  | 'suspicious_activity';
+
+/**
+ * Security event severity levels
+ */
+export type SecurityEventSeverity = 'low' | 'medium' | 'high' | 'critical';
+
+/**
+ * Security activity event
+ */
+export interface SecurityActivity {
+  id: string;
+  userId: string;
+  eventType: SecurityEventType;
+  eventDescription: string;
+  metadata?: Record<string, any>;
+  ipAddress?: string;
+  userAgent?: string;
+  deviceId?: string;
+  timestamp: string;
+  severity: SecurityEventSeverity;
+  createdAt: string;
+}
+
+/**
+ * Security activity response with pagination
+ */
+export interface SecurityActivityResponse {
+  data: SecurityActivity[];
+  total: number;
+  limit: number;
+  offset: number;
+  hasMore: boolean;
+}
+
 export interface AssetUploadProgress {
   fileId: string;
   uploaded: number;

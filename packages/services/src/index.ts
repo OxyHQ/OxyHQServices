@@ -103,7 +103,12 @@ export type {
   AssetUpdateVisibilityResponse,
   // Account storage usage
   AccountStorageCategoryUsage,
-  AccountStorageUsageResponse
+  AccountStorageUsageResponse,
+  // Security activity
+  SecurityEventType,
+  SecurityEventSeverity,
+  SecurityActivity,
+  SecurityActivityResponse
 } from './models/interfaces';
 
 export type {

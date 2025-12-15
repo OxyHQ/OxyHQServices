@@ -171,7 +171,8 @@ router.put(
     try {
       const updatedUser = await userService.updateUserProfile(
         req.user.id,
-        req.body
+        req.body,
+        req
       );
 
       logger.info('User profile updated', {

@@ -1,0 +1,79 @@
+import { Request, Response } from 'express';
+import { AuthRequest } from '../middleware/auth';
+import securityActivityService from '../services/securityActivityService';
+import { SecurityEventType } from '../models/SecurityActivity';
+import { validatePagination } from '../utils/validation';
+import { sendPaginated } from '../utils/asyncHandler';
+
+const DEFAULT_LIMIT = 50;
+const MAX_LIMIT = 100;
+
+/**
+ * Get user's security activity with pagination
+ * GET /api/security/activity
+ */
+export const getSecurityActivity = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const userId = req.user._id.toString();
+    const { limit: parsedLimit, offset: parsedOffset } = validatePagination(
+      req.query.limit,
+      req.query.offset,
+      MAX_LIMIT,
+      DEFAULT_LIMIT
+    );
+
+    const eventType = req.query.eventType as SecurityEventType | undefined;
+    
+    // Validate event type if provided
+    if (eventType) {
+      const validEventTypes: SecurityEventType[] = [
+        'sign_in',
+        'sign_out',
+        'email_changed',
+        'profile_updated',
+        'device_added',
+        'device_removed',
+        'account_recovery',
+        'security_settings_changed',
+        'suspicious_activity',
+      ];
+      
+      if (!validEventTypes.includes(eventType)) {
+        res.status(400).json({ error: 'Invalid event type' });
+        return;
+      }
+    }
+
+    const result = await securityActivityService.getUserSecurityActivity(userId, {
+      limit: parsedLimit,
+      offset: parsedOffset,
+      eventType,
+    });
+
+    // Transform activities for response
+    const activities = result.activities.map((activity) => ({
+      id: activity._id.toString(),
+      userId: activity.userId.toString(),
+      eventType: activity.eventType,
+      eventDescription: activity.eventDescription,
+      metadata: activity.metadata || {},
+      ipAddress: activity.ipAddress,
+      userAgent: activity.userAgent,
+      deviceId: activity.deviceId,
+      timestamp: activity.timestamp,
+      severity: activity.severity,
+      createdAt: activity.createdAt,
+    }));
+
+    sendPaginated(res, activities, result.total, parsedLimit, parsedOffset);
+  } catch (error: any) {
+    console.error('Error fetching security activity:', error);
+    res.status(500).json({ error: 'Failed to fetch security activity' });
+  }
+};
+

@@ -16,6 +16,7 @@ import sessionService from '../services/session.service';
 import sessionCache from '../utils/sessionCache';
 import { logger } from '../utils/logger';
 import { normalizeUser } from '../utils/userTransform';
+import securityActivityService from '../services/securityActivityService';
 
 // Challenge expiration time (5 minutes)
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -218,6 +219,23 @@ export class SessionController {
         { deviceName, deviceFingerprint }
       );
 
+      // Log security event for sign-in
+      try {
+        await securityActivityService.logSignIn(
+          user._id.toString(),
+          req,
+          session.deviceId,
+          {
+            deviceName: deviceName || session.deviceInfo?.deviceName,
+            deviceType: session.deviceInfo?.deviceType,
+            platform: session.deviceInfo?.platform,
+          }
+        );
+      } catch (error) {
+        // Don't fail the sign-in if logging fails
+        logger.error('Failed to log security event for sign-in:', error);
+      }
+
       // Emit session update for real-time updates
       emitSessionUpdate(user._id.toString(), {
         type: 'session_created',
@@ -383,6 +401,20 @@ export class SessionController {
           sessionId: sessionIdToLogout,
           deviceId: deviceId || null
         });
+      }
+
+      // Log security event for sign-out
+      if (userId) {
+        try {
+          await securityActivityService.logSignOut(
+            userId,
+            req,
+            deviceId || undefined
+          );
+        } catch (error) {
+          // Don't fail the logout if logging fails
+          logger.error('Failed to log security event for sign-out:', error);
+        }
       }
 
       logger.info(`Logged out session: ${sessionIdToLogout.substring(0, 8)}...`);
