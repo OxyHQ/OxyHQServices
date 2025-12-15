@@ -109,11 +109,13 @@ export default function TabLayout() {
         </View>
 
         <View style={styles.desktopBottomActions}>
-          <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleScanQR}>
-            <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
-              <MaterialCommunityIcons name="qrcode-scan" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
-            </View>
-          </TouchableOpacity>
+          {Platform.OS !== 'web' && (
+            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleScanQR}>
+              <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
+                <MaterialCommunityIcons name="qrcode-scan" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
+              </View>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleReload}>
             <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
               <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
@@ -259,7 +261,7 @@ export default function TabLayout() {
       </Drawer>
 
       {/* FAB Button for QR Scan - Mobile - Fixed outside ScrollView */}
-      {!pathname.includes('scan-qr') && (
+      {Platform.OS !== 'web' && !pathname.includes('scan-qr') && (
         <View style={styles.fabButton}>
           <TouchableOpacity
             style={styles.circleButton}

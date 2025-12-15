@@ -114,9 +114,7 @@ function RootLayoutContent() {
                 <Stack>
                   <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
                   {/* Auth route is only available on native platforms */}
-                  {Platform.OS !== 'web' && (
-                    <Stack.Screen name="(auth)" options={{ headerShown: false }} />
-                  )}
+                  <Stack.Screen name="(auth)" redirect={Platform.OS === 'web'} options={{ headerShown: false }} />
                   <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
                 </Stack>
                 <StatusBar style="auto" />
