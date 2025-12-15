@@ -5,12 +5,14 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { AccountCard, ScreenHeader } from '@/components/ui';
+import { AccountCard, ScreenHeader, LinkButton } from '@/components/ui';
+import { Section } from '@/components/section';
+import { GroupedSection } from '@/components/grouped-section';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useHapticPress } from '@/hooks/use-haptic-press';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
 import type { AccountStorageUsageResponse } from '@oxyhq/services';
+import { formatDate } from '@/utils/date-utils';
 
 export default function StorageScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -19,8 +21,6 @@ export default function StorageScreen() {
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
-
-  const handlePressIn = useHapticPress();
 
   const { oxyServices, isAuthenticated, isLoading: oxyLoading } = useOxy();
   const [usage, setUsage] = useState<AccountStorageUsageResponse | null>(null);
@@ -66,12 +66,39 @@ export default function StorageScreen() {
     return { value: bytes, unit: 'B', text: `${bytes} B` };
   }, []);
 
+  const formatRelativeTime = useCallback((dateString?: string) => {
+    if (!dateString) return 'Never';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const minutes = Math.floor(diffMs / 60000);
+
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return formatDate(dateString);
+  }, []);
+
+  const usagePercentage = useMemo(() => {
+    if (!usage || usage.totalLimitBytes === 0) return 0;
+    return Math.round((usage.totalUsedBytes / usage.totalLimitBytes) * 100);
+  }, [usage]);
+
   const usageSummaryText = useMemo(() => {
     if (!usage) return '';
     const used = formatBytes(usage.totalUsedBytes).text;
     const total = formatBytes(usage.totalLimitBytes).text;
     return `${used} of ${total} used`;
   }, [formatBytes, usage]);
+
+  const planDisplayName = useMemo(() => {
+    if (!usage) return '';
+    const plan = usage.plan;
+    return plan.charAt(0).toUpperCase() + plan.slice(1);
+  }, [usage]);
 
   const segments = useMemo(() => {
     const total = usage?.totalLimitBytes ?? 0;
@@ -83,8 +110,9 @@ export default function StorageScreen() {
     const photosVideos = safe(cats?.photosVideos?.bytes);
     const recordings = safe(cats?.recordings?.bytes);
     const family = safe(cats?.family?.bytes);
+    const other = safe(cats?.other?.bytes);
 
-    const used = documents + mail + photosVideos + recordings + family;
+    const used = documents + mail + photosVideos + recordings + family + other;
     const remaining = Math.max(0, total - used);
 
     const toPct = (b: number) => (total > 0 ? (b / total) * 100 : 0);
@@ -95,57 +123,107 @@ export default function StorageScreen() {
       { key: 'photosVideos', color: colors.sidebarIconPayments, pct: toPct(photosVideos) },
       { key: 'recordings', color: colors.sidebarIconData, pct: toPct(recordings) },
       { key: 'family', color: colors.sidebarIconPersonalInfo, pct: toPct(family) },
+      { key: 'other', color: colors.secondaryText, pct: toPct(other) },
       { key: 'remaining', color: colors.border, pct: toPct(remaining) },
     ].filter((s) => s.pct > 0.2); // avoid tiny slivers that look like rendering glitches
-  }, [colors.border, colors.sidebarIconData, colors.sidebarIconPayments, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconSharing, usage]);
+  }, [colors.border, colors.sidebarIconData, colors.sidebarIconPayments, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.secondaryText, usage]);
 
   const storageDetails = useMemo(() => {
     const cats = usage?.categories;
     const safe = (v?: number) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
+    const safeCount = (v?: number) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
-    return [
+    const items = [
       {
-        key: 'documents',
-        label: 'Documents',
-        color: colors.sidebarIconSecurity,
+        id: 'documents',
+        icon: 'file-document-outline' as any,
+        iconColor: colors.sidebarIconSecurity,
+        title: 'Documents',
+        subtitle: `${safeCount(cats?.documents?.count).toLocaleString()} file${safeCount(cats?.documents?.count) !== 1 ? 's' : ''}`,
         bytes: safe(cats?.documents?.bytes),
         onPress: () => router.push('/(tabs)/data'),
+        showChevron: true,
       },
       {
-        key: 'mail',
-        label: 'Oxy Mail',
-        color: colors.sidebarIconSharing,
+        id: 'mail',
+        icon: 'email-outline' as any,
+        iconColor: colors.sidebarIconSharing,
+        title: 'Oxy Mail',
+        subtitle: `${safeCount(cats?.mail?.count).toLocaleString()} message${safeCount(cats?.mail?.count) !== 1 ? 's' : ''}`,
         bytes: safe(cats?.mail?.bytes),
         onPress: () => router.push('/(tabs)/data'),
+        showChevron: true,
       },
       {
-        key: 'photosVideos',
-        label: 'Photos & Videos',
-        color: colors.sidebarIconPayments,
+        id: 'photosVideos',
+        icon: 'image-outline' as any,
+        iconColor: colors.sidebarIconPayments,
+        title: 'Photos & Videos',
+        subtitle: `${safeCount(cats?.photosVideos?.count).toLocaleString()} item${safeCount(cats?.photosVideos?.count) !== 1 ? 's' : ''}`,
         bytes: safe(cats?.photosVideos?.bytes),
         onPress: () => router.push('/(tabs)/data'),
+        showChevron: true,
       },
       {
-        key: 'recordings',
-        label: 'Recordings',
-        color: colors.sidebarIconData,
+        id: 'recordings',
+        icon: 'microphone-outline' as any,
+        iconColor: colors.sidebarIconData,
+        title: 'Recordings',
+        subtitle: `${safeCount(cats?.recordings?.count).toLocaleString()} recording${safeCount(cats?.recordings?.count) !== 1 ? 's' : ''}`,
         bytes: safe(cats?.recordings?.bytes),
         onPress: () => router.push('/(tabs)/data'),
+        showChevron: true,
       },
       {
-        key: 'family',
-        label: 'Family storage',
-        color: colors.sidebarIconPersonalInfo,
+        id: 'family',
+        icon: 'account-group-outline' as any,
+        iconColor: colors.sidebarIconPersonalInfo,
+        title: 'Family storage',
+        subtitle: `${safeCount(cats?.family?.count).toLocaleString()} file${safeCount(cats?.family?.count) !== 1 ? 's' : ''}`,
         bytes: safe(cats?.family?.bytes),
         onPress: () => router.push('/(tabs)/family'),
-        subtitle: '5 members',
+        showChevron: true,
       },
     ];
-  }, [colors.sidebarIconData, colors.sidebarIconPayments, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconSharing, router, usage]);
 
-  const handleCleanup = useCallback(() => {
-    router.push('/(tabs)/data');
-  }, [router]);
+    // Add "Other" category if it has data
+    if (safe(cats?.other?.bytes) > 0) {
+      items.push({
+        id: 'other',
+        icon: 'folder-outline' as any,
+        iconColor: colors.secondaryText,
+        title: 'Other',
+        subtitle: `${safeCount(cats?.other?.count).toLocaleString()} file${safeCount(cats?.other?.count) !== 1 ? 's' : ''}`,
+        bytes: safe(cats?.other?.bytes),
+        onPress: () => router.push('/(tabs)/data'),
+        showChevron: true,
+      });
+    }
+
+    return items;
+  }, [colors.sidebarIconData, colors.sidebarIconPayments, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.secondaryText, router, usage]);
+
+  const accountInfoItems = useMemo(() => {
+    if (!usage) return [];
+    return [
+      {
+        id: 'plan',
+        icon: 'crown-outline' as any,
+        iconColor: colors.sidebarIconPayments,
+        title: 'Storage plan',
+        subtitle: planDisplayName,
+        showChevron: false,
+      },
+      {
+        id: 'updated',
+        icon: 'clock-outline' as any,
+        iconColor: colors.secondaryText,
+        title: 'Last updated',
+        subtitle: formatRelativeTime(usage.updatedAt),
+        showChevron: false,
+      },
+    ];
+  }, [colors.sidebarIconPayments, colors.secondaryText, formatRelativeTime, planDisplayName, usage]);
 
   if (!isAuthenticated && !oxyLoading) {
     return (
@@ -162,90 +240,91 @@ export default function StorageScreen() {
     <>
       <ScreenHeader title="Oxy storage" subtitle="Manage your storage usage and files." />
 
-      <AccountCard>
-        <View style={styles.hero}>
-          <ThemedText style={[styles.heroTitle, { color: colors.text }]}>
-            {`You've got ${usage ? formatBytes(usage.totalLimitBytes).text : ''} of storage`}
-          </ThemedText>
-          <ThemedText style={[styles.heroSubtitle, { color: colors.secondaryText }]}>
-            Your storage is shared across Oxy Photos, Oxy Drive, and Oxy Mail.
-          </ThemedText>
-
-          <TouchableOpacity
-            style={[styles.primaryButton, { backgroundColor: colors.sidebarIconSecurity }]}
-            onPressIn={handlePressIn}
-            onPress={handleCleanup}
-            activeOpacity={0.85}
-            disabled={loading || oxyLoading}
-          >
-            <Text style={styles.primaryButtonText}>Clean up space</Text>
-          </TouchableOpacity>
-
-          <View style={styles.usageRow}>
+      <Section title="Storage overview">
+        <AccountCard>
+          <View style={styles.overviewContainer}>
             {loading || oxyLoading ? (
-              <View style={styles.usageLoading}>
-                <ActivityIndicator size="small" color={colors.tint} />
-                <Text style={[styles.usageText, { color: colors.text }]}>Loading usage…</Text>
+              <View style={styles.loadingContainer}>
+                <ActivityIndicator size="large" color={colors.tint} />
+                <ThemedText style={[styles.loadingText, { color: colors.text }]}>Loading storage usage…</ThemedText>
               </View>
             ) : error ? (
-              <Text style={[styles.usageText, { color: colors.sidebarIconSharing }]} numberOfLines={2}>
-                {error}
-              </Text>
-            ) : (
+              <View style={styles.errorContainer}>
+                <MaterialCommunityIcons name="alert-circle-outline" size={40} color={colors.sidebarIconSharing} />
+                <ThemedText style={[styles.errorText, { color: colors.text }]}>{error}</ThemedText>
+                <TouchableOpacity
+                  style={[styles.retryButton, { backgroundColor: colors.tint }]}
+                  onPress={loadUsage}
+                >
+                  <Text style={styles.retryButtonText}>Retry</Text>
+                </TouchableOpacity>
+              </View>
+            ) : usage ? (
               <>
-                <Text style={[styles.usageText, { color: colors.text }]}>{usageSummaryText}</Text>
-                <MaterialCommunityIcons name="information-outline" size={18} color={colors.secondaryText} />
-              </>
-            )}
-          </View>
+                <View style={styles.usageHeader}>
+                  <ThemedText style={[styles.usageTitle, { color: colors.text }]}>
+                    {usageSummaryText}
+                  </ThemedText>
+                  <ThemedText style={[styles.usagePercentage, { color: colors.secondaryText }]}>
+                    {usagePercentage}% used
+                  </ThemedText>
+                </View>
 
-          <View style={[styles.usageBar, { backgroundColor: colors.border }]}>
-            <View style={styles.usageBarInner}>
-              {segments.map((segment) => (
-                <View
-                  key={segment.key}
-                  style={[
-                    styles.usageSegment,
-                    { backgroundColor: segment.color, width: `${segment.pct}%` },
-                  ]}
-                />
-              ))}
-            </View>
-          </View>
-
-          <Text style={[styles.sectionLabel, { color: colors.secondaryText }]}>STORAGE DETAILS</Text>
-
-          <View style={[styles.detailsCard, { backgroundColor: colors.background }]}>
-            {storageDetails.map((row, idx) => (
-              <TouchableOpacity
-                key={row.key}
-                style={[
-                  styles.detailRow,
-                  idx < storageDetails.length - 1 ? { borderBottomColor: colors.border, borderBottomWidth: StyleSheet.hairlineWidth } : null,
-                ]}
-                onPressIn={handlePressIn}
-                onPress={row.onPress}
-                activeOpacity={0.7}
-              >
-                <View style={styles.detailLeft}>
-                  <View style={[styles.dot, { backgroundColor: row.color }]} />
-                  <View style={styles.detailLabels}>
-                    <Text style={[styles.detailTitle, { color: colors.text }]}>{row.label}</Text>
-                    {'subtitle' in row && row.subtitle ? (
-                      <Text style={[styles.detailSubtitle, { color: colors.secondaryText }]}>{row.subtitle}</Text>
-                    ) : null}
+                <View style={[styles.usageBar, { backgroundColor: colors.border }]}>
+                  <View style={styles.usageBarInner}>
+                    {segments.map((segment) => (
+                      <View
+                        key={segment.key}
+                        style={[
+                          styles.usageSegment,
+                          { backgroundColor: segment.color, width: `${segment.pct}%` },
+                        ]}
+                      />
+                    ))}
                   </View>
                 </View>
 
-                <View style={styles.detailRight}>
-                  <Text style={[styles.detailValue, { color: colors.text }]}>{formatBytes(row.bytes).text}</Text>
-                  <MaterialCommunityIcons name="open-in-new" size={18} color={colors.secondaryText} />
-                </View>
-              </TouchableOpacity>
-            ))}
+                <ThemedText style={[styles.usageSubtitle, { color: colors.secondaryText }]}>
+                  Your storage is shared across Oxy Photos, Oxy Drive, and Oxy Mail.
+                </ThemedText>
+              </>
+            ) : null}
           </View>
-        </View>
-      </AccountCard>
+        </AccountCard>
+      </Section>
+
+      {usage && (
+        <>
+          <Section title="Account information">
+            <AccountCard>
+              <GroupedSection items={accountInfoItems} />
+            </AccountCard>
+          </Section>
+
+          <Section title="Storage by category">
+            <AccountCard>
+              <GroupedSection
+                items={storageDetails.map((item) => ({
+                  ...item,
+                  customContent: (
+                    <View style={styles.storageValue}>
+                      <ThemedText style={[styles.storageValueText, { color: colors.text }]}>
+                        {formatBytes(item.bytes).text}
+                      </ThemedText>
+                    </View>
+                  ),
+                }))}
+              />
+            </AccountCard>
+          </Section>
+
+          <Section>
+            <View style={{ marginTop: -8 }}>
+              <LinkButton text="Clean up space" onPress={() => router.push('/(tabs)/data')} />
+            </View>
+          </Section>
+        </>
+      )}
     </>
   );
 
@@ -270,52 +349,54 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 120,
   },
-  hero: {
-    padding: 18,
-    gap: 14,
+  overviewContainer: {
+    padding: 16,
+    gap: 16,
   },
-  heroTitle: {
-    fontSize: 26,
-    fontWeight: '700',
-    textAlign: 'center',
-  },
-  heroSubtitle: {
-    fontSize: 15,
-    textAlign: 'center',
-    lineHeight: 20,
-    maxWidth: 420,
-    alignSelf: 'center',
-  },
-  primaryButton: {
-    alignSelf: 'center',
-    paddingHorizontal: 22,
-    paddingVertical: 12,
-    borderRadius: 999,
-    minWidth: 180,
+  loadingContainer: {
     alignItems: 'center',
     justifyContent: 'center',
+    paddingVertical: 32,
+    gap: 12,
   },
-  primaryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 16,
-    fontWeight: '700',
+  loadingText: {
+    fontSize: 15,
+    fontWeight: '500',
   },
-  usageRow: {
+  errorContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    gap: 12,
+  },
+  errorText: {
+    fontSize: 15,
+    fontWeight: '500',
+    textAlign: 'center',
+  },
+  retryButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 18,
     marginTop: 8,
+  },
+  retryButtonText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  usageHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10,
   },
-  usageLoading: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  usageText: {
-    fontSize: 16,
+  usageTitle: {
+    fontSize: 18,
     fontWeight: '600',
-    flex: 1,
+  },
+  usagePercentage: {
+    fontSize: 15,
+    fontWeight: '500',
   },
   usageBar: {
     height: 10,
@@ -330,55 +411,16 @@ const styles = StyleSheet.create({
   usageSegment: {
     height: '100%',
   },
-  sectionLabel: {
-    marginTop: 6,
+  usageSubtitle: {
     fontSize: 13,
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    lineHeight: 18,
+    marginTop: 4,
   },
-  detailsCard: {
-    borderRadius: 14,
-    overflow: 'hidden',
+  storageValue: {
+    marginLeft: 8,
   },
-  detailRow: {
-    paddingVertical: 14,
-    paddingHorizontal: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  detailLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    flex: 1,
-  },
-  dot: {
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-  },
-  detailLabels: {
-    flexDirection: 'column',
-    gap: 2,
-    flex: 1,
-  },
-  detailTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  detailSubtitle: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  detailRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  detailValue: {
+  storageValueText: {
     fontSize: 15,
     fontWeight: '600',
   },
 });
-
