@@ -424,7 +424,12 @@ router.get('/:id/url', asyncHandler(async (req: AuthenticatedRequest, res: expre
   const variantType = typeof variant === 'string' ? variant : undefined;
   const expiry = typeof expiresIn === 'string' ? parseInt(expiresIn) : 3600;
 
-  const url = await assetService.getFileUrl(fileId, variantType, expiry);
+  const file = await assetService.getFile(fileId);
+  if (!file) {
+    throw new NotFoundError('File not found');
+  }
+
+  const url = await assetService.getFileUrl(fileId, variantType, expiry, file);
 
   logger.debug('File URL generated', { 
     userId: user._id, 
@@ -476,13 +481,11 @@ router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, asyncH
   const { variant } = req.query;
   const variantType = typeof variant === 'string' ? variant : undefined;
 
-  // Resolve storage key like in AssetService.getFileUrl
   const file = await assetService.getFile(fileId);
   if (!file) {
     throw new NotFoundError('File not found');
   }
 
-  // Check access permissions
   let context: any = undefined;
   if (typeof req.query.context === 'string') {
      const parts = req.query.context.split(':');
@@ -496,16 +499,12 @@ router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, asyncH
     throw new ForbiddenError('Access denied');
   }
 
-  // CDN Redirect Optimization for Public Files
-  // If file is public and no variant requested, redirect to CDN/Presigned URL
-  // This offloads bandwidth from the API server
   if (file.visibility === 'public' && !variantType) {
       try {
-          const url = await assetService.getFileUrl(fileId, undefined, 3600);
-          res.setHeader('Cache-Control', 'public, max-age=3600'); // Cache the redirect
+          const url = await assetService.getFileUrl(fileId, undefined, 3600, file);
+          res.setHeader('Cache-Control', 'public, max-age=3600');
           return res.redirect(url);
       } catch (e) {
-          // Fallback to streaming if URL generation fails
           logger.warn('Failed to generate redirect URL for public file, falling back to stream', { fileId, error: e });
       }
   }
@@ -514,8 +513,7 @@ router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, asyncH
   let storageKey = originalKey;
   if (variantType) {
     try {
-      // Ensure the requested variant exists (generate if needed)
-      const ensured = await assetService.ensureVariant(fileId, variantType);
+      const ensured = await assetService.ensureVariant(fileId, variantType, file);
       storageKey = ensured.key;
     } catch (e: any) {
       logger.warn('Variant ensure failed, falling back to original', { fileId, variantType, error: e?.message });
@@ -602,8 +600,7 @@ router.get('/:id/download', optionalAuthMiddleware, asyncHandler(async (req: Aut
   const variantType = typeof variant === 'string' ? variant : undefined;
   const expiry = typeof expiresIn === 'string' ? parseInt(expiresIn) : 3600;
 
-  const url = await assetService.getFileUrl(fileId, variantType, expiry);
-  // Set short cache headers for redirect to reduce load while respecting expirations
+  const url = await assetService.getFileUrl(fileId, variantType, expiry, file);
   res.setHeader('Cache-Control', 'private, max-age=60');
   return res.redirect(url);
 }));
@@ -758,13 +755,11 @@ router.post('/batch-access', asyncHandler(async (req: AuthenticatedRequest, res:
   const files = await assetService.getFilesByIds(fileIds);
   const results: Record<string, any> = {};
 
-  // Process in parallel
   await Promise.all(files.map(async (file) => {
     const canAccess = await assetService.canUserAccessFile(file, user?._id, context);
     
     if (canAccess) {
-      // If accessible, generate a URL (CDN/presigned)
-      const url = await assetService.getFileUrl(file._id.toString(), undefined, 3600);
+      const url = await assetService.getFileUrl(file._id.toString(), undefined, 3600, file);
       results[file._id.toString()] = {
         allowed: true,
         url,

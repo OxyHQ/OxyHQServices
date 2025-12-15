@@ -14,6 +14,7 @@ import {
 
 import { mediaPrivacyService } from './mediaPrivacyService';
 import { MediaAccessContext } from '../types/mediaPrivacy.types';
+import fileCache from '../utils/fileCache';
 
 export class AssetService {
   private variantService: VariantService;
@@ -22,35 +23,28 @@ export class AssetService {
     this.variantService = new VariantService(s3Service);
   }
 
-  /**
-   * Ensure a specific variant exists for a file; generate it if missing.
-   */
-  async ensureVariant(fileId: string, variantType: string): Promise<IFileVariant> {
-    const file = await File.findById(fileId);
-    if (!file) {
+  async ensureVariant(fileId: string, variantType: string, file?: IFile): Promise<IFileVariant> {
+    const fileObj = file || await this.getFile(fileId);
+    if (!fileObj) {
       throw new Error('File not found');
     }
 
-    // If already recorded and object exists, return it
-    const existing = file.variants.find(v => v.type === variantType && v.readyAt);
+    const existing = fileObj.variants.find(v => v.type === variantType && v.readyAt);
     if (existing) {
-      const exists = await this.s3Service.fileExists(existing.key);
-      if (exists) return existing;
+      return existing;
     }
 
-    if (file.mime.startsWith('image/')) {
-      const variant = await this.variantService.ensureImageVariant(file, variantType);
+    if (fileObj.mime.startsWith('image/')) {
+      const variant = await this.variantService.ensureImageVariant(fileObj, variantType);
       return variant;
     }
 
-    // Support video poster variants
-    if (file.mime.startsWith('video/') && variantType === 'poster') {
-      const variant = await this.variantService.ensureVideoPoster(file);
+    if (fileObj.mime.startsWith('video/') && variantType === 'poster') {
+      const variant = await this.variantService.ensureVideoPoster(fileObj);
       return variant;
     }
 
-    // Future: support other video/pdf variants
-    throw new Error(`Variant ${variantType} not supported for mime ${file.mime}`);
+    throw new Error(`Variant ${variantType} not supported for mime ${fileObj.mime}`);
   }
 
   /**
@@ -261,8 +255,9 @@ export class AssetService {
       }
       
       await file.save();
+      fileCache.invalidate(file._id.toString());
+      fileCache.set(file._id.toString(), file as any);
 
-      // Queue variant generation (implement this later)
       this.queueVariantGeneration(file);
 
       logger.info('Asset upload completed', { 
@@ -327,12 +322,13 @@ export class AssetService {
         );
       }
       
-      // If file was in trash and now has links, restore it
       if (file.status === 'trash' && file.links.length > 0) {
         file.status = 'active';
       }
       
       await file.save();
+      fileCache.invalidate(fileId);
+      fileCache.set(fileId, file as any);
 
       logger.info('File linked successfully', { 
         fileId, 
@@ -414,6 +410,8 @@ export class AssetService {
       }
 
       await file.save();
+      fileCache.invalidate(fileId);
+      fileCache.set(fileId, file as any);
 
       logger.info('File unlinked successfully', { 
         fileId, 
@@ -442,58 +440,51 @@ export class AssetService {
    */
   async getFile(fileId: string): Promise<IFile | null> {
     try {
-      // Handle temp file IDs (optimistic UI updates) gracefully
       if (fileId.startsWith('temp-')) {
         return null;
       }
       
-      // Validate that fileId is a valid ObjectId
       if (!mongoose.Types.ObjectId.isValid(fileId)) {
-        // Don't log warnings for invalid IDs - they might be temp IDs or malformed requests
         return null;
       }
-      const file = await File.findById(fileId);
-      return file;
+
+      const cached = fileCache.get(fileId);
+      if (cached) {
+        return cached;
+      }
+
+      const file = await File.findById(fileId).lean();
+      if (file) {
+        fileCache.set(fileId, file as any);
+        return file as any;
+      }
+      return null;
     } catch (error) {
       logger.error('Error getting file', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
 
-  /**
-   * Get file URL (CDN or signed URL)
-   */
   async getFileUrl(
     fileId: string,
     variant?: string,
-    expiresIn: number = 3600
+    expiresIn: number = 3600,
+    file?: IFile
   ): Promise<string> {
     try {
-      const file = await this.getFile(fileId);
-      if (!file) {
+      const fileObj = file || await this.getFile(fileId);
+      if (!fileObj) {
         throw new Error('File not found');
       }
 
-      let storageKey = file.storageKey;
+      let storageKey = fileObj.storageKey;
 
-      // If variant requested, ensure or find variant key
       if (variant) {
-        const ensured = await this.ensureVariant(file._id.toString(), variant);
+        const ensured = await this.ensureVariant(fileObj._id.toString(), variant, fileObj);
         storageKey = ensured.key;
       }
 
-      // Verify object exists before generating URL to avoid redirecting to 404
-      const exists = await this.s3Service.fileExists(storageKey);
-      if (!exists) {
-        throw new Error('File not found in storage');
-      }
-
-      // For now, return presigned URL
-      // Later this will check if file is public and return CDN URL
       const url = await this.s3Service.getPresignedDownloadUrl(storageKey, expiresIn);
-
-      logger.debug('Generated file URL', { fileId, actualId: file._id, variant, storageKey });
-
       return url;
     } catch (error) {
       logger.error('Error getting file URL:', error);
@@ -562,9 +553,9 @@ export class AssetService {
         }
       }
 
-      // Mark as deleted in database
       file.status = 'deleted';
       await file.save();
+      fileCache.invalidate(fileId);
 
       // Notify linked apps that file was deleted
       await this.notifyLinks(file, 'deleted', { force });
@@ -596,6 +587,8 @@ export class AssetService {
 
       file.status = 'active';
       await file.save();
+      fileCache.invalidate(fileId);
+      fileCache.set(fileId, file as any);
 
       logger.info('File restored from trash', { fileId });
 
@@ -653,6 +646,8 @@ export class AssetService {
 
       file.visibility = visibility;
       await file.save();
+      fileCache.invalidate(fileId);
+      fileCache.set(fileId, file as any);
 
       // Notify linked apps about visibility change
       try {
