@@ -77,6 +77,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
         activeSessionId,
         oxyServices,
         isAuthenticated,
+        openAvatarPicker,
     } = useOxy();
     const { t } = useI18n();
     const [showMoreAccounts, setShowMoreAccounts] = useState(false);
@@ -108,10 +109,10 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
         return undefined;
     }, [user?.avatar, oxyServices]);
 
-    // Handle avatar press to navigate to EditProfile
+    // Handle avatar press - use openAvatarPicker from context
     const handleAvatarPress = useCallback(() => {
-        navigate?.('EditProfile', { initialSection: 'profilePicture', initialField: 'avatar' });
-    }, [navigate]);
+        openAvatarPicker();
+    }, [openAvatarPicker]);
 
     // Play Lottie animation once when component mounts
     useEffect(() => {

@@ -32,7 +32,6 @@ import { useAccountStore } from '../stores/accountStore';
 import { KeyManager } from '../../crypto/keyManager';
 import { translate } from '../../i18n';
 import { queryKeys } from '../hooks/queries/queryKeys';
-import { useUpdateProfile } from '../hooks/mutations/useAccountMutations';
 
 export interface OxyContextState {
   user: User | null;
@@ -327,7 +326,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const clearAllAccountData = useCallback(async (): Promise<void> => {
     // Clear TanStack Query cache (in-memory)
     queryClient.clear();
-    
+
     // Clear persisted query cache
     if (storage) {
       try {
@@ -338,10 +337,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         }
       }
     }
-    
+
     // Clear session state (sessions, activeSessionId, storage)
     await clearSessionState();
-    
+
     // Clear identity sync state from storage
     if (storage) {
       try {
@@ -352,14 +351,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         }
       }
     }
-    
+
     // Reset auth store identity sync state
     useAuthStore.getState().setIdentitySynced(false);
     useAuthStore.getState().setSyncing(false);
-    
+
     // Reset account store
     useAccountStore.getState().reset();
-    
+
     // Clear HTTP service cache
     oxyServices.clearCache();
   }, [queryClient, storage, clearSessionState, logger, oxyServices]);
@@ -373,7 +372,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   ): Promise<void> => {
     // First, clear all account data
     await clearAllAccountData();
-    
+
     // Then delete the identity keys
     await KeyManager.deleteIdentity(skipBackup, force, userConfirmed);
   }, [clearAllAccountData]);
@@ -385,7 +384,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
     let wasOffline = false;
     let checkTimeout: NodeJS.Timeout | null = null;
-    
+
     // Circuit breaker and exponential backoff state
     const stateRef = {
       consecutiveFailures: 0,
@@ -442,10 +441,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       } catch (error) {
         // Network check failed - we're offline
         wasOffline = true;
-        
+
         // Increment failure count and apply exponential backoff
         stateRef.consecutiveFailures++;
-        
+
         // Calculate new interval with exponential backoff, capped at maxInterval
         const backoffMultiplier = Math.min(
           Math.pow(2, stateRef.consecutiveFailures - 1),
@@ -455,7 +454,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           stateRef.baseInterval * backoffMultiplier,
           stateRef.maxInterval
         );
-        
+
         // If we hit the circuit breaker threshold, use max interval
         if (stateRef.consecutiveFailures >= stateRef.maxFailures) {
           stateRef.currentInterval = stateRef.maxInterval;
@@ -485,9 +484,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   });
 
   const useFollowHook = loadUseFollowHook();
-
-  // Create update profile mutation for avatar picker
-  const updateProfileMutation = useUpdateProfile();
 
   const restoreSessionsFromStorage = useCallback(async (): Promise<void> => {
     if (!storage) {
@@ -650,9 +646,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               }
             }
 
-            // Update user profile using mutation hook (provides optimistic updates, error handling, retry)
-            await updateProfileMutation.mutateAsync({ avatar: file.id });
-            
+            // Update user profile directly
+            await oxyServices.updateProfile({ avatar: file.id });
+
+            // Invalidate queries to refresh user data
+            queryClient.invalidateQueries({ queryKey: queryKeys.accounts.current() });
+            if (activeSessionId) {
+              queryClient.invalidateQueries({ queryKey: queryKeys.users.profile(activeSessionId) });
+            }
+
             toast.success(translate(currentLanguage, 'editProfile.toasts.avatarUpdated') || 'Avatar updated');
           } catch (e: any) {
             toast.error(e.message || translate(currentLanguage, 'editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
@@ -660,7 +662,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         },
       },
     });
-  }, [oxyServices, currentLanguage, showBottomSheetForContext, updateProfileMutation]);
+  }, [oxyServices, currentLanguage, showBottomSheetForContext, queryClient, activeSessionId]);
 
   const contextValue: OxyContextState = useMemo(() => ({
     user,
