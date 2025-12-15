@@ -1,6 +1,18 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import type { SecurityEventType, SecurityEventSeverity, SecurityActivity } from '@oxyhq/services';
-import { SECURITY_EVENT_SEVERITY_MAP } from '@oxyhq/services';
+
+// Severity mapping (matches backend - single source of truth)
+const SECURITY_EVENT_SEVERITY_MAP: Record<SecurityEventType, SecurityEventSeverity> = {
+  'sign_in': 'low',
+  'sign_out': 'low',
+  'profile_updated': 'low',
+  'email_changed': 'medium',
+  'device_added': 'medium',
+  'device_removed': 'medium',
+  'security_settings_changed': 'medium',
+  'account_recovery': 'high',
+  'suspicious_activity': 'critical',
+};
 
 /**
  * Get icon name for security event type
@@ -18,7 +30,7 @@ export function getEventIcon(eventType: SecurityEventType): keyof typeof Materia
     case 'device_added':
       return 'devices';
     case 'device_removed':
-      return 'devices-off';
+      return 'monitor-off';
     case 'account_recovery':
       return 'key-variant';
     case 'security_settings_changed':
@@ -31,35 +43,25 @@ export function getEventIcon(eventType: SecurityEventType): keyof typeof Materia
 }
 
 /**
- * Get color for security event type
+ * Get color for security event severity
  */
-export function getEventColor(eventType: SecurityEventType, colorScheme: 'light' | 'dark'): string {
+export function getSeverityColor(severity: SecurityEventSeverity, colorScheme: 'light' | 'dark'): string {
   const colors = {
     light: {
-      sign_in: '#34C759',
-      sign_out: '#8E8E93',
-      email_changed: '#FF9500',
-      profile_updated: '#5AC8FA',
-      device_added: '#007AFF',
-      device_removed: '#FF3B30',
-      account_recovery: '#AF52DE',
-      security_settings_changed: '#5856D6',
-      suspicious_activity: '#FF3B30',
+      low: '#34C759',        // Green - normal operations
+      medium: '#FF9500',     // Orange - important changes
+      high: '#AF52DE',       // Purple - critical actions
+      critical: '#FF3B30',   // Red - security threats
     },
     dark: {
-      sign_in: '#30D158',
-      sign_out: '#8E8E93',
-      email_changed: '#FF9F0A',
-      profile_updated: '#64D2FF',
-      device_added: '#0A84FF',
-      device_removed: '#FF453A',
-      account_recovery: '#BF5AF2',
-      security_settings_changed: '#5E5CE6',
-      suspicious_activity: '#FF453A',
+      low: '#30D158',        // Green - normal operations
+      medium: '#FF9F0A',     // Orange - important changes
+      high: '#BF5AF2',       // Purple - critical actions
+      critical: '#FF453A',   // Red - security threats
     },
   };
 
-  return colors[colorScheme][eventType] || colors[colorScheme].sign_in;
+  return colors[colorScheme][severity] || colors[colorScheme].low;
 }
 
 /**

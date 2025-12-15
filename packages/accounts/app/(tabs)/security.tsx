@@ -11,11 +11,11 @@ import { darkenColor } from '@/utils/color-utils';
 import { LinkButton, AccountCard, AppleSwitch, ScreenHeader, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
-import { useOxy, useUserDevices, useRecentSecurityActivity } from '@oxyhq/services';
+import { useOxy, useUserDevices, useRecentSecurityActivity, useUpdateProfile } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
 import type { ClientSession, SecurityActivity } from '@oxyhq/services';
 import { useBiometricSettings } from '@/hooks/useBiometricSettings';
-import { getEventIcon, getEventColor, formatEventDescription } from '@/utils/security-utils';
+import { getEventIcon, getSeverityColor, getEventSeverity, formatEventDescription } from '@/utils/security-utils';
 
 export default function SecurityScreen() {
     const colorScheme = useColorScheme() ?? 'light';
@@ -36,6 +36,9 @@ export default function SecurityScreen() {
     const { data: devices = [], isLoading: loading, error: devicesError } = useUserDevices({
         enabled: isAuthenticated,
     });
+
+    // Fetch security activity
+    const { data: securityActivities = [], isLoading: securityActivityLoading } = useRecentSecurityActivity(10);
 
     // Biometric settings
     const {
@@ -83,43 +86,154 @@ export default function SecurityScreen() {
         return 'devices';
     }, []);
 
-    // Compute security recommendations
-    const securityRecommendation = useMemo(() => {
-        const recommendations: string[] = [];
+    // Compute security recommendations with actionable items
+    const securityRecommendations = useMemo(() => {
+        const recommendations: any[] = [];
 
-        // Recommend biometric if available but not enabled
+        // 1. Recommend biometric if available but not enabled (High priority)
         if (canEnableBiometric && !biometricEnabled && !biometricLoading) {
-            recommendations.push('Enable biometric authentication');
+            recommendations.push({
+                id: 'biometric',
+                priority: 1,
+                icon: Platform.OS === 'ios' ? 'face-recognition' : 'fingerprint',
+                iconColor: '#fbbc04',
+                title: 'Enable biometric authentication',
+                subtitle: 'Add an extra layer of security to your account',
+                onPress: () => {
+                    // Navigate to biometric section and show toggle
+                    alert(
+                        'Enable Biometric Authentication',
+                        'You can enable biometric authentication in the "How you sign in" section below. This adds an extra layer of security to your account.',
+                        [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                                text: 'Go to Settings',
+                                onPress: () => {
+                                    // Scroll to biometric section (user can enable it there)
+                                    // For now, just show the section is below
+                                },
+                            },
+                        ]
+                    );
+                },
+                showChevron: true,
+            });
         }
 
-        // Recommend recovery email
+        // 2. Recommend recovery email (High priority)
         if (!user?.email) {
-            recommendations.push('Add a recovery email');
+            recommendations.push({
+                id: 'recovery-email',
+                priority: 1,
+                icon: 'email-alert-outline',
+                iconColor: '#FF9500',
+                title: 'Add a recovery email',
+                subtitle: 'Help secure your account and enable account recovery',
+                onPress: () => {
+                    alert(
+                        'Add Recovery Email',
+                        'A recovery email helps you regain access to your account if you lose your keys. Would you like to add one now?',
+                        [
+                            { text: 'Cancel', style: 'cancel' },
+                            {
+                                text: 'Add Email',
+                                onPress: async () => {
+                                    // Prompt for email
+                                    alert(
+                                        'Add Email',
+                                        'Please go to your Profile settings to add an email address.',
+                                        [
+                                            { text: 'OK', onPress: () => router.push('/(tabs)/profile') },
+                                        ]
+                                    );
+                                },
+                            },
+                        ]
+                    );
+                },
+                showChevron: true,
+            });
         }
 
-        if (recommendations.length === 0) return [];
+        // 3. Check for old/inactive sessions (Medium priority)
+        const activeSessionsCount = sessions?.filter(s => s.isActive !== false).length || 0;
+        const oldSessions = sessions?.filter(s => {
+            if (!s.lastActive) return false;
+            const lastActive = new Date(s.lastActive);
+            const daysSinceActive = (Date.now() - lastActive.getTime()) / (1000 * 60 * 60 * 24);
+            return daysSinceActive > 30; // Older than 30 days
+        }) || [];
+        
+        if (oldSessions.length > 0) {
+            recommendations.push({
+                id: 'old-sessions',
+                priority: 2,
+                icon: 'clock-alert-outline',
+                iconColor: '#FF9500',
+                title: `Review ${oldSessions.length} inactive session${oldSessions.length !== 1 ? 's' : ''}`,
+                subtitle: `Some sessions haven't been used in over 30 days`,
+                onPress: () => {
+                    router.push('/(tabs)/devices');
+                },
+                showChevron: true,
+            });
+        }
 
-        return [{
-            id: 'recommendation',
-            customIcon: (
-                <View style={[styles.recommendationIconContainer, { backgroundColor: '#FFC107' }]}>
-                    <MaterialCommunityIcons name="shield-alert" size={22} color={darkenColor('#FFC107')} />
-                </View>
-            ),
-            title: 'You have security recommendations',
-            subtitle: recommendations.join(', '),
-            onPress: () => {
-                // Scroll to biometric section or show email prompt
-                if (canEnableBiometric && !biometricEnabled) {
-                    // The toggle will be visible in the biometric section
-                }
-            },
-            showChevron: false,
-        }];
-    }, [canEnableBiometric, biometricEnabled, biometricLoading, user?.email]);
+        // 4. Check for multiple devices (Low priority - informational)
+        if (devices.length > 5) {
+            recommendations.push({
+                id: 'many-devices',
+                priority: 3,
+                icon: 'devices',
+                iconColor: '#5AC8FA',
+                title: `You're signed in on ${devices.length} devices`,
+                subtitle: 'Review your active devices to ensure they\'re all yours',
+                onPress: () => {
+                    router.push('/(tabs)/devices');
+                },
+                showChevron: true,
+            });
+        }
 
-    // Fetch security activity
-    const { data: securityActivities = [], isLoading: securityActivityLoading } = useRecentSecurityActivity(10);
+        // 5. Check for suspicious activity (Critical priority)
+        const recentSuspiciousActivity = securityActivities?.filter(
+            (activity: SecurityActivity) => 
+                activity.severity === 'critical' || 
+                activity.eventType === 'suspicious_activity'
+        ) || [];
+        
+        if (recentSuspiciousActivity.length > 0) {
+            recommendations.push({
+                id: 'suspicious-activity',
+                priority: 0,
+                icon: 'alert-octagon',
+                iconColor: '#FF3B30',
+                title: `${recentSuspiciousActivity.length} critical security event${recentSuspiciousActivity.length !== 1 ? 's' : ''} detected`,
+                subtitle: 'Review your security activity immediately',
+                onPress: () => {
+                    alert(
+                        'Critical Security Events',
+                        `You have ${recentSuspiciousActivity.length} critical security event(s). Please review your security activity below and consider changing your password or signing out of all devices if you notice any suspicious activity.`,
+                        [{ text: 'OK', style: 'default' }]
+                    );
+                },
+                showChevron: true,
+            });
+        }
+
+        // Sort by priority (lower number = higher priority)
+        return recommendations.sort((a, b) => a.priority - b.priority);
+    }, [
+        canEnableBiometric,
+        biometricEnabled,
+        biometricLoading,
+        user?.email,
+        sessions,
+        devices.length,
+        securityActivities,
+        router,
+        alert,
+    ]);
 
     // Recent activity from security events
     const recentActivity = useMemo(() => {
@@ -127,18 +241,42 @@ export default function SecurityScreen() {
 
         return securityActivities.slice(0, 5).map((activity: SecurityActivity) => {
             const eventIcon = getEventIcon(activity.eventType);
-            const eventColor = getEventColor(activity.eventType, colorScheme);
+            // Use severity-based color for better consistency
+            const severity = activity.severity || getEventSeverity(activity.eventType);
+            const eventColor = getSeverityColor(severity, colorScheme);
             const description = formatEventDescription(activity);
             const deviceId = activity.deviceId;
 
-            // For device-related events, navigate to device details
-            const onPress = (deviceId && (activity.eventType === 'device_added' || activity.eventType === 'device_removed' || activity.eventType === 'sign_in'))
-                ? () => {
-                    if (deviceId) {
-                        router.push(`/(tabs)/devices/${deviceId}` as any);
-                    }
-                }
-                : undefined;
+            // Show details on press - include IP, device info, etc.
+            const onPress = () => {
+                const details = [
+                    `Type: ${activity.eventType}`,
+                    `Severity: ${severity}`,
+                    activity.ipAddress ? `IP: ${activity.ipAddress}` : null,
+                    activity.deviceId && activity.metadata?.deviceName 
+                        ? `Device: ${activity.metadata.deviceName}` 
+                        : activity.deviceId 
+                            ? `Device ID: ${activity.deviceId}` 
+                            : null,
+                    activity.userAgent ? `Browser: ${activity.userAgent.substring(0, 50)}${activity.userAgent.length > 50 ? '...' : ''}` : null,
+                    `Time: ${formatDate(activity.timestamp)}`,
+                ].filter(Boolean).join('\n');
+
+                alert(
+                    description,
+                    details,
+                    [
+                        // Add navigation to device if available
+                        ...(deviceId && (activity.eventType === 'device_added' || activity.eventType === 'device_removed' || activity.eventType === 'sign_in')
+                            ? [{
+                                text: 'View Device',
+                                onPress: () => router.push(`/(tabs)/devices/${deviceId}` as any),
+                            }]
+                            : []),
+                        { text: 'OK', style: 'default' },
+                    ]
+                );
+            };
 
             return {
                 id: `activity-${activity.id}`,
@@ -147,10 +285,10 @@ export default function SecurityScreen() {
                 title: description,
                 subtitle: formatRelativeTime(activity.timestamp),
                 onPress,
-                showChevron: !!onPress,
+                showChevron: true, // Always show chevron since we show details
             };
         });
-    }, [securityActivities, colorScheme, formatRelativeTime, router]);
+    }, [securityActivities, colorScheme, formatRelativeTime, router, alert, formatDate]);
 
     // Sign-in items
     const signInItems = useMemo(() => {
@@ -373,10 +511,12 @@ export default function SecurityScreen() {
 
     const renderContent = () => (
         <>
-            {securityRecommendation.length > 0 && (
-                <AccountCard>
-                    <GroupedSection items={securityRecommendation} />
-                </AccountCard>
+            {securityRecommendations.length > 0 && (
+                <Section title="Security recommendations">
+                    <AccountCard>
+                        <GroupedSection items={securityRecommendations} />
+                    </AccountCard>
+                </Section>
             )}
 
             <Section title="Recent security activity">
@@ -397,9 +537,19 @@ export default function SecurityScreen() {
                         <View style={{ marginTop: -8 }}>
                             <LinkButton 
                                 text="Review security activity" 
+                                count={securityActivities.length > 5 ? `${securityActivities.length - 5} more` : undefined}
                                 onPress={() => {
-                                    // TODO: Navigate to full security activity screen or show more items
-                                    alert('Security Activity', 'Full security activity history will be available here.');
+                                    // Show all activities in an alert with details
+                                    const allActivities = securityActivities.map((activity: SecurityActivity) => {
+                                        const severity = activity.severity || getEventSeverity(activity.eventType);
+                                        return `• ${formatEventDescription(activity)} (${severity}) - ${formatRelativeTime(activity.timestamp)}`;
+                                    }).join('\n\n');
+
+                                    alert(
+                                        'Security Activity',
+                                        allActivities || 'No security activity found.',
+                                        [{ text: 'OK', style: 'default' }]
+                                    );
                                 }}
                             />
                         </View>
