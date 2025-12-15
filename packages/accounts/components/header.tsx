@@ -195,12 +195,12 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
     // Track header visibility based on scroll
     const headerVisible = useDerivedValue(() => {
         const scrollThreshold = 10;
-        
+
         // Always show header when at top
         if (scrollY.value < scrollThreshold) {
             return 1;
         }
-        
+
         // Hide when scrolling down, show when scrolling up
         return scrollDirection.value === 'down' ? 0 : 1;
     }, []);
@@ -209,12 +209,12 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
     const headerAnimatedStyle = useAnimatedStyle(() => {
         const headerHeight = isDesktop ? 64 : (insets.top + 4 + 36 + (isSearchScreen ? 0 : 10));
         const visible = headerVisible.value;
-        
+
         return {
-            transform: [{ 
-                translateY: withTiming(visible === 1 ? 0 : -headerHeight, { 
-                    duration: 300 
-                }) 
+            transform: [{
+                translateY: withTiming(visible === 1 ? 0 : -headerHeight, {
+                    duration: 300
+                })
             }],
             opacity: withTiming(visible, { duration: 300 }),
         };
@@ -225,40 +225,111 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
     const avatarIconSize = isDesktop ? 20 : 18;
 
     return (
-        <Animated.View style={headerAnimatedStyle}>
+        <Animated.View
+            style={[styles.headerContainer, headerAnimatedStyle]}
+            pointerEvents="box-none"
+        >
             <BlurView
                 intensity={isScrolled ? 50 : 0}
                 tint={colorScheme === 'dark' ? 'dark' : 'light'}
                 experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
                 style={[headerStyle, !isDesktop && isSearchScreen && styles.headerColumn]}
             >
-            <View style={styles.headerRow}>
-                <View style={[styles.topBarLeft, !isDesktop && styles.topBarLeftMobile]}>
-                    {!isDesktop && (
+                <View style={styles.headerRow}>
+                    <View style={[styles.topBarLeft, !isDesktop && styles.topBarLeftMobile]}>
+                        {!isDesktop && (
+                            <TouchableOpacity
+                                onPressIn={handlePressIn}
+                                onPress={handleMenuPress}
+                                style={styles.menuButton}
+                            >
+                                <Ionicons name="menu" size={24} color={colors.text} />
+                            </TouchableOpacity>
+                        )}
+                        {isDesktop && (
+                            <TouchableOpacity
+                                onPressIn={handleLogoPressIn}
+                                onPress={handleLogoPress}
+                                onLongPress={handleLogoLongPressStart}
+                                onPressOut={handleLogoPressOut}
+                                activeOpacity={0.7}
+                            >
+                                <LogoIcon height={32} useThemeColors={true} />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+
+                    {isDesktop ? (
+                        <View style={styles.searchBarContainer}>
+                            <View style={[styles.searchBar, {
+                                backgroundColor: searchBarBackgroundColor,
+                                borderColor: colors.border
+                            }]}>
+                                <Ionicons name="search-outline" size={20} color={colors.text} style={styles.searchIcon} />
+                                <TextInput
+                                    ref={searchInputRef}
+                                    style={[styles.searchInput, { color: colors.text }]}
+                                    placeholder="Search Oxy Account"
+                                    placeholderTextColor={colors.secondaryText}
+                                    value={searchQuery}
+                                    onChangeText={onSearchChange}
+                                    returnKeyType="search"
+                                />
+                            </View>
+                        </View>
+                    ) : (
+                        <View style={styles.logoCenterContainer}>
+                            <TouchableOpacity
+                                onPressIn={handleLogoPressIn}
+                                onPress={handleLogoPress}
+                                onLongPress={handleLogoLongPressStart}
+                                onPressOut={handleLogoPressOut}
+                                activeOpacity={0.7}
+                            >
+                                <LogoIcon height={24} useThemeColors={true} />
+                            </TouchableOpacity>
+                        </View>
+                    )}
+
+                    <View style={[styles.topBarRight, !isDesktop && styles.topBarRightMobile]}>
+                        {!isDesktop && !isSearchScreen && (
+                            <TouchableOpacity
+                                style={styles.iconButton}
+                                onPressIn={handlePressIn}
+                                onPress={handleSearchPress}
+                            >
+                                <Ionicons name="search-outline" size={22} color={colors.text} />
+                            </TouchableOpacity>
+                        )}
                         <TouchableOpacity
                             onPressIn={handlePressIn}
-                            onPress={handleMenuPress}
-                            style={styles.menuButton}
-                        >
-                            <Ionicons name="menu" size={24} color={colors.text} />
-                        </TouchableOpacity>
-                    )}
-                    {isDesktop && (
-                        <TouchableOpacity
-                            onPressIn={handleLogoPressIn}
-                            onPress={handleLogoPress}
-                            onLongPress={handleLogoLongPressStart}
-                            onPressOut={handleLogoPressOut}
+                            onPress={handleAvatarPress}
                             activeOpacity={0.7}
                         >
-                            <LogoIcon height={32} useThemeColors={true} />
+                            {isAuthenticated ? (
+                                <UserAvatar name={displayName} imageUrl={avatarUrl} size={avatarSize} />
+                            ) : (
+                                <View style={[styles.userIconContainer, {
+                                    backgroundColor: colors.sidebarIconPersonalInfo,
+                                    width: avatarSize,
+                                    height: avatarSize,
+                                    borderRadius: avatarBorderRadius,
+                                }]}>
+                                    <MaterialCommunityIcons
+                                        name="account-outline"
+                                        size={avatarIconSize}
+                                        color={darkenColor(colors.sidebarIconPersonalInfo)}
+                                    />
+                                </View>
+                            )}
                         </TouchableOpacity>
-                    )}
+                    </View>
                 </View>
 
-                {isDesktop ? (
-                    <View style={styles.searchBarContainer}>
-                        <View style={[styles.searchBar, {
+                {/* Mobile search bar at bottom of header */}
+                {!isDesktop && isSearchScreen && (
+                    <View style={styles.mobileSearchBarContainer}>
+                        <View style={[styles.mobileSearchBar, {
                             backgroundColor: searchBarBackgroundColor,
                             borderColor: colors.border
                         }]}>
@@ -271,85 +342,25 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
                                 value={searchQuery}
                                 onChangeText={onSearchChange}
                                 returnKeyType="search"
+                                autoFocus
                             />
                         </View>
                     </View>
-                ) : (
-                    <View style={styles.logoCenterContainer}>
-                        <TouchableOpacity
-                            onPressIn={handleLogoPressIn}
-                            onPress={handleLogoPress}
-                            onLongPress={handleLogoLongPressStart}
-                            onPressOut={handleLogoPressOut}
-                            activeOpacity={0.7}
-                        >
-                            <LogoIcon height={24} useThemeColors={true} />
-                        </TouchableOpacity>
-                    </View>
                 )}
-
-                <View style={[styles.topBarRight, !isDesktop && styles.topBarRightMobile]}>
-                    {!isDesktop && !isSearchScreen && (
-                        <TouchableOpacity
-                            style={styles.iconButton}
-                            onPressIn={handlePressIn}
-                            onPress={handleSearchPress}
-                        >
-                            <Ionicons name="search-outline" size={22} color={colors.text} />
-                        </TouchableOpacity>
-                    )}
-                    <TouchableOpacity
-                        onPressIn={handlePressIn}
-                        onPress={handleAvatarPress}
-                        activeOpacity={0.7}
-                    >
-                        {isAuthenticated ? (
-                            <UserAvatar name={displayName} imageUrl={avatarUrl} size={avatarSize} />
-                        ) : (
-                            <View style={[styles.userIconContainer, {
-                                backgroundColor: colors.sidebarIconPersonalInfo,
-                                width: avatarSize,
-                                height: avatarSize,
-                                borderRadius: avatarBorderRadius,
-                            }]}>
-                                <MaterialCommunityIcons
-                                    name="account-outline"
-                                    size={avatarIconSize}
-                                    color={darkenColor(colors.sidebarIconPersonalInfo)}
-                                />
-                            </View>
-                        )}
-                    </TouchableOpacity>
-                </View>
-            </View>
-
-            {/* Mobile search bar at bottom of header */}
-            {!isDesktop && isSearchScreen && (
-                <View style={styles.mobileSearchBarContainer}>
-                    <View style={[styles.mobileSearchBar, {
-                        backgroundColor: searchBarBackgroundColor,
-                        borderColor: colors.border
-                    }]}>
-                        <Ionicons name="search-outline" size={20} color={colors.text} style={styles.searchIcon} />
-                        <TextInput
-                            ref={searchInputRef}
-                            style={[styles.searchInput, { color: colors.text }]}
-                            placeholder="Search Oxy Account"
-                            placeholderTextColor={colors.secondaryText}
-                            value={searchQuery}
-                            onChangeText={onSearchChange}
-                            returnKeyType="search"
-                            autoFocus
-                        />
-                    </View>
-                </View>
-            )}
             </BlurView>
         </Animated.View>
     );
 }
 
 const styles = StyleSheet.create({
+    headerContainer: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        zIndex: 1100,
+        elevation: 1100, // Ensure the header stays above scrollable content on Android
+    },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -358,7 +369,7 @@ const styles = StyleSheet.create({
         top: 0,
         left: 0,
         right: 0,
-        zIndex: 1000,
+        zIndex: 1100,
         overflow: 'hidden',
         ...Platform.select({
             web: {

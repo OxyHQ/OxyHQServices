@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useCallback } from 'react';
 import { View, StyleSheet, ActivityIndicator } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -17,10 +17,16 @@ export default function PersonalInfoScreen() {
   const colorScheme = useColorScheme() ?? 'light';
 
   // OxyServices integration
-  const { user, isLoading: oxyLoading, isAuthenticated } = useOxy();
+  const { user, isLoading: oxyLoading, isAuthenticated, showBottomSheet } = useOxy();
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const handlePressIn = useHapticPress();
+  const handleEditField = useCallback((field: string) => {
+    showBottomSheet?.({
+      screen: 'EditProfile',
+      props: { initialSection: 'basicInfo', initialField: field }
+    });
+  }, [showBottomSheet]);
 
   // Compute user data
   const displayName = useMemo(() => getDisplayName(user), [user]);
@@ -39,6 +45,7 @@ export default function PersonalInfoScreen() {
       iconColor: colors.sidebarIconPersonalInfo,
       title: 'Full name',
       value: displayName || 'Not set',
+      onPress: () => handleEditField('displayName'),
     },
     {
       id: 'email',
@@ -46,6 +53,7 @@ export default function PersonalInfoScreen() {
       iconColor: colors.sidebarIconSecurity,
       title: 'Email',
       value: userEmail,
+      onPress: () => handleEditField('email'),
     },
     {
       id: 'phone',
@@ -53,6 +61,7 @@ export default function PersonalInfoScreen() {
       iconColor: colors.sidebarIconPersonalInfo,
       title: 'Phone number',
       value: userPhone || 'Not set',
+      onPress: () => handleEditField('phone'),
     },
     {
       id: 'address',
@@ -60,13 +69,15 @@ export default function PersonalInfoScreen() {
       iconColor: colors.sidebarIconData,
       title: 'Address',
       value: userAddress || 'Not set',
+      onPress: () => handleEditField('address'),
     },
     {
       id: 'birthday',
-      icon: 'cake-outline',
+      icon: 'calendar-star',
       iconColor: colors.sidebarIconFamily,
       title: 'Birthday',
       value: userBirthday || 'Not set',
+      onPress: () => handleEditField('birthday'),
     },
     {
       id: 'created',
@@ -75,7 +86,7 @@ export default function PersonalInfoScreen() {
       title: 'Account created',
       value: user?.createdAt ? formatDate(user.createdAt) : 'Unknown',
     },
-  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconData, colors.sidebarIconFamily, displayName, userEmail, userPhone, userAddress, userBirthday, user?.createdAt]);
+  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconData, colors.sidebarIconFamily, displayName, userEmail, userPhone, userAddress, userBirthday, user?.createdAt, handleEditField]);
 
   const contactItems = useMemo(() => [
     {
@@ -85,6 +96,7 @@ export default function PersonalInfoScreen() {
       title: 'Email',
       subtitle: userEmail,
       showChevron: false,
+      onPress: () => handleEditField('email'),
     },
     {
       id: 'phone',
@@ -93,6 +105,7 @@ export default function PersonalInfoScreen() {
       title: 'Phone number',
       subtitle: userPhone || 'Not set',
       showChevron: false,
+      onPress: () => handleEditField('phone'),
     },
     {
       id: 'address',
@@ -101,16 +114,48 @@ export default function PersonalInfoScreen() {
       title: 'Address',
       subtitle: userAddress || 'Not set',
       showChevron: false,
+      onPress: () => handleEditField('address'),
     },
     {
       id: 'birthday',
-      icon: 'cake-outline' as any,
+      icon: 'calendar-star' as any,
       iconColor: colors.sidebarIconFamily,
       title: 'Birthday',
       subtitle: userBirthday || 'Not set',
       showChevron: false,
+      onPress: () => handleEditField('birthday'),
     },
-  ], [colors.sidebarIconSecurity, colors.sidebarIconPersonalInfo, colors.sidebarIconData, colors.sidebarIconFamily, userEmail, userPhone, userAddress, userBirthday]);
+  ], [colors.sidebarIconSecurity, colors.sidebarIconPersonalInfo, colors.sidebarIconData, colors.sidebarIconFamily, userEmail, userPhone, userAddress, userBirthday, handleEditField]);
+
+  const actionsItems = useMemo(() => [
+    {
+      id: 'manage-sessions',
+      icon: 'monitor-lock' as any,
+      iconColor: colors.sidebarIconSecurity,
+      title: 'Manage devices & sessions',
+      subtitle: 'Review active devices and sign out',
+      onPress: () => showBottomSheet?.('SessionManagement'),
+      showChevron: true,
+    },
+    {
+      id: 'subscription',
+      icon: 'credit-card-outline' as any,
+      iconColor: colors.sidebarIconPayments,
+      title: 'Payments & subscription',
+      subtitle: 'Manage billing and plan',
+      onPress: () => showBottomSheet?.('PremiumSubscription'),
+      showChevron: true,
+    },
+    {
+      id: 'account-overview',
+      icon: 'shield-key' as any,
+      iconColor: colors.sidebarIconSecurity,
+      title: 'Identity & security',
+      subtitle: 'Keys, recovery, and account status',
+      onPress: () => showBottomSheet?.('AccountOverview'),
+      showChevron: true,
+    },
+  ], [colors.sidebarIconSecurity, colors.sidebarIconPayments, showBottomSheet]);
 
   // Show loading state while OxyServices is initializing
   if (oxyLoading) {
@@ -146,6 +191,11 @@ export default function PersonalInfoScreen() {
         <Section title="Contact & details">
           <AccountCard>
             <GroupedSection items={contactItems} />
+          </AccountCard>
+        </Section>
+        <Section title="Actions">
+          <AccountCard>
+            <GroupedSection items={actionsItems} />
           </AccountCard>
         </Section>
       </View>

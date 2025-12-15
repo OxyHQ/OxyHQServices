@@ -1,12 +1,11 @@
-import React, { useCallback, useMemo } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity } from 'react-native';
+import React, { useMemo } from 'react';
+import { View, StyleSheet } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { ScreenHeader } from '@/components/ui';
-import { useOxy, OxySignInButton } from '@oxyhq/services';
-import { useHapticPress } from '@/hooks/use-haptic-press';
+import { OxySignInButton } from '@oxyhq/services';
 
 interface UnauthenticatedScreenProps {
   title: string;
@@ -23,15 +22,6 @@ export function UnauthenticatedScreen({
 }: UnauthenticatedScreenProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
-  const { showBottomSheet } = useOxy();
-  const handlePressIn = useHapticPress();
-
-  // Handle sign in
-  const handleSignIn = useCallback(() => {
-    if (showBottomSheet) {
-      showBottomSheet({ screen: 'SignIn' });
-    }
-  }, [showBottomSheet]);
 
   // Don't render if authenticated
   if (isAuthenticated) {
@@ -49,17 +39,6 @@ export function UnauthenticatedScreen({
             </ThemedText>
             <View style={styles.signInButtonWrapper}>
               <OxySignInButton />
-              {showBottomSheet && (
-                <TouchableOpacity
-                  style={[styles.alternativeSignInButton, { backgroundColor: colors.card, borderColor: colors.tint }]}
-                  onPressIn={handlePressIn}
-                  onPress={handleSignIn}
-                >
-                  <Text style={[styles.alternativeSignInText, { color: colors.tint }]}>
-                    Sign in with username
-                  </Text>
-                </TouchableOpacity>
-              )}
             </View>
           </View>
         </View>
@@ -92,18 +71,6 @@ const styles = StyleSheet.create({
     maxWidth: 300,
     gap: 12,
     marginTop: 16,
-  },
-  alternativeSignInButton: {
-    paddingVertical: 12,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    borderWidth: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  alternativeSignInText: {
-    fontSize: 14,
-    fontWeight: '500',
   },
 });
 
