@@ -1,203 +1,126 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ActivityIndicator,
-  Platform,
-} from 'react-native';
+import React, { useEffect, useRef } from 'react';
+import { View, StyleSheet, Pressable } from 'react-native';
+import Animated, {
+  useSharedValue,
+  withTiming,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
 import { useRouter } from 'expo-router';
-import { useOxy } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
-import { useBiometricSignIn } from '@/hooks/useBiometricSignIn';
+import { StaggeredText, type StaggeredTextRef } from '@/components/staggered-text';
+import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text';
 
-/**
- * Auth Index Screen
- * 
- * Entry point for authentication flow.
- * Checks if device has an existing identity and routes accordingly.
- */
+const humanTranslations = [
+  'Human',
+  'Humano',
+  'Humain',
+  'Mensch',
+  '人类',
+  '人間',
+  'إنسان',
+];
+
 export default function AuthIndexScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
-  const oxyContext = useOxy();
-  const { hasIdentity, isLoading } = oxyContext;
-  // @ts-ignore - isStorageReady may not be in type definition yet due to build cache
-  const isStorageReady = oxyContext.isStorageReady ?? false;
-  const { signIn } = useBiometricSignIn();
+  const backgroundColor = colorScheme === 'dark' ? '#000000' : '#FFFFFF';
+  const textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
 
-  const [checking, setChecking] = useState(true);
-  const [hasExistingIdentity, setHasExistingIdentity] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Entrance animation values
+  const helloOpacity = useSharedValue(0);
+  const helloTranslateY = useSharedValue(20);
+  const humanOpacity = useSharedValue(0);
+  const footerOpacity = useSharedValue(0);
 
-  const checkIdentity = useCallback(
-    async () => {
-      try {
-        const exists = await hasIdentity();
-        setHasExistingIdentity(exists);
+  // Refs for staggered text
+  const helloRef = useRef<StaggeredTextRef>(null);
+  const tapToContinueRef = useRef<StaggeredTextRef>(null);
 
-        if (exists) {
-          // Try to auto sign in
-          try {
-            await signIn();
-            router.replace('/(tabs)');
-            return;
-          } catch (err: any) {
-            // Silently handle expected 401 errors (expired/invalid sessions) during auto sign-in
-            // Only log unexpected errors
-            const errMessage = err?.message?.toLowerCase() || '';
-            const isExpectedError = err?.status === 401 || 
-                                   err?.response?.status === 401 ||
-                                   errMessage.includes('http 401') ||
-                                   errMessage.includes('401') ||
-                                   errMessage.includes('invalid session') ||
-                                   errMessage.includes('expired') ||
-                                   errMessage.includes('unauthorized');
-            
-            if (!isExpectedError) {
-              // Log unexpected errors only
-              console.warn('Auto sign in failed:', err);
-            }
-            // Expected errors (401/invalid session) are silently handled - user will see sign-in options
-          }
-        }
-      } catch (err) {
-        console.error('Error checking identity:', err);
-      } finally {
-        setChecking(false);
-      }
-    },
-    [hasIdentity, signIn, router]
-  );
+  const entranceHelloStyle = useAnimatedStyle(() => ({
+    opacity: helloOpacity.value,
+    transform: [{ translateY: helloTranslateY.value }],
+  }));
 
+  const entranceHumanStyle = useAnimatedStyle(() => ({
+    opacity: humanOpacity.value,
+  }));
+
+  const footerStyle = useAnimatedStyle(() => ({
+    opacity: footerOpacity.value,
+  }));
+
+  // Initial entrance animation
   useEffect(() => {
-    // Wait for storage to be ready before checking identity
-    if (isStorageReady) {
-      checkIdentity();
-    } else {
-      // If storage isn't ready after a reasonable time, stop checking to avoid infinite loading
-      // This handles cases where storage initialization fails
-      const timeout = setTimeout(() => {
-        console.warn('Storage not ready after timeout, stopping check');
-        setChecking(false);
-      }, 3000); // 3 second timeout
+    // "Hello" appears first
+    const t1 = setTimeout(() => {
+      helloOpacity.value = withTiming(1, { duration: 600 });
+      helloTranslateY.value = withTiming(0, { duration: 600 });
+      helloRef.current?.reset();
+      setTimeout(() => helloRef.current?.animate(), 200);
+    }, 200);
 
-      return () => clearTimeout(timeout);
-    }
-  }, [isStorageReady, checkIdentity]);
+    // Human text appears
+    const t2 = setTimeout(() => {
+      humanOpacity.value = withTiming(1, { duration: 600 });
+    }, 800);
 
-  const handleSignIn = async () => {
-    setError(null);
-    try {
-      await signIn();
-      router.replace('/(tabs)');
-    } catch (err: any) {
-      setError(err.message || 'Sign in failed');
-    }
+    // Footer appears
+    const t3 = setTimeout(() => {
+      footerOpacity.value = withTiming(1, { duration: 600 });
+      tapToContinueRef.current?.reset();
+      setTimeout(() => tapToContinueRef.current?.animate(), 200);
+    }, 1500);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handlePress = () => {
+    router.push('/(auth)/welcome');
   };
 
-  if (checking || isLoading) {
-    return (
-      <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-          Checking identity...
-        </Text>
-      </View>
-    );
-  }
-
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <Pressable style={[styles.container, { backgroundColor }]} onPress={handlePress}>
       <View style={styles.content}>
-        <Text style={[styles.title, { color: colors.text }]}>Welcome to Oxy</Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-          Your identity, your control.{'\n'}Secured by cryptography.
-        </Text>
+        <View style={styles.textContainer}>
+          {/* "Hello" text with entrance animation */}
+          <Animated.View style={entranceHelloStyle}>
+            <StaggeredText
+              text="Hello"
+              ref={helloRef}
+              fontSize={48}
+              textStyle={[styles.text, { color: textColor }]}
+            />
+          </Animated.View>
 
-        {/* Self-custody badge */}
-        <View style={[styles.selfCustodyBadge, { backgroundColor: colors.primary + '15', borderColor: colors.primary + '30' }]}>
-          <Text style={[styles.selfCustodyIcon]}>🔐</Text>
-          <View style={styles.selfCustodyTextContainer}>
-            <Text style={[styles.selfCustodyTitle, { color: colors.primary }]}>Self-Custody Identity</Text>
-            <Text style={[styles.selfCustodyText, { color: colors.textSecondary }]}>
-              You own your keys. No passwords. No central authority.
-            </Text>
-          </View>
-        </View>
-
-        {hasExistingIdentity ? (
-          <>
-            <TouchableOpacity
-              style={[styles.button, styles.primaryButton, { backgroundColor: colors.primary }]}
-              onPress={handleSignIn}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <ActivityIndicator color="#fff" />
-              ) : (
-                <Text style={styles.buttonText}>Sign In</Text>
-              )}
-            </TouchableOpacity>
-
-            {error && <Text style={styles.errorText}>{error}</Text>}
-
-            <TouchableOpacity
-              style={[styles.button, styles.secondaryButton, { borderColor: colors.border }]}
-              onPress={() => router.push('/(auth)/import-identity')}
-            >
-              <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-                Use Different Identity
-              </Text>
-            </TouchableOpacity>
-          </>
-        ) : (
-          <>
-            <TouchableOpacity
-              style={[styles.button, styles.primaryButton, { backgroundColor: colors.primary }]}
-              onPress={() => router.push('/(auth)/create-identity')}
-            >
-              <Text style={styles.buttonText}>Create New Identity</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[styles.button, styles.secondaryButton, { borderColor: colors.border }]}
-              onPress={() => router.push('/(auth)/import-identity')}
-            >
-              <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
-                I Have a Recovery Phrase
-              </Text>
-            </TouchableOpacity>
-          </>
-        )}
-      </View>
-
-      <View style={styles.footer}>
-        <View style={styles.footerFeatures}>
-          <View style={styles.footerFeature}>
-            <Text style={styles.footerIcon}>🔑</Text>
-            <Text style={[styles.footerFeatureText, { color: colors.textSecondary }]}>
-              Private key stays on device
-            </Text>
-          </View>
-          <View style={styles.footerFeature}>
-            <Text style={styles.footerIcon}>✍️</Text>
-            <Text style={[styles.footerFeatureText, { color: colors.textSecondary }]}>
-              Sign in with cryptographic proof
-            </Text>
-          </View>
-          <View style={styles.footerFeature}>
-            <Text style={styles.footerIcon}>🌐</Text>
-            <Text style={[styles.footerFeatureText, { color: colors.textSecondary }]}>
-              One identity for all Oxy apps
-            </Text>
-          </View>
+          {/* Rotating human text with drum effect */}
+          <Animated.View style={entranceHumanStyle}>
+            <RotatingTextAnimation
+              texts={humanTranslations}
+              fontSize={48}
+              interval={3000}
+              duration={600}
+              textStyle={{ ...styles.text, color: textColor }}
+              containerStyle={styles.rotatingContainer}
+            />
+          </Animated.View>
         </View>
       </View>
-    </View>
+
+      {/* Footer */}
+      <Animated.View style={[styles.footer, footerStyle]}>
+        <StaggeredText
+          text="Tap to continue"
+          ref={tapToContinueRef}
+          fontSize={16}
+          textStyle={[styles.tapText, { color: textColor }]}
+        />
+      </Animated.View>
+    </Pressable>
   );
 }
 
@@ -205,100 +128,31 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  centered: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
   content: {
     flex: 1,
     justifyContent: 'center',
-    padding: 20,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: 'bold',
-    textAlign: 'center',
-    marginBottom: 8,
-  },
-  subtitle: {
-    fontSize: 16,
-    textAlign: 'center',
-    marginBottom: 24,
-    lineHeight: 24,
-  },
-  selfCustodyBadge: {
-    flexDirection: 'row',
     alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 32,
+    paddingHorizontal: 24,
   },
-  selfCustodyIcon: {
-    fontSize: 24,
-    marginRight: 12,
+  textContainer: {
+    alignItems: 'flex-start',
+    gap: -16,
+    width: '100%',
   },
-  selfCustodyTextContainer: {
-    flex: 1,
+  rotatingContainer: {
+    width: '100%',
   },
-  selfCustodyTitle: {
-    fontSize: 14,
+  text: {
     fontWeight: '600',
-    marginBottom: 2,
-  },
-  selfCustodyText: {
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  button: {
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  primaryButton: {},
-  secondaryButton: {
-    borderWidth: 1,
-    backgroundColor: 'transparent',
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  loadingText: {
-    marginTop: 16,
-    fontSize: 16,
-  },
-  errorText: {
-    color: '#DC3545',
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 12,
+    letterSpacing: -0.5,
   },
   footer: {
-    padding: 20,
-    paddingBottom: 40,
-  },
-  footerFeatures: {
-    gap: 12,
-  },
-  footerFeature: {
-    flexDirection: 'row',
+    padding: 42,
+    paddingBottom: 60,
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  footerIcon: {
-    fontSize: 16,
-    marginRight: 8,
-  },
-  footerFeatureText: {
-    fontSize: 13,
+  tapText: {
+    fontWeight: '400',
+    opacity: 0.6,
   },
 });
-
-

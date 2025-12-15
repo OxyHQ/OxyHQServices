@@ -1,0 +1,246 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import Animated, {
+  useSharedValue,
+  withTiming,
+  useAnimatedStyle,
+} from 'react-native-reanimated';
+import { useRouter } from 'expo-router';
+import { Checkbox } from 'expo-checkbox';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { StaggeredText, type StaggeredTextRef } from '@/components/staggered-text';
+import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text';
+
+const rotatingTexts = [
+  'human ID',
+  'digital identity',
+  'privacy-first account',
+  'secure identity',
+  'gateway to ethical apps',
+  'foundation for digital trust',
+  'account for the Oxy ecosystem',
+  'key to human-first technology',
+  'passport to a fair digital world',
+  'identity without passwords',
+  'trust layer for modern apps',
+  'connection to a human network',
+  'access to ethical technology',
+  'ownership over your data',
+  'unique identity for many apps',
+];
+
+
+
+export default function WelcomeScreen() {
+  const router = useRouter();
+  const colorScheme = useColorScheme() ?? 'light';
+  const backgroundColor = colorScheme === 'dark' ? '#000000' : '#FFFFFF';
+  const textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+
+  const [termsAccepted, setTermsAccepted] = useState(false);
+
+  // Entrance animation values
+  const oxyOpacity = useSharedValue(0);
+  const oxyTranslateY = useSharedValue(20);
+  const rotatingOpacity = useSharedValue(0);
+  const footerOpacity = useSharedValue(0);
+
+  // Refs for staggered text
+  const oxyRef = useRef<StaggeredTextRef>(null);
+
+  // Animated styles
+  const entranceOxyStyle = useAnimatedStyle(() => ({
+    opacity: oxyOpacity.value,
+    transform: [{ translateY: oxyTranslateY.value }],
+  }));
+
+  const entranceRotatingStyle = useAnimatedStyle(() => ({
+    opacity: rotatingOpacity.value,
+  }));
+
+  const footerStyle = useAnimatedStyle(() => ({
+    opacity: footerOpacity.value,
+  }));
+
+  // Initial entrance animation
+  useEffect(() => {
+    const t1 = setTimeout(() => {
+      oxyOpacity.value = withTiming(1, { duration: 600 });
+      oxyTranslateY.value = withTiming(0, { duration: 600 });
+      oxyRef.current?.reset();
+      setTimeout(() => oxyRef.current?.animate(), 200);
+    }, 200);
+
+    const t2 = setTimeout(() => {
+      rotatingOpacity.value = withTiming(1, { duration: 600 });
+    }, 800);
+
+    const t3 = setTimeout(() => {
+      footerOpacity.value = withTiming(1, { duration: 600 });
+    }, 1500);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const handleContinue = () => {
+    if (termsAccepted) {
+      router.push('/(auth)/create-identity');
+    }
+  };
+
+  const handleDecline = () => {
+    router.back();
+  };
+
+  return (
+    <View style={[styles.container, { backgroundColor }]}>
+      <View style={styles.content}>
+        <View style={styles.textContainer}>
+          {/* "Oxy is your" text */}
+          <Animated.View style={entranceOxyStyle}>
+            <StaggeredText
+              text="Oxy is your"
+              ref={oxyRef}
+              fontSize={38}
+              textStyle={[styles.text, { color: textColor }]}
+            />
+          </Animated.View>
+
+          {/* Rotating text with drum effect */}
+          <Animated.View style={entranceRotatingStyle}>
+            <RotatingTextAnimation
+              texts={rotatingTexts}
+              fontSize={38}
+              interval={3000}
+              duration={600}
+              textStyle={{ ...styles.text, color: textColor }}
+              containerStyle={styles.rotatingContainer}
+            />
+          </Animated.View>
+        </View>
+      </View>
+
+      {/* Footer */}
+      <Animated.View style={[styles.footer, footerStyle]}>
+        <View style={styles.checkboxContainer}>
+          <Checkbox
+            value={termsAccepted}
+            onValueChange={setTermsAccepted}
+            style={styles.checkbox}
+            color={termsAccepted ? textColor : undefined}
+          />
+          <TouchableOpacity
+            style={styles.checkboxTextContainer}
+            onPress={() => setTermsAccepted(!termsAccepted)}
+            activeOpacity={0.7}
+          >
+            <Text style={[styles.checkboxText, { color: textColor }]}>
+              I agree with Oxy User Terms And Conditions and acknowledge the Privacy notice
+            </Text>
+          </TouchableOpacity>
+        </View>
+
+        <View style={styles.buttonContainer}>
+          <TouchableOpacity
+            style={[styles.button, styles.declineButton, { borderColor: `${textColor}40` }]}
+            onPress={handleDecline}
+          >
+            <Text style={[styles.buttonText, { color: textColor }]}>Decline</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.button,
+              styles.acceptButton,
+              {
+                backgroundColor: termsAccepted ? textColor : `${textColor}20`,
+                opacity: termsAccepted ? 1 : 0.5,
+              },
+            ]}
+            onPress={handleContinue}
+            disabled={!termsAccepted}
+          >
+            <Text style={[styles.buttonText, { color: termsAccepted ? backgroundColor : textColor }]}>
+              Accept
+            </Text>
+          </TouchableOpacity>
+        </View>
+      </Animated.View>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  content: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 24,
+  },
+  textContainer: {
+    alignItems: 'flex-start',
+    gap: -16,
+    width: '100%',
+  },
+  rotatingContainer: {
+    width: '100%',
+  },
+  text: {
+    fontWeight: '600',
+    letterSpacing: -0.5,
+  },
+  footer: {
+    padding: 42,
+    paddingBottom: 60,
+  },
+  checkboxContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    marginBottom: 32,
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    marginRight: 12,
+    marginTop: 2,
+  },
+  checkboxTextContainer: {
+    flex: 1,
+  },
+  checkboxText: {
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '400',
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  button: {
+    flex: 1,
+    paddingVertical: 16,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  declineButton: {
+    borderWidth: 1,
+    backgroundColor: 'transparent',
+  },
+  acceptButton: {
+    borderWidth: 0,
+  },
+  buttonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+});
