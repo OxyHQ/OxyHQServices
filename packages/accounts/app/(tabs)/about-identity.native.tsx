@@ -23,6 +23,7 @@ import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, KeyManager } from '@oxyhq/services';
 import * as Print from 'expo-print';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { formatDate } from '@/utils/date-utils';
 
 export default function AboutIdentityScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -36,6 +37,37 @@ export default function AboutIdentityScreen() {
   const [exportHistory, setExportHistory] = useState<Array<{ timestamp: string; date: string }>>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+
+  // Format relative time for dates (matching security screen)
+  const formatRelativeTime = useCallback((dateString?: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const minutes = Math.floor(diffMs / 60000);
+
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return formatDate(dateString);
+  }, []);
+
+  // Convert export history to GroupedSection items format
+  const exportHistoryItems = useMemo(() => {
+    if (!exportHistory || exportHistory.length === 0) return [];
+
+    return exportHistory.map((entry, index) => ({
+      id: `export-${index}`,
+      icon: 'printer' as any,
+      iconColor: colors.sidebarIconSecurity,
+      title: 'Private key exported',
+      subtitle: formatRelativeTime(entry.timestamp),
+      showChevron: false,
+    }));
+  }, [exportHistory, colors, formatRelativeTime]);
 
   useEffect(() => {
     const loadPublicKey = async () => {
@@ -562,47 +594,24 @@ export default function AboutIdentityScreen() {
 
           {/* Export History */}
           <Section title="Export History">
-            <ThemedText style={styles.sectionDescription}>
-              View your private key export history for transparency and security auditing.
-            </ThemedText>
-            <AccountCard>
-              {isLoadingHistory ? (
-                <View style={styles.historyLoadingContainer}>
-                  <ActivityIndicator size="small" color={colors.tint} />
-                  <Text style={[styles.historyLoadingText, { color: colors.textSecondary }]}>
-                    Loading history...
-                  </Text>
-                </View>
-              ) : exportHistory.length === 0 ? (
-                <View style={styles.emptyHistoryContainer}>
-                  <MaterialCommunityIcons name="history" size={48} color={colors.textSecondary} style={{ opacity: 0.5 }} />
-                  <Text style={[styles.emptyHistoryText, { color: colors.textSecondary }]}>
-                    No export history yet
-                  </Text>
-                  <Text style={[styles.emptyHistorySubtext, { color: colors.textSecondary }]}>
-                    When you export your private key, it will appear here
-                  </Text>
-                </View>
-              ) : (
-                <ScrollView style={styles.historyList} nestedScrollEnabled>
-                  {exportHistory.map((entry, index) => (
-                    <View key={index} style={[styles.historyItem, { borderBottomColor: colors.border }]}>
-                      <View style={styles.historyItemContent}>
-                        <MaterialCommunityIcons name="printer" size={20} color={colors.tint} />
-                        <View style={styles.historyItemText}>
-                          <Text style={[styles.historyItemDate, { color: colors.text }]}>
-                            {entry.date}
-                          </Text>
-                          <Text style={[styles.historyItemTimestamp, { color: colors.textSecondary }]}>
-                            {new Date(entry.timestamp).toISOString()}
-                          </Text>
-                        </View>
-                      </View>
-                    </View>
-                  ))}
-                </ScrollView>
-              )}
-            </AccountCard>
+            {isLoadingHistory ? (
+              <View style={styles.historyLoadingContainer}>
+                <ActivityIndicator size="small" color={colors.tint} />
+                <Text style={[styles.historyLoadingText, { color: colors.textSecondary }]}>
+                  Loading history...
+                </Text>
+              </View>
+            ) : exportHistoryItems.length > 0 ? (
+              <>
+                <AccountCard>
+                  <GroupedSection items={exportHistoryItems} />
+                </AccountCard>
+              </>
+            ) : (
+              <ThemedText style={[styles.emptyText, { color: colors.text }]}>
+                No export history yet
+              </ThemedText>
+            )}
           </Section>
         </View>
       </View>
@@ -692,44 +701,10 @@ const styles = StyleSheet.create({
     marginLeft: 12,
     fontSize: 14,
   },
-  emptyHistoryContainer: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 40,
-  },
-  emptyHistoryText: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginTop: 16,
-    marginBottom: 8,
-  },
-  emptyHistorySubtext: {
+  emptyText: {
     fontSize: 14,
+    opacity: 0.6,
     textAlign: 'center',
-    opacity: 0.7,
-  },
-  historyList: {
-    maxHeight: 300,
-  },
-  historyItem: {
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-  },
-  historyItemContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  historyItemText: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  historyItemDate: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  historyItemTimestamp: {
-    fontSize: 12,
-    marginTop: 4,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    paddingVertical: 20,
   },
 });

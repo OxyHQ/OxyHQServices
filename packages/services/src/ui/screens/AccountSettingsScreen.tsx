@@ -504,8 +504,48 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     };
 
     const openAvatarPicker = useCallback(() => {
-        toast.info?.(t('editProfile.toasts.avatarPickerUnavailable') || 'Avatar picker is not available in this build.');
-    }, [t]);
+        if (!navigate) {
+            console.error('[AccountSettings] navigate function is not available');
+            toast.error(t('editProfile.toasts.avatarPickerUnavailable') || 'Avatar picker is not available in this build.');
+            return;
+        }
+
+        navigate('FileManagement', {
+            selectMode: true,
+            multiSelect: false,
+            disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
+            afterSelect: 'none', // Don't navigate away - stay on current screen
+            onSelect: async (file: any) => {
+                if (!file.contentType.startsWith('image/')) {
+                    toast.error(t('editProfile.toasts.selectImage') || 'Please select an image file');
+                    return;
+                }
+                try {
+                    // Update file visibility to public for avatar (skip if temporary asset ID)
+                    if (file.id && !file.id.startsWith('temp-')) {
+                        try {
+                            await oxyServices.assetUpdateVisibility(file.id, 'public');
+                            console.log('[AccountSettings] Avatar visibility updated to public');
+                        } catch (visError: any) {
+                            // Only log non-404 errors (404 means asset doesn't exist yet, which is OK)
+                            if (visError?.response?.status !== 404) {
+                                console.warn('[AccountSettings] Failed to update avatar visibility, continuing anyway:', visError);
+                            }
+                        }
+                    }
+
+                    // Update the avatar immediately in local state
+                    setAvatarFileId(file.id);
+
+                    // Update user using TanStack Query mutation
+                    await updateProfileMutation.mutateAsync({ avatar: file.id });
+                    toast.success(t('editProfile.toasts.avatarUpdated') || 'Avatar updated');
+                } catch (e: any) {
+                    toast.error(e.message || t('editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
+                }
+            }
+        });
+    }, [navigate, updateProfileMutation, oxyServices, setAvatarFileId, t]);
 
     // Handlers to open modals
     const handleOpenDisplayNameModal = useCallback(() => setShowEditDisplayNameModal(true), []);
@@ -567,37 +607,39 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
     // Handle initialField prop - open appropriate modal
     useEffect(() => {
-        if (initialField) {
-            // Special handling for avatar - open avatar picker directly
-            if (initialField === 'avatar') {
-                setTimeout(() => {
-                    openAvatarPicker();
-                }, 300);
-            } else {
-                // Open appropriate modal
-                setTimeout(() => {
-                    switch (initialField) {
-                        case 'displayName':
-                            setShowEditDisplayNameModal(true);
-                            break;
-                        case 'username':
-                            setShowEditUsernameModal(true);
-                            break;
-                        case 'email':
-                            setShowEditEmailModal(true);
-                            break;
-                        case 'bio':
-                            setShowEditBioModal(true);
-                            break;
-                        case 'location':
-                            setShowEditLocationModal(true);
-                            break;
-                        case 'links':
-                            setShowEditLinksModal(true);
-                            break;
-                    }
-                }, 300);
-            }
+        if (!initialField) return;
+
+        // Special handling for avatar - open avatar picker directly
+        if (initialField === 'avatar') {
+            // Wait a bit for the screen to be fully mounted and navigate to be available
+            const timeoutId = setTimeout(() => {
+                openAvatarPicker();
+            }, 500); // Increased timeout to ensure navigate is available
+            return () => clearTimeout(timeoutId);
+        } else {
+            // Open appropriate modal
+            setTimeout(() => {
+                switch (initialField) {
+                    case 'displayName':
+                        setShowEditDisplayNameModal(true);
+                        break;
+                    case 'username':
+                        setShowEditUsernameModal(true);
+                        break;
+                    case 'email':
+                        setShowEditEmailModal(true);
+                        break;
+                    case 'bio':
+                        setShowEditBioModal(true);
+                        break;
+                    case 'location':
+                        setShowEditLocationModal(true);
+                        break;
+                    case 'links':
+                        setShowEditLinksModal(true);
+                        break;
+                }
+            }, 300);
         }
     }, [initialField, openAvatarPicker]);
 
