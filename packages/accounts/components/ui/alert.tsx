@@ -104,43 +104,52 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
       }
     }
 
-    // Determine button background color
+    // Determine button background color with more transparent effect
     let backgroundColor: string;
     let textColor: string;
     
     if (isDestructive) {
-      backgroundColor = '#FF3B30';
-      textColor = '#FFFFFF';
+      backgroundColor = colorScheme === 'dark' ? 'rgba(255, 59, 48, 0.3)' : 'rgba(255, 59, 48, 0.25)';
+      textColor = '#FF3B30';
     } else if (isCancel) {
-      backgroundColor = colorScheme === 'dark' ? '#2C2C2E' : '#E5E5EA';
+      backgroundColor = colorScheme === 'dark' ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.05)';
       textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
     } else {
-      // Default button - use a nice blue color
-      backgroundColor = colorScheme === 'dark' ? '#0A84FF' : '#007AFF';
-      textColor = '#FFFFFF';
+      // Default button - use more transparent blue
+      backgroundColor = colorScheme === 'dark' ? 'rgba(10, 132, 255, 0.3)' : 'rgba(0, 122, 255, 0.25)';
+      textColor = colorScheme === 'dark' ? '#0A84FF' : '#007AFF';
     }
 
     return (
-      <TouchableOpacity
-        key={index}
+      <BlurView
+        intensity={50}
+        tint={colorScheme === 'dark' ? 'dark' : 'light'}
         style={[
           styles.button,
           useHorizontalLayout && styles.buttonHorizontal,
-          { borderRadius: 18, backgroundColor },
+          { borderRadius: 18 },
           marginStyle,
         ]}
-        onPress={() => handleButtonPress(button)}
-        activeOpacity={0.8}
       >
-        <Text
+        <TouchableOpacity
+          key={index}
           style={[
-            styles.buttonText,
-            { color: textColor, fontWeight: '600' },
+            styles.buttonInner,
+            { backgroundColor },
           ]}
+          onPress={() => handleButtonPress(button)}
+          activeOpacity={0.8}
         >
-          {button.text}
-        </Text>
-      </TouchableOpacity>
+          <Text
+            style={[
+              styles.buttonText,
+              { color: textColor, fontWeight: '600' },
+            ]}
+          >
+            {button.text}
+          </Text>
+        </TouchableOpacity>
+      </BlurView>
     );
   };
 
@@ -176,7 +185,7 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
           pointerEvents="box-none"
         >
           <BlurView
-            intensity={50}
+            intensity={100}
             tint={colorScheme === 'dark' ? 'dark' : 'light'}
             experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
             style={[
@@ -252,11 +261,11 @@ const styles = StyleSheet.create({
     shadowColor: '#000',
     shadowOffset: {
       width: 0,
-      height: 10,
+      height: 2,
     },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
   },
   alertContent: {
     borderRadius: 14,
@@ -301,11 +310,27 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   button: {
+    borderRadius: 18,
+    overflow: 'hidden',
+    shadowColor: 'transparent',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+    borderWidth: 0,
+  },
+  buttonInner: {
     paddingVertical: 8,
     paddingHorizontal: 14,
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 36,
+    shadowColor: 'transparent',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0,
+    shadowRadius: 0,
+    elevation: 0,
+    borderWidth: 0,
   },
   buttonHorizontal: {
     flex: 1,
