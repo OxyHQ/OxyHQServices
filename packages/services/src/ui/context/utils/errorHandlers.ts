@@ -53,9 +53,19 @@ export const isInvalidSessionError = (error: unknown): boolean => {
     return false;
   }
 
+  // Check error.status directly (HttpService sets this)
+  if ((error as any).status === 401) {
+    return true;
+  }
+
   const normalizedMessage = extractErrorMessage(error)?.toLowerCase();
   if (!normalizedMessage) {
     return false;
+  }
+
+  // Check for HTTP 401 in message (HttpService creates errors with "HTTP 401:" format)
+  if (normalizedMessage.includes('http 401') || normalizedMessage.includes('401')) {
+    return true;
   }
 
   return DEFAULT_INVALID_SESSION_MESSAGES.some((msg) =>

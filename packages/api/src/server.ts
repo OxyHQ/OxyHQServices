@@ -30,6 +30,7 @@ import { createCorsMiddleware, SOCKET_IO_CORS_CONFIG } from './config/cors';
 import { validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
 import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from './middleware/performance';
 import { performanceMonitor } from './utils/performanceMonitor';
+import { waitForMongoConnection } from './utils/dbConnection';
 
 // Load environment variables
 dotenv.config();
@@ -176,6 +177,8 @@ const mongoOptions = {
   heartbeatFrequencyMS: 10000, // Frequency of server heartbeat checks
   retryWrites: true, // Retry write operations on network errors
   retryReads: true, // Retry read operations on network errors
+  // Disable command buffering to fail fast instead of timing out
+  bufferCommands: false, // Don't buffer commands if not connected - fail fast
 };
 
 mongoose.connect(process.env.MONGODB_URI as string, mongoOptions)
@@ -339,9 +342,20 @@ app.use((req: express.Request, res: express.Response) => {
 // Only call listen if this module is run directly
 const PORT = getEnvNumber('PORT', 3001);
 if (require.main === module) {
-  server.listen(PORT, '0.0.0.0', () => {
-    logger.info(`Server running on port ${PORT}`);
-  });
+  // Wait for MongoDB connection before starting server
+  // This prevents queries from executing before the database is ready
+  waitForMongoConnection(30000)
+    .then(() => {
+      server.listen(PORT, '0.0.0.0', () => {
+        logger.info(`Server running on port ${PORT}`, {
+          mongodb: 'connected',
+        });
+      });
+    })
+    .catch((error) => {
+      logger.error('Failed to start server - MongoDB connection failed:', error);
+      process.exit(1);
+    });
 }
 
 export default server;

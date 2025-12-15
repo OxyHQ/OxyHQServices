@@ -45,9 +45,23 @@ export default function AuthIndexScreen() {
             await signIn();
             router.replace('/(tabs)');
             return;
-          } catch (err) {
-            // Identity exists but sign in failed - show options
-            console.warn('Auto sign in failed:', err);
+          } catch (err: any) {
+            // Silently handle expected 401 errors (expired/invalid sessions) during auto sign-in
+            // Only log unexpected errors
+            const errMessage = err?.message?.toLowerCase() || '';
+            const isExpectedError = err?.status === 401 || 
+                                   err?.response?.status === 401 ||
+                                   errMessage.includes('http 401') ||
+                                   errMessage.includes('401') ||
+                                   errMessage.includes('invalid session') ||
+                                   errMessage.includes('expired') ||
+                                   errMessage.includes('unauthorized');
+            
+            if (!isExpectedError) {
+              // Log unexpected errors only
+              console.warn('Auto sign in failed:', err);
+            }
+            // Expected errors (401/invalid session) are silently handled - user will see sign-in options
           }
         }
       } catch (err) {

@@ -10,6 +10,7 @@ import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, UnauthorizedError, ForbiddenError, ValidationError, ConflictError } from '../utils/error';
 import { z } from 'zod';
 import { FileVisibility } from '../models/File';
+import { generateMissingFilePlaceholder, TRANSPARENT_PNG_PLACEHOLDER } from '../utils/placeholders';
 
 interface AuthenticatedRequest extends express.Request {
   user?: {
@@ -522,71 +523,58 @@ router.get('/:id/stream', mediaHeadersMiddleware, optionalAuthMiddleware, asyncH
     }
   }
 
-  // Ensure object exists before streaming
-  const exists = await s3Service.fileExists(storageKey);
-  if (!exists) {
-    // Optional placeholder fallback for UI
-    const fallback = typeof req.query.fallback === 'string' ? req.query.fallback : '';
-    if (fallback === 'placeholder') {
-      // 1x1 transparent PNG (invisible)
-      const pngBase64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=';
-      const buf = Buffer.from(pngBase64, 'base64');
-      res.setHeader('Content-Type', 'image/png');
-      res.setHeader('Content-Length', String(buf.length));
-      res.setHeader('Cache-Control', 'no-store');
-      return res.status(200).end(buf);
+  // Stream from S3/Spaces (getObjectStream will fail fast if file doesn't exist)
+  // Removed fileExists check to avoid extra S3 API call - improves performance
+  try {
+    const streamInfo = await s3Service.getObjectStream(storageKey);
+    
+    if (streamInfo.contentType) {
+      res.setHeader('Content-Type', streamInfo.contentType);
     }
-    if (fallback === 'icon' || fallback === 'placeholderVisible') {
-      // Visible SVG placeholder
-      const svg = `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200" role="img" aria-label="Missing file">
-  <defs>
-    <pattern id="grid" width="16" height="16" patternUnits="userSpaceOnUse">
-      <rect width="16" height="16" fill="#f3f4f6"/>
-      <path d="M16 0H0V16" fill="none" stroke="#e5e7eb" stroke-width="1"/>
-    </pattern>
-  </defs>
-  <rect width="100%" height="100%" fill="url(#grid)"/>
-  <g fill="none" stroke="#9ca3af" stroke-width="3">
-    <rect x="8" y="8" width="304" height="184" rx="8"/>
-    <path d="M80 140l40-40 30 30 40-50 50 60"/>
-    <circle cx="115" cy="88" r="10"/>
-  </g>
-  <text x="50%" y="50%" text-anchor="middle" fill="#6b7280" font-family="sans-serif" font-size="14" dy="56">Missing or deleted</text>
-  <text x="50%" y="50%" text-anchor="middle" fill="#9ca3af" font-family="sans-serif" font-size="12" dy="76">id: ${fileId}</text>
-  </svg>`;
-      res.setHeader('Content-Type', 'image/svg+xml');
-      res.setHeader('Cache-Control', 'no-store');
-      return res.status(200).end(svg);
+    if (streamInfo.contentLength) {
+      res.setHeader('Content-Length', String(streamInfo.contentLength));
     }
-    throw new NotFoundError('File not found');
-  }
-
-  // Stream from S3/Spaces
-  const streamInfo = await s3Service.getObjectStream(storageKey);
-  
-  if (streamInfo.contentType) {
-    res.setHeader('Content-Type', streamInfo.contentType);
-  }
-  if (streamInfo.contentLength) {
-    res.setHeader('Content-Length', String(streamInfo.contentLength));
-  }
-  if (streamInfo.lastModified) {
-    res.setHeader('Last-Modified', new Date(streamInfo.lastModified).toUTCString());
-  }
-  // Cache headers: immutable for content-addressed files
-  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
-
-  streamInfo.body.on('error', (err: any) => {
-    logger.error('Stream error', { err });
-    if (!res.headersSent) {
-      res.status(500).end('Stream error');
-    } else {
-      res.end();
+    if (streamInfo.lastModified) {
+      res.setHeader('Last-Modified', new Date(streamInfo.lastModified).toUTCString());
     }
-  });
+    // Cache headers: immutable for content-addressed files
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
 
-  streamInfo.body.pipe(res);
+    streamInfo.body.on('error', (err: any) => {
+      logger.error('Stream error', { err });
+      if (!res.headersSent) {
+        res.status(500).end('Stream error');
+      } else {
+        res.end();
+      }
+    });
+
+    streamInfo.body.pipe(res);
+  } catch (streamError: any) {
+    // Handle file not found or other S3 errors
+    if (streamError.name === 'NoSuchKey' || streamError.name === 'NotFound') {
+      // Optional placeholder fallback for UI
+      const fallback = typeof req.query.fallback === 'string' ? req.query.fallback : '';
+      if (fallback === 'placeholder') {
+        // 1x1 transparent PNG (invisible)
+        const buf = Buffer.from(TRANSPARENT_PNG_PLACEHOLDER, 'base64');
+        res.setHeader('Content-Type', 'image/png');
+        res.setHeader('Content-Length', String(buf.length));
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(200).end(buf);
+      }
+      if (fallback === 'icon' || fallback === 'placeholderVisible') {
+        // Visible SVG placeholder
+        const svg = generateMissingFilePlaceholder(fileId);
+        res.setHeader('Content-Type', 'image/svg+xml');
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(200).end(svg);
+      }
+      throw new NotFoundError('File not found');
+    }
+    // Re-throw other errors
+    throw streamError;
+  }
 }));
 
 /**

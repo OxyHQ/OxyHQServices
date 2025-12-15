@@ -442,9 +442,14 @@ export class AssetService {
    */
   async getFile(fileId: string): Promise<IFile | null> {
     try {
+      // Handle temp file IDs (optimistic UI updates) gracefully
+      if (fileId.startsWith('temp-')) {
+        return null;
+      }
+      
       // Validate that fileId is a valid ObjectId
       if (!mongoose.Types.ObjectId.isValid(fileId)) {
-        logger.warn('Invalid ObjectId provided to getFile', undefined, { fileId });
+        // Don't log warnings for invalid IDs - they might be temp IDs or malformed requests
         return null;
       }
       const file = await File.findById(fileId);

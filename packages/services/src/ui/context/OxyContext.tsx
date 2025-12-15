@@ -501,7 +501,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               });
             }
           } catch (validationError) {
-            logger('Session validation failed during init', validationError);
+            // Silently handle expected 401 errors (expired/invalid sessions) during restoration
+            // Only log unexpected errors
+            if (!isInvalidSessionError(validationError)) {
+              logger('Session validation failed during init', validationError);
+            }
           }
         }
 
@@ -514,13 +518,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         try {
           await switchSession(storedActiveSessionId);
         } catch (switchError) {
+          // Silently handle expected 401 errors (expired/invalid active session)
           if (isInvalidSessionError(switchError)) {
             await storage.removeItem(storageKeys.activeSessionId);
             updateSessions(
               validSessions.filter((session) => session.sessionId !== storedActiveSessionId),
               { merge: false },
             );
+            // Don't log expected session errors during restoration
           } else {
+            // Only log unexpected errors
             logger('Active session validation error', switchError);
           }
         }

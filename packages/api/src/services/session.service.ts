@@ -2,6 +2,7 @@ import Session, { ISession } from '../models/Session';
 import { User } from '../models/User';
 import { logger } from '../utils/logger';
 import sessionCache from '../utils/sessionCache';
+import { isMongoConnected, getConnectionState } from '../utils/dbConnection';
 import { 
   extractDeviceInfo, 
   generateDeviceFingerprint, 
@@ -89,6 +90,17 @@ class SessionService {
     options: { useCache?: boolean; select?: string } = {}
   ): Promise<{ session: ISession; user: any } | null> {
     try {
+      // Check MongoDB connection state before executing query
+      if (!isMongoConnected()) {
+        logger.error('[SessionService] MongoDB not connected', {
+          component: 'SessionService',
+          method: 'getSessionWithUser',
+          connectionState: getConnectionState(),
+          sessionId,
+        });
+        return null;
+      }
+
       const { useCache = true, select = '-password' } = options;
 
       // Try cache first for session
@@ -131,6 +143,8 @@ class SessionService {
       logger.error('[SessionService] Failed to get session with user', error instanceof Error ? error : new Error(String(error)), {
         component: 'SessionService',
         method: 'getSessionWithUser',
+        connectionState: getConnectionState(),
+        sessionId,
       });
       // Return null on error for graceful degradation - consistent error handling pattern
       // Caller should handle null case appropriately
