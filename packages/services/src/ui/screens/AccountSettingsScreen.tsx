@@ -75,12 +75,12 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     } = useOxy();
     const { t } = useI18n();
     const normalizedTheme = normalizeTheme(theme);
-    
+
     // Use TanStack Query for user data
     const { data: user, isLoading: userLoading } = useCurrentUser({ enabled: isAuthenticated });
     const updateProfileMutation = useUpdateProfile();
     const uploadAvatarMutation = useUploadAvatar();
-    
+
     // Fallback to store for backward compatibility
     const userFromStore = useAuthStore((state) => state.user);
     const finalUser = user || userFromStore;
