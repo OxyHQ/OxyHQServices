@@ -126,7 +126,7 @@ export default function SecurityScreen() {
                 id: 'recovery-email',
                 priority: 1,
                 icon: 'email-alert-outline',
-                iconColor: '#FF9500',
+                iconColor: '#fbbc04',
                 title: 'Add a recovery email',
                 subtitle: 'Help secure your account and enable account recovery',
                 onPress: () => {
@@ -169,7 +169,7 @@ export default function SecurityScreen() {
                 id: 'old-sessions',
                 priority: 2,
                 icon: 'clock-alert-outline',
-                iconColor: '#FF9500',
+                iconColor: '#fbbc04',
                 title: `Review ${oldSessions.length} inactive session${oldSessions.length !== 1 ? 's' : ''}`,
                 subtitle: `Some sessions haven't been used in over 30 days`,
                 onPress: () => {
