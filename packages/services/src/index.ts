@@ -153,6 +153,9 @@ export {
   useDeviceSessions,
   useUserDevices,
   useSecurityInfo,
+  // Security activity queries
+  useSecurityActivity,
+  useRecentSecurityActivity,
 } from './ui/hooks/queries';
 
 // UI hooks - Mutation hooks (TanStack Query)
