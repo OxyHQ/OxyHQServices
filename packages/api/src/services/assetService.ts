@@ -641,13 +641,13 @@ export class AssetService {
         throw new Error('File not found');
       }
 
+      // Only update if visibility is actually changing
+      if (file.visibility === visibility) {
+        return file;
+      }
+
       file.visibility = visibility;
       await file.save();
-
-      logger.info('File visibility updated', { 
-        fileId, 
-        visibility 
-      });
 
       // Notify linked apps about visibility change
       try {

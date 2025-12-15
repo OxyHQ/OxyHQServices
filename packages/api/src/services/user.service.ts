@@ -462,7 +462,6 @@ export class UserService {
     };
 
     if (stats) {
-      response.stats = stats;
       response._count = stats;
     }
 

@@ -50,12 +50,8 @@ export interface User {
     image?: string;
     link: string;
   }>;
-  // Social counts - can be returned by API in different formats
+  // Social counts
   _count?: {
-    followers?: number;
-    following?: number;
-  };
-  stats?: {
     followers?: number;
     following?: number;
   };

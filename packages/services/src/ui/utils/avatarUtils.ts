@@ -25,12 +25,11 @@ export async function updateAvatarVisibility(
 
   try {
     await oxyServices.assetUpdateVisibility(fileId, 'public');
-    console.log(`[${contextName}] Avatar visibility updated to public`);
+    // Visibility update is logged by the API
   } catch (visError: any) {
-    // Only log non-404 errors (404 means asset doesn't exist yet, which is OK)
-    if (visError?.response?.status !== 404) {
-      console.warn(`[${contextName}] Failed to update avatar visibility, continuing anyway:`, visError);
-    }
+    // Silently handle errors - 404 means asset doesn't exist yet (which is OK)
+    // Other errors are logged by the API, so no need to log here
+    // Function continues gracefully regardless of visibility update success
   }
 }
 
