@@ -9,9 +9,10 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Platform, Alert } from 'react-native';
+import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useOxy, usePrivacySettings, useUpdatePrivacySettings } from '@oxyhq/services';
+import { useAlert } from '@/components/ui';
 import {
   canUseBiometrics,
   hasBiometricHardware,
@@ -35,6 +36,7 @@ export interface BiometricSettingsState {
 
 export function useBiometricSettings() {
   const { user } = useOxy();
+  const alert = useAlert();
   const [canEnable, setCanEnable] = useState(false);
   const [hasHardware, setHasHardware] = useState(false);
   const [isEnrolled, setIsEnrolled] = useState(false);
@@ -113,7 +115,7 @@ export function useBiometricSettings() {
    */
   const toggleBiometricLogin = useCallback(async (value: boolean) => {
     if (!user?.id) {
-      Alert.alert('Error', 'User not available');
+      alert('Error', 'User not available');
       return;
     }
 
@@ -129,7 +131,7 @@ export function useBiometricSettings() {
         console.error('[useBiometricSettings] Failed to disable biometric login:', err);
         const errorMsg = err instanceof Error ? err.message : 'Failed to disable biometric login';
         setError(errorMsg);
-        Alert.alert('Error', errorMsg);
+        alert('Error', errorMsg);
       }
       return;
     }
@@ -137,14 +139,14 @@ export function useBiometricSettings() {
     // If enabling, check if biometrics can be used
     if (!canEnable) {
       if (!hasHardware) {
-        Alert.alert(
+        alert(
           'Not Available',
           'Biometric authentication is not available on this device.'
         );
         return;
       }
       if (!isEnrolled) {
-        Alert.alert(
+        alert(
           'Not Set Up',
           'Please set up Face ID, Touch ID, or fingerprint in your device settings first.',
           [
@@ -152,7 +154,7 @@ export function useBiometricSettings() {
             { text: 'Open Settings', onPress: () => {
               // On native, this would typically open device settings
               // For now, just show a message
-              Alert.alert('Settings', 'Go to your device settings to set up biometric authentication.');
+              alert('Settings', 'Go to your device settings to set up biometric authentication.');
             }},
           ]
         );
@@ -171,7 +173,7 @@ export function useBiometricSettings() {
       if (!authResult.success) {
         const errorMsg = getErrorMessage(authResult.error);
         setError(errorMsg);
-        Alert.alert('Authentication Failed', errorMsg);
+        alert('Authentication Failed', errorMsg);
         return;
       }
 
@@ -184,9 +186,9 @@ export function useBiometricSettings() {
       console.error('[useBiometricSettings] Failed to enable biometric login:', err);
       const errorMsg = err instanceof Error ? err.message : 'Failed to enable biometric login';
       setError(errorMsg);
-      Alert.alert('Error', errorMsg);
+      alert('Error', errorMsg);
     }
-  }, [user?.id, updatePrivacyMutation, canEnable, hasHardware, isEnrolled]);
+  }, [user?.id, updatePrivacyMutation, canEnable, hasHardware, isEnrolled, alert]);
 
   /**
    * Refresh device capabilities (useful after user sets up biometrics)

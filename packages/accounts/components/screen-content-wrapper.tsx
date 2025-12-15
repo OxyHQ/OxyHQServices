@@ -14,9 +14,8 @@ interface ScreenContentWrapperProps {
 
 // Header dimensions - must match MobileHeader component
 const HEADER_TOP_PADDING = 4;
-const HEADER_BOTTOM_PADDING = 10;
-// Content height: menu button (24px icon + 6px padding top + 6px padding bottom = 36px) is tallest
-const HEADER_CONTENT_HEIGHT = 36;
+// Content height: top row (menu button 24px icon + 6px padding top + 6px padding bottom = 36px) + search bar (8px top + 48px height + 10px bottom = 66px)
+const HEADER_CONTENT_HEIGHT = 36 + 66; // 102px total
 
 export function ScreenContentWrapper({ children, refreshing = false, onRefresh }: ScreenContentWrapperProps) {
   const { setIsScrolled, scrollRef, scrollY, scrollDirection } = useScrollContext();
@@ -45,11 +44,11 @@ export function ScreenContentWrapper({ children, refreshing = false, onRefresh }
     },
   }, []);
 
-  // Calculate header height: safe area + header padding + content + bottom padding
+  // Calculate header height: safe area + header padding + content
   // This matches the header's actual rendered height on mobile
-  // Header has: paddingTop (insets.top + 4) + content (36) + paddingBottom (10) = total
+  // Header has: paddingTop (insets.top + 4) + top row (36) + search bar (66) = total
   const headerHeight = useMemo(() => {
-    return insets.top + HEADER_TOP_PADDING + HEADER_CONTENT_HEIGHT + HEADER_BOTTOM_PADDING;
+    return insets.top + HEADER_TOP_PADDING + HEADER_CONTENT_HEIGHT;
   }, [insets.top]);
 
   return (

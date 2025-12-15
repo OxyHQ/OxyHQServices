@@ -201,7 +201,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
     const checkAndRestoreIdentity = async () => {
       try {
-        const { KeyManager } = await import('../../crypto/index.js');
         // Check if identity exists and verify integrity
         const hasIdentity = await KeyManager.hasIdentity();
         if (hasIdentity) {
@@ -209,14 +208,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           if (!isValid) {
             // Try to restore from backup
             const restored = await KeyManager.restoreIdentityFromBackup();
-            if (restored) {
-              if (__DEV__) {
-                logger('Identity restored from backup successfully');
-              }
-            } else {
-              if (__DEV__) {
-                logger('Identity integrity check failed - user may need to restore from recovery phrase');
-              }
+            if (__DEV__) {
+              logger(restored
+                ? 'Identity restored from backup successfully'
+                : 'Identity integrity check failed - user may need to restore from recovery phrase'
+              );
             }
           } else {
             // Identity is valid - ensure backup is up to date
@@ -317,9 +313,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   });
 
   // syncIdentity - TanStack Query handles offline mutations automatically
-  const syncIdentity = useCallback(async () => {
-    return await syncIdentityBase();
-  }, [syncIdentityBase]);
+  const syncIdentity = useCallback(() => syncIdentityBase(), [syncIdentityBase]);
 
   // Clear all account data when identity is lost (for accounts app)
   // In accounts app, identity = account, so losing identity means losing everything
@@ -332,9 +326,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       try {
         await clearQueryCache(storage);
       } catch (error) {
-        if (logger) {
-          logger('Failed to clear persisted query cache', error);
-        }
+        logger('Failed to clear persisted query cache', error);
       }
     }
 
@@ -346,9 +338,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       try {
         await storage.removeItem('oxy_identity_synced');
       } catch (error) {
-        if (logger) {
-          logger('Failed to clear identity sync state', error);
-        }
+        logger('Failed to clear identity sync state', error);
       }
     }
 
@@ -419,9 +409,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
         // If we were offline and now we're online, sync identity if needed
         if (wasOffline) {
-          if (__DEV__ && logger) {
-            logger('Network reconnected, checking identity sync...');
-          }
+          logger('Network reconnected, checking identity sync...');
 
           // Sync identity first (if not synced)
           try {
@@ -430,9 +418,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               await syncIdentity();
             }
           } catch (syncError) {
-            if (__DEV__ && logger) {
-              logger('Error syncing identity on reconnect', syncError);
-            }
+            logger('Error syncing identity on reconnect', syncError);
           }
 
           // TanStack Query will automatically retry pending mutations

@@ -7,7 +7,7 @@ import { getStorageKeys, type StorageInterface } from '../utils/storageHelpers';
 import { handleAuthError, isInvalidSessionError } from '../utils/errorHandlers';
 import type { OxyServices } from '../../../core';
 import type { QueryClient } from '@tanstack/react-query';
-import { clearQueryCache } from '../../hooks/queryClient.js';
+import { clearQueryCache } from '../../hooks/queryClient';
 
 export interface UseSessionManagementOptions {
   oxyServices: OxyServices;

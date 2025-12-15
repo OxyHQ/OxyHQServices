@@ -4,7 +4,6 @@ import {
   Text,
   TouchableOpacity,
   StyleSheet,
-  Alert,
   Linking,
   Platform,
   ActivityIndicator,
@@ -15,6 +14,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useOxy } from '@oxyhq/services';
+import { useAlert } from '@/components/ui';
 
 /**
  * QR Scanner Screen
@@ -26,6 +26,7 @@ export default function ScanQRScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const alert = useAlert();
   const oxyContext = useOxy();
   const { hasIdentity, isLoading } = oxyContext;
   // @ts-ignore - isStorageReady may not be in type definition yet due to build cache
@@ -78,7 +79,7 @@ export default function ScanQRScreen() {
         params: { token },
       });
     } else {
-      Alert.alert(
+      alert(
         'Invalid QR Code',
         'This QR code is not a valid Oxy authorization request.',
         [

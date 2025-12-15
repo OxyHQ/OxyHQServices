@@ -15,6 +15,7 @@ import { useOxy } from '@oxyhq/services';
 import { getDisplayName } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { darkenColor } from '@/utils/color-utils';
+import { useSearchInput } from '@/hooks/use-search-input';
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, withTiming, useDerivedValue } from 'react-native-reanimated';
 
@@ -55,6 +56,19 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
 
     const { user, oxyServices, showBottomSheet, isAuthenticated, refreshSessions } = useOxy();
 
+    // Use custom hook for search input management with focus preservation
+    const {
+        localSearchQuery,
+        handleSearchChange: handleSearchChangeLocal,
+        handleSearchFocus,
+        handleSearchBlur,
+    } = useSearchInput({
+        searchQuery,
+        onSearchChange,
+        searchInputRef,
+        isSearchScreen,
+    });
+
     const lastPressRef = useRef<number>(0);
     const pressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const hapticIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -91,10 +105,6 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
         }
         lastPressRef.current = 0;
     }, []);
-
-    const handleSearchPress = useCallback(() => {
-        router.push({ pathname: '/(tabs)/search', params: { q: '' } });
-    }, [router]);
 
     const handleAvatarPress = useCallback(() => {
         showBottomSheet?.('AccountOverview');
@@ -180,12 +190,15 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
         styles.header,
         {
             paddingTop: isDesktop ? 0 : insets.top + 4,
-            paddingBottom: isDesktop ? 0 : (isSearchScreen ? 0 : 10),
+            paddingBottom: isDesktop ? 0 : 0,
             paddingHorizontal: isDesktop ? 16 : 10,
             borderBottomColor: colors.border,
             borderBottomWidth: isDesktop ? 0.5 : 0,
+            ...(!isDesktop && {
+                overflow: 'visible' as const,
+            }),
         },
-    ], [insets.top, colors.border, isDesktop, isSearchScreen]);
+    ], [insets.top, colors.border, isDesktop]);
 
     const searchBarBackgroundColor = useMemo(() =>
         colorScheme === 'dark' ? 'rgba(44, 44, 46, 0.7)' : 'rgba(248, 249, 250, 0.7)',
@@ -206,8 +219,9 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
     }, []);
 
     // Animated styles for header slide/fade based on scroll
+    // Mobile header height: safe area + top padding (4) + top row (36) + search bar container (8 top + 48 height + 10 bottom = 66)
     const headerAnimatedStyle = useAnimatedStyle(() => {
-        const headerHeight = isDesktop ? 64 : (insets.top + 4 + 36 + (isSearchScreen ? 0 : 10));
+        const headerHeight = isDesktop ? 64 : (insets.top + 4 + 36 + 66);
         const visible = headerVisible.value;
 
         return {
@@ -218,7 +232,7 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
             }],
             opacity: withTiming(visible, { duration: 300 }),
         };
-    }, [isDesktop, insets.top, isSearchScreen]);
+    }, [isDesktop, insets.top]);
 
     const avatarSize = isDesktop ? 36 : 32;
     const avatarBorderRadius = avatarSize / 2;
@@ -233,7 +247,7 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
                 intensity={isScrolled ? 50 : 0}
                 tint={colorScheme === 'dark' ? 'dark' : 'light'}
                 experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
-                style={[headerStyle, !isDesktop && isSearchScreen && styles.headerColumn]}
+                style={[headerStyle, !isDesktop && styles.headerColumn]}
             >
                 <View style={styles.headerRow}>
                     <View style={[styles.topBarLeft, !isDesktop && styles.topBarLeftMobile]}>
@@ -268,12 +282,19 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
                                 <Ionicons name="search-outline" size={20} color={colors.text} style={styles.searchIcon} />
                                 <TextInput
                                     ref={searchInputRef}
-                                    style={[styles.searchInput, { color: colors.text }]}
+                                    style={[
+                                        styles.searchInput,
+                                        { color: colors.text },
+                                        Platform.OS === 'web' && { outlineStyle: 'none' as any, outlineWidth: 0 }
+                                    ]}
                                     placeholder="Search Oxy Account"
                                     placeholderTextColor={colors.secondaryText}
-                                    value={searchQuery}
-                                    onChangeText={onSearchChange}
+                                    value={localSearchQuery}
+                                    onChangeText={handleSearchChangeLocal}
+                                    onFocus={handleSearchFocus}
+                                    onBlur={handleSearchBlur}
                                     returnKeyType="search"
+                                    blurOnSubmit={false}
                                 />
                             </View>
                         </View>
@@ -292,15 +313,6 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
                     )}
 
                     <View style={[styles.topBarRight, !isDesktop && styles.topBarRightMobile]}>
-                        {!isDesktop && !isSearchScreen && (
-                            <TouchableOpacity
-                                style={styles.iconButton}
-                                onPressIn={handlePressIn}
-                                onPress={handleSearchPress}
-                            >
-                                <Ionicons name="search-outline" size={22} color={colors.text} />
-                            </TouchableOpacity>
-                        )}
                         <TouchableOpacity
                             onPressIn={handlePressIn}
                             onPress={handleAvatarPress}
@@ -326,8 +338,8 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
                     </View>
                 </View>
 
-                {/* Mobile search bar at bottom of header */}
-                {!isDesktop && isSearchScreen && (
+                {/* Mobile search bar at bottom of header - always visible */}
+                {!isDesktop && (
                     <View style={styles.mobileSearchBarContainer}>
                         <View style={[styles.mobileSearchBar, {
                             backgroundColor: searchBarBackgroundColor,
@@ -336,13 +348,20 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
                             <Ionicons name="search-outline" size={20} color={colors.text} style={styles.searchIcon} />
                             <TextInput
                                 ref={searchInputRef}
-                                style={[styles.searchInput, { color: colors.text }]}
+                                style={[
+                                    styles.searchInput,
+                                    { color: colors.text },
+                                    Platform.OS === 'web' && { outlineStyle: 'none' as any, outlineWidth: 0 }
+                                ]}
                                 placeholder="Search Oxy Account"
                                 placeholderTextColor={colors.secondaryText}
-                                value={searchQuery}
-                                onChangeText={onSearchChange}
+                                value={localSearchQuery}
+                                onChangeText={handleSearchChangeLocal}
+                                onFocus={handleSearchFocus}
+                                onBlur={handleSearchBlur}
                                 returnKeyType="search"
-                                autoFocus
+                                autoFocus={isSearchScreen && localSearchQuery.length === 0}
+                                blurOnSubmit={false}
                             />
                         </View>
                     </View>
@@ -370,15 +389,16 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         zIndex: 1100,
-        overflow: 'hidden',
         ...Platform.select({
             web: {
+                overflow: 'hidden',
                 height: 64,
             },
         }),
     },
     headerColumn: {
         flexDirection: 'column',
+        alignItems: 'stretch',
     },
     headerRow: {
         flexDirection: 'row',

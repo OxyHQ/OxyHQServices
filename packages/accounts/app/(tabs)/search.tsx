@@ -66,7 +66,7 @@ export default function SearchScreen() {
             <View style={styles.startSearchContent}>
               <MaterialCommunityIcons 
                 name="magnify" 
-                size={80} 
+                size={isDesktop ? 96 : 64} 
                 color={colors.text} 
                 style={styles.startSearchIcon}
               />
@@ -147,6 +147,9 @@ const styles = StyleSheet.create({
   },
   desktopContent: {
     padding: 32,
+    maxWidth: 800,
+    alignSelf: 'center',
+    width: '100%',
   },
   header: {
     marginBottom: 16,
@@ -163,44 +166,44 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   startSearchContainer: {
-    flex: 1,
     alignItems: 'flex-start',
     justifyContent: 'flex-start',
-    minHeight: 400,
+    paddingTop: Platform.OS === 'web' ? 40 : 20,
+    paddingBottom: 40,
   },
   startSearchContent: {
     alignItems: 'flex-start',
     width: '100%',
   },
   startSearchIcon: {
-    opacity: 0.6,
-    marginBottom: 32,
+    marginBottom: 24,
   },
   titleDescriptionWrapper: {
     maxWidth: 600,
     width: '100%',
+    marginBottom: 32,
   },
   startSearchTitle: {
-    fontSize: 48,
-    fontWeight: '600',
-    marginBottom: 24,
+    fontSize: Platform.OS === 'web' ? 56 : 36,
+    fontWeight: 'bold',
+    marginBottom: 16,
     textAlign: 'left',
+    lineHeight: Platform.OS === 'web' ? 64 : 44,
   },
   startSearchSubtitle: {
-    fontSize: 18,
+    fontSize: Platform.OS === 'web' ? 18 : 16,
     opacity: 0.7,
     textAlign: 'left',
-    marginBottom: 48,
-    lineHeight: 26,
+    lineHeight: Platform.OS === 'web' ? 26 : 24,
   },
   suggestionsContainer: {
     width: '100%',
     alignItems: 'flex-start',
   },
   suggestionsTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '600',
-    marginBottom: 16,
+    marginBottom: 12,
     opacity: 0.8,
   },
   suggestionsList: {
@@ -232,7 +235,7 @@ const styles = StyleSheet.create({
   emptyState: {
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 120,
+    paddingVertical: 80,
     paddingHorizontal: 24,
   },
   emptyIcon: {
@@ -240,13 +243,13 @@ const styles = StyleSheet.create({
     marginBottom: 24,
   },
   emptyText: {
-    fontSize: 32,
+    fontSize: 28,
     fontWeight: '600',
     marginBottom: 12,
     opacity: 0.9,
   },
   emptySubtext: {
-    fontSize: 18,
+    fontSize: 16,
     opacity: 0.7,
     textAlign: 'center',
   },

@@ -1,5 +1,5 @@
 import React, { useMemo, useCallback, useRef, useEffect, useState } from 'react';
-import { View, StyleSheet, Platform, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, StyleSheet, Platform, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import LottieView from 'lottie-react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -11,7 +11,7 @@ import { UserAvatar } from '@/components/user-avatar';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import lottieAnimation from '@/assets/lottie/welcomeheader_background_op1.json';
 import { darkenColor } from '@/utils/color-utils';
-import { AccountCard } from '@/components/ui';
+import { AccountCard, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy } from '@oxyhq/services';
 import { formatDate, getDisplayName, getShortDisplayName } from '@/utils/date-utils';
@@ -29,6 +29,7 @@ export default function HomeScreen() {
 
   // OxyServices integration
   const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, isIdentitySynced, syncIdentity, identitySyncState, openAvatarPicker } = useOxy();
+  const alert = useAlert();
 
   // Use reactive state from Zustand store (with defaults)
   const { isSynced, isSyncing } = identitySyncState || { isSynced: true, isSyncing: false };
@@ -91,9 +92,9 @@ export default function HomeScreen() {
       // syncIdentity updates the Zustand store (isSyncing, isSynced)
       await syncIdentity();
     } catch (err: any) {
-      Alert.alert('Sync Failed', err.message || 'Could not sync with server. Please check your internet connection.');
+      alert('Sync Failed', err.message || 'Could not sync with server. Please check your internet connection.');
     }
-  }, [syncIdentity]);
+  }, [syncIdentity, alert]);
 
   const handleReload = useCallback(async () => {
     if (!refreshSessions) return;

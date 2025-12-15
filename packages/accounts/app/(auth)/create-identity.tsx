@@ -6,13 +6,13 @@ import {
   TouchableOpacity,
   StyleSheet,
   ScrollView,
-  Alert,
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
+import { useAlert } from '@/components/ui';
 
 type Step = 'intro' | 'recovery' | 'confirm';
 
@@ -20,6 +20,7 @@ export default function CreateIdentityScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const alert = useAlert();
   const { createIdentity, signIn, isLoading } = useOxy();
 
   const [step, setStep] = useState<Step>('intro');
@@ -57,7 +58,7 @@ export default function CreateIdentityScreen() {
   }, [createIdentity]);
 
   const handleContinueToConfirm = useCallback(() => {
-    Alert.alert(
+    alert(
       'Have you saved your recovery phrase?',
       'You will need it to recover your account if you lose access to this device. This is the ONLY time you will see it.',
       [
@@ -65,7 +66,7 @@ export default function CreateIdentityScreen() {
         { text: 'I saved it', onPress: () => setStep('confirm') },
       ]
     );
-  }, []);
+  }, [alert]);
 
   const handleConfirmPhrase = useCallback(async () => {
     const isCorrect = confirmWords.every(
@@ -88,7 +89,7 @@ export default function CreateIdentityScreen() {
       // Successfully signed in - navigate to main app
       if (isOffline) {
         // Show offline success message
-        Alert.alert(
+        alert(
           'Identity Created (Offline)',
           'Your identity has been created and saved locally. When you connect to the internet, it will automatically sync with Oxy servers.',
           [{ text: 'OK', onPress: () => router.replace('/(tabs)') }]
@@ -104,7 +105,7 @@ export default function CreateIdentityScreen() {
     } finally {
       setIsSigningIn(false);
     }
-  }, [confirmWords, userConfirmation, router, isOffline, signIn]);
+  }, [confirmWords, userConfirmation, router, isOffline, signIn, alert]);
 
   const renderIntroStep = () => (
     <View style={styles.stepContainer}>

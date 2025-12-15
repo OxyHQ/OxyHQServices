@@ -5,7 +5,6 @@ import {
   TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
-  Alert,
   ScrollView,
   Platform,
 } from 'react-native';
@@ -16,6 +15,7 @@ import { Colors } from '@/constants/theme';
 import { UserAvatar } from '@/components/user-avatar';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import { useAlert } from '@/components/ui';
 
 /**
  * Authorize Screen
@@ -30,6 +30,7 @@ export default function AuthorizeScreen() {
   const params = useLocalSearchParams<{ token: string }>();
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
+  const alert = useAlert();
   const { oxyServices, user, isAuthenticated, activeSessionId } = useOxy();
 
   const [isLoading, setIsLoading] = useState(true);
@@ -91,7 +92,7 @@ export default function AuthorizeScreen() {
         },
       });
 
-      Alert.alert(
+      alert(
         'Authorization Successful',
         `You have authorized ${sessionInfo?.appId || 'the app'} to access your Oxy identity.`,
         [
@@ -106,7 +107,7 @@ export default function AuthorizeScreen() {
     } finally {
       setIsAuthorizing(false);
     }
-  }, [params.token, activeSessionId, oxyServices, sessionInfo, router]);
+  }, [params.token, activeSessionId, oxyServices, sessionInfo, router, alert]);
 
   const handleDeny = useCallback(async () => {
     if (!params.token) return;

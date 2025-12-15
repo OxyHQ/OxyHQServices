@@ -4,7 +4,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   Share,
   Platform,
@@ -17,7 +16,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import { AccountCard, ScreenHeader } from '@/components/ui';
+import { AccountCard, ScreenHeader, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, KeyManager } from '@oxyhq/services';
@@ -29,6 +28,7 @@ export default function AboutIdentityScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const router = useRouter();
+  const alert = useAlert();
   const { user, isAuthenticated, isLoading: oxyLoading, getPublicKey, hasIdentity, oxyServices } = useOxy();
 
   const [publicKey, setPublicKey] = useState<string | null>(null);
@@ -118,9 +118,9 @@ export default function AboutIdentityScreen() {
     if (Platform.OS === 'web') {
       try {
         await navigator.clipboard.writeText(publicKey);
-        Alert.alert('Copied', 'Public key copied to clipboard');
+        alert('Copied', 'Public key copied to clipboard');
       } catch {
-        Alert.alert('Error', 'Failed to copy');
+        alert('Error', 'Failed to copy');
       }
     } else {
       try {
@@ -129,7 +129,7 @@ export default function AboutIdentityScreen() {
         // Cancelled
       }
     }
-  }, [publicKey]);
+  }, [publicKey, alert]);
 
   const truncateKey = (key: string): string => {
     if (key.length <= 20) return key;
@@ -157,14 +157,14 @@ export default function AboutIdentityScreen() {
       setIsSavingExpiration(true);
       await oxyServices.updateProfile({ accountExpiresAfterInactivityDays: selectedDays });
       // User object from useOxy should update automatically via the context
-      Alert.alert('Success', 'Account expiration setting updated successfully');
+      alert('Success', 'Account expiration setting updated successfully');
     } catch (error: any) {
       console.error('Failed to update expiration setting:', error);
-      Alert.alert('Error', error?.message || 'Failed to update account expiration setting. Please try again.');
+      alert('Error', error?.message || 'Failed to update account expiration setting. Please try again.');
     } finally {
       setIsSavingExpiration(false);
     }
-  }, [oxyServices, user]);
+  }, [oxyServices, user, alert]);
 
   // Show expiration selection dialog
   const showExpirationPicker = useCallback(() => {
@@ -176,7 +176,7 @@ export default function AboutIdentityScreen() {
       { label: 'Never', value: null },
     ];
 
-    Alert.alert(
+    alert(
       'Account Expiration',
       'Choose when your account expires after inactivity',
       [
@@ -187,7 +187,7 @@ export default function AboutIdentityScreen() {
         { text: 'Cancel', style: 'cancel' },
       ]
     );
-  }, [handleExpirationChange]);
+  }, [handleExpirationChange, alert]);
 
   // Save export history
   const saveExportHistory = useCallback(async (timestamp: string) => {
@@ -207,7 +207,7 @@ export default function AboutIdentityScreen() {
 
   // Export private key using expo-print
   const handleExportPrivateKey = useCallback(async () => {
-    Alert.alert(
+    alert(
       'Security Warning',
       'Exporting your private key will print it on paper. Anyone with access to this printed key can control your identity. Make sure you are in a secure location and will store the printed document safely.\n\nDo you want to continue?',
       [
@@ -222,7 +222,7 @@ export default function AboutIdentityScreen() {
               // Get private key
               const privateKey = await KeyManager.getPrivateKey();
               if (!privateKey) {
-                Alert.alert('Error', 'No private key found on this device');
+                alert('Error', 'No private key found on this device');
                 return;
               }
 
@@ -359,10 +359,10 @@ export default function AboutIdentityScreen() {
               const timestamp = new Date().toISOString();
               await saveExportHistory(timestamp);
 
-              Alert.alert('Success', 'Private key has been sent to printer');
+              alert('Success', 'Private key has been sent to printer');
             } catch (error: any) {
               console.error('Failed to export private key:', error);
-              Alert.alert('Error', error?.message || 'Failed to export private key. Please try again.');
+              alert('Error', error?.message || 'Failed to export private key. Please try again.');
             } finally {
               setIsExporting(false);
             }
@@ -370,7 +370,7 @@ export default function AboutIdentityScreen() {
         },
       ]
     );
-  }, [publicKey, saveExportHistory]);
+  }, [publicKey, saveExportHistory, alert]);
 
   // Self-custody features
   const selfCustodyItems = useMemo(() => [
@@ -551,7 +551,7 @@ export default function AboutIdentityScreen() {
                     iconColor: '#F59E0B',
                     title: 'View Recovery Phrase',
                     subtitle: 'Show your 12-word backup phrase',
-                    onPress: () => Alert.alert(
+                    onPress: () => alert(
                       'Security Check',
                       'Make sure no one is looking at your screen before viewing your recovery phrase.',
                       [
@@ -580,7 +580,7 @@ export default function AboutIdentityScreen() {
                     iconColor: colors.tint,
                     title: 'Export to Another Device',
                     subtitle: 'Use your recovery phrase on another device',
-                    onPress: () => Alert.alert(
+                    onPress: () => alert(
                       'Export Identity',
                       'To use your identity on another device, open Oxy Accounts on that device and choose "I Have a Recovery Phrase".',
                       [{ text: 'OK' }]

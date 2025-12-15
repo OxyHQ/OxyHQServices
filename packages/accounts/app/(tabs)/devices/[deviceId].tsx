@@ -1,10 +1,10 @@
 import React, { useMemo, useCallback, useState, useEffect } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
-import { AccountCard, ScreenHeader } from '@/components/ui';
+import { AccountCard, ScreenHeader, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
@@ -35,6 +35,7 @@ export default function DeviceDetailScreen() {
 
   // OxyServices integration
   const { oxyServices, isAuthenticated, isLoading: oxyLoading } = useOxy();
+  const alert = useAlert();
   const [device, setDevice] = useState<Device | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -114,7 +115,7 @@ export default function DeviceDetailScreen() {
     const isCurrent = Boolean(device.isCurrent);
 
     if (isCurrent) {
-      Alert.alert(
+      alert(
         'Cannot remove current device',
         'You cannot remove your current device. Please use another device to remove this one.',
         [{ text: 'OK' }]
@@ -122,7 +123,7 @@ export default function DeviceDetailScreen() {
       return;
     }
 
-    Alert.alert(
+    alert(
       'Remove device',
       `Are you sure you want to remove "${deviceName}"? This will sign out all sessions on this device.`,
       [
@@ -134,7 +135,7 @@ export default function DeviceDetailScreen() {
             // Explicitly check if oxyServices exists before attempting operations
             if (!oxyServices) {
               console.error('Failed to remove device: oxyServices is not available');
-              Alert.alert('Error', 'Service unavailable. Please try again.');
+              alert('Error', 'Service unavailable. Please try again.');
               return;
             }
 
@@ -146,11 +147,11 @@ export default function DeviceDetailScreen() {
               if (Platform.OS === 'web') {
                 console.log('Device removed successfully');
               } else {
-                Alert.alert('Success', 'Device removed successfully');
+                alert('Success', 'Device removed successfully');
               }
             } catch (err: any) {
               console.error('Failed to remove device:', err);
-              Alert.alert('Error', err?.message || 'Failed to remove device. Please try again.');
+              alert('Error', err?.message || 'Failed to remove device. Please try again.');
             } finally {
               setActionLoading(false);
             }
@@ -158,7 +159,7 @@ export default function DeviceDetailScreen() {
         },
       ]
     );
-  }, [device, deviceId, oxyServices, router]);
+  }, [device, deviceId, oxyServices, router, alert]);
 
   // Device information items
   const deviceInfoItems = useMemo(() => {

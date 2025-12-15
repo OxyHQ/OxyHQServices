@@ -427,7 +427,7 @@ const TextInputOutlined = ({
               flexShrink: 1,
               minWidth: 0,
             },
-            Platform.OS === 'web' ? { outline: 'none' } : undefined,
+            Platform.OS === 'web' ? { outline: 'none', outlineWidth: 0, outlineStyle: 'none' } : undefined,
             adornmentStyleAdjustmentForNativeInput,
             contentStyle,
           ],

@@ -678,14 +678,25 @@ router.patch('/:id/visibility', asyncHandler(async (req: AuthenticatedRequest, r
     throw new ForbiddenError('Access denied');
   }
 
+  // Only update if visibility is actually changing
+  if (file.visibility === visibility) {
+    // No change needed, return current file
+    return sendSuccess(res, {
+      file: {
+        id: file._id,
+        visibility: file.visibility,
+        updatedAt: file.updatedAt
+      }
+    });
+  }
+
   // Update visibility
   const updatedFile = await assetService.updateFileVisibility(fileId, visibility as FileVisibility);
 
   logger.info('File visibility updated', { 
     userId: user._id, 
     fileId,
-    oldVisibility: file.visibility,
-    newVisibility: visibility
+    visibility
   });
 
   sendSuccess(res, {

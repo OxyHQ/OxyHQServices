@@ -13,6 +13,7 @@ import { ScrollProvider } from '@/contexts/scroll-context';
 import { ThemeProvider as AppThemeProvider } from '@/contexts/theme-context';
 import AppSplashScreen from '@/components/AppSplashScreen';
 import { AppInitializer } from '@/lib/appInitializer';
+import { AlertProvider } from '@/components/ui';
 import * as SplashScreen from 'expo-splash-screen';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete
@@ -101,28 +102,30 @@ function RootLayoutContent() {
   // OxyProvider must always be rendered so screens can use useOxy() hook
   const appContent = useMemo(() => {
     return (
-      <OxyProvider baseURL={API_URL}>
-        {!appIsReady ? (
-          <AppSplashScreen
-            startFade={splashState.startFade}
-            onFadeComplete={handleSplashFadeComplete}
-          />
-        ) : (
-          <SafeAreaProvider>
-            <ScrollProvider>
-              <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-                <Stack>
-                  <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                  {/* Auth route is only available on native platforms */}
-                  <Stack.Screen name="(auth)" redirect={Platform.OS === 'web'} options={{ headerShown: false }} />
-                  <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-                </Stack>
-                <StatusBar style="auto" />
-              </ThemeProvider>
-            </ScrollProvider>
-          </SafeAreaProvider>
-        )}
-      </OxyProvider>
+      <AlertProvider>
+        <OxyProvider baseURL={API_URL}>
+          {!appIsReady ? (
+            <AppSplashScreen
+              startFade={splashState.startFade}
+              onFadeComplete={handleSplashFadeComplete}
+            />
+          ) : (
+            <SafeAreaProvider>
+              <ScrollProvider>
+                <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                  <Stack>
+                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+                    {/* Auth route is only available on native platforms */}
+                    <Stack.Screen name="(auth)" redirect={Platform.OS === 'web'} options={{ headerShown: false }} />
+                    <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+                  </Stack>
+                  <StatusBar style="auto" />
+                </ThemeProvider>
+              </ScrollProvider>
+            </SafeAreaProvider>
+          )}
+        </OxyProvider>
+      </AlertProvider>
     );
   }, [
     appIsReady,

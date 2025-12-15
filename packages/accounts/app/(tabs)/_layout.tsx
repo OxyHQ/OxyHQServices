@@ -1,32 +1,35 @@
-import { Slot } from 'expo-router';
+import { Slot, useRouter, usePathname } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
-import React, { useMemo, useState, useRef, useEffect, useCallback } from 'react';
+import React, { useMemo, useRef, useCallback, useState } from 'react';
 import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, TextInput, TouchableOpacity } from 'react-native';
-import { useRouter, usePathname, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { DesktopSidebar, DrawerContent } from '@/components/ui';
 import { Header } from '@/components/header';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useScrollContext } from '@/contexts/scroll-context';
-import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useThemeContext } from '@/contexts/theme-context';
 import { useOxy } from '@oxyhq/services';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+import { useSearchNavigation } from '@/hooks/use-search-navigation';
 import { darkenColor } from '@/utils/color-utils';
-import Animated, { useAnimatedStyle, useDerivedValue, withTiming, interpolate, runOnJS } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useDerivedValue, withTiming, runOnJS } from 'react-native-reanimated';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
   const { width } = useWindowDimensions();
   const router = useRouter();
   const pathname = usePathname();
-  const params = useLocalSearchParams<{ q?: string }>();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
-  const [searchQuery, setSearchQuery] = useState('');
+
   const searchInputRef = useRef<TextInput>(null);
-  const { setIsScrolled, isScrolled, scrollToTop, scrollY } = useScrollContext();
+
+  // Use custom hook for search navigation management
+  const { searchQuery, handleSearchChange } = useSearchNavigation({
+    searchInputRef,
+  });
+  const { setIsScrolled, scrollToTop, scrollY } = useScrollContext();
   const { toggleColorScheme } = useThemeContext();
   const [showGoToTopButton, setShowGoToTopButton] = useState(false);
 
@@ -93,26 +96,6 @@ export default function TabLayout() {
     const offsetY = event.nativeEvent.contentOffset.y;
     setIsScrolled(offsetY > 10);
   }, [setIsScrolled]);
-
-  const handleSearchChange = (text: string) => {
-    setSearchQuery(text);
-    if (pathname === '/(tabs)/search') {
-      router.setParams({ q: text || '' });
-    } else {
-      router.push({
-        pathname: '/(tabs)/search',
-        params: { q: text || '' },
-      });
-    }
-  };
-
-  useEffect(() => {
-    if (pathname === '/(tabs)/search') {
-      setSearchQuery(params.q || '');
-    } else {
-      setSearchQuery('');
-    }
-  }, [pathname, params.q]);
 
   if (isDesktop) {
     return (

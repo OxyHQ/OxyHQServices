@@ -1,10 +1,10 @@
 import React, { useMemo, useCallback, useState } from 'react';
-import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator, Alert, Platform } from 'react-native';
+import { View, StyleSheet, Text, TouchableOpacity, ActivityIndicator, Platform } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { ScreenHeader } from '@/components/ui';
+import { ScreenHeader, useAlert } from '@/components/ui';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
 import { AccountCard } from '@/components/ui';
@@ -20,6 +20,7 @@ export default function SessionsScreen() {
     
     // OxyServices integration
     const { sessions, activeSessionId, removeSession, switchSession, isLoading: oxyLoading, isAuthenticated, refreshSessions } = useOxy();
+    const alert = useAlert();
     const [actionLoading, setActionLoading] = useState<string | null>(null);
 
     const handlePressIn = useHapticPress();
@@ -44,7 +45,7 @@ export default function SessionsScreen() {
     // Handle session removal
     const handleRemoveSession = useCallback(async (sessionId: string, isActive: boolean) => {
         if (isActive) {
-            Alert.alert(
+            alert(
                 'Cannot remove active session',
                 'You cannot remove your current active session. Please switch to another session first.',
                 [{ text: 'OK' }]
@@ -52,7 +53,7 @@ export default function SessionsScreen() {
             return;
         }
 
-        Alert.alert(
+        alert(
             'Remove session',
             'Are you sure you want to remove this session?',
             [
@@ -68,11 +69,11 @@ export default function SessionsScreen() {
                                 // Toast would be shown here if toast library is available
                                 console.log('Session removed successfully');
                             } else {
-                                Alert.alert('Success', 'Session removed successfully');
+                                alert('Success', 'Session removed successfully');
                             }
                         } catch (error) {
                             console.error('Failed to remove session:', error);
-                            Alert.alert('Error', 'Failed to remove session. Please try again.');
+                            alert('Error', 'Failed to remove session. Please try again.');
                         } finally {
                             setActionLoading(null);
                         }
@@ -80,7 +81,7 @@ export default function SessionsScreen() {
                 },
             ]
         );
-    }, [removeSession]);
+    }, [removeSession, alert]);
 
     // Handle session switch
     const handleSwitchSession = useCallback(async (sessionId: string) => {
@@ -92,15 +93,15 @@ export default function SessionsScreen() {
             if (Platform.OS === 'web') {
                 console.log('Session switched successfully');
             } else {
-                Alert.alert('Success', 'Session switched successfully');
+                alert('Success', 'Session switched successfully');
             }
         } catch (error) {
             console.error('Failed to switch session:', error);
-            Alert.alert('Error', 'Failed to switch session. Please try again.');
+            alert('Error', 'Failed to switch session. Please try again.');
         } finally {
             setActionLoading(null);
         }
-    }, [switchSession, activeSessionId]);
+    }, [switchSession, activeSessionId, alert]);
 
     // Format session items for display
     const sessionItems = useMemo(() => {
