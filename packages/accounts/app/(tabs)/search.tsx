@@ -1,10 +1,10 @@
 import React, { useMemo, useState, useEffect } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions, TouchableOpacity, TextInput } from 'react-native';
+import { View, StyleSheet, Platform, useWindowDimensions, TouchableOpacity } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
-import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { AccountCard } from '@/components/ui';
@@ -59,20 +59,6 @@ export default function SearchScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {!isDesktop && (
-        <View style={[styles.mobileSearchBar, { backgroundColor: colors.card }]}>
-          <Ionicons name="search-outline" size={20} color={colors.icon} style={styles.mobileSearchIcon} />
-          <TextInput
-            style={[styles.mobileSearchInput, { color: colors.text }]}
-            placeholder="Search Oxy Account"
-            placeholderTextColor={colors.secondaryText}
-            value={localSearchQuery}
-            onChangeText={handleSearchChange}
-            returnKeyType="search"
-            autoFocus
-          />
-        </View>
-      )}
       <ScreenContentWrapper>
         <View style={[styles.content, isDesktop && styles.desktopContent]}>
         {!searchQuery.trim() ? (
@@ -151,25 +137,6 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  mobileSearchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 48,
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    marginHorizontal: 16,
-    marginTop: 16,
-    marginBottom: 8,
-    gap: 12,
-  },
-  mobileSearchIcon: {
-    opacity: 0.6,
-  },
-  mobileSearchInput: {
-    flex: 1,
-    fontSize: 16,
-    padding: 0,
   },
   scrollView: {
     flex: 1,

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, StyleSheet, Platform } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -10,10 +10,18 @@ export function DrawerContent(props: DrawerContentComponentProps) {
     const colorScheme = useColorScheme() ?? 'light';
     const colors = Colors[colorScheme];
 
+    const gradientColors = useMemo(() => {
+        if (colorScheme === 'dark') {
+            return ['rgba(0, 0, 0, 0.9)', 'rgba(0, 0, 0, 0.5)', 'transparent'];
+        } else {
+            return ['rgba(255, 255, 255, 0.9)', 'rgba(255, 255, 255, 0.5)', 'transparent'];
+        }
+    }, [colorScheme]);
+
     return (
         <View style={styles.container}>
             <LinearGradient
-                colors={['rgba(0, 0, 0, 0.9)', 'rgba(0, 0, 0, 0.5)', 'transparent']}
+                colors={gradientColors}
                 locations={[0, 0.6, 1]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}

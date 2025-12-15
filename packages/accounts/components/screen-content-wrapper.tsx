@@ -1,10 +1,15 @@
 import React, { useMemo } from 'react';
-import { ScrollView, StyleSheet } from 'react-native';
+import { StyleSheet, RefreshControl, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Animated, { useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
 import { useScrollContext } from '@/contexts/scroll-context';
+import { useColorScheme } from '@/hooks/use-color-scheme';
+import { Colors } from '@/constants/theme';
 
 interface ScreenContentWrapperProps {
   children: React.ReactNode;
+  refreshing?: boolean;
+  onRefresh?: () => void;
 }
 
 // Header dimensions - must match MobileHeader component
@@ -13,22 +18,42 @@ const HEADER_BOTTOM_PADDING = 10;
 // Content height: menu button (24px icon + 6px padding top + 6px padding bottom = 36px) is tallest
 const HEADER_CONTENT_HEIGHT = 36;
 
-export function ScreenContentWrapper({ children }: ScreenContentWrapperProps) {
-  const { setIsScrolled, scrollRef } = useScrollContext();
+export function ScreenContentWrapper({ children, refreshing = false, onRefresh }: ScreenContentWrapperProps) {
+  const { setIsScrolled, scrollRef, scrollY, scrollDirection } = useScrollContext();
   const insets = useSafeAreaInsets();
+  const colorScheme = useColorScheme() ?? 'light';
+  const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
 
-  const handleScroll = (event: any) => {
-    const offsetY = event.nativeEvent.contentOffset.y;
-    setIsScrolled(offsetY > 10);
-  };
+  const scrollHandler = useAnimatedScrollHandler({
+    onScroll: (event) => {
+      const currentY = event.contentOffset.y;
+      const previousY = scrollY.value;
+      
+      scrollY.value = currentY;
+      
+      // Determine scroll direction
+      if (currentY > previousY) {
+        scrollDirection.value = 'down';
+      } else if (currentY < previousY) {
+        scrollDirection.value = 'up';
+      }
+      
+      // Update isScrolled state on JS thread
+      if (currentY > 10 !== (previousY > 10)) {
+        runOnJS(setIsScrolled)(currentY > 10);
+      }
+    },
+  }, []);
 
   // Calculate header height: safe area + header padding + content + bottom padding
+  // This matches the header's actual rendered height on mobile
+  // Header has: paddingTop (insets.top + 4) + content (36) + paddingBottom (10) = total
   const headerHeight = useMemo(() => {
     return insets.top + HEADER_TOP_PADDING + HEADER_CONTENT_HEIGHT + HEADER_BOTTOM_PADDING;
   }, [insets.top]);
 
   return (
-    <ScrollView
+    <Animated.ScrollView
       ref={scrollRef}
       style={styles.scrollView}
       contentContainerStyle={[
@@ -36,12 +61,27 @@ export function ScreenContentWrapper({ children }: ScreenContentWrapperProps) {
         { paddingTop: headerHeight }
       ]}
       showsVerticalScrollIndicator={false}
-      onScroll={handleScroll}
+      onScroll={scrollHandler}
       scrollEventThrottle={16}
       nestedScrollEnabled={true}
+      contentInsetAdjustmentBehavior="never"
+      automaticallyAdjustContentInsets={false}
+      contentInset={{ top: 0, bottom: 0, left: 0, right: 0 }}
+      refreshControl={
+        onRefresh ? (
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor={colors.tint}
+            colors={[colors.tint]}
+            progressViewOffset={headerHeight + 8}
+            progressBackgroundColor={colors.background}
+          />
+        ) : undefined
+      }
     >
       {children}
-    </ScrollView>
+    </Animated.ScrollView>
   );
 }
 

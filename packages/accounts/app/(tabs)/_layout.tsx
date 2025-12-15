@@ -14,6 +14,7 @@ import { useThemeContext } from '@/contexts/theme-context';
 import { useOxy } from '@oxyhq/services';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { darkenColor } from '@/utils/color-utils';
+import Animated, { useAnimatedStyle, useDerivedValue, withTiming, interpolate } from 'react-native-reanimated';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -25,8 +26,9 @@ export default function TabLayout() {
   const isDesktop = Platform.OS === 'web' && width >= 768;
   const [searchQuery, setSearchQuery] = useState('');
   const searchInputRef = useRef<TextInput>(null);
-  const { setIsScrolled, isScrolled } = useScrollContext();
+  const { setIsScrolled, isScrolled, scrollToTop, scrollY } = useScrollContext();
   const { toggleColorScheme } = useThemeContext();
+  const [showGoToTopButton, setShowGoToTopButton] = useState(false);
 
   const { showBottomSheet, refreshSessions } = useOxy();
   const { scrollRef } = useScrollContext();
@@ -54,10 +56,59 @@ export default function TabLayout() {
     router.push('/(tabs)/scan-qr');
   }, [router]);
 
+  const handleGoToTop = useCallback(() => {
+    scrollToTop();
+  }, [scrollToTop]);
+
+  // Determine if FAB should show scan or go to top based on scroll position
+  const showGoToTop = useDerivedValue(() => {
+    return scrollY.value > 100; // Show go to top after scrolling 100px
+  }, []);
+
+  // Animated styles for FAB icon transition
+  const fabIconAnimatedStyle = useAnimatedStyle(() => {
+    const showTop = showGoToTop.value;
+    return {
+      opacity: withTiming(showTop ? 1 : 0, { duration: 200 }),
+      transform: [{ scale: withTiming(showTop ? 1 : 0.8, { duration: 200 }) }],
+    };
+  }, []);
+
+  const scanIconAnimatedStyle = useAnimatedStyle(() => {
+    const showTop = showGoToTop.value;
+    return {
+      opacity: withTiming(showTop ? 0 : 1, { duration: 200 }),
+      transform: [{ scale: withTiming(showTop ? 0.8 : 1, { duration: 200 }) }],
+    };
+  }, []);
+
   const handleScroll = useCallback((event: any) => {
     const offsetY = event.nativeEvent.contentOffset.y;
     setIsScrolled(offsetY > 10);
   }, [setIsScrolled]);
+
+  // Update showGoToTopButton state based on scroll position
+  useEffect(() => {
+    // Update when isScrolled changes (which happens when scrollY > 10)
+    // We'll check scrollY.value periodically for the 100px threshold
+    if (!isScrolled) {
+      setShowGoToTopButton(false);
+      return;
+    }
+    
+    const checkScroll = () => {
+      // Access scrollY.value - this will be updated by the scroll handler
+      // We need to check it periodically since it's a shared value
+      const currentScrollY = scrollY.value;
+      setShowGoToTopButton(currentScrollY > 100);
+    };
+    
+    // Check periodically (scrollY updates are on UI thread)
+    const interval = setInterval(checkScroll, 50);
+    checkScroll(); // Initial check
+    
+    return () => clearInterval(interval);
+  }, [isScrolled, scrollY]);
 
   const handleSearchChange = (text: string) => {
     setSearchQuery(text);
@@ -260,17 +311,24 @@ export default function TabLayout() {
         />
       </Drawer>
 
-      {/* FAB Button for QR Scan - Mobile - Fixed outside ScrollView */}
+      {/* FAB Button - Mobile - Changes between Scan and Go to Top */}
       {Platform.OS !== 'web' && !pathname.includes('scan-qr') && (
         <View style={styles.fabButton}>
           <TouchableOpacity
             style={styles.circleButton}
             onPressIn={handlePressIn}
-            onPress={handleScanQR}
+            onPress={showGoToTopButton ? handleGoToTop : handleScanQR}
             activeOpacity={0.8}
           >
-            <View style={[styles.fabIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
-              <MaterialCommunityIcons name="qrcode-scan" size={26} color={darkenColor(colors.sidebarIconSecurity)} />
+            <View style={[styles.fabIconContainer, { backgroundColor: colorScheme === 'dark' ? colors.text : colors.background }]}>
+              {/* Scan Icon - shown when at top */}
+              <Animated.View style={[styles.fabIconAbsolute, scanIconAnimatedStyle]}>
+                <MaterialCommunityIcons name="qrcode-scan" size={26} color={colorScheme === 'dark' ? colors.background : colors.text} />
+              </Animated.View>
+              {/* Go to Top Icon - shown when scrolling */}
+              <Animated.View style={[styles.fabIconAbsolute, fabIconAnimatedStyle]}>
+                <MaterialCommunityIcons name="arrow-up" size={26} color={colorScheme === 'dark' ? colors.background : colors.text} />
+              </Animated.View>
             </View>
           </TouchableOpacity>
         </View>
@@ -355,6 +413,29 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 4,
+        },
+        shadowOpacity: 0.3,
+        shadowRadius: 8,
+      },
+      android: {
+        elevation: 8,
+      },
+      web: {
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.15)',
+      },
+    }),
+  },
+  fabIconAbsolute: {
+    position: 'absolute',
     alignItems: 'center',
     justifyContent: 'center',
   },

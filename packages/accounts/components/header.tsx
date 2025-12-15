@@ -3,7 +3,7 @@ import { View, TouchableOpacity, StyleSheet, Platform, TextInput, useWindowDimen
 import { BlurView } from 'expo-blur';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
 import type { DrawerNavigationProp } from '@react-navigation/drawer';
-import { useRouter } from 'expo-router';
+import { useRouter, usePathname } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -16,6 +16,7 @@ import { getDisplayName } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { darkenColor } from '@/utils/color-utils';
 import * as Haptics from 'expo-haptics';
+import Animated, { useAnimatedStyle, withTiming, useDerivedValue } from 'react-native-reanimated';
 
 interface HeaderProps {
     searchQuery: string;
@@ -43,12 +44,14 @@ const getHapticStyle = (intensity: number): Haptics.ImpactFeedbackStyle => {
 export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderProps) {
     const navigation = useNavigation<DrawerNavigationProp<any>>();
     const router = useRouter();
+    const pathname = usePathname();
     const colorScheme = useColorScheme();
     const colors = Colors[colorScheme ?? 'light'];
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
-    const { isScrolled, scrollToTop } = useScrollContext();
+    const { isScrolled, scrollToTop, scrollY, scrollDirection } = useScrollContext();
     const isDesktop = Platform.OS === 'web' && width >= 768;
+    const isSearchScreen = pathname === '/(tabs)/search';
 
     const { user, oxyServices, showBottomSheet, isAuthenticated, refreshSessions } = useOxy();
 
@@ -177,59 +180,153 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
         styles.header,
         {
             paddingTop: isDesktop ? 0 : insets.top + 4,
-            paddingBottom: isDesktop ? 0 : 10,
+            paddingBottom: isDesktop ? 0 : (isSearchScreen ? 0 : 10),
             paddingHorizontal: isDesktop ? 16 : 10,
             borderBottomColor: colors.border,
             borderBottomWidth: isDesktop ? 0.5 : 0,
         },
-    ], [insets.top, colors.border, isDesktop]);
+    ], [insets.top, colors.border, isDesktop, isSearchScreen]);
 
     const searchBarBackgroundColor = useMemo(() =>
         colorScheme === 'dark' ? 'rgba(44, 44, 46, 0.7)' : 'rgba(248, 249, 250, 0.7)',
         [colorScheme]
     );
 
-    const logoCenterStyle = useMemo(() => ({
-        top: insets.top + 4,
-    }), [insets.top]);
+    // Track header visibility based on scroll
+    const headerVisible = useDerivedValue(() => {
+        const scrollThreshold = 10;
+        
+        // Always show header when at top
+        if (scrollY.value < scrollThreshold) {
+            return 1;
+        }
+        
+        // Hide when scrolling down, show when scrolling up
+        return scrollDirection.value === 'down' ? 0 : 1;
+    }, []);
+
+    // Animated styles for header slide/fade based on scroll
+    const headerAnimatedStyle = useAnimatedStyle(() => {
+        const headerHeight = isDesktop ? 64 : (insets.top + 4 + 36 + (isSearchScreen ? 0 : 10));
+        const visible = headerVisible.value;
+        
+        return {
+            transform: [{ 
+                translateY: withTiming(visible === 1 ? 0 : -headerHeight, { 
+                    duration: 300 
+                }) 
+            }],
+            opacity: withTiming(visible, { duration: 300 }),
+        };
+    }, [isDesktop, insets.top, isSearchScreen]);
 
     const avatarSize = isDesktop ? 36 : 32;
     const avatarBorderRadius = avatarSize / 2;
     const avatarIconSize = isDesktop ? 20 : 18;
 
     return (
-        <BlurView
-            intensity={isScrolled ? 50 : 0}
-            tint={colorScheme === 'dark' ? 'dark' : 'light'}
-            experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
-            style={headerStyle}
-        >
-            <View style={[styles.topBarLeft, !isDesktop && styles.topBarLeftMobile]}>
-                {!isDesktop && (
+        <Animated.View style={headerAnimatedStyle}>
+            <BlurView
+                intensity={isScrolled ? 50 : 0}
+                tint={colorScheme === 'dark' ? 'dark' : 'light'}
+                experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
+                style={[headerStyle, !isDesktop && isSearchScreen && styles.headerColumn]}
+            >
+            <View style={styles.headerRow}>
+                <View style={[styles.topBarLeft, !isDesktop && styles.topBarLeftMobile]}>
+                    {!isDesktop && (
+                        <TouchableOpacity
+                            onPressIn={handlePressIn}
+                            onPress={handleMenuPress}
+                            style={styles.menuButton}
+                        >
+                            <Ionicons name="menu" size={24} color={colors.text} />
+                        </TouchableOpacity>
+                    )}
+                    {isDesktop && (
+                        <TouchableOpacity
+                            onPressIn={handleLogoPressIn}
+                            onPress={handleLogoPress}
+                            onLongPress={handleLogoLongPressStart}
+                            onPressOut={handleLogoPressOut}
+                            activeOpacity={0.7}
+                        >
+                            <LogoIcon height={32} useThemeColors={true} />
+                        </TouchableOpacity>
+                    )}
+                </View>
+
+                {isDesktop ? (
+                    <View style={styles.searchBarContainer}>
+                        <View style={[styles.searchBar, {
+                            backgroundColor: searchBarBackgroundColor,
+                            borderColor: colors.border
+                        }]}>
+                            <Ionicons name="search-outline" size={20} color={colors.text} style={styles.searchIcon} />
+                            <TextInput
+                                ref={searchInputRef}
+                                style={[styles.searchInput, { color: colors.text }]}
+                                placeholder="Search Oxy Account"
+                                placeholderTextColor={colors.secondaryText}
+                                value={searchQuery}
+                                onChangeText={onSearchChange}
+                                returnKeyType="search"
+                            />
+                        </View>
+                    </View>
+                ) : (
+                    <View style={styles.logoCenterContainer}>
+                        <TouchableOpacity
+                            onPressIn={handleLogoPressIn}
+                            onPress={handleLogoPress}
+                            onLongPress={handleLogoLongPressStart}
+                            onPressOut={handleLogoPressOut}
+                            activeOpacity={0.7}
+                        >
+                            <LogoIcon height={24} useThemeColors={true} />
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                <View style={[styles.topBarRight, !isDesktop && styles.topBarRightMobile]}>
+                    {!isDesktop && !isSearchScreen && (
+                        <TouchableOpacity
+                            style={styles.iconButton}
+                            onPressIn={handlePressIn}
+                            onPress={handleSearchPress}
+                        >
+                            <Ionicons name="search-outline" size={22} color={colors.text} />
+                        </TouchableOpacity>
+                    )}
                     <TouchableOpacity
                         onPressIn={handlePressIn}
-                        onPress={handleMenuPress}
-                        style={styles.menuButton}
-                    >
-                        <Ionicons name="menu" size={24} color={colors.text} />
-                    </TouchableOpacity>
-                )}
-                {isDesktop && (
-                    <TouchableOpacity
-                        onPressIn={handleLogoPressIn}
-                        onPress={handleLogoPress}
-                        onLongPress={handleLogoLongPressStart}
-                        onPressOut={handleLogoPressOut}
+                        onPress={handleAvatarPress}
                         activeOpacity={0.7}
                     >
-                        <LogoIcon height={32} useThemeColors={true} />
+                        {isAuthenticated ? (
+                            <UserAvatar name={displayName} imageUrl={avatarUrl} size={avatarSize} />
+                        ) : (
+                            <View style={[styles.userIconContainer, {
+                                backgroundColor: colors.sidebarIconPersonalInfo,
+                                width: avatarSize,
+                                height: avatarSize,
+                                borderRadius: avatarBorderRadius,
+                            }]}>
+                                <MaterialCommunityIcons
+                                    name="account-outline"
+                                    size={avatarIconSize}
+                                    color={darkenColor(colors.sidebarIconPersonalInfo)}
+                                />
+                            </View>
+                        )}
                     </TouchableOpacity>
-                )}
+                </View>
             </View>
 
-            {isDesktop ? (
-                <View style={styles.searchBarContainer}>
-                    <View style={[styles.searchBar, {
+            {/* Mobile search bar at bottom of header */}
+            {!isDesktop && isSearchScreen && (
+                <View style={styles.mobileSearchBarContainer}>
+                    <View style={[styles.mobileSearchBar, {
                         backgroundColor: searchBarBackgroundColor,
                         borderColor: colors.border
                     }]}>
@@ -242,57 +339,13 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
                             value={searchQuery}
                             onChangeText={onSearchChange}
                             returnKeyType="search"
+                            autoFocus
                         />
                     </View>
                 </View>
-            ) : (
-                <View style={[styles.logoCenter, logoCenterStyle]} pointerEvents="box-none">
-                    <TouchableOpacity
-                        onPressIn={handleLogoPressIn}
-                        onPress={handleLogoPress}
-                        onLongPress={handleLogoLongPressStart}
-                        onPressOut={handleLogoPressOut}
-                        activeOpacity={0.7}
-                    >
-                        <LogoIcon height={24} useThemeColors={true} />
-                    </TouchableOpacity>
-                </View>
             )}
-
-            <View style={[styles.topBarRight, !isDesktop && styles.topBarRightMobile]}>
-                {!isDesktop && (
-                    <TouchableOpacity
-                        style={styles.iconButton}
-                        onPressIn={handlePressIn}
-                        onPress={handleSearchPress}
-                    >
-                        <Ionicons name="search-outline" size={22} color={colors.text} />
-                    </TouchableOpacity>
-                )}
-                <TouchableOpacity
-                    onPressIn={handlePressIn}
-                    onPress={handleAvatarPress}
-                    activeOpacity={0.7}
-                >
-                    {isAuthenticated ? (
-                        <UserAvatar name={displayName} imageUrl={avatarUrl} size={avatarSize} />
-                    ) : (
-                        <View style={[styles.userIconContainer, {
-                            backgroundColor: colors.sidebarIconPersonalInfo,
-                            width: avatarSize,
-                            height: avatarSize,
-                            borderRadius: avatarBorderRadius,
-                        }]}>
-                            <MaterialCommunityIcons
-                                name="account-outline"
-                                size={avatarIconSize}
-                                color={darkenColor(colors.sidebarIconPersonalInfo)}
-                            />
-                        </View>
-                    )}
-                </TouchableOpacity>
-            </View>
-        </BlurView>
+            </BlurView>
+        </Animated.View>
     );
 }
 
@@ -313,6 +366,15 @@ const styles = StyleSheet.create({
             },
         }),
     },
+    headerColumn: {
+        flexDirection: 'column',
+    },
+    headerRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        width: '100%',
+    },
     menuButton: {
         padding: 6,
     },
@@ -324,14 +386,13 @@ const styles = StyleSheet.create({
     topBarLeftMobile: {
         flex: 1,
         justifyContent: 'flex-start',
+        minWidth: 0,
     },
-    logoCenter: {
-        position: 'absolute',
-        left: 0,
-        right: 0,
+    logoCenterContainer: {
+        flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        pointerEvents: 'box-none',
+        minWidth: 0,
     },
     topBarRight: {
         flexDirection: 'row',
@@ -341,6 +402,7 @@ const styles = StyleSheet.create({
     topBarRightMobile: {
         flex: 1,
         justifyContent: 'flex-end',
+        minWidth: 0,
     },
     iconButton: {
         padding: 6,
@@ -374,5 +436,19 @@ const styles = StyleSheet.create({
         flex: 1,
         fontSize: 16,
         padding: 0,
+    },
+    mobileSearchBarContainer: {
+        paddingHorizontal: 10,
+        paddingBottom: 10,
+        paddingTop: 8,
+    },
+    mobileSearchBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        height: 48,
+        borderRadius: 24,
+        paddingHorizontal: 16,
+        gap: 12,
+        borderWidth: 0.5,
     },
 });

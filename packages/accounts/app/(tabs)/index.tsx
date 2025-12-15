@@ -1,4 +1,4 @@
-import React, { useMemo, useCallback, useRef, useEffect } from 'react';
+import React, { useMemo, useCallback, useRef, useEffect, useState } from 'react';
 import { View, StyleSheet, Platform, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import LottieView from 'lottie-react-native';
 import { useRouter } from 'expo-router';
@@ -22,6 +22,7 @@ export default function HomeScreen() {
   const router = useRouter();
   const lottieRef = useRef<LottieView>(null);
   const hasPlayedRef = useRef(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   // OxyServices integration
   const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, isIdentitySynced, syncIdentity, identitySyncState, openAvatarPicker } = useOxy();
@@ -99,6 +100,23 @@ export default function HomeScreen() {
       console.error('Failed to refresh sessions', error);
     }
   }, [refreshSessions]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      // Refresh sessions and sync identity if needed
+      if (refreshSessions) {
+        await refreshSessions();
+      }
+      if (syncIdentity && !isSynced) {
+        await syncIdentity();
+      }
+    } catch (error) {
+      console.error('Failed to refresh', error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [refreshSessions, syncIdentity, isSynced]);
 
   const handleDevices = useCallback(() => {
     showBottomSheet?.('SessionManagement');
@@ -291,7 +309,7 @@ export default function HomeScreen() {
   }
 
   return (
-    <ScreenContentWrapper>
+    <ScreenContentWrapper refreshing={refreshing} onRefresh={handleRefresh}>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.content}>
           <View style={styles.header}>

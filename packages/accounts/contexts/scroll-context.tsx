@@ -1,25 +1,39 @@
-import React, { createContext, useContext, useState, ReactNode, useRef } from 'react';
-import { ScrollView } from 'react-native';
+import React, { createContext, useContext, useState, ReactNode, useRef, useMemo } from 'react';
+import Animated from 'react-native-reanimated';
+import { useSharedValue, SharedValue } from 'react-native-reanimated';
 
 interface ScrollContextType {
   isScrolled: boolean;
   setIsScrolled: (isScrolled: boolean) => void;
-  scrollRef: React.RefObject<ScrollView>;
+  scrollRef: React.RefObject<Animated.ScrollView>;
   scrollToTop: () => void;
+  scrollY: SharedValue<number>;
+  scrollDirection: SharedValue<'up' | 'down'>;
 }
 
 const ScrollContext = createContext<ScrollContextType | undefined>(undefined);
 
 export function ScrollProvider({ children }: { children: ReactNode }) {
   const [isScrolled, setIsScrolled] = useState(false);
-  const scrollRef = useRef<ScrollView>(null);
+  const scrollRef = useRef<Animated.ScrollView>(null);
+  const scrollY = useSharedValue(0);
+  const scrollDirection = useSharedValue<'up' | 'down'>('up');
 
   const scrollToTop = () => {
     scrollRef.current?.scrollTo({ y: 0, animated: true });
   };
 
+  const value = useMemo(() => ({
+    isScrolled,
+    setIsScrolled,
+    scrollRef,
+    scrollToTop,
+    scrollY,
+    scrollDirection,
+  }), [isScrolled, scrollY, scrollDirection]);
+
   return (
-    <ScrollContext.Provider value={{ isScrolled, setIsScrolled, scrollRef, scrollToTop }}>
+    <ScrollContext.Provider value={value}>
       {children}
     </ScrollContext.Provider>
   );
