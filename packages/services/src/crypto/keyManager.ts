@@ -28,7 +28,15 @@ const STORAGE_KEYS = {
  */
 async function initSecureStore(): Promise<typeof import('expo-secure-store')> {
   if (!SecureStore) {
-    SecureStore = await import('expo-secure-store');
+    try {
+      SecureStore = await import('expo-secure-store');
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to load expo-secure-store: ${errorMessage}. Make sure expo-secure-store is installed and properly configured.`);
+    }
+  }
+  if (!SecureStore) {
+    throw new Error('expo-secure-store module is not available');
   }
   return SecureStore;
 }
@@ -95,6 +103,19 @@ export interface KeyPair {
 }
 
 export class KeyManager {
+  // In-memory cache for identity state (invalidated on identity changes)
+  private static cachedPublicKey: string | null = null;
+  private static cachedHasIdentity: boolean | null = null;
+
+  /**
+   * Invalidate cached identity state
+   * Called internally when identity is created/deleted/imported
+   */
+  private static invalidateCache(): void {
+    KeyManager.cachedPublicKey = null;
+    KeyManager.cachedHasIdentity = null;
+  }
+
   /**
    * Generate a new ECDSA secp256k1 key pair
    * Returns the keys in hexadecimal format
@@ -129,13 +150,15 @@ export class KeyManager {
     const store = await initSecureStore();
     const { privateKey, publicKey } = await KeyManager.generateKeyPair();
 
-    // Store private key securely
     await store.setItemAsync(STORAGE_KEYS.PRIVATE_KEY, privateKey, {
       keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     });
 
-    // Store public key (for quick access without deriving)
     await store.setItemAsync(STORAGE_KEYS.PUBLIC_KEY, publicKey);
+
+    // Update cache
+    KeyManager.cachedPublicKey = publicKey;
+    KeyManager.cachedHasIdentity = true;
 
     return publicKey;
   }
@@ -146,15 +169,17 @@ export class KeyManager {
   static async importKeyPair(privateKey: string): Promise<string> {
     const store = await initSecureStore();
     
-    // Derive public key from private key
     const keyPair = ec.keyFromPrivate(privateKey);
     const publicKey = keyPair.getPublic('hex');
 
-    // Store both keys
     await store.setItemAsync(STORAGE_KEYS.PRIVATE_KEY, privateKey, {
       keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     });
     await store.setItemAsync(STORAGE_KEYS.PUBLIC_KEY, publicKey);
+
+    // Update cache
+    KeyManager.cachedPublicKey = publicKey;
+    KeyManager.cachedHasIdentity = true;
 
     return publicKey;
   }
@@ -164,24 +189,71 @@ export class KeyManager {
    * WARNING: Only use this for signing operations within the app
    */
   static async getPrivateKey(): Promise<string | null> {
-    const store = await initSecureStore();
-    return store.getItemAsync(STORAGE_KEYS.PRIVATE_KEY);
+    try {
+      const store = await initSecureStore();
+      return await store.getItemAsync(STORAGE_KEYS.PRIVATE_KEY);
+    } catch (error) {
+      // If secure store is not available, return null (no identity)
+      // This allows the app to continue functioning even if secure store fails to load
+      if (__DEV__) {
+        console.warn('[KeyManager] Failed to access secure store:', error);
+      }
+      return null;
+    }
   }
 
   /**
-   * Get the stored public key
+   * Get the stored public key (cached for performance)
    */
   static async getPublicKey(): Promise<string | null> {
-    const store = await initSecureStore();
-    return store.getItemAsync(STORAGE_KEYS.PUBLIC_KEY);
+    if (KeyManager.cachedPublicKey !== null) {
+      return KeyManager.cachedPublicKey;
+    }
+
+    try {
+      const store = await initSecureStore();
+      const publicKey = await store.getItemAsync(STORAGE_KEYS.PUBLIC_KEY);
+      
+      // Cache result (null is a valid cache value meaning no identity)
+      KeyManager.cachedPublicKey = publicKey;
+      
+      return publicKey;
+    } catch (error) {
+      // If secure store is not available, return null (no identity)
+      // Cache null to avoid repeated failed attempts
+      KeyManager.cachedPublicKey = null;
+      if (__DEV__) {
+        console.warn('[KeyManager] Failed to access secure store:', error);
+      }
+      return null;
+    }
   }
 
   /**
-   * Check if an identity (key pair) exists on this device
+   * Check if an identity (key pair) exists on this device (cached for performance)
    */
   static async hasIdentity(): Promise<boolean> {
-    const privateKey = await KeyManager.getPrivateKey();
-    return privateKey !== null;
+    if (KeyManager.cachedHasIdentity !== null) {
+      return KeyManager.cachedHasIdentity;
+    }
+
+    try {
+      const privateKey = await KeyManager.getPrivateKey();
+      const hasIdentity = privateKey !== null;
+      
+      // Cache result
+      KeyManager.cachedHasIdentity = hasIdentity;
+      
+      return hasIdentity;
+    } catch (error) {
+      // If we can't check, assume no identity (safer default)
+      // Cache false to avoid repeated failed attempts
+      KeyManager.cachedHasIdentity = false;
+      if (__DEV__) {
+        console.warn('[KeyManager] Failed to check identity:', error);
+      }
+      return false;
+    }
   }
 
   /**
@@ -227,6 +299,9 @@ export class KeyManager {
 
     await store.deleteItemAsync(STORAGE_KEYS.PRIVATE_KEY);
     await store.deleteItemAsync(STORAGE_KEYS.PUBLIC_KEY);
+    
+    // Invalidate cache
+    KeyManager.invalidateCache();
     
     // Also clear backup if force deletion
     if (force) {
@@ -343,16 +418,17 @@ export class KeyManager {
         return false; // Backup keys don't match
       }
 
-      // Restore from backup
       await store.setItemAsync(STORAGE_KEYS.PRIVATE_KEY, backupPrivateKey, {
         keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
       await store.setItemAsync(STORAGE_KEYS.PUBLIC_KEY, backupPublicKey);
 
-      // Verify restoration was successful
       const restored = await KeyManager.verifyIdentityIntegrity();
       if (restored) {
-        // Update backup timestamp
+        // Update cache
+        KeyManager.cachedPublicKey = backupPublicKey;
+        KeyManager.cachedHasIdentity = true;
+
         await store.setItemAsync(STORAGE_KEYS.BACKUP_TIMESTAMP, Date.now().toString());
         return true;
       }
