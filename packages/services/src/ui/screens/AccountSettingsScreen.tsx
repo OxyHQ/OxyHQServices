@@ -504,13 +504,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     };
 
     const openAvatarPicker = useCallback(() => {
-        if (!navigate) {
-            console.error('[AccountSettings] navigate function is not available');
-            toast.error(t('editProfile.toasts.avatarPickerUnavailable') || 'Avatar picker is not available in this build.');
-            return;
-        }
-
-        navigate('FileManagement', {
+        navigate?.('FileManagement', {
             selectMode: true,
             multiSelect: false,
             disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
@@ -607,39 +601,37 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
     // Handle initialField prop - open appropriate modal
     useEffect(() => {
-        if (!initialField) return;
-
-        // Special handling for avatar - open avatar picker directly
-        if (initialField === 'avatar') {
-            // Wait a bit for the screen to be fully mounted and navigate to be available
-            const timeoutId = setTimeout(() => {
-                openAvatarPicker();
-            }, 500); // Increased timeout to ensure navigate is available
-            return () => clearTimeout(timeoutId);
-        } else {
-            // Open appropriate modal
-            setTimeout(() => {
-                switch (initialField) {
-                    case 'displayName':
-                        setShowEditDisplayNameModal(true);
-                        break;
-                    case 'username':
-                        setShowEditUsernameModal(true);
-                        break;
-                    case 'email':
-                        setShowEditEmailModal(true);
-                        break;
-                    case 'bio':
-                        setShowEditBioModal(true);
-                        break;
-                    case 'location':
-                        setShowEditLocationModal(true);
-                        break;
-                    case 'links':
-                        setShowEditLinksModal(true);
-                        break;
-                }
-            }, 300);
+        if (initialField) {
+            // Special handling for avatar - open avatar picker directly
+            if (initialField === 'avatar') {
+                setTimeout(() => {
+                    openAvatarPicker();
+                }, 300);
+            } else {
+                // Open appropriate modal
+                setTimeout(() => {
+                    switch (initialField) {
+                        case 'displayName':
+                            setShowEditDisplayNameModal(true);
+                            break;
+                        case 'username':
+                            setShowEditUsernameModal(true);
+                            break;
+                        case 'email':
+                            setShowEditEmailModal(true);
+                            break;
+                        case 'bio':
+                            setShowEditBioModal(true);
+                            break;
+                        case 'location':
+                            setShowEditLocationModal(true);
+                            break;
+                        case 'links':
+                            setShowEditLinksModal(true);
+                            break;
+                    }
+                }, 300);
+            }
         }
     }, [initialField, openAvatarPicker]);
 
