@@ -28,10 +28,10 @@ import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
 import { useQueryClient } from '@tanstack/react-query';
 import { clearQueryCache } from '../hooks/queryClient';
-import { useAccountStore } from '../stores/accountStore';
 import { KeyManager } from '../../crypto/keyManager';
 import { translate } from '../../i18n';
-import { queryKeys } from '../hooks/queries/queryKeys';
+import { updateAvatarVisibility, updateProfileWithAvatar } from '../utils/avatarUtils';
+import { useAccountStore } from '../stores/accountStore';
 
 export interface OxyContextState {
   user: User | null;
@@ -633,27 +633,17 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             return;
           }
           try {
-            // Update file visibility to public for avatar (skip if temporary asset ID)
-            if (file.id && !file.id.startsWith('temp-')) {
-              try {
-                await oxyServices.assetUpdateVisibility(file.id, 'public');
-                console.log('[OxyContext] Avatar visibility updated to public');
-              } catch (visError: any) {
-                // Only log non-404 errors (404 means asset doesn't exist yet, which is OK)
-                if (visError?.response?.status !== 404) {
-                  console.warn('[OxyContext] Failed to update avatar visibility, continuing anyway:', visError);
-                }
-              }
-            }
+            // Update file visibility to public for avatar
+            await updateAvatarVisibility(file.id, oxyServices, 'OxyContext');
 
-            // Update user profile directly
-            await oxyServices.updateProfile({ avatar: file.id });
-
-            // Invalidate queries to refresh user data
-            queryClient.invalidateQueries({ queryKey: queryKeys.accounts.current() });
-            if (activeSessionId) {
-              queryClient.invalidateQueries({ queryKey: queryKeys.users.profile(activeSessionId) });
-            }
+            // Update user profile (handles query invalidation and accountStore update)
+            await updateProfileWithAvatar(
+              { avatar: file.id },
+              oxyServices,
+              activeSessionId,
+              queryClient,
+              syncIdentity
+            );
 
             toast.success(translate(currentLanguage, 'editProfile.toasts.avatarUpdated') || 'Avatar updated');
           } catch (e: any) {
@@ -662,7 +652,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         },
       },
     });
-  }, [oxyServices, currentLanguage, showBottomSheetForContext, queryClient, activeSessionId]);
+  }, [oxyServices, currentLanguage, showBottomSheetForContext, activeSessionId, queryClient, syncIdentity]);
 
   const contextValue: OxyContextState = useMemo(() => ({
     user,

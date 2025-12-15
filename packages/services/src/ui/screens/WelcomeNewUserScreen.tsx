@@ -12,6 +12,7 @@ import GroupedPillButtons from '../components/internal/GroupedPillButtons';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
 import { useUpdateProfile } from '../hooks/mutations/useAccountMutations';
+import { updateAvatarVisibility } from '../utils/avatarUtils';
 
 const GAP = 12;
 const INNER_GAP = 8;
@@ -147,18 +148,8 @@ const WelcomeNewUserScreen: React.FC<BaseScreenProps & { newUser?: any }> = ({
                     return;
                 }
                 try {
-                    // Update file visibility to public for avatar (skip if temporary asset ID)
-                    if (file.id && !file.id.startsWith('temp-')) {
-                        try {
-                            await oxyServices.assetUpdateVisibility(file.id, 'public');
-                            console.log('[WelcomeNewUser] Avatar visibility updated to public');
-                        } catch (visError: any) {
-                            // Only log non-404 errors (404 means asset doesn't exist yet, which is OK)
-                            if (visError?.response?.status !== 404) {
-                                console.warn('[WelcomeNewUser] Failed to update avatar visibility, continuing anyway:', visError);
-                            }
-                        }
-                    }
+                    // Update file visibility to public for avatar
+                    await updateAvatarVisibility(file.id, oxyServices, 'WelcomeNewUser');
 
                     // Update the avatar immediately in local state
                     setSelectedAvatarId(file.id);

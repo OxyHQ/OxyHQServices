@@ -34,6 +34,21 @@ export const Colors = {
     sidebarIconFamily: '#EA4335',
     sidebarIconPayments: '#FBBC04',
     sidebarIconStorage: '#FF9800',
+    // Banner colors
+    bannerWarningBackground: '#FEF3C7',
+    bannerWarningBorder: '#FCD34D',
+    bannerWarningIcon: '#D97706',
+    bannerWarningText: '#92400E',
+    bannerWarningSubtext: '#B45309',
+    bannerWarningButton: '#D97706',
+    bannerInfoBackground: '#E0E7FF',
+    bannerInfoBorder: '#C7D2FE',
+    bannerInfoIcon: '#4F46E5',
+    bannerInfoText: '#312E81',
+    bannerInfoSubtext: '#4338CA',
+    // Identity icon colors
+    identityIconSelfCustody: '#10B981',
+    identityIconPublicKey: '#8B5CF6',
   },
   dark: {
     text: '#ECEDEE',
@@ -60,6 +75,21 @@ export const Colors = {
     sidebarIconFamily: '#F28B82',
     sidebarIconPayments: '#FDD663',
     sidebarIconStorage: '#FFB74D',
+    // Banner colors
+    bannerWarningBackground: '#78350F',
+    bannerWarningBorder: '#92400E',
+    bannerWarningIcon: '#FCD34D',
+    bannerWarningText: '#FEF3C7',
+    bannerWarningSubtext: '#FDE68A',
+    bannerWarningButton: '#F59E0B',
+    bannerInfoBackground: '#1E1B4B',
+    bannerInfoBorder: '#312E81',
+    bannerInfoIcon: '#818CF8',
+    bannerInfoText: '#C7D2FE',
+    bannerInfoSubtext: '#A5B4FC',
+    // Identity icon colors
+    identityIconSelfCustody: '#34D399',
+    identityIconPublicKey: '#A78BFA',
   },
 };
 

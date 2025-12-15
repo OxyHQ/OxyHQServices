@@ -3,6 +3,7 @@ import type { User } from '../../../models/interfaces';
 import { queryKeys, invalidateAccountQueries, invalidateUserQueries } from '../queries/queryKeys';
 import { useOxy } from '../../context/OxyContext';
 import { toast } from '../../../lib/sonner';
+import { refreshAvatarInStore } from '../../utils/avatarUtils';
 
 /**
  * Update user profile with optimistic updates and offline queue support
@@ -99,22 +100,21 @@ export const useUpdateProfile = () => {
       toast.error(error instanceof Error ? error.message : 'Failed to update profile');
     },
     // On success, invalidate and refetch
-    onSuccess: (data) => {
+    onSuccess: (data, updates) => {
       // Update cache with server response
       queryClient.setQueryData(queryKeys.accounts.current(), data);
       if (activeSessionId) {
         queryClient.setQueryData(queryKeys.users.profile(activeSessionId), data);
       }
       
-      // Invalidate related queries
-      invalidateUserQueries(queryClient);
-    },
-    // Always refetch after error or success
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.accounts.current() });
-      if (activeSessionId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.users.profile(activeSessionId) });
+      // If avatar was updated, refresh accountStore with cache-busted URL
+      if (updates.avatar && activeSessionId && oxyServices) {
+        refreshAvatarInStore(activeSessionId, updates.avatar, oxyServices);
       }
+      
+      // Invalidate all related queries to refresh everywhere
+      invalidateUserQueries(queryClient);
+      invalidateAccountQueries(queryClient);
     },
   });
 };
@@ -219,14 +219,16 @@ export const useUploadAvatar = () => {
       if (activeSessionId) {
         queryClient.setQueryData(queryKeys.users.profile(activeSessionId), data);
       }
-      invalidateUserQueries(queryClient);
-      toast.success('Avatar updated successfully');
-    },
-    onSettled: () => {
-      queryClient.invalidateQueries({ queryKey: queryKeys.accounts.current() });
-      if (activeSessionId) {
-        queryClient.invalidateQueries({ queryKey: queryKeys.users.profile(activeSessionId) });
+      
+      // Refresh accountStore with cache-busted URL if avatar was updated
+      if (data?.avatar && activeSessionId && oxyServices) {
+        refreshAvatarInStore(activeSessionId, data.avatar, oxyServices);
       }
+      
+      // Invalidate all related queries to refresh everywhere
+      invalidateUserQueries(queryClient);
+      invalidateAccountQueries(queryClient);
+      toast.success('Avatar updated successfully');
     },
   });
 };

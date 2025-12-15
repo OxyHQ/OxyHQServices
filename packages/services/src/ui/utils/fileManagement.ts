@@ -3,6 +3,7 @@ import type { FileMetadata } from '../../models/interfaces';
 import { File as ExpoFile } from 'expo-file-system';
 import { toast } from '../../lib/sonner';
 import type { RouteName } from '../navigation/routes';
+import { updateAvatarVisibility } from './avatarUtils';
 
 /**
  * Format file size in bytes to human-readable string
@@ -263,18 +264,8 @@ export function createAvatarPickerHandler(config: AvatarPickerConfig): () => voi
                 }
                 
                 try {
-                    // Update file visibility to public for avatar (skip if temporary asset ID)
-                    if (file.id && !file.id.startsWith('temp-')) {
-                        try {
-                            await oxyServices.assetUpdateVisibility(file.id, 'public');
-                            console.log(`[${contextName}] Avatar visibility updated to public`);
-                        } catch (visError: any) {
-                            // Only log non-404 errors (404 means asset doesn't exist yet, which is OK)
-                            if (visError?.response?.status !== 404) {
-                                console.warn(`[${contextName}] Failed to update avatar visibility, continuing anyway:`, visError);
-                            }
-                        }
-                    }
+                    // Update file visibility to public for avatar
+                    await updateAvatarVisibility(file.id, oxyServices, contextName);
 
                     // Update local state if callback provided
                     if (onAvatarSelected) {

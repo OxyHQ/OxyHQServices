@@ -1,8 +1,7 @@
 import React, { useMemo, useCallback, useRef, useEffect } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
-import { Image } from 'expo-image';
+import { View, StyleSheet, Platform, Text, TouchableOpacity, ActivityIndicator, Alert } from 'react-native';
 import LottieView from 'lottie-react-native';
-import { useRouter, usePathname } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
@@ -20,9 +19,7 @@ import { useHapticPress } from '@/hooks/use-haptic-press';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
-  const { width } = useWindowDimensions();
   const router = useRouter();
-  const pathname = usePathname();
   const lottieRef = useRef<LottieView>(null);
   const hasPlayedRef = useRef(false);
 
@@ -33,7 +30,6 @@ export default function HomeScreen() {
   const { isSynced, isSyncing } = identitySyncState || { isSynced: true, isSyncing: false };
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
-  const isDesktop = useMemo(() => Platform.OS === 'web' && width >= 768, [width]);
 
   // Compute user data
   const displayName = useMemo(() => getDisplayName(user), [user]);
@@ -151,7 +147,7 @@ export default function HomeScreen() {
       title: 'Account created',
       subtitle: accountCreatedDate || 'Unknown',
     },
-  ], [colors.text, colors.sidebarIconPersonalInfo, colors.sidebarIconPayments, colors.sidebarIconData, displayName, accountCreatedDate, handleEditName, handleManageSubscription]);
+  ], [colors.text, colors.sidebarIconPersonalInfo, colors.sidebarIconPayments, colors.sidebarIconData, displayName, accountCreatedDate, handleEditName, handleManageSubscription, handlePressIn]);
 
   const identityItems = useMemo(() => {
     // Only show identity items on native platforms
@@ -162,8 +158,8 @@ export default function HomeScreen() {
       {
         id: 'self-custody',
         customIcon: (
-          <View style={[styles.methodIcon, { backgroundColor: '#10B981' }]}>
-            <MaterialCommunityIcons name="shield-key" size={22} color={darkenColor('#10B981')} />
+          <View style={[styles.methodIcon, { backgroundColor: colors.identityIconSelfCustody }]}>
+            <MaterialCommunityIcons name="shield-key" size={22} color={darkenColor(colors.identityIconSelfCustody)} />
           </View>
         ),
         title: 'Self-Custody Identity',
@@ -174,8 +170,8 @@ export default function HomeScreen() {
       {
         id: 'public-key',
         customIcon: (
-          <View style={[styles.methodIcon, { backgroundColor: '#8B5CF6' }]}>
-            <MaterialCommunityIcons name="key-variant" size={22} color={darkenColor('#8B5CF6')} />
+          <View style={[styles.methodIcon, { backgroundColor: colors.identityIconPublicKey }]}>
+            <MaterialCommunityIcons name="key-variant" size={22} color={darkenColor(colors.identityIconPublicKey)} />
           </View>
         ),
         title: 'Your Public Key',
@@ -184,31 +180,31 @@ export default function HomeScreen() {
         showChevron: true,
       },
     ];
-  }, [handleAboutIdentity]);
+  }, [handleAboutIdentity, colors.identityIconSelfCustody, colors.identityIconPublicKey]);
 
   const content = useMemo(() => (
     <>
       {/* Sync Status Banner */}
       {!isSynced && (
-        <View style={[styles.syncBanner, { backgroundColor: '#FEF3C7', borderColor: '#FCD34D' }]}>
+        <View style={[styles.syncBanner, { backgroundColor: colors.bannerWarningBackground, borderColor: colors.bannerWarningBorder }]}>
           <View style={styles.syncBannerContent}>
-            <MaterialCommunityIcons name="cloud-off-outline" size={24} color="#D97706" />
+            <MaterialCommunityIcons name="cloud-off-outline" size={24} color={colors.bannerWarningIcon} />
             <View style={styles.syncBannerText}>
-              <Text style={[styles.syncBannerTitle, { color: '#92400E' }]}>Pending Sync</Text>
-              <Text style={[styles.syncBannerSubtitle, { color: '#B45309' }]}>
+              <Text style={[styles.syncBannerTitle, { color: colors.bannerWarningText }]}>Pending Sync</Text>
+              <Text style={[styles.syncBannerSubtitle, { color: colors.bannerWarningSubtext }]}>
                 Your identity is stored locally. Connect to sync with Oxy servers.
               </Text>
             </View>
           </View>
           <TouchableOpacity
-            style={[styles.syncButton, { backgroundColor: '#D97706' }]}
+            style={[styles.syncButton, { backgroundColor: colors.bannerWarningButton }]}
             onPress={handleSyncNow}
             disabled={isSyncing}
           >
             {isSyncing ? (
-              <ActivityIndicator size="small" color="#fff" />
+              <ActivityIndicator size="small" color={colors.avatarText} />
             ) : (
-              <Text style={styles.syncButtonText}>Sync Now</Text>
+              <Text style={[styles.syncButtonText, { color: colors.avatarText }]}>Sync Now</Text>
             )}
           </TouchableOpacity>
         </View>
@@ -223,17 +219,27 @@ export default function HomeScreen() {
       {/* Self-Custody Identity Section */}
       <Section title="Your Identity">
         <ThemedText style={styles.subtitle}>Your identity is secured by cryptography. You control your keys.</ThemedText>
-        <AccountCard>
-          <GroupedSection items={identityItems} />
-        </AccountCard>
+        {Platform.OS === 'web' ? (
+          <View style={[styles.infoBanner, { backgroundColor: colors.bannerInfoBackground, borderColor: colors.bannerInfoBorder }]}>
+            <View style={styles.infoBannerContent}>
+              <MaterialCommunityIcons name="cellphone-key" size={24} color={colors.bannerInfoIcon} />
+              <View style={styles.infoBannerText}>
+                <Text style={[styles.infoBannerTitle, { color: colors.bannerInfoText }]}>Identity Available on Mobile</Text>
+                <Text style={[styles.infoBannerSubtitle, { color: colors.bannerInfoSubtext }]}>
+                  Your self-custody identity and keys are stored on your mobile device. Access your identity settings from the Oxy app on your phone or tablet.
+                </Text>
+              </View>
+            </View>
+          </View>
+        ) : (
+          <AccountCard>
+            <GroupedSection items={identityItems} />
+          </AccountCard>
+        )}
       </Section>
     </>
-  ), [accountItems, identityItems, isSynced, isSyncing, handleSyncNow]);
+  ), [accountItems, identityItems, isSynced, isSyncing, handleSyncNow, colors]);
 
-  const toggleColorScheme = useCallback(() => {
-    // This would toggle between light and dark mode
-    // You'd need to implement this based on your theme system
-  }, []);
 
   useEffect(() => {
     // Play animation only once when component mounts
@@ -284,45 +290,15 @@ export default function HomeScreen() {
     );
   }
 
-  if (isDesktop) {
-    return (
-      <>
-        <View style={styles.desktopMainHeader}>
-          <View style={styles.avatarSectionWrapper}>
-            <View style={styles.avatarContainer}>
-              <LottieView
-                ref={lottieRef}
-                source={lottieAnimation}
-                style={styles.lottieBackground}
-              />
-              <TouchableOpacity
-                style={styles.avatarWrapper}
-                onPressIn={handlePressIn}
-                onPress={handleAvatarPress}
-                activeOpacity={0.8}
-              >
-                <UserAvatar name={displayName} imageUrl={avatarUrl} size={100} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.nameWrapper}>
-              <ThemedText style={styles.welcomeText}>Welcome, {shortDisplayName}.</ThemedText>
-              <ThemedText style={styles.welcomeSubtext}>Manage your Oxy account.</ThemedText>
-            </View>
-          </View>
-        </View>
-        {content}
-      </>
-    );
-  }
-
   return (
     <ScreenContentWrapper>
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.mobileContent}>
-          <View style={styles.mobileHeader}>
+        <View style={styles.content}>
+          <View style={styles.header}>
             <View style={styles.avatarSectionWrapper}>
               <View style={styles.avatarContainer}>
                 <LottieView
+                  autoPlay
                   ref={lottieRef}
                   source={lottieAnimation}
                   loop
@@ -373,79 +349,6 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   } as const,
-  desktopTopBar: {
-    height: 60,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 24,
-    borderBottomWidth: 1,
-  } as const,
-  topBarLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  } as const,
-  logo: {
-    width: 120,
-    height: 28,
-  } as const,
-  topBarRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  } as const,
-  searchButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    gap: 8,
-  } as const,
-  searchText: {
-    fontSize: 13,
-    fontWeight: '500',
-  } as const,
-  iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  } as const,
-  desktopBody: {
-    flex: 1,
-    flexDirection: 'row',
-  } as const,
-  desktopContent: {
-    flexDirection: 'row',
-    minHeight: '100vh' as any,
-  } as const,
-  desktopSidebar: {
-    width: 260,
-    padding: 20,
-    borderRightWidth: 0,
-  } as const,
-  desktopHeader: {
-    marginBottom: 24,
-  } as const,
-  logoContainer: {
-    marginBottom: 24,
-  } as const,
-  menuContainer: {
-    gap: 4,
-  } as const,
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 26,
-    gap: 12,
-  } as const,
-  menuItemActive: {
-    // backgroundColor is set dynamically
-  } as const,
   menuIconContainer: {
     width: 36,
     height: 36,
@@ -453,38 +356,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   } as const,
-  menuItemText: {
-    fontSize: 14,
-    fontWeight: '400',
-  } as const,
-  desktopMain: {
-    flex: 1,
-    maxWidth: 720,
-  } as const,
-  desktopMainContent: {
-    padding: 32,
-  } as const,
-  desktopMainHeader: {
-    alignItems: 'center',
-    marginBottom: 32,
-  } as const,
-  mobileContent: {
+  content: {
     padding: 16,
     paddingBottom: 120,
   } as const,
-  mobileHeaderSection: {
-    marginBottom: 20,
-  } as const,
-  mobileTitle: {
-    fontSize: 28,
-    fontWeight: '600',
-    marginBottom: 6,
-  } as const,
-  mobileSubtitle: {
-    fontSize: 15,
-    opacity: 0.6,
-  } as const,
-  mobileHeader: {
+  header: {
     alignItems: 'center',
     marginBottom: 24,
   } as const,
@@ -674,8 +550,30 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   } as const,
   syncButtonText: {
-    color: '#fff',
     fontSize: 14,
     fontWeight: '600',
+  } as const,
+  infoBanner: {
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 16,
+    marginTop: 12,
+  } as const,
+  infoBannerContent: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+  } as const,
+  infoBannerText: {
+    flex: 1,
+    marginLeft: 12,
+  } as const,
+  infoBannerTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  } as const,
+  infoBannerSubtitle: {
+    fontSize: 14,
+    lineHeight: 20,
   } as const,
 });
