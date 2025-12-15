@@ -413,9 +413,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
           // Sync identity first (if not synced)
           try {
-            const isSynced = await storage.getItem('oxy_identity_synced');
-            if (isSynced === 'false') {
-              await syncIdentity();
+            const hasIdentityValue = await hasIdentity();
+            if (hasIdentityValue) {
+              const isSynced = await storage.getItem('oxy_identity_synced');
+              // Sync if not synced (undefined means not synced yet, 'false' means explicitly not synced)
+              if (isSynced !== 'true') {
+                await syncIdentity();
+              }
             }
           } catch (syncError) {
             logger('Error syncing identity on reconnect', syncError);
