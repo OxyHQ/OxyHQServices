@@ -1,6 +1,7 @@
 import SecurityActivity, { ISecurityActivity, SecurityEventType, SecurityEventSeverity } from '../models/SecurityActivity';
 import { Request } from 'express';
 import { extractDeviceInfo } from '../utils/deviceUtils';
+import { logger } from '../utils/logger';
 
 export interface SecurityEventMetadata {
   [key: string]: any;
@@ -69,7 +70,20 @@ class SecurityActivityService {
       severity,
     });
 
-    return await activity.save();
+    try {
+      const savedActivity = await activity.save();
+      return savedActivity;
+    } catch (error) {
+      // Log error but don't throw - security logging should never break main operations
+      logger.error('Failed to log security event', error instanceof Error ? error : new Error(String(error)), {
+        component: 'SecurityActivityService',
+        method: 'logSecurityEvent',
+        userId,
+        eventType,
+      });
+      // Return the activity object even if save failed (non-critical operation)
+      return activity;
+    }
   }
 
   /**
@@ -90,8 +104,10 @@ class SecurityActivityService {
       query.eventType = eventType;
     }
 
+    // Select only needed fields for better performance and memory efficiency
     const [activities, total] = await Promise.all([
       SecurityActivity.find(query)
+        .select('_id userId eventType eventDescription metadata ipAddress userAgent deviceId timestamp severity createdAt')
         .sort({ timestamp: -1 })
         .skip(offset)
         .limit(limit)
@@ -113,7 +129,9 @@ class SecurityActivityService {
     userId: string,
     limit: number = 10
   ): Promise<ISecurityActivity[]> {
+    // Select only needed fields for better performance
     const activities = await SecurityActivity.find({ userId })
+      .select('_id userId eventType eventDescription metadata ipAddress userAgent deviceId timestamp severity createdAt')
       .sort({ timestamp: -1 })
       .limit(limit)
       .lean();

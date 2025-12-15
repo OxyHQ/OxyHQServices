@@ -94,5 +94,13 @@ SecurityActivitySchema.index({ userId: 1, eventType: 1, timestamp: -1 });
 // Index for device-related queries
 SecurityActivitySchema.index({ userId: 1, deviceId: 1, timestamp: -1 });
 
+// TTL index: Automatically delete security activity older than 2 years (730 days)
+// This prevents unbounded growth while retaining sufficient audit history
+// MongoDB TTL cleanup runs every 60 seconds
+// Note: This is a separate index from the compound indexes above - MongoDB will use
+// the appropriate index based on query patterns. The TTL index is specifically for
+// automatic data retention/cleanup, while compound indexes optimize query performance.
+SecurityActivitySchema.index({ timestamp: 1 }, { expireAfterSeconds: 730 * 24 * 60 * 60 });
+
 export default mongoose.model<ISecurityActivity>("SecurityActivity", SecurityActivitySchema);
 

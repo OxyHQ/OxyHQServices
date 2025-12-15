@@ -4,6 +4,7 @@ import securityActivityService from '../services/securityActivityService';
 import { SecurityEventType } from '../models/SecurityActivity';
 import { validatePagination } from '../utils/validation';
 import { sendPaginated } from '../utils/asyncHandler';
+import { logger } from '../utils/logger';
 
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
@@ -70,9 +71,21 @@ export const getSecurityActivity = async (req: AuthRequest, res: Response): Prom
       createdAt: activity.createdAt,
     }));
 
+    logger.debug('Security activity fetched', {
+      userId,
+      limit: parsedLimit,
+      offset: parsedOffset,
+      eventType,
+      total: result.total,
+    });
+
     sendPaginated(res, activities, result.total, parsedLimit, parsedOffset);
   } catch (error: any) {
-    console.error('Error fetching security activity:', error);
+    logger.error('Error fetching security activity', error instanceof Error ? error : new Error(String(error)), {
+      component: 'SecurityActivityController',
+      method: 'getSecurityActivity',
+      userId: req.user?._id?.toString(),
+    });
     res.status(500).json({ error: 'Failed to fetch security activity' });
   }
 };
