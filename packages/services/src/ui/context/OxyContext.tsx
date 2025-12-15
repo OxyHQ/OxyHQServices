@@ -415,9 +415,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           try {
             const hasIdentityValue = await hasIdentity();
             if (hasIdentityValue) {
-              const isSynced = await storage.getItem('oxy_identity_synced');
-              // Sync if not synced (undefined means not synced yet, 'false' means explicitly not synced)
-              if (isSynced !== 'true') {
+              // Check sync status directly - sync if not explicitly 'true'
+              // undefined = not synced yet, 'false' = explicitly not synced, 'true' = synced
+              const syncStatus = await storage.getItem('oxy_identity_synced');
+              if (syncStatus !== 'true') {
                 await syncIdentity();
               }
             }
