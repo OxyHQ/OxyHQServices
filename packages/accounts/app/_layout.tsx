@@ -53,8 +53,13 @@ function RootLayoutContent() {
 
   // Font Loading
   const [fontsLoaded] = useFonts({
-    // Add your custom fonts here if needed
-    // Example: 'Inter': require('@/assets/fonts/Inter.ttf'),
+    'Phudu-Light': require('@/assets/fonts/Phudu/Phudu-Light.ttf'),
+    'Phudu-Regular': require('@/assets/fonts/Phudu/Phudu-Regular.ttf'),
+    'Phudu-Medium': require('@/assets/fonts/Phudu/Phudu-Medium.ttf'),
+    'Phudu-SemiBold': require('@/assets/fonts/Phudu/Phudu-SemiBold.ttf'),
+    'Phudu-Bold': require('@/assets/fonts/Phudu/Phudu-Bold.ttf'),
+    'Phudu-ExtraBold': require('@/assets/fonts/Phudu/Phudu-ExtraBold.ttf'),
+    'Phudu-Black': require('@/assets/fonts/Phudu/Phudu-Black.ttf'),
   });
 
   // Callbacks

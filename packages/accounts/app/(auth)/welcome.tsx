@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -34,8 +34,16 @@ const rotatingTexts = [
 export default function WelcomeScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
-  const backgroundColor = colorScheme === 'dark' ? '#000000' : '#FFFFFF';
-  const textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+  
+  // Memoize color values
+  const backgroundColor = useMemo(() => 
+    colorScheme === 'dark' ? '#000000' : '#FFFFFF',
+    [colorScheme]
+  );
+  const textColor = useMemo(() => 
+    colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+    [colorScheme]
+  );
 
   const [termsAccepted, setTermsAccepted] = useState(false);
 
@@ -62,19 +70,51 @@ export default function WelcomeScreen() {
     opacity: footerOpacity.value,
   }));
 
-  // Initial entrance animation
+  // Memoize style objects to prevent recreation on every render
+  const containerStyle = useMemo(() => ({ backgroundColor }), [backgroundColor]);
+  const textStyleMemo = useMemo(() => [styles.text, { color: textColor }], [textColor]);
+  const rotatingTextStyleMemo = useMemo(() => ({ ...styles.text, color: textColor }), [textColor]);
+  const checkboxTextStyleMemo = useMemo(() => [styles.checkboxText, { color: textColor }], [textColor]);
+  const buttonTextStyleMemo = useMemo(() => [styles.buttonText, { color: textColor }], [textColor]);
+  const acceptButtonTextStyleMemo = useMemo(() => 
+    [styles.buttonText, { color: termsAccepted ? backgroundColor : textColor }],
+    [termsAccepted, backgroundColor, textColor]
+  );
+  const declineButtonStyleMemo = useMemo(() => 
+    [styles.button, styles.declineButton, { borderColor: `${textColor}40` }],
+    [textColor]
+  );
+  const acceptButtonStyleMemo = useMemo(() => 
+    [
+      styles.button,
+      styles.acceptButton,
+      {
+        backgroundColor: termsAccepted ? textColor : `${textColor}20`,
+        opacity: termsAccepted ? 1 : 0.5,
+      },
+    ],
+    [termsAccepted, textColor]
+  );
+
+  // Consolidated entrance animation
   useEffect(() => {
+    // Start Oxy animation after 200ms
     const t1 = setTimeout(() => {
       oxyOpacity.value = withTiming(1, { duration: 600 });
       oxyTranslateY.value = withTiming(0, { duration: 600 });
       oxyRef.current?.reset();
-      setTimeout(() => oxyRef.current?.animate(), 200);
+      // Start staggered text animation after reset
+      setTimeout(() => {
+        oxyRef.current?.animate();
+      }, 200);
     }, 200);
 
+    // Start rotating animation after 800ms
     const t2 = setTimeout(() => {
       rotatingOpacity.value = withTiming(1, { duration: 600 });
     }, 800);
 
+    // Start footer animation after 1500ms
     const t3 = setTimeout(() => {
       footerOpacity.value = withTiming(1, { duration: 600 });
     }, 1500);
@@ -87,18 +127,22 @@ export default function WelcomeScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handleContinue = () => {
+  const handleContinue = useCallback(() => {
     if (termsAccepted) {
       router.push('/(auth)/create-identity');
     }
-  };
+  }, [termsAccepted, router]);
 
-  const handleDecline = () => {
+  const handleDecline = useCallback(() => {
     router.back();
-  };
+  }, [router]);
+
+  const toggleTermsAccepted = useCallback(() => {
+    setTermsAccepted(prev => !prev);
+  }, []);
 
   return (
-    <View style={[styles.container, { backgroundColor }]}>
+    <View style={[styles.container, containerStyle]}>
       <View style={styles.content}>
         <View style={styles.textContainer}>
           {/* "Oxy is your" text */}
@@ -107,7 +151,7 @@ export default function WelcomeScreen() {
               text="Oxy is your"
               ref={oxyRef}
               fontSize={38}
-              textStyle={[styles.text, { color: textColor }]}
+              textStyle={textStyleMemo}
             />
           </Animated.View>
 
@@ -118,7 +162,7 @@ export default function WelcomeScreen() {
               fontSize={38}
               interval={3000}
               duration={600}
-              textStyle={{ ...styles.text, color: textColor }}
+              textStyle={rotatingTextStyleMemo}
               containerStyle={styles.rotatingContainer}
             />
           </Animated.View>
@@ -132,14 +176,14 @@ export default function WelcomeScreen() {
             value={termsAccepted}
             onValueChange={setTermsAccepted}
             style={styles.checkbox}
-            color={termsAccepted ? textColor : undefined}
+            color={textColor}
           />
           <TouchableOpacity
             style={styles.checkboxTextContainer}
-            onPress={() => setTermsAccepted(!termsAccepted)}
+            onPress={toggleTermsAccepted}
             activeOpacity={0.7}
           >
-            <Text style={[styles.checkboxText, { color: textColor }]}>
+            <Text style={checkboxTextStyleMemo}>
               I agree with Oxy User Terms And Conditions and acknowledge the Privacy notice
             </Text>
           </TouchableOpacity>
@@ -147,25 +191,18 @@ export default function WelcomeScreen() {
 
         <View style={styles.buttonContainer}>
           <TouchableOpacity
-            style={[styles.button, styles.declineButton, { borderColor: `${textColor}40` }]}
+            style={declineButtonStyleMemo}
             onPress={handleDecline}
           >
-            <Text style={[styles.buttonText, { color: textColor }]}>Decline</Text>
+            <Text style={buttonTextStyleMemo}>Decline</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[
-              styles.button,
-              styles.acceptButton,
-              {
-                backgroundColor: termsAccepted ? textColor : `${textColor}20`,
-                opacity: termsAccepted ? 1 : 0.5,
-              },
-            ]}
+            style={acceptButtonStyleMemo}
             onPress={handleContinue}
             disabled={!termsAccepted}
           >
-            <Text style={[styles.buttonText, { color: termsAccepted ? backgroundColor : textColor }]}>
+            <Text style={acceptButtonTextStyleMemo}>
               Accept
             </Text>
           </TouchableOpacity>
@@ -194,6 +231,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   text: {
+    fontFamily: 'Phudu-SemiBold',
     fontWeight: '600',
     letterSpacing: -0.5,
   },
@@ -218,6 +256,7 @@ const styles = StyleSheet.create({
   checkboxText: {
     fontSize: 14,
     lineHeight: 20,
+    fontFamily: 'Phudu-Regular',
     fontWeight: '400',
   },
   buttonContainer: {
@@ -241,6 +280,7 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     fontSize: 16,
+    fontFamily: 'Phudu-SemiBold',
     fontWeight: '600',
   },
 });

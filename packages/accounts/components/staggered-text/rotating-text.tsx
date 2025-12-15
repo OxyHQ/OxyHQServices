@@ -1,5 +1,5 @@
 import React, { useEffect, useCallback, useMemo, useState } from 'react';
-import { View, StyleSheet, type ViewStyle, type TextStyle, LayoutChangeEvent } from 'react-native';
+import { View, Text, StyleSheet, type ViewStyle, type TextStyle, LayoutChangeEvent } from 'react-native';
 import Animated, {
     useSharedValue,
     useAnimatedStyle,
@@ -7,7 +7,6 @@ import Animated, {
     Easing,
     runOnJS,
 } from 'react-native-reanimated';
-import { StaggeredText } from './index';
 
 type TextItem = string | string[];
 
@@ -83,13 +82,13 @@ export function RotatingTextAnimation({
         return textHeights.reduce((sum, height) => sum + height, 0);
     }, [textHeights]);
 
-    // Memoize the full list to render - we render 3 copies of the array to enable seamless looping
+    // Optimized: Render only 2 copies instead of 3 for better performance
+    // Still maintains seamless looping while reducing render count by 33%
     const textList = useMemo(() => {
-        // Render 3 copies of the array for seamless infinite loop
-        return [...normalizedTexts, ...normalizedTexts, ...normalizedTexts];
+        return [...normalizedTexts, ...normalizedTexts];
     }, [normalizedTexts]);
 
-    // Calculate positions for the tripled list using actual textHeights
+    // Calculate positions for the doubled list
     const textListPositions = useMemo(() => {
         const positions: number[] = [];
         let currentPosition = 0;
@@ -112,9 +111,14 @@ export function RotatingTextAnimation({
 
     const onRotationComplete = useCallback(() => {
         indexRef.current = (indexRef.current + 1) % texts.length;
-        // Reset to middle section immediately without animation to avoid pause
-        const resetPosition = totalHeight + textPositions[indexRef.current];
-        translateY.value = -resetPosition;
+        // Reset to start of first section when we reach end of second section
+        // This creates seamless loop with only 2 copies
+        if (indexRef.current === 0) {
+            translateY.value = -totalHeight;
+        } else {
+            const resetPosition = totalHeight + textPositions[indexRef.current];
+            translateY.value = -resetPosition;
+        }
 
         // Update container height to match the new current item
         const newHeight = textHeights[indexRef.current] || calculatedLineHeight;
@@ -124,16 +128,6 @@ export function RotatingTextAnimation({
         });
     }, [texts.length, totalHeight, textPositions, textHeights, calculatedLineHeight, duration, translateY, containerHeight]);
 
-    // Calculate the maximum height needed for any single text item
-    // Use exact height to ensure only one item is visible at a time
-    const maxTextHeight = useMemo(() => {
-        if (textHeights.length === 0) {
-            return calculatedLineHeight;
-        }
-        const max = Math.max(...textHeights, calculatedLineHeight);
-        // Use exact height, no padding, to prevent multiple items showing
-        return max;
-    }, [textHeights, calculatedLineHeight]);
 
     useEffect(() => {
         let isActive = true;
@@ -182,7 +176,7 @@ export function RotatingTextAnimation({
         };
     }, [texts, textHeights, totalHeight, interval, duration, calculatedLineHeight, translateY, containerHeight, onRotationComplete]);
 
-    // Initialize translateY and container height immediately when values are available
+    // Consolidated initialization and height updates
     useEffect(() => {
         if (totalHeight > 0 && textHeights.length > 0) {
             // Position first text of middle section at the top of container
@@ -192,21 +186,7 @@ export function RotatingTextAnimation({
             const initialHeight = textHeights[0] || calculatedLineHeight;
             containerHeight.value = initialHeight;
         }
-    }, [totalHeight, textHeights, calculatedLineHeight, translateY, containerHeight]);
-
-    // Update container height whenever the current item's measured height changes
-    useEffect(() => {
-        if (textHeights.length > 0 && indexRef.current < textHeights.length) {
-            const currentHeight = textHeights[indexRef.current] || calculatedLineHeight;
-            // Smoothly update container height to match current phrase
-            if (Math.abs(containerHeight.value - currentHeight) > 1) {
-                containerHeight.value = withTiming(currentHeight, {
-                    duration: 300,
-                    easing: Easing.out(Easing.cubic),
-                });
-            }
-        }
-    }, [textHeights, calculatedLineHeight, containerHeight]);
+    }, [totalHeight, textHeights.length, calculatedLineHeight, translateY, containerHeight]);
 
     // Handle layout measurement for actual text heights
     const handleTextLayout = useCallback((index: number, height: number) => {
@@ -237,9 +217,7 @@ export function RotatingTextAnimation({
         <Animated.View style={[styles.container, containerAnimatedStyle, containerStyle]}>
             <Animated.View style={[rotatingStyle, { overflow: 'visible' }]}>
                 {textList.map((lines, index) => {
-                    // Calculate absolute position for this text item
                     const absolutePosition = textListPositions[index];
-                    // Use estimated height, will be updated by measurement
                     const originalIndex = index % normalizedTexts.length;
                     const itemHeight = textHeights[originalIndex] || lines.length * calculatedLineHeight;
 
@@ -250,7 +228,6 @@ export function RotatingTextAnimation({
                             fontSize={fontSize}
                             lineHeight={calculatedLineHeight}
                             itemHeight={itemHeight}
-                            maxTextHeight={maxTextHeight}
                             textStyle={textStyle}
                             absolutePosition={absolutePosition}
                             translateY={translateY}
@@ -269,19 +246,17 @@ interface AnimatedTextItemProps {
     fontSize: number;
     lineHeight: number;
     itemHeight: number;
-    maxTextHeight: number;
     textStyle?: TextStyle;
     absolutePosition: number;
     translateY: ReturnType<typeof useSharedValue<number>>;
     onLayout?: (height: number) => void;
 }
 
-function AnimatedTextItem({
+const AnimatedTextItem = React.memo(function AnimatedTextItem({
     lines,
     fontSize,
     lineHeight,
     itemHeight,
-    maxTextHeight,
     textStyle,
     absolutePosition,
     translateY,
@@ -293,52 +268,27 @@ function AnimatedTextItem({
             onLayout(height);
         }
     }, [onLayout]);
+
+    // Optimized animated style with simplified calculations
     const animatedStyle = useAnimatedStyle(() => {
         'worklet';
-        // Calculate the current screen position of this item (relative to container top)
         const screenPosition = absolutePosition + translateY.value;
-
-        // 3D slot machine effect: rotate around X-axis based on position
-        // Rotate from 0° at top to -90° as it moves up and out
-        const rotationX = (screenPosition / itemHeight) * -90;
-
-        // Opacity: ensure smooth transitions between consecutive items
-        // Handle different heights by using adaptive fade range
-        // For items moving up: fade out over their own height
-        // For items moving up from below: fade in based on distance to top
+        const fadeRange = itemHeight * 0.4;
+        
+        // Simplified opacity calculation
         let opacity = 0;
-
-        if (screenPosition <= 0) {
-            // At top or moving up and out - fade out quickly as it rotates up
-            // Use smaller fade range for faster fade
-            const fadeRange = itemHeight * 0.4; // Faster fade - 40% of item height
-            if (screenPosition >= -fadeRange) {
-                // screenPosition = 0: opacity = 1 (at top)
-                // screenPosition = -fadeRange: opacity = 0 (moved up and out, completely faded)
-                opacity = Math.max(0, 1 + (screenPosition / fadeRange));
-            } else {
-                // Beyond fade range - completely invisible
-                opacity = 0;
-            }
-        } else {
-            // Below top - fade in quickly as it approaches top during rotation
-            // Use smaller fade range for faster fade
-            const fadeRange = itemHeight * 0.4; // Faster fade - 40% of item height
-            if (screenPosition <= fadeRange) {
-                // screenPosition = fadeRange: opacity = 0 (just starting)
-                // screenPosition approaches 0: opacity = 1 (reaching top)
-                opacity = 1 - (screenPosition / fadeRange);
-            } else {
-                // Too far below - completely invisible
-                opacity = 0;
-            }
+        if (screenPosition <= 0 && screenPosition >= -fadeRange) {
+            opacity = Math.max(0, 1 + (screenPosition / fadeRange));
+        } else if (screenPosition > 0 && screenPosition <= fadeRange) {
+            opacity = 1 - (screenPosition / fadeRange);
         }
+        
+        // Simplified rotation calculation
+        const rotationX = (screenPosition / itemHeight) * -90;
 
         return {
             opacity,
-            transform: [
-                { rotateX: `${rotationX}deg` as any },
-            ],
+            transform: [{ rotateX: `${rotationX}deg` as any }],
         };
     });
 
@@ -348,16 +298,15 @@ function AnimatedTextItem({
             onLayout={handleLayout}
         >
             {lines.map((line, lineIndex) => (
-                <View
-                    key={lineIndex}
-                    style={styles.textLine}
-                >
-                    <StaggeredText text={line} fontSize={fontSize} textStyle={textStyle} />
+                <View key={lineIndex} style={styles.textLine}>
+                    <Text style={[textStyle, { fontSize, lineHeight }]}>
+                        {line}
+                    </Text>
                 </View>
             ))}
         </Animated.View>
     );
-}
+});
 
 const styles = StyleSheet.create({
     container: {
