@@ -5,7 +5,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { AccountCard, ScreenHeader, LinkButton } from '@/components/ui';
+import { AccountCard, ScreenHeader, LinkButton, useAlert } from '@/components/ui';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
@@ -23,6 +23,7 @@ export default function StorageScreen() {
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
   const { oxyServices, isAuthenticated, isLoading: oxyLoading } = useOxy();
+  const alert = useAlert();
   const [usage, setUsage] = useState<AccountStorageUsageResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -128,6 +129,20 @@ export default function StorageScreen() {
     ].filter((s) => s.pct > 0.2); // avoid tiny slivers that look like rendering glitches
   }, [colors.border, colors.sidebarIconData, colors.sidebarIconPayments, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.secondaryText, usage]);
 
+  const handleCategoryPress = useCallback((categoryId: string, categoryName: string, bytes: number, count: number) => {
+    const sizeText = formatBytes(bytes).text;
+    const countText = `${count.toLocaleString()} ${categoryId === 'mail' ? 'message' : categoryId === 'photosVideos' ? 'item' : categoryId === 'recordings' ? 'recording' : 'file'}${count !== 1 ? 's' : ''}`;
+    const percentage = usage && usage.totalLimitBytes > 0 
+      ? Math.round((bytes / usage.totalLimitBytes) * 100) 
+      : 0;
+    
+    alert(
+      categoryName,
+      `${sizeText} (${countText})\n\nThis category uses ${percentage}% of your total storage.`,
+      [{ text: 'OK' }]
+    );
+  }, [alert, formatBytes, usage]);
+
   const storageDetails = useMemo(() => {
     const cats = usage?.categories;
     const safe = (v?: number) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
@@ -141,8 +156,8 @@ export default function StorageScreen() {
         title: 'Documents',
         subtitle: `${safeCount(cats?.documents?.count).toLocaleString()} file${safeCount(cats?.documents?.count) !== 1 ? 's' : ''}`,
         bytes: safe(cats?.documents?.bytes),
-        onPress: () => router.push('/(tabs)/data'),
-        showChevron: true,
+        onPress: () => handleCategoryPress('documents', 'Documents', safe(cats?.documents?.bytes), safeCount(cats?.documents?.count)),
+        showChevron: false,
       },
       {
         id: 'mail',
@@ -151,8 +166,8 @@ export default function StorageScreen() {
         title: 'Oxy Mail',
         subtitle: `${safeCount(cats?.mail?.count).toLocaleString()} message${safeCount(cats?.mail?.count) !== 1 ? 's' : ''}`,
         bytes: safe(cats?.mail?.bytes),
-        onPress: () => router.push('/(tabs)/data'),
-        showChevron: true,
+        onPress: () => handleCategoryPress('mail', 'Oxy Mail', safe(cats?.mail?.bytes), safeCount(cats?.mail?.count)),
+        showChevron: false,
       },
       {
         id: 'photosVideos',
@@ -161,8 +176,8 @@ export default function StorageScreen() {
         title: 'Photos & Videos',
         subtitle: `${safeCount(cats?.photosVideos?.count).toLocaleString()} item${safeCount(cats?.photosVideos?.count) !== 1 ? 's' : ''}`,
         bytes: safe(cats?.photosVideos?.bytes),
-        onPress: () => router.push('/(tabs)/data'),
-        showChevron: true,
+        onPress: () => handleCategoryPress('photosVideos', 'Photos & Videos', safe(cats?.photosVideos?.bytes), safeCount(cats?.photosVideos?.count)),
+        showChevron: false,
       },
       {
         id: 'recordings',
@@ -171,8 +186,8 @@ export default function StorageScreen() {
         title: 'Recordings',
         subtitle: `${safeCount(cats?.recordings?.count).toLocaleString()} recording${safeCount(cats?.recordings?.count) !== 1 ? 's' : ''}`,
         bytes: safe(cats?.recordings?.bytes),
-        onPress: () => router.push('/(tabs)/data'),
-        showChevron: true,
+        onPress: () => handleCategoryPress('recordings', 'Recordings', safe(cats?.recordings?.bytes), safeCount(cats?.recordings?.count)),
+        showChevron: false,
       },
       {
         id: 'family',
@@ -195,13 +210,13 @@ export default function StorageScreen() {
         title: 'Other',
         subtitle: `${safeCount(cats?.other?.count).toLocaleString()} file${safeCount(cats?.other?.count) !== 1 ? 's' : ''}`,
         bytes: safe(cats?.other?.bytes),
-        onPress: () => router.push('/(tabs)/data'),
-        showChevron: true,
+        onPress: () => handleCategoryPress('other', 'Other', safe(cats?.other?.bytes), safeCount(cats?.other?.count)),
+        showChevron: false,
       });
     }
 
     return items;
-  }, [colors.sidebarIconData, colors.sidebarIconPayments, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.secondaryText, router, usage]);
+  }, [colors.sidebarIconData, colors.sidebarIconPayments, colors.sidebarIconPersonalInfo, colors.sidebarIconSecurity, colors.sidebarIconSharing, colors.secondaryText, handleCategoryPress, router, usage]);
 
   const accountInfoItems = useMemo(() => {
     if (!usage) return [];

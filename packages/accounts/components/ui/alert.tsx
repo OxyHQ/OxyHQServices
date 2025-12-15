@@ -104,16 +104,30 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
       }
     }
 
+    // Determine button background color
+    let backgroundColor: string;
+    let textColor: string;
+    
+    if (isDestructive) {
+      backgroundColor = '#FF3B30';
+      textColor = '#FFFFFF';
+    } else if (isCancel) {
+      backgroundColor = colorScheme === 'dark' ? '#2C2C2E' : '#E5E5EA';
+      textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+    } else {
+      // Default button - use a nice blue color
+      backgroundColor = colorScheme === 'dark' ? '#0A84FF' : '#007AFF';
+      textColor = '#FFFFFF';
+    }
+
     return (
       <TouchableOpacity
         key={index}
         style={[
           styles.button,
           useHorizontalLayout && styles.buttonHorizontal,
-          { borderRadius: 18 },
+          { borderRadius: 18, backgroundColor },
           marginStyle,
-          isDestructive && { backgroundColor: '#FF3B30' },
-          (isCancel || isDefault) && { backgroundColor: colors.tint },
         ]}
         onPress={() => handleButtonPress(button)}
         activeOpacity={0.8}
@@ -121,7 +135,7 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
         <Text
           style={[
             styles.buttonText,
-            { color: '#FFFFFF', fontWeight: '600' },
+            { color: textColor, fontWeight: '600' },
           ]}
         >
           {button.text}
@@ -162,7 +176,7 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
           pointerEvents="box-none"
         >
           <BlurView
-            intensity={100}
+            intensity={50}
             tint={colorScheme === 'dark' ? 'dark' : 'light'}
             experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
             style={[
