@@ -14,7 +14,7 @@ import { useThemeContext } from '@/contexts/theme-context';
 import { useOxy } from '@oxyhq/services';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { darkenColor } from '@/utils/color-utils';
-import Animated, { useAnimatedStyle, useDerivedValue, withTiming, interpolate } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useDerivedValue, withTiming, interpolate, runOnJS } from 'react-native-reanimated';
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -60,10 +60,17 @@ export default function TabLayout() {
     scrollToTop();
   }, [scrollToTop]);
 
+  // Update showGoToTopButton state using runOnJS to avoid reading .value during render
+  const updateShowGoToTopButton = useCallback((shouldShow: boolean) => {
+    setShowGoToTopButton(shouldShow);
+  }, []);
+
   // Determine if FAB should show scan or go to top based on scroll position
   const showGoToTop = useDerivedValue(() => {
-    return scrollY.value > 100; // Show go to top after scrolling 100px
-  }, []);
+    const shouldShow = scrollY.value > 100; // Show go to top after scrolling 100px
+    runOnJS(updateShowGoToTopButton)(shouldShow);
+    return shouldShow;
+  }, [updateShowGoToTopButton]);
 
   // Animated styles for FAB icon transition
   const fabIconAnimatedStyle = useAnimatedStyle(() => {
@@ -86,29 +93,6 @@ export default function TabLayout() {
     const offsetY = event.nativeEvent.contentOffset.y;
     setIsScrolled(offsetY > 10);
   }, [setIsScrolled]);
-
-  // Update showGoToTopButton state based on scroll position
-  useEffect(() => {
-    // Update when isScrolled changes (which happens when scrollY > 10)
-    // We'll check scrollY.value periodically for the 100px threshold
-    if (!isScrolled) {
-      setShowGoToTopButton(false);
-      return;
-    }
-    
-    const checkScroll = () => {
-      // Access scrollY.value - this will be updated by the scroll handler
-      // We need to check it periodically since it's a shared value
-      const currentScrollY = scrollY.value;
-      setShowGoToTopButton(currentScrollY > 100);
-    };
-    
-    // Check periodically (scrollY updates are on UI thread)
-    const interval = setInterval(checkScroll, 50);
-    checkScroll(); // Initial check
-    
-    return () => clearInterval(interval);
-  }, [isScrolled, scrollY]);
 
   const handleSearchChange = (text: string) => {
     setSearchQuery(text);

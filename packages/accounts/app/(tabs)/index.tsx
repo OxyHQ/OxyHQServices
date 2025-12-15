@@ -16,6 +16,9 @@ import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy } from '@oxyhq/services';
 import { formatDate, getDisplayName, getShortDisplayName } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+import { QuickActionsSection, type QuickAction } from '@/components/quick-actions-section';
+import { AccountInfoGrid, type AccountInfoCard } from '@/components/account-info-grid';
+import { IdentityCardsSection, type IdentityCard } from '@/components/identity-cards-section';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -132,42 +135,58 @@ export default function HomeScreen() {
     }
   }, [router]);
 
-  const accountItems = useMemo(() => [
+  // Quick action cards for horizontal scroll
+  const quickActions = useMemo<QuickAction[]>(() => [
     {
-      id: 'name',
-      icon: 'account-outline' as any,
+      id: 'edit-name',
+      icon: 'account-edit-outline',
       iconColor: colors.sidebarIconPersonalInfo,
-      title: 'Full name',
-      subtitle: displayName,
-      customContent: (
-        <TouchableOpacity style={styles.button} onPressIn={handlePressIn} onPress={handleEditName}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Edit name</Text>
-        </TouchableOpacity>
-      ),
+      title: 'Edit Name',
+      onPress: handleEditName,
     },
     {
       id: 'subscription',
-      icon: 'credit-card-outline' as any,
+      icon: 'credit-card-outline',
       iconColor: colors.sidebarIconPayments,
       title: 'Subscription',
-      subtitle: 'Manage your Oxy subscription',
-      customContent: (
-        <TouchableOpacity style={styles.button} onPressIn={handlePressIn} onPress={handleManageSubscription}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
-          <Ionicons name="open-outline" size={16} color={colors.text} style={{ marginLeft: 4 }} />
-        </TouchableOpacity>
-      ),
+      onPress: handleManageSubscription,
+    },
+    {
+      id: 'devices',
+      icon: 'desktop-classic',
+      iconColor: colors.sidebarIconDevices,
+      title: 'Devices',
+      onPress: handleDevices,
+    },
+    {
+      id: 'security',
+      icon: 'shield-check-outline',
+      iconColor: colors.sidebarIconSecurity,
+      title: 'Security',
+      onPress: () => router.push('/(tabs)/security' as any),
+    },
+  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconPayments, colors.sidebarIconDevices, colors.sidebarIconSecurity, handleEditName, handleManageSubscription, handleDevices, router]);
+
+  // Account info cards for grid layout
+  const accountCards = useMemo<AccountInfoCard[]>(() => [
+    {
+      id: 'name',
+      icon: 'account-outline',
+      iconColor: colors.sidebarIconPersonalInfo,
+      title: 'Full name',
+      value: displayName,
+      onPress: handleEditName,
     },
     {
       id: 'created',
-      icon: 'calendar-outline' as any,
+      icon: 'calendar-outline',
       iconColor: colors.sidebarIconData,
       title: 'Account created',
-      subtitle: accountCreatedDate || 'Unknown',
+      value: accountCreatedDate || 'Unknown',
     },
-  ], [colors.text, colors.sidebarIconPersonalInfo, colors.sidebarIconPayments, colors.sidebarIconData, displayName, accountCreatedDate, handleEditName, handleManageSubscription, handlePressIn]);
+  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconData, displayName, accountCreatedDate, handleEditName]);
 
-  const identityItems = useMemo(() => {
+  const identityCards = useMemo<IdentityCard[]>(() => {
     // Only show identity items on native platforms
     if (Platform.OS === 'web') {
       return [];
@@ -228,10 +247,14 @@ export default function HomeScreen() {
         </View>
       )}
 
-      <Section title={undefined} isFirst>
-        <AccountCard>
-          <GroupedSection items={accountItems} />
-        </AccountCard>
+      {/* Quick Actions - Horizontal Scroll */}
+      <Section title="Quick Actions" isFirst>
+        <QuickActionsSection actions={quickActions} onPressIn={handlePressIn} />
+      </Section>
+
+      {/* Account Info - Grid Layout */}
+      <Section title="Account Info">
+        <AccountInfoGrid cards={accountCards} onPressIn={handlePressIn} />
       </Section>
 
       {/* Self-Custody Identity Section */}
@@ -250,13 +273,11 @@ export default function HomeScreen() {
             </View>
           </View>
         ) : (
-          <AccountCard>
-            <GroupedSection items={identityItems} />
-          </AccountCard>
+          <IdentityCardsSection cards={identityCards} onPressIn={handlePressIn} />
         )}
       </Section>
     </>
-  ), [accountItems, identityItems, isSynced, isSyncing, handleSyncNow, colors]);
+  ), [quickActions, accountCards, identityCards, isSynced, isSyncing, handleSyncNow, colors, handlePressIn]);
 
 
   useEffect(() => {
