@@ -38,7 +38,7 @@ export class NotificationService {
       await notification.save();
       return notification;
     } catch (error) {
-      console.error('Error creating notification:', error);
+      logger.error('Error creating notification', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }
@@ -169,7 +169,7 @@ export class NotificationService {
     try {
       await Notification.deleteMany({ entityId });
     } catch (error) {
-      console.error('Error deleting notifications for entity:', error);
+      logger.error('Error deleting notifications for entity', error instanceof Error ? error : new Error(String(error)));
       throw error;
     }
   }

@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import axios from 'axios';
 import * as cheerio from 'cheerio';
+import { logger } from '../utils/logger';
 
 interface LinkMetadata {
     url: string;
@@ -64,7 +65,7 @@ export const fetchLinkMetadata = async (req: Request, res: Response) => {
 
         res.json(metadata);
     } catch (error: any) {
-        console.error('Error fetching link metadata:', error);
+        logger.error('Error fetching link metadata', error instanceof Error ? error : new Error(String(error)));
         
         // Return fallback metadata
         const fallbackUrl = normalizedUrl.startsWith('http') ? normalizedUrl : 'https://' + normalizedUrl;

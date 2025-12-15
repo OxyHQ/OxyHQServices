@@ -10,6 +10,7 @@ import {
   FileInfo,
   PresignedUrlOptions,
 } from '../types/s3.types';
+import { logger } from '../utils/logger';
 
 // Extend UploadOptions with service-specific fields
 export interface UploadOptions extends S3UploadOptions {
@@ -40,7 +41,7 @@ export class S3Service {
       clientConfig.useArnRegion = false;
     }
 
-    console.log('S3Client Configuration:', {
+    logger.debug('S3Client Configuration', {
       region: clientConfig.region,
       endpoint: clientConfig.endpoint,
       forcePathStyle: clientConfig.forcePathStyle,
