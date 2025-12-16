@@ -6,7 +6,7 @@ import { useFonts } from 'expo-font';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Platform } from 'react-native';
 import 'react-native-reanimated';
-import { OxyProvider } from '@oxyhq/services';
+import { OxyProvider, useOxy } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ScrollProvider } from '@/contexts/scroll-context';
@@ -115,19 +115,7 @@ function RootLayoutContent() {
               onFadeComplete={handleSplashFadeComplete}
             />
           ) : (
-            <SafeAreaProvider>
-              <ScrollProvider>
-                <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-                  <Stack>
-                    <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-                    {/* Auth route is only available on native platforms */}
-                    <Stack.Screen name="(auth)" redirect={Platform.OS === 'web'} options={{ headerShown: false }} />
-                    <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
-                  </Stack>
-                  <StatusBar style="auto" />
-                </ThemeProvider>
-              </ScrollProvider>
-            </SafeAreaProvider>
+            <AppStackContent colorScheme={colorScheme} />
           )}
         </OxyProvider>
       </AlertProvider>
@@ -140,4 +128,45 @@ function RootLayoutContent() {
   ]);
 
   return appContent;
+}
+
+// Component that uses useOxy hook to check for identity
+function AppStackContent({ colorScheme }: { colorScheme: 'light' | 'dark' | null }) {
+  const { hasIdentity } = useOxy();
+  const [hasExistingIdentity, setHasExistingIdentity] = useState<boolean | null>(null);
+
+  // Check if identity exists on mount
+  useEffect(() => {
+    const checkIdentity = async () => {
+      try {
+        const exists = await hasIdentity();
+        setHasExistingIdentity(exists);
+      } catch (error) {
+        console.error('Error checking identity:', error);
+        setHasExistingIdentity(false);
+      }
+    };
+
+    checkIdentity();
+  }, [hasIdentity]);
+
+  // Don't render Stack until we know identity status
+  // Default to showing auth screen if we haven't checked yet
+  const shouldRedirectAuth = Platform.OS === 'web' || hasExistingIdentity === true;
+
+  return (
+    <SafeAreaProvider>
+      <ScrollProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <Stack>
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            {/* Auth route redirects on web or if identity already exists */}
+            <Stack.Screen name="(auth)" redirect={shouldRedirectAuth} options={{ headerShown: false }} />
+            <Stack.Screen name="modal" options={{ presentation: 'modal', title: 'Modal' }} />
+          </Stack>
+          <StatusBar style="auto" />
+        </ThemeProvider>
+      </ScrollProvider>
+    </SafeAreaProvider>
+  );
 }

@@ -136,6 +136,35 @@ export default function HomeScreen() {
     }
   }, [router]);
 
+  const handleSetUsername = useCallback(() => {
+    showBottomSheet?.({
+      screen: 'EditProfile',
+      props: { initialSection: 'basicInfo', initialField: 'username' }
+    });
+  }, [showBottomSheet]);
+
+  // Compute recommendations similar to security screen
+  const recommendations = useMemo(() => {
+    const recs: any[] = [];
+
+    // Check if username is missing
+    if (!user?.username) {
+      recs.push({
+        id: 'set-username',
+        priority: 1,
+        icon: 'account-outline',
+        iconColor: '#fbbc04',
+        title: 'Set your username',
+        subtitle: 'A username is needed to use the Oxy ecosystem. Without it, you can only use Oxy Identity accounts app.',
+        onPress: handleSetUsername,
+        showChevron: true,
+      });
+    }
+
+    // Sort by priority (lower number = higher priority)
+    return recs.sort((a, b) => a.priority - b.priority);
+  }, [user?.username, handleSetUsername]);
+
   // Quick action cards for horizontal scroll
   const quickActions = useMemo<QuickAction[]>(() => [
     {
@@ -248,8 +277,17 @@ export default function HomeScreen() {
         </View>
       )}
 
+      {/* Recommendations Section */}
+      {recommendations.length > 0 && (
+        <Section title="Recommendations" isFirst={isSynced}>
+          <AccountCard>
+            <GroupedSection items={recommendations} />
+          </AccountCard>
+        </Section>
+      )}
+
       {/* Quick Actions - Horizontal Scroll */}
-      <Section title="Quick Actions" isFirst>
+      <Section title="Quick Actions" isFirst={recommendations.length === 0 && isSynced}>
         <QuickActionsSection actions={quickActions} onPressIn={handlePressIn} />
       </Section>
 
@@ -278,7 +316,7 @@ export default function HomeScreen() {
         )}
       </Section>
     </>
-  ), [quickActions, accountCards, identityCards, isSynced, isSyncing, handleSyncNow, colors, handlePressIn]);
+  ), [quickActions, accountCards, identityCards, isSynced, isSyncing, handleSyncNow, colors, handlePressIn, recommendations]);
 
 
   useEffect(() => {
