@@ -1,9 +1,10 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, ScrollView, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { HorizontalScrollSection } from './horizontal-scroll-section';
 
 export interface QuickAction {
   id: string;
@@ -23,10 +24,9 @@ export function QuickActionsSection({ actions, onPressIn }: QuickActionsSectionP
   const colors = Colors[colorScheme];
 
   return (
-    <ScrollView
-      horizontal
-      showsHorizontalScrollIndicator={false}
-      style={styles.scrollView}
+    <HorizontalScrollSection
+      onPressIn={onPressIn}
+      scrollViewStyle={styles.scrollView}
       contentContainerStyle={styles.horizontalScrollContent}
     >
       {actions.map((action) => (
@@ -40,24 +40,27 @@ export function QuickActionsSection({ actions, onPressIn }: QuickActionsSectionP
           <View style={[styles.quickActionIcon, { backgroundColor: action.iconColor }]}>
             <MaterialCommunityIcons name={action.icon as any} size={24} color={darkenColor(action.iconColor)} />
           </View>
-          <Text style={[styles.quickActionTitle, { color: colors.text }]}>{action.title}</Text>
+          <Text
+            style={[styles.quickActionTitle, { color: colors.text }]}
+            numberOfLines={1}
+          >
+            {action.title}
+          </Text>
         </TouchableOpacity>
       ))}
-    </ScrollView>
+    </HorizontalScrollSection>
   );
 }
 
 const styles = StyleSheet.create({
   scrollView: {
-    marginHorizontal: -16, // Extend to screen edges (compensate for parent padding)
+    // Styles handled by HorizontalScrollSection
   } as const,
   horizontalScrollContent: {
-    paddingLeft: 16,
-    paddingRight: 16,
     gap: 12,
   } as const,
   quickActionCard: {
-    width: 100,
+    minWidth: 100,
     padding: 16,
     borderRadius: 16,
     borderWidth: 1,
@@ -76,6 +79,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     textAlign: 'center',
+    flexShrink: 0,
   } as const,
 });
 

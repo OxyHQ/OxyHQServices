@@ -19,6 +19,7 @@ import { useHapticPress } from '@/hooks/use-haptic-press';
 import { QuickActionsSection, type QuickAction } from '@/components/quick-actions-section';
 import { AccountInfoGrid, type AccountInfoCard } from '@/components/account-info-grid';
 import { IdentityCardsSection, type IdentityCard } from '@/components/identity-cards-section';
+import { RecentActivitySection, type RecentActivityItem } from '@/components/recent-activity-section';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -123,12 +124,36 @@ export default function HomeScreen() {
   }, [refreshSessions, syncIdentity, isSynced]);
 
   const handleDevices = useCallback(() => {
-    showBottomSheet?.('SessionManagement');
-  }, [showBottomSheet]);
+    router.push('/(tabs)/devices' as any);
+  }, [router]);
 
   const handleMenu = useCallback(() => {
     showBottomSheet?.('AccountOverview');
   }, [showBottomSheet]);
+
+  const handlePersonalInfo = useCallback(() => {
+    router.push('/(tabs)/personal-info' as any);
+  }, [router]);
+
+  const handleDataPrivacy = useCallback(() => {
+    router.push('/(tabs)/data' as any);
+  }, [router]);
+
+  const handleSharing = useCallback(() => {
+    router.push('/(tabs)/sharing' as any);
+  }, [router]);
+
+  const handlePayments = useCallback(() => {
+    router.push('/(tabs)/payments' as any);
+  }, [router]);
+
+  const handleStorage = useCallback(() => {
+    router.push('/(tabs)/storage' as any);
+  }, [router]);
+
+  const handleFamily = useCallback(() => {
+    router.push('/(tabs)/family' as any);
+  }, [router]);
 
   const handleAboutIdentity = useCallback(() => {
     if (Platform.OS !== 'web') {
@@ -168,18 +193,18 @@ export default function HomeScreen() {
   // Quick action cards for horizontal scroll
   const quickActions = useMemo<QuickAction[]>(() => [
     {
-      id: 'edit-name',
-      icon: 'account-edit-outline',
+      id: 'personal-info',
+      icon: 'card-account-details-outline',
       iconColor: colors.sidebarIconPersonalInfo,
-      title: 'Edit Name',
-      onPress: handleEditName,
+      title: 'Personal Info',
+      onPress: handlePersonalInfo,
     },
     {
-      id: 'subscription',
-      icon: 'credit-card-outline',
-      iconColor: colors.sidebarIconPayments,
-      title: 'Subscription',
-      onPress: handleManageSubscription,
+      id: 'security',
+      icon: 'shield-check-outline',
+      iconColor: colors.sidebarIconSecurity,
+      title: 'Security',
+      onPress: () => router.push('/(tabs)/security' as any),
     },
     {
       id: 'devices',
@@ -189,13 +214,58 @@ export default function HomeScreen() {
       onPress: handleDevices,
     },
     {
-      id: 'security',
-      icon: 'shield-check-outline',
-      iconColor: colors.sidebarIconSecurity,
-      title: 'Security',
-      onPress: () => router.push('/(tabs)/security' as any),
+      id: 'data',
+      icon: 'toggle-switch-outline',
+      iconColor: colors.sidebarIconData,
+      title: 'Data & Privacy',
+      onPress: handleDataPrivacy,
     },
-  ], [colors.sidebarIconPersonalInfo, colors.sidebarIconPayments, colors.sidebarIconDevices, colors.sidebarIconSecurity, handleEditName, handleManageSubscription, handleDevices, router]);
+    {
+      id: 'sharing',
+      icon: 'account-group-outline',
+      iconColor: colors.sidebarIconSharing,
+      title: 'Sharing',
+      onPress: handleSharing,
+    },
+    {
+      id: 'payments',
+      icon: 'wallet-outline',
+      iconColor: colors.sidebarIconPayments,
+      title: 'Payments',
+      onPress: handlePayments,
+    },
+    {
+      id: 'storage',
+      icon: 'cloud-outline',
+      iconColor: colors.sidebarIconStorage,
+      title: 'Storage',
+      onPress: handleStorage,
+    },
+    {
+      id: 'family',
+      icon: 'home-group',
+      iconColor: colors.sidebarIconFamily,
+      title: 'Family',
+      onPress: handleFamily,
+    },
+  ], [
+    colors.sidebarIconPersonalInfo,
+    colors.sidebarIconSecurity,
+    colors.sidebarIconDevices,
+    colors.sidebarIconData,
+    colors.sidebarIconSharing,
+    colors.sidebarIconPayments,
+    colors.sidebarIconStorage,
+    colors.sidebarIconFamily,
+    handlePersonalInfo,
+    handleDevices,
+    handleDataPrivacy,
+    handleSharing,
+    handlePayments,
+    handleStorage,
+    handleFamily,
+    router,
+  ]);
 
   // Account info cards for grid layout
   const accountCards = useMemo<AccountInfoCard[]>(() => [
@@ -249,6 +319,34 @@ export default function HomeScreen() {
     ];
   }, [handleAboutIdentity, colors.identityIconSelfCustody, colors.identityIconPublicKey]);
 
+  // Recent activity items
+  const recentActivityItems = useMemo<RecentActivityItem[]>(() => [
+    {
+      id: 'security-check',
+      icon: 'shield-check-outline',
+      iconColor: colors.sidebarIconSecurity,
+      title: 'Security Review',
+      subtitle: 'Last checked 2 days ago',
+      onPress: () => router.push('/(tabs)/security' as any),
+    },
+    {
+      id: 'device-added',
+      icon: 'devices',
+      iconColor: colors.sidebarIconDevices,
+      title: 'New Device',
+      subtitle: 'iPhone added yesterday',
+      onPress: handleDevices,
+    },
+    {
+      id: 'profile-updated',
+      icon: 'account-edit-outline',
+      iconColor: colors.sidebarIconPersonalInfo,
+      title: 'Profile Updated',
+      subtitle: '3 days ago',
+      onPress: handlePersonalInfo,
+    },
+  ], [colors.sidebarIconSecurity, colors.sidebarIconDevices, colors.sidebarIconPersonalInfo, router, handleDevices, handlePersonalInfo]);
+
   const content = useMemo(() => (
     <>
       {/* Sync Status Banner */}
@@ -291,6 +389,11 @@ export default function HomeScreen() {
         <QuickActionsSection actions={quickActions} onPressIn={handlePressIn} />
       </Section>
 
+      {/* Recent Activity - Horizontal Scroll */}
+      <Section title="Recent Activity">
+        <RecentActivitySection items={recentActivityItems} onPressIn={handlePressIn} />
+      </Section>
+
       {/* Account Info - Grid Layout */}
       <Section title="Account Info">
         <AccountInfoGrid cards={accountCards} onPressIn={handlePressIn} />
@@ -316,7 +419,7 @@ export default function HomeScreen() {
         )}
       </Section>
     </>
-  ), [quickActions, accountCards, identityCards, isSynced, isSyncing, handleSyncNow, colors, handlePressIn, recommendations]);
+  ), [quickActions, accountCards, identityCards, recentActivityItems, isSynced, isSyncing, handleSyncNow, colors, handlePressIn, recommendations]);
 
 
   useEffect(() => {
