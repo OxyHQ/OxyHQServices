@@ -402,6 +402,54 @@ export default function PaymentsScreen() {
     return items;
   }, [payments, transactions, colors, handleViewBillingHistory, handleViewTransactions]);
 
+  // Info section items
+  const infoItems = useMemo(() => {
+    return [
+      {
+        id: 'faircoin',
+        customIcon: (
+          <View style={{ width: 36, height: 36, borderRadius: 18, overflow: 'hidden', backgroundColor: colors.sidebarIconPayments }}>
+            <Image 
+              source={faircoinImage} 
+              style={{ width: 36, height: 36 }}
+              resizeMode="cover"
+            />
+          </View>
+        ),
+        title: 'FairCoin (⊜)',
+        subtitle: 'FairCoin is the base cryptocurrency used across all Oxy services. All transactions, including subscriptions, services, and in-app purchases, are denominated in FairCoin.',
+      },
+      {
+        id: 'oxy-pay',
+        icon: 'wallet-outline',
+        iconColor: colors.sidebarIconPersonalInfo,
+        title: 'Oxy Pay',
+        subtitle: 'Oxy Pay is your in-app wallet that stores your FairCoin balance. Use it to pay for subscriptions, premium features, and services within the Oxy ecosystem. Your balance is displayed at the top of this screen.',
+      },
+      {
+        id: 'fairwallet',
+        icon: 'qrcode-scan',
+        iconColor: colors.sidebarIconSharing,
+        title: 'FAIRWallet',
+        subtitle: 'FAIRWallet enables direct FairCoin payments via QR code scanning. When making a payment, you can choose FAIRWallet as your payment method and scan the generated QR code with your FairCoin wallet app.',
+      },
+      {
+        id: 'security',
+        icon: 'shield-check-outline',
+        iconColor: colors.sidebarIconSecurity,
+        title: 'Security & Privacy',
+        subtitle: 'All payments are processed securely through Oxy services. Your payment information is encrypted and never stored on your device. Credit card details are handled by secure payment processors, and cryptocurrency transactions use blockchain technology for transparency and security.',
+      },
+      {
+        id: 'payment-methods',
+        icon: 'credit-card-outline',
+        iconColor: colors.sidebarIconData,
+        title: 'Payment Methods',
+        subtitle: 'You can pay using Credit/Debit Cards, Oxy Pay wallet balance, or FAIRWallet. When purchasing subscriptions or services, the payment gateway will guide you through the process and allow you to choose your preferred payment method.',
+      },
+    ];
+  }, [colors]);
+
   if (loading || oxyLoading) {
     return (
       <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
@@ -455,21 +503,41 @@ export default function PaymentsScreen() {
       {/* Wallet Balance Card */}
       {wallet && (
         <View style={[styles.walletCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <View style={styles.walletHeader}>
+          {/* Large Icon */}
+          <View style={styles.walletIconWrapper}>
             <View style={[styles.walletIconContainer, { backgroundColor: colors.sidebarIconPayments }]}>
-              <MaterialCommunityIcons name="wallet-outline" size={32} color={darkenColor(colors.sidebarIconPayments)} />
-            </View>
-            <View style={styles.walletInfo}>
-              <Text style={[styles.walletTitle, { color: colors.text }]}>Oxy Pay Balance</Text>
-              <Text style={[styles.walletBalance, { color: colors.text }]}>
-                {formatFairCoinBalance(wallet.balance || 0)}
-              </Text>
+              <MaterialCommunityIcons name="wallet-outline" size={48} color={darkenColor(colors.sidebarIconPayments)} />
             </View>
           </View>
-          <View style={styles.walletFooter}>
+          
+          {/* Balance Display */}
+          <View style={styles.walletBalanceWrapper}>
+            <Text style={[styles.walletBalance, { color: colors.text }]}>
+              {formatFairCoinBalance(wallet.balance || 0)}
+            </Text>
             <Text style={[styles.walletSubtitle, { color: colors.secondaryText }]}>
               Your in-app wallet for Oxy services
             </Text>
+          </View>
+
+          {/* Summary Cards */}
+          <View style={styles.walletSummaryCards}>
+            <View style={[styles.summaryCard, { backgroundColor: colors.background }]}>
+              <Text style={[styles.summaryCardValue, { color: colors.text }]}>
+                {transactions.length}
+              </Text>
+              <Text style={[styles.summaryCardLabel, { color: colors.secondaryText }]}>
+                Transactions
+              </Text>
+            </View>
+            <View style={[styles.summaryCard, { backgroundColor: colors.background }]}>
+              <Text style={[styles.summaryCardValue, { color: colors.text }]}>
+                {payments.length}
+              </Text>
+              <Text style={[styles.summaryCardLabel, { color: colors.secondaryText }]}>
+                Payments
+              </Text>
+            </View>
           </View>
         </View>
       )}
@@ -507,57 +575,7 @@ export default function PaymentsScreen() {
       {/* Info Section */}
       <Section title="About Payments">
         <AccountCard>
-          <View style={styles.infoSection}>
-            <View style={styles.infoCard}>
-              <View style={styles.infoCardHeader}>
-                <MaterialCommunityIcons name="currency-usd" size={24} color={colors.sidebarIconPayments} />
-                <Text style={[styles.infoCardTitle, { color: colors.text }]}>FairCoin (⊜)</Text>
-              </View>
-              <Text style={[styles.infoCardText, { color: colors.secondaryText }]}>
-                FairCoin is the base cryptocurrency used across all Oxy services. All transactions, including subscriptions, services, and in-app purchases, are denominated in FairCoin.
-              </Text>
-            </View>
-
-            <View style={styles.infoCard}>
-              <View style={styles.infoCardHeader}>
-                <MaterialCommunityIcons name="wallet-outline" size={24} color={colors.sidebarIconPayments} />
-                <Text style={[styles.infoCardTitle, { color: colors.text }]}>Oxy Pay</Text>
-              </View>
-              <Text style={[styles.infoCardText, { color: colors.secondaryText }]}>
-                Oxy Pay is your in-app wallet that stores your FairCoin balance. Use it to pay for subscriptions, premium features, and services within the Oxy ecosystem. Your balance is displayed at the top of this screen.
-              </Text>
-            </View>
-
-            <View style={styles.infoCard}>
-              <View style={styles.infoCardHeader}>
-                <MaterialCommunityIcons name="qrcode-scan" size={24} color="#FF6B35" />
-                <Text style={[styles.infoCardTitle, { color: colors.text }]}>FAIRWallet</Text>
-              </View>
-              <Text style={[styles.infoCardText, { color: colors.secondaryText }]}>
-                FAIRWallet enables direct FairCoin payments via QR code scanning. When making a payment, you can choose FAIRWallet as your payment method and scan the generated QR code with your FairCoin wallet app.
-              </Text>
-            </View>
-
-            <View style={styles.infoCard}>
-              <View style={styles.infoCardHeader}>
-                <MaterialCommunityIcons name="shield-check-outline" size={24} color={colors.sidebarIconPayments} />
-                <Text style={[styles.infoCardTitle, { color: colors.text }]}>Security & Privacy</Text>
-              </View>
-              <Text style={[styles.infoCardText, { color: colors.secondaryText }]}>
-                All payments are processed securely through Oxy services. Your payment information is encrypted and never stored on your device. Credit card details are handled by secure payment processors, and cryptocurrency transactions use blockchain technology for transparency and security.
-              </Text>
-            </View>
-
-            <View style={styles.infoCard}>
-              <View style={styles.infoCardHeader}>
-                <MaterialCommunityIcons name="credit-card-outline" size={24} color={colors.sidebarIconPayments} />
-                <Text style={[styles.infoCardTitle, { color: colors.text }]}>Payment Methods</Text>
-              </View>
-              <Text style={[styles.infoCardText, { color: colors.secondaryText }]}>
-                You can pay using Credit/Debit Cards, Oxy Pay wallet balance, or FAIRWallet. When purchasing subscriptions or services, the payment gateway will guide you through the process and allow you to choose your preferred payment method.
-              </Text>
-            </View>
-          </View>
+          <GroupedSection items={infoItems} />
         </AccountCard>
       </Section>
     </>
@@ -608,43 +626,53 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   walletCard: {
-    borderRadius: 16,
+    borderRadius: 24,
     borderWidth: 1,
-    padding: 20,
+    padding: 24,
     marginBottom: 24,
   },
-  walletHeader: {
-    flexDirection: 'row',
+  walletIconWrapper: {
     alignItems: 'center',
     marginBottom: 16,
   },
   walletIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 100,
+    height: 100,
+    borderRadius: 50,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
   },
-  walletInfo: {
-    flex: 1,
-  },
-  walletTitle: {
-    fontSize: 14,
-    fontWeight: '500',
-    opacity: 0.7,
-    marginBottom: 4,
+  walletBalanceWrapper: {
+    alignItems: 'center',
+    marginBottom: 24,
   },
   walletBalance: {
-    fontSize: 32,
+    fontSize: 40,
     fontWeight: '700',
-  },
-  walletFooter: {
-    marginTop: 8,
+    marginBottom: 8,
   },
   walletSubtitle: {
-    fontSize: 13,
+    fontSize: 14,
     opacity: 0.7,
+  },
+  walletSummaryCards: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  summaryCard: {
+    flex: 1,
+    borderRadius: 16,
+    padding: 16,
+    alignItems: 'center',
+  },
+  summaryCardValue: {
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  summaryCardLabel: {
+    fontSize: 13,
+    opacity: 0.8,
   },
   button: {
     paddingHorizontal: 16,
@@ -655,30 +683,8 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  infoSection: {
-    padding: 4,
-    gap: 16,
-  },
-  infoCard: {
-    gap: 8,
-  },
-  infoCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    marginBottom: 4,
-  },
-  infoCardTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  infoCardText: {
-    fontSize: 14,
-    lineHeight: 20,
-    paddingLeft: 36, // Align with icon
-  },
   faircoinBanner: {
-    borderRadius: 16,
+    borderRadius: 24,
     marginBottom: 24,
     overflow: 'hidden',
   },

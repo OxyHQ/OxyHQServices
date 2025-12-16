@@ -5,7 +5,7 @@ import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
-import { AccountCard, ScreenHeader, AppleSwitch, useAlert } from '@/components/ui';
+import { AccountCard, ScreenHeader, Switch, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, usePrivacySettings, useUpdatePrivacySettings } from '@oxyhq/services';
@@ -117,7 +117,7 @@ export default function DataScreen() {
       title: 'Data sharing',
       subtitle: 'Allow data sharing for improved services',
       customContent: (
-        <AppleSwitch
+        <Switch
           value={dataSharing}
           onValueChange={(value) => handlePrivacyUpdate('dataSharing', value)}
           disabled={updatePrivacyMutation.isPending}
@@ -131,7 +131,7 @@ export default function DataScreen() {
       title: 'Location sharing',
       subtitle: 'Share your location for location-based features',
       customContent: (
-        <AppleSwitch
+        <Switch
           value={locationSharing}
           onValueChange={(value) => handlePrivacyUpdate('locationSharing', value)}
           disabled={updatePrivacyMutation.isPending}
@@ -145,7 +145,7 @@ export default function DataScreen() {
       title: 'Analytics & diagnostics',
       subtitle: 'Help improve our services by sharing usage data',
       customContent: (
-        <AppleSwitch
+        <Switch
           value={analyticsSharing}
           onValueChange={(value) => handlePrivacyUpdate('analyticsSharing', value)}
           disabled={updatePrivacyMutation.isPending}
@@ -159,7 +159,7 @@ export default function DataScreen() {
       title: 'Show activity status',
       subtitle: 'Let others see when you\'re active',
       customContent: (
-        <AppleSwitch
+        <Switch
           value={showActivity}
           onValueChange={(value) => handlePrivacyUpdate('showActivity', value)}
           disabled={updatePrivacyMutation.isPending}

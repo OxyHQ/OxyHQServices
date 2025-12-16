@@ -8,7 +8,7 @@ import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
-import { LinkButton, AccountCard, AppleSwitch, ScreenHeader, useAlert } from '@/components/ui';
+import { LinkButton, AccountCard, Switch, ScreenHeader, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, useUserDevices, useRecentSecurityActivity, useUpdateProfile } from '@oxyhq/services';
@@ -320,7 +320,7 @@ export default function SecurityScreen() {
                 title: Platform.OS === 'ios' ? 'Face ID / Touch ID' : 'Biometric Authentication',
                 subtitle: biometricSubtitle,
                 customContent: canEnableBiometric ? (
-                    <AppleSwitch
+                    <Switch
                         value={biometricEnabled}
                         onValueChange={toggleBiometricLogin}
                         disabled={biometricSaving || biometricLoading}
@@ -464,7 +464,7 @@ export default function SecurityScreen() {
             title: 'Enhanced Safe Browsing for your account',
             subtitle: 'More personalized protections against dangerous websites, downloads, and extensions.',
             customContent: (
-                <AppleSwitch
+                <Switch
                     value={enhancedSafeBrowsing}
                     onValueChange={setEnhancedSafeBrowsing}
                 />
@@ -477,7 +477,7 @@ export default function SecurityScreen() {
             title: 'Dark web report',
             subtitle: 'Start monitoring to get alerts and guidance if your info is found on the dark web',
             customContent: (
-                <AppleSwitch
+                <Switch
                     value={darkWebReport}
                     onValueChange={setDarkWebReport}
                 />

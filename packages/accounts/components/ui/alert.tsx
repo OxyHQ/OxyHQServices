@@ -72,10 +72,6 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
   // Separate cancel and other buttons
   const cancelButton = alertButtons.find(btn => btn.style === 'cancel');
   const otherButtons = alertButtons.filter(btn => btn.style !== 'cancel');
-  
-  // Determine if we should use horizontal layout (2 buttons) or vertical (3+ buttons)
-  const totalButtons = alertButtons.length;
-  const useHorizontalLayout = totalButtons === 2 && cancelButton && otherButtons.length === 1;
 
   const handleButtonPress = (button: AlertButton) => {
     button.onPress?.();
@@ -89,20 +85,9 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
     const isCancel = button.style === 'cancel';
     const isDefault = button.style === 'default' || !button.style;
 
-    // Add margin for gaps between buttons (consistent gap value)
+    // Add margin for gaps between buttons (vertical layout)
     const buttonGap = 12;
-    let marginStyle = {};
-    if (useHorizontalLayout) {
-      // Horizontal layout: add horizontal margin except for first button
-      if (index > 0) {
-        marginStyle = { marginLeft: buttonGap };
-      }
-    } else {
-      // Vertical layout: add vertical margin except for first button
-      if (index > 0) {
-        marginStyle = { marginTop: buttonGap };
-      }
-    }
+    const marginStyle = index > 0 ? { marginTop: buttonGap } : {};
 
     // Determine button background color with more transparent effect
     let backgroundColor: string;
@@ -126,7 +111,6 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
         tint={colorScheme === 'dark' ? 'dark' : 'light'}
         style={[
           styles.button,
-          useHorizontalLayout && styles.buttonHorizontal,
           { borderRadius: 18 },
           marginStyle,
         ]}
@@ -214,27 +198,13 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
             </ScrollView>
 
             {/* Button Section */}
-            <View
-              style={[
-                styles.buttonSection,
-                useHorizontalLayout && styles.buttonSectionHorizontal,
-              ]}
-            >
-              {useHorizontalLayout ? (
-                <>
-                  {cancelButton && renderButton(cancelButton, 0, false, false)}
-                  {otherButtons.map((button, index) => renderButton(button, index + 1, index === otherButtons.length - 1, false))}
-                </>
-              ) : (
-                <>
-                  {otherButtons.map((button, index) => {
-                    const isLast = index === otherButtons.length - 1 && !cancelButton;
-                    const showBorder = index > 0;
-                    return renderButton(button, index, isLast, showBorder);
-                  })}
-                  {cancelButton && renderButton(cancelButton, otherButtons.length, true, otherButtons.length > 0)}
-                </>
-              )}
+            <View style={styles.buttonSection}>
+              {otherButtons.map((button, index) => {
+                const isLast = index === otherButtons.length - 1 && !cancelButton;
+                const showBorder = index > 0;
+                return renderButton(button, index, isLast, showBorder);
+              })}
+              {cancelButton && renderButton(cancelButton, otherButtons.length, true, otherButtons.length > 0)}
             </View>
           </BlurView>
         </Animated.View>
@@ -306,9 +276,6 @@ const styles = StyleSheet.create({
     paddingBottom: 12,
     flexDirection: 'column',
   },
-  buttonSectionHorizontal: {
-    flexDirection: 'row',
-  },
   button: {
     borderRadius: 18,
     overflow: 'hidden',
@@ -331,9 +298,6 @@ const styles = StyleSheet.create({
     shadowRadius: 0,
     elevation: 0,
     borderWidth: 0,
-  },
-  buttonHorizontal: {
-    flex: 1,
   },
   buttonText: {
     fontSize: 15,
