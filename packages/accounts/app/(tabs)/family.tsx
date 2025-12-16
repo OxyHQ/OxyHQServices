@@ -138,7 +138,8 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 32,
-    fontWeight: '600',
+    fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
     marginBottom: 8,
   },
   subtitle: {
@@ -182,7 +183,8 @@ const styles = StyleSheet.create({
   },
   mobileTitle: {
     fontSize: 28,
-    fontWeight: '600',
+    fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
     marginBottom: 6,
   },
   mobileSubtitle: {

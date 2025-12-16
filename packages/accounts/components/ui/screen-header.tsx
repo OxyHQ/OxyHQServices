@@ -1,8 +1,6 @@
 import React from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { ThemedText } from '@/components/themed-text';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
 
 interface ScreenHeaderProps {
     title: string;
@@ -11,9 +9,7 @@ interface ScreenHeaderProps {
 }
 
 export function ScreenHeader({ title, subtitle, style }: ScreenHeaderProps) {
-    const colorScheme = useColorScheme() ?? 'light';
     const { width } = useWindowDimensions();
-    const colors = Colors[colorScheme];
     const isDesktop = Platform.OS === 'web' && width >= 768;
 
     return (
@@ -33,23 +29,27 @@ export function ScreenHeader({ title, subtitle, style }: ScreenHeaderProps) {
 const styles = StyleSheet.create({
     desktopHeader: {
         marginBottom: 24,
+        paddingTop: 24,
+        gap: 24,
     },
     mobileHeader: {
         marginBottom: 20,
+        paddingTop: 24,
+        gap: 24,
     },
     title: {
-        fontSize: 32,
-        fontWeight: '600',
-        marginBottom: 12,
+        fontSize: 48,
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
     },
     subtitle: {
         fontSize: 16,
         opacity: 0.7,
     },
     mobileTitle: {
-        fontSize: 28,
-        fontWeight: '600',
-        marginBottom: 10,
+        fontSize: 40,
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
     },
     mobileSubtitle: {
         fontSize: 15,

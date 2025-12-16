@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { StyleSheet, RefreshControl, Platform } from 'react-native';
+import { StyleSheet, RefreshControl, Platform, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
 import { useScrollContext } from '@/contexts/scroll-context';
@@ -20,8 +20,12 @@ const HEADER_CONTENT_HEIGHT = 36 + 66; // 102px total
 export function ScreenContentWrapper({ children, refreshing = false, onRefresh }: ScreenContentWrapperProps) {
   const { setIsScrolled, scrollRef, scrollY, scrollDirection } = useScrollContext();
   const insets = useSafeAreaInsets();
+  const { width } = useWindowDimensions();
   const colorScheme = useColorScheme() ?? 'light';
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
+
+  // Check if we're on mobile (header is absolutely positioned on mobile)
+  const isMobile = Platform.OS !== 'web' || (Platform.OS === 'web' && width < 768);
 
   const scrollHandler = useAnimatedScrollHandler({
     onScroll: (event) => {
@@ -47,6 +51,7 @@ export function ScreenContentWrapper({ children, refreshing = false, onRefresh }
   // Calculate header height: safe area + header padding + content
   // This matches the header's actual rendered height on mobile
   // Header has: paddingTop (insets.top + 4) + top row (36) + search bar (66) = total
+  // Only apply paddingTop when header is absolutely positioned (mobile)
   const headerHeight = useMemo(() => {
     return insets.top + HEADER_TOP_PADDING + HEADER_CONTENT_HEIGHT;
   }, [insets.top]);
@@ -57,7 +62,7 @@ export function ScreenContentWrapper({ children, refreshing = false, onRefresh }
       style={styles.scrollView}
       contentContainerStyle={[
         styles.contentContainer,
-        { paddingTop: headerHeight }
+        isMobile && { paddingTop: headerHeight }
       ]}
       showsVerticalScrollIndicator={false}
       onScroll={scrollHandler}
@@ -73,7 +78,7 @@ export function ScreenContentWrapper({ children, refreshing = false, onRefresh }
             onRefresh={onRefresh}
             tintColor={colors.tint}
             colors={[colors.tint]}
-            progressViewOffset={headerHeight + 8}
+            progressViewOffset={isMobile ? headerHeight + 8 : 8}
             progressBackgroundColor={colors.background}
           />
         ) : undefined

@@ -306,6 +306,5 @@ const styles = StyleSheet.create({
   sectionSubtitle: {
     fontSize: 14,
     opacity: 0.7,
-    marginBottom: 12,
   },
 });

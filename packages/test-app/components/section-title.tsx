@@ -1,5 +1,5 @@
 import type React from 'react';
-import { Text, StyleSheet, type StyleProp, type TextStyle } from 'react-native';
+import { Text, StyleSheet, Platform, type StyleProp, type TextStyle } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { normalizeColorScheme } from '@/utils/themeUtils';
 import { useThemeStyles } from '@/hooks/use-theme-styles';
@@ -24,8 +24,8 @@ const SectionTitle: React.FC<SectionTitleProps> = ({ title, theme, style }) => {
 const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 16,
-        fontWeight: '600',
-        marginBottom: 12,
+        fontWeight: Platform.OS === 'web' ? '600' : undefined,
+        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-SemiBold',
     },
 });
 

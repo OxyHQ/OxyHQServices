@@ -6,6 +6,7 @@ import { useI18n } from '../../hooks/useI18n';
 import { useThemeStyles } from '../../hooks/useThemeStyles';
 import { normalizeTheme } from '../../utils/themeUtils';
 import { useColorScheme } from '../../hooks/use-color-scheme';
+import { fontFamilies } from '../../styles/fonts';
 
 const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
     const { t } = useI18n();
@@ -61,7 +62,13 @@ const styles = StyleSheet.create({
         marginBottom: 24,
     },
     contentContainer: { padding: 24, paddingTop: 20 },
-    section: { fontSize: 18, fontWeight: 'bold', marginTop: 24, marginBottom: 8 },
+    section: { 
+        fontSize: 18, 
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+        fontFamily: fontFamilies.phuduBold,
+        marginTop: 24, 
+        marginBottom: 8 
+    },
     paragraph: { fontSize: 16, marginBottom: 12 },
 });
 

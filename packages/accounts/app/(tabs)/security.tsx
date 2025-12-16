@@ -695,7 +695,8 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: 32,
-        fontWeight: '600',
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
         marginBottom: 8,
     },
     recommendationIconContainer: {
@@ -708,7 +709,6 @@ const styles = StyleSheet.create({
     sectionSubtitle: {
         fontSize: 14,
         opacity: 0.7,
-        marginBottom: 12,
     },
     statusContainer: {
         marginLeft: 8,

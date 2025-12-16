@@ -339,7 +339,8 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 28,
-    fontWeight: '700',
+    fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
     textAlign: 'center',
     marginBottom: 12,
     letterSpacing: -0.5,

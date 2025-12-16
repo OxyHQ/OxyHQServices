@@ -223,8 +223,8 @@ const styles = StyleSheet.create({
     },
     sectionTitle: {
         fontSize: 18,
-        fontWeight: '600',
-        marginBottom: 12,
+        fontWeight: Platform.OS === 'web' ? '600' : undefined,
+        fontFamily: fontFamilies.phuduSemiBold,
         marginTop: 8,
         alignSelf: 'flex-start',
         marginLeft: 24,

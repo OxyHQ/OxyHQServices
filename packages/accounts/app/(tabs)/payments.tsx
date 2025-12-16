@@ -591,16 +591,14 @@ export default function PaymentsScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScreenContentWrapper>
-        <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-          <View style={styles.mobileContent}>
-            <ScreenHeader title="Payments & subscriptions" subtitle="Manage your payment methods, subscriptions, and wallets." />
-            {content}
-          </View>
-        </ScrollView>
-      </ScreenContentWrapper>
-    </View>
+    <ScreenContentWrapper>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.mobileContent}>
+          <ScreenHeader title="Payments & subscriptions" subtitle="Manage your payment methods, subscriptions, and wallets." />
+          {content}
+        </View>
+      </View>
+    </ScreenContentWrapper>
   );
 }
 
@@ -648,7 +646,8 @@ const styles = StyleSheet.create({
   },
   walletBalance: {
     fontSize: 40,
-    fontWeight: '700',
+    fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
     marginBottom: 8,
   },
   walletSubtitle: {

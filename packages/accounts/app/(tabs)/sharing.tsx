@@ -62,20 +62,20 @@ export default function SharingScreen() {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <ScreenContentWrapper>
+    <ScreenContentWrapper>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-        <ScreenHeader title="People & sharing" subtitle="Manage shared accounts and permissions." />
-        <AccountCard>
-          <GroupedSection items={sharedItems} />
-        </AccountCard>
-        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]} onPressIn={handlePressIn}>
-          <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
-          <Text style={styles.addButtonText}>Invite user</Text>
-        </TouchableOpacity>
+          <ScreenHeader title="People & sharing" subtitle="Manage shared accounts and permissions." />
+          <AccountCard>
+            <GroupedSection items={sharedItems} />
+          </AccountCard>
+          <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]} onPressIn={handlePressIn}>
+            <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
+            <Text style={styles.addButtonText}>Invite user</Text>
+          </TouchableOpacity>
         </View>
-      </ScreenContentWrapper>
-    </View>
+      </View>
+    </ScreenContentWrapper>
   );
 }
 
@@ -141,7 +141,8 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 32,
-    fontWeight: '600',
+    fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
     marginBottom: 8,
   },
   subtitle: {
@@ -185,7 +186,8 @@ const styles = StyleSheet.create({
   },
   mobileTitle: {
     fontSize: 28,
-    fontWeight: '600',
+    fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
     marginBottom: 6,
   },
   mobileSubtitle: {

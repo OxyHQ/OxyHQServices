@@ -1197,7 +1197,6 @@ const styles = StyleSheet.create({
     sectionSubtitle: {
         fontSize: 16,
         lineHeight: 22,
-        marginBottom: 20,
     },
     loadingText: {
         fontSize: 16,

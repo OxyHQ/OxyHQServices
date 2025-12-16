@@ -5,6 +5,7 @@ import {
     TouchableOpacity,
     StyleSheet,
     ScrollView,
+    Platform,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { useThemeStyles } from '../hooks/useThemeStyles';
@@ -16,6 +17,7 @@ import { Header, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { SUPPORTED_LANGUAGES } from '../../utils/languageUtils';
 import { useOxy } from '../context/OxyContext';
+import { fontFamilies } from '../styles/fonts';
 
 interface LanguageSelectorScreenProps extends BaseScreenProps { }
 
@@ -174,7 +176,8 @@ const styles = StyleSheet.create({
     },
     bigTitle: {
         fontSize: 34,
-        fontWeight: '700',
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+        fontFamily: fontFamilies.phuduBold,
         lineHeight: 40,
         marginBottom: 8,
         letterSpacing: -0.5,

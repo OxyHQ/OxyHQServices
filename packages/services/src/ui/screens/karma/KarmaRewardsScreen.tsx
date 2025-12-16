@@ -1,6 +1,6 @@
 import type React from 'react';
 import { useMemo, useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Platform } from 'react-native';
 import type { BaseScreenProps } from '../../types/navigation';
 import { Header } from '../../components';
 import { Ionicons } from '@expo/vector-icons';
@@ -11,6 +11,7 @@ import { useColorScheme } from '../../hooks/use-color-scheme';
 import { Colors } from '../../constants/theme';
 import { useOxy } from '../../context/OxyContext';
 import { darkenColor, lightenColor } from '../../utils/colorUtils';
+import { fontFamilies } from '../../styles/fonts';
 
 interface Achievement {
     id: string;
@@ -456,7 +457,8 @@ const styles = StyleSheet.create({
     },
     currentKarma: {
         fontSize: 36,
-        fontWeight: 'bold',
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+        fontFamily: fontFamilies.phuduBold,
         marginBottom: 4,
     },
     achievementStats: {
@@ -464,7 +466,8 @@ const styles = StyleSheet.create({
     },
     achievementCount: {
         fontSize: 36,
-        fontWeight: 'bold',
+        fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+        fontFamily: fontFamilies.phuduBold,
         marginBottom: 4,
     },
     achievementCountLabel: {
@@ -492,8 +495,8 @@ const styles = StyleSheet.create({
     },
     sectionTitle: {
         fontSize: 20,
-        fontWeight: '600',
-        marginBottom: 16,
+        fontWeight: Platform.OS === 'web' ? '600' : undefined,
+        fontFamily: fontFamilies.phuduSemiBold,
         marginTop: 8,
     },
     achievementsGrid: {

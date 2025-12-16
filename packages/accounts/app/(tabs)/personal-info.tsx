@@ -183,21 +183,23 @@ export default function PersonalInfoScreen() {
 
   return (
     <ScreenContentWrapper>
-      <View style={styles.content}>
-        <ScreenHeader title="Personal info" subtitle="Manage your personal information and profile details." />
-        <Section title="Profile summary">
-          <AccountInfoGrid cards={personalInfoCards} onPressIn={handlePressIn} />
-        </Section>
-        <Section title="Contact & details">
-          <AccountCard>
-            <GroupedSection items={contactItems} />
-          </AccountCard>
-        </Section>
-        <Section title="Actions">
-          <AccountCard>
-            <GroupedSection items={actionsItems} />
-          </AccountCard>
-        </Section>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.content}>
+          <ScreenHeader title="Personal info" subtitle="Manage your personal information and profile details." />
+          <Section title="Profile summary">
+            <AccountInfoGrid cards={personalInfoCards} onPressIn={handlePressIn} />
+          </Section>
+          <Section title="Contact & details">
+            <AccountCard>
+              <GroupedSection items={contactItems} />
+            </AccountCard>
+          </Section>
+          <Section title="Actions">
+            <AccountCard>
+              <GroupedSection items={actionsItems} />
+            </AccountCard>
+          </Section>
+        </View>
       </View>
     </ScreenContentWrapper>
   );
@@ -209,7 +211,6 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 16,
-    paddingBottom: 120,
     gap: 16,
   },
   loadingContainer: {

@@ -27,7 +27,6 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
         fontFamily: fontFamilies.phuduSemiBold,
-        marginBottom: 12,
     },
 });
 

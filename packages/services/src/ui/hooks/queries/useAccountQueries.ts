@@ -132,7 +132,7 @@ export const usePrivacySettings = (userId?: string, options?: { enabled?: boolea
   const targetUserId = userId || user?.id;
 
   return useQuery({
-    queryKey: queryKeys.privacy.settings(userId),
+    queryKey: queryKeys.privacy.settings(targetUserId),
     queryFn: async () => {
       if (!targetUserId) {
         throw new Error('User ID is required');

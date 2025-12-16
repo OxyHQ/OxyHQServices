@@ -672,7 +672,6 @@ const styles = StyleSheet.create({
   } as const,
   content: {
     padding: 16,
-    paddingBottom: 120,
   } as const,
   header: {
     alignItems: 'center',
