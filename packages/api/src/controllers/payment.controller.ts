@@ -1,5 +1,10 @@
 import { Request, Response } from 'express';
 import { z } from 'zod';
+import { AuthRequest } from '../middleware/auth';
+import Transaction from '../models/Transaction';
+import { logger } from '../utils/logger';
+import { sendSuccess } from '../utils/asyncHandler';
+import { UnauthorizedError, InternalServerError } from '../utils/error';
 
 // Validation schemas
 const paymentMethodSchema = z.object({
@@ -81,6 +86,52 @@ export const getPaymentMethods = async (req: Request, res: Response) => {
     });
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch payment methods', error });
+  }
+};
+
+/**
+ * Get all payments for the authenticated user
+ * @param req - Express request with authentication
+ * @param res - Express response
+ */
+export const getUserPayments = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    // Validate user authentication
+    if (!req.user) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    const userId = req.user._id.toString();
+
+    // Fetch payment-related transactions (deposit and purchase types)
+    const transactions = await Transaction.find({
+      userId,
+      type: { $in: ['deposit', 'purchase'] },
+    })
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Format transactions for response
+    const payments = transactions.map((transaction) => ({
+      id: transaction._id.toString(),
+      userId: transaction.userId.toString(),
+      type: transaction.type,
+      amount: transaction.amount,
+      status: transaction.status,
+      description: transaction.description,
+      itemId: transaction.itemId,
+      itemType: transaction.itemType,
+      timestamp: transaction.createdAt,
+      completedAt: transaction.completedAt,
+    }));
+
+    sendSuccess(res, payments);
+  } catch (error) {
+    if (error instanceof UnauthorizedError) {
+      throw error;
+    }
+    logger.error('Error fetching user payments', error instanceof Error ? error : new Error(String(error)));
+    throw new InternalServerError('Server error when fetching user payments');
   }
 };
 

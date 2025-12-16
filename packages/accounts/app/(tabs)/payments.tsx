@@ -212,26 +212,13 @@ export default function PaymentsScreen() {
   }, [transactions, alert]);
 
   const handleInstallFairCoinWallet = useCallback(() => {
-    // Open app store based on platform
-    let storeUrl = '';
-    if (Platform.OS === 'ios') {
-      storeUrl = 'https://apps.apple.com/app/faircoin-wallet'; // Update with actual App Store URL
-    } else if (Platform.OS === 'android') {
-      storeUrl = 'https://play.google.com/store/apps/details?id=org.faircoin.wallet'; // Update with actual Play Store URL
-    } else {
-      // Web fallback
-      storeUrl = 'https://faircoin.org/wallet';
-    }
+    const walletUrl = 'https://fairco.in/wallet';
     
-    Linking.openURL(storeUrl).catch((err) => {
-      console.error('Failed to open app store URL:', err);
+    Linking.openURL(walletUrl).catch((err) => {
+      console.error('Failed to open FAIRWallet URL:', err);
       alert(
-        'Install FairCoin Wallet',
-        Platform.OS === 'ios' 
-          ? 'Visit the App Store to download FairCoin Wallet.'
-          : Platform.OS === 'android'
-          ? 'Visit the Play Store to download FairCoin Wallet.'
-          : 'Visit faircoin.org/wallet to download the FairCoin Wallet app.',
+        'Open FAIRWallet',
+        'Please visit https://fairco.in/wallet to learn more about FAIRWallet.',
         [{ text: 'OK' }]
       );
     });

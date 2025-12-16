@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { Platform } from 'react-native';
 import { OxyServices } from '../../core';
 import type { User, ApiError } from '../../models/interfaces';
 import type { ClientSession } from '../../models/session';
@@ -196,8 +197,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const { storage, isReady: isStorageReady } = useStorage({ onError, logger });
 
   // Identity integrity check and auto-restore on startup
+  // Skip on web platform - identity storage is only available on native platforms
   useEffect(() => {
     if (!storage || !isStorageReady) return;
+    if (Platform.OS === 'web') return; // Identity operations are native-only
 
     const checkAndRestoreIdentity = async () => {
       try {

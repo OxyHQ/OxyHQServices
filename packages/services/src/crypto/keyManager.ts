@@ -7,6 +7,7 @@
 
 import { ec as EC } from 'elliptic';
 import type { ECKeyPair } from 'elliptic';
+import { Platform } from 'react-native';
 
 // Lazy imports for React Native specific modules
 let SecureStore: typeof import('expo-secure-store') | null = null;
@@ -53,6 +54,19 @@ function isReactNative(): boolean {
  */
 function isNodeJS(): boolean {
   return typeof process !== 'undefined' && process.versions != null && process.versions.node != null;
+}
+
+/**
+ * Check if we're on web platform
+ * Identity storage is only available on native platforms (iOS/Android)
+ */
+function isWebPlatform(): boolean {
+  try {
+    return Platform.OS === 'web';
+  } catch {
+    // Fallback if Platform is not available
+    return typeof window !== 'undefined' && typeof navigator !== 'undefined' && navigator.product !== 'ReactNative';
+  }
 }
 
 async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
@@ -147,6 +161,9 @@ export class KeyManager {
    * Returns only the public key (private key is stored securely)
    */
   static async createIdentity(): Promise<string> {
+    if (isWebPlatform()) {
+      throw new Error('Identity creation is only available on native platforms (iOS/Android). Please use the native app to create your identity.');
+    }
     const store = await initSecureStore();
     const { privateKey, publicKey } = await KeyManager.generateKeyPair();
 
@@ -167,6 +184,9 @@ export class KeyManager {
    * Import an existing key pair (e.g., from recovery phrase)
    */
   static async importKeyPair(privateKey: string): Promise<string> {
+    if (isWebPlatform()) {
+      throw new Error('Identity import is only available on native platforms (iOS/Android). Please use the native app to import your identity.');
+    }
     const store = await initSecureStore();
     
     const keyPair = ec.keyFromPrivate(privateKey);
@@ -189,6 +209,9 @@ export class KeyManager {
    * WARNING: Only use this for signing operations within the app
    */
   static async getPrivateKey(): Promise<string | null> {
+    if (isWebPlatform()) {
+      return null; // Identity storage is only available on native platforms
+    }
     try {
       const store = await initSecureStore();
       return await store.getItemAsync(STORAGE_KEYS.PRIVATE_KEY);
@@ -206,6 +229,9 @@ export class KeyManager {
    * Get the stored public key (cached for performance)
    */
   static async getPublicKey(): Promise<string | null> {
+    if (isWebPlatform()) {
+      return null; // Identity storage is only available on native platforms
+    }
     if (KeyManager.cachedPublicKey !== null) {
       return KeyManager.cachedPublicKey;
     }
@@ -233,6 +259,9 @@ export class KeyManager {
    * Check if an identity (key pair) exists on this device (cached for performance)
    */
   static async hasIdentity(): Promise<boolean> {
+    if (isWebPlatform()) {
+      return false; // Identity storage is only available on native platforms
+    }
     if (KeyManager.cachedHasIdentity !== null) {
       return KeyManager.cachedHasIdentity;
     }
@@ -269,6 +298,9 @@ export class KeyManager {
     force: boolean = false,
     userConfirmed: boolean = false
   ): Promise<void> {
+    if (isWebPlatform()) {
+      return; // Identity storage is only available on native platforms, nothing to delete
+    }
     // CRITICAL SAFEGUARD: Require explicit user confirmation unless force is true
     if (!force && !userConfirmed) {
       throw new Error('Identity deletion requires explicit user confirmation. This is a safety measure to prevent accidental data loss.');
@@ -320,6 +352,9 @@ export class KeyManager {
    * This provides a recovery mechanism if primary storage fails
    */
   static async backupIdentity(): Promise<boolean> {
+    if (isWebPlatform()) {
+      return false; // Identity storage is only available on native platforms
+    }
     try {
       const store = await initSecureStore();
       const privateKey = await KeyManager.getPrivateKey();
@@ -349,6 +384,9 @@ export class KeyManager {
    * Verify identity integrity - checks if keys are valid and accessible
    */
   static async verifyIdentityIntegrity(): Promise<boolean> {
+    if (isWebPlatform()) {
+      return false; // Identity storage is only available on native platforms
+    }
     try {
       const privateKey = await KeyManager.getPrivateKey();
       const publicKey = await KeyManager.getPublicKey();
@@ -392,6 +430,9 @@ export class KeyManager {
    * Restore identity from backup if primary storage is corrupted
    */
   static async restoreIdentityFromBackup(): Promise<boolean> {
+    if (isWebPlatform()) {
+      return false; // Identity storage is only available on native platforms
+    }
     try {
       const store = await initSecureStore();
       
@@ -447,6 +488,9 @@ export class KeyManager {
    * Used internally for signing operations
    */
   static async getKeyPairObject(): Promise<ECKeyPair | null> {
+    if (isWebPlatform()) {
+      return null; // Identity storage is only available on native platforms
+    }
     const privateKey = await KeyManager.getPrivateKey();
     if (!privateKey) return null;
     return ec.keyFromPrivate(privateKey);
