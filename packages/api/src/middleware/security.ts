@@ -4,13 +4,22 @@ import { Request, Response, NextFunction } from "express";
 
 // General rate limiting middleware (exclude file uploads)
 // Set to 150 requests per 15 minutes per IP for general API usage
+// Much higher limit in development to avoid blocking during active development
 const rateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 150, // limit each IP to 150 requests per window
+  max: process.env.NODE_ENV === 'development' ? 2000 : 150, // limit each IP to 150 requests per window (2000 in dev)
   message: "Too many requests from this IP, please try again later.",
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
-  skip: (req: Request) => req.path.startsWith('/files/upload')
+  skip: (req: Request) => {
+    // Skip file uploads
+    if (req.path.startsWith('/files/upload')) return true;
+    // In development, skip session validation endpoints to avoid blocking
+    if (process.env.NODE_ENV === 'development' && req.path.startsWith('/api/session/validate')) {
+      return true;
+    }
+    return false;
+  }
 });
 
 // Stricter rate limiting for authentication endpoints
@@ -26,9 +35,10 @@ const authRateLimiter = rateLimit({
 
 // Per-user rate limiting for authenticated requests
 // Uses user ID from request if available, falls back to IP
+// Much higher limit in development to avoid blocking during active development
 const userRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200, // limit each user to 200 requests per window
+  max: process.env.NODE_ENV === 'development' ? 2000 : 200, // limit each user to 200 requests per window (2000 in dev)
   message: "Too many requests, please try again later.",
   standardHeaders: true,
   legacyHeaders: false,
@@ -38,16 +48,30 @@ const userRateLimiter = rateLimit({
   },
   skip: (req: Request) => {
     // Skip for file uploads and unauthenticated requests
-    return req.path.startsWith('/files/upload') || !(req as any).user;
+    if (req.path.startsWith('/files/upload') || !(req as any).user) return true;
+    // In development, skip session validation endpoints to avoid blocking
+    if (process.env.NODE_ENV === 'development' && req.path.startsWith('/api/session/validate')) {
+      return true;
+    }
+    return false;
   }
 });
 
 // Brute force protection middleware (exclude file uploads)
+// More lenient in development to avoid slowing down development workflow
 const bruteForceProtection = slowDown({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  delayAfter: 100, // allow 100 requests per 15 minutes, then...
-  delayMs: () => 500, // add 500ms delay per request above 100
-  skip: (req: Request) => req.path.startsWith('/files/upload')
+  delayAfter: process.env.NODE_ENV === 'development' ? 1000 : 100, // allow 100 requests per 15 minutes (1000 in dev), then...
+  delayMs: () => process.env.NODE_ENV === 'development' ? 100 : 500, // add 500ms delay per request above limit (100ms in dev)
+  skip: (req: Request) => {
+    // Skip file uploads
+    if (req.path.startsWith('/files/upload')) return true;
+    // In development, skip session validation endpoints to avoid delays
+    if (process.env.NODE_ENV === 'development' && req.path.startsWith('/api/session/validate')) {
+      return true;
+    }
+    return false;
+  }
 });
 
 export { rateLimiter, authRateLimiter, userRateLimiter, bruteForceProtection };

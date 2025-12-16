@@ -26,6 +26,7 @@ import {
 import { userService } from '../services/user.service';
 import { UsersController } from '../controllers/users.controller';
 import { PaginationParams, UserStatistics } from '../types/user.types';
+import { resolveUserIdToObjectId } from '../utils/validation';
 
 // Types
 interface AuthRequest extends Request {
@@ -50,21 +51,50 @@ const usersController = new UsersController();
 // ============================================================================
 
 /**
- * Validates MongoDB ObjectId parameter
- * Returns 400 if invalid
+ * Resolves userId parameter (ObjectId or publicKey) to MongoDB ObjectId
+ * Accepts both ObjectId strings and publicKey strings
+ * Stores the resolved ObjectId back in req.params.userId
  */
-const validateObjectId = (req: Request, res: Response, next: NextFunction): void => {
-  const { userId } = req.params;
-  
-  if (!userId || !Types.ObjectId.isValid(userId)) {
-    res.status(400).json({
-      error: 'BAD_REQUEST',
-      message: 'Invalid user ID format',
+const resolveUserId = async (req: Request, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const { userId } = req.params;
+    
+    if (!userId) {
+      res.status(400).json({
+        error: 'BAD_REQUEST',
+        message: 'User ID is required',
+      });
+      return;
+    }
+
+    // Resolve userId (ObjectId or publicKey) to ObjectId
+    const resolvedObjectId = await resolveUserIdToObjectId(userId);
+    
+    // Store the resolved ObjectId back in params for route handlers
+    req.params.userId = resolvedObjectId;
+    
+    next();
+  } catch (error) {
+    if (error instanceof BadRequestError) {
+      res.status(400).json({
+        error: 'BAD_REQUEST',
+        message: error.message,
+      });
+      return;
+    }
+    if (error instanceof NotFoundError) {
+      res.status(404).json({
+        error: 'NOT_FOUND',
+        message: error.message,
+      });
+      return;
+    }
+    logger.error('Error resolving user ID', error instanceof Error ? error : new Error(String(error)));
+    res.status(500).json({
+      error: 'INTERNAL_SERVER_ERROR',
+      message: 'Error resolving user ID',
     });
-    return;
   }
-  
-  next();
 };
 
 /**
@@ -96,20 +126,33 @@ const validatePagination = (req: Request, res: Response, next: NextFunction): vo
 
 /**
  * Ensures authenticated user owns the resource or is authorized
+ * Note: This middleware should be used after resolveUserId, so req.params.userId is already an ObjectId
+ * We need to resolve req.user.id (which might be a publicKey) to ObjectId for comparison
  */
-const requireOwnership = (req: AuthRequest, res: Response, next: NextFunction): void => {
-  const userId = req.params.userId;
-  const currentUserId = req.user?.id;
+const requireOwnership = async (req: AuthRequest, res: Response, next: NextFunction): Promise<void> => {
+  try {
+    const userId = req.params.userId; // Already resolved to ObjectId by resolveUserId middleware
+    const currentUserId = req.user?.id;
 
-  if (!currentUserId) {
-    throw new UnauthorizedError('Authentication required');
+    if (!currentUserId) {
+      throw new UnauthorizedError('Authentication required');
+    }
+
+    // Resolve current user's ID to ObjectId for comparison (it might be a publicKey)
+    const currentUserObjectId = await resolveUserIdToObjectId(currentUserId);
+
+    if (userId !== currentUserObjectId) {
+      throw new ForbiddenError('Not authorized to access this resource');
+    }
+
+    next();
+  } catch (error) {
+    if (error instanceof UnauthorizedError || error instanceof ForbiddenError) {
+      throw error;
+    }
+    logger.error('Error in requireOwnership middleware', error instanceof Error ? error : new Error(String(error)));
+    throw new ForbiddenError('Error validating ownership');
   }
-
-  if (userId !== currentUserId) {
-    throw new ForbiddenError('Not authorized to access this resource');
-  }
-
-  next();
 };
 
 // ============================================================================
@@ -215,7 +258,7 @@ router.put(
  */
 router.get(
   '/:userId',
-  validateObjectId,
+  resolveUserId,
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
 
@@ -248,7 +291,7 @@ router.get(
  */
 router.get(
   '/:userId/followers',
-  validateObjectId,
+  resolveUserId,
   validatePagination,
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
@@ -287,7 +330,7 @@ router.get(
  */
 router.get(
   '/:userId/following',
-  validateObjectId,
+  resolveUserId,
   validatePagination,
   asyncHandler(async (req: Request, res: Response) => {
     const { userId } = req.params;
@@ -325,7 +368,7 @@ router.get(
 router.get(
   '/:userId/follow-status',
   authMiddleware,
-  validateObjectId,
+  resolveUserId,
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { userId: targetUserId } = req.params;
     const currentUserId = req.user?.id;
@@ -357,7 +400,7 @@ router.get(
 router.post(
   '/:userId/follow',
   authMiddleware,
-  validateObjectId,
+  resolveUserId,
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { userId: targetUserId } = req.params;
     const currentUserId = req.user?.id;
@@ -405,7 +448,7 @@ router.post(
 router.delete(
   '/:userId/follow',
   authMiddleware,
-  validateObjectId,
+  resolveUserId,
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { userId: targetUserId } = req.params;
     const currentUserId = req.user?.id;
@@ -449,7 +492,7 @@ router.delete(
 router.put(
   '/:userId/privacy',
   authMiddleware,
-  validateObjectId,
+  resolveUserId,
   requireOwnership,
   asyncHandler(async (req: AuthRequest, res: Response) => {
     const { userId } = req.params;

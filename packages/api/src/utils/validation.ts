@@ -4,6 +4,9 @@
  */
 
 import mongoose from 'mongoose';
+import User from '../models/User';
+import { NotFoundError, BadRequestError } from './error';
+import { logger } from './logger';
 
 /**
  * Validates if a string is a valid MongoDB ObjectId
@@ -57,5 +60,40 @@ export function validatePagination(
     : 0;
   
   return { limit: parsedLimit, offset: parsedOffset };
+}
+
+/**
+ * Resolves a user ID to a MongoDB ObjectId
+ * Accepts both ObjectId strings and publicKey strings
+ * @param userId - User ID (can be ObjectId or publicKey)
+ * @returns MongoDB ObjectId as string
+ * @throws BadRequestError if userId is invalid or user not found
+ */
+export async function resolveUserIdToObjectId(userId: string): Promise<string> {
+  if (!userId || typeof userId !== 'string' || userId.trim().length === 0) {
+    logger.warn('resolveUserIdToObjectId: Empty or invalid userId provided', { userId });
+    throw new BadRequestError('User ID is required');
+  }
+
+  const trimmedUserId = userId.trim();
+
+  // Check if it's a valid ObjectId
+  if (mongoose.Types.ObjectId.isValid(trimmedUserId)) {
+    // Verify the ObjectId is exactly 24 hex characters (MongoDB ObjectId format)
+    if (trimmedUserId.length === 24 && /^[0-9a-fA-F]{24}$/.test(trimmedUserId)) {
+      return trimmedUserId;
+    }
+  }
+
+  // If not a valid ObjectId, treat it as a publicKey and look up the user
+  logger.debug('resolveUserIdToObjectId: Treating userId as publicKey', { userId: trimmedUserId });
+  const user = await User.findOne({ publicKey: trimmedUserId }).select('_id').lean();
+
+  if (!user || !user._id) {
+    logger.warn('resolveUserIdToObjectId: User not found for publicKey', { userId: trimmedUserId });
+    throw new NotFoundError('User not found');
+  }
+
+  return user._id.toString();
 }
 

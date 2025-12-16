@@ -7,7 +7,7 @@ import Karma from '../models/Karma';
 import KarmaRule from '../models/KarmaRule';
 import User from '../models/User';
 import { logger } from '../utils/logger';
-import { isValidObjectId, validatePagination } from '../utils/validation';
+import { resolveUserIdToObjectId, validatePagination } from '../utils/validation';
 import { sendSuccess, sendPaginated } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, ConflictError, InternalServerError } from '../utils/error';
 import { KARMA, PAGINATION } from '../utils/constants';
@@ -58,20 +58,25 @@ export const getUserKarmaTotal = async (req: Request, res: Response): Promise<vo
   try {
     const { userId } = req.params;
 
-    if (!isValidObjectId(userId)) {
-      throw new BadRequestError('Invalid user ID format');
+    if (!userId) {
+      logger.warn('getUserKarmaTotal: Missing userId parameter', { params: req.params });
+      throw new BadRequestError('User ID is required');
     }
 
-    const user = await User.findById(userId);
+    // Resolve userId (ObjectId or publicKey) to ObjectId
+    const userObjectId = await resolveUserIdToObjectId(userId);
+
+    const user = await User.findById(userObjectId);
     if (!user) {
+      logger.warn('getUserKarmaTotal: User not found after resolution', { userId, userObjectId });
       throw new NotFoundError('User not found');
     }
 
-    const karmaRecord = await Karma.findOne({ userId });
+    const karmaRecord = await Karma.findOne({ userId: userObjectId });
     const totalKarma = karmaRecord?.totalKarma || 0;
 
     sendSuccess(res, {
-      userId,
+      userId: user.publicKey || userObjectId, // Return publicKey if available, otherwise ObjectId
       totalKarma,
       username: user.username,
     });
@@ -79,7 +84,11 @@ export const getUserKarmaTotal = async (req: Request, res: Response): Promise<vo
     if (error instanceof BadRequestError || error instanceof NotFoundError) {
       throw error;
     }
-    logger.error('Error fetching user karma total', error instanceof Error ? error : new Error(String(error)));
+    logger.error('Error fetching user karma total', { 
+      error: error instanceof Error ? error.message : String(error),
+      userId: req.params.userId,
+      stack: error instanceof Error ? error.stack : undefined
+    });
     throw new InternalServerError('Error fetching karma total');
   }
 };
@@ -99,19 +108,24 @@ export const getUserKarmaHistory = async (req: Request, res: Response): Promise<
       KARMA.DEFAULT_HISTORY_LIMIT
     );
 
-    if (!isValidObjectId(userId)) {
-      throw new BadRequestError('Invalid user ID format');
+    if (!userId) {
+      logger.warn('getUserKarmaHistory: Missing userId parameter', { params: req.params });
+      throw new BadRequestError('User ID is required');
     }
 
-    const user = await User.findById(userId);
+    // Resolve userId (ObjectId or publicKey) to ObjectId
+    const userObjectId = await resolveUserIdToObjectId(userId);
+
+    const user = await User.findById(userObjectId);
     if (!user) {
+      logger.warn('getUserKarmaHistory: User not found after resolution', { userId, userObjectId });
       throw new NotFoundError('User not found');
     }
 
-    const karmaRecord = await Karma.findOne({ userId });
+    const karmaRecord = await Karma.findOne({ userId: userObjectId });
     if (!karmaRecord) {
       sendSuccess(res, {
-        userId,
+        userId: user.publicKey || userObjectId, // Return publicKey if available, otherwise ObjectId
         totalKarma: 0,
         history: [],
       });
@@ -127,7 +141,11 @@ export const getUserKarmaHistory = async (req: Request, res: Response): Promise<
     if (error instanceof BadRequestError || error instanceof NotFoundError) {
       throw error;
     }
-    logger.error('Error fetching user karma history', error instanceof Error ? error : new Error(String(error)));
+    logger.error('Error fetching user karma history', { 
+      error: error instanceof Error ? error.message : String(error),
+      userId: req.params.userId,
+      stack: error instanceof Error ? error.stack : undefined
+    });
     throw new InternalServerError('Error fetching karma history');
   }
 };
@@ -148,12 +166,17 @@ export const awardKarma = async (req: AuthRequest, res: Response): Promise<void>
     // Get source user ID (who triggered the action)
     const sourceUserId = req.user?._id;
 
-    if (!isValidObjectId(userId)) {
-      throw new BadRequestError('Invalid user ID');
+    if (!userId) {
+      logger.warn('awardKarma: Missing userId in request body', { body: req.body });
+      throw new BadRequestError('User ID is required');
     }
 
-    const user = await User.findById(userId);
+    // Resolve userId (ObjectId or publicKey) to ObjectId
+    const userObjectId = await resolveUserIdToObjectId(userId);
+
+    const user = await User.findById(userObjectId);
     if (!user) {
+      logger.warn('awardKarma: User not found after resolution', { userId, userObjectId });
       throw new NotFoundError('User not found');
     }
 
@@ -169,10 +192,10 @@ export const awardKarma = async (req: AuthRequest, res: Response): Promise<void>
     }
 
     // Find or create karma record
-    let karmaRecord = await Karma.findOne({ userId }).session(session);
+    let karmaRecord = await Karma.findOne({ userId: userObjectId }).session(session);
     if (!karmaRecord) {
       karmaRecord = new Karma({
-        userId,
+        userId: userObjectId,
         totalKarma: 0,
         history: [],
       });
@@ -208,7 +231,7 @@ export const awardKarma = async (req: AuthRequest, res: Response): Promise<void>
 
     // Update user's karma count in the User model
     await User.findByIdAndUpdate(
-      userId,
+      userObjectId,
       { $set: { '_count.karma': karmaRecord.totalKarma } },
       { session }
     );
@@ -229,7 +252,11 @@ export const awardKarma = async (req: AuthRequest, res: Response): Promise<void>
       throw error;
     }
 
-    logger.error('Error awarding karma', error instanceof Error ? error : new Error(String(error)));
+    logger.error('Error awarding karma', { 
+      error: error instanceof Error ? error.message : String(error),
+      userId: req.body?.userId,
+      stack: error instanceof Error ? error.stack : undefined
+    });
     throw new InternalServerError('Error awarding karma');
   } finally {
     session.endSession();
@@ -252,20 +279,25 @@ export const deductKarma = async (req: AuthRequest, res: Response): Promise<void
     // Get source user ID (who triggered the action)
     const sourceUserId = req.user?._id;
 
-    if (!isValidObjectId(userId)) {
-      throw new BadRequestError('Invalid user ID');
+    if (!userId) {
+      logger.warn('deductKarma: Missing userId in request body', { body: req.body });
+      throw new BadRequestError('User ID is required');
     }
 
-    const user = await User.findById(userId);
+    // Resolve userId (ObjectId or publicKey) to ObjectId
+    const userObjectId = await resolveUserIdToObjectId(userId);
+
+    const user = await User.findById(userObjectId);
     if (!user) {
+      logger.warn('deductKarma: User not found after resolution', { userId, userObjectId });
       throw new NotFoundError('User not found');
     }
 
     // Find or create karma record
-    let karmaRecord = await Karma.findOne({ userId }).session(session);
+    let karmaRecord = await Karma.findOne({ userId: userObjectId }).session(session);
     if (!karmaRecord) {
       karmaRecord = new Karma({
-        userId,
+        userId: userObjectId,
         totalKarma: 0,
         history: [],
       });
@@ -302,7 +334,7 @@ export const deductKarma = async (req: AuthRequest, res: Response): Promise<void
 
     // Update user's karma count in the User model
     await User.findByIdAndUpdate(
-      userId,
+      userObjectId,
       { $set: { '_count.karma': karmaRecord.totalKarma } },
       { session }
     );
@@ -323,7 +355,11 @@ export const deductKarma = async (req: AuthRequest, res: Response): Promise<void
       throw error;
     }
 
-    logger.error('Error deducting karma', error instanceof Error ? error : new Error(String(error)));
+    logger.error('Error deducting karma', { 
+      error: error instanceof Error ? error.message : String(error),
+      userId: req.body?.userId,
+      stack: error instanceof Error ? error.stack : undefined
+    });
     throw new InternalServerError('Error deducting karma');
   } finally {
     session.endSession();
