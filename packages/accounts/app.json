@@ -50,6 +50,16 @@
         {
           "faceIDPermission": "Allow $(PRODUCT_NAME) to use Face ID to protect your identity."
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "enableProguardInReleaseBuilds": true,
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "useLegacyPackaging": true
+          }
+        }
       ]
     ],
     "experiments": {
