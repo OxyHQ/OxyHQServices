@@ -1,0 +1,9 @@
+{
+    "build": {
+        "apk-arm64-local": {
+            "android": {
+                "buildType": "apk"
+            }
+        }
+    }
+}
