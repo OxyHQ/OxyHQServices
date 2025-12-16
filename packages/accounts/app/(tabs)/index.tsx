@@ -13,9 +13,11 @@ import lottieAnimation from '@/assets/lottie/welcomeheader_background_op1.json';
 import { darkenColor } from '@/utils/color-utils';
 import { AccountCard, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useOxy } from '@oxyhq/services';
+import { useOxy, useUserDevices, useRecentSecurityActivity } from '@oxyhq/services';
 import { formatDate, getDisplayName, getShortDisplayName } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+import { useBiometricSettings } from '@/hooks/useBiometricSettings';
+import { formatEventDescription, getEventIcon, getSeverityColor } from '@/utils/security-utils';
 import { QuickActionsSection, type QuickAction } from '@/components/quick-actions-section';
 import { AccountInfoGrid, type AccountInfoCard } from '@/components/account-info-grid';
 import { IdentityCardsSection, type IdentityCard } from '@/components/identity-cards-section';
@@ -29,8 +31,39 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   // OxyServices integration
-  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, isIdentitySynced, syncIdentity, identitySyncState, openAvatarPicker } = useOxy();
+  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, isIdentitySynced, syncIdentity, identitySyncState, openAvatarPicker, sessions } = useOxy();
   const alert = useAlert();
+
+  // Fetch devices for stats
+  const { data: devices = [] } = useUserDevices({ enabled: isAuthenticated });
+
+  // Fetch security activity
+  const { data: securityActivities = [] } = useRecentSecurityActivity(5);
+
+  // Biometric settings
+  const {
+    enabled: biometricEnabled,
+    canEnable: canEnableBiometric,
+    hasHardware: hasBiometricHardware,
+    isLoading: biometricLoading,
+  } = useBiometricSettings();
+
+  // Format relative time for dates
+  const formatRelativeTime = useCallback((dateString?: string) => {
+    if (!dateString) return '';
+    const date = new Date(dateString);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const minutes = Math.floor(diffMs / 60000);
+
+    if (minutes < 1) return 'Just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    if (days < 7) return `${days}d ago`;
+    return formatDate(dateString);
+  }, []);
 
   // Use reactive state from Zustand store (with defaults)
   const { isSynced, isSyncing } = identitySyncState || { isSynced: true, isSyncing: false };
@@ -319,33 +352,117 @@ export default function HomeScreen() {
     ];
   }, [handleAboutIdentity, colors.identityIconSelfCustody, colors.identityIconPublicKey]);
 
-  // Recent activity items
-  const recentActivityItems = useMemo<RecentActivityItem[]>(() => [
+  // Recent activity items - use real security activities
+  const recentActivityItems = useMemo<RecentActivityItem[]>(() => {
+    if (!securityActivities || securityActivities.length === 0) {
+      // Show placeholder if no activities
+      return [{
+        id: 'no-activity',
+        icon: 'shield-check-outline',
+        iconColor: colors.sidebarIconSecurity,
+        title: 'No recent activity',
+        subtitle: 'Your security events will appear here',
+        onPress: () => router.push('/(tabs)/security' as any),
+      }];
+    }
+
+    return securityActivities.slice(0, 3).map((activity: any) => {
+      const eventIcon = getEventIcon(activity.eventType);
+      const eventColor = getSeverityColor(activity.severity || 'low', colorScheme);
+      const description = formatEventDescription(activity);
+
+      return {
+        id: `activity-${activity.id}`,
+        icon: eventIcon as any,
+        iconColor: eventColor,
+        title: description,
+        subtitle: formatRelativeTime(activity.timestamp),
+        onPress: () => router.push('/(tabs)/security' as any),
+      };
+    });
+  }, [securityActivities, colors.sidebarIconSecurity, colorScheme, formatRelativeTime, router]);
+
+  // Quick stats cards
+  const quickStatsCards = useMemo<AccountInfoCard[]>(() => [
     {
-      id: 'security-check',
-      icon: 'shield-check-outline',
-      iconColor: colors.sidebarIconSecurity,
-      title: 'Security Review',
-      subtitle: 'Last checked 2 days ago',
-      onPress: () => router.push('/(tabs)/security' as any),
-    },
-    {
-      id: 'device-added',
+      id: 'devices-count',
       icon: 'devices',
       iconColor: colors.sidebarIconDevices,
-      title: 'New Device',
-      subtitle: 'iPhone added yesterday',
+      title: 'Active Devices',
+      value: `${devices.length || 0} device${devices.length !== 1 ? 's' : ''}`,
       onPress: handleDevices,
     },
     {
-      id: 'profile-updated',
-      icon: 'account-edit-outline',
-      iconColor: colors.sidebarIconPersonalInfo,
-      title: 'Profile Updated',
-      subtitle: '3 days ago',
-      onPress: handlePersonalInfo,
+      id: 'sessions-count',
+      icon: 'account-multiple-outline',
+      iconColor: colors.sidebarIconSecurity,
+      title: 'Active Sessions',
+      value: `${sessions?.filter((s: any) => s.isActive !== false).length || 0} session${(sessions?.filter((s: any) => s.isActive !== false).length || 0) !== 1 ? 's' : ''}`,
+      onPress: () => router.push('/(tabs)/security' as any),
     },
-  ], [colors.sidebarIconSecurity, colors.sidebarIconDevices, colors.sidebarIconPersonalInfo, router, handleDevices, handlePersonalInfo]);
+    {
+      id: 'username-status',
+      icon: 'account-check-outline',
+      iconColor: colors.sidebarIconPersonalInfo,
+      title: 'Username',
+      value: user?.username ? `@${user.username}` : 'Not set',
+      onPress: user?.username ? handlePersonalInfo : handleSetUsername,
+    },
+  ], [devices.length, sessions, user?.username, colors.sidebarIconDevices, colors.sidebarIconSecurity, colors.sidebarIconPersonalInfo, handleDevices, router, handlePersonalInfo, handleSetUsername]);
+
+  // Security overview items - use real data
+  const securityOverviewItems = useMemo(() => {
+    const items = [];
+
+    // Biometric status
+    if (Platform.OS !== 'web') {
+      let biometricSubtitle = '';
+      if (biometricLoading) {
+        biometricSubtitle = 'Checking...';
+      } else if (!hasBiometricHardware) {
+        biometricSubtitle = 'Not available';
+      } else if (biometricEnabled) {
+        biometricSubtitle = 'Enabled';
+      } else if (canEnableBiometric) {
+        biometricSubtitle = 'Available';
+      } else {
+        biometricSubtitle = 'Not set up';
+      }
+
+      items.push({
+        id: 'biometric',
+        icon: Platform.OS === 'ios' ? 'face-recognition' : 'fingerprint',
+        iconColor: biometricEnabled ? '#34C759' : colors.sidebarIconSecurity,
+        title: Platform.OS === 'ios' ? 'Face ID / Touch ID' : 'Biometric Auth',
+        subtitle: biometricSubtitle,
+        onPress: () => router.push('/(tabs)/security' as any),
+      });
+    }
+
+    // Recovery email
+    items.push({
+      id: 'recovery-email',
+      icon: 'email-check-outline',
+      iconColor: user?.email ? '#34C759' : colors.sidebarIconSecurity,
+      title: 'Recovery Email',
+      subtitle: user?.email ? 'Set' : 'Not set',
+      onPress: () => router.push('/(tabs)/security' as any),
+    });
+
+    // Security status based on recommendations
+    const hasSecurityIssues = !user?.email || (Platform.OS !== 'web' && hasBiometricHardware && !biometricEnabled && canEnableBiometric);
+    items.push({
+      id: 'security-status',
+      icon: 'shield-lock-outline',
+      iconColor: hasSecurityIssues ? colors.sidebarIconPayments : '#34C759',
+      title: 'Security Status',
+      subtitle: hasSecurityIssues ? 'Needs attention' : 'Protected',
+      onPress: () => router.push('/(tabs)/security' as any),
+    });
+
+    return items;
+  }, [biometricEnabled, canEnableBiometric, hasBiometricHardware, biometricLoading, colors.sidebarIconSecurity, colors.sidebarIconPayments, user?.email, router]);
+
 
   const content = useMemo(() => (
     <>
@@ -389,15 +506,31 @@ export default function HomeScreen() {
         <QuickActionsSection actions={quickActions} onPressIn={handlePressIn} />
       </Section>
 
-      {/* Recent Activity - Horizontal Scroll */}
-      <Section title="Recent Activity">
-        <RecentActivitySection items={recentActivityItems} onPressIn={handlePressIn} />
-      </Section>
-
       {/* Account Info - Grid Layout */}
       <Section title="Account Info">
         <AccountInfoGrid cards={accountCards} onPressIn={handlePressIn} />
       </Section>
+
+      {/* Recent Activity - Horizontal Scroll */}
+      {recentActivityItems.length > 0 && recentActivityItems[0].id !== 'no-activity' && (
+        <Section title="Recent Activity">
+          <RecentActivitySection items={recentActivityItems} onPressIn={handlePressIn} />
+        </Section>
+      )}
+
+      {/* Quick Stats - Grid Layout */}
+      <Section title="Overview">
+        <AccountInfoGrid cards={quickStatsCards} onPressIn={handlePressIn} />
+      </Section>
+
+      {/* Security Overview - Card Layout */}
+      {securityOverviewItems.length > 0 && (
+        <Section title="Security">
+          <AccountCard>
+            <GroupedSection items={securityOverviewItems} />
+          </AccountCard>
+        </Section>
+      )}
 
       {/* Self-Custody Identity Section */}
       <Section title="Your Identity">
@@ -419,7 +552,7 @@ export default function HomeScreen() {
         )}
       </Section>
     </>
-  ), [quickActions, accountCards, identityCards, recentActivityItems, isSynced, isSyncing, handleSyncNow, colors, handlePressIn, recommendations]);
+  ), [quickActions, accountCards, identityCards, recentActivityItems, quickStatsCards, securityOverviewItems, isSynced, isSyncing, handleSyncNow, colors, handlePressIn, recommendations]);
 
 
   useEffect(() => {
