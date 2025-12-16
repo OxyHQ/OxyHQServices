@@ -13,12 +13,7 @@ const rateLimiter = rateLimit({
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
   skip: (req: Request) => {
     // Skip file uploads
-    if (req.path.startsWith('/files/upload')) return true;
-    // In development, skip session validation endpoints to avoid blocking
-    if (process.env.NODE_ENV === 'development' && req.path.startsWith('/api/session/validate')) {
-      return true;
-    }
-    return false;
+    return req.path.startsWith('/files/upload');
   }
 });
 
@@ -48,12 +43,7 @@ const userRateLimiter = rateLimit({
   },
   skip: (req: Request) => {
     // Skip for file uploads and unauthenticated requests
-    if (req.path.startsWith('/files/upload') || !(req as any).user) return true;
-    // In development, skip session validation endpoints to avoid blocking
-    if (process.env.NODE_ENV === 'development' && req.path.startsWith('/api/session/validate')) {
-      return true;
-    }
-    return false;
+    return req.path.startsWith('/files/upload') || !(req as any).user;
   }
 });
 
@@ -65,12 +55,7 @@ const bruteForceProtection = slowDown({
   delayMs: () => process.env.NODE_ENV === 'development' ? 100 : 500, // add 500ms delay per request above limit (100ms in dev)
   skip: (req: Request) => {
     // Skip file uploads
-    if (req.path.startsWith('/files/upload')) return true;
-    // In development, skip session validation endpoints to avoid delays
-    if (process.env.NODE_ENV === 'development' && req.path.startsWith('/api/session/validate')) {
-      return true;
-    }
-    return false;
+    return req.path.startsWith('/files/upload');
   }
 });
 

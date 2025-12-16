@@ -53,8 +53,14 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   preventParentActions = true,
   theme = 'light',
 }) => {
-  const { oxyServices, isAuthenticated } = useOxy();
+  const { oxyServices, isAuthenticated, user: currentUser } = useOxy();
   const colors = useThemeColors(theme);
+
+  // Safety check: Don't render follow button on own profile
+  // This provides a fallback in case parent components don't handle this check
+  if (currentUser && currentUser.id === userId) {
+    return null;
+  }
   const {
     isFollowing,
     isLoading,
