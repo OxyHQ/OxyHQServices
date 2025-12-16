@@ -23,6 +23,7 @@ import storageRoutes from './routes/storage';
 import developerRoutes from './routes/developer';
 import devicesRouter from './routes/devices';
 import securityRoutes from './routes/security';
+import subscriptionRoutes from './routes/subscription.routes';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
 import { Response } from 'express';
@@ -317,6 +318,7 @@ app.use('/api/location-search', locationSearchRoutes);
 app.use('/api/developer', developerRoutes);
 app.use('/api/devices', userRateLimiter, devicesRouter);
 app.use('/api/security', userRateLimiter, securityRoutes);
+app.use('/api/subscription', userRateLimiter, subscriptionRoutes);
 
 // Add a protected route for testing
 app.get('/api/protected-server-route', authMiddleware, (req: any, res: Response) => {
