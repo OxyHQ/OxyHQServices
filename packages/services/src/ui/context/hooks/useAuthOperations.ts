@@ -405,6 +405,13 @@ export const useAuthOperations = ({
         // Sign in
         const user = await performSignIn(publicKey);
 
+        // Check if user has username - required for syncing
+        if (!user.username) {
+          const usernameError = new Error('USERNAME_REQUIRED');
+          (usernameError as any).code = 'USERNAME_REQUIRED';
+          throw usernameError;
+        }
+
         // TanStack Query will automatically retry any pending mutations
 
         return user;

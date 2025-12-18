@@ -74,6 +74,54 @@ export const isInvalidSessionError = (error: unknown): boolean => {
 };
 
 /**
+ * Determine whether the error represents a timeout or network error.
+ * These are expected when the device is offline or has poor connectivity.
+ */
+export const isTimeoutOrNetworkError = (error: unknown): boolean => {
+  if (!isObject(error) && !(error instanceof Error)) {
+    return false;
+  }
+
+  const message = extractErrorMessage(error, '').toLowerCase();
+  const errorCode = (error as any).code;
+
+  // Check for timeout/cancelled messages
+  if (
+    message.includes('timeout') ||
+    message.includes('cancelled') ||
+    message.includes('econnaborted') ||
+    message.includes('aborted') ||
+    message.includes('request timeout or cancelled')
+  ) {
+    return true;
+  }
+
+  // Check for timeout/network error codes
+  if (errorCode === 'TIMEOUT' || errorCode === 'NETWORK_ERROR' || errorCode === 'ECONNABORTED') {
+    return true;
+  }
+
+  // Check for AbortError
+  if (error instanceof Error && error.name === 'AbortError') {
+    return true;
+  }
+
+  // Check for network-related TypeErrors
+  if (error instanceof TypeError) {
+    const typeErrorMessage = error.message.toLowerCase();
+    if (
+      typeErrorMessage.includes('fetch') ||
+      typeErrorMessage.includes('network') ||
+      typeErrorMessage.includes('failed to fetch')
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+/**
  * Extract a consistent error message from unknown error shapes.
  *
  * @param error - The unknown error payload

@@ -44,7 +44,15 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     const { t } = useI18n();
 
     // Check if current user is viewing their own profile
-    const isOwnProfile = currentUser && currentUser.id === userId;
+    // Normalize IDs by trimming whitespace to handle format mismatches
+    const normalizeId = (id: string | undefined | null): string => {
+        if (!id) return '';
+        return String(id).trim();
+    };
+    
+    const currentUserId = normalizeId(currentUser?.id);
+    const targetUserId = normalizeId(userId);
+    const isOwnProfile = currentUserId && targetUserId && currentUserId === targetUserId;
 
     useEffect(() => {
         if (!userId) {
@@ -60,7 +68,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
         Promise.all([
             oxyServices.getUserById(userId).catch((err: any) => {
                 // If this is the current user and the API call fails, use current user data as fallback
-                if (currentUser && currentUser.id === userId) {
+                const normalizedCurrentId = normalizeId(currentUser?.id);
+                const normalizedTargetId = normalizeId(userId);
+                if (normalizedCurrentId && normalizedTargetId && normalizedCurrentId === normalizedTargetId) {
                     return currentUser;
                 }
                 throw err;
@@ -116,7 +126,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 let errorMessage = 'Failed to load profile';
 
                 if (err.status === 404 || err.message?.includes('not found') || err.message?.includes('Resource not found')) {
-                    if (currentUser && currentUser.id === userId) {
+                    const normalizedCurrentId = normalizeId(currentUser?.id);
+                    const normalizedTargetId = normalizeId(userId);
+                    if (normalizedCurrentId && normalizedTargetId && normalizedCurrentId === normalizedTargetId) {
                         errorMessage = 'Unable to load your profile from the server. This may be due to a temporary service issue.';
                     } else {
                         errorMessage = 'This user profile could not be found or may have been removed.';

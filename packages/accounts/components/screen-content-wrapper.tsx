@@ -1,7 +1,7 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { StyleSheet, RefreshControl, Platform, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { useAnimatedScrollHandler, runOnJS } from 'react-native-reanimated';
+import Animated, { useAnimatedScrollHandler, runOnJS, useAnimatedReaction } from 'react-native-reanimated';
 import { useScrollContext } from '@/contexts/scroll-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -12,14 +12,8 @@ interface ScreenContentWrapperProps {
   onRefresh?: () => void;
 }
 
-// Header dimensions - must match MobileHeader component
-const HEADER_TOP_PADDING = 4;
-// Content height: top row (menu button 24px icon + 6px padding top + 6px padding bottom = 36px) + search bar (8px top + 48px height + 10px bottom = 66px)
-const HEADER_CONTENT_HEIGHT = 36 + 66; // 102px total
-
 export function ScreenContentWrapper({ children, refreshing = false, onRefresh }: ScreenContentWrapperProps) {
-  const { setIsScrolled, scrollRef, scrollY, scrollDirection } = useScrollContext();
-  const insets = useSafeAreaInsets();
+  const { setIsScrolled, scrollRef, scrollY, scrollDirection, headerHeight: contextHeaderHeight } = useScrollContext();
   const { width } = useWindowDimensions();
   const colorScheme = useColorScheme() ?? 'light';
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
@@ -48,22 +42,45 @@ export function ScreenContentWrapper({ children, refreshing = false, onRefresh }
     },
   }, []);
 
-  // Calculate header height: safe area + header padding + content
-  // This matches the header's actual rendered height on mobile
-  // Header has: paddingTop (insets.top + 4) + top row (36) + search bar (66) = total
-  // Only apply paddingTop when header is absolutely positioned (mobile)
-  const headerHeight = useMemo(() => {
-    return insets.top + HEADER_TOP_PADDING + HEADER_CONTENT_HEIGHT;
-  }, [insets.top]);
+  const insets = useSafeAreaInsets();
+  
+  // Sync header height from shared value to state for use in styles
+  // Use a conservative initial estimate: safe area + top padding (10) + top row (menu button 24px + padding 10px top + 10px bottom = 44px) + bottom padding (10) = ~64 + safe area
+  // This will be updated immediately when the header measures its actual height
+  const initialHeaderHeight = insets.top + 10 + 44 + 10;
+  const [headerHeight, setHeaderHeight] = useState(initialHeaderHeight);
+  
+  useAnimatedReaction(
+    () => contextHeaderHeight.value,
+    (height) => {
+      if (height > 0) {
+        runOnJS(setHeaderHeight)(height);
+      }
+    },
+    [contextHeaderHeight]
+  );
+  
+  // Also check the shared value on mount in case it was already set
+  useEffect(() => {
+    if (contextHeaderHeight.value > 0) {
+      setHeaderHeight(contextHeaderHeight.value);
+    }
+  }, []);
+
+  const contentContainerStyle = useMemo(() => {
+    return [
+      styles.contentContainer,
+      isMobile && {
+        paddingTop: headerHeight,
+      },
+    ];
+  }, [isMobile, headerHeight]);
 
   return (
     <Animated.ScrollView
       ref={scrollRef}
       style={styles.scrollView}
-      contentContainerStyle={[
-        styles.contentContainer,
-        isMobile && { paddingTop: headerHeight }
-      ]}
+      contentContainerStyle={contentContainerStyle}
       showsVerticalScrollIndicator={false}
       onScroll={scrollHandler}
       scrollEventThrottle={16}

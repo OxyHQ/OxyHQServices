@@ -1,262 +1,440 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
   TextInput,
   TouchableOpacity,
   StyleSheet,
-  ScrollView,
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Colors } from '@/constants/theme';
-import { useAlert } from '@/components/ui';
+import { useOnboardingStatus } from '@/hooks/useOnboardingStatus';
+import * as Notifications from 'expo-notifications';
+import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
+import { LoadingSpinner } from '@/components/ui/Loading';
+import { getNetworkStateAsync } from 'expo-network';
 
-type Step = 'intro' | 'recovery' | 'confirm';
+type Step = 'creating' | 'username' | 'notifications';
+
+// Generate a random suggested username
+const generateSuggestedUsername = (): string => {
+  return Math.floor(1000 + Math.random() * 9000).toString();
+};
 
 export default function CreateIdentityScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
-  const alert = useAlert();
-  const { createIdentity, signIn, isLoading } = useOxy();
+  const insets = useSafeAreaInsets();
+  const { createIdentity, signIn, oxyServices } = useOxy();
+  const { status, hasIdentity } = useOnboardingStatus();
 
-  const [step, setStep] = useState<Step>('intro');
-  const [recoveryPhrase, setRecoveryPhrase] = useState<string[]>([]);
-  const [confirmWords, setConfirmWords] = useState<{ index: number; word: string }[]>([]);
-  const [userConfirmation, setUserConfirmation] = useState<string[]>([]);
+  const backgroundColor = useMemo(() =>
+    colorScheme === 'dark' ? '#000000' : '#FFFFFF',
+    [colorScheme]
+  );
+  const textColor = useMemo(() =>
+    colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+    [colorScheme]
+  );
+
+  const [step, setStep] = useState<Step>('creating');
   const [error, setError] = useState<string | null>(null);
-  const [isOffline, setIsOffline] = useState(false);
   const [isSigningIn, setIsSigningIn] = useState(false);
 
-  const handleCreateIdentity = useCallback(async () => {
-    setError(null);
+  // Creating step state
+  const [creatingProgress, setCreatingProgress] = useState(0);
+  const creatingProgressRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Username step state
+  const [username, setUsername] = useState<string>('');
+  const [usernameError, setUsernameError] = useState<string | null>(null);
+  const [isCheckingUsername, setIsCheckingUsername] = useState(false);
+  const [usernameAvailable, setUsernameAvailable] = useState<boolean | null>(null);
+  const hasInitializedUsername = useRef(false);
+  const previousStepRef = useRef<Step>('creating');
+
+  // Notifications step state
+  const [isRequestingNotifications, setIsRequestingNotifications] = useState(false);
+
+  // Check if device is offline using expo-network
+  const checkIfOffline = useCallback(async (): Promise<boolean> => {
     try {
-      const result = await createIdentity();
-      setRecoveryPhrase(result.recoveryPhrase);
-      setIsOffline(!result.synced);
-
-      // Select 3 random words to confirm
-      const indices: number[] = [];
-      while (indices.length < 3) {
-        const idx = Math.floor(Math.random() * result.recoveryPhrase.length);
-        if (!indices.includes(idx)) {
-          indices.push(idx);
-        }
-      }
-      indices.sort((a, b) => a - b);
-      setConfirmWords(indices.map(idx => ({ index: idx, word: result.recoveryPhrase[idx] })));
-      setUserConfirmation(new Array(3).fill(''));
-
-      setStep('recovery');
-    } catch (err: any) {
-      setError(err.message || 'Failed to create identity');
+      const networkState = await getNetworkStateAsync();
+      return !networkState.isConnected || !networkState.isInternetReachable;
+    } catch {
+      // If network check fails, assume offline to be safe
+      return true;
     }
-  }, [createIdentity]);
+  }, []);
 
-  const handleContinueToConfirm = useCallback(() => {
-    alert(
-      'Have you saved your recovery phrase?',
-      'You will need it to recover your account if you lose access to this device. This is the ONLY time you will see it.',
-      [
-        { text: 'Go Back', style: 'cancel' },
-        { text: 'I saved it', onPress: () => setStep('confirm') },
-      ]
-    );
-  }, [alert]);
+  // Initialize flow based on onboarding status
+  useEffect(() => {
+    // Wait for status to be determined
+    if (status === 'checking') return;
 
-  const handleConfirmPhrase = useCallback(async () => {
-    const isCorrect = confirmWords.every(
-      (item, idx) => userConfirmation[idx]?.toLowerCase().trim() === item.word.toLowerCase()
-    );
+    // If onboarding complete, shouldn't be here (handled by routing)
+    if (status === 'complete') return;
 
-    if (!isCorrect) {
-      setError('The words you entered do not match. Please check your recovery phrase.');
+    // If identity exists but onboarding in progress, resume from username
+    if (status === 'in_progress' && hasIdentity) {
+      setStep('username');
+      if (!hasInitializedUsername.current) {
+        setUsername(generateSuggestedUsername());
+        hasInitializedUsername.current = true;
+      }
       return;
     }
 
-    // Phrase confirmed - now sign in (works offline)
+    // No identity - create one
+    if (status === 'none') {
+      const create = async () => {
+        try {
+          // Start progress animation
+          setCreatingProgress(0);
+          let progressStep = 0;
+
+          const progressInterval = setInterval(() => {
+            progressStep++;
+            if (progressStep <= 2) {
+              setCreatingProgress(progressStep);
+            } else {
+              clearInterval(progressInterval);
+            }
+          }, 500);
+
+          creatingProgressRef.current = progressInterval as unknown as NodeJS.Timeout;
+
+          await createIdentity();
+
+          // Clear progress interval
+          if (creatingProgressRef.current) {
+            clearInterval(creatingProgressRef.current);
+            creatingProgressRef.current = null;
+          }
+
+          // Small delay to show final progress message
+          setTimeout(async () => {
+            // Check if offline - if so, skip username step
+            const isOffline = await checkIfOffline();
+            if (isOffline) {
+              // Skip username step when offline, go directly to notifications
+              setStep('notifications');
+            } else {
+              setStep('username');
+              if (!hasInitializedUsername.current) {
+                setUsername(generateSuggestedUsername());
+                hasInitializedUsername.current = true;
+              }
+            }
+            setCreatingProgress(0);
+          }, 500);
+        } catch (err: any) {
+          // Clear progress interval on error
+          if (creatingProgressRef.current) {
+            clearInterval(creatingProgressRef.current);
+            creatingProgressRef.current = null;
+          }
+
+          // If identity already exists (race condition), go to username step
+          if (err?.message?.includes('already exists') || err?.message?.includes('Identity already')) {
+            setStep('username');
+            if (!hasInitializedUsername.current) {
+              setUsername(generateSuggestedUsername());
+              hasInitializedUsername.current = true;
+            }
+            setCreatingProgress(0);
+          } else {
+            setError(err.message || 'Failed to create identity');
+            setCreatingProgress(0);
+          }
+        }
+      };
+      create();
+    }
+
+    return () => {
+      if (creatingProgressRef.current) {
+        clearInterval(creatingProgressRef.current);
+      }
+    };
+  }, [status, hasIdentity, createIdentity, checkIfOffline]);
+
+  // Reset username initialization flag when leaving username step
+  useEffect(() => {
+    if (step !== 'username' && previousStepRef.current === 'username') {
+      hasInitializedUsername.current = false;
+      setUsername('');
+    }
+    previousStepRef.current = step;
+  }, [step]);
+
+  // Username validation
+  useEffect(() => {
+    if (!username || username.length < 4) {
+      setUsernameAvailable(null);
+      setUsernameError(null);
+      return;
+    }
+
+    // Validate format
+    if (!/^[a-z0-9]+$/i.test(username)) {
+      setUsernameError('You can use a-z, 0-9. Minimum length is 4 characters.');
+      setUsernameAvailable(false);
+      return;
+    }
+
+    setUsernameError(null);
+
+    // Debounce API check
+    const timer = setTimeout(async () => {
+      if (!oxyServices) return;
+
+      setIsCheckingUsername(true);
+      try {
+        const result = await oxyServices.checkUsernameAvailability(username);
+        setUsernameAvailable(result.available);
+        if (!result.available) {
+          setUsernameError(result.message || 'Username is already taken');
+        }
+      } catch (err: any) {
+        const errorMsg = err?.message || '';
+        // Handle timeout and network errors gracefully
+        if (
+          errorMsg.includes('network') ||
+          errorMsg.includes('offline') ||
+          errorMsg.includes('timeout') ||
+          errorMsg.includes('cancelled') ||
+          errorMsg.includes('ECONNABORTED')
+        ) {
+          // Allow proceeding if offline/network issue
+          setUsernameAvailable(true);
+        } else {
+          setUsernameAvailable(false);
+          setUsernameError(errorMsg || 'Failed to check username availability');
+        }
+      } finally {
+        setIsCheckingUsername(false);
+      }
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [username, oxyServices]);
+
+  const handleUsernameContinue = useCallback(async () => {
+    if (!username || username.length < 4 || !/^[a-z0-9]+$/i.test(username)) {
+      setUsernameError('Please enter a valid username (4+ characters, a-z and 0-9 only)');
+      return;
+    }
+
+    if (usernameAvailable === false || isCheckingUsername) {
+      return;
+    }
+
+    // Just proceed - we'll save username after sign-in
+    setStep('notifications');
+  }, [username, usernameAvailable, isCheckingUsername]);
+
+  const handleSignIn = useCallback(async () => {
     setIsSigningIn(true);
     setError(null);
 
     try {
-      // Sign in (works offline - will create local session if offline)
       await signIn();
 
-      // Successfully signed in - navigate to main app
-      if (isOffline) {
-        // Show offline success message
-        alert(
-          'Identity Created (Offline)',
-          'Your identity has been created and saved locally. When you connect to the internet, it will automatically sync with Oxy servers.',
-          [{ text: 'OK', onPress: () => router.replace('/(tabs)') }]
-        );
-      } else {
-        // Online - navigate directly
-        router.replace('/(tabs)');
+      // Now that we're authenticated, update profile with username
+      if (username && oxyServices) {
+        try {
+          await oxyServices.updateProfile({ username });
+        } catch (err: any) {
+          // Log but don't block - username can be set later
+          console.warn('Failed to set username:', err);
+        }
       }
+
+      router.replace('/(tabs)');
     } catch (err: any) {
-      const errorMessage = err?.message || 'Failed to sign in. Please try again.';
-      setError(errorMessage);
-      console.error('Sign-in error:', err);
+      setError(err?.message || 'Failed to sign in. Please try again.');
     } finally {
       setIsSigningIn(false);
     }
-  }, [confirmWords, userConfirmation, router, isOffline, signIn, alert]);
+  }, [router, signIn, username, oxyServices]);
 
-  const renderIntroStep = () => (
-    <View style={styles.stepContainer}>
-      <Text style={[styles.title, { color: colors.text }]}>Create Your Identity</Text>
-      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-        Your identity is self-custody. You hold the keys, not us.
-      </Text>
+  const handleRequestNotifications = useCallback(async () => {
+    setIsRequestingNotifications(true);
+    try {
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
 
-      {/* How it works info */}
-      <View style={[styles.infoBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        <Text style={[styles.infoTitle, { color: colors.text }]}>🔐 How Self-Custody Works</Text>
-        <Text style={[styles.infoText, { color: colors.textSecondary }]}>
-          • A unique cryptographic key pair is generated on your device{'\n'}
-          • Your private key never leaves this device{'\n'}
-          • Your public key becomes your identity across all Oxy apps{'\n'}
-          • No passwords to remember or get hacked{'\n'}
-          • Profile information (username, name, etc.) can be added later
-        </Text>
-      </View>
+      if (existingStatus !== 'granted') {
+        await Notifications.requestPermissionsAsync();
+      }
 
-      {error && <Text style={styles.errorText}>{error}</Text>}
+      await handleSignIn();
+    } catch (err: any) {
+      console.error('Error requesting notifications:', err);
+      await handleSignIn();
+    } finally {
+      setIsRequestingNotifications(false);
+    }
+  }, [handleSignIn]);
 
-      <TouchableOpacity
-        style={[styles.button, { backgroundColor: colors.primary }]}
-        onPress={handleCreateIdentity}
-        disabled={isLoading}
-      >
-        {isLoading ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Generate My Keys</Text>
-        )}
-      </TouchableOpacity>
+  // Creating animation step
+  const renderCreatingStep = () => {
+    const progressMessages = [
+      'Generating cryptographic keys...',
+      'Creating your identity...',
+      'Setting up your account...',
+    ];
 
-      <TouchableOpacity
-        style={styles.linkButton}
-        onPress={() => router.push('/(auth)/import-identity')}
-      >
-        <Text style={[styles.linkText, { color: colors.primary }]}>
-          I already have a recovery phrase
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
+    const currentMessage = progressMessages[creatingProgress] || progressMessages[0];
 
-  const renderRecoveryStep = () => (
-    <View style={styles.stepContainer}>
-      <Text style={[styles.title, { color: colors.text }]}>Your Recovery Phrase</Text>
-      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-        These 12 words are the master key to your identity. Write them down and store them safely offline.
-      </Text>
-
-      {/* Offline notice */}
-      {isOffline && (
-        <View style={[styles.offlineNotice, { backgroundColor: '#E0F2FE', borderColor: '#7DD3FC' }]}>
-          <Text style={[styles.offlineNoticeText, { color: '#0369A1' }]}>
-            📱 Created Offline — Your identity was created locally. It will sync automatically when you connect to the internet.
+    return (
+      <View style={[styles.container, { backgroundColor }]}>
+        <View style={styles.centeredContainer}>
+          <LoadingSpinner iconSize={48} color={textColor} />
+          <Animated.View
+            key={creatingProgress}
+            entering={FadeIn.duration(300)}
+            exiting={FadeOut.duration(200)}
+            style={styles.progressMessageContainer}
+          >
+            <Text style={[styles.creatingTitle, { color: textColor }]}>
+              {currentMessage}
+            </Text>
+          </Animated.View>
+          <Text style={[styles.creatingSubtitle, { color: textColor, opacity: 0.6 }]}>
+            This may take a moment
           </Text>
         </View>
-      )}
+      </View>
+    );
+  };
 
-      <View style={[styles.phraseContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
-        {recoveryPhrase.map((word, index) => (
-          <View key={index} style={styles.wordItem}>
-            <Text style={[styles.wordNumber, { color: colors.textSecondary }]}>{index + 1}</Text>
-            <Text style={[styles.word, { color: colors.text }]}>{word}</Text>
+  // Username step
+  const renderUsernameStep = () => {
+    const isUsernameValid = username.length >= 4 && /^[a-z0-9]+$/i.test(username);
+    const canContinue = isUsernameValid && (usernameAvailable === true || usernameAvailable === null) && !isCheckingUsername;
+
+    return (
+      <View style={[styles.container, { backgroundColor, paddingTop: insets.top }]}>
+        <View style={styles.stepContainer}>
+          <Text style={[styles.title, { color: textColor }]}>Choose your username</Text>
+          <Text style={[styles.subtitle, { color: textColor, opacity: 0.6 }]}>
+            You can change this later in the settings
+          </Text>
+
+          <View style={styles.inputWrapper}>
+            <TextInput
+              style={[styles.usernameInput, {
+                color: textColor,
+                backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#F5F5F5',
+                borderColor: usernameError ? '#DC3545' : (colorScheme === 'dark' ? '#2C2C2E' : '#E0E0E0')
+              }]}
+              placeholder="Username"
+              placeholderTextColor={colorScheme === 'dark' ? '#8E8E93' : '#8E8E93'}
+              value={username}
+              onChangeText={(text) => {
+                setUsername(text.toLowerCase().replace(/[^a-z0-9]/g, ''));
+                setUsernameError(null);
+              }}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoFocus
+            />
           </View>
-        ))}
-      </View>
 
-      <View style={[styles.warningBox, { backgroundColor: '#FFF3CD', borderColor: '#FFE69C' }]}>
-        <Text style={styles.warningText}>
-          ⚠️ Self-Custody Warning
-        </Text>
-        <Text style={[styles.warningText, { marginTop: 8 }]}>
-          • This is the ONLY way to recover your identity{'\n'}
-          • Never share these words with anyone{'\n'}
-          • Oxy cannot recover your account without this phrase{'\n'}
-          • Store it offline in a secure location
-        </Text>
-      </View>
+          <Text style={[styles.inputHint, { color: textColor, opacity: 0.6 }]}>
+            You can use a-z, 0-9. Minimum length is 4 characters.
+          </Text>
 
-      <TouchableOpacity
-        style={[styles.button, { backgroundColor: colors.primary }]}
-        onPress={handleContinueToConfirm}
-      >
-        <Text style={styles.buttonText}>I've Saved My Phrase Securely</Text>
-      </TouchableOpacity>
-    </View>
-  );
+          {isCheckingUsername && (
+            <Text style={[styles.checkingText, { color: textColor, opacity: 0.6 }]}>
+              Checking availability...
+            </Text>
+          )}
 
-  const renderConfirmStep = () => (
-    <View style={styles.stepContainer}>
-      <Text style={[styles.title, { color: colors.text }]}>Confirm Your Phrase</Text>
-      <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
-        Enter the following words from your recovery phrase to confirm you saved it.
-      </Text>
+          {usernameAvailable === true && !isCheckingUsername && (
+            <Text style={[styles.availableText, { color: '#28A745' }]}>
+              ✓ Username is available
+            </Text>
+          )}
 
-      {confirmWords.map((item, idx) => (
-        <View key={item.index} style={styles.inputContainer}>
-          <Text style={[styles.label, { color: colors.text }]}>Word #{item.index + 1}</Text>
-          <TextInput
-            style={[styles.input, { color: colors.text, borderColor: colors.border, backgroundColor: colors.card }]}
-            placeholder={`Enter word #${item.index + 1}`}
-            placeholderTextColor={colors.textSecondary}
-            value={userConfirmation[idx]}
-            onChangeText={(text) => {
-              const newConfirmation = [...userConfirmation];
-              newConfirmation[idx] = text;
-              setUserConfirmation(newConfirmation);
-            }}
-            autoCapitalize="none"
-            autoCorrect={false}
-          />
+          {usernameError && (
+            <Text style={styles.errorText}>{usernameError}</Text>
+          )}
+
+          <TouchableOpacity
+            style={[
+              styles.primaryButton,
+              {
+                backgroundColor: canContinue ? textColor : (colorScheme === 'dark' ? '#2C2C2E' : '#CCCCCC'),
+                opacity: canContinue ? 1 : 0.6,
+              }
+            ]}
+            onPress={handleUsernameContinue}
+            disabled={!canContinue}
+          >
+            <Text style={[
+              styles.primaryButtonText,
+              { color: canContinue ? backgroundColor : (colorScheme === 'dark' ? '#8E8E93' : '#999999') }
+            ]}>
+              Confirm
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.linkButton}
+            onPress={() => { }}
+          >
+            <Text style={[styles.linkText, { color: textColor, opacity: 0.6 }]}>
+              Learn more about usernames
+            </Text>
+          </TouchableOpacity>
         </View>
-      ))}
+      </View>
+    );
+  };
 
-      {error && <Text style={styles.errorText}>{error}</Text>}
+  // Notifications step
+  const renderNotificationsStep = () => (
+    <View style={[styles.container, { backgroundColor, paddingTop: insets.top }]}>
+      <View style={styles.stepContainer}>
+        <View style={styles.notificationIllustration}>
+          <Text style={styles.notificationIcon}>🔔</Text>
+        </View>
 
-      <TouchableOpacity
-        style={[styles.button, { backgroundColor: colors.primary }]}
-        onPress={handleConfirmPhrase}
-        disabled={isSigningIn}
-      >
-        {isSigningIn ? (
-          <ActivityIndicator color="#fff" />
-        ) : (
-          <Text style={styles.buttonText}>Confirm & Continue</Text>
-        )}
-      </TouchableOpacity>
-
-      <TouchableOpacity
-        style={styles.linkButton}
-        onPress={() => setStep('recovery')}
-      >
-        <Text style={[styles.linkText, { color: colors.primary }]}>
-          Go back to see the phrase
+        <Text style={[styles.title, { color: textColor }]}>Receive push notifications</Text>
+        <Text style={[styles.subtitle, { color: textColor, opacity: 0.6 }]}>
+          Don&apos;t miss messages from friends, transaction alerts, and feature updates.
         </Text>
-      </TouchableOpacity>
+
+        {error && <Text style={styles.errorText}>{error}</Text>}
+
+        <TouchableOpacity
+          style={[styles.primaryButton, { backgroundColor: textColor }]}
+          onPress={handleRequestNotifications}
+          disabled={isRequestingNotifications || isSigningIn}
+        >
+          {isRequestingNotifications || isSigningIn ? (
+            <ActivityIndicator color={backgroundColor} />
+          ) : (
+            <Text style={[styles.primaryButtonText, { color: backgroundColor }]}>
+              Enable notifications
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
     </View>
   );
 
   return (
-    <ScrollView
-      style={[styles.container, { backgroundColor: colors.background }]}
-      contentContainerStyle={styles.contentContainer}
-    >
-      {step === 'intro' && renderIntroStep()}
-      {step === 'recovery' && renderRecoveryStep()}
-      {step === 'confirm' && renderConfirmStep()}
-    </ScrollView>
+    <>
+      {step === 'creating' && renderCreatingStep()}
+      {step === 'username' && renderUsernameStep()}
+      {step === 'notifications' && renderNotificationsStep()}
+    </>
   );
 }
 
@@ -264,124 +442,104 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  contentContainer: {
+  centeredContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
     padding: 20,
-    paddingTop: 40,
   },
   stepContainer: {
     flex: 1,
+    padding: 24,
+    paddingTop: 60,
+    justifyContent: 'center',
   },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
+    fontSize: 38,
+    fontFamily: 'Phudu-SemiBold',
+    fontWeight: '600',
     marginBottom: 8,
+    textAlign: 'center',
+    letterSpacing: -0.5,
   },
   subtitle: {
     fontSize: 16,
-    marginBottom: 20,
+    marginBottom: 32,
     lineHeight: 22,
+    textAlign: 'center',
   },
-  infoBox: {
+  creatingTitle: {
+    fontSize: 20,
+    fontFamily: 'Phudu-SemiBold',
+    fontWeight: '600',
+    marginTop: 20,
+    textAlign: 'center',
+  },
+  creatingSubtitle: {
+    fontSize: 14,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  progressMessageContainer: {
+    marginTop: 20,
+    minHeight: 30,
+  },
+  inputWrapper: {
+    marginTop: 24,
+    marginBottom: 8,
+  },
+  usernameInput: {
     borderWidth: 1,
     borderRadius: 12,
     padding: 16,
-    marginBottom: 24,
-  },
-  infoTitle: {
-    fontSize: 15,
-    fontWeight: '600',
-    marginBottom: 10,
-  },
-  infoText: {
-    fontSize: 14,
-    lineHeight: 22,
-  },
-  inputContainer: {
-    marginBottom: 20,
+    fontSize: 16,
   },
   inputHint: {
     fontSize: 12,
-    marginTop: 6,
-    marginLeft: 4,
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
     marginBottom: 8,
   },
-  input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    fontSize: 16,
+  checkingText: {
+    fontSize: 12,
+    marginTop: 4,
   },
-  button: {
-    padding: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    marginTop: 20,
-  },
-  buttonText: {
-    color: '#fff',
-    fontSize: 16,
+  availableText: {
+    fontSize: 12,
+    marginTop: 4,
     fontWeight: '600',
-  },
-  linkButton: {
-    padding: 16,
-    alignItems: 'center',
-  },
-  linkText: {
-    fontSize: 16,
   },
   errorText: {
     color: '#DC3545',
     fontSize: 14,
     marginTop: 8,
+    textAlign: 'center',
   },
-  phraseContainer: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-    marginBottom: 20,
-  },
-  wordItem: {
-    width: '30%',
-    flexDirection: 'row',
+  primaryButton: {
+    padding: 18,
+    borderRadius: 8,
     alignItems: 'center',
-    marginBottom: 12,
+    marginTop: 32,
+    minHeight: 56,
+    justifyContent: 'center',
   },
-  wordNumber: {
-    fontSize: 12,
-    width: 20,
+  primaryButtonText: {
+    fontSize: 16,
+    fontFamily: 'Phudu-SemiBold',
+    fontWeight: '600',
   },
-  word: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  warningBox: {
-    borderWidth: 1,
-    borderRadius: 12,
+  linkButton: {
     padding: 16,
-    marginBottom: 20,
+    alignItems: 'center',
+    marginTop: 16,
   },
-  warningText: {
-    color: '#856404',
-    fontSize: 14,
-    lineHeight: 20,
+  linkText: {
+    fontSize: 16,
+    textDecorationLine: 'underline',
   },
-  offlineNotice: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+  notificationIllustration: {
+    alignItems: 'center',
+    marginBottom: 32,
   },
-  offlineNoticeText: {
-    fontSize: 14,
-    lineHeight: 20,
+  notificationIcon: {
+    fontSize: 64,
   },
 });
-
-

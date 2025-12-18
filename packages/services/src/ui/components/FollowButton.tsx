@@ -58,7 +58,19 @@ const FollowButton: React.FC<FollowButtonProps> = ({
 
   // Safety check: Don't render follow button on own profile
   // This provides a fallback in case parent components don't handle this check
-  if (currentUser && currentUser.id === userId) {
+  // Normalize IDs by trimming whitespace and comparing as strings
+  const normalizeId = (id: string | undefined | null): string => {
+    if (!id) return '';
+    return String(id).trim();
+  };
+
+  const currentUserId = normalizeId(currentUser?.id);
+  const targetUserId = normalizeId(userId);
+
+  // Don't render if:
+  // 1. Not authenticated (can't follow anyway)
+  // 2. Viewing own profile (currentUser.id matches userId)
+  if (!isAuthenticated || (currentUserId && targetUserId && currentUserId === targetUserId)) {
     return null;
   }
   const {

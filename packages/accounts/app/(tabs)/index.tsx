@@ -22,6 +22,7 @@ import { QuickActionsSection, type QuickAction } from '@/components/quick-action
 import { AccountInfoGrid, type AccountInfoCard } from '@/components/account-info-grid';
 import { IdentityCardsSection, type IdentityCard } from '@/components/identity-cards-section';
 import { RecentActivitySection, type RecentActivityItem } from '@/components/recent-activity-section';
+import { UsernameRequiredModal } from '@/components/UsernameRequiredModal';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -99,6 +100,8 @@ export default function HomeScreen() {
     showBottomSheet?.('PremiumSubscription');
   }, [showBottomSheet]);
 
+  const [showUsernameModal, setShowUsernameModal] = useState(false);
+
   // Check sync status on mount and auto-sync if needed
   useEffect(() => {
     const checkAndSync = async () => {
@@ -110,14 +113,20 @@ export default function HomeScreen() {
         if (!synced && syncIdentity) {
           try {
             await syncIdentity();
-          } catch (err) {
-            // Silent fail - will try again later
-            console.log('[Home] Auto-sync failed:', err);
+          } catch (err: any) {
+            // Check if error is username required - show modal
+            if (err?.code === 'USERNAME_REQUIRED' || err?.message === 'USERNAME_REQUIRED') {
+              setShowUsernameModal(true);
+            } else {
+              // Silent fail for other errors - will try again later
+              console.log('[Home] Auto-sync failed:', err);
+            }
           }
         }
       }
     };
     checkAndSync();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isIdentitySynced, syncIdentity]);
 
   const handleSyncNow = useCallback(async () => {
@@ -126,7 +135,24 @@ export default function HomeScreen() {
       // syncIdentity updates the Zustand store (isSyncing, isSynced)
       await syncIdentity();
     } catch (err: any) {
-      alert('Sync Failed', err.message || 'Could not sync with server. Please check your internet connection.');
+      // Check if error is username required
+      if (err?.code === 'USERNAME_REQUIRED' || err?.message === 'USERNAME_REQUIRED') {
+        setShowUsernameModal(true);
+      } else {
+        alert('Sync Failed', err.message || 'Could not sync with server. Please check your internet connection.');
+      }
+    }
+  }, [syncIdentity, alert]);
+
+  const handleUsernameModalComplete = useCallback(async () => {
+    setShowUsernameModal(false);
+    // Retry sync after username is set
+    if (syncIdentity) {
+      try {
+        await syncIdentity();
+      } catch (err: any) {
+        alert('Sync Failed', err.message || 'Could not sync with server. Please check your internet connection.');
+      }
     }
   }, [syncIdentity, alert]);
 
@@ -605,9 +631,10 @@ export default function HomeScreen() {
   }
 
   return (
-    <ScreenContentWrapper refreshing={refreshing} onRefresh={handleRefresh}>
-      <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.content}>
+    <>
+      <ScreenContentWrapper refreshing={refreshing} onRefresh={handleRefresh}>
+        <View style={[styles.container, { backgroundColor: colors.background }]}>
+          <View style={styles.content}>
           <View style={styles.header}>
             <View style={styles.avatarSectionWrapper}>
               <View style={styles.avatarContainer}>
@@ -655,7 +682,13 @@ export default function HomeScreen() {
           </View>
         </View>
       </View>
-    </ScreenContentWrapper>
+      </ScreenContentWrapper>
+      <UsernameRequiredModal
+        visible={showUsernameModal}
+        onComplete={handleUsernameModalComplete}
+        onCancel={() => setShowUsernameModal(false)}
+      />
+    </>
   );
 }
 

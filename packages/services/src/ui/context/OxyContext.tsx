@@ -24,7 +24,7 @@ import { useSessionManagement } from '../hooks/useSessionManagement';
 import { useAuthOperations } from './hooks/useAuthOperations';
 import { useDeviceManagement } from '../hooks/useDeviceManagement';
 import { getStorageKeys } from '../utils/storageHelpers';
-import { isInvalidSessionError } from '../utils/errorHandlers';
+import { isInvalidSessionError, isTimeoutOrNetworkError } from '../utils/errorHandlers';
 import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
 import { useQueryClient } from '@tanstack/react-query';
@@ -425,8 +425,19 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
                 await syncIdentity();
               }
             }
-          } catch (syncError) {
-            logger('Error syncing identity on reconnect', syncError);
+          } catch (syncError: any) {
+            // Skip sync silently if username is required (expected when offline onboarding)
+            if (syncError?.code === 'USERNAME_REQUIRED' || syncError?.message === 'USERNAME_REQUIRED') {
+              if (__DEV__) {
+                console.debug('Sync skipped - username required', syncError);
+              }
+              // Don't log or show error - username will be set later
+            } else if (!isTimeoutOrNetworkError(syncError)) {
+              // Only log unexpected errors - timeouts/network issues are expected when offline
+              logger('Error syncing identity on reconnect', syncError);
+            } else if (__DEV__) {
+              console.debug('Identity sync timeout (expected when offline)', syncError);
+            }
           }
 
           // TanStack Query will automatically retry pending mutations
@@ -509,10 +520,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               });
             }
           } catch (validationError) {
-            // Silently handle expected 401 errors (expired/invalid sessions) during restoration
+            // Silently handle expected errors (invalid sessions, timeouts, network issues) during restoration
             // Only log unexpected errors
-            if (!isInvalidSessionError(validationError)) {
+            if (!isInvalidSessionError(validationError) && !isTimeoutOrNetworkError(validationError)) {
               logger('Session validation failed during init', validationError);
+            } else if (__DEV__ && isTimeoutOrNetworkError(validationError)) {
+              // Only log timeouts in dev mode for debugging
+              console.debug('Session validation timeout (expected when offline)', validationError);
             }
           }
         }
@@ -526,7 +540,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         try {
           await switchSession(storedActiveSessionId);
         } catch (switchError) {
-          // Silently handle expected 401 errors (expired/invalid active session)
+          // Silently handle expected errors (invalid sessions, timeouts, network issues)
           if (isInvalidSessionError(switchError)) {
             await storage.removeItem(storageKeys.activeSessionId);
             updateSessions(
@@ -534,6 +548,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               { merge: false },
             );
             // Don't log expected session errors during restoration
+          } else if (isTimeoutOrNetworkError(switchError)) {
+            // Timeout/network error - non-critical, don't block
+            if (__DEV__) {
+              console.debug('Active session validation timeout (expected when offline)', switchError);
+            }
           } else {
             // Only log unexpected errors
             logger('Active session validation error', switchError);

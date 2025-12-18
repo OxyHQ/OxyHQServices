@@ -12,6 +12,8 @@ module.exports = function (api) {
           extensions: ['.ts', '.tsx', '.js', '.jsx', '.json'],
         },
       ],
+      // react-native-worklets plugin must be listed last for Reanimated v4
+      'react-native-worklets/plugin',
     ],
   };
 };

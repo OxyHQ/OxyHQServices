@@ -160,7 +160,7 @@ export default function TabLayout() {
         drawerContent={(props) => <DrawerContent {...props} />}
         screenOptions={{
           headerShown: true,
-          header: () => <Header searchQuery={searchQuery} onSearchChange={handleSearchChange} />,
+          header: () => <Header searchQuery={searchQuery} onSearchChange={handleSearchChange} searchInputRef={searchInputRef} />,
           headerTransparent: true,
           headerStyle: {
             backgroundColor: 'transparent',
