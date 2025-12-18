@@ -181,7 +181,7 @@ export default function HomeScreen() {
                 items={[
                   {
                     id: 'account-overview',
-                    icon: 'phone-portrait',
+                    icon: 'cellphone',
                     iconColor: colors.iconHome,
                     title: 'Account Overview',
                     subtitle: 'Main account screen with all features',
@@ -233,7 +233,7 @@ export default function HomeScreen() {
                   },
                   {
                     id: 'account-switcher',
-                    icon: 'people',
+                    icon: 'account-group',
                     iconColor: colors.iconData,
                     title: 'Switch Account',
                     subtitle: 'Switch between accounts',
@@ -242,7 +242,7 @@ export default function HomeScreen() {
                   },
                   {
                     id: 'session-management',
-                    icon: 'phone-portrait',
+                    icon: 'cellphone',
                     iconColor: colors.iconSecurity,
                     title: 'Sessions',
                     subtitle: 'Manage device sessions',
@@ -251,7 +251,7 @@ export default function HomeScreen() {
                   },
                   {
                     id: 'account-verification',
-                    icon: 'checkmark-circle',
+                    icon: 'check-circle',
                     iconColor: colors.iconSuccess,
                     title: 'Verification',
                     subtitle: 'Account verification',
@@ -268,7 +268,7 @@ export default function HomeScreen() {
                 items={[
                   {
                     id: 'profile',
-                    icon: 'person',
+                    icon: 'account',
                     iconColor: colors.iconPersonalInfo,
                     title: 'Profile',
                     subtitle: 'User profile',
@@ -295,7 +295,7 @@ export default function HomeScreen() {
                   },
                   {
                     id: 'language-selector',
-                    icon: 'language',
+                    icon: 'translate',
                     iconColor: colors.iconPersonalInfo,
                     title: 'Language',
                     subtitle: 'Change language',
@@ -312,7 +312,7 @@ export default function HomeScreen() {
                 items={[
                   {
                     id: 'history-view',
-                    icon: 'time',
+                    icon: 'clock',
                     iconColor: colors.iconSecurity,
                     title: 'History',
                     subtitle: 'View & manage history',
@@ -330,7 +330,7 @@ export default function HomeScreen() {
                   },
                   {
                     id: 'search-settings',
-                    icon: 'search',
+                    icon: 'magnify',
                     iconColor: colors.iconSecurity,
                     title: 'Search',
                     subtitle: 'SafeSearch & settings',
@@ -383,7 +383,7 @@ export default function HomeScreen() {
                   },
                   {
                     id: 'karma-rules',
-                    icon: 'document-text',
+                    icon: 'file-document',
                     iconColor: colors.iconSecurity,
                     title: 'Rules',
                     subtitle: 'Karma rules',
@@ -392,7 +392,7 @@ export default function HomeScreen() {
                   },
                   {
                     id: 'about-karma',
-                    icon: 'information-circle',
+                    icon: 'information',
                     iconColor: colors.iconPersonalInfo,
                     title: 'About',
                     subtitle: 'About karma',
@@ -471,7 +471,7 @@ export default function HomeScreen() {
                   },
                   {
                     id: 'legal-documents',
-                    icon: 'document-text',
+                    icon: 'file-document',
                     iconColor: colors.iconSecurity,
                     title: 'Legal',
                     subtitle: 'Privacy & Terms',
@@ -480,7 +480,7 @@ export default function HomeScreen() {
                   },
                   {
                     id: 'app-info',
-                    icon: 'information-circle',
+                    icon: 'information',
                     iconColor: '#8E8E93',
                     title: 'App Info',
                     subtitle: 'App information',

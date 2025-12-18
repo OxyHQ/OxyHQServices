@@ -1,9 +1,9 @@
 import React, { useMemo, useRef, useCallback, useEffect } from 'react';
-import { View, TouchableOpacity, StyleSheet, Platform, TextInput, useWindowDimensions } from 'react-native';
+import { View, TouchableOpacity, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useNavigation, DrawerActions } from '@react-navigation/native';
 import type { DrawerNavigationProp } from '@react-navigation/drawer';
-import { useRouter, usePathname } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -15,14 +15,10 @@ import { useOxy } from '@oxyhq/services';
 import { getDisplayName } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { darkenColor } from '@/utils/color-utils';
-import { useSearchInput } from '@/hooks/use-search-input';
 import * as Haptics from 'expo-haptics';
 import Animated, { useAnimatedStyle, withTiming, useDerivedValue } from 'react-native-reanimated';
 
 interface HeaderProps {
-    searchQuery: string;
-    onSearchChange: (text: string) => void;
-    searchInputRef?: React.RefObject<TextInput | null>;
 }
 
 const DOUBLE_PRESS_DELAY = 300;
@@ -42,32 +38,17 @@ const getHapticStyle = (intensity: number): Haptics.ImpactFeedbackStyle => {
     return Haptics.ImpactFeedbackStyle.Heavy;
 };
 
-export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderProps) {
+export function Header({ }: HeaderProps) {
     const navigation = useNavigation<DrawerNavigationProp<any>>();
     const router = useRouter();
-    const pathname = usePathname();
     const colorScheme = useColorScheme();
     const colors = Colors[colorScheme ?? 'light'];
     const insets = useSafeAreaInsets();
     const { width } = useWindowDimensions();
     const { isScrolled, scrollToTop, scrollY, scrollDirection } = useScrollContext();
     const isDesktop = Platform.OS === 'web' && width >= 768;
-    const isSearchScreen = pathname === '/(tabs)/search';
 
     const { user, oxyServices, showBottomSheet, isAuthenticated, refreshSessions } = useOxy();
-
-    // Use custom hook for search input management with focus preservation
-    const {
-        localSearchQuery,
-        handleSearchChange: handleSearchChangeLocal,
-        handleSearchFocus,
-        handleSearchBlur,
-    } = useSearchInput({
-        searchQuery,
-        onSearchChange,
-        searchInputRef,
-        isSearchScreen,
-    });
 
     const lastPressRef = useRef<number>(0);
     const pressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -200,11 +181,6 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
         },
     ], [insets.top, colors.border, isDesktop]);
 
-    const searchBarBackgroundColor = useMemo(() =>
-        colorScheme === 'dark' ? 'rgba(44, 44, 46, 0.7)' : 'rgba(248, 249, 250, 0.7)',
-        [colorScheme]
-    );
-
     // Track header visibility based on scroll
     const headerVisible = useDerivedValue(() => {
         const scrollThreshold = 10;
@@ -219,9 +195,9 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
     }, []);
 
     // Animated styles for header slide/fade based on scroll
-    // Mobile header height: safe area + top padding (4) + top row (36) + search bar container (8 top + 48 height + 10 bottom = 66)
+    // Mobile header height: safe area + top padding (4) + top row (36)
     const headerAnimatedStyle = useAnimatedStyle(() => {
-        const headerHeight = isDesktop ? 64 : (insets.top + 4 + 36 + 66);
+        const headerHeight = isDesktop ? 64 : (insets.top + 4 + 36);
         const visible = headerVisible.value;
 
         return {
@@ -273,32 +249,7 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
                         )}
                     </View>
 
-                    {isDesktop ? (
-                        <View style={styles.searchBarContainer}>
-                            <View style={[styles.searchBar, {
-                                backgroundColor: searchBarBackgroundColor,
-                                borderColor: colors.border
-                            }]}>
-                                <Ionicons name="search-outline" size={20} color={colors.text} style={styles.searchIcon} />
-                                <TextInput
-                                    ref={searchInputRef}
-                                    style={[
-                                        styles.searchInput,
-                                        { color: colors.text },
-                                        Platform.OS === 'web' && { outlineStyle: 'none' as any, outlineWidth: 0 }
-                                    ]}
-                                    placeholder="Search Oxy Account"
-                                    placeholderTextColor={colors.secondaryText}
-                                    value={localSearchQuery}
-                                    onChangeText={handleSearchChangeLocal}
-                                    onFocus={handleSearchFocus}
-                                    onBlur={handleSearchBlur}
-                                    returnKeyType="search"
-                                    blurOnSubmit={false}
-                                />
-                            </View>
-                        </View>
-                    ) : (
+                    {!isDesktop && (
                         <View style={styles.logoCenterContainer}>
                             <TouchableOpacity
                                 onPressIn={handleLogoPressIn}
@@ -337,35 +288,6 @@ export function Header({ searchQuery, onSearchChange, searchInputRef }: HeaderPr
                         </TouchableOpacity>
                     </View>
                 </View>
-
-                {/* Mobile search bar at bottom of header - always visible */}
-                {!isDesktop && (
-                    <View style={styles.mobileSearchBarContainer}>
-                        <View style={[styles.mobileSearchBar, {
-                            backgroundColor: searchBarBackgroundColor,
-                            borderColor: colors.border
-                        }]}>
-                            <Ionicons name="search-outline" size={20} color={colors.text} style={styles.searchIcon} />
-                            <TextInput
-                                ref={searchInputRef}
-                                style={[
-                                    styles.searchInput,
-                                    { color: colors.text },
-                                    Platform.OS === 'web' && { outlineStyle: 'none' as any, outlineWidth: 0 }
-                                ]}
-                                placeholder="Search Oxy Account"
-                                placeholderTextColor={colors.secondaryText}
-                                value={localSearchQuery}
-                                onChangeText={handleSearchChangeLocal}
-                                onFocus={handleSearchFocus}
-                                onBlur={handleSearchBlur}
-                                returnKeyType="search"
-                                autoFocus={isSearchScreen && localSearchQuery.length === 0}
-                                blurOnSubmit={false}
-                            />
-                        </View>
-                    </View>
-                )}
             </BlurView>
         </Animated.View>
     );
@@ -442,44 +364,5 @@ const styles = StyleSheet.create({
     userIconContainer: {
         alignItems: 'center',
         justifyContent: 'center',
-    },
-    searchBarContainer: {
-        flex: 1,
-        flexDirection: 'row',
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
-    searchBar: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        height: 48,
-        borderRadius: 24,
-        paddingHorizontal: 16,
-        gap: 12,
-        maxWidth: 600,
-        width: '100%',
-        borderWidth: 0.5,
-    },
-    searchIcon: {
-        opacity: 0.6,
-    },
-    searchInput: {
-        flex: 1,
-        fontSize: 16,
-        padding: 0,
-    },
-    mobileSearchBarContainer: {
-        paddingHorizontal: 10,
-        paddingBottom: 10,
-        paddingTop: 8,
-    },
-    mobileSearchBar: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        height: 48,
-        borderRadius: 24,
-        paddingHorizontal: 16,
-        gap: 12,
-        borderWidth: 0.5,
     },
 });

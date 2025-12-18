@@ -185,7 +185,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
                         items={[
                             {
                                 id: 'delete-last-15',
-                                icon: 'time-outline',
+                                icon: 'clock-outline',
                                 iconColor: themeStyles.colors.iconStorage,
                                 title: t('history.deleteLast15Minutes.title') || 'Delete Last 15 Minutes',
                                 subtitle: t('history.deleteLast15Minutes.subtitle') || 'Remove recent history entries',
@@ -194,7 +194,7 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'clear-all',
-                                icon: 'trash-outline',
+                                icon: 'delete-outline',
                                 iconColor: themeStyles.colors.iconSharing,
                                 title: t('history.clearAll.title') || 'Clear All History',
                                 subtitle: t('history.clearAll.subtitle') || 'Remove all history entries',

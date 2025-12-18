@@ -2007,7 +2007,7 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                         key: 'delete',
                         text: `Delete (${selectedIds.size})`,
                         onPress: handleBulkDelete,
-                        icon: 'trash',
+                        icon: 'delete',
                     },
                     {
                         key: 'visibility',

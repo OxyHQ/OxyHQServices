@@ -102,9 +102,9 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                     <QuickActions
                         theme={normalizedTheme}
                         actions={useMemo(() => [
-                            { id: 'overview', icon: 'person-circle', iconColor: colors.iconSecurity, title: t('accountCenter.quickActions.overview') || 'Overview', onPress: () => navigate?.('AccountOverview') },
-                            { id: 'settings', icon: 'settings', iconColor: colors.iconData, title: t('accountCenter.quickActions.editProfile') || 'Edit Profile', onPress: () => navigate?.('EditProfile') },
-                            { id: 'sessions', icon: 'shield-checkmark', iconColor: colors.iconSecurity, title: t('accountCenter.quickActions.sessions') || 'Sessions', onPress: () => navigate?.('SessionManagement') },
+                            { id: 'overview', icon: 'account-circle', iconColor: colors.iconSecurity, title: t('accountCenter.quickActions.overview') || 'Overview', onPress: () => navigate?.('AccountOverview') },
+                            { id: 'settings', icon: 'cog', iconColor: colors.iconData, title: t('accountCenter.quickActions.editProfile') || 'Edit Profile', onPress: () => navigate?.('EditProfile') },
+                            { id: 'sessions', icon: 'shield-check', iconColor: colors.iconSecurity, title: t('accountCenter.quickActions.sessions') || 'Sessions', onPress: () => navigate?.('SessionManagement') },
                             { id: 'premium', icon: 'star', iconColor: colors.iconPayments, title: t('accountCenter.quickActions.premium') || 'Premium', onPress: () => navigate?.('PremiumSubscription') },
                             ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: colors.iconPersonalInfo, title: t('accountCenter.quickActions.billing') || 'Billing', onPress: () => navigate?.('PaymentGateway') }] : []),
                             ...(sessions && sessions.length > 1 ? [{ id: 'switch', icon: 'swap-horizontal', iconColor: colors.iconStorage, title: t('accountCenter.quickActions.switch') || 'Switch', onPress: () => navigate?.('AccountSwitcher') }] : []),
@@ -119,7 +119,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                         items={useMemo(() => [
                             {
                                 id: 'overview',
-                                icon: 'person-circle',
+                                icon: 'account-circle',
                                 iconColor: colors.iconSecurity,
                                 title: t('accountCenter.items.accountOverview.title') || 'Account Overview',
                                 subtitle: t('accountCenter.items.accountOverview.subtitle') || 'Complete account information',
@@ -127,7 +127,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'settings',
-                                icon: 'settings',
+                                icon: 'cog',
                                 iconColor: colors.iconData,
                                 title: t('accountCenter.items.editProfile.title') || 'Edit Profile',
                                 subtitle: t('accountCenter.items.editProfile.subtitle') || 'Manage your profile and preferences',
@@ -135,7 +135,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'sessions',
-                                icon: 'shield-checkmark',
+                                icon: 'shield-check',
                                 iconColor: colors.iconSecurity,
                                 title: t('accountCenter.items.manageSessions.title') || 'Manage Sessions',
                                 subtitle: t('accountCenter.items.manageSessions.subtitle') || 'Security and active devices',
@@ -177,7 +177,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             items={useMemo(() => [
                                 {
                                     id: 'switch',
-                                    icon: 'people',
+                                    icon: 'account-group',
                                     iconColor: colors.iconStorage,
                                     title: t('accountCenter.items.switchAccount.title') || 'Switch Account',
                                     subtitle: t('accountCenter.items.switchAccount.subtitle', { count: sessions.length }) || `${sessions.length} accounts available`,
@@ -185,7 +185,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 },
                                 {
                                     id: 'add',
-                                    icon: 'person-add',
+                                    icon: 'account-plus',
                                     iconColor: colors.iconPersonalInfo,
                                     title: t('accountCenter.items.addAccount.title') || 'Add Another Account',
                                     subtitle: t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account',
@@ -204,7 +204,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             items={useMemo(() => [
                                 {
                                     id: 'add',
-                                    icon: 'person-add',
+                                    icon: 'account-plus',
                                     iconColor: colors.iconPersonalInfo,
                                     title: t('accountCenter.items.addAccount.title') || 'Add Another Account',
                                     subtitle: t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account',
@@ -222,7 +222,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                         items={useMemo(() => [
                             ...(Platform.OS !== 'web' ? [{
                                 id: 'notifications',
-                                icon: 'notifications',
+                                icon: 'bell',
                                 iconColor: colors.iconStorage,
                                 title: t('accountCenter.items.notifications.title') || 'Notifications',
                                 subtitle: t('accountCenter.items.notifications.subtitle') || 'Manage notification settings',
@@ -230,7 +230,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             }] : []),
                             {
                                 id: 'language',
-                                icon: 'language',
+                                icon: 'translate',
                                 iconColor: colors.iconPersonalInfo,
                                 title: t('language.title') || 'Language',
                                 subtitle: t('language.subtitle') || 'Choose your preferred language',
@@ -246,7 +246,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'appinfo',
-                                icon: 'information-circle',
+                                icon: 'information',
                                 iconColor: '#8E8E93',
                                 title: t('accountCenter.items.appInfo.title') || 'App Information',
                                 subtitle: t('accountCenter.items.appInfo.subtitle') || 'Version and system details',
@@ -260,7 +260,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 {/* Sign Out Section */}
                 <Section >
                     <GroupedItem
-                        icon="log-out"
+                        icon="logout"
                         iconColor={dangerColor}
                         title={isLoading ? (t('accountCenter.signingOut') || 'Signing out...') : (t('common.actions.signOut') || 'Sign Out')}
 

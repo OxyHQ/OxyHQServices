@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { Colors } from '@/constants/theme';
@@ -37,8 +37,11 @@ export function AccountInfoGrid({ cards, onPressIn }: AccountInfoGridProps) {
           <View style={[styles.accountInfoIcon, { backgroundColor: card.iconColor }]}>
             <MaterialCommunityIcons name={card.icon as any} size={20} color={darkenColor(card.iconColor)} />
           </View>
-          <Text style={[styles.accountInfoTitle, { color: colors.secondaryText }]}>{card.title}</Text>
-          <Text style={[styles.accountInfoValue, { color: colors.text }]} numberOfLines={1}>{card.value}</Text>
+          <View style={styles.spacer} />
+          <View style={styles.textContainer}>
+            <Text style={[styles.accountInfoTitle, { color: colors.secondaryText }]}>{card.title}</Text>
+            <Text style={[styles.accountInfoValue, { color: colors.text }]}>{card.value}</Text>
+          </View>
         </TouchableOpacity>
       ))}
     </View>
@@ -50,6 +53,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+    alignItems: 'stretch',
   } as const,
   accountInfoCard: {
     flex: 1,
@@ -57,7 +61,7 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 16,
     borderWidth: 1,
-    gap: 8,
+    alignSelf: 'flex-start',
   } as const,
   accountInfoIcon: {
     width: 36,
@@ -65,16 +69,21 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 4,
+  } as const,
+  spacer: {
+    height: 20,
+  } as const,
+  textContainer: {
+    gap: 4,
   } as const,
   accountInfoTitle: {
     fontSize: 12,
     fontWeight: '500',
-    marginBottom: 4,
   } as const,
   accountInfoValue: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: 'bold',
+    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
   } as const,
 });
 

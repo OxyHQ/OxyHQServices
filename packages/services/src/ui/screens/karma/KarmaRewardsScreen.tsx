@@ -83,7 +83,7 @@ const KarmaRewardsScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
             name: t('karma.achievements.contributor') || 'Contributor',
             description: t('karma.achievements.contributorDesc') || 'Reached 50 karma points',
             category: 'contribution',
-            icon: 'people',
+            icon: 'account-group',
             iconColor: '#007AFF',
             unlocked: karmaTotal >= 50,
             rarity: 'common',

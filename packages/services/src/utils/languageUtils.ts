@@ -19,7 +19,7 @@ export const SUPPORTED_LANGUAGES: LanguageMetadata[] = [
     name: 'English',
     nativeName: 'English',
     flag: '🇺🇸',
-    icon: 'language-outline',
+    icon: 'translate',
     color: '#007AFF',
   },
   {
@@ -27,7 +27,7 @@ export const SUPPORTED_LANGUAGES: LanguageMetadata[] = [
     name: 'Spanish',
     nativeName: 'Español',
     flag: '🇪🇸',
-    icon: 'language-outline',
+    icon: 'translate',
     color: '#FF3B30',
   },
   {
@@ -35,7 +35,7 @@ export const SUPPORTED_LANGUAGES: LanguageMetadata[] = [
     name: 'Catalan',
     nativeName: 'Català',
     flag: '🇪🇸',
-    icon: 'language-outline',
+    icon: 'translate',
     color: '#0CA678',
   },
   {
@@ -43,7 +43,7 @@ export const SUPPORTED_LANGUAGES: LanguageMetadata[] = [
     name: 'French',
     nativeName: 'Français',
     flag: '🇫🇷',
-    icon: 'language-outline',
+    icon: 'translate',
     color: '#5856D6',
   },
   {
@@ -51,7 +51,7 @@ export const SUPPORTED_LANGUAGES: LanguageMetadata[] = [
     name: 'German',
     nativeName: 'Deutsch',
     flag: '🇩🇪',
-    icon: 'language-outline',
+    icon: 'translate',
     color: '#FF9500',
   },
   {
@@ -59,7 +59,7 @@ export const SUPPORTED_LANGUAGES: LanguageMetadata[] = [
     name: 'Italian',
     nativeName: 'Italiano',
     flag: '🇮🇹',
-    icon: 'language-outline',
+    icon: 'translate',
     color: '#34C759',
   },
   {
@@ -67,7 +67,7 @@ export const SUPPORTED_LANGUAGES: LanguageMetadata[] = [
     name: 'Portuguese',
     nativeName: 'Português',
     flag: '🇵🇹',
-    icon: 'language-outline',
+    icon: 'translate',
     color: '#AF52DE',
   },
   {
@@ -75,7 +75,7 @@ export const SUPPORTED_LANGUAGES: LanguageMetadata[] = [
     name: 'Japanese',
     nativeName: '日本語',
     flag: '🇯🇵',
-    icon: 'language-outline',
+    icon: 'translate',
     color: '#FF2D92',
   },
   {
@@ -83,7 +83,7 @@ export const SUPPORTED_LANGUAGES: LanguageMetadata[] = [
     name: 'Korean',
     nativeName: '한국어',
     flag: '🇰🇷',
-    icon: 'language-outline',
+    icon: 'translate',
     color: '#32D74B',
   },
   {
@@ -91,7 +91,7 @@ export const SUPPORTED_LANGUAGES: LanguageMetadata[] = [
     name: 'Chinese',
     nativeName: '中文',
     flag: '🇨🇳',
-    icon: 'language-outline',
+    icon: 'translate',
     color: '#FF9F0A',
   },
   {
@@ -99,7 +99,7 @@ export const SUPPORTED_LANGUAGES: LanguageMetadata[] = [
     name: 'Arabic',
     nativeName: 'العربية',
     flag: '🇸🇦',
-    icon: 'language-outline',
+    icon: 'translate',
     color: '#30B0C7',
   },
 ];

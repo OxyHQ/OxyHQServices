@@ -9,6 +9,7 @@ import {
     Platform,
 } from 'react-native';
 import Animated, { useSharedValue, useAnimatedStyle, withTiming, Easing } from 'react-native-reanimated';
+import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 import { BlurView } from 'expo-blur';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -191,94 +192,99 @@ export function UsernameRequiredModal({ visible, onComplete, onCancel }: Usernam
                     ]}
                     pointerEvents="box-none"
                 >
-                    <BlurView
-                        intensity={100}
-                        tint={colorScheme === 'dark' ? 'dark' : 'light'}
-                        experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
-                        style={[
-                            styles.modalContent,
-                            {
-                                backgroundColor: colorScheme === 'dark'
-                                    ? 'rgba(0, 0, 0, 0.95)'
-                                    : 'rgba(255, 255, 255, 0.95)',
-                            },
-                        ]}
+                    <KeyboardAvoidingView
+                        behavior="padding"
+                        keyboardVerticalOffset={0}
                     >
-                        <Text style={[styles.title, { color: textColor }]}>Username Required</Text>
-                        <Text style={[styles.subtitle, { color: textColor, opacity: 0.6 }]}>
-                            You need to set a username before you can sync your identity
-                        </Text>
-
-                        <View style={styles.inputWrapper}>
-                            <TextInput
-                                style={[styles.usernameInput, {
-                                    color: textColor,
-                                    backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#F5F5F5',
-                                    borderColor: usernameError ? '#DC3545' : (colorScheme === 'dark' ? '#2C2C2E' : '#E0E0E0')
-                                }]}
-                                placeholder="Username"
-                                placeholderTextColor={colorScheme === 'dark' ? '#8E8E93' : '#8E8E93'}
-                                value={username}
-                                onChangeText={(text) => {
-                                    setUsername(text.toLowerCase().replace(/[^a-z0-9]/g, ''));
-                                    setUsernameError(null);
-                                }}
-                                autoCapitalize="none"
-                                autoCorrect={false}
-                                autoFocus
-                            />
-                        </View>
-
-                        <Text style={[styles.inputHint, { color: textColor, opacity: 0.6 }]}>
-                            You can use a-z, 0-9. Minimum length is 4 characters.
-                        </Text>
-
-                        {isCheckingUsername && (
-                            <Text style={[styles.checkingText, { color: textColor, opacity: 0.6 }]}>
-                                Checking availability...
-                            </Text>
-                        )}
-
-                        {usernameAvailable === true && !isCheckingUsername && (
-                            <Text style={[styles.availableText, { color: '#28A745' }]}>
-                                ✓ Username is available
-                            </Text>
-                        )}
-
-                        {usernameError && (
-                            <Text style={styles.errorText}>{usernameError}</Text>
-                        )}
-
-                        <TouchableOpacity
+                        <BlurView
+                            intensity={100}
+                            tint={colorScheme === 'dark' ? 'dark' : 'light'}
+                            experimentalBlurMethod={Platform.OS === 'android' ? 'dimezisBlurView' : undefined}
                             style={[
-                                styles.primaryButton,
+                                styles.modalContent,
                                 {
-                                    backgroundColor: canContinue ? textColor : (colorScheme === 'dark' ? '#2C2C2E' : '#CCCCCC'),
-                                    opacity: canContinue ? 1 : 0.6,
-                                }
+                                    backgroundColor: colorScheme === 'dark'
+                                        ? 'rgba(0, 0, 0, 0.95)'
+                                        : 'rgba(255, 255, 255, 0.95)',
+                                },
                             ]}
-                            onPress={handleSave}
-                            disabled={!canContinue}
                         >
-                            <Text style={[
-                                styles.primaryButtonText,
-                                { color: canContinue ? backgroundColor : (colorScheme === 'dark' ? '#8E8E93' : '#999999') }
-                            ]}>
-                                {isSaving ? 'Saving...' : 'Save Username'}
+                            <Text style={[styles.title, { color: textColor }]}>Username Required</Text>
+                            <Text style={[styles.subtitle, { color: textColor, opacity: 0.6 }]}>
+                                You need to set a username before you can sync your identity
                             </Text>
-                        </TouchableOpacity>
 
-                        {onCancel && (
+                            <View style={styles.inputWrapper}>
+                                <TextInput
+                                    style={[styles.usernameInput, {
+                                        color: textColor,
+                                        backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#F5F5F5',
+                                        borderColor: usernameError ? '#DC3545' : (colorScheme === 'dark' ? '#2C2C2E' : '#E0E0E0')
+                                    }]}
+                                    placeholder="Username"
+                                    placeholderTextColor={colorScheme === 'dark' ? '#8E8E93' : '#8E8E93'}
+                                    value={username}
+                                    onChangeText={(text) => {
+                                        setUsername(text.toLowerCase().replace(/[^a-z0-9]/g, ''));
+                                        setUsernameError(null);
+                                    }}
+                                    autoCapitalize="none"
+                                    autoCorrect={false}
+                                    autoFocus
+                                />
+                            </View>
+
+                            <Text style={[styles.inputHint, { color: textColor, opacity: 0.6 }]}>
+                                You can use a-z, 0-9. Minimum length is 4 characters.
+                            </Text>
+
+                            {isCheckingUsername && (
+                                <Text style={[styles.checkingText, { color: textColor, opacity: 0.6 }]}>
+                                    Checking availability...
+                                </Text>
+                            )}
+
+                            {usernameAvailable === true && !isCheckingUsername && (
+                                <Text style={[styles.availableText, { color: '#28A745' }]}>
+                                    ✓ Username is available
+                                </Text>
+                            )}
+
+                            {usernameError && (
+                                <Text style={styles.errorText}>{usernameError}</Text>
+                            )}
+
                             <TouchableOpacity
-                                style={styles.cancelButton}
-                                onPress={onCancel}
+                                style={[
+                                    styles.primaryButton,
+                                    {
+                                        backgroundColor: canContinue ? textColor : (colorScheme === 'dark' ? '#2C2C2E' : '#CCCCCC'),
+                                        opacity: canContinue ? 1 : 0.6,
+                                    }
+                                ]}
+                                onPress={handleSave}
+                                disabled={!canContinue}
                             >
-                                <Text style={[styles.cancelText, { color: textColor, opacity: 0.6 }]}>
-                                    Cancel
+                                <Text style={[
+                                    styles.primaryButtonText,
+                                    { color: canContinue ? backgroundColor : (colorScheme === 'dark' ? '#8E8E93' : '#999999') }
+                                ]}>
+                                    {isSaving ? 'Saving...' : 'Save Username'}
                                 </Text>
                             </TouchableOpacity>
-                        )}
-                    </BlurView>
+
+                            {onCancel && (
+                                <TouchableOpacity
+                                    style={styles.cancelButton}
+                                    onPress={onCancel}
+                                >
+                                    <Text style={[styles.cancelText, { color: textColor, opacity: 0.6 }]}>
+                                        Cancel
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
+                        </BlurView>
+                    </KeyboardAvoidingView>
                 </Animated.View>
             </Animated.View>
         </Modal>

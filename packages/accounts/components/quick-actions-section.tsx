@@ -32,16 +32,16 @@ export function QuickActionsSection({ actions, onPressIn }: QuickActionsSectionP
       {actions.map((action) => (
         <TouchableOpacity
           key={action.id}
-          style={[styles.quickActionCard, { backgroundColor: colors.card, borderColor: colors.border }]}
+          style={[styles.chip, { backgroundColor: colors.card, borderColor: colors.border }]}
           onPressIn={onPressIn}
           onPress={action.onPress}
           activeOpacity={0.7}
         >
-          <View style={[styles.quickActionIcon, { backgroundColor: action.iconColor }]}>
-            <MaterialCommunityIcons name={action.icon as any} size={24} color={darkenColor(action.iconColor)} />
+          <View style={[styles.chipIcon, { backgroundColor: action.iconColor }]}>
+            <MaterialCommunityIcons name={action.icon as any} size={20} color={darkenColor(action.iconColor)} />
           </View>
           <Text
-            style={[styles.quickActionTitle, { color: colors.text }]}
+            style={[styles.chipText, { color: colors.text }]}
             numberOfLines={1}
           >
             {action.title}
@@ -57,28 +57,29 @@ const styles = StyleSheet.create({
     // Styles handled by HorizontalScrollSection
   } as const,
   horizontalScrollContent: {
-    gap: 12,
+    gap: 6,
+    paddingHorizontal: 4,
   } as const,
-  quickActionCard: {
-    minWidth: 100,
-    padding: 16,
-    borderRadius: 16,
+  chip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 9999,
     borderWidth: 1,
+    gap: 5,
+    minHeight: 28,
+  } as const,
+  chipIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
   } as const,
-  quickActionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-  } as const,
-  quickActionTitle: {
+  chipText: {
     fontSize: 13,
     fontWeight: '500',
-    textAlign: 'center',
     flexShrink: 0,
   } as const,
 });

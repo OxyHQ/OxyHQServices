@@ -648,7 +648,7 @@ const FeedbackScreen: React.FC<BaseScreenProps> = ({
 
     const categoryItems = useMemo(() => (feedbackData.type ? (CATEGORIES[feedbackData.type as keyof typeof CATEGORIES] || []).map(cat => ({
         id: cat,
-        icon: feedbackData.category === cat ? 'checkmark-circle' : 'ellipse-outline',
+        icon: feedbackData.category === cat ? 'check-circle' : 'ellipse-outline',
         iconColor: feedbackData.category === cat ? colors.primary : colors.secondaryText,
         title: cat,
         onPress: () => updateField('category', cat),

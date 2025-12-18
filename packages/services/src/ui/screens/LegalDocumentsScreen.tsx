@@ -120,7 +120,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                         items={[
                             {
                                 id: 'privacy-policy',
-                                icon: 'shield-checkmark',
+                                icon: 'shield-check',
                                 iconColor: themeStyles.colors.iconPersonalInfo,
                                 title: t('legal.privacyPolicy.title') || 'Privacy Policy',
                                 subtitle: t('legal.privacyPolicy.subtitle') || 'How we handle your data',
@@ -128,7 +128,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'terms-of-service',
-                                icon: 'document-text',
+                                icon: 'file-document',
                                 iconColor: themeStyles.colors.iconSecurity,
                                 title: t('legal.termsOfService.title') || 'Terms of Service',
                                 subtitle: t('legal.termsOfService.subtitle') || 'Terms and conditions of use',
@@ -136,7 +136,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'community-guidelines',
-                                icon: 'people',
+                                icon: 'account-group',
                                 iconColor: themeStyles.colors.iconData,
                                 title: t('legal.communityGuidelines.title') || 'Community Guidelines',
                                 subtitle: t('legal.communityGuidelines.subtitle') || 'Rules and expectations for our community',
@@ -144,7 +144,7 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'data-retention',
-                                icon: 'time',
+                                icon: 'clock',
                                 iconColor: themeStyles.colors.iconStorage,
                                 title: t('legal.dataRetention.title') || 'Data Retention Policy',
                                 subtitle: t('legal.dataRetention.subtitle') || 'How long we keep your data',

@@ -456,7 +456,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                 items={[
                                     {
                                         id: 'add-account',
-                                        icon: 'person-add',
+                                        icon: 'account-plus',
                                         iconColor: '#007AFF',
                                         title: 'Add Another Account',
                                         subtitle: 'Sign in with a different account',
@@ -464,7 +464,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                     },
                                     {
                                         id: 'device-management',
-                                        icon: 'phone-portrait',
+                                        icon: 'cellphone',
                                         iconColor: '#5856D6',
                                         title: `${showDeviceManagement ? 'Hide' : 'Manage'} Device Sessions`,
                                         subtitle: 'View and manage sessions on other devices',
@@ -472,7 +472,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                     },
                                     {
                                         id: 'sign-out-all',
-                                        icon: 'log-out',
+                                        icon: 'logout',
                                         iconColor: '#FF3B30',
                                         title: 'Sign Out All Accounts',
                                         subtitle: 'Remove all accounts from this device',
@@ -511,7 +511,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                         items={[
                                             {
                                                 id: 'no-device-sessions',
-                                                icon: 'phone-portrait',
+                                                icon: 'cellphone',
                                                 iconColor: '#ccc',
                                                 title: t('accountSwitcher.device.noneTitle') || 'No device sessions found',
                                                 subtitle: t('accountSwitcher.device.noneSubtitle') || 'Device session management not available',
@@ -524,7 +524,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                     <GroupedSection
                                         items={deviceSessions.map((session, index) => ({
                                             id: `device-session-${session.sessionId}`,
-                                            icon: session.isCurrent ? 'phone-portrait' : 'phone-portrait-outline',
+                                            icon: session.isCurrent ? 'cellphone' : 'cellphone-basic',
                                             iconColor: session.isCurrent ? '#34C759' : '#8E8E93',
                                             title: `${session.deviceName} ${session.isCurrent ? '(' + (t('accountSwitcher.device.thisDevice') || 'This device') + ')' : ''}`,
                                             subtitle: t('accountSwitcher.device.lastActive', { date: new Date(session.lastActive).toLocaleDateString() }) || `Last active: ${new Date(session.lastActive).toLocaleDateString()}`,
@@ -557,7 +557,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                     items={[
                                         {
                                             id: 'empty-state',
-                                            icon: 'person-outline',
+                                            icon: 'account-outline',
                                             iconColor: '#ccc',
                                             title: t('accountSwitcher.empty.title') || 'No saved accounts',
                                             subtitle: t('accountSwitcher.empty.subtitle') || 'Add another account to switch between them quickly',

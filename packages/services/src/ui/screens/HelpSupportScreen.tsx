@@ -93,7 +93,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                         items={[
                             {
                                 id: 'documentation',
-                                icon: 'document-text',
+                                icon: 'file-document',
                                 iconColor: '#8E8E93',
                                 title: t('help.documentation.title') || 'Documentation',
                                 subtitle: t('help.documentation.subtitle') || 'User guides and tutorials',
@@ -105,7 +105,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'community',
-                                icon: 'people',
+                                icon: 'account-group',
                                 iconColor: themeStyles.colors.iconData,
                                 title: t('help.community.title') || 'Community',
                                 subtitle: t('help.community.subtitle') || 'Join our community',
@@ -117,7 +117,7 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'developers-portal',
-                                icon: 'code',
+                                icon: 'code-tags',
                                 iconColor: themeStyles.colors.iconSharing,
                                 title: t('help.developersPortal.title') || 'Developers Portal',
                                 subtitle: t('help.developersPortal.subtitle') || 'API documentation and developer resources',

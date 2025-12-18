@@ -5,6 +5,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useFonts } from 'expo-font';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import 'react-native-reanimated';
+import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -107,18 +108,20 @@ function RootLayoutContent() {
   // OxyProvider must always be rendered so screens can use useOxy() hook
   const appContent = useMemo(() => {
     return (
-      <AlertProvider>
-        <OxyProvider baseURL={API_URL}>
-          {!appIsReady ? (
-            <AppSplashScreen
-              startFade={splashState.startFade}
-              onFadeComplete={handleSplashFadeComplete}
-            />
-          ) : (
-            <AppStackContent colorScheme={colorScheme} />
-          )}
-        </OxyProvider>
-      </AlertProvider>
+      <KeyboardProvider>
+        <AlertProvider>
+          <OxyProvider baseURL={API_URL}>
+            {!appIsReady ? (
+              <AppSplashScreen
+                startFade={splashState.startFade}
+                onFadeComplete={handleSplashFadeComplete}
+              />
+            ) : (
+              <AppStackContent colorScheme={colorScheme} />
+            )}
+          </OxyProvider>
+        </AlertProvider>
+      </KeyboardProvider>
     );
   }, [
     appIsReady,

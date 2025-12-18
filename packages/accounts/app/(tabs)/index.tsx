@@ -635,53 +635,53 @@ export default function HomeScreen() {
       <ScreenContentWrapper refreshing={refreshing} onRefresh={handleRefresh}>
         <View style={[styles.container, { backgroundColor: colors.background }]}>
           <View style={styles.content}>
-          <View style={styles.header}>
-            <View style={styles.avatarSectionWrapper}>
-              <View style={styles.avatarContainer}>
-                <LottieView
-                  autoPlay
-                  ref={lottieRef}
-                  source={lottieAnimation}
-                  loop
-                  style={styles.lottieBackground}
-                />
-                <TouchableOpacity
-                  style={styles.avatarWrapper}
-                  onPressIn={handlePressIn}
-                  onPress={handleAvatarPress}
-                  activeOpacity={0.8}
-                >
-                  <UserAvatar name={displayName} imageUrl={avatarUrl} size={100} />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.nameWrapper}>
-                <ThemedText style={styles.welcomeText}>Welcome, {shortDisplayName}.</ThemedText>
-                <ThemedText style={styles.welcomeSubtext}>Manage your Oxy account.</ThemedText>
+            <View style={styles.header}>
+              <View style={styles.avatarSectionWrapper}>
+                <View style={styles.avatarContainer}>
+                  <LottieView
+                    autoPlay
+                    ref={lottieRef}
+                    source={lottieAnimation}
+                    loop
+                    style={styles.lottieBackground}
+                  />
+                  <TouchableOpacity
+                    style={styles.avatarWrapper}
+                    onPressIn={handlePressIn}
+                    onPress={handleAvatarPress}
+                    activeOpacity={0.8}
+                  >
+                    <UserAvatar name={displayName} imageUrl={avatarUrl} size={100} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.nameWrapper}>
+                  <ThemedText style={styles.welcomeText}>{displayName}</ThemedText>
+                  <ThemedText style={styles.welcomeSubtext}>Manage your Oxy account.</ThemedText>
+                </View>
               </View>
             </View>
-          </View>
-          {content}
+            {content}
 
-          {/* Bottom action buttons */}
-          <View style={styles.bottomActions}>
-            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleReload}>
-              <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
-                <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleDevices}>
-              <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
-                <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleMenu}>
-              <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
-                <MaterialCommunityIcons name="menu" size={22} color={darkenColor(colors.sidebarIconData)} />
-              </View>
-            </TouchableOpacity>
+            {/* Bottom action buttons */}
+            <View style={styles.bottomActions}>
+              <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleReload}>
+                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconSecurity }]}>
+                  <MaterialCommunityIcons name="reload" size={22} color={darkenColor(colors.sidebarIconSecurity)} />
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleDevices}>
+                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconDevices }]}>
+                  <MaterialCommunityIcons name="desktop-classic" size={22} color={darkenColor(colors.sidebarIconDevices)} />
+                </View>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.circleButton} onPressIn={handlePressIn} onPress={handleMenu}>
+                <View style={[styles.menuIconContainer, { backgroundColor: colors.sidebarIconData }]}>
+                  <MaterialCommunityIcons name="menu" size={22} color={darkenColor(colors.sidebarIconData)} />
+                </View>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      </View>
       </ScreenContentWrapper>
       <UsernameRequiredModal
         visible={showUsernameModal}
@@ -760,6 +760,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '600',
     marginBottom: 8,
+    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
   } as const,
   welcomeSubtext: {
     fontSize: 16,

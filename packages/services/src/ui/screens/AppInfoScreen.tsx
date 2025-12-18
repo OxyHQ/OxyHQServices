@@ -175,7 +175,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         items={[
                             {
                                 id: 'name',
-                                icon: 'information-circle',
+                                icon: 'information',
                                 iconColor: themeStyles.colors.iconSecurity,
                                 title: 'Name',
                                 subtitle: packageInfo.name,
@@ -184,7 +184,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'version',
-                                icon: 'pricetag',
+                                icon: 'tag',
                                 iconColor: themeStyles.colors.iconData,
                                 title: 'Version',
                                 subtitle: packageInfo.version,
@@ -192,14 +192,14 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'description',
-                                icon: 'document-text',
+                                icon: 'file-document',
                                 iconColor: themeStyles.colors.iconPersonalInfo,
                                 title: 'Description',
                                 subtitle: packageInfo.description || 'No description',
                             },
                             {
                                 id: 'main-entry',
-                                icon: 'code',
+                                icon: 'code-tags',
                                 iconColor: themeStyles.colors.iconStorage,
                                 title: 'Main Entry',
                                 subtitle: packageInfo.main || 'N/A',
@@ -215,7 +215,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'types-entry',
-                                icon: 'construct',
+                                icon: 'wrench',
                                 iconColor: themeStyles.colors.iconPersonalInfo,
                                 title: 'Types Entry',
                                 subtitle: packageInfo.types || 'N/A',
@@ -231,14 +231,14 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         items={[
                             {
                                 id: 'platform',
-                                icon: 'phone-portrait',
+                                icon: 'cellphone',
                                 iconColor: themeStyles.colors.iconSecurity,
                                 title: 'Platform',
                                 subtitle: Platform.OS,
                             },
                             {
                                 id: 'platform-version',
-                                icon: 'hardware-chip',
+                                icon: 'chip',
                                 iconColor: themeStyles.colors.iconData,
                                 title: 'Platform Version',
                                 subtitle: systemInfo?.version || 'Loading...',
@@ -259,7 +259,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'environment',
-                                icon: 'settings',
+                                icon: 'cog',
                                 iconColor: themeStyles.colors.iconPersonalInfo,
                                 title: 'Environment',
                                 subtitle: __DEV__ ? 'Development' : 'Production',
@@ -274,7 +274,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         items={[
                             {
                                 id: 'auth-status',
-                                icon: 'shield-checkmark',
+                                icon: 'shield-check',
                                 iconColor: isAuthenticated ? themeStyles.colors.iconPersonalInfo : themeStyles.colors.iconSharing,
                                 title: 'Authentication Status',
                                 subtitle: isAuthenticated ? 'Authenticated' : 'Not Authenticated',
@@ -282,7 +282,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             ...(user ? [
                                 {
                                     id: 'user-id',
-                                    icon: 'person',
+                                    icon: 'account',
                                     iconColor: themeStyles.colors.iconSecurity,
                                     title: 'User ID',
                                     subtitle: user.id,
@@ -319,7 +319,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             ] : []),
                             {
                                 id: 'active-sessions',
-                                icon: 'people',
+                                icon: 'account-group',
                                 iconColor: themeStyles.colors.iconPersonalInfo,
                                 title: 'Total Active Sessions',
                                 subtitle: sessions?.length?.toString() || '0',
@@ -375,7 +375,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         items={[
                             {
                                 id: 'build-timestamp',
-                                icon: 'time',
+                                icon: 'clock',
                                 iconColor: themeStyles.colors.iconSecurity,
                                 title: 'Build Timestamp',
                                 subtitle: systemInfo?.timestamp || 'Loading...',
@@ -383,7 +383,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'react-native',
-                                icon: 'logo-react',
+                                icon: 'react',
                                 iconColor: '#61DAFB',
                                 title: 'React Native',
                                 subtitle: 'Expo/React Native',
@@ -405,7 +405,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                         items={[
                             {
                                 id: 'copy-full-report',
-                                icon: 'copy',
+                                icon: 'content-copy',
                                 iconColor: themeStyles.colors.iconSecurity,
                                 title: 'Copy Full Report',
                                 subtitle: 'Copy complete application information to clipboard',
@@ -413,7 +413,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
                             },
                             {
                                 id: 'run-system-check',
-                                icon: isRunningSystemCheck ? 'sync' : 'checkmark-circle',
+                                icon: isRunningSystemCheck ? 'sync' : 'check-circle',
                                 iconColor: isRunningSystemCheck ? '#FF9500' : '#34C759',
                                 title: isRunningSystemCheck ? 'Running System Check...' : 'Run System Check',
                                 subtitle: isRunningSystemCheck

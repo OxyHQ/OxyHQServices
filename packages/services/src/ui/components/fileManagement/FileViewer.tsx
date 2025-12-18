@@ -105,7 +105,7 @@ export const FileViewer: React.FC<FileViewerProps> = ({
         const items = [
             {
                 id: 'filename',
-                icon: 'document-text',
+                icon: 'file-document',
                 iconColor: themeStyles.colors.iconSecurity,
                 title: 'File Name',
                 subtitle: file.filename,
@@ -119,14 +119,14 @@ export const FileViewer: React.FC<FileViewerProps> = ({
             },
             {
                 id: 'type',
-                icon: 'code',
+                icon: 'code-tags',
                 iconColor: themeStyles.colors.iconData,
                 title: 'Type',
                 subtitle: file.contentType,
             },
             {
                 id: 'uploaded',
-                icon: 'time',
+                icon: 'clock',
                 iconColor: themeStyles.colors.iconPersonalInfo,
                 title: 'Uploaded',
                 subtitle: new Date(file.uploadDate).toLocaleString(),

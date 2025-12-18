@@ -695,7 +695,7 @@ const PaymentGatewayScreen: React.FC<PaymentGatewayScreenProps> = (props) => {
                     items={[
                         {
                             id: 'secure-payment',
-                            icon: 'shield-checkmark',
+                            icon: 'shield-check',
                             iconColor: colors.success || '#4BB543',
                             title: 'Secure payment',
                             subtitle: 'Your payment is protected by industry-standard encryption',

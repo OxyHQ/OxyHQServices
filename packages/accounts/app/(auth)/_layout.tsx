@@ -1,4 +1,5 @@
 import { Stack } from 'expo-router';
+import { AuthFlowProvider } from './_authFlowContext';
 
 /**
  * Auth Layout (Base)
@@ -8,16 +9,18 @@ import { Stack } from 'expo-router';
  */
 export default function AuthLayout() {
     return (
-        <Stack
-            screenOptions={{
-                headerShown: false,
-            }}
-        >
-            <Stack.Screen name="index" />
-            <Stack.Screen name="welcome" />
-            <Stack.Screen name="create-identity" />
-            <Stack.Screen name="import-identity" />
-        </Stack>
+        <AuthFlowProvider>
+            <Stack
+                screenOptions={{
+                    headerShown: false,
+                }}
+            >
+                <Stack.Screen name="index" />
+                <Stack.Screen name="welcome" />
+                <Stack.Screen name="create-identity" />
+                <Stack.Screen name="import-identity" />
+            </Stack>
+        </AuthFlowProvider>
     );
 }
 

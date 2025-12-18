@@ -1038,10 +1038,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             );
         }
         const fieldConfig = {
-            displayName: { label: 'Display Name', value: displayName, placeholder: 'Enter your display name', icon: 'person', color: colors.iconPersonalInfo, multiline: false, keyboardType: 'default' as const },
+            displayName: { label: 'Display Name', value: displayName, placeholder: 'Enter your display name', icon: 'account', color: colors.iconPersonalInfo, multiline: false, keyboardType: 'default' as const },
             username: { label: 'Username', value: username, placeholder: 'Choose a username', icon: 'at', color: colors.iconData, multiline: false, keyboardType: 'default' as const },
             email: { label: 'Email', value: email, placeholder: 'Enter your email address', icon: 'mail', color: colors.iconStorage, multiline: false, keyboardType: 'email-address' as const },
-            bio: { label: 'Bio', value: bio, placeholder: 'Tell people about yourself...', icon: 'document-text', color: colors.iconPersonalInfo, multiline: true, keyboardType: 'default' as const },
+            bio: { label: 'Bio', value: bio, placeholder: 'Tell people about yourself...', icon: 'file-document', color: colors.iconPersonalInfo, multiline: true, keyboardType: 'default' as const },
             location: { label: 'Location', value: location, placeholder: 'Enter your location', icon: 'location', color: colors.iconSharing, multiline: false, keyboardType: 'default' as const },
             links: { label: 'Links', value: links.join(', '), placeholder: 'Enter your links (comma separated)', icon: 'link', color: colors.iconPersonalInfo, multiline: false, keyboardType: 'url' as const }
         };

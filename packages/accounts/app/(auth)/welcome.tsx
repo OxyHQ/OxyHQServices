@@ -10,6 +10,7 @@ import { Checkbox } from 'expo-checkbox';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { StaggeredText, type StaggeredTextRef } from '@/components/staggered-text';
 import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text';
+import { Button } from '@/components/ui';
 
 const rotatingTexts = [
   'human ID',
@@ -34,13 +35,13 @@ const rotatingTexts = [
 export default function WelcomeScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
-  
+
   // Memoize color values
-  const backgroundColor = useMemo(() => 
+  const backgroundColor = useMemo(() =>
     colorScheme === 'dark' ? '#000000' : '#FFFFFF',
     [colorScheme]
   );
-  const textColor = useMemo(() => 
+  const textColor = useMemo(() =>
     colorScheme === 'dark' ? '#FFFFFF' : '#000000',
     [colorScheme]
   );
@@ -75,26 +76,6 @@ export default function WelcomeScreen() {
   const textStyleMemo = useMemo(() => [styles.text, { color: textColor }], [textColor]);
   const rotatingTextStyleMemo = useMemo(() => ({ ...styles.text, color: textColor }), [textColor]);
   const checkboxTextStyleMemo = useMemo(() => [styles.checkboxText, { color: textColor }], [textColor]);
-  const buttonTextStyleMemo = useMemo(() => [styles.buttonText, { color: textColor }], [textColor]);
-  const acceptButtonTextStyleMemo = useMemo(() => 
-    [styles.buttonText, { color: termsAccepted ? backgroundColor : textColor }],
-    [termsAccepted, backgroundColor, textColor]
-  );
-  const declineButtonStyleMemo = useMemo(() => 
-    [styles.button, styles.declineButton, { borderColor: `${textColor}40` }],
-    [textColor]
-  );
-  const acceptButtonStyleMemo = useMemo(() => 
-    [
-      styles.button,
-      styles.acceptButton,
-      {
-        backgroundColor: termsAccepted ? textColor : `${textColor}20`,
-        opacity: termsAccepted ? 1 : 0.5,
-      },
-    ],
-    [termsAccepted, textColor]
-  );
 
   // Consolidated entrance animation
   useEffect(() => {
@@ -190,22 +171,22 @@ export default function WelcomeScreen() {
         </View>
 
         <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            style={declineButtonStyleMemo}
+          <Button
+            variant="secondary"
             onPress={handleDecline}
+            style={styles.button}
           >
-            <Text style={buttonTextStyleMemo}>Decline</Text>
-          </TouchableOpacity>
+            Decline
+          </Button>
 
-          <TouchableOpacity
-            style={acceptButtonStyleMemo}
+          <Button
+            variant="primary"
             onPress={handleContinue}
             disabled={!termsAccepted}
+            style={styles.button}
           >
-            <Text style={acceptButtonTextStyleMemo}>
-              Accept
-            </Text>
-          </TouchableOpacity>
+            Accept
+          </Button>
         </View>
       </Animated.View>
     </View>
@@ -256,8 +237,6 @@ const styles = StyleSheet.create({
   checkboxText: {
     fontSize: 14,
     lineHeight: 20,
-    fontFamily: 'Phudu-Regular',
-    fontWeight: '400',
   },
   buttonContainer: {
     flexDirection: 'row',
@@ -265,22 +244,5 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  declineButton: {
-    borderWidth: 1,
-    backgroundColor: 'transparent',
-  },
-  acceptButton: {
-    borderWidth: 0,
-  },
-  buttonText: {
-    fontSize: 16,
-    fontFamily: 'Phudu-SemiBold',
-    fontWeight: '600',
   },
 });

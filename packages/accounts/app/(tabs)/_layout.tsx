@@ -100,11 +100,7 @@ export default function TabLayout() {
   if (isDesktop) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <Header
-          searchQuery={searchQuery}
-          onSearchChange={handleSearchChange}
-          searchInputRef={searchInputRef}
-        />
+        <Header />
 
         <View style={styles.desktopBody}>
           <View style={styles.desktopSidebarColumn}>
@@ -160,7 +156,7 @@ export default function TabLayout() {
         drawerContent={(props) => <DrawerContent {...props} />}
         screenOptions={{
           headerShown: true,
-          header: () => <Header searchQuery={searchQuery} onSearchChange={handleSearchChange} searchInputRef={searchInputRef} />,
+          header: () => <Header />,
           headerTransparent: true,
           headerStyle: {
             backgroundColor: 'transparent',

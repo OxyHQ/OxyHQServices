@@ -161,7 +161,6 @@ const styles = StyleSheet.create({
   horizontalScrollContent: {
     paddingLeft: 16,
     paddingRight: 16,
-    gap: 12,
   } as const,
   gradientOverlay: {
     position: 'absolute',
