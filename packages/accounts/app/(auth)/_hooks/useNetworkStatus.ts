@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { checkIfOffline } from '../utils/networkUtils';
+import { checkIfOffline } from '../_utils/networkUtils';
 
 /**
  * Hook for managing network status

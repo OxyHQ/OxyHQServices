@@ -198,6 +198,9 @@ export const Ticket: FC<TicketProps> = memo(
                         rotateY={rotateY}
                         rotateX={combinedRotateX}
                         rotateZ={combinedRotateZ}
+                        pressX={pressX}
+                        pressY={pressY}
+                        isPressed={isPressed}
                         color="#FFFFFF"
                     />
                     {/* Front side content */}

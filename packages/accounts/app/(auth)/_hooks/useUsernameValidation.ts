@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import type { OxyServices } from '@oxyhq/services';
-import { validateUsernameFormat, USERNAME_MIN_LENGTH, USERNAME_REGEX, USERNAME_FORMAT_ERROR } from '../constants';
-import { isNetworkOrTimeoutError, extractAuthErrorMessage } from '../utils/errorUtils';
-import type { UsernameValidationResult } from '../types';
-import { USERNAME_DEBOUNCE_MS } from '../constants';
+import { USERNAME_MIN_LENGTH, USERNAME_REGEX, USERNAME_FORMAT_ERROR, USERNAME_DEBOUNCE_MS } from '../_constants';
+import { validateUsernameFormat } from '../_utils/usernameUtils';
+import { isNetworkOrTimeoutError, extractAuthErrorMessage } from '../_utils/errorUtils';
+import type { UsernameValidationResult } from '../_types';
 
 /**
  * Hook for username validation with debouncing and availability checking

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef } from 'react';
-import type { AuthStep } from '../types';
+import type { AuthStep } from '../_types';
 
 /**
  * Hook for managing authentication flow state

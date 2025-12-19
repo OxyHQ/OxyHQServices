@@ -3,9 +3,9 @@ import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import type { OxyServices } from '@oxyhq/services';
 import { useAuthStore } from '@oxyhq/services';
-import { checkIfOffline } from '../utils/networkUtils';
-import { isNetworkOrTimeoutError, extractAuthErrorMessage, handleAuthError } from '../utils/errorUtils';
-import { STORE_UPDATE_DELAY_MS } from '../constants';
+import { checkIfOffline } from '../_utils/networkUtils';
+import { isNetworkOrTimeoutError, extractAuthErrorMessage, handleAuthError } from '../_utils/errorUtils';
+import { STORE_UPDATE_DELAY_MS } from '../_constants';
 
 interface UseAuthHandlersOptions {
   signIn: () => Promise<unknown>;

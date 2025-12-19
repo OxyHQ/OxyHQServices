@@ -7,7 +7,7 @@ import {
   USERNAME_NUM_SUFFIX_MAX,
   USERNAME_FALLBACK_MIN,
   USERNAME_FALLBACK_MAX,
-} from '../constants';
+} from '../_constants';
 
 /**
  * Generate a deterministic username based on public key

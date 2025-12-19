@@ -30,30 +30,36 @@ const styles = StyleSheet.create({
     desktopHeader: {
         marginBottom: 24,
         paddingTop: 24,
-        gap: 24,
+        paddingBottom: 4,
     },
     mobileHeader: {
         marginBottom: 20,
         paddingTop: 24,
-        gap: 24,
+        paddingBottom: 4,
     },
     title: {
         fontSize: 48,
+        lineHeight: 56,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
         fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
     },
     subtitle: {
         fontSize: 16,
         opacity: 0.7,
+        marginTop: 16,
+        lineHeight: 22,
     },
     mobileTitle: {
         fontSize: 40,
+        lineHeight: 48,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
         fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
     },
     mobileSubtitle: {
         fontSize: 15,
         opacity: 0.6,
+        marginTop: 16,
+        lineHeight: 21,
     },
 });
 

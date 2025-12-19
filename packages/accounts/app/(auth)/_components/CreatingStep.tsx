@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
 import { LoadingSpinner } from '@/components/ui/Loading';
-import { CREATING_PROGRESS_MESSAGES, CREATING_SUBTITLE } from '../constants';
+import { CREATING_PROGRESS_MESSAGES, CREATING_SUBTITLE } from '../_constants';
 
 interface CreatingStepProps {
   progress: number;

@@ -41,10 +41,10 @@ export const FrontSide: React.FC<FrontSideProps> = ({
                                 </Text>
                             </View>
                         )}
-                        {/* Oval fade mask - government ID style (only fades edges, center stays fully visible) */}
+                        {/* Oval fade mask - transparent to show hologram through edges */}
                         {/* Top fade - creates oval top edge */}
                         <LinearGradient
-                            colors={['rgba(255,255,255,1)', 'rgba(255,255,255,0.8)', 'rgba(255,255,255,0)']}
+                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0)']}
                             locations={[0, 0.4, 1]}
                             start={{ x: 0.5, y: 0 }}
                             end={{ x: 0.5, y: 1 }}
@@ -52,7 +52,7 @@ export const FrontSide: React.FC<FrontSideProps> = ({
                         />
                         {/* Bottom fade - creates oval bottom edge */}
                         <LinearGradient
-                            colors={['rgba(255,255,255,1)', 'rgba(255,255,255,0.8)', 'rgba(255,255,255,0)']}
+                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0)']}
                             locations={[0, 0.4, 1]}
                             start={{ x: 0.5, y: 1 }}
                             end={{ x: 0.5, y: 0 }}
@@ -60,7 +60,7 @@ export const FrontSide: React.FC<FrontSideProps> = ({
                         />
                         {/* Left fade - creates oval left edge */}
                         <LinearGradient
-                            colors={['rgba(255,255,255,1)', 'rgba(255,255,255,0.8)', 'rgba(255,255,255,0)']}
+                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0)']}
                             locations={[0, 0.4, 1]}
                             start={{ x: 0, y: 0.5 }}
                             end={{ x: 1, y: 0.5 }}
@@ -68,7 +68,7 @@ export const FrontSide: React.FC<FrontSideProps> = ({
                         />
                         {/* Right fade - creates oval right edge */}
                         <LinearGradient
-                            colors={['rgba(255,255,255,1)', 'rgba(255,255,255,0.8)', 'rgba(255,255,255,0)']}
+                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0.3)', 'rgba(0,0,0,0)']}
                             locations={[0, 0.4, 1]}
                             start={{ x: 1, y: 0.5 }}
                             end={{ x: 0, y: 0.5 }}
@@ -76,25 +76,25 @@ export const FrontSide: React.FC<FrontSideProps> = ({
                         />
                         {/* Corner overlays for smoother oval shape - smaller to not affect center */}
                         <LinearGradient
-                            colors={['rgba(255,255,255,1)', 'rgba(255,255,255,0)']}
+                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
                             start={{ x: 0, y: 0 }}
                             end={{ x: 1, y: 1 }}
                             style={styles.fadeOvalCornerTL}
                         />
                         <LinearGradient
-                            colors={['rgba(255,255,255,1)', 'rgba(255,255,255,0)']}
+                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
                             start={{ x: 1, y: 0 }}
                             end={{ x: 0, y: 1 }}
                             style={styles.fadeOvalCornerTR}
                         />
                         <LinearGradient
-                            colors={['rgba(255,255,255,1)', 'rgba(255,255,255,0)']}
+                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
                             start={{ x: 0, y: 1 }}
                             end={{ x: 1, y: 0 }}
                             style={styles.fadeOvalCornerBL}
                         />
                         <LinearGradient
-                            colors={['rgba(255,255,255,1)', 'rgba(255,255,255,0)']}
+                            colors={['rgba(0,0,0,0.6)', 'rgba(0,0,0,0)']}
                             start={{ x: 1, y: 1 }}
                             end={{ x: 0, y: 0 }}
                             style={styles.fadeOvalCornerBR}
@@ -164,7 +164,7 @@ const styles = StyleSheet.create({
         minHeight: 120, // Minimum height for portrait aspect ratio
         borderRadius: 8, // Rounded rectangle
         overflow: 'hidden',
-        backgroundColor: '#FFFFFF', // White background to match card
+        backgroundColor: 'transparent', // Transparent to show hologram through
         position: 'relative',
     },
     avatar: {

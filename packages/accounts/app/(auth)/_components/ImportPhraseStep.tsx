@@ -3,7 +3,7 @@ import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, KeyboardAwareScrollViewWrapper } from '@/components/ui';
-import { RECOVERY_PHRASE_LENGTH, RECOVERY_PHRASE_24_LENGTH } from '../constants';
+import { RECOVERY_PHRASE_LENGTH, RECOVERY_PHRASE_24_LENGTH } from '../_constants';
 
 interface ImportPhraseStepProps {
   phraseWords: string[];

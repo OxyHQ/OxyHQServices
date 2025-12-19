@@ -2,8 +2,9 @@ import React from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, KeyboardAwareScrollViewWrapper } from '@/components/ui';
-import { useUsernameValidation } from '../hooks/useUsernameValidation';
-import { sanitizeUsernameInput, USERNAME_INVALID_ERROR } from '../utils/usernameUtils';
+import { useUsernameValidation } from '../_hooks/useUsernameValidation';
+import { sanitizeUsernameInput } from '../_utils/usernameUtils';
+import { USERNAME_INVALID_ERROR } from '../_constants';
 import type { OxyServices } from '@oxyhq/services';
 
 interface UsernameStepProps {
