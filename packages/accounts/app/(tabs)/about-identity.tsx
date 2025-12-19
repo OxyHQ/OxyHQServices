@@ -1,22 +1,6 @@
-import { useEffect } from 'react';
-import { useRouter } from 'expo-router';
-import { Platform } from 'react-native';
+// src/screens/native-only.web.tsx
+import { Redirect } from 'expo-router';
 
-/**
- * About Identity Screen (Web Fallback)
- * 
- * This screen is only available on native platforms (iOS/Android).
- * On web, this fallback redirects to home.
- */
-export default function AboutIdentityScreen() {
-    const router = useRouter();
-
-    useEffect(() => {
-        if (Platform.OS === 'web') {
-            router.replace('/(tabs)');
-        }
-    }, [router]);
-
-    return null;
+export default function NativeOnlyWeb() {
+    return <Redirect href="/" />;
 }
-

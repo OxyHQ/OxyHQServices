@@ -7,7 +7,6 @@ import {
   ActivityIndicator,
   Share,
   Platform,
-  ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -15,26 +14,46 @@ import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
-import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard, ScreenHeader, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, KeyManager } from '@oxyhq/services';
 import * as Print from 'expo-print';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { formatDate } from '@/utils/date-utils';
+import { formatDate, getDisplayName } from '@/utils/date-utils';
+import { useHapticPress } from '@/hooks/use-haptic-press';
+import { Ticket as OxyID } from '@/components/OxyID';
+import { FrontSide } from '@/components/OxyID/front-side';
+import { BackSide } from '@/components/OxyID/back-side';
 
 export default function AboutIdentityScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const router = useRouter();
   const alert = useAlert();
-  const { user, isAuthenticated, isLoading: oxyLoading, getPublicKey, hasIdentity, oxyServices } = useOxy();
+  const { user, isAuthenticated, isLoading: oxyLoading, getPublicKey, oxyServices, showBottomSheet } = useOxy();
+  const handlePressIn = useHapticPress();
+
+  const displayName = useMemo(() => getDisplayName(user), [user]);
+  const avatarUrl = useMemo(() => {
+    if (user?.avatar && oxyServices) {
+      return oxyServices.getFileDownloadUrl(user.avatar, 'thumb');
+    }
+    return undefined;
+  }, [user?.avatar, oxyServices]);
+
+  const handleEditName = useCallback(() => {
+    showBottomSheet?.({
+      screen: 'EditProfile',
+      props: { initialSection: 'basicInfo', initialField: 'displayName' }
+    });
+  }, [showBottomSheet]);
 
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSavingExpiration, setIsSavingExpiration] = useState(false);
-  const [exportHistory, setExportHistory] = useState<Array<{ timestamp: string; date: string }>>([]);
+  const [exportHistory, setExportHistory] = useState<{ timestamp: string; date: string }[]>([]);
   const [isExporting, setIsExporting] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
 
@@ -218,7 +237,7 @@ export default function AboutIdentityScreen() {
           onPress: async () => {
             try {
               setIsExporting(true);
-              
+
               // Get private key
               const privateKey = await KeyManager.getPrivateKey();
               if (!privateKey) {
@@ -354,7 +373,7 @@ export default function AboutIdentityScreen() {
 
               // Print the HTML
               await Print.printAsync({ html });
-              
+
               // Save to export history
               const timestamp = new Date().toISOString();
               await saveExportHistory(timestamp);
@@ -460,6 +479,32 @@ export default function AboutIdentityScreen() {
             subtitle="Self-custody identity powered by cryptography"
           />
 
+          {/* ID Card */}
+          <Section title="ID Card">
+            <View style={styles.idCardContainer}>
+              <OxyID
+                width={340}
+                height={214}
+                frontSide={
+                  <FrontSide
+                    displayName={displayName}
+                    username={user?.username}
+                    avatarUrl={avatarUrl}
+                    accountCreated={user?.createdAt}
+                    publicKeyShort={publicKey ? `${publicKey.substring(0, 8)}...${publicKey.substring(publicKey.length - 8)}` : undefined}
+                  />
+                }
+                backSide={
+                  <BackSide
+                    publicKey={publicKey || undefined}
+                    displayName={displayName}
+                    accountCreated={user?.createdAt}
+                  />
+                }
+              />
+            </View>
+          </Section>
+
           {/* Public Key Card */}
           <AccountCard>
             <View style={styles.publicKeyCard}>
@@ -468,14 +513,14 @@ export default function AboutIdentityScreen() {
                 <Text style={[styles.publicKeyLabel, { color: colors.text }]}>Your Public Key</Text>
               </View>
               <TouchableOpacity onPress={handleCopyPublicKey} style={styles.publicKeyButton}>
-                <Text style={[styles.publicKeyValue, { color: colors.textSecondary }]}>
+                <Text style={[styles.publicKeyValue, { color: colors.secondaryText }]}>
                   {publicKey ? truncateKey(publicKey) : 'Not available'}
                 </Text>
                 {publicKey && (
-                  <MaterialCommunityIcons name="content-copy" size={18} color={colors.textSecondary} />
+                  <MaterialCommunityIcons name="content-copy" size={18} color={colors.secondaryText} />
                 )}
               </TouchableOpacity>
-              <Text style={[styles.publicKeyHint, { color: colors.textSecondary }]}>
+              <Text style={[styles.publicKeyHint, { color: colors.secondaryText }]}>
                 This is your unique identifier across all Oxy apps. Tap to copy.
               </Text>
             </View>
@@ -484,7 +529,7 @@ export default function AboutIdentityScreen() {
           {/* Self-Custody Explanation */}
           <Section title="Self-Custody Identity">
             <ThemedText style={styles.sectionDescription}>
-              Unlike traditional accounts, your Oxy identity uses the same technology that secures Bitcoin. 
+              Unlike traditional accounts, your Oxy identity uses the same technology that secures Bitcoin.
               You have complete control over your identity.
             </ThemedText>
             <AccountCard>
@@ -597,7 +642,7 @@ export default function AboutIdentityScreen() {
             {isLoadingHistory ? (
               <View style={styles.historyLoadingContainer}>
                 <ActivityIndicator size="small" color={colors.tint} />
-                <Text style={[styles.historyLoadingText, { color: colors.textSecondary }]}>
+                <Text style={[styles.historyLoadingText, { color: colors.secondaryText }]}>
                   Loading history...
                 </Text>
               </View>
@@ -620,6 +665,12 @@ export default function AboutIdentityScreen() {
 }
 
 const styles = StyleSheet.create({
+  idCardContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    alignItems: 'stretch',
+  } as const,
   container: {
     flex: 1,
   },
