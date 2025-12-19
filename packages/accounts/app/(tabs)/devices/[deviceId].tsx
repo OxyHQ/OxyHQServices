@@ -207,7 +207,7 @@ export default function DeviceDetailScreen() {
       },
       ...(createdAt ? [{
         id: 'createdAt',
-        icon: 'calendar-outline' as any,
+        icon: 'calendar-outline',
         iconColor: colors.sidebarIconDevices,
         title: 'First Seen',
         subtitle: formatDate(createdAt),

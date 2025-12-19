@@ -12,6 +12,7 @@ import { useHapticPress } from '@/hooks/use-haptic-press';
 import { AccountInfoGrid, type AccountInfoCard } from '@/components/account-info-grid';
 import { Section } from '@/components/section';
 import { GroupedSection } from '@/components/grouped-section';
+import type { ExtendedUser } from '@/types/user';
 
 export default function PersonalInfoScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -30,13 +31,14 @@ export default function PersonalInfoScreen() {
 
   // Compute user data
   const displayName = useMemo(() => getDisplayName(user), [user]);
-  const userEmail = useMemo(() => user?.email || 'No email set', [user?.email]);
-  const userPhone = useMemo(() => (user as any)?.phone || null, [user]);
-  const userAddress = useMemo(() => user?.location || (user as any)?.address || null, [user]);
+  const userEmail = useMemo(() => user?.email ?? 'No email set', [user?.email]);
+  const extendedUser = user as ExtendedUser | undefined;
+  const userPhone = useMemo(() => extendedUser?.phone ?? null, [extendedUser]);
+  const userAddress = useMemo(() => user?.location ?? extendedUser?.address ?? null, [user, extendedUser]);
   const userBirthday = useMemo(() => {
-    const birthday = (user as any)?.birthday || (user as any)?.dateOfBirth;
+    const birthday = extendedUser?.birthday ?? extendedUser?.dateOfBirth;
     return birthday ? formatDate(birthday) : null;
-  }, [user]);
+  }, [extendedUser]);
 
   const personalInfoCards = useMemo<AccountInfoCard[]>(() => [
     {
@@ -44,7 +46,7 @@ export default function PersonalInfoScreen() {
       icon: 'account-outline',
       iconColor: colors.sidebarIconPersonalInfo,
       title: 'Full name',
-      value: displayName || 'Not set',
+      value: displayName ?? 'Not set',
       onPress: () => handleEditField('displayName'),
     },
     {
@@ -60,7 +62,7 @@ export default function PersonalInfoScreen() {
       icon: 'phone-outline',
       iconColor: colors.sidebarIconPersonalInfo,
       title: 'Phone number',
-      value: userPhone || 'Not set',
+      value: userPhone ?? 'Not set',
       onPress: () => handleEditField('phone'),
     },
     {
@@ -68,7 +70,7 @@ export default function PersonalInfoScreen() {
       icon: 'map-marker-outline',
       iconColor: colors.sidebarIconData,
       title: 'Address',
-      value: userAddress || 'Not set',
+      value: userAddress ?? 'Not set',
       onPress: () => handleEditField('address'),
     },
     {
@@ -76,7 +78,7 @@ export default function PersonalInfoScreen() {
       icon: 'calendar-star',
       iconColor: colors.sidebarIconFamily,
       title: 'Birthday',
-      value: userBirthday || 'Not set',
+      value: userBirthday ?? 'Not set',
       onPress: () => handleEditField('birthday'),
     },
     {
@@ -103,7 +105,7 @@ export default function PersonalInfoScreen() {
       icon: 'phone-outline',
       iconColor: colors.sidebarIconPersonalInfo,
       title: 'Phone number',
-      subtitle: userPhone || 'Not set',
+      subtitle: userPhone ?? 'Not set',
       showChevron: false,
       onPress: () => handleEditField('phone'),
     },
@@ -112,7 +114,7 @@ export default function PersonalInfoScreen() {
       icon: 'map-marker-outline',
       iconColor: colors.sidebarIconData,
       title: 'Address',
-      subtitle: userAddress || 'Not set',
+      subtitle: userAddress ?? 'Not set',
       showChevron: false,
       onPress: () => handleEditField('address'),
     },
@@ -121,7 +123,7 @@ export default function PersonalInfoScreen() {
       icon: 'calendar-star',
       iconColor: colors.sidebarIconFamily,
       title: 'Birthday',
-      subtitle: userBirthday || 'Not set',
+      subtitle: userBirthday ?? 'Not set',
       showChevron: false,
       onPress: () => handleEditField('birthday'),
     },
