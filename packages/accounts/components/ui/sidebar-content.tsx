@@ -8,10 +8,11 @@ import { ThemedText } from '@/components/themed-text';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+import type { MaterialCommunityIconName } from '@/types/icons';
 
 export interface MenuItem {
     path: string;
-    icon: string;
+    icon: MaterialCommunityIconName;
     label: string;
     iconColor: string;
 }
@@ -64,7 +65,7 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
                     const menuItemContent = (
                         <>
                             <View style={[styles.menuIconContainer, { backgroundColor: iconColor }]}>
-                                <MaterialCommunityIcons name={item.icon as any} size={22} color={darkenColor(iconColor)} />
+                                <MaterialCommunityIcons name={item.icon} size={22} color={darkenColor(iconColor)} />
                             </View>
                             <Text style={[styles.menuItemText, { color: isActive ? colors.sidebarItemActiveText : colors.text }]}>
                                 {item.label}

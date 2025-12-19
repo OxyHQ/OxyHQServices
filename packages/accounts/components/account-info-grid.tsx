@@ -4,10 +4,11 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import type { MaterialCommunityIconName } from '@/types/icons';
 
 export interface AccountInfoCard {
   id: string;
-  icon: string;
+  icon: MaterialCommunityIconName;
   iconColor: string;
   title: string;
   value: string;
@@ -35,7 +36,7 @@ export function AccountInfoGrid({ cards, onPressIn }: AccountInfoGridProps) {
           disabled={!card.onPress}
         >
           <View style={[styles.accountInfoIcon, { backgroundColor: card.iconColor }]}>
-            <MaterialCommunityIcons name={card.icon as any} size={20} color={darkenColor(card.iconColor)} />
+            <MaterialCommunityIcons name={card.icon} size={20} color={darkenColor(card.iconColor)} />
           </View>
           <View style={styles.spacer} />
           <View style={styles.textContainer}>

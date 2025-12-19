@@ -3,7 +3,6 @@ import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, KeyboardAwareScrollViewWrapper } from '@/components/ui';
-import { RECOVERY_PHRASE_LENGTH, RECOVERY_PHRASE_24_LENGTH } from '../_constants';
 
 interface ImportPhraseStepProps {
   phraseWords: string[];
@@ -57,8 +56,14 @@ export function ImportPhraseStep({
                   borderColor: colorScheme === 'dark' ? '#2C2C2E' : '#E0E0E0'
                 }]}
                 value={word}
-                onChangeText={(text) => onWordChange(index, text)}
-                onPaste={(e) => onPaste(e.nativeEvent.text)}
+                onChangeText={(text) => {
+                  // Detect paste: if text contains multiple words (space-separated), handle as paste
+                  if (index === 0 && text.includes(' ') && text.split(/\s+/).length > 1) {
+                    onPaste(text);
+                  } else {
+                    onWordChange(index, text);
+                  }
+                }}
                 placeholder="word"
                 placeholderTextColor={colorScheme === 'dark' ? '#8E8E93' : '#8E8E93'}
                 autoCapitalize="none"

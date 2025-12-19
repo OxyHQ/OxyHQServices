@@ -280,7 +280,7 @@ export default function SearchScreen() {
                           activeOpacity={0.7}
                         >
                           <View style={[styles.suggestionIcon, { backgroundColor: iconColor }]}>
-                            <MaterialCommunityIcons name={item.icon as any} size={20} color={darkenColor(iconColor)} />
+                            <MaterialCommunityIcons name={item.icon} size={20} color={darkenColor(iconColor)} />
                           </View>
                           <ThemedText style={[styles.suggestionText, { color: colors.text }]}>{item.label}</ThemedText>
                         </TouchableOpacity>

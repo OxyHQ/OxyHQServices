@@ -399,7 +399,7 @@ export default function HomeScreen() {
 
       return {
         id: `activity-${activity.id}`,
-        icon: eventIcon as any,
+        icon: eventIcon,
         iconColor: eventColor,
         title: description,
         subtitle: formatRelativeTime(activity.timestamp),

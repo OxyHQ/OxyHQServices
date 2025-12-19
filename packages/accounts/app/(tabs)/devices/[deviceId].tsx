@@ -13,6 +13,7 @@ import { useOxy } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import type { MaterialCommunityIconName } from '@/types/icons';
 
 interface Device {
   id?: string;
@@ -94,7 +95,7 @@ export default function DeviceDetailScreen() {
   }, []);
 
   // Get device icon based on type
-  const getDeviceIcon = useCallback((deviceType?: string): string => {
+  const getDeviceIcon = useCallback((deviceType?: string): MaterialCommunityIconName => {
     if (!deviceType) return 'devices';
     const type = deviceType.toLowerCase();
     if (type.includes('mobile') || type.includes('phone') || type.includes('iphone') || type.includes('android')) {
@@ -176,7 +177,7 @@ export default function DeviceDetailScreen() {
     return [
       {
         id: 'name',
-        icon: getDeviceIcon(deviceType) as any,
+        icon: getDeviceIcon(deviceType),
         iconColor: isCurrent ? '#34C759' : colors.sidebarIconDevices,
         title: deviceName,
         subtitle: isCurrent ? 'Current Device' : 'Other Device',
@@ -192,14 +193,14 @@ export default function DeviceDetailScreen() {
       },
       {
         id: 'type',
-        icon: 'devices' as any,
+        icon: 'devices',
         iconColor: colors.sidebarIconDevices,
         title: 'Device Type',
         subtitle: deviceType.charAt(0).toUpperCase() + deviceType.slice(1),
       },
       {
         id: 'lastActive',
-        icon: 'clock-outline' as any,
+        icon: 'clock-outline',
         iconColor: colors.sidebarIconDevices,
         title: 'Last Active',
         subtitle: lastActive ? formatRelativeTime(lastActive) : 'Unknown',

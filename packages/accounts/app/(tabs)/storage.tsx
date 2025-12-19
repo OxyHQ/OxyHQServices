@@ -151,7 +151,7 @@ export default function StorageScreen() {
     const items = [
       {
         id: 'documents',
-        icon: 'file-document-outline' as any,
+        icon: 'file-document-outline',
         iconColor: colors.sidebarIconSecurity,
         title: 'Documents',
         subtitle: `${safeCount(cats?.documents?.count).toLocaleString()} file${safeCount(cats?.documents?.count) !== 1 ? 's' : ''}`,
@@ -161,7 +161,7 @@ export default function StorageScreen() {
       },
       {
         id: 'mail',
-        icon: 'email-outline' as any,
+        icon: 'email-outline',
         iconColor: colors.sidebarIconSharing,
         title: 'Oxy Mail',
         subtitle: `${safeCount(cats?.mail?.count).toLocaleString()} message${safeCount(cats?.mail?.count) !== 1 ? 's' : ''}`,
@@ -171,7 +171,7 @@ export default function StorageScreen() {
       },
       {
         id: 'photosVideos',
-        icon: 'image-outline' as any,
+        icon: 'image-outline',
         iconColor: colors.sidebarIconPayments,
         title: 'Photos & Videos',
         subtitle: `${safeCount(cats?.photosVideos?.count).toLocaleString()} item${safeCount(cats?.photosVideos?.count) !== 1 ? 's' : ''}`,
@@ -181,7 +181,7 @@ export default function StorageScreen() {
       },
       {
         id: 'recordings',
-        icon: 'microphone-outline' as any,
+        icon: 'microphone-outline',
         iconColor: colors.sidebarIconData,
         title: 'Recordings',
         subtitle: `${safeCount(cats?.recordings?.count).toLocaleString()} recording${safeCount(cats?.recordings?.count) !== 1 ? 's' : ''}`,
@@ -191,7 +191,7 @@ export default function StorageScreen() {
       },
       {
         id: 'family',
-        icon: 'account-group-outline' as any,
+        icon: 'account-group-outline',
         iconColor: colors.sidebarIconPersonalInfo,
         title: 'Family storage',
         subtitle: `${safeCount(cats?.family?.count).toLocaleString()} file${safeCount(cats?.family?.count) !== 1 ? 's' : ''}`,
@@ -205,7 +205,7 @@ export default function StorageScreen() {
     if (safe(cats?.other?.bytes) > 0) {
       items.push({
         id: 'other',
-        icon: 'folder-outline' as any,
+        icon: 'folder-outline',
         iconColor: colors.secondaryText,
         title: 'Other',
         subtitle: `${safeCount(cats?.other?.count).toLocaleString()} file${safeCount(cats?.other?.count) !== 1 ? 's' : ''}`,
@@ -223,7 +223,7 @@ export default function StorageScreen() {
     return [
       {
         id: 'plan',
-        icon: 'crown-outline' as any,
+        icon: 'crown-outline',
         iconColor: colors.sidebarIconPayments,
         title: 'Storage plan',
         subtitle: planDisplayName,
@@ -231,7 +231,7 @@ export default function StorageScreen() {
       },
       {
         id: 'updated',
-        icon: 'clock-outline' as any,
+        icon: 'clock-outline',
         iconColor: colors.secondaryText,
         title: 'Last updated',
         subtitle: formatRelativeTime(usage.updatedAt),

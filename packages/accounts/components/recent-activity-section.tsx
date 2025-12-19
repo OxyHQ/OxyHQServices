@@ -5,10 +5,11 @@ import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { HorizontalScrollSection } from './horizontal-scroll-section';
 import { darkenColor } from '@/utils/color-utils';
+import type { MaterialCommunityIconName } from '@/types/icons';
 
 export interface RecentActivityItem {
   id: string;
-  icon: string;
+  icon: MaterialCommunityIconName;
   iconColor: string;
   title: string;
   subtitle?: string;
@@ -42,7 +43,7 @@ export function RecentActivitySection({ items, onPressIn }: RecentActivitySectio
           activeOpacity={0.7}
         >
           <View style={[styles.activityIcon, { backgroundColor: item.iconColor }]}>
-            <MaterialCommunityIcons name={item.icon as any} size={20} color={darkenColor(item.iconColor)} />
+            <MaterialCommunityIcons name={item.icon} size={20} color={darkenColor(item.iconColor)} />
           </View>
           <View style={styles.activityContent}>
             <Text 

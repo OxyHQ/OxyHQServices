@@ -41,12 +41,7 @@ export default function AuthorizeScreen() {
     expiresAt: string;
   } | null>(null);
 
-  // Load session info
-  useEffect(() => {
-    loadSessionInfo();
-  }, [params.token]);
-
-  const loadSessionInfo = async () => {
+  const loadSessionInfo = useCallback(async () => {
     if (!params.token) {
       setError('No authorization token provided');
       setIsLoading(false);
@@ -76,7 +71,12 @@ export default function AuthorizeScreen() {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [params.token, oxyServices]);
+
+  // Load session info
+  useEffect(() => {
+    loadSessionInfo();
+  }, [params.token, loadSessionInfo]);
 
   const handleAuthorize = useCallback(async () => {
     if (!params.token || !activeSessionId) return;
@@ -148,7 +148,7 @@ export default function AuthorizeScreen() {
             <MaterialCommunityIcons name="lock-outline" size={48} color={colors.tint} />
           </View>
           <Text style={[styles.title, { color: colors.text }]}>Sign In Required</Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+          <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
             You need to be signed in to authorize this request.
           </Text>
           <TouchableOpacity
@@ -167,7 +167,7 @@ export default function AuthorizeScreen() {
       <ScreenContentWrapper>
         <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
           <ActivityIndicator size="large" color={colors.tint} />
-          <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
+          <Text style={[styles.loadingText, { color: colors.secondaryText }]}>
             Loading authorization request...
           </Text>
         </View>
@@ -183,7 +183,7 @@ export default function AuthorizeScreen() {
             <MaterialCommunityIcons name="alert-circle-outline" size={48} color="#FF3B30" />
           </View>
           <Text style={[styles.title, { color: colors.text }]}>Authorization Error</Text>
-          <Text style={[styles.errorText, { color: colors.textSecondary }]}>{error}</Text>
+          <Text style={[styles.errorText, { color: colors.secondaryText }]}>{error}</Text>
           <TouchableOpacity
             style={[styles.secondaryButton, { borderColor: colors.border }]}
             onPress={() => router.back()}
@@ -197,7 +197,7 @@ export default function AuthorizeScreen() {
 
   return (
     <ScreenContentWrapper>
-      <ScrollView 
+      <ScrollView
         style={[styles.scrollView, { backgroundColor: colors.background }]}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
@@ -206,16 +206,16 @@ export default function AuthorizeScreen() {
           {/* App Icon/Name Section */}
           <View style={styles.appHeader}>
             <View style={[styles.appIconContainer, { backgroundColor: colors.card }]}>
-              <MaterialCommunityIcons 
-                name="application" 
-                size={64} 
-                color={colors.tint} 
+              <MaterialCommunityIcons
+                name="application"
+                size={64}
+                color={colors.tint}
               />
             </View>
             <Text style={[styles.appName, { color: colors.text }]}>
               {sessionInfo?.appId || 'An app'}
             </Text>
-            <Text style={[styles.appRequest, { color: colors.textSecondary }]}>
+            <Text style={[styles.appRequest, { color: colors.secondaryText }]}>
               wants to access your account
             </Text>
           </View>
@@ -229,13 +229,13 @@ export default function AuthorizeScreen() {
                 size={64}
               />
               <View style={styles.userDetails}>
-                <Text style={[styles.userLabel, { color: colors.textSecondary }]}>
+                <Text style={[styles.userLabel, { color: colors.secondaryText }]}>
                   Signing in as
                 </Text>
                 <Text style={[styles.username, { color: colors.text }]}>
                   {user.username ? `@${user.username}` : displayName}
                 </Text>
-                <Text style={[styles.publicKey, { color: colors.textSecondary }]}>
+                <Text style={[styles.publicKey, { color: colors.secondaryText }]}>
                   {KeyManager.shortenPublicKey(user.publicKey || '')}
                 </Text>
               </View>
@@ -245,10 +245,10 @@ export default function AuthorizeScreen() {
           {/* Permissions Section */}
           <View style={[styles.permissionsCard, { backgroundColor: colors.card }]}>
             <View style={styles.permissionsHeader}>
-              <MaterialCommunityIcons 
-                name="shield-check-outline" 
-                size={20} 
-                color={colors.tint} 
+              <MaterialCommunityIcons
+                name="shield-check-outline"
+                size={20}
+                color={colors.tint}
               />
               <Text style={[styles.permissionsTitle, { color: colors.text }]}>
                 This app will be able to:
@@ -272,8 +272,8 @@ export default function AuthorizeScreen() {
 
           {/* Security Notice */}
           <View style={[styles.securityNotice, { backgroundColor: colors.card }]}>
-            <MaterialCommunityIcons name="lock-outline" size={16} color={colors.textSecondary} />
-            <Text style={[styles.securityText, { color: colors.textSecondary }]}>
+            <MaterialCommunityIcons name="lock-outline" size={16} color={colors.secondaryText} />
+            <Text style={[styles.securityText, { color: colors.secondaryText }]}>
               Your password will not be shared with this app
             </Text>
           </View>

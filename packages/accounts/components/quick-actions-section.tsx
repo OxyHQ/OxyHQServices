@@ -5,10 +5,11 @@ import { darkenColor } from '@/utils/color-utils';
 import { Colors } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { HorizontalScrollSection } from './horizontal-scroll-section';
+import type { MaterialCommunityIconName } from '@/types/icons';
 
 export interface QuickAction {
   id: string;
-  icon: string;
+  icon: MaterialCommunityIconName;
   iconColor: string;
   title: string;
   onPress: () => void;
@@ -38,7 +39,7 @@ export function QuickActionsSection({ actions, onPressIn }: QuickActionsSectionP
           activeOpacity={0.7}
         >
           <View style={[styles.chipIcon, { backgroundColor: action.iconColor }]}>
-            <MaterialCommunityIcons name={action.icon as any} size={20} color={darkenColor(action.iconColor)} />
+            <MaterialCommunityIcons name={action.icon} size={20} color={darkenColor(action.iconColor)} />
           </View>
           <Text
             style={[styles.chipText, { color: colors.text }]}

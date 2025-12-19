@@ -91,7 +91,7 @@ export default function PersonalInfoScreen() {
   const contactItems = useMemo(() => [
     {
       id: 'email',
-      icon: 'email-outline' as any,
+      icon: 'email-outline',
       iconColor: colors.sidebarIconSecurity,
       title: 'Email',
       subtitle: userEmail,
@@ -100,7 +100,7 @@ export default function PersonalInfoScreen() {
     },
     {
       id: 'phone',
-      icon: 'phone-outline' as any,
+      icon: 'phone-outline',
       iconColor: colors.sidebarIconPersonalInfo,
       title: 'Phone number',
       subtitle: userPhone || 'Not set',
@@ -109,7 +109,7 @@ export default function PersonalInfoScreen() {
     },
     {
       id: 'address',
-      icon: 'map-marker-outline' as any,
+      icon: 'map-marker-outline',
       iconColor: colors.sidebarIconData,
       title: 'Address',
       subtitle: userAddress || 'Not set',
@@ -118,7 +118,7 @@ export default function PersonalInfoScreen() {
     },
     {
       id: 'birthday',
-      icon: 'calendar-star' as any,
+      icon: 'calendar-star',
       iconColor: colors.sidebarIconFamily,
       title: 'Birthday',
       subtitle: userBirthday || 'Not set',
@@ -130,7 +130,7 @@ export default function PersonalInfoScreen() {
   const actionsItems = useMemo(() => [
     {
       id: 'manage-sessions',
-      icon: 'monitor-lock' as any,
+      icon: 'monitor-lock',
       iconColor: colors.sidebarIconSecurity,
       title: 'Manage devices & sessions',
       subtitle: 'Review active devices and sign out',
@@ -139,7 +139,7 @@ export default function PersonalInfoScreen() {
     },
     {
       id: 'subscription',
-      icon: 'credit-card-outline' as any,
+      icon: 'credit-card-outline',
       iconColor: colors.sidebarIconPayments,
       title: 'Payments & subscription',
       subtitle: 'Manage billing and plan',
@@ -148,7 +148,7 @@ export default function PersonalInfoScreen() {
     },
     {
       id: 'account-overview',
-      icon: 'shield-key' as any,
+      icon: 'shield-key',
       iconColor: colors.sidebarIconSecurity,
       title: 'Identity & security',
       subtitle: 'Keys, recovery, and account status',

@@ -11,6 +11,7 @@ import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+import type { MaterialCommunityIconName } from '@/types/icons';
 
 interface Device {
   id?: string;
@@ -89,7 +90,7 @@ export default function DevicesScreen() {
   }, []);
 
   // Get device icon based on type
-  const getDeviceIcon = useCallback((deviceType?: string): string => {
+  const getDeviceIcon = useCallback((deviceType?: string): MaterialCommunityIconName => {
     if (!deviceType) return 'devices';
     const type = deviceType.toLowerCase();
     if (type.includes('mobile') || type.includes('phone') || type.includes('iphone') || type.includes('android')) {
@@ -162,7 +163,7 @@ export default function DevicesScreen() {
 
       return {
         id: deviceId,
-        icon: getDeviceIcon(deviceType) as any,
+        icon: getDeviceIcon(deviceType),
         iconColor: isCurrent ? colors.tint : colors.sidebarIconDevices,
         title: deviceName,
         subtitle: isCurrent

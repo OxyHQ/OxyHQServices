@@ -4,11 +4,12 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+import type { MaterialCommunityIconName } from '@/types/icons';
 
 interface LinkButtonProps {
     text: string;
     onPress?: () => void;
-    icon?: string;
+    icon?: MaterialCommunityIconName;
     count?: string | number;
 }
 
@@ -20,7 +21,7 @@ export function LinkButton({ text, onPress, icon, count }: LinkButtonProps) {
 
     return (
         <TouchableOpacity style={styles.linkButton} onPressIn={handlePressIn} onPress={onPress}>
-            {icon && <MaterialCommunityIcons name={icon as any} size={16} color={colors.tint} />}
+            {icon && <MaterialCommunityIcons name={icon} size={16} color={colors.tint} />}
             <Text style={[styles.linkText, { color: colors.tint }]}>{text}</Text>
             {count !== undefined && (
                 <Text style={[styles.linkCount, { color: colors.secondaryText }]}>{count}</Text>

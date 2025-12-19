@@ -55,7 +55,7 @@ const UserAvatarComponent = ({ name = 'User', imageUrl, size = 80 }: UserAvatarP
 
     // Use avatarBackground from theme, fallback to tint if not available
     const avatarBackground = useMemo(() => {
-        return colors.avatarBackground || colors.tint;
+        return colors.avatarBackground ?? colors.tint;
     }, [colors.avatarBackground, colors.tint]);
 
     // Use avatarText from theme, or determine based on background brightness

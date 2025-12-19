@@ -488,7 +488,7 @@ export default function PaymentsScreen() {
               activeOpacity={0.8}
             >
               <MaterialCommunityIcons 
-                name={Platform.OS === 'ios' ? 'logo-apple' : Platform.OS === 'android' ? 'google-play' : 'download'} 
+                name={Platform.OS === 'ios' ? 'apple' : Platform.OS === 'android' ? 'google-play' : 'download'} 
                 size={18} 
                 color="#1A1A1A" 
               />

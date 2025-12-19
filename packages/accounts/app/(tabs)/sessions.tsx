@@ -113,7 +113,7 @@ export default function SessionsScreen() {
 
             return {
                 id: session.sessionId,
-                icon: 'devices' as any,
+                icon: 'devices',
                 iconColor: isActive ? colors.tint : colors.sidebarIconDevices,
                 title: `Session ${session.deviceId?.substring(0, 8) || session.sessionId.substring(0, 8)}`,
                 subtitle: isActive 

@@ -5,10 +5,11 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { darkenColor, normalizeColorScheme } from '@/utils/color-utils';
+import type { MaterialCommunityIconName } from '@/types/icons';
 
 
 interface GroupedItemProps {
-    icon?: string;
+    icon?: MaterialCommunityIconName;
     iconColor?: string;
     title: string;
     subtitle?: string;
@@ -40,7 +41,7 @@ const GroupedItemComponent = ({
     // instead of useThemeStyles which expects a theme prop from screen components
     const colors = Colors[colorScheme];
     // Use fallback color when iconColor is not provided
-    const finalIconColor = iconColor || colors.iconSecurity;
+    const finalIconColor = iconColor ?? colors.sidebarIconSecurity;
 
     const itemStyles = useMemo(
         () => [
@@ -60,7 +61,7 @@ const GroupedItemComponent = ({
                 <View style={styles.actionIcon}>{customIcon}</View>
             ) : icon ? (
                 <View style={[styles.iconContainer, { backgroundColor: finalIconColor }]}>
-                    <MaterialCommunityIcons name={icon as any} size={22} color={darkenColor(finalIconColor)} />
+                    <MaterialCommunityIcons name={icon} size={22} color={darkenColor(finalIconColor)} />
                 </View>
             ) : null}
             <View style={styles.actionTextContainer}>

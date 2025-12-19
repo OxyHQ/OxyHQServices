@@ -80,7 +80,7 @@ export default function AboutIdentityScreen() {
 
     return exportHistory.map((entry, index) => ({
       id: `export-${index}`,
-      icon: 'printer' as any,
+      icon: 'printer',
       iconColor: colors.sidebarIconSecurity,
       title: 'Private key exported',
       subtitle: formatRelativeTime(entry.timestamp),

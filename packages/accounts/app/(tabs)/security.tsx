@@ -16,6 +16,7 @@ import { formatDate } from '@/utils/date-utils';
 import type { ClientSession, SecurityActivity } from '@oxyhq/services';
 import { useBiometricSettings } from '@/hooks/useBiometricSettings';
 import { getEventIcon, getSeverityColor, getEventSeverity, formatEventDescription } from '@/utils/security-utils';
+import type { MaterialCommunityIconName } from '@/types/icons';
 
 export default function SecurityScreen() {
     const colorScheme = useColorScheme() ?? 'light';
@@ -71,7 +72,7 @@ export default function SecurityScreen() {
     }, []);
 
     // Get device icon based on type
-    const getDeviceIcon = useCallback((deviceType?: string): string => {
+    const getDeviceIcon = useCallback((deviceType?: string): MaterialCommunityIconName => {
         if (!deviceType) return 'devices';
         const type = deviceType.toLowerCase();
         if (type.includes('mobile') || type.includes('phone') || type.includes('iphone') || type.includes('android')) {
@@ -143,7 +144,7 @@ export default function SecurityScreen() {
                                         'Add Email',
                                         'Please go to your Profile settings to add an email address.',
                                         [
-                                            { text: 'OK', onPress: () => router.push('/(tabs)/profile') },
+                                            { text: 'OK', onPress: () => router.push('/(tabs)/personal-info') },
                                         ]
                                     );
                                 },
@@ -156,14 +157,14 @@ export default function SecurityScreen() {
         }
 
         // 3. Check for old/inactive sessions (Medium priority)
-        const activeSessionsCount = sessions?.filter(s => s.isActive !== false).length || 0;
+        const activeSessionsCount = sessions?.filter(s => s.isCurrent !== false).length || 0;
         const oldSessions = sessions?.filter(s => {
             if (!s.lastActive) return false;
             const lastActive = new Date(s.lastActive);
             const daysSinceActive = (Date.now() - lastActive.getTime()) / (1000 * 60 * 60 * 24);
             return daysSinceActive > 30; // Older than 30 days
         }) || [];
-        
+
         if (oldSessions.length > 0) {
             recommendations.push({
                 id: 'old-sessions',
@@ -197,11 +198,11 @@ export default function SecurityScreen() {
 
         // 5. Check for suspicious activity (Critical priority)
         const recentSuspiciousActivity = securityActivities?.filter(
-            (activity: SecurityActivity) => 
-                activity.severity === 'critical' || 
+            (activity: SecurityActivity) =>
+                activity.severity === 'critical' ||
                 activity.eventType === 'suspicious_activity'
         ) || [];
-        
+
         if (recentSuspiciousActivity.length > 0) {
             recommendations.push({
                 id: 'suspicious-activity',
@@ -253,10 +254,10 @@ export default function SecurityScreen() {
                     `Type: ${activity.eventType}`,
                     `Severity: ${severity}`,
                     activity.ipAddress ? `IP: ${activity.ipAddress}` : null,
-                    activity.deviceId && activity.metadata?.deviceName 
-                        ? `Device: ${activity.metadata.deviceName}` 
-                        : activity.deviceId 
-                            ? `Device ID: ${activity.deviceId}` 
+                    activity.deviceId && activity.metadata?.deviceName
+                        ? `Device: ${activity.metadata.deviceName}`
+                        : activity.deviceId
+                            ? `Device ID: ${activity.deviceId}`
                             : null,
                     activity.userAgent ? `Browser: ${activity.userAgent.substring(0, 50)}${activity.userAgent.length > 50 ? '...' : ''}` : null,
                     `Time: ${formatDate(activity.timestamp)}`,
@@ -280,7 +281,7 @@ export default function SecurityScreen() {
 
             return {
                 id: `activity-${activity.id}`,
-                icon: eventIcon as any,
+                icon: eventIcon,
                 iconColor: eventColor,
                 title: description,
                 subtitle: formatRelativeTime(activity.timestamp),
@@ -304,11 +305,11 @@ export default function SecurityScreen() {
             } else if (!isBiometricEnrolled) {
                 biometricSubtitle = 'Not set up - configure in device settings';
             } else if (biometricEnabled) {
-                biometricSubtitle = biometricTypes.length > 0 
+                biometricSubtitle = biometricTypes.length > 0
                     ? `Enabled (${biometricTypes.join(', ')})`
                     : 'Enabled';
             } else {
-                biometricSubtitle = canEnableBiometric 
+                biometricSubtitle = canEnableBiometric
                     ? 'Available - tap to enable'
                     : 'Not available';
             }
@@ -392,7 +393,7 @@ export default function SecurityScreen() {
 
             items.push({
                 id: `device-${type}`,
-                icon: icon as any,
+                icon: icon,
                 iconColor: colors.sidebarIconDevices,
                 title: `${group.count} device${group.count !== 1 ? 's' : ''} (${typeLabel})`,
                 subtitle,
@@ -435,7 +436,7 @@ export default function SecurityScreen() {
     // Active sessions management
     const activeSessionsItems = useMemo(() => {
         const items: any[] = [];
-        const activeSessionsCount = sessions?.filter(s => s.isActive !== false).length || 0;
+        const activeSessionsCount = sessions?.filter(s => s.isCurrent !== false).length || 0;
 
         if (activeSessionsCount > 1) {
             items.push({
@@ -535,8 +536,8 @@ export default function SecurityScreen() {
                             <GroupedSection items={recentActivity} />
                         </AccountCard>
                         <View style={{ marginTop: -8 }}>
-                            <LinkButton 
-                                text="Review security activity" 
+                            <LinkButton
+                                text="Review security activity"
                                 count={securityActivities.length > 5 ? `${securityActivities.length - 5} more` : undefined}
                                 onPress={() => {
                                     // Show all activities in an alert with details
@@ -557,10 +558,10 @@ export default function SecurityScreen() {
                 ) : (
                     <AccountCard>
                         <View style={styles.emptyStateContainer}>
-                            <MaterialCommunityIcons 
-                                name="shield-check-outline" 
-                                size={40} 
-                                color={colors.text} 
+                            <MaterialCommunityIcons
+                                name="shield-check-outline"
+                                size={40}
+                                color={colors.text}
                                 style={styles.emptyStateIcon}
                             />
                             <ThemedText style={[styles.emptyStateTitle, { color: colors.text }]}>
@@ -618,10 +619,10 @@ export default function SecurityScreen() {
                 ) : (
                     <AccountCard>
                         <View style={styles.emptyStateContainer}>
-                            <MaterialCommunityIcons 
-                                name="devices" 
-                                size={40} 
-                                color={colors.text} 
+                            <MaterialCommunityIcons
+                                name="devices"
+                                size={40}
+                                color={colors.text}
                                 style={styles.emptyStateIcon}
                             />
                             <ThemedText style={[styles.emptyStateTitle, { color: colors.text }]}>

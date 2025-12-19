@@ -156,8 +156,8 @@ export default function ScanQRScreen() {
   if (checkingIdentity || isLoading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.text, { color: colors.textSecondary, marginTop: 16 }]}>
+        <ActivityIndicator size="large" color={colors.tint} />
+        <Text style={[styles.text, { color: colors.secondaryText, marginTop: 16 }]}>
           Checking identity...
         </Text>
       </View>
@@ -173,18 +173,18 @@ export default function ScanQRScreen() {
           <MaterialCommunityIcons
             name="qrcode-scan"
             size={64}
-            color={colors.textSecondary}
+            color={colors.secondaryText}
             style={styles.icon}
           />
           <Text style={[styles.title, { color: colors.text }]}>
             Identity Required
           </Text>
-          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+          <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
             To scan QR codes and authorize sign-in requests, you need to create or import an identity.{'\n\n'}
             Identity creation is only available on native platforms (iOS/Android). Please use the mobile app to set up your identity.
           </Text>
           <TouchableOpacity
-            style={[styles.button, { backgroundColor: colors.primary, marginTop: 24 }]}
+            style={[styles.button, { backgroundColor: colors.tint, marginTop: 24 }]}
             onPress={handleClose}
           >
             <Text style={styles.buttonText}>Go Back</Text>
@@ -195,8 +195,8 @@ export default function ScanQRScreen() {
     // Native: should have redirected, but show fallback just in case
     return (
       <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
-        <Text style={[styles.text, { color: colors.textSecondary, marginTop: 16 }]}>
+        <ActivityIndicator size="large" color={colors.tint} />
+        <Text style={[styles.text, { color: colors.secondaryText, marginTop: 16 }]}>
           Redirecting to identity setup...
         </Text>
       </View>
@@ -221,17 +221,17 @@ export default function ScanQRScreen() {
         <MaterialCommunityIcons
           name="camera-off"
           size={64}
-          color={colors.textSecondary}
+          color={colors.secondaryText}
           style={styles.icon}
         />
         <Text style={[styles.title, { color: colors.text }]}>
           Camera Access Required
         </Text>
-        <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+        <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
           To scan QR codes for sign-in authorization, we need access to your camera.
         </Text>
         <TouchableOpacity
-          style={[styles.button, { backgroundColor: colors.primary }]}
+          style={[styles.button, { backgroundColor: colors.tint }]}
           onPress={requestPermission}
         >
           <Text style={styles.buttonText}>Grant Permission</Text>
@@ -240,7 +240,7 @@ export default function ScanQRScreen() {
           style={[styles.linkButton]}
           onPress={openSettings}
         >
-          <Text style={[styles.linkText, { color: colors.primary }]}>
+          <Text style={[styles.linkText, { color: colors.tint }]}>
             Open Settings
           </Text>
         </TouchableOpacity>
@@ -248,7 +248,7 @@ export default function ScanQRScreen() {
           style={[styles.linkButton]}
           onPress={handleClose}
         >
-          <Text style={[styles.linkText, { color: colors.textSecondary }]}>
+          <Text style={[styles.linkText, { color: colors.secondaryText }]}>
             Cancel
           </Text>
         </TouchableOpacity>
