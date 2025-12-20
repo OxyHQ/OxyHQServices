@@ -5,12 +5,12 @@
  * before any crypto operations are performed.
  * 
  * Polyfills included:
- * - Buffer: Required by bip39 and other crypto libraries
- * - crypto.getRandomValues: Required by bip39 for secure random number generation
+ * - Buffer: Required by crypto libraries
+ * - crypto.getRandomValues: Required for secure random number generation
  */
 
 // Import Buffer polyfill for React Native compatibility
-// Libraries like bip39 depend on Buffer which isn't available in React Native
+// Some crypto libraries depend on Buffer which isn't available in React Native
 import { Buffer } from 'buffer';
 
 // Get the global object in a cross-platform way
@@ -30,7 +30,7 @@ if (!globalObject.Buffer) {
 }
 
 // Polyfill crypto.getRandomValues for React Native
-// This is required by bip39 and other crypto libraries
+// This is required by crypto libraries for secure random number generation
 type CryptoLike = {
   getRandomValues: <T extends ArrayBufferView>(array: T) => T;
 };

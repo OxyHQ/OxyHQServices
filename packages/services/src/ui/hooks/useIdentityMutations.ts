@@ -8,7 +8,6 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import type { User } from '../../models/interfaces';
 
 export interface CreateIdentityResult {
-  recoveryPhrase: string[];
   synced: boolean;
 }
 
@@ -34,7 +33,7 @@ export function useCreateIdentity(
     },
     onError: (error) => {
       // Never delete identity on error - just log it
-      // User can recover using recovery phrase
+      // User can recover using backup file
       if (__DEV__) {
         console.warn('[useCreateIdentity] Identity creation error (identity may still exist):', error);
       }
@@ -45,11 +44,11 @@ export function useCreateIdentity(
 }
 
 /**
- * Hook for importing an identity from recovery phrase
+ * Hook for importing an identity from backup file
  * Never deletes identity on error - preserves user data
  */
 export function useImportIdentity(
-  importIdentityFn: (phrase: string) => Promise<ImportIdentityResult>
+  importIdentityFn: (backupData: { encrypted: string; salt: string; iv: string; publicKey: string }, password: string) => Promise<ImportIdentityResult>
 ) {
   const queryClient = useQueryClient();
 
@@ -89,7 +88,7 @@ export function useSyncIdentity(
     },
     onError: (error) => {
       // Never delete identity on error - just log it
-      // User can retry sync later or use recovery phrase
+      // User can retry sync later or use backup file
       if (__DEV__) {
         console.warn('[useSyncIdentity] Sync failed, but identity is preserved:', error);
       }

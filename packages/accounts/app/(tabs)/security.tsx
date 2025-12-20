@@ -586,12 +586,12 @@ export default function SecurityScreen() {
                 <Section title="Account recovery">
                     <ThemedText style={styles.sectionSubtitle}>Manage your recovery options</ThemedText>
                     <AccountCard>
-                        <GroupedSection items={[{
-                            id: 'manage-recovery',
+                        <GroupedSection items={[                        {
+                            id: 'manage-backup',
                             icon: 'shield-key-outline',
                             iconColor: '#F59E0B',
-                            title: 'Recovery phrase & settings',
-                            subtitle: 'View recovery phrase and manage account settings',
+                            title: 'Backup & settings',
+                            subtitle: 'Create backup file and manage account settings',
                             onPress: () => router.push('/(tabs)/about-identity'),
                             showChevron: true,
                         }]} />

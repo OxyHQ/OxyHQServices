@@ -13,8 +13,7 @@ import './crypto/polyfill';
 // Crypto/Identity exports (must be before core to ensure polyfills are available)
 export { 
   KeyManager, 
-  SignatureService, 
-  RecoveryPhraseService 
+  SignatureService
 } from './crypto';
 
 // Core exports
@@ -23,8 +22,7 @@ export { OXY_CLOUD_URL, oxyClient } from './core';
 export type { 
   KeyPair, 
   SignedMessage, 
-  AuthChallenge, 
-  RecoveryPhraseResult 
+  AuthChallenge
 } from './crypto';
 
 // React context

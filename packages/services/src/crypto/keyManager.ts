@@ -181,7 +181,7 @@ export class KeyManager {
   }
 
   /**
-   * Import an existing key pair (e.g., from recovery phrase)
+   * Import an existing key pair (e.g., from backup file)
    */
   static async importKeyPair(privateKey: string): Promise<string> {
     if (isWebPlatform()) {
@@ -287,7 +287,7 @@ export class KeyManager {
 
   /**
    * Delete the stored identity (both keys)
-   * Use with EXTREME caution - this is irreversible without a recovery phrase
+   * Use with EXTREME caution - this is irreversible without a backup file
    * This should ONLY be called when explicitly requested by the user
    * @param skipBackup - If true, skip backup before deletion (default: false)
    * @param force - If true, skip confirmation checks (default: false)

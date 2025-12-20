@@ -329,8 +329,7 @@ import {
 // Crypto module (for identity management)
 import {
   KeyManager,
-  SignatureService,
-  RecoveryPhraseService
+  SignatureService
 } from '@oxyhq/services/crypto';
 ```
 
@@ -437,8 +436,8 @@ const {
   error,
   
   // Identity management (Public Key Authentication)
-  createIdentity,     // Create new identity with recovery phrase
-  importIdentity,     // Import identity from recovery phrase
+  createIdentity,     // Create new identity
+  importIdentity,     // Import identity from backup file
   signIn,             // Sign in with stored identity
   hasIdentity,        // Check if identity exists on device
   getPublicKey,       // Get stored public key
@@ -501,12 +500,12 @@ function AuthScreen() {
   
   // Create new identity (in Oxy Accounts app)
   const handleCreate = async () => {
-    const { user, recoveryPhrase } = await createIdentity('username', 'email');
-    // Show recoveryPhrase to user - they must save it!
+    const { synced } = await createIdentity();
+    // Identity created - user should create backup file
   };
   
-  // Import existing identity
-  const handleImport = async (phrase: string) => {
+  // Import existing identity from backup file
+  const handleImport = async (backupData: { encrypted: string; salt: string; iv: string; publicKey: string }, password: string) => {
     const user = await importIdentity(phrase, 'username', 'email');
   };
   

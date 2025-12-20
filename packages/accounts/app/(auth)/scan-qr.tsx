@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -17,25 +17,20 @@ import { useOxy } from '@oxyhq/services';
 import { useAlert } from '@/components/ui';
 
 /**
- * QR Scanner Screen
+ * QR Scanner Screen (Auth Flow)
  * 
- * Scans QR codes from other Oxy apps to authorize sign-in requests.
- * The QR code contains an oxyauth:// URL with a session token.
+ * Scans QR codes for identity transfer. Works for unauthenticated users.
+ * After successful import, navigates to appropriate next step.
  */
-export default function ScanQRScreen() {
+export default function AuthScanQRScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const alert = useAlert();
-  const oxyContext = useOxy();
-  const { hasIdentity, isLoading, importIdentity } = oxyContext;
-  // @ts-ignore - isStorageReady may not be in type definition yet due to build cache
-  const isStorageReady = oxyContext.isStorageReady ?? false;
+  const { importIdentity } = useOxy();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [flashOn, setFlashOn] = useState(false);
-  const [checkingIdentity, setCheckingIdentity] = useState(true);
-  const [hasExistingIdentity, setHasExistingIdentity] = useState(false);
 
   // Handle barcode scan
   const handleBarCodeScanned = useCallback(async ({ data }: BarcodeScanningResult) => {
@@ -126,7 +121,8 @@ export default function ScanQRScreen() {
                 {
                   text: 'OK',
                   onPress: () => {
-                    router.replace('/(tabs)');
+                    // Navigate to notifications step (similar to backup import flow)
+                    router.replace('/(auth)/import-identity/notifications');
                   },
                 },
               ]
@@ -151,49 +147,10 @@ export default function ScanQRScreen() {
           return;
         }
       } catch {
-        // Not JSON, continue with auth QR code handling
-      }
-
-      // Expected formats for auth QR codes:
-      // 1. oxyauth://{sessionToken} (simple format from OxyAuthScreen QR)
-      // 2. oxyauth://authorize?token=xxx (with query params)
-      // 3. oxyaccounts://authorize?token=xxx (deep link format)
-      // 4. https://accounts.oxy.so/authorize?token=xxx (web URL)
-      let token: string | null = null;
-
-      try {
-        // Simple format: oxyauth://{sessionToken}
-        if (data.startsWith('oxyauth://') && !data.includes('?')) {
-          // Extract token directly from the path
-          token = data.replace('oxyauth://', '').trim();
-        }
-        // URL format with query params
-        else if (data.startsWith('oxyauth://') || data.startsWith('oxyaccounts://')) {
-          const url = new URL(data);
-          token = url.searchParams.get('token');
-        }
-        // Web URL format
-        else if (data.includes('/authorize')) {
-          const url = new URL(data);
-          token = url.searchParams.get('token');
-        }
-      } catch {
-        // Invalid URL format, try extracting token directly
-        if (data.startsWith('oxyauth://')) {
-          token = data.replace('oxyauth://', '').split('?')[0].trim();
-        }
-      }
-
-      if (token && token.length > 10) {
-        // Navigate to authorize screen with the token
-        router.push({
-          pathname: '/(tabs)/authorize',
-          params: { token },
-        });
-      } else {
+        // Not JSON, show error for non-transfer QR codes
         alert(
           'Invalid QR Code',
-          'This QR code is not a valid Oxy authorization request or identity transfer.',
+          'This QR code is not a valid identity transfer code. Please scan a QR code generated from the Transfer Identity screen.',
           [
             {
               text: 'Scan Again',
@@ -245,93 +202,6 @@ export default function ScanQRScreen() {
     }
   }, []);
 
-  // Check identity on mount
-  const checkIdentity = useCallback(async () => {
-    try {
-      const exists = await hasIdentity();
-      setHasExistingIdentity(exists);
-
-      if (!exists) {
-        // No identity found - handle based on platform
-        if (Platform.OS !== 'web') {
-          // Native: redirect to auth flow
-          router.replace('/(auth)');
-        }
-        // Web: will show message below
-      }
-    } catch (err) {
-      console.error('Error checking identity:', err);
-    } finally {
-      setCheckingIdentity(false);
-    }
-  }, [hasIdentity, router]);
-
-  useEffect(() => {
-    // Wait for storage to be ready before checking identity
-    if (isStorageReady) {
-      checkIdentity();
-    } else {
-      // If storage isn't ready after a reasonable time, stop checking to avoid infinite loading
-      const timeout = setTimeout(() => {
-        console.warn('Storage not ready after timeout, stopping check');
-        setCheckingIdentity(false);
-      }, 3000); // 3 second timeout
-
-      return () => clearTimeout(timeout);
-    }
-  }, [isStorageReady, checkIdentity]);
-
-  // Show loading state while checking identity
-  if (checkingIdentity || isLoading) {
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={colors.tint} />
-        <Text style={[styles.text, { color: colors.secondaryText, marginTop: 16 }]}>
-          Checking identity...
-        </Text>
-      </View>
-    );
-  }
-
-  // No identity - show platform-specific message
-  if (!hasExistingIdentity) {
-    if (Platform.OS === 'web') {
-      // Web: show message that identity creation is native-only
-      return (
-        <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', padding: 32 }]}>
-          <MaterialCommunityIcons
-            name="qrcode-scan"
-            size={64}
-            color={colors.secondaryText}
-            style={styles.icon}
-          />
-          <Text style={[styles.title, { color: colors.text }]}>
-            Identity Required
-          </Text>
-          <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
-            To scan QR codes and authorize sign-in requests, you need to create or import an identity.{'\n\n'}
-            Identity creation is only available on native platforms (iOS/Android). Please use the mobile app to set up your identity.
-          </Text>
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: colors.tint, marginTop: 24 }]}
-            onPress={handleClose}
-          >
-            <Text style={styles.buttonText}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
-      );
-    }
-    // Native: should have redirected, but show fallback just in case
-    return (
-      <View style={[styles.container, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}>
-        <ActivityIndicator size="large" color={colors.tint} />
-        <Text style={[styles.text, { color: colors.secondaryText, marginTop: 16 }]}>
-          Redirecting to identity setup...
-        </Text>
-      </View>
-    );
-  }
-
   // Permission not determined yet
   if (!permission) {
     return (
@@ -357,7 +227,7 @@ export default function ScanQRScreen() {
           Camera Access Required
         </Text>
         <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
-          To scan QR codes for sign-in authorization, we need access to your camera.
+          To scan QR codes for identity transfer, we need access to your camera.
         </Text>
         <TouchableOpacity
           style={[styles.button, { backgroundColor: colors.tint }]}
@@ -417,7 +287,7 @@ export default function ScanQRScreen() {
           {/* Bottom section */}
           <View style={[styles.overlaySection, styles.bottomSection]}>
             <Text style={styles.instructionText}>
-              Scan a QR code to authorize sign-in or transfer identity
+              Scan the QR code from another device to transfer your identity
             </Text>
 
             {/* Controls */}

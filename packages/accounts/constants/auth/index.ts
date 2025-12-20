@@ -56,9 +56,3 @@ export const CREATING_PROGRESS_MESSAGES = [
 
 export const CREATING_SUBTITLE = 'This may take a moment';
 
-/**
- * Recovery phrase constants
- */
-export const RECOVERY_PHRASE_LENGTH = 12;
-export const RECOVERY_PHRASE_24_LENGTH = 24;
-

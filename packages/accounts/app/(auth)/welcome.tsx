@@ -119,6 +119,10 @@ export default function WelcomeScreen() {
     router.back();
   }, [router]);
 
+  const handleImport = useCallback(() => {
+    router.push('/(auth)/import-options');
+  }, [router]);
+
   const toggleTermsAccepted = useCallback(() => {
     setTermsAccepted(prev => !prev);
   }, []);
@@ -189,6 +193,16 @@ export default function WelcomeScreen() {
             Accept
           </Button>
         </View>
+
+        <TouchableOpacity
+          onPress={handleImport}
+          style={styles.importButton}
+          activeOpacity={0.7}
+        >
+          <Text style={[styles.importButtonText, { color: textColor, opacity: 0.7 }]}>
+            Already have an identity? Import or restore
+          </Text>
+        </TouchableOpacity>
       </Animated.View>
     </View>
   );
@@ -245,5 +259,14 @@ const styles = StyleSheet.create({
   },
   button: {
     flex: 1,
+  },
+  importButton: {
+    marginTop: 16,
+    paddingVertical: 12,
+    alignItems: 'center',
+  },
+  importButtonText: {
+    fontSize: 14,
+    textDecorationLine: 'underline',
   },
 });

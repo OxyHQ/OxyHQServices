@@ -50,8 +50,8 @@ export interface OxyContextState {
   currentNativeLanguageName: string;
 
   // Identity management (public key authentication - offline-first)
-  createIdentity: () => Promise<{ recoveryPhrase: string[]; synced: boolean }>;
-  importIdentity: (phrase: string) => Promise<{ synced: boolean }>;
+  createIdentity: () => Promise<{ synced: boolean }>;
+  importIdentity: (backupData: { encrypted: string; salt: string; iv: string; publicKey: string }, password: string) => Promise<{ synced: boolean }>;
   signIn: (deviceName?: string) => Promise<User>;
   hasIdentity: () => Promise<boolean>;
   getPublicKey: () => Promise<string | null>;
@@ -216,7 +216,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             if (__DEV__) {
               logger(restored
                 ? 'Identity restored from backup successfully'
-                : 'Identity integrity check failed - user may need to restore from recovery phrase'
+                : 'Identity integrity check failed - user may need to restore from backup file'
               );
             }
           } else {
@@ -234,7 +234,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         if (__DEV__) {
           logger('Error during identity integrity check', error);
         }
-        // Don't block app startup - user can recover with recovery phrase
+        // Don't block app startup - user can recover with backup file
       }
     };
 
@@ -287,7 +287,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const {
     createIdentity,
-    importIdentity,
+    importIdentity: importIdentityBase,
     signIn,
     logout,
     logoutAll,
@@ -319,6 +319,24 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   // syncIdentity - TanStack Query handles offline mutations automatically
   const syncIdentity = useCallback(() => syncIdentityBase(), [syncIdentityBase]);
+
+  // Wrapper for importIdentity to handle legacy calls gracefully
+  const importIdentity = useCallback(
+    async (backupData: { encrypted: string; salt: string; iv: string; publicKey: string } | string, password?: string): Promise<{ synced: boolean }> => {
+      // Handle legacy calls with single string argument (old recovery phrase signature)
+      if (typeof backupData === 'string') {
+        throw new Error('Recovery phrase import is no longer supported. Please use backup file import or QR code transfer instead.');
+      }
+
+      // Validate that password is provided
+      if (!password || typeof password !== 'string') {
+        throw new Error('Password is required for backup file import.');
+      }
+
+      return importIdentityBase(backupData, password);
+    },
+    [importIdentityBase]
+  );
 
   // Clear all account data when identity is lost (for accounts app)
   // In accounts app, identity = account, so losing identity means losing everything

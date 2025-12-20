@@ -9,7 +9,7 @@ Oxy uses **public/private key cryptography** (ECDSA secp256k1) for authenticatio
 - **Private Key**: Generated and stored securely on the user's device (never leaves the device)
 - **Public Key**: Serves as the unique identifier across the Oxy ecosystem (displayed as truncated public key if no username is set)
 - **Digital Signatures**: All actions are cryptographically signed to prove identity
-- **Recovery Phrase**: BIP39 mnemonic phrase (12 or 24 words) for backing up and restoring identities
+- **Backup File**: Password-protected encrypted file for backing up and restoring identities
 - **Oxy Accounts App**: The dedicated mobile app where users manage their cryptographic identity
 
 ### Architecture
@@ -42,10 +42,17 @@ The identity system is designed to work **completely offline**:
 // Create identity (works offline) - no parameters needed!
 const result = await createIdentity();
 // result.synced = false if offline
-// result.recoveryPhrase = ['word1', 'word2', ...]
 
-// Import identity from recovery phrase
-const importResult = await importIdentity('word1 word2 ... word12');
+// Import identity from backup file
+const importResult = await importIdentity(
+  {
+    encrypted: '...',
+    salt: '...',
+    iv: '...',
+    publicKey: '...'
+  },
+  'backup-password'
+);
 // importResult.synced = false if offline
 
 // Check sync status
@@ -64,9 +71,8 @@ if (!isSynced) {
 1. Open the **Oxy Accounts** app
 2. Choose "Create New Identity"
 3. Tap "Generate My Keys"
-4. Save your **12-word recovery phrase** securely
-5. Confirm a few words from the phrase to verify you saved it
-6. Your identity is ready!
+4. Create an encrypted backup file and save it securely
+5. Your identity is ready!
 
 Your identity is purely cryptographic - just your public/private key pair. Profile information like username, name, etc. can be added later if desired.
 
@@ -74,8 +80,18 @@ Your identity is purely cryptographic - just your public/private key pair. Profi
 
 1. Open the **Oxy Accounts** app
 2. Choose "Import Identity"
-3. Enter your **12-word recovery phrase**
-4. Your identity is restored and will sync with the server when online
+3. Select your encrypted backup file
+4. Enter your backup password
+5. Your identity is restored and will sync with the server when online
+
+### Transferring Identity Between Devices
+
+1. On source device: Open **Oxy Accounts** app → Transfer Identity
+2. Generate QR code with encrypted identity data
+3. Note the transfer password shown
+4. On target device: Open **Oxy Accounts** app → Scan QR Code
+5. Scan the QR code and enter the transfer password
+6. Your identity is transferred to the new device
 
 ### Signing In to Other Apps
 
@@ -292,30 +308,6 @@ const { signature, timestamp } = await SignatureService.signRequestData({
 });
 ```
 
-### RecoveryPhraseService
-
-```typescript
-import { RecoveryPhraseService } from '@oxyhq/services/crypto';
-
-// Generate new identity with recovery phrase (12 words)
-const { phrase, words, publicKey } = await RecoveryPhraseService.generateIdentityWithRecovery();
-
-// Generate with 24 words (more secure)
-const { phrase, words, publicKey } = await RecoveryPhraseService.generateIdentityWithRecovery24();
-
-// Restore identity from phrase
-const publicKey = await RecoveryPhraseService.restoreFromPhrase(phrase);
-
-// Validate phrase
-const isValid = RecoveryPhraseService.validatePhrase(phrase);
-
-// Get suggestions for partial word (autocomplete)
-const suggestions = RecoveryPhraseService.getSuggestions('aband', 5);
-
-// Derive public key from phrase (without storing)
-const publicKey = await RecoveryPhraseService.derivePublicKeyFromPhrase(phrase);
-```
-
 ## Security Best Practices
 
 ### Private Key Storage
@@ -324,12 +316,13 @@ const publicKey = await RecoveryPhraseService.derivePublicKeyFromPhrase(phrase);
 - Keys **never leave the device** - all signing happens locally
 - Never log, transmit, or store private keys in plaintext
 
-### Recovery Phrase
+### Backup Files
 
-- **Always** have users save their recovery phrase before completing registration
-- Store recovery phrases securely offline (paper, password manager)
-- Never store recovery phrases on servers or in logs
-- Provide clear instructions on phrase backup
+- **Always** have users create encrypted backup files before completing registration
+- Store backup files securely offline (encrypted drive, password manager, safe)
+- Never store backup files or passwords on servers or in logs
+- Provide clear instructions on backup file creation and storage
+- Backup files are password-protected ZIP files containing encrypted identity data
 
 ### Signature Verification
 
@@ -390,12 +383,20 @@ await signUp('username', 'email', 'password');
 const { createIdentity, importIdentity, signIn } = useOxy();
 
 // For Oxy Accounts app:
-const { recoveryPhrase, synced } = await createIdentity();
-// Show recovery phrase to user
+const { synced } = await createIdentity();
+// Identity created - user should create backup file
 // synced = false if offline, will auto-sync when online
 
-// For importing:
-const { synced } = await importIdentity('word1 word2 ... word12');
+// For importing from backup file:
+const { synced } = await importIdentity(
+  {
+    encrypted: '...',
+    salt: '...',
+    iv: '...',
+    publicKey: '...'
+  },
+  'backup-password'
+);
 // synced = false if offline, will auto-sync when online
 
 // For signing in:
@@ -423,7 +424,7 @@ Use `OxySignInButton` or the `OxyAuth` screen (see "Cross-App Authentication Flo
 
 **Solution**: Request a new challenge. Challenges typically expire after 5 minutes.
 
-### Recovery phrase validation fails
+### Backup file import fails
 
 **Check**:
 - All words are from the BIP39 English wordlist

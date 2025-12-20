@@ -7,7 +7,7 @@ import { fetchSessionsWithFallback, mapSessionsToClient } from '../../utils/sess
 import { handleAuthError, isInvalidSessionError } from '../../utils/errorHandlers';
 import type { StorageInterface } from '../../utils/storageHelpers';
 import type { OxyServices } from '../../../core';
-import { KeyManager, SignatureService, RecoveryPhraseService } from '../../../crypto';
+import { KeyManager, SignatureService } from '../../../crypto';
 
 export interface UseAuthOperationsOptions {
   oxyServices: OxyServices;
@@ -34,9 +34,9 @@ export interface UseAuthOperationsOptions {
 
 export interface UseAuthOperationsResult {
   /** Create a new identity locally (offline-first) and optionally sync with server */
-  createIdentity: () => Promise<{ recoveryPhrase: string[]; synced: boolean }>;
-  /** Import an existing identity from recovery phrase */
-  importIdentity: (phrase: string) => Promise<{ synced: boolean }>;
+  createIdentity: () => Promise<{ synced: boolean }>;
+  /** Import an existing identity from backup file data */
+  importIdentity: (backupData: { encrypted: string; salt: string; iv: string; publicKey: string }, password: string) => Promise<{ synced: boolean }>;
   /** Sign in with existing identity on device */
   signIn: (deviceName?: string) => Promise<User>;
   /** Logout from current session */
@@ -274,18 +274,19 @@ export const useAuthOperations = ({
   );
 
   /**
-   * Create a new identity with recovery phrase (offline-first)
+   * Create a new identity (offline-first)
    * Identity is purely cryptographic - no username or email required
    */
   const createIdentity = useCallback(
-    async (): Promise<{ recoveryPhrase: string[]; synced: boolean }> => {
+    async (): Promise<{ synced: boolean }> => {
       if (!storage) throw new Error('Storage not initialized');
 
       setAuthState({ isLoading: true, error: null });
 
       try {
-        // Generate new identity with recovery phrase (works offline)
-        const { phrase, words, publicKey } = await RecoveryPhraseService.generateIdentityWithRecovery();
+        // Generate new key pair directly (works offline)
+        const { publicKey, privateKey } = await KeyManager.generateKeyPair();
+        await KeyManager.importKeyPair(privateKey);
 
         // Mark as not synced
         await storage.setItem('oxy_identity_synced', 'false');
@@ -301,7 +302,6 @@ export const useAuthOperations = ({
           setIdentitySynced(true);
 
           return {
-            recoveryPhrase: words,
             synced: true,
           };
         } catch (syncError) {
@@ -311,13 +311,12 @@ export const useAuthOperations = ({
           }
           
           return {
-            recoveryPhrase: words,
             synced: false,
           };
         }
       } catch (error) {
         // CRITICAL: Never delete identity on error - it may have been successfully created
-        // Only log the error and let the user recover using their recovery phrase
+        // Only log the error and let the user recover using their backup file
         // Identity deletion should ONLY happen when explicitly requested by the user
         if (__DEV__ && logger) {
           logger('Error during identity creation (identity may still exist):', error);
@@ -330,7 +329,7 @@ export const useAuthOperations = ({
           await storage.setItem('oxy_identity_synced', 'false').catch(() => {});
           setIdentitySynced(false);
           if (__DEV__ && logger) {
-            logger('Identity was created but sync failed - user can sync later using recovery phrase');
+            logger('Identity was created but sync failed - user can sync later using backup file');
           }
         } else {
           // No identity exists - this was a generation failure, safe to clean up sync flag
@@ -434,17 +433,68 @@ export const useAuthOperations = ({
   );
 
   /**
-   * Import identity from recovery phrase (offline-first)
+   * Import identity from backup file data (offline-first)
    */
   const importIdentity = useCallback(
-    async (phrase: string): Promise<{ synced: boolean }> => {
+    async (backupData: { encrypted: string; salt: string; iv: string; publicKey: string }, password: string): Promise<{ synced: boolean }> => {
       if (!storage) throw new Error('Storage not initialized');
+
+      // Validate arguments - ensure backupData is an object, not a string (old signature)
+      if (!backupData || typeof backupData !== 'object' || Array.isArray(backupData)) {
+        throw new Error('Invalid backup data. Please use the backup file import feature.');
+      }
+
+      if (!backupData.encrypted || !backupData.salt || !backupData.iv || !backupData.publicKey) {
+        throw new Error('Invalid backup data structure. Missing required fields.');
+      }
+
+      if (!password || typeof password !== 'string') {
+        throw new Error('Password is required for backup file import.');
+      }
 
       setAuthState({ isLoading: true, error: null });
 
       try {
-        // Restore identity from phrase (works offline)
-        const publicKey = await RecoveryPhraseService.restoreFromPhrase(phrase);
+        // Decrypt private key from backup data
+        const Crypto = await import('expo-crypto');
+        
+        // Convert hex strings to Uint8Array
+        const saltBytes = new Uint8Array(
+          backupData.salt.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || []
+        );
+        const ivBytes = new Uint8Array(
+          backupData.iv.match(/.{1,2}/g)?.map(byte => parseInt(byte, 16)) || []
+        );
+
+        // Derive key from password (same algorithm as EncryptedBackupGenerator)
+        const saltHex = Array.from(saltBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+        let key = password + saltHex;
+        for (let i = 0; i < 10000; i++) {
+          key = await Crypto.digestStringAsync(
+            Crypto.CryptoDigestAlgorithm.SHA256,
+            key
+          );
+        }
+        const keyBytes = new Uint8Array(32);
+        for (let i = 0; i < 64 && i < key.length; i += 2) {
+          keyBytes[i / 2] = parseInt(key.substring(i, i + 2), 16);
+        }
+
+        // Decrypt private key (XOR decryption - same as encryption)
+        const encryptedBytes = Buffer.from(backupData.encrypted, 'base64');
+        const decryptedBytes = new Uint8Array(encryptedBytes.length);
+        for (let i = 0; i < encryptedBytes.length; i++) {
+          decryptedBytes[i] = encryptedBytes[i] ^ keyBytes[i % keyBytes.length] ^ ivBytes[i % ivBytes.length];
+        }
+        const privateKey = new TextDecoder().decode(decryptedBytes);
+
+        // Import the key pair
+        const publicKey = await KeyManager.importKeyPair(privateKey);
+
+        // Verify public key matches
+        if (publicKey !== backupData.publicKey) {
+          throw new Error('Backup file is corrupted or password is incorrect');
+        }
 
         // Mark as not synced
         await storage.setItem('oxy_identity_synced', 'false');
@@ -478,7 +528,7 @@ export const useAuthOperations = ({
         }
       } catch (error) {
         const message = handleAuthError(error, {
-          defaultMessage: 'Failed to import identity',
+          defaultMessage: 'Failed to import identity. Please check your password and backup file.',
           code: REGISTER_ERROR_CODE,
           onError,
           setAuthError: (msg: string) => setAuthState({ error: msg }),

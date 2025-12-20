@@ -328,7 +328,7 @@ export default function AboutIdentityScreen() {
       <div class="info-title">Important Information:</div>
       <ul>
         <li>This private key is used to sign transactions and prove your identity</li>
-        <li>If you lose this key and your recovery phrase, you will permanently lose access to your identity</li>
+        <li>If you lose this key and your backup file, you will permanently lose access to your identity</li>
         <li>Do not store this document digitally (screenshots, cloud storage, etc.)</li>
         <li>Consider storing multiple copies in different secure locations</li>
         <li>If this key is compromised, you should immediately create a new identity</li>
@@ -390,11 +390,11 @@ export default function AboutIdentityScreen() {
       subtitle: 'You sign in using cryptographic proof, not passwords that can be guessed or stolen.',
     },
     {
-      id: 'recovery',
-      icon: 'text-box-outline',
+      id: 'backup',
+      icon: 'file-export',
       iconColor: '#F59E0B',
-      title: 'Recovery Phrase Backup',
-      subtitle: 'Your 12-word recovery phrase is the only way to restore your identity on a new device.',
+      title: 'Encrypted Backup File',
+      subtitle: 'Your password-protected backup file is the only way to restore your identity on a new device.',
     },
     {
       id: 'decentralized',
@@ -461,8 +461,8 @@ export default function AboutIdentityScreen() {
 
           {/* Important Notice */}
           <ImportantBanner>
-            Your recovery phrase is the ONLY way to restore your identity if you lose access to this device.
-            Oxy cannot reset or recover your account. Keep your recovery phrase safe and never share it.
+            Your encrypted backup file is the ONLY way to restore your identity if you lose access to this device.
+            Oxy cannot reset or recover your account. Keep your backup file safe and never share it or your password.
           </ImportantBanner>
 
           {/* Self-Custody Identity */}
@@ -488,6 +488,15 @@ export default function AboutIdentityScreen() {
                     title: 'Create Encrypted Backup',
                     subtitle: 'Generate password-protected backup file',
                     onPress: () => router.push('/(tabs)/create-backup'),
+                    showChevron: true,
+                  },
+                  {
+                    id: 'transfer-identity',
+                    icon: 'qrcode-scan',
+                    iconColor: '#3B82F6',
+                    title: 'Transfer Identity',
+                    subtitle: 'Generate QR code to move identity to another device',
+                    onPress: () => router.push('/(tabs)/transfer-identity'),
                     showChevron: true,
                   },
                   {
