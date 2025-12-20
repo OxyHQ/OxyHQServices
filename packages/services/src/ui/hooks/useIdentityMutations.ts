@@ -53,7 +53,8 @@ export function useImportIdentity(
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: importIdentityFn,
+    mutationFn: (variables: { backupData: { encrypted: string; salt: string; iv: string; publicKey: string }; password: string }) => 
+      importIdentityFn(variables.backupData, variables.password),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['user'] });
       queryClient.invalidateQueries({ queryKey: ['identity'] });
