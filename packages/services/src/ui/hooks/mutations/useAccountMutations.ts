@@ -292,12 +292,14 @@ export const useUpdateAccountSettings = () => {
  * Update privacy settings with optimistic updates and authentication handling
  */
 export const useUpdatePrivacySettings = () => {
-  const { oxyServices, activeSessionId, user, syncIdentity } = useOxy();
+  const { oxyServices, activeSessionId, syncIdentity } = useOxy();
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async ({ settings, userId }: { settings: Record<string, any>; userId?: string }) => {
-      const targetUserId = userId || user?.id;
+      // Use getCurrentUserId() which returns MongoDB ObjectId from JWT token
+      // Never use user?.id as it may be set to publicKey
+      const targetUserId = userId || oxyServices.getCurrentUserId();
       if (!targetUserId) {
         throw new Error('User ID is required');
       }
@@ -353,7 +355,7 @@ export const useUpdatePrivacySettings = () => {
     },
     // Optimistic update
     onMutate: async ({ settings, userId }) => {
-      const targetUserId = userId || user?.id;
+      const targetUserId = userId || oxyServices.getCurrentUserId();
       if (!targetUserId) return;
 
       // Cancel outgoing refetches
@@ -387,7 +389,7 @@ export const useUpdatePrivacySettings = () => {
     },
     // On error, rollback
     onError: (error, { userId }, context) => {
-      const targetUserId = userId || user?.id;
+      const targetUserId = userId || oxyServices.getCurrentUserId();
       if (context?.previousPrivacySettings && targetUserId) {
         queryClient.setQueryData(queryKeys.privacy.settings(targetUserId), context.previousPrivacySettings);
       }
@@ -398,7 +400,7 @@ export const useUpdatePrivacySettings = () => {
     },
     // On success, invalidate and refetch
     onSuccess: (data, { userId }) => {
-      const targetUserId = userId || user?.id;
+      const targetUserId = userId || oxyServices.getCurrentUserId();
       if (targetUserId) {
         queryClient.setQueryData(queryKeys.privacy.settings(targetUserId), data);
       }
@@ -418,7 +420,7 @@ export const useUpdatePrivacySettings = () => {
     },
     // Always refetch after error or success
     onSettled: (data, error, { userId }) => {
-      const targetUserId = userId || user?.id;
+      const targetUserId = userId || oxyServices.getCurrentUserId();
       if (targetUserId) {
         queryClient.invalidateQueries({ queryKey: queryKeys.privacy.settings(targetUserId) });
       }

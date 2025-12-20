@@ -59,9 +59,12 @@ export interface OxyContextState {
   isIdentitySynced: () => Promise<boolean>;
   syncIdentity: () => Promise<User>;
   deleteIdentityAndClearAccount: (skipBackup?: boolean, force?: boolean, userConfirmed?: boolean) => Promise<void>;
-  storeTransferCode: (transferId: string, code: string, sourceDeviceId: string | null, publicKey: string) => void;
-  getTransferCode: (transferId: string) => { code: string; sourceDeviceId: string | null; publicKey: string; timestamp: number } | null;
-  clearTransferCode: (transferId: string) => void;
+  storeTransferCode: (transferId: string, code: string, sourceDeviceId: string | null, publicKey: string) => Promise<void>;
+  getTransferCode: (transferId: string) => { code: string; sourceDeviceId: string | null; publicKey: string; timestamp: number; state: 'pending' | 'completed' | 'failed' } | null;
+  clearTransferCode: (transferId: string) => Promise<void>;
+  getAllPendingTransfers: () => Array<{ transferId: string; data: { code: string; sourceDeviceId: string | null; publicKey: string; timestamp: number; state: 'pending' | 'completed' | 'failed' } }>;
+  getActiveTransferId: () => string | null;
+  updateTransferState: (transferId: string, state: 'pending' | 'completed' | 'failed') => Promise<void>;
 
   // Identity sync state (reactive, from Zustand store)
   identitySyncState: {
@@ -194,7 +197,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const logger = useCallback((message: string, err?: unknown) => {
     if (__DEV__) {
-      console.warn(`[OxyContext] ${message}`, err);
+      if (err !== undefined) {
+        console.warn(`[OxyContext] ${message}`, err);
+      } else {
+        console.warn(`[OxyContext] ${message}`);
+      }
     }
   }, []);
 
@@ -380,6 +387,21 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     oxyServices.clearCache();
   }, [queryClient, storage, clearSessionState, logger, oxyServices]);
 
+  // Transfer code management functions (must be defined before deleteIdentityAndClearAccount)
+  const getAllPendingTransfers = useCallback(() => {
+    const pending: Array<{ transferId: string; data: TransferCodeData }> = [];
+    transferCodesRef.current.forEach((data, transferId) => {
+      if (data.state === 'pending') {
+        pending.push({ transferId, data });
+      }
+    });
+    return pending;
+  }, []);
+
+  const getActiveTransferId = useCallback(() => {
+    return activeTransferIdRef.current;
+  }, []);
+
   // Delete identity and clear all account data
   // In accounts app, deleting identity means losing the account completely
   const deleteIdentityAndClearAccount = useCallback(async (
@@ -387,12 +409,30 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     force: boolean = false,
     userConfirmed: boolean = false
   ): Promise<void> => {
+    // CRITICAL: Check for active transfers before deletion (unless force is true)
+    // This prevents accidental identity loss during transfer
+    if (!force) {
+      const pendingTransfers = getAllPendingTransfers();
+      if (pendingTransfers.length > 0) {
+        const activeTransferId = getActiveTransferId();
+        const hasActiveTransfer = activeTransferId && pendingTransfers.some(t => t.transferId === activeTransferId);
+        
+        if (hasActiveTransfer) {
+          throw new Error(
+            'Cannot delete identity: An active identity transfer is in progress. ' +
+            'Please wait for the transfer to complete or cancel it first. ' +
+            'If you proceed, you may lose access to your identity permanently.'
+          );
+        }
+      }
+    }
+
     // First, clear all account data
     await clearAllAccountData();
 
     // Then delete the identity keys
     await KeyManager.deleteIdentity(skipBackup, force, userConfirmed);
-  }, [clearAllAccountData]);
+  }, [clearAllAccountData, getAllPendingTransfers, getActiveTransferId]);
 
   // Network reconnect sync - TanStack Query automatically retries mutations on reconnect
   // We only need to sync identity if it's not synced
@@ -401,6 +441,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
     let wasOffline = false;
     let checkTimeout: NodeJS.Timeout | null = null;
+    let lastReconnectionLog = 0;
+    const RECONNECTION_LOG_DEBOUNCE_MS = 5000; // 5 seconds
 
     // Circuit breaker and exponential backoff state
     const stateRef = {
@@ -436,35 +478,42 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
         // If we were offline and now we're online, sync identity if needed
         if (wasOffline) {
-          logger('Network reconnected, checking identity sync...');
-
-          // Sync identity first (if not synced)
-          try {
-            const hasIdentityValue = await hasIdentity();
-            if (hasIdentityValue) {
-              // Check sync status directly - sync if not explicitly 'true'
-              // undefined = not synced yet, 'false' = explicitly not synced, 'true' = synced
-              const syncStatus = await storage.getItem('oxy_identity_synced');
-              if (syncStatus !== 'true') {
-                await syncIdentity();
+          const now = Date.now();
+          const timeSinceLastLog = now - lastReconnectionLog;
+          
+          if (timeSinceLastLog >= RECONNECTION_LOG_DEBOUNCE_MS) {
+            logger('Network reconnected, checking identity sync...');
+            lastReconnectionLog = now;
+            
+            // Sync identity first (if not synced)
+            try {
+              const hasIdentityValue = await hasIdentity();
+              if (hasIdentityValue) {
+                // Check sync status directly - sync if not explicitly 'true'
+                // undefined = not synced yet, 'false' = explicitly not synced, 'true' = synced
+                const syncStatus = await storage.getItem('oxy_identity_synced');
+                if (syncStatus !== 'true') {
+                  await syncIdentity();
+                }
               }
-            }
-          } catch (syncError: any) {
-            // Skip sync silently if username is required (expected when offline onboarding)
-            if (syncError?.code === 'USERNAME_REQUIRED' || syncError?.message === 'USERNAME_REQUIRED') {
-              if (__DEV__) {
-                loggerUtil.debug('Sync skipped - username required', { component: 'OxyContext', method: 'checkNetworkAndSync' }, syncError as unknown);
+            } catch (syncError: any) {
+              // Skip sync silently if username is required (expected when offline onboarding)
+              if (syncError?.code === 'USERNAME_REQUIRED' || syncError?.message === 'USERNAME_REQUIRED') {
+                if (__DEV__) {
+                  loggerUtil.debug('Sync skipped - username required', { component: 'OxyContext', method: 'checkNetworkAndSync' }, syncError as unknown);
+                }
+                // Don't log or show error - username will be set later
+              } else if (!isTimeoutOrNetworkError(syncError)) {
+                // Only log unexpected errors - timeouts/network issues are expected when offline
+                logger('Error syncing identity on reconnect', syncError);
+              } else if (__DEV__) {
+                loggerUtil.debug('Identity sync timeout (expected when offline)', { component: 'OxyContext', method: 'checkNetworkAndSync' }, syncError as unknown);
               }
-              // Don't log or show error - username will be set later
-            } else if (!isTimeoutOrNetworkError(syncError)) {
-              // Only log unexpected errors - timeouts/network issues are expected when offline
-              logger('Error syncing identity on reconnect', syncError);
-            } else if (__DEV__) {
-              loggerUtil.debug('Identity sync timeout (expected when offline)', { component: 'OxyContext', method: 'checkNetworkAndSync' }, syncError as unknown);
             }
           }
-
+          
           // TanStack Query will automatically retry pending mutations
+          // Reset flag immediately after processing (whether logged or not)
           wasOffline = false;
         }
       } catch (error) {
@@ -621,51 +670,207 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // The JWT token's userId field contains the MongoDB ObjectId
   const userId = oxyServices.getCurrentUserId() || user?.id;
 
-  // Store transfer codes in memory for verification
-  // Map: transferId -> { code, sourceDeviceId, publicKey, timestamp }
-  const transferCodesRef = useRef<Map<string, { code: string; sourceDeviceId: string | null; publicKey: string; timestamp: number }>>(new Map());
+  // Transfer code storage interface
+  interface TransferCodeData {
+    code: string;
+    sourceDeviceId: string | null;
+    publicKey: string;
+    timestamp: number;
+    state: 'pending' | 'completed' | 'failed';
+  }
+
+  // Store transfer codes in memory for verification (also persisted to storage)
+  // Map: transferId -> TransferCodeData
+  const transferCodesRef = useRef<Map<string, TransferCodeData>>(new Map());
+  const activeTransferIdRef = useRef<string | null>(null);
+  const TRANSFER_CODES_STORAGE_KEY = `${storageKeyPrefix}_transfer_codes`;
+  const ACTIVE_TRANSFER_STORAGE_KEY = `${storageKeyPrefix}_active_transfer_id`;
+
+  // Load transfer codes from storage on startup
+  useEffect(() => {
+    if (!storage || !isStorageReady) return;
+
+    const loadTransferCodes = async () => {
+      try {
+        // Load transfer codes
+        const storedCodes = await storage.getItem(TRANSFER_CODES_STORAGE_KEY);
+        if (storedCodes) {
+          const parsed = JSON.parse(storedCodes);
+          const now = Date.now();
+          const fifteenMinutes = 15 * 60 * 1000;
+          
+          // Only restore non-expired pending transfers
+          Object.entries(parsed).forEach(([transferId, data]: [string, any]) => {
+            if (data.state === 'pending' && (now - data.timestamp) < fifteenMinutes) {
+              transferCodesRef.current.set(transferId, data);
+              if (__DEV__) {
+                logger('Restored pending transfer from storage', { transferId });
+              }
+            }
+          });
+        }
+
+        // Load active transfer ID
+        const activeTransferId = await storage.getItem(ACTIVE_TRANSFER_STORAGE_KEY);
+        if (activeTransferId) {
+          // Verify it's still valid
+          const transferData = transferCodesRef.current.get(activeTransferId);
+          if (transferData && transferData.state === 'pending') {
+            activeTransferIdRef.current = activeTransferId;
+            if (__DEV__) {
+              logger('Restored active transfer ID from storage', { transferId: activeTransferId });
+            }
+          } else {
+            // Clear invalid active transfer
+            await storage.removeItem(ACTIVE_TRANSFER_STORAGE_KEY);
+          }
+        }
+      } catch (error) {
+        if (__DEV__) {
+          logger('Failed to load transfer codes from storage', error);
+        }
+      }
+    };
+
+    loadTransferCodes();
+  }, [storage, isStorageReady, logger, storageKeyPrefix]);
+
+  // Persist transfer codes to storage whenever they change
+  const persistTransferCodes = useCallback(async () => {
+    if (!storage) return;
+    
+    try {
+      const codesToStore: Record<string, TransferCodeData> = {};
+      transferCodesRef.current.forEach((value, key) => {
+        codesToStore[key] = value;
+      });
+      await storage.setItem(TRANSFER_CODES_STORAGE_KEY, JSON.stringify(codesToStore));
+    } catch (error) {
+      if (__DEV__) {
+        logger('Failed to persist transfer codes', error);
+      }
+    }
+  }, [storage, logger]);
 
   // Cleanup old transfer codes (older than 15 minutes)
   useEffect(() => {
-    const cleanup = setInterval(() => {
+    const cleanup = setInterval(async () => {
       const now = Date.now();
       const fifteenMinutes = 15 * 60 * 1000;
+      let needsPersist = false;
+
       transferCodesRef.current.forEach((value, key) => {
         if (now - value.timestamp > fifteenMinutes) {
           transferCodesRef.current.delete(key);
+          needsPersist = true;
           if (__DEV__) {
             logger('Cleaned up expired transfer code', { transferId: key });
           }
         }
       });
+
+      // Clear active transfer if it was deleted
+      if (activeTransferIdRef.current && !transferCodesRef.current.has(activeTransferIdRef.current)) {
+        activeTransferIdRef.current = null;
+        if (storage) {
+          try {
+            await storage.removeItem(ACTIVE_TRANSFER_STORAGE_KEY);
+          } catch (error) {
+            // Ignore storage errors
+          }
+        }
+      }
+
+      if (needsPersist) {
+        await persistTransferCodes();
+      }
     }, 60000); // Check every minute
 
     return () => clearInterval(cleanup);
-  }, [logger]);
+  }, [logger, persistTransferCodes, storage]);
 
   // Transfer code management functions
-  const storeTransferCode = useCallback((transferId: string, code: string, sourceDeviceId: string | null, publicKey: string) => {
-    transferCodesRef.current.set(transferId, {
+  const storeTransferCode = useCallback(async (transferId: string, code: string, sourceDeviceId: string | null, publicKey: string) => {
+    const transferData: TransferCodeData = {
       code,
       sourceDeviceId,
       publicKey,
       timestamp: Date.now(),
-    });
+      state: 'pending',
+    };
+    
+    transferCodesRef.current.set(transferId, transferData);
+    activeTransferIdRef.current = transferId;
+    
+    // Persist to storage
+    await persistTransferCodes();
+    if (storage) {
+      try {
+        await storage.setItem(ACTIVE_TRANSFER_STORAGE_KEY, transferId);
+      } catch (error) {
+        if (__DEV__) {
+          logger('Failed to persist active transfer ID', error);
+        }
+      }
+    }
+    
     if (__DEV__) {
       logger('Stored transfer code', { transferId, sourceDeviceId, publicKey: publicKey.substring(0, 16) + '...' });
     }
-  }, [logger]);
+  }, [logger, persistTransferCodes, storage]);
 
   const getTransferCode = useCallback((transferId: string) => {
     return transferCodesRef.current.get(transferId) || null;
   }, []);
 
-  const clearTransferCode = useCallback((transferId: string) => {
+  const updateTransferState = useCallback(async (transferId: string, state: 'pending' | 'completed' | 'failed') => {
+    const transferData = transferCodesRef.current.get(transferId);
+    if (transferData) {
+      transferData.state = state;
+      transferCodesRef.current.set(transferId, transferData);
+      
+      // Clear active transfer if completed or failed
+      if (state === 'completed' || state === 'failed') {
+        if (activeTransferIdRef.current === transferId) {
+          activeTransferIdRef.current = null;
+          if (storage) {
+            try {
+              await storage.removeItem(ACTIVE_TRANSFER_STORAGE_KEY);
+            } catch (error) {
+              // Ignore storage errors
+            }
+          }
+        }
+      }
+      
+      await persistTransferCodes();
+      
+      if (__DEV__) {
+        logger('Updated transfer state', { transferId, state });
+      }
+    }
+  }, [logger, persistTransferCodes, storage]);
+
+  const clearTransferCode = useCallback(async (transferId: string) => {
     transferCodesRef.current.delete(transferId);
+    
+    if (activeTransferIdRef.current === transferId) {
+      activeTransferIdRef.current = null;
+      if (storage) {
+        try {
+          await storage.removeItem(ACTIVE_TRANSFER_STORAGE_KEY);
+        } catch (error) {
+          // Ignore storage errors
+        }
+      }
+    }
+    
+    await persistTransferCodes();
+    
     if (__DEV__) {
       logger('Cleared transfer code', { transferId });
     }
-  }, [logger]);
+  }, [logger, persistTransferCodes, storage]);
 
   const refreshSessionsWithUser = useCallback(
     () => refreshSessions(userId),
@@ -686,15 +891,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const handleIdentityTransferComplete = useCallback(
     async (data: { transferId: string; sourceDeviceId: string; publicKey: string; transferCode?: string; completedAt: string }) => {
-      if (__DEV__) {
-        console.log('[OxyContext] handleIdentityTransferComplete called', {
-          transferId: data.transferId,
-          sourceDeviceId: data.sourceDeviceId,
-          currentDeviceId,
-          hasActiveSession: activeSessionId !== null,
-        });
-      }
-      
       try {
         logger('Received identity transfer complete notification', {
           transferId: data.transferId,
@@ -704,29 +900,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           publicKey: data.publicKey.substring(0, 16) + '...',
         });
 
-        // Get stored transfer code for verification
         const storedTransfer = getTransferCode(data.transferId);
 
         if (!storedTransfer) {
-          if (__DEV__) {
-            console.warn('[OxyContext] Transfer code not found for transferId', {
-              transferId: data.transferId,
-            });
-          }
           logger('Transfer code not found for transferId', { 
             transferId: data.transferId,
           });
           toast.error('Transfer verification failed: Code not found. Identity will not be deleted.');
           return;
-        }
-
-        if (__DEV__) {
-          console.log('[OxyContext] Found stored transfer code', {
-            transferId: data.transferId,
-            storedSourceDeviceId: storedTransfer.sourceDeviceId,
-            receivedSourceDeviceId: data.sourceDeviceId,
-            currentDeviceId,
-          });
         }
 
         // Verify publicKey matches first (most important check)
@@ -784,13 +965,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // Don't block - publicKey match is sufficient, code mismatch might be due to user error
             // Log warning but proceed
           }
-        } else {
-          // If transfer code is not provided, log info but proceed
-          if (__DEV__) {
-            logger('Transfer code not provided in completion notification, but publicKey matches - proceeding', { 
-              transferId: data.transferId 
-            });
-          }
         }
 
         // Check if transfer is too old (safety timeout - 10 minutes)
@@ -807,15 +981,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           return;
         }
 
-        // All verifications passed - automatically delete identity
-        if (__DEV__) {
-          console.log('[OxyContext] All verifications passed, deleting identity', {
-            transferId: data.transferId,
-            sourceDeviceId: data.sourceDeviceId,
-            currentDeviceId,
-          });
-        }
-        
+        // NOTE: Target device verification already happened server-side when notifyTransferComplete was called
+        // The server verified that the target device is authenticated and has the matching public key
+        // Additional client-side verification is not necessary and would require source device authentication
+        // which may not be available. The existing checks (public key match, transfer code, device ID) are sufficient.
+
         logger('All transfer verifications passed, deleting identity from source device', {
           transferId: data.transferId,
           sourceDeviceId: data.sourceDeviceId,
@@ -823,14 +993,31 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         });
 
         try {
-          await deleteIdentityAndClearAccount(false, false, true);
-          
-          if (__DEV__) {
-            console.log('[OxyContext] Identity deleted successfully');
+          // Verify identity still exists before deletion (safety check)
+          const identityStillExists = await KeyManager.hasIdentity();
+          if (!identityStillExists) {
+            logger('Identity already deleted - skipping deletion', {
+              transferId: data.transferId,
+            });
+            await updateTransferState(data.transferId, 'completed');
+            await clearTransferCode(data.transferId);
+            return;
           }
 
-          // Clear the transfer code after successful deletion
-          clearTransferCode(data.transferId);
+          await deleteIdentityAndClearAccount(false, false, true);
+          
+          // Verify identity was actually deleted
+          const identityDeleted = !(await KeyManager.hasIdentity());
+          if (!identityDeleted) {
+            logger('Identity deletion failed - identity still exists', {
+              transferId: data.transferId,
+            });
+            await updateTransferState(data.transferId, 'failed');
+            throw new Error('Identity deletion failed - identity still exists');
+          }
+
+          await updateTransferState(data.transferId, 'completed');
+          await clearTransferCode(data.transferId);
 
           logger('Identity successfully deleted and transfer code cleared', {
             transferId: data.transferId,
@@ -838,18 +1025,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
           toast.success('Identity successfully transferred and removed from this device');
         } catch (deleteError: any) {
-          if (__DEV__) {
-            console.error('[OxyContext] Error deleting identity', deleteError);
-          }
           logger('Error during identity deletion', deleteError);
-          throw deleteError; // Re-throw to be caught by outer catch
+          await updateTransferState(data.transferId, 'failed');
+          throw deleteError;
         }
       } catch (error: any) {
         logger('Failed to delete identity after transfer', error);
         toast.error(error?.message || 'Failed to remove identity from this device. Please try again manually from Security Settings.');
       }
     },
-    [deleteIdentityAndClearAccount, logger, getTransferCode, clearTransferCode, currentDeviceId, activeSessionId],
+    [deleteIdentityAndClearAccount, logger, getTransferCode, clearTransferCode, updateTransferState, currentDeviceId, activeSessionId, oxyServices],
   );
 
   useSessionSocket({
@@ -943,6 +1128,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     storeTransferCode,
     getTransferCode,
     clearTransferCode,
+    getAllPendingTransfers,
+    getActiveTransferId,
+    updateTransferState,
     identitySyncState: {
       isSynced: isIdentitySyncedStore ?? true,
       isSyncing: isSyncing ?? false,
@@ -976,6 +1164,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     storeTransferCode,
     getTransferCode,
     clearTransferCode,
+    getAllPendingTransfers,
+    getActiveTransferId,
+    updateTransferState,
     isIdentitySyncedStore,
     isSyncing,
     currentLanguage,

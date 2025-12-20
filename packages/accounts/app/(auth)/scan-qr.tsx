@@ -17,6 +17,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useOxy } from '@oxyhq/services';
 import { useAlert } from '@/components/ui';
+import { notifyTransferComplete } from '@/utils/transferUtils';
 
 /**
  * QR Scanner Screen (Auth Flow)
@@ -163,40 +164,16 @@ export default function AuthScanQRScreen() {
 
       setProcessingMessage('Completing transfer...');
       
-      // Notify server about successful transfer (if transferId and sourceDeviceId are present)
-      // Include transfer code for verification on source device
-      // Retry with exponential backoff if it fails
-      let notificationSuccess = false;
-      if (pendingTransferData.transferId && pendingTransferData.sourceDeviceId && pendingTransferData.publicKey && oxyServices) {
-        let retries = 3;
-        let delay = 1000; // Start with 1 second
-        
-        while (retries > 0) {
-          try {
-            await oxyServices.makeRequest('POST', '/api/identity/transfer-complete', {
-              transferId: pendingTransferData.transferId,
-              sourceDeviceId: pendingTransferData.sourceDeviceId,
-              publicKey: pendingTransferData.publicKey,
-              transferCode: code, // Include transfer code for verification
-            }, { cache: false });
-            notificationSuccess = true;
-            break; // Success, exit retry loop
-          } catch (err: any) {
-            retries--;
-            if (retries > 0) {
-              // Wait before retrying with exponential backoff
-              await new Promise(resolve => setTimeout(resolve, delay));
-              delay *= 2; // Double the delay for next retry
-            } else {
-              // Final failure - log but don't block user
-              if (__DEV__) {
-                console.warn('Failed to notify server about transfer completion after retries:', err);
-              }
-              notificationSuccess = false;
-            }
-          }
+      const notificationResult = await notifyTransferComplete(
+        oxyServices!,
+        {
+          transferId: pendingTransferData.transferId,
+          sourceDeviceId: pendingTransferData.sourceDeviceId,
+          publicKey: pendingTransferData.publicKey,
+          transferCode: code,
         }
-      }
+      );
+      const notificationSuccess = notificationResult.success;
 
       setIsProcessing(false);
       setProcessingMessage('');

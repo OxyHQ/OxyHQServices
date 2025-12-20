@@ -78,8 +78,11 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         const loadSettings = async () => {
             try {
                 setIsLoading(true);
-                if (user?.id && oxyServices) {
-                    const privacySettings = await oxyServices.getPrivacySettings(user.id);
+                // Use getCurrentUserId() which returns MongoDB ObjectId from JWT token
+                // Never use user?.id as it may be set to publicKey
+                const userId = oxyServices?.getCurrentUserId();
+                if (userId && oxyServices) {
+                    const privacySettings = await oxyServices.getPrivacySettings(userId);
                     if (privacySettings) {
                         setSettings(privacySettings);
                     }
@@ -93,7 +96,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         };
 
         loadSettings();
-    }, [user?.id, oxyServices, t]);
+    }, [oxyServices, t]);
 
     // Load blocked and restricted users
     useEffect(() => {
@@ -123,8 +126,11 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
             const newSettings = { ...settings, [key]: value };
             setSettings(newSettings);
             
-            if (user?.id && oxyServices) {
-                await oxyServices.updatePrivacySettings({ [key]: value }, user.id);
+            // Use getCurrentUserId() which returns MongoDB ObjectId from JWT token
+            // Never use user?.id as it may be set to publicKey
+            const userId = oxyServices?.getCurrentUserId();
+            if (userId && oxyServices) {
+                await oxyServices.updatePrivacySettings({ [key]: value }, userId);
                 toast.success(t('privacySettings.updated') || 'Privacy settings updated');
             }
         } catch (error) {
@@ -135,7 +141,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         } finally {
             setIsSaving(false);
         }
-    }, [settings, user?.id, oxyServices, t]);
+    }, [settings, oxyServices, t]);
 
     const handleUnblock = useCallback(async (userId: string) => {
         if (!oxyServices) return;

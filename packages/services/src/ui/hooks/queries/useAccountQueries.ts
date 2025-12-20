@@ -128,8 +128,10 @@ export const useUsersBySessions = (sessionIds: string[], options?: { enabled?: b
  * Get privacy settings for a user
  */
 export const usePrivacySettings = (userId?: string, options?: { enabled?: boolean }) => {
-  const { oxyServices, activeSessionId, syncIdentity, user } = useOxy();
-  const targetUserId = userId || user?.id;
+  const { oxyServices, activeSessionId, syncIdentity } = useOxy();
+  // Use getCurrentUserId() which returns MongoDB ObjectId from JWT token
+  // Never use user?.id as it may be set to publicKey
+  const targetUserId = userId || oxyServices.getCurrentUserId() || undefined;
 
   return useQuery({
     queryKey: queryKeys.privacy.settings(targetUserId),

@@ -109,9 +109,15 @@ io.use((socket: AuthenticatedSocket, next) => {
     
     logger.debug('Socket authenticated', { socketId: socket.id, userId });
     next();
-  } catch (error) {
-    logger.error('Socket authentication error:', error);
-    next(new Error('Authentication error'));
+  } catch (error: any) {
+    // Provide more specific error for expired tokens
+    if (error.name === 'TokenExpiredError') {
+      logger.debug('Socket authentication failed: token expired', { socketId: socket.id, expiredAt: error.expiredAt });
+      next(new Error('Token expired'));
+    } else {
+      logger.error('Socket authentication error:', error);
+      next(new Error('Authentication error'));
+    }
   }
 });
 

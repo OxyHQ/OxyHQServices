@@ -157,11 +157,16 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
 
     /**
      * Get privacy settings for a user
-     * @param userId - The user ID (defaults to current user)
+     * @param userId - The user ID (MongoDB ObjectId, defaults to current user)
      */
     async getPrivacySettings(userId?: string): Promise<any> {
       try {
-        const id = userId || (await this.getCurrentUser()).id;
+        // Use getCurrentUserId() which returns MongoDB ObjectId from JWT token
+        // Never use getCurrentUser().id as it may be set to publicKey
+        const id = userId || this.getCurrentUserId();
+        if (!id) {
+          throw new Error('User ID is required');
+        }
         return await this.makeRequest<any>('GET', `/api/privacy/${id}/privacy`, undefined, {
           cache: true,
           cacheTTL: 2 * 60 * 1000, // 2 minutes cache
@@ -174,11 +179,16 @@ export function OxyServicesUserMixin<T extends typeof OxyServicesBase>(Base: T) 
     /**
      * Update privacy settings
      * @param settings - Partial privacy settings object
-     * @param userId - The user ID (defaults to current user)
+     * @param userId - The user ID (MongoDB ObjectId, defaults to current user)
      */
     async updatePrivacySettings(settings: Record<string, any>, userId?: string): Promise<any> {
       try {
-        const id = userId || (await this.getCurrentUser()).id;
+        // Use getCurrentUserId() which returns MongoDB ObjectId from JWT token
+        // Never use getCurrentUser().id as it may be set to publicKey
+        const id = userId || this.getCurrentUserId();
+        if (!id) {
+          throw new Error('User ID is required');
+        }
         return await this.makeRequest<any>('PATCH', `/api/privacy/${id}/privacy`, settings, {
           cache: false,
         });

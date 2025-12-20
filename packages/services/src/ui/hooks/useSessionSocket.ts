@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import { toast } from '../../lib/sonner';
 import { logger } from '../../utils/loggerUtils';
+import { tokenService } from '../../core/services/TokenService';
 
 interface UseSessionSocketProps {
   userId: string | null | undefined;
@@ -23,6 +24,9 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
   const joinedRoomRef = useRef<string | null>(null);
   const accessTokenRef = useRef<string | null>(null);
   const handlersSetupRef = useRef<boolean>(false);
+  const lastRegisteredSocketIdRef = useRef<string | null>(null);
+  const getAccessTokenRef = useRef(getAccessToken);
+  const getTransferCodeRef = useRef(getTransferCode);
   
   // Store callbacks in refs to avoid re-joining when they change
   const refreshSessionsRef = useRef(refreshSessions);
@@ -44,7 +48,9 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
     onIdentityTransferCompleteRef.current = onIdentityTransferComplete;
     activeSessionIdRef.current = activeSessionId;
     currentDeviceIdRef.current = currentDeviceId;
-  }, [refreshSessions, logout, clearSessionState, onRemoteSignOut, onSessionRemoved, onIdentityTransferComplete, activeSessionId, currentDeviceId]);
+    getAccessTokenRef.current = getAccessToken;
+    getTransferCodeRef.current = getTransferCode;
+  }, [refreshSessions, logout, clearSessionState, onRemoteSignOut, onSessionRemoved, onIdentityTransferComplete, activeSessionId, currentDeviceId, getAccessToken, getTransferCode]);
 
   useEffect(() => {
     if (!userId || !baseURL) {
@@ -57,62 +63,58 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
       return;
     }
 
-    const accessToken = getAccessToken();
-    // Recreate socket if token changed or socket doesn't exist
-    const tokenChanged = accessTokenRef.current !== accessToken;
-    if (!socketRef.current || tokenChanged) {
-      // Disconnect old socket if exists
-      if (socketRef.current) {
-        socketRef.current.disconnect();
-        socketRef.current = null;
+    // Initialize socket with token refresh
+    const initializeSocket = async () => {
+      try {
+        // Refresh token if expiring soon before creating socket connection
+        await tokenService.refreshTokenIfNeeded();
+      } catch (error) {
+        // If refresh fails, log but continue with current token
+        logger.debug('Token refresh failed before socket connection', { component: 'useSessionSocket', userId, error });
       }
-      
-      // Create new socket with authentication
-      const socketOptions: any = {
-        transports: ['websocket'],
-      };
-      
-      if (accessToken) {
-        socketOptions.auth = {
-          token: accessToken,
-        };
-        if (__DEV__) {
-          console.log('[useSessionSocket] Creating socket with auth token', {
-            userId,
-            hasToken: !!accessToken,
-            tokenLength: accessToken.length,
-          });
-        }
-      } else {
-        if (__DEV__) {
-          console.warn('[useSessionSocket] No access token available for socket authentication');
-        }
-      }
-      
-      socketRef.current = io(baseURL, socketOptions);
-      accessTokenRef.current = accessToken;
-      joinedRoomRef.current = null; // Reset room tracking
-      handlersSetupRef.current = false; // Reset handlers flag for new socket
-    }
-    
-    const socket = socketRef.current;
-    
-    // Server auto-joins room on connection when authenticated, so we don't need to manually join
-    // Just track that we're in the room
-    if (!joinedRoomRef.current && socket.connected) {
-      joinedRoomRef.current = `user:${userId}`;
-      if (__DEV__) {
-        console.log('[useSessionSocket] Socket connected, should be auto-joined to room', {
-          userId,
-          room: `user:${userId}`,
-        });
-      }
-    }
 
-    // Set up event handlers (only once per socket instance)
-    // Define handlers outside if block so they're always available
-    const handleConnect = () => {
-      const currentToken = getAccessToken();
+      const accessToken = getAccessTokenRef.current();
+      // Recreate socket if token changed or socket doesn't exist
+      const tokenChanged = accessTokenRef.current !== accessToken;
+      if (!socketRef.current || tokenChanged) {
+        // Disconnect old socket if exists
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+          socketRef.current = null;
+        }
+        
+        // Create new socket with authentication
+        const socketOptions: any = {
+          transports: ['websocket'],
+        };
+        
+        // Get fresh token after potential refresh
+        const freshToken = getAccessTokenRef.current();
+        if (freshToken) {
+          socketOptions.auth = {
+            token: freshToken,
+          };
+        } else {
+          logger.debug('No access token available for socket authentication', { component: 'useSessionSocket', userId });
+        }
+        
+        socketRef.current = io(baseURL, socketOptions);
+        accessTokenRef.current = freshToken;
+        joinedRoomRef.current = null; // Reset room tracking
+        handlersSetupRef.current = false; // Reset handlers flag for new socket
+      }
+      
+      const socket = socketRef.current;
+      if (!socket) return;
+      
+      if (!joinedRoomRef.current && socket.connected) {
+        joinedRoomRef.current = `user:${userId}`;
+      }
+
+      // Set up event handlers (only once per socket instance)
+      // Define handlers - they reference socket from closure
+      const handleConnect = () => {
+      const currentToken = getAccessTokenRef.current();
       if (__DEV__) {
         console.log('[useSessionSocket] Socket connected', {
           socketId: socket.id,
@@ -129,18 +131,47 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
       }
     };
 
-    const handleDisconnect = (reason: string) => {
-      if (__DEV__) {
-        console.log('[useSessionSocket] Socket disconnected:', reason);
-        logger.debug('Socket disconnected', { component: 'useSessionSocket', reason, userId });
+    const handleDisconnect = async (reason: string) => {
+      logger.debug('Socket disconnected', { component: 'useSessionSocket', reason, userId });
+      joinedRoomRef.current = null;
+      
+      // If disconnected due to auth error, try to refresh token and reconnect
+      if (reason === 'io server disconnect' || reason.includes('auth') || reason.includes('Authentication')) {
+        try {
+          // Refresh token and reconnect
+          await tokenService.refreshTokenIfNeeded();
+          const freshToken = getAccessTokenRef.current();
+          if (freshToken && socketRef.current) {
+            // Update auth and reconnect
+            socketRef.current.auth = { token: freshToken };
+            socketRef.current.connect();
+          }
+        } catch (error) {
+          logger.debug('Failed to refresh token after disconnect', { component: 'useSessionSocket', userId, error });
+        }
       }
-      joinedRoomRef.current = null; // Reset room tracking on disconnect
     };
 
     const handleError = (error: Error) => {
-      if (__DEV__) {
-        console.error('[useSessionSocket] Socket error', error);
-        logger.error('Socket error', error, { component: 'useSessionSocket', userId });
+      logger.error('Socket error', error, { component: 'useSessionSocket', userId });
+    };
+
+    const handleConnectError = async (error: Error) => {
+      logger.debug('Socket connection error', { component: 'useSessionSocket', userId, error: error.message });
+      
+      // If error is due to expired/invalid token, try to refresh and reconnect
+      if (error.message.includes('Authentication') || error.message.includes('expired') || error.message.includes('token')) {
+        try {
+          await tokenService.refreshTokenIfNeeded();
+          const freshToken = getAccessTokenRef.current();
+          if (freshToken && socketRef.current) {
+            // Update auth and reconnect
+            socketRef.current.auth = { token: freshToken };
+            socketRef.current.connect();
+          }
+        } catch (refreshError) {
+          logger.debug('Failed to refresh token after connection error', { component: 'useSessionSocket', userId, error: refreshError });
+        }
       }
     };
 
@@ -150,14 +181,13 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
       deviceId?: string; 
       sessionIds?: string[] 
     }) => {
-      if (__DEV__) {
-        console.log('[useSessionSocket] Received session_update event:', {
-          type: data.type,
-          socketId: socket.id,
-          socketConnected: socket.connected,
-          roomId: joinedRoomRef.current,
-        });
-      }
+      logger.debug('Received session_update event', {
+        component: 'useSessionSocket',
+        type: data.type,
+        socketId: socket.id,
+        socketConnected: socket.connected,
+        roomId: joinedRoomRef.current,
+      });
       
       const currentActiveSessionId = activeSessionIdRef.current;
       const currentDeviceId = currentDeviceIdRef.current;
@@ -271,16 +301,6 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
           completedAt: string;
         };
         
-        if (__DEV__) {
-          console.log('[useSessionSocket] Received identity_transfer_complete event', {
-            transferId: transferData.transferId,
-            sourceDeviceId: transferData.sourceDeviceId,
-            currentDeviceId,
-            hasActiveSession: activeSessionIdRef.current !== null,
-            socketConnected: socket.connected,
-          });
-        }
-        
         logger.debug('Received identity_transfer_complete event', {
           component: 'useSessionSocket',
           transferId: transferData.transferId,
@@ -293,33 +313,30 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
           publicKey: transferData.publicKey.substring(0, 16) + '...',
         });
         
-        // Only call handler on the SOURCE device (the one that initiated the transfer)
-        // The source device is identified by:
-        // 1. Matching deviceId with sourceDeviceId, OR
-        // 2. Having a stored transfer code for this transferId (most reliable check)
-        const deviceIdMatches = transferData.sourceDeviceId && transferData.sourceDeviceId === currentDeviceId;
+        // CRITICAL: Only call handler on the SOURCE device (the one that initiated the transfer)
+        // The new device (target) should NEVER process this event - it would delete its own identity!
         
-        // Check if this device has a stored transfer code (meaning it's the source device)
-        const hasStoredTransferCode = getTransferCode && !!getTransferCode(transferData.transferId);
+        // Check if this device has a stored transfer code (most reliable check - only source device has this)
+        const hasStoredTransferCode = getTransferCodeRef.current && !!getTransferCodeRef.current(transferData.transferId);
         
-        // Only call handler if this is the source device
-        // We check both deviceId match AND stored transfer code to handle cases where
-        // deviceId might be null (logged out device) but transfer code still exists
-        const shouldCallHandler = !!transferData.transferId && (deviceIdMatches || hasStoredTransferCode);
+        // Also check deviceId match (exact match required)
+        const deviceIdMatches = transferData.sourceDeviceId && 
+                                currentDeviceId && 
+                                transferData.sourceDeviceId === currentDeviceId;
+        
+        // ONLY call handler if BOTH conditions are met:
+        // 1. Has stored transfer code (definitive proof this is the source device)
+        // 2. DeviceId matches (additional verification)
+        // If deviceId is null/undefined, we still allow if stored code exists (logged out source device)
+        // But we NEVER process if no stored code exists (definitely not the source device)
+        const shouldCallHandler = !!transferData.transferId && 
+                                  hasStoredTransferCode && 
+                                  (deviceIdMatches || !currentDeviceId); // Allow if deviceId matches OR device is logged out (but has stored code)
         
         if (shouldCallHandler) {
           const matchReason = deviceIdMatches 
-            ? 'deviceId-exact'
-            : (activeSessionIdRef.current !== null ? 'active-session' : 'transferId-only');
-          
-          if (__DEV__) {
-            console.log('[useSessionSocket] Matched source device, calling handler', {
-              transferId: transferData.transferId,
-              matchReason,
-              sourceDeviceId: transferData.sourceDeviceId,
-              currentDeviceId,
-            });
-          }
+            ? 'deviceId-exact-with-stored-code'
+            : (currentDeviceId ? 'deviceId-mismatch-but-has-stored-code' : 'logged-out-source-device-with-stored-code');
           
           logger.debug('Matched source device, calling transfer complete handler', {
             component: 'useSessionSocket',
@@ -332,15 +349,8 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
             socketId: socket.id,
           });
           
-          // Call the handler - it will verify using stored transfer codes
           if (onIdentityTransferCompleteRef.current) {
             try {
-              if (__DEV__) {
-                console.log('[useSessionSocket] Calling onIdentityTransferComplete handler', {
-                  transferId: transferData.transferId,
-                });
-              }
-              
               logger.debug('Calling onIdentityTransferComplete handler', {
                 component: 'useSessionSocket',
                 transferId: transferData.transferId,
@@ -354,42 +364,23 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
                 completedAt: transferData.completedAt,
               });
               
-              if (__DEV__) {
-                console.log('[useSessionSocket] Handler called successfully', {
-                  transferId: transferData.transferId,
-                });
-              }
-              
               logger.debug('onIdentityTransferComplete handler called successfully', {
                 component: 'useSessionSocket',
                 transferId: transferData.transferId,
               });
             } catch (error) {
-              if (__DEV__) {
-                console.error('[useSessionSocket] Error calling handler', error);
-              }
               logger.error('Error calling onIdentityTransferComplete handler', error instanceof Error ? error : new Error(String(error)), {
                 component: 'useSessionSocket',
                 transferId: transferData.transferId,
               });
             }
           } else {
-            if (__DEV__) {
-              console.warn('[useSessionSocket] No handler registered');
-            }
             logger.debug('No onIdentityTransferComplete handler registered', {
               component: 'useSessionSocket',
               transferId: transferData.transferId,
             });
           }
         } else {
-          if (__DEV__) {
-            console.log('[useSessionSocket] Not matched, ignoring', {
-              sourceDeviceId: transferData.sourceDeviceId,
-              currentDeviceId,
-              hasActiveSession: activeSessionIdRef.current !== null,
-            });
-          }
           logger.debug('Not the source device, ignoring transfer completion', {
             component: 'useSessionSocket',
             sourceDeviceId: transferData.sourceDeviceId,
@@ -418,57 +409,64 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
           try {
             await clearSessionStateRef.current();
           } catch (error) {
-            if (__DEV__) {
-              console.error('Failed to clear session state after session_update:', error);
-            }
+            logger.error('Failed to clear session state after session_update', error instanceof Error ? error : new Error(String(error)), { component: 'useSessionSocket' });
           }
         }
       }
     };
 
     // Register event handlers (only once per socket instance)
-    if (!handlersSetupRef.current) {
+    // Track by socket.id to prevent duplicate registrations when socket reconnects
+    const currentSocketId = socket.id || 'pending';
+    
+    if (!handlersSetupRef.current || lastRegisteredSocketIdRef.current !== currentSocketId) {
+      // Remove old handlers if socket changed (reconnection)
+      if (socketRef.current && handlersSetupRef.current && lastRegisteredSocketIdRef.current) {
+        try {
+          socketRef.current.off('connect', handleConnect);
+          socketRef.current.off('disconnect', handleDisconnect);
+          socketRef.current.off('error', handleError);
+          socketRef.current.off('session_update', handleSessionUpdate);
+        } catch (error) {
+          // Ignore errors when removing handlers
+        }
+      }
+      
+      // Register handlers on current socket
       socket.on('connect', handleConnect);
       socket.on('disconnect', handleDisconnect);
       socket.on('error', handleError);
+      socket.on('connect_error', handleConnectError);
       socket.on('session_update', handleSessionUpdate);
       
       handlersSetupRef.current = true;
+      lastRegisteredSocketIdRef.current = currentSocketId;
       
-      if (__DEV__) {
-        console.log('[useSessionSocket] Event handlers set up', {
-          socketId: socket.id,
-          userId,
-        });
-      }
+      logger.debug('Event handlers set up', { component: 'useSessionSocket', socketId: socket.id, userId });
     }
 
-    // Ensure socket is connected before proceeding
-    if (!socket.connected) {
-      if (__DEV__) {
-        console.log('[useSessionSocket] Socket not connected, connecting...', { userId });
-        logger.debug('Socket not connected, waiting for connection', { component: 'useSessionSocket', userId });
+      if (!socket.connected) {
+        logger.debug('Socket not connected, connecting...', { component: 'useSessionSocket', userId });
+        socket.connect();
       }
-      socket.connect();
-    } else {
-      if (__DEV__) {
-        console.log('[useSessionSocket] Socket already connected', { 
-          socketId: socket.id, 
-          userId,
-          connected: socket.connected 
-        });
-      }
-    }
+    };
+
+    initializeSocket();
 
     return () => {
       // Only clean up handlers if socket still exists and handlers were set up
       if (socketRef.current && handlersSetupRef.current) {
-        socketRef.current.off('connect', handleConnect);
-        socketRef.current.off('disconnect', handleDisconnect);
-        socketRef.current.off('error', handleError);
-        socketRef.current.off('session_update', handleSessionUpdate);
+        try {
+          socketRef.current.off('connect');
+          socketRef.current.off('disconnect');
+          socketRef.current.off('error');
+          socketRef.current.off('connect_error');
+          socketRef.current.off('session_update');
+        } catch (error) {
+          // Ignore errors when removing handlers
+        }
         handlersSetupRef.current = false;
       }
     };
-  }, [userId, baseURL, getAccessToken]); // Depend on userId, baseURL, and getAccessToken
-} 
+  }, [userId, baseURL]); // Only depend on userId and baseURL - functions are in refs
+}

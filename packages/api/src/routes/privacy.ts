@@ -2,17 +2,11 @@ import express, { Request, Response, NextFunction, RequestHandler } from 'expres
 import User from "../models/User";
 import Block from "../models/Block";
 import Restricted from "../models/Restricted";
-import { authMiddleware } from '../middleware/auth';
+import { authMiddleware, AuthRequest } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, ConflictError, UnauthorizedError } from '../utils/error';
 import { z } from "zod";
 import { logger } from '../utils/logger';
-
-interface AuthenticatedRequest extends Request {
-  user?: {
-    id: string;
-  };
-}
 
 const router = express.Router();
 router.use(authMiddleware);
@@ -40,10 +34,16 @@ const privacySettingsSchema = z.object({
 });
 
 // Get privacy settings
-const getPrivacySettings = async (req: Request, res: Response) => {
+const getPrivacySettings = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
-    const user = await User.findById(id).select('privacySettings');
+    // Use authenticated user's MongoDB ObjectId from req.user._id
+    // Never trust req.params.id as it may be a public key
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+    
+    const userId = req.user._id;
+    const user = await User.findById(userId).select('privacySettings');
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -58,18 +58,19 @@ const getPrivacySettings = async (req: Request, res: Response) => {
 };
 
 // Update privacy settings
-const updatePrivacySettings = async (req: Request, res: Response) => {
+const updatePrivacySettings = async (req: AuthRequest, res: Response) => {
   try {
-    const { id } = req.params;
-    const settings = privacySettingsSchema.parse(req.body);
-    const authUser = (req as AuthenticatedRequest).user;
-
-    if (authUser?.id !== id) {
-      return res.status(403).json({ message: "Not authorized to update these settings" });
+    // Use authenticated user's MongoDB ObjectId from req.user._id
+    // Never trust req.params.id as it may be a public key
+    if (!req.user || !req.user._id) {
+      return res.status(401).json({ message: "Authentication required" });
     }
+    
+    const userId = req.user._id;
+    const settings = privacySettingsSchema.parse(req.body);
 
     const user = await User.findByIdAndUpdate(
-      id,
+      userId,
       { $set: { privacySettings: settings } },
       { new: true }
     ).select('privacySettings');
@@ -93,9 +94,12 @@ const createUserListHandler = <T extends typeof Block | typeof Restricted>(
   Model: T,
   fieldName: 'blockedId' | 'restrictedId'
 ) => {
-  return asyncHandler(async (req: Request, res: Response) => {
-    const authUser = (req as AuthenticatedRequest).user;
-    const users = await (Model as any).find({ userId: authUser?.id })
+  return asyncHandler(async (req: AuthRequest, res: Response) => {
+    if (!req.user || !req.user._id) {
+      throw new UnauthorizedError("Authentication required");
+    }
+    const userId = req.user._id.toString();
+    const users = await (Model as any).find({ userId })
       .populate(fieldName, 'username avatar')
       .lean();
     res.json(users);
@@ -107,16 +111,19 @@ const createUserActionHandler = <T extends typeof Block | typeof Restricted>(
   fieldName: 'blockedId' | 'restrictedId',
   actionName: string
 ) => {
-  return asyncHandler(async (req: Request, res: Response) => {
+  return asyncHandler(async (req: AuthRequest, res: Response) => {
     const { targetId } = req.params;
-    const authUser = (req as AuthenticatedRequest).user;
-
-    if (!authUser?.id || authUser.id === targetId) {
+    if (!req.user || !req.user._id) {
+      throw new UnauthorizedError("Authentication required");
+    }
+    
+    const userId = req.user._id.toString();
+    if (userId === targetId) {
       throw new BadRequestError(`Invalid ${actionName} request`);
     }
 
     const existing = await (Model as any).findOne({
-      userId: authUser.id,
+      userId,
       [fieldName]: targetId
     });
 
@@ -125,7 +132,7 @@ const createUserActionHandler = <T extends typeof Block | typeof Restricted>(
     }
 
     const record = new (Model as any)({
-      userId: authUser.id,
+      userId,
       [fieldName]: targetId
     });
     await record.save();
@@ -139,16 +146,15 @@ const createUserRemoveHandler = <T extends typeof Block | typeof Restricted>(
   fieldName: 'blockedId' | 'restrictedId',
   actionName: string
 ) => {
-  return asyncHandler(async (req: Request, res: Response) => {
+  return asyncHandler(async (req: AuthRequest, res: Response) => {
     const { targetId } = req.params;
-    const authUser = (req as AuthenticatedRequest).user;
-
-    if (!authUser?.id) {
+    if (!req.user || !req.user._id) {
       throw new UnauthorizedError("Authentication required");
     }
-
+    
+    const userId = req.user._id.toString();
     const result = await (Model as any).deleteOne({
-      userId: authUser.id,
+      userId,
       [fieldName]: targetId
     });
 

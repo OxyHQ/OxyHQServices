@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { View, StyleSheet, ActivityIndicator, Platform, TouchableOpacity } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { KeyManager, useOxy } from '@oxyhq/services';
@@ -21,31 +21,132 @@ interface IdentityTransferQRProps {
 export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransferQRProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { getPublicKey, currentDeviceId, activeSessionId, oxyServices, storeTransferCode, getTransferCode, hasIdentity, isAuthenticated } = useOxy();
+  const { getPublicKey, currentDeviceId, activeSessionId, oxyServices, storeTransferCode, getTransferCode, hasIdentity, isAuthenticated, getActiveTransferId, getAllPendingTransfers } = useOxy();
 
   const [qrData, setQrData] = useState<string | null>(null);
-  const [isGenerating, setIsGenerating] = useState(true);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [transferCode, setTransferCode] = useState<string | null>(null);
   const [transferId, setTransferId] = useState<string | null>(null);
-  const [transferStatus, setTransferStatus] = useState<'pending' | 'completed' | 'checking'>('pending');
+  const [transferStatus, setTransferStatus] = useState<'pending' | 'completed'>('pending');
   const [transferCodeStored, setTransferCodeStored] = useState<boolean>(false);
   const [wasAuthenticated, setWasAuthenticated] = useState<boolean>(false);
 
+  // Use refs to track generation state and prevent infinite loops
+  const isGeneratingRef = useRef(false);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isMountedRef = useRef(true);
+
   // Generate QR code data with encrypted identity
   const generateQRData = useCallback(async () => {
+    // CRITICAL: Don't generate if transfer already completed
+    if (transferStatus === 'completed') {
+      setIsGenerating(false);
+      isGeneratingRef.current = false;
+      return;
+    }
+
+    // CRITICAL: Check for active transfer lock - prevent multiple simultaneous transfers
+    const activeTransferId = getActiveTransferId();
+    if (activeTransferId && activeTransferId !== transferId) {
+      const pendingTransfers = getAllPendingTransfers();
+      const activeTransfer = pendingTransfers.find((t: { transferId: string }) => t.transferId === activeTransferId);
+      if (activeTransfer) {
+        const errorMsg = 'Another identity transfer is already in progress. Please wait for it to complete before starting a new transfer.';
+        setError(errorMsg);
+        setIsGenerating(false);
+        isGeneratingRef.current = false;
+        onError?.(errorMsg);
+        if (__DEV__) {
+          console.warn('[IdentityTransferQR] Active transfer lock detected', { activeTransferId });
+        }
+        return;
+      }
+    }
+
+    // Prevent multiple simultaneous generation attempts
+    if (isGeneratingRef.current) {
+      if (__DEV__) {
+        console.log('[IdentityTransferQR] Generation already in progress, skipping');
+      }
+      return;
+    }
+
+    // Clear any existing timeout
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+
     try {
+      isGeneratingRef.current = true;
       setIsGenerating(true);
+      setError(null);
+
+      // Set timeout to detect stuck operations (30 seconds)
+      timeoutRef.current = setTimeout(() => {
+        if (isMountedRef.current && isGeneratingRef.current) {
+          const errorMsg = 'QR code generation timed out. Please try again.';
+          setError(errorMsg);
+          setIsGenerating(false);
+          isGeneratingRef.current = false;
+          onError?.(errorMsg);
+          if (__DEV__) {
+            console.error('[IdentityTransferQR] Generation timeout');
+          }
+        }
+      }, 30000);
+
+      // Verify identity exists before proceeding
+      const identityExists = await hasIdentity();
+      if (!identityExists) {
+        const errorMsg = 'No identity found. Please create or import an identity first.';
+        setError(errorMsg);
+        setIsGenerating(false);
+        isGeneratingRef.current = false;
+        onError?.(errorMsg);
+        if (__DEV__) {
+          console.error('[IdentityTransferQR] No identity found');
+        }
+        return;
+      }
+
+      // Verify identity still exists before proceeding
+      const identityStillExists = await KeyManager.hasIdentity();
+      if (!identityStillExists) {
+        const errorMsg = 'Identity was deleted. Please create or import an identity first.';
+        setError(errorMsg);
+        setIsGenerating(false);
+        isGeneratingRef.current = false;
+        onError?.(errorMsg);
+        if (__DEV__) {
+          console.error('[IdentityTransferQR] Identity was deleted');
+        }
+        return;
+      }
 
       // Check if biometric authentication is enabled and required
       if (Platform.OS !== 'web') {
         try {
           const biometricEnabled = await AsyncStorage.getItem('oxy_biometric_enabled');
           if (biometricEnabled === 'true') {
-            // Check if biometrics can be used
             const canUse = await canUseBiometrics();
             if (canUse) {
-              // Perform biometric authentication
+              // Verify identity still exists before biometric prompt
+              const identityCheck = await KeyManager.hasIdentity();
+              if (!identityCheck) {
+                const errorMsg = 'Identity was deleted during authentication. Please create or import an identity first.';
+                setError(errorMsg);
+                setIsGenerating(false);
+                isGeneratingRef.current = false;
+                onError?.(errorMsg);
+                if (__DEV__) {
+                  console.error('[IdentityTransferQR] Identity was deleted during authentication');
+                }
+                return;
+              }
+
               const authResult = await authenticate('Authenticate to generate identity transfer QR code');
 
               if (!authResult.success) {
@@ -67,14 +168,30 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
       // Get public key for display
       const pk = await getPublicKey();
       if (!pk) {
-        throw new Error('No identity found on this device');
+        const errorMsg = 'Failed to retrieve public key. Please try again.';
+        setError(errorMsg);
+        setIsGenerating(false);
+        isGeneratingRef.current = false;
+        onError?.(errorMsg);
+        if (__DEV__) {
+          console.error('[IdentityTransferQR] Failed to retrieve public key');
+        }
+        return;
       }
       setPublicKey(pk);
 
       // Get private key
       const privateKey = await KeyManager.getPrivateKey();
       if (!privateKey) {
-        throw new Error('No private key found on this device');
+        const errorMsg = 'Failed to retrieve private key. Please try again.';
+        setError(errorMsg);
+        setIsGenerating(false);
+        isGeneratingRef.current = false;
+        onError?.(errorMsg);
+        if (__DEV__) {
+          console.error('[IdentityTransferQR] Failed to retrieve private key');
+        }
+        return;
       }
 
       // Generate random salt and IV (same as backup file)
@@ -117,7 +234,7 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
       const randomBytes = Crypto.getRandomBytes(4);
       const randomHex = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
       const generatedTransferId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${randomHex}`;
-      
+
       // Reset state for new transfer
       setTransferCodeStored(false);
       setWasAuthenticated(false);
@@ -140,30 +257,14 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
             sourceDeviceId = currentDeviceSession.deviceId;
           }
         } catch (error) {
-          // Silently fail - deviceId is optional for transfer
-          if (__DEV__) {
-            console.warn('[IdentityTransferQR] Failed to fetch deviceId from API:', error);
-          }
+          // deviceId is optional for transfer
         }
       }
 
-      // Warn if deviceId is still not available (deletion notification won't work)
-      if (!sourceDeviceId && __DEV__) {
-        console.warn('[IdentityTransferQR] No deviceId found. Deletion notification may not work. The identity will still be transferred successfully.');
-      }
-
-      // Store transfer code for verification when transfer completes
-      storeTransferCode(generatedTransferId, code, sourceDeviceId, pk);
+      // Store transfer code for verification when transfer completes (this sets the transfer lock)
+      await storeTransferCode(generatedTransferId, code, sourceDeviceId, pk);
       setTransferCodeStored(true);
       setWasAuthenticated(isAuthenticated);
-
-      if (__DEV__) {
-        console.log('[IdentityTransferQR] Transfer code stored', {
-          transferId: generatedTransferId,
-          sourceDeviceId,
-          publicKey: pk.substring(0, 16) + '...',
-        });
-      }
 
       // Create transfer data structure
       const transferData = {
@@ -183,53 +284,113 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
 
       // Convert to JSON string for QR code
       const qrString = JSON.stringify(transferData);
-      setQrData(qrString);
+
+      // Clear timeout on success
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+
+      if (isMountedRef.current) {
+        setQrData(qrString);
+        setError(null);
+      }
     } catch (error: any) {
       const errorMessage = error?.message || 'Failed to generate QR code';
-      onError?.(errorMessage);
+
+      // Clear timeout on error
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+
+      if (isMountedRef.current) {
+        setError(errorMessage);
+        onError?.(errorMessage);
+        if (__DEV__) {
+          console.error('[IdentityTransferQR] Generation error:', errorMessage, error);
+        }
+      }
     } finally {
-      setIsGenerating(false);
+      if (isMountedRef.current) {
+        setIsGenerating(false);
+      }
+      isGeneratingRef.current = false;
     }
-  }, [getPublicKey, onError, onCodeGenerated, storeTransferCode, activeSessionId, oxyServices, currentDeviceId]);
+  }, [getPublicKey, onError, onCodeGenerated, storeTransferCode, activeSessionId, oxyServices, currentDeviceId, hasIdentity, transferStatus, isAuthenticated, getActiveTransferId, getAllPendingTransfers, transferId]);
 
   useEffect(() => {
-    generateQRData();
-  }, [generateQRData]);
+    // Only generate QR if identity exists and transfer not completed
+    // Use ref to prevent infinite loops
+    const currentStatus = transferStatus;
+    if (isGeneratingRef.current || currentStatus === 'completed') {
+      return;
+    }
+
+    // Check if identity exists and generate QR code
+    const checkAndGenerate = async () => {
+      // Double-check ref inside async function
+      // Re-read transferStatus to get latest value
+      const latestStatus = transferStatus;
+      if (isGeneratingRef.current || latestStatus === 'completed' || !isMountedRef.current) {
+        return;
+      }
+
+      try {
+        const identityExists = await hasIdentity();
+        // Re-check status and ref inside async function to ensure it hasn't changed
+        const finalStatus = transferStatus;
+        if (identityExists && finalStatus !== 'completed' && !isGeneratingRef.current && isMountedRef.current) {
+          generateQRData();
+        }
+      } catch (error) {
+        // Identity may have been deleted or error checking
+        if (isMountedRef.current) {
+          setIsGenerating(false);
+          isGeneratingRef.current = false;
+          const errorMsg = 'Failed to check identity. Please try again.';
+          setError(errorMsg);
+          onError?.(errorMsg);
+          if (__DEV__) {
+            console.error('[IdentityTransferQR] Error checking identity:', error);
+          }
+        }
+      }
+    };
+
+    checkAndGenerate();
+
+    // Cleanup function
+    return () => {
+      // Cleanup is handled by isMountedRef
+    };
+  }, [generateQRData, hasIdentity, transferStatus, onError]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    isMountedRef.current = true;
+
+    return () => {
+      isMountedRef.current = false;
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+      isGeneratingRef.current = false;
+    };
+  }, []);
 
   // Listen for socket-triggered deletion
-  // Socket event triggers deletion which clears the transfer code and logs user out
   useEffect(() => {
-    // Only check if transfer code was stored and we're not already completed
     if (!transferId || transferStatus === 'completed' || !transferCodeStored) return;
 
     const storedTransfer = getTransferCode(transferId);
-    
-    // Mark as completed only if:
-    // 1. Transfer code was stored (we confirmed it existed)
-    // 2. Transfer code is now cleared (socket event triggered deletion)
-    // 3. User was authenticated and is now logged out (identity deleted)
-    if (!storedTransfer && wasAuthenticated && !isAuthenticated) {
-      if (__DEV__) {
-        console.log('[IdentityTransferQR] Transfer completed via socket - transfer code cleared and user logged out', { transferId });
-      }
+
+    // Mark as completed if transfer code was cleared and user was logged out
+    if (!storedTransfer && wasAuthenticated && !isAuthenticated && isMountedRef.current) {
       setTransferStatus('completed');
     }
   }, [transferId, transferStatus, transferCodeStored, wasAuthenticated, isAuthenticated, getTransferCode]);
-
-  // Manual check function
-  const handleCheckStatus = useCallback(() => {
-    if (!transferId || !transferCodeStored) return;
-    
-    setTransferStatus('checking');
-    
-    // Check if transfer code exists - it's cleared after successful deletion
-    const storedTransfer = getTransferCode(transferId);
-    if (!storedTransfer && wasAuthenticated && !isAuthenticated) {
-      setTransferStatus('completed');
-    } else {
-      setTransferStatus('pending');
-    }
-  }, [transferId, transferCodeStored, wasAuthenticated, isAuthenticated, getTransferCode]);
 
   if (isGenerating) {
     return (
@@ -242,12 +403,43 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
     );
   }
 
+  if (error) {
+    return (
+      <View style={styles.container}>
+        <ThemedText style={[styles.errorText, { color: '#FF3B30' }]}>
+          {error}
+        </ThemedText>
+        <TouchableOpacity
+          style={[styles.retryButton, { backgroundColor: colors.tint, marginTop: 16 }]}
+          onPress={() => {
+            setError(null);
+            generateQRData();
+          }}
+        >
+          <ThemedText style={[styles.retryButtonText, { color: '#FFFFFF' }]}>
+            Try Again
+          </ThemedText>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
   if (!qrData) {
     return (
       <View style={styles.container}>
         <ThemedText style={[styles.errorText, { color: colors.text }]}>
           Failed to generate QR code
         </ThemedText>
+        <TouchableOpacity
+          style={[styles.retryButton, { backgroundColor: colors.tint, marginTop: 16 }]}
+          onPress={() => {
+            generateQRData();
+          }}
+        >
+          <ThemedText style={[styles.retryButtonText, { color: '#FFFFFF' }]}>
+            Try Again
+          </ThemedText>
+        </TouchableOpacity>
       </View>
     );
   }
@@ -296,28 +488,12 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
             Transfer Status:
           </ThemedText>
           <View style={[styles.statusBadge, {
-            backgroundColor: transferStatus === 'checking' 
-              ? colors.tint + '40' 
-              : colorScheme === 'dark' ? '#2C2C2E' : '#F5F5F5',
+            backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#F5F5F5',
           }]}>
-            {transferStatus === 'checking' && (
-              <ActivityIndicator size="small" color={colors.tint} style={{ marginRight: 8 }} />
-            )}
             <ThemedText style={[styles.statusText, { color: colors.text }]}>
-              {transferStatus === 'checking' ? 'Checking...' : 'Waiting for transfer...'}
+              Waiting for transfer...
             </ThemedText>
           </View>
-          <TouchableOpacity
-            style={[styles.checkButton, {
-              backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#F5F5F5',
-            }]}
-            onPress={handleCheckStatus}
-            disabled={transferStatus === 'checking'}
-          >
-            <ThemedText style={[styles.checkButtonText, { color: colors.tint }]}>
-              Check Status
-            </ThemedText>
-          </TouchableOpacity>
         </View>
       )}
 
@@ -422,17 +598,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  checkButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    minWidth: 120,
-    alignItems: 'center',
-  },
-  checkButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
-  },
   completedContainer: {
     marginTop: 24,
     alignItems: 'center',
@@ -449,6 +614,17 @@ const styles = StyleSheet.create({
   completedSubtext: {
     fontSize: 12,
     textAlign: 'center',
+  },
+  retryButton: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  retryButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 
