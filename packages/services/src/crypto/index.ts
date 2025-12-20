@@ -14,6 +14,7 @@ export {
   type SignedMessage, 
   type AuthChallenge 
 } from './signatureService';
+export { type BackupData } from './types';
 
 // Re-export for convenience
 export { KeyManager as default } from './keyManager';

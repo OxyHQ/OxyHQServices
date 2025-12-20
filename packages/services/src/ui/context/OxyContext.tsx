@@ -29,7 +29,7 @@ import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
 import { useQueryClient } from '@tanstack/react-query';
 import { clearQueryCache } from '../hooks/queryClient';
-import { KeyManager } from '../../crypto/keyManager';
+import { KeyManager, type BackupData } from '../../crypto';
 import { translate } from '../../i18n';
 import { updateAvatarVisibility, updateProfileWithAvatar } from '../utils/avatarUtils';
 import { useAccountStore } from '../stores/accountStore';
@@ -51,7 +51,7 @@ export interface OxyContextState {
 
   // Identity management (public key authentication - offline-first)
   createIdentity: () => Promise<{ synced: boolean }>;
-  importIdentity: (backupData: { encrypted: string; salt: string; iv: string; publicKey: string }, password: string) => Promise<{ synced: boolean }>;
+  importIdentity: (backupData: BackupData, password: string) => Promise<{ synced: boolean }>;
   signIn: (deviceName?: string) => Promise<User>;
   hasIdentity: () => Promise<boolean>;
   getPublicKey: () => Promise<string | null>;
@@ -322,7 +322,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   // Wrapper for importIdentity to handle legacy calls gracefully
   const importIdentity = useCallback(
-    async (backupData: { encrypted: string; salt: string; iv: string; publicKey: string } | string, password?: string): Promise<{ synced: boolean }> => {
+    async (backupData: BackupData | string, password?: string): Promise<{ synced: boolean }> => {
       // Handle legacy calls with single string argument (old recovery phrase signature)
       if (typeof backupData === 'string') {
         throw new Error('Recovery phrase import is no longer supported. Please use backup file import or QR code transfer instead.');

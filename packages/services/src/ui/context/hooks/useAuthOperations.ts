@@ -7,7 +7,7 @@ import { fetchSessionsWithFallback, mapSessionsToClient } from '../../utils/sess
 import { handleAuthError, isInvalidSessionError } from '../../utils/errorHandlers';
 import type { StorageInterface } from '../../utils/storageHelpers';
 import type { OxyServices } from '../../../core';
-import { KeyManager, SignatureService } from '../../../crypto';
+import { KeyManager, SignatureService, type BackupData } from '../../../crypto';
 
 export interface UseAuthOperationsOptions {
   oxyServices: OxyServices;
@@ -36,7 +36,7 @@ export interface UseAuthOperationsResult {
   /** Create a new identity locally (offline-first) and optionally sync with server */
   createIdentity: () => Promise<{ synced: boolean }>;
   /** Import an existing identity from backup file data */
-  importIdentity: (backupData: { encrypted: string; salt: string; iv: string; publicKey: string }, password: string) => Promise<{ synced: boolean }>;
+  importIdentity: (backupData: BackupData, password: string) => Promise<{ synced: boolean }>;
   /** Sign in with existing identity on device */
   signIn: (deviceName?: string) => Promise<User>;
   /** Logout from current session */
@@ -436,7 +436,7 @@ export const useAuthOperations = ({
    * Import identity from backup file data (offline-first)
    */
   const importIdentity = useCallback(
-    async (backupData: { encrypted: string; salt: string; iv: string; publicKey: string }, password: string): Promise<{ synced: boolean }> => {
+    async (backupData: BackupData, password: string): Promise<{ synced: boolean }> => {
       if (!storage) throw new Error('Storage not initialized');
 
       // Validate arguments - ensure backupData is an object, not a string (old signature)
