@@ -22,6 +22,15 @@ interface SavedItem {
     url?: string;
 }
 
+interface Collection {
+    id: string;
+    name: string;
+    description?: string;
+    itemCount?: number;
+    createdAt?: Date;
+    updatedAt?: Date;
+}
+
 const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
@@ -31,7 +40,7 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     const { oxyServices, user } = useOxy();
     const { t } = useI18n();
     const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
-    const [collections, setCollections] = useState<any[]>([]);
+    const [collections, setCollections] = useState<Collection[]>([]);
     const [isLoading, setIsLoading] = useState(true);
     const [activeTab, setActiveTab] = useState<'saves' | 'collections'>('saves');
 

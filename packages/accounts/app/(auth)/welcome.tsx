@@ -11,6 +11,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { StaggeredText, type StaggeredTextRef } from '@/components/staggered-text';
 import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text';
 import { Button } from '@/components/ui';
+import { Colors } from '@/constants/theme';
 
 const rotatingTexts = [
   'human ID',
@@ -37,12 +38,12 @@ export default function WelcomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
 
   // Memoize color values
-  const backgroundColor = useMemo(() =>
-    colorScheme === 'dark' ? '#000000' : '#FFFFFF',
+  const backgroundColor = useMemo(
+    () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
     [colorScheme]
   );
-  const textColor = useMemo(() =>
-    colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+  const textColor = useMemo(
+    () => (colorScheme === 'dark' ? Colors.dark.text : Colors.light.text),
     [colorScheme]
   );
 
@@ -110,7 +111,7 @@ export default function WelcomeScreen() {
 
   const handleContinue = useCallback(() => {
     if (termsAccepted) {
-      router.push('/(auth)/create-identity');
+      router.replace('/(auth)/create-identity');
     }
   }, [termsAccepted, router]);
 

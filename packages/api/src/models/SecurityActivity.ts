@@ -9,6 +9,8 @@ export type SecurityEventType =
   | 'device_removed'
   | 'account_recovery'
   | 'security_settings_changed'
+  | 'private_key_exported'
+  | 'backup_created'
   | 'suspicious_activity';
 
 export type SecurityEventSeverity = 'low' | 'medium' | 'high' | 'critical';
@@ -23,6 +25,8 @@ export const SECURITY_EVENT_TYPES: SecurityEventType[] = [
   'device_removed',
   'account_recovery',
   'security_settings_changed',
+  'private_key_exported',
+  'backup_created',
   'suspicious_activity',
 ];
 
@@ -36,6 +40,8 @@ export const SECURITY_EVENT_SEVERITY_MAP: Record<SecurityEventType, SecurityEven
   'device_removed': 'medium',
   'security_settings_changed': 'medium',
   'account_recovery': 'high',
+  'private_key_exported': 'high',
+  'backup_created': 'high',
   'suspicious_activity': 'critical',
 };
 

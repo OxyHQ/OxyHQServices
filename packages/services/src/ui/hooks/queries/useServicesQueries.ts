@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import type { ClientSession } from '../../../models/session';
 import { queryKeys } from './queryKeys';
 import { useOxy } from '../../context/OxyContext';
-import { fetchSessionsWithFallback, mapSessionsToClient } from '../../context/utils/sessionHelpers';
+import { fetchSessionsWithFallback, mapSessionsToClient } from '../../utils/sessionHelpers';
 
 /**
  * Get all active sessions for the current user

@@ -1,9 +1,11 @@
 import React, { useMemo } from 'react';
+import { View, StyleSheet } from 'react-native';
 import { useOxy } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { NotificationsStep } from '@/components/auth/NotificationsStep';
 import { useAuthHandlers } from '@/hooks/auth/useAuthHandlers';
-import { useAuthFlowContext } from '../_authFlowContext';
+import { useAuthFlowContext } from '@/contexts/auth-flow-context';
+import { Colors } from '@/constants/theme';
 
 /**
  * Import Identity - Notifications Screen
@@ -12,15 +14,15 @@ import { useAuthFlowContext } from '../_authFlowContext';
  */
 export default function ImportIdentityNotificationsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
-  const { signIn, oxyServices } = useOxy();
+  const { signIn, oxyServices, isAuthenticated } = useOxy();
   const { error, isSigningIn, setAuthError, setSigningIn, usernameRef } = useAuthFlowContext();
 
-  const backgroundColor = useMemo(() =>
-    colorScheme === 'dark' ? '#000000' : '#FFFFFF',
+  const backgroundColor = useMemo(
+    () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
     [colorScheme]
   );
-  const textColor = useMemo(() =>
-    colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+  const textColor = useMemo(
+    () => (colorScheme === 'dark' ? Colors.dark.text : Colors.light.text),
     [colorScheme]
   );
 
@@ -31,17 +33,26 @@ export default function ImportIdentityNotificationsScreen() {
     usernameRef,
     setAuthError,
     setSigningIn,
+    isAuthenticated,
   });
 
   return (
-    <NotificationsStep
-      error={error}
-      onRequestNotifications={handleRequestNotifications}
-      isRequestingNotifications={isRequestingNotifications}
-      isSigningIn={isSigningIn}
-      backgroundColor={backgroundColor}
-      textColor={textColor}
-    />
+    <View style={[styles.container, { backgroundColor }]} pointerEvents={isSigningIn ? 'none' : 'auto'}>
+      <NotificationsStep
+        error={error}
+        onRequestNotifications={handleRequestNotifications}
+        isRequestingNotifications={isRequestingNotifications}
+        isSigningIn={isSigningIn}
+        backgroundColor={backgroundColor}
+        textColor={textColor}
+      />
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+});
 

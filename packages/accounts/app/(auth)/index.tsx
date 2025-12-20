@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useMemo, useCallback } from 'react';
 import { View, StyleSheet, Pressable } from 'react-native';
 import Animated, {
   useSharedValue,
@@ -9,6 +9,7 @@ import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { StaggeredText, type StaggeredTextRef } from '@/components/staggered-text';
 import { RotatingTextAnimation } from '@/components/staggered-text/rotating-text';
+import { Colors } from '@/constants/theme';
 
 const humanTranslations = [
   'Human',
@@ -23,8 +24,14 @@ const humanTranslations = [
 export default function AuthIndexScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
-  const backgroundColor = colorScheme === 'dark' ? '#000000' : '#FFFFFF';
-  const textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+  const backgroundColor = useMemo(
+    () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
+    [colorScheme]
+  );
+  const textColor = useMemo(
+    () => (colorScheme === 'dark' ? Colors.dark.text : Colors.light.text),
+    [colorScheme]
+  );
 
   // Entrance animation values
   const helloOpacity = useSharedValue(0);
@@ -79,9 +86,9 @@ export default function AuthIndexScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const handlePress = () => {
-    router.push('/(auth)/welcome');
-  };
+  const handlePress = useCallback(() => {
+    router.push('./welcome');
+  }, [router]);
 
   return (
     <Pressable style={[styles.container, { backgroundColor }]} onPress={handlePress}>

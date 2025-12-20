@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import { toast } from '../../lib/sonner';
+import { logger } from '../../utils/loggerUtils';
 
 interface UseSessionSocketProps {
   userId: string | null | undefined;
@@ -113,7 +114,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
             await clearSessionStateRef.current();
           } catch (error) {
             if (__DEV__) {
-              console.error('Failed to clear session state after session_removed:', error);
+              logger.error('Failed to clear session state after session_removed', error instanceof Error ? error : new Error(String(error)), { component: 'useSessionSocket' });
             }
           }
         } else {
@@ -121,7 +122,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
           refreshSessionsRef.current().catch((error) => {
             // Silently handle errors from refresh - they're expected if sessions were removed
             if (__DEV__) {
-              console.debug('Failed to refresh sessions after session_removed:', error);
+              logger.debug('Failed to refresh sessions after session_removed', { component: 'useSessionSocket' }, error as unknown);
             }
           });
         }
@@ -146,7 +147,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
             await clearSessionStateRef.current();
           } catch (error) {
             if (__DEV__) {
-              console.error('Failed to clear session state after device_removed:', error);
+              logger.error('Failed to clear session state after device_removed', error instanceof Error ? error : new Error(String(error)), { component: 'useSessionSocket' });
             }
           }
         } else {
@@ -154,7 +155,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
           refreshSessionsRef.current().catch((error) => {
             // Silently handle errors from refresh - they're expected if sessions were removed
             if (__DEV__) {
-              console.debug('Failed to refresh sessions after device_removed:', error);
+              logger.debug('Failed to refresh sessions after device_removed', { component: 'useSessionSocket' }, error as unknown);
             }
           });
         }
@@ -179,7 +180,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
             await clearSessionStateRef.current();
           } catch (error) {
             if (__DEV__) {
-              console.error('Failed to clear session state after sessions_removed:', error);
+              logger.error('Failed to clear session state after sessions_removed', error instanceof Error ? error : new Error(String(error)), { component: 'useSessionSocket' });
             }
           }
         } else {
@@ -187,7 +188,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
           refreshSessionsRef.current().catch((error) => {
             // Silently handle errors from refresh - they're expected if sessions were removed
             if (__DEV__) {
-              console.debug('Failed to refresh sessions after sessions_removed:', error);
+              logger.debug('Failed to refresh sessions after sessions_removed', { component: 'useSessionSocket' }, error as unknown);
             }
           });
         }
@@ -196,7 +197,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
         refreshSessionsRef.current().catch((error) => {
           // Log but don't throw - refresh errors shouldn't break the socket handler
           if (__DEV__) {
-            console.debug('Failed to refresh sessions after session_update:', error);
+            logger.debug('Failed to refresh sessions after session_update', { component: 'useSessionSocket' }, error as unknown);
           }
         });
         

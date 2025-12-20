@@ -3,9 +3,9 @@ import type { ApiError, User } from '../../../models/interfaces';
 import type { AuthState } from '../../stores/authStore';
 import type { ClientSession, SessionLoginResponse } from '../../../models/session';
 import { DeviceManager } from '../../../utils/deviceManager';
-import { fetchSessionsWithFallback, mapSessionsToClient } from '../utils/sessionHelpers';
-import { handleAuthError, isInvalidSessionError } from '../utils/errorHandlers';
-import type { StorageInterface } from '../utils/storageHelpers';
+import { fetchSessionsWithFallback, mapSessionsToClient } from '../../utils/sessionHelpers';
+import { handleAuthError, isInvalidSessionError } from '../../utils/errorHandlers';
+import type { StorageInterface } from '../../utils/storageHelpers';
 import type { OxyServices } from '../../../core';
 import { KeyManager, SignatureService, RecoveryPhraseService } from '../../../crypto';
 
@@ -342,7 +342,7 @@ export const useAuthOperations = ({
           defaultMessage: 'Failed to create identity',
           code: REGISTER_ERROR_CODE,
           onError,
-          setAuthError: (msg) => setAuthState({ error: msg }),
+          setAuthError: (msg: string) => setAuthState({ error: msg }),
           logger,
         });
         loginFailure(message);
@@ -420,7 +420,7 @@ export const useAuthOperations = ({
           defaultMessage: 'Failed to sync identity',
           code: REGISTER_ERROR_CODE,
           onError,
-          setAuthError: (msg) => setAuthState({ error: msg }),
+          setAuthError: (msg: string) => setAuthState({ error: msg }),
           logger,
         });
         loginFailure(message);
@@ -481,7 +481,7 @@ export const useAuthOperations = ({
           defaultMessage: 'Failed to import identity',
           code: REGISTER_ERROR_CODE,
           onError,
-          setAuthError: (msg) => setAuthState({ error: msg }),
+          setAuthError: (msg: string) => setAuthState({ error: msg }),
           logger,
         });
         loginFailure(message);
@@ -515,7 +515,7 @@ export const useAuthOperations = ({
           defaultMessage: 'Sign in failed',
           code: LOGIN_ERROR_CODE,
           onError,
-          setAuthError: (msg) => setAuthState({ error: msg }),
+          setAuthError: (msg: string) => setAuthState({ error: msg }),
           logger,
         });
         loginFailure(message);
@@ -561,7 +561,7 @@ export const useAuthOperations = ({
           defaultMessage: 'Logout failed',
           code: LOGOUT_ERROR_CODE,
           onError,
-          setAuthError: (msg) => setAuthState({ error: msg }),
+          setAuthError: (msg: string) => setAuthState({ error: msg }),
           logger,
           status: isInvalid ? 401 : undefined,
         });
@@ -599,7 +599,7 @@ export const useAuthOperations = ({
         defaultMessage: 'Logout all failed',
         code: LOGOUT_ALL_ERROR_CODE,
         onError,
-        setAuthError: (msg) => setAuthState({ error: msg }),
+        setAuthError: (msg: string) => setAuthState({ error: msg }),
         logger,
       });
       throw error instanceof Error ? error : new Error('Logout all failed');

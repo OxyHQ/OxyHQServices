@@ -531,6 +531,48 @@ class SecurityActivityService {
       severity: 'critical',
     });
   }
+
+  /**
+   * Helper: Log private key export event
+   */
+  async logPrivateKeyExported(
+    userId: string,
+    req?: Request,
+    deviceId?: string
+  ): Promise<ISecurityActivity> {
+    return this.logSecurityEvent({
+      userId,
+      eventType: 'private_key_exported',
+      eventDescription: 'Private key exported',
+      metadata: {
+        exportMethod: 'printed',
+      },
+      req,
+      deviceId,
+      severity: 'high',
+    });
+  }
+
+  /**
+   * Helper: Log backup created event
+   */
+  async logBackupCreated(
+    userId: string,
+    req?: Request,
+    deviceId?: string
+  ): Promise<ISecurityActivity> {
+    return this.logSecurityEvent({
+      userId,
+      eventType: 'backup_created',
+      eventDescription: 'Encrypted backup file created',
+      metadata: {
+        backupType: 'encrypted_zip',
+      },
+      req,
+      deviceId,
+      severity: 'high',
+    });
+  }
 }
 
 export default new SecurityActivityService();

@@ -1,11 +1,12 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'expo-router';
 import { useOxy, RecoveryPhraseService } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ImportPhraseStep } from '@/components/auth/ImportPhraseStep';
 import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
 import { RECOVERY_PHRASE_LENGTH } from '@/constants/auth';
-import { useAuthFlowContext } from '../_authFlowContext';
+import { useAuthFlowContext } from '@/contexts/auth-flow-context';
+import { Colors } from '@/constants/theme';
 
 /**
  * Import Identity - Phrase Screen (Index)
@@ -18,8 +19,14 @@ export default function ImportIdentityPhraseScreen() {
   const { importIdentity, isLoading } = useOxy();
   const { error, setAuthError } = useAuthFlowContext();
 
-  const backgroundColor = colorScheme === 'dark' ? '#000000' : '#FFFFFF';
-  const textColor = colorScheme === 'dark' ? '#FFFFFF' : '#000000';
+  const backgroundColor = useMemo(
+    () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
+    [colorScheme]
+  );
+  const textColor = useMemo(
+    () => (colorScheme === 'dark' ? Colors.dark.text : Colors.light.text),
+    [colorScheme]
+  );
 
   const [phraseWords, setPhraseWords] = useState<string[]>(new Array(RECOVERY_PHRASE_LENGTH).fill(''));
 
@@ -55,9 +62,9 @@ export default function ImportIdentityPhraseScreen() {
 
       // Check if offline - if so, skip username step
       if (wasOffline) {
-        router.push('/(auth)/import-identity/notifications');
+        router.replace('/(auth)/import-identity/notifications');
       } else {
-        router.push('/(auth)/import-identity/username');
+        router.replace('/(auth)/import-identity/username');
       }
     } catch (err: unknown) {
       setAuthError(extractAuthErrorMessage(err, 'Failed to import identity'));

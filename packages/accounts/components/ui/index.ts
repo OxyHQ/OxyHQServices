@@ -12,3 +12,4 @@ export type { AlertButton } from './alert';
 export { Button } from './button';
 export type { ButtonProps, ButtonVariant } from './button';
 export { KeyboardAwareScrollViewWrapper } from './keyboard-aware-scroll-view';
+export { ImportantBanner } from './important-banner';

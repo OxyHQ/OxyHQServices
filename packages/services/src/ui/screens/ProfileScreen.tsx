@@ -2,23 +2,36 @@ import type React from 'react';
 import { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ActivityIndicator, ScrollView, TouchableOpacity, Image } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import { useThemeColors } from '../styles';
+import { useThemeColors, type ThemeColors } from '../styles';
 import Avatar from '../components/Avatar';
 import { FollowButton } from '../components';
 import { useFollow } from '../hooks/useFollow';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
+import { logger } from '../../utils/loggerUtils';
+import type { User } from '../../models/interfaces';
+import { extractErrorMessage } from '../utils/errorHandlers';
 
 interface ProfileScreenProps extends BaseScreenProps {
     userId: string;
     username?: string;
 }
 
+interface LinkMetadata {
+    id?: string;
+    url: string;
+    title?: string;
+    description?: string;
+    image?: string;
+}
+
+type ProfileLink = string | { link: string } | LinkMetadata;
+
 const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, goBack, navigate }) => {
     // Use useOxy() hook for OxyContext values
     const { oxyServices, user: currentUser } = useOxy();
-    const [profile, setProfile] = useState<any>(null);
+    const [profile, setProfile] = useState<User | null>(null);
     const [karmaTotal, setKarmaTotal] = useState<number | null>(null);
     const [postsCount, setPostsCount] = useState<number | null>(null);
     const [commentsCount, setCommentsCount] = useState<number | null>(null);
@@ -49,7 +62,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
         if (!id) return '';
         return String(id).trim();
     };
-    
+
     const currentUserId = normalizeId(currentUser?.id);
     const targetUserId = normalizeId(userId);
     const isOwnProfile = currentUserId && targetUserId && currentUserId === targetUserId;
@@ -66,7 +79,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
         // Load user profile and karma total
         Promise.all([
-            oxyServices.getUserById(userId).catch((err: any) => {
+            oxyServices.getUserById(userId).catch((err: unknown) => {
                 // If this is the current user and the API call fails, use current user data as fallback
                 const normalizedCurrentId = normalizeId(currentUser?.id);
                 const normalizedTargetId = normalizeId(userId);
@@ -82,18 +95,24 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 Promise.resolve({ total: undefined })
         ])
             .then(([profileRes, karmaRes]) => {
+                if (!profileRes) {
+                    setError('Profile data is not available');
+                    setIsLoading(false);
+                    return;
+                }
+
                 setProfile(profileRes);
                 setKarmaTotal(typeof karmaRes.total === 'number' ? karmaRes.total : null);
 
                 // Extract links from profile data
                 if (profileRes.linksMetadata && Array.isArray(profileRes.linksMetadata)) {
-                    const linksWithIds = profileRes.linksMetadata.map((link: any, index: number) => ({
+                    const linksWithIds = profileRes.linksMetadata.map((link: LinkMetadata, index: number) => ({
                         ...link,
                         id: link.id || `existing-${index}`
                     }));
                     setLinks(linksWithIds);
                 } else if (Array.isArray(profileRes.links)) {
-                    const simpleLinks = profileRes.links.map((l: any) => typeof l === 'string' ? l : l.link).filter(Boolean);
+                    const simpleLinks = profileRes.links.map((l: ProfileLink) => typeof l === 'string' ? l : (typeof l === 'object' && 'link' in l ? l.link : '')).filter(Boolean);
                     const linksWithMetadata = simpleLinks.map((url: string, index: number) => ({
                         url,
                         title: url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
@@ -120,12 +139,16 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 setPostsCount(Math.floor(Math.random() * 50));
                 setCommentsCount(Math.floor(Math.random() * 100));
             })
-            .catch((err: any) => {
-                console.error('Profile loading error:', err);
+            .catch((err: unknown) => {
+                logger.error('Profile loading error', err instanceof Error ? err : new Error(String(err)), { component: 'ProfileScreen' });
                 // Provide user-friendly error messages based on the error type
                 let errorMessage = 'Failed to load profile';
 
-                if (err.status === 404 || err.message?.includes('not found') || err.message?.includes('Resource not found')) {
+                // Type guard for error with status property
+                const errorWithStatus = err && typeof err === 'object' && 'status' in err ? err as { status?: number; message?: string } : null;
+                const errorMessageText = extractErrorMessage(err, '');
+
+                if (errorWithStatus?.status === 404 || errorMessageText.includes('not found') || errorMessageText.includes('Resource not found')) {
                     const normalizedCurrentId = normalizeId(currentUser?.id);
                     const normalizedTargetId = normalizeId(userId);
                     if (normalizedCurrentId && normalizedTargetId && normalizedCurrentId === normalizedTargetId) {
@@ -133,12 +156,12 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                     } else {
                         errorMessage = 'This user profile could not be found or may have been removed.';
                     }
-                } else if (err.status === 403) {
+                } else if (errorWithStatus?.status === 403) {
                     errorMessage = 'You do not have permission to view this profile.';
-                } else if (err.status === 500) {
+                } else if (errorWithStatus?.status === 500) {
                     errorMessage = 'Server error occurred while loading the profile. Please try again later.';
-                } else if (err.message) {
-                    errorMessage = err.message;
+                } else if (errorMessageText) {
+                    errorMessage = errorMessageText;
                 }
 
                 setError(errorMessage);
@@ -208,7 +231,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
                                 onFollowChange={(isFollowing) => {
                                     // The follow button will automatically update counts via Zustand
-                                    console.log(`Follow status changed: ${isFollowing}`);
+                                    if (__DEV__) {
+                                        logger.debug(`Follow status changed: ${isFollowing}`, { component: 'ProfileScreen' });
+                                    }
                                 }}
                             />
                         )}
@@ -216,7 +241,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 </View>
                 {/* Profile Info */}
                 <View style={styles.header}>
-                    <Text style={[styles.displayName, { color: colors.text }]}>{profile?.displayName || profile?.username || username || profile?.id}</Text>
+                    <Text style={[styles.displayName, { color: colors.text }]}>
+                        {(profile && 'displayName' in profile && typeof profile.displayName === 'string' ? profile.displayName : null) || profile?.username || username || profile?.id || ''}
+                    </Text>
                     {profile?.username && (
                         <Text style={[styles.subText, { color: colors.secondaryText }]}>@{profile.username}</Text>
                     )}
@@ -245,25 +272,25 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                                 <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>{profile.website}</Text>
                             </View>
                         )}
-                        {profile?.company && (
+                        {profile && 'company' in profile && typeof profile.company === 'string' && profile.company && (
                             <View style={styles.infoGridItem}>
                                 <Ionicons name="business-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
                                 <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>{profile.company}</Text>
                             </View>
                         )}
-                        {profile?.jobTitle && (
+                        {profile && 'jobTitle' in profile && typeof profile.jobTitle === 'string' && profile.jobTitle && (
                             <View style={styles.infoGridItem}>
                                 <Ionicons name="briefcase-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
                                 <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>{profile.jobTitle}</Text>
                             </View>
                         )}
-                        {profile?.education && (
+                        {profile && 'education' in profile && typeof profile.education === 'string' && profile.education && (
                             <View style={styles.infoGridItem}>
                                 <Ionicons name="school-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
                                 <Text style={[styles.infoGridText, { color: colors.secondaryText }]} numberOfLines={1}>{profile.education}</Text>
                             </View>
                         )}
-                        {profile?.birthday && (
+                        {profile && 'birthday' in profile && typeof profile.birthday === 'string' && profile.birthday && (
                             <View style={styles.infoGridItem}>
                                 <Ionicons name="gift-outline" size={16} color={colors.secondaryText} style={{ marginRight: 6 }} />
                                 <Text style={[styles.infoGridText, { color: colors.secondaryText }]}>
@@ -319,7 +346,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
     );
 };
 
-const createStyles = (colors: any) => StyleSheet.create({
+const createStyles = (colors: ThemeColors) => StyleSheet.create({
     container: { flex: 1 },
     scrollContainer: { alignItems: 'stretch', paddingBottom: 40 },
     bannerContainer: { height: 160, backgroundColor: colors.primary + '20', position: 'relative', overflow: 'hidden' },

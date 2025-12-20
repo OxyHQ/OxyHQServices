@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ApiError } from '../../../models/interfaces';
-import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
-import { extractErrorMessage } from '../utils/errorHandlers';
+import { createPlatformStorage, type StorageInterface } from '../../utils/storageHelpers';
+import { extractErrorMessage } from '../../utils/errorHandlers';
 
 export interface UseStorageOptions {
   onError?: (error: ApiError) => void;

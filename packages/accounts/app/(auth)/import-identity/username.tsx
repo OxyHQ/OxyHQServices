@@ -1,11 +1,12 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { useOxy } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { UsernameStep } from '@/components/auth/UsernameStep';
 import { useNetworkStatus } from '@/hooks/auth/useNetworkStatus';
 import { generateSuggestedUsername } from '@/utils/auth/usernameUtils';
-import { useAuthFlowContext } from '../_authFlowContext';
+import { useAuthFlowContext } from '@/contexts/auth-flow-context';
+import { Colors } from '@/constants/theme';
 
 /**
  * Import Identity - Username Screen
@@ -19,12 +20,12 @@ export default function ImportIdentityUsernameScreen() {
   const { isOffline, checkNetworkStatus } = useNetworkStatus();
   const { usernameRef } = useAuthFlowContext();
 
-  const backgroundColor = useMemo(() =>
-    colorScheme === 'dark' ? '#000000' : '#FFFFFF',
+  const backgroundColor = useMemo(
+    () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
     [colorScheme]
   );
-  const textColor = useMemo(() =>
-    colorScheme === 'dark' ? '#FFFFFF' : '#000000',
+  const textColor = useMemo(
+    () => (colorScheme === 'dark' ? Colors.dark.text : Colors.light.text),
     [colorScheme]
   );
 
@@ -58,18 +59,18 @@ export default function ImportIdentityUsernameScreen() {
     checkNetworkStatus();
   }, [checkNetworkStatus]);
 
-  const handleContinue = () => {
+  const handleContinue = useCallback(() => {
     // Save username to ref for later use after sign-in
     usernameRef.current = username;
     // Navigate to notifications step
-    router.push('/(auth)/import-identity/notifications');
-  };
+    router.replace('/(auth)/import-identity/notifications');
+  }, [username, usernameRef, router]);
 
-  const handleSkip = () => {
+  const handleSkip = useCallback(() => {
     // Skip username step - user can set it later
     usernameRef.current = '';
-    router.push('/(auth)/import-identity/notifications');
-  };
+    router.replace('/(auth)/import-identity/notifications');
+  }, [usernameRef, router]);
 
   return (
     <UsernameStep

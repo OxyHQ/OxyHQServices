@@ -7,8 +7,8 @@ import {
   normalizeLanguageCode,
   type LanguageMetadata,
 } from '../../../utils/languageUtils';
-import type { StorageInterface } from '../utils/storageHelpers';
-import { extractErrorMessage } from '../utils/errorHandlers';
+import type { StorageInterface } from '../../utils/storageHelpers';
+import { extractErrorMessage } from '../../utils/errorHandlers';
 
 export interface UseLanguageManagementOptions {
   storage: StorageInterface | null;

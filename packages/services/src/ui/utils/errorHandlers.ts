@@ -53,14 +53,72 @@ export const isInvalidSessionError = (error: unknown): boolean => {
     return false;
   }
 
+  // Check error.status directly (HttpService sets this)
+  if ((error as any).status === 401) {
+    return true;
+  }
+
   const normalizedMessage = extractErrorMessage(error)?.toLowerCase();
   if (!normalizedMessage) {
     return false;
   }
 
+  // Check for HTTP 401 in message (HttpService creates errors with "HTTP 401:" format)
+  if (normalizedMessage.includes('http 401') || normalizedMessage.includes('401')) {
+    return true;
+  }
+
   return DEFAULT_INVALID_SESSION_MESSAGES.some((msg) =>
     normalizedMessage.includes(msg.toLowerCase()),
   );
+};
+
+/**
+ * Determine whether the error represents a timeout or network error.
+ * These are expected when the device is offline or has poor connectivity.
+ */
+export const isTimeoutOrNetworkError = (error: unknown): boolean => {
+  if (!isObject(error) && !(error instanceof Error)) {
+    return false;
+  }
+
+  const message = extractErrorMessage(error, '').toLowerCase();
+  const errorCode = (error as any).code;
+
+  // Check for timeout/cancelled messages
+  if (
+    message.includes('timeout') ||
+    message.includes('cancelled') ||
+    message.includes('econnaborted') ||
+    message.includes('aborted') ||
+    message.includes('request timeout or cancelled')
+  ) {
+    return true;
+  }
+
+  // Check for timeout/network error codes
+  if (errorCode === 'TIMEOUT' || errorCode === 'NETWORK_ERROR' || errorCode === 'ECONNABORTED') {
+    return true;
+  }
+
+  // Check for AbortError
+  if (error instanceof Error && error.name === 'AbortError') {
+    return true;
+  }
+
+  // Check for network-related TypeErrors
+  if (error instanceof TypeError) {
+    const typeErrorMessage = error.message.toLowerCase();
+    if (
+      typeErrorMessage.includes('fetch') ||
+      typeErrorMessage.includes('network') ||
+      typeErrorMessage.includes('failed to fetch')
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 };
 
 /**

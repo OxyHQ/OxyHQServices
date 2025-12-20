@@ -107,6 +107,7 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
 
     return (
       <BlurView
+        key={`button-${index}-${button.text}`}
         intensity={50}
         tint={colorScheme === 'dark' ? 'dark' : 'light'}
         style={[
@@ -116,7 +117,6 @@ export function Alert({ visible, title, message, buttons = [], onDismiss }: Aler
         ]}
       >
         <TouchableOpacity
-          key={index}
           style={[
             styles.buttonInner,
             { backgroundColor },
@@ -228,14 +228,23 @@ const styles = StyleSheet.create({
     width: maxWidth,
     maxWidth: '85%',
     maxHeight: maxHeight,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2,
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: {
+          width: 0,
+          height: 2,
+        },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+      },
+      android: {
+        elevation: 2,
+      },
+      web: {
+        boxShadow: '0px 2px 4px rgba(0, 0, 0, 0.1)',
+      },
+    }),
   },
   alertContent: {
     borderRadius: 14,
@@ -279,11 +288,20 @@ const styles = StyleSheet.create({
   button: {
     borderRadius: 18,
     overflow: 'hidden',
-    shadowColor: 'transparent',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    elevation: 0,
+    ...Platform.select({
+      ios: {
+        shadowColor: 'transparent',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0,
+        shadowRadius: 0,
+      },
+      android: {
+        elevation: 0,
+      },
+      web: {
+        boxShadow: 'none',
+      },
+    }),
     borderWidth: 0,
   },
   buttonInner: {
@@ -292,11 +310,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     minHeight: 36,
-    shadowColor: 'transparent',
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0,
-    shadowRadius: 0,
-    elevation: 0,
+    ...Platform.select({
+      ios: {
+        shadowColor: 'transparent',
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0,
+        shadowRadius: 0,
+      },
+      android: {
+        elevation: 0,
+      },
+      web: {
+        boxShadow: 'none',
+      },
+    }),
     borderWidth: 0,
   },
   buttonText: {

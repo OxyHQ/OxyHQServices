@@ -1,5 +1,5 @@
 import { Stack } from 'expo-router';
-import { AuthFlowProvider } from './_authFlowContext';
+import { AuthFlowProvider } from '@/contexts/auth-flow-context';
 
 /**
  * Auth Layout (Base)

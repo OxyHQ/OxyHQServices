@@ -54,6 +54,50 @@ export function OxyServicesSecurityMixin<T extends typeof OxyServicesBase>(Base:
         throw this.handleError(error);
       }
     }
+
+    /**
+     * Log private key exported event
+     * @param deviceId - Optional device ID for tracking
+     * @returns Promise that resolves when event is logged
+     */
+    async logPrivateKeyExported(deviceId?: string): Promise<void> {
+      try {
+        await this.makeRequest<{ success: boolean }>(
+          'POST',
+          '/api/security/activity/private-key-exported',
+          { deviceId },
+          { cache: false }
+        );
+      } catch (error) {
+        // Don't throw - logging failures shouldn't break user flow
+        // But log for monitoring
+        if (__DEV__) {
+          console.warn('[OxyServices] Failed to log private key exported event:', error);
+        }
+      }
+    }
+
+    /**
+     * Log backup created event
+     * @param deviceId - Optional device ID for tracking
+     * @returns Promise that resolves when event is logged
+     */
+    async logBackupCreated(deviceId?: string): Promise<void> {
+      try {
+        await this.makeRequest<{ success: boolean }>(
+          'POST',
+          '/api/security/activity/backup-created',
+          { deviceId },
+          { cache: false }
+        );
+      } catch (error) {
+        // Don't throw - logging failures shouldn't break user flow
+        // But log for monitoring
+        if (__DEV__) {
+          console.warn('[OxyServices] Failed to log backup created event:', error);
+        }
+      }
+    }
   };
 }
 

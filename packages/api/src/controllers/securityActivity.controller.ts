@@ -10,6 +10,60 @@ const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 100;
 
 /**
+ * Log private key exported event
+ * POST /api/security/activity/private-key-exported
+ */
+export const logPrivateKeyExported = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const userId = req.user._id.toString();
+    const deviceId = req.body.deviceId as string | undefined;
+
+    await securityActivityService.logPrivateKeyExported(userId, req, deviceId);
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    logger.error('Failed to log private key exported event', error instanceof Error ? error : new Error(String(error)), {
+      component: 'SecurityActivityController',
+      method: 'logPrivateKeyExported',
+      userId: req.user?._id.toString(),
+    });
+    res.status(500).json({ error: 'Failed to log security event' });
+  }
+};
+
+/**
+ * Log backup created event
+ * POST /api/security/activity/backup-created
+ */
+export const logBackupCreated = async (req: AuthRequest, res: Response): Promise<void> => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    const userId = req.user._id.toString();
+    const deviceId = req.body.deviceId as string | undefined;
+
+    await securityActivityService.logBackupCreated(userId, req, deviceId);
+
+    res.status(200).json({ success: true });
+  } catch (error) {
+    logger.error('Failed to log backup created event', error instanceof Error ? error : new Error(String(error)), {
+      component: 'SecurityActivityController',
+      method: 'logBackupCreated',
+      userId: req.user?._id.toString(),
+    });
+    res.status(500).json({ error: 'Failed to log security event' });
+  }
+};
+
+/**
  * Get user's security activity with pagination
  * GET /api/security/activity
  */

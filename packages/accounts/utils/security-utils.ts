@@ -11,6 +11,8 @@ const SECURITY_EVENT_SEVERITY_MAP: Record<SecurityEventType, SecurityEventSeveri
   'device_removed': 'medium',
   'security_settings_changed': 'medium',
   'account_recovery': 'high',
+  'private_key_exported': 'high',
+  'backup_created': 'high',
   'suspicious_activity': 'critical',
 };
 
@@ -35,6 +37,10 @@ export function getEventIcon(eventType: SecurityEventType): keyof typeof Materia
       return 'key-variant';
     case 'security_settings_changed':
       return 'shield-edit';
+    case 'private_key_exported':
+      return 'printer';
+    case 'backup_created':
+      return 'file-export';
     case 'suspicious_activity':
       return 'alert-circle';
     default:

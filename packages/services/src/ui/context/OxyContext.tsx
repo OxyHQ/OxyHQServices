@@ -33,6 +33,7 @@ import { KeyManager } from '../../crypto/keyManager';
 import { translate } from '../../i18n';
 import { updateAvatarVisibility, updateProfileWithAvatar } from '../utils/avatarUtils';
 import { useAccountStore } from '../stores/accountStore';
+import { logger as loggerUtil } from '../../utils/loggerUtils';
 
 export interface OxyContextState {
   user: User | null;
@@ -115,9 +116,10 @@ const loadUseFollowHook = (): UseFollowHook => {
     return cachedUseFollowHook;
   } catch (error) {
     if (__DEV__) {
-      console.warn(
+      loggerUtil.warn(
         'useFollow hook is not available. Please import useFollow from @oxyhq/services directly.',
-        error,
+        { component: 'OxyContext', method: 'loadUseFollowHook' },
+        error
       );
     }
 
@@ -429,14 +431,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // Skip sync silently if username is required (expected when offline onboarding)
             if (syncError?.code === 'USERNAME_REQUIRED' || syncError?.message === 'USERNAME_REQUIRED') {
               if (__DEV__) {
-                console.debug('Sync skipped - username required', syncError);
+                loggerUtil.debug('Sync skipped - username required', { component: 'OxyContext', method: 'checkNetworkAndSync' }, syncError as unknown);
               }
               // Don't log or show error - username will be set later
             } else if (!isTimeoutOrNetworkError(syncError)) {
               // Only log unexpected errors - timeouts/network issues are expected when offline
               logger('Error syncing identity on reconnect', syncError);
             } else if (__DEV__) {
-              console.debug('Identity sync timeout (expected when offline)', syncError);
+              loggerUtil.debug('Identity sync timeout (expected when offline)', { component: 'OxyContext', method: 'checkNetworkAndSync' }, syncError as unknown);
             }
           }
 
@@ -526,7 +528,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               logger('Session validation failed during init', validationError);
             } else if (__DEV__ && isTimeoutOrNetworkError(validationError)) {
               // Only log timeouts in dev mode for debugging
-              console.debug('Session validation timeout (expected when offline)', validationError);
+              loggerUtil.debug('Session validation timeout (expected when offline)', { component: 'OxyContext', method: 'restoreSessionsFromStorage' }, validationError as unknown);
             }
           }
         }
@@ -551,7 +553,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           } else if (isTimeoutOrNetworkError(switchError)) {
             // Timeout/network error - non-critical, don't block
             if (__DEV__) {
-              console.debug('Active session validation timeout (expected when offline)', switchError);
+              loggerUtil.debug('Active session validation timeout (expected when offline)', { component: 'OxyContext', method: 'restoreSessionsFromStorage' }, switchError as unknown);
             }
           } else {
             // Only log unexpected errors
@@ -561,7 +563,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       }
     } catch (error) {
       if (__DEV__) {
-        console.error('Auth init error', error);
+        loggerUtil.error('Auth init error', error instanceof Error ? error : new Error(String(error)), { component: 'OxyContext', method: 'restoreSessionsFromStorage' });
       }
       await clearSessionState();
     } finally {
