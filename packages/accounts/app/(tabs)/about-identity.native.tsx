@@ -20,9 +20,7 @@ import { useOxy, KeyManager } from '@oxyhq/services';
 import * as Print from 'expo-print';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatDate, getDisplayName } from '@/utils/date-utils';
-import { Ticket as OxyID } from '@/components/OxyID';
-import { FrontSide } from '@/components/OxyID/front-side';
-import { BackSide } from '@/components/OxyID/back-side';
+import { IdentityCard } from '@/components/identity';
 
 export default function AboutIdentityScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -442,25 +440,12 @@ export default function AboutIdentityScreen() {
           {/* ID Card */}
           <Section title="ID Card">
             <View style={styles.idCardContainer}>
-              <OxyID
-                width={340}
-                height={214}
-                frontSide={
-                  <FrontSide
-                    displayName={displayName}
-                    username={user?.username}
-                    avatarUrl={avatarUrl}
-                    accountCreated={user?.createdAt}
-                    publicKeyShort={publicKey ? `${publicKey.substring(0, 8)}...${publicKey.substring(publicKey.length - 8)}` : undefined}
-                  />
-                }
-                backSide={
-                  <BackSide
-                    publicKey={publicKey || undefined}
-                    displayName={displayName}
-                    accountCreated={user?.createdAt}
-                  />
-                }
+              <IdentityCard
+                displayName={displayName}
+                username={user?.username}
+                avatarUrl={avatarUrl}
+                accountCreated={user?.createdAt}
+                publicKey={publicKey || undefined}
               />
             </View>
             {publicKey && (

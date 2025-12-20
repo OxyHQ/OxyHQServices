@@ -2,20 +2,18 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
-  TouchableOpacity,
   StyleSheet,
   ActivityIndicator,
   ScrollView,
   Platform,
 } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useOxy, KeyManager } from '@oxyhq/services';
+import { useOxy } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { UserAvatar } from '@/components/user-avatar';
 import { MaterialCommunityIcons, Ionicons } from '@expo/vector-icons';
-import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
-import { useAlert } from '@/components/ui';
+import { useAlert, Button } from '@/components/ui';
+import { IdentityCard } from '@/components/identity';
 
 /**
  * Authorize Screen
@@ -29,7 +27,6 @@ export default function AuthorizeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{ token: string }>();
   const colorScheme = useColorScheme() ?? 'light';
-  const colors = Colors[colorScheme];
   const alert = useAlert();
   const { oxyServices, user, isAuthenticated, activeSessionId } = useOxy();
 
@@ -139,181 +136,170 @@ export default function AuthorizeScreen() {
     return undefined;
   }, [user?.avatar, oxyServices]);
 
+  // Memoize colors for all states
+  const backgroundColor = useMemo(
+    () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
+    [colorScheme]
+  );
+  const textColor = useMemo(
+    () => (colorScheme === 'dark' ? Colors.dark.text : Colors.light.text),
+    [colorScheme]
+  );
+
   // Check if user is authenticated
   if (!isAuthenticated || !user) {
     return (
-      <ScreenContentWrapper>
-        <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
-          <View style={[styles.iconContainer, { backgroundColor: colors.card }]}>
-            <MaterialCommunityIcons name="lock-outline" size={48} color={colors.tint} />
-          </View>
-          <Text style={[styles.title, { color: colors.text }]}>Sign In Required</Text>
-          <Text style={[styles.subtitle, { color: colors.secondaryText }]}>
+      <View style={[styles.container, styles.centered, { backgroundColor }]}>
+        <View style={styles.content}>
+          <MaterialCommunityIcons name="lock-outline" size={48} color={textColor} />
+          <Text style={[styles.title, { color: textColor }]}>Sign In Required</Text>
+          <Text style={[styles.subtitle, { color: textColor, opacity: 0.8 }]}>
             You need to be signed in to authorize this request.
           </Text>
-          <TouchableOpacity
-            style={[styles.primaryButton, { backgroundColor: colors.tint }]}
+          <Button
+            variant="primary"
             onPress={() => router.push('/(auth)')}
+            style={styles.fullWidthButton}
           >
-            <Text style={styles.primaryButtonText}>Sign In</Text>
-          </TouchableOpacity>
+            Sign In
+          </Button>
         </View>
-      </ScreenContentWrapper>
+      </View>
     );
   }
 
   if (isLoading) {
     return (
-      <ScreenContentWrapper>
-        <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
-          <ActivityIndicator size="large" color={colors.tint} />
-          <Text style={[styles.loadingText, { color: colors.secondaryText }]}>
+      <View style={[styles.container, styles.centered, { backgroundColor }]}>
+        <View style={styles.content}>
+          <ActivityIndicator size="large" color={textColor} />
+          <Text style={[styles.loadingText, { color: textColor, opacity: 0.8 }]}>
             Loading authorization request...
           </Text>
         </View>
-      </ScreenContentWrapper>
+      </View>
     );
   }
 
   if (error) {
     return (
-      <ScreenContentWrapper>
-        <View style={[styles.container, styles.centered, { backgroundColor: colors.background }]}>
-          <View style={[styles.iconContainer, styles.errorIcon, { backgroundColor: colors.card }]}>
-            <MaterialCommunityIcons name="alert-circle-outline" size={48} color="#FF3B30" />
-          </View>
-          <Text style={[styles.title, { color: colors.text }]}>Authorization Error</Text>
-          <Text style={[styles.errorText, { color: colors.secondaryText }]}>{error}</Text>
-          <TouchableOpacity
-            style={[styles.secondaryButton, { borderColor: colors.border }]}
+      <View style={[styles.container, styles.centered, { backgroundColor }]}>
+        <View style={styles.content}>
+          <MaterialCommunityIcons name="alert-circle-outline" size={48} color="#FF3B30" />
+          <Text style={[styles.title, { color: textColor }]}>Authorization Error</Text>
+          <Text style={[styles.errorText, { color: textColor, opacity: 0.8 }]}>{error}</Text>
+          <Button
+            variant="secondary"
             onPress={() => router.back()}
+            style={styles.fullWidthButton}
           >
-            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Go Back</Text>
-          </TouchableOpacity>
+            Go Back
+          </Button>
         </View>
-      </ScreenContentWrapper>
+      </View>
     );
   }
 
   return (
-    <ScreenContentWrapper>
+    <View style={[styles.container, { backgroundColor }]}>
       <ScrollView
-        style={[styles.scrollView, { backgroundColor: colors.background }]}
+        style={styles.scrollView}
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.container}>
+        <View style={styles.content}>
           {/* App Icon/Name Section */}
           <View style={styles.appHeader}>
-            <View style={[styles.appIconContainer, { backgroundColor: colors.card }]}>
-              <MaterialCommunityIcons
-                name="application"
-                size={64}
-                color={colors.tint}
-              />
-            </View>
-            <Text style={[styles.appName, { color: colors.text }]}>
+            <MaterialCommunityIcons
+              name="application"
+              size={64}
+              color={textColor}
+            />
+            <Text style={[styles.appName, { color: textColor }]}>
               {sessionInfo?.appId || 'An app'}
             </Text>
-            <Text style={[styles.appRequest, { color: colors.secondaryText }]}>
+            <Text style={[styles.appRequest, { color: textColor, opacity: 0.8 }]}>
               wants to access your account
             </Text>
           </View>
 
-          {/* User Profile Section */}
-          <View style={[styles.userCard, { backgroundColor: colors.card }]}>
-            <View style={styles.userInfo}>
-              <UserAvatar
-                name={displayName}
-                imageUrl={avatarUrl}
-                size={64}
-              />
-              <View style={styles.userDetails}>
-                <Text style={[styles.userLabel, { color: colors.secondaryText }]}>
-                  Signing in as
-                </Text>
-                <Text style={[styles.username, { color: colors.text }]}>
-                  {user.username ? `@${user.username}` : displayName}
-                </Text>
-                <Text style={[styles.publicKey, { color: colors.secondaryText }]}>
-                  {KeyManager.shortenPublicKey(user.publicKey || '')}
-                </Text>
-              </View>
-            </View>
+          {/* Identity Card */}
+          <View style={styles.identityCardContainer}>
+            <IdentityCard
+              displayName={displayName}
+              username={user?.username}
+              avatarUrl={avatarUrl}
+              accountCreated={user?.createdAt}
+              publicKey={user?.publicKey}
+            />
           </View>
 
           {/* Permissions Section */}
-          <View style={[styles.permissionsCard, { backgroundColor: colors.card }]}>
+          <View style={styles.permissionsSection}>
             <View style={styles.permissionsHeader}>
               <MaterialCommunityIcons
                 name="shield-check-outline"
                 size={20}
-                color={colors.tint}
+                color={textColor}
               />
-              <Text style={[styles.permissionsTitle, { color: colors.text }]}>
+              <Text style={[styles.permissionsTitle, { color: textColor }]}>
                 This app will be able to:
               </Text>
             </View>
             <View style={styles.permissionsList}>
               <View style={styles.permissionItem}>
-                <Ionicons name="checkmark-circle" size={20} color={colors.tint} />
-                <Text style={[styles.permissionText, { color: colors.text }]}>
+                <Ionicons name="checkmark-circle" size={20} color={textColor} />
+                <Text style={[styles.permissionText, { color: textColor, opacity: 0.8 }]}>
                   Verify your identity
                 </Text>
               </View>
               <View style={styles.permissionItem}>
-                <Ionicons name="checkmark-circle" size={20} color={colors.tint} />
-                <Text style={[styles.permissionText, { color: colors.text }]}>
+                <Ionicons name="checkmark-circle" size={20} color={textColor} />
+                <Text style={[styles.permissionText, { color: textColor, opacity: 0.8 }]}>
                   Access your public profile information
                 </Text>
               </View>
             </View>
           </View>
 
-          {/* Security Notice */}
-          <View style={[styles.securityNotice, { backgroundColor: colors.card }]}>
-            <MaterialCommunityIcons name="lock-outline" size={16} color={colors.secondaryText} />
-            <Text style={[styles.securityText, { color: colors.secondaryText }]}>
-              Your password will not be shared with this app
-            </Text>
-          </View>
         </View>
       </ScrollView>
 
       {/* Action Buttons */}
-      <View style={[styles.actionsContainer, { backgroundColor: colors.background, borderTopColor: colors.border }]}>
-        <TouchableOpacity
-          style={[styles.secondaryButton, { borderColor: colors.border }]}
+      <View style={styles.footer}>
+        <Button
+          variant="secondary"
           onPress={handleDeny}
           disabled={isAuthorizing}
+          style={styles.button}
         >
-          <Text style={[styles.secondaryButtonText, { color: colors.text }]}>Cancel</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.primaryButton, { backgroundColor: colors.tint }]}
+          Cancel
+        </Button>
+        <Button
+          variant="primary"
           onPress={handleAuthorize}
           disabled={isAuthorizing}
+          loading={isAuthorizing}
+          style={styles.button}
         >
-          {isAuthorizing ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Text style={styles.primaryButtonText}>Continue</Text>
-          )}
-        </TouchableOpacity>
+          Continue
+        </Button>
       </View>
-    </ScreenContentWrapper>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 100,
   },
-  container: {
+  content: {
     flex: 1,
     paddingHorizontal: 24,
     paddingTop: 40,
@@ -324,124 +310,47 @@ const styles = StyleSheet.create({
   centered: {
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 24,
-  },
-  iconContainer: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 24,
-  },
-  errorIcon: {
-    backgroundColor: '#FF3B3015',
   },
   title: {
-    fontSize: 28,
-    fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+    fontSize: 42,
     fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
     textAlign: 'center',
+    marginTop: 24,
     marginBottom: 12,
-    letterSpacing: -0.5,
+    letterSpacing: -1,
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 18,
     textAlign: 'center',
     marginBottom: 32,
-    lineHeight: 22,
+    lineHeight: 24,
     paddingHorizontal: 16,
   },
   appHeader: {
     alignItems: 'center',
     marginBottom: 32,
   },
-  appIconContainer: {
-    width: 80,
-    height: 80,
-    borderRadius: 20,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 20,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-      },
-      android: {
-        elevation: 4,
-      },
-    }),
-  },
   appName: {
-    fontSize: 24,
-    fontWeight: '600',
-    marginBottom: 8,
+    fontSize: 42,
+    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
+    marginTop: 20,
+    marginBottom: 12,
     textAlign: 'center',
-    letterSpacing: -0.3,
+    letterSpacing: -1,
   },
   appRequest: {
-    fontSize: 16,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-  userCard: {
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 24,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
-  },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  userDetails: {
-    flex: 1,
-    marginLeft: 16,
-  },
-  userLabel: {
-    fontSize: 13,
-    marginBottom: 4,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-    fontWeight: '500',
-  },
-  username: {
     fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 4,
+    textAlign: 'center',
+    lineHeight: 24,
   },
-  publicKey: {
-    fontSize: 13,
-    fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+  identityCardContainer: {
+    alignItems: 'center',
+    marginBottom: 32,
   },
-  permissionsCard: {
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 16,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
+  permissionsSection: {
+    marginBottom: 24,
   },
   permissionsHeader: {
     flexDirection: 'row',
@@ -449,10 +358,11 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   permissionsTitle: {
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 18,
+    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-SemiBold',
+    fontWeight: Platform.OS === 'web' ? '600' : undefined,
     marginLeft: 8,
-    letterSpacing: -0.2,
+    letterSpacing: -0.5,
   },
   permissionsList: {
     gap: 12,
@@ -467,93 +377,30 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 20,
   },
-  securityNotice: {
+  footer: {
     flexDirection: 'row',
-    alignItems: 'center',
-    padding: 16,
-    borderRadius: 12,
-    gap: 8,
-  },
-  securityText: {
-    flex: 1,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  actionsContainer: {
-    flexDirection: 'row',
-    paddingHorizontal: 24,
-    paddingVertical: 16,
-    paddingBottom: Platform.OS === 'ios' ? 32 : 16,
+    padding: 42,
+    paddingBottom: 60,
     gap: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: -2 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 8,
-      },
-    }),
   },
-  primaryButton: {
+  button: {
     flex: 1,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 52,
-    ...Platform.select({
-      ios: {
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.15,
-        shadowRadius: 4,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
   },
-  primaryButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 0.2,
-  },
-  secondaryButton: {
-    flex: 1,
-    paddingVertical: 16,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1.5,
-    minHeight: 52,
-    backgroundColor: 'transparent',
-  },
-  secondaryButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    letterSpacing: 0.2,
+  fullWidthButton: {
+    width: '100%',
   },
   loadingText: {
     marginTop: 16,
-    fontSize: 15,
+    fontSize: 18,
     textAlign: 'center',
+    lineHeight: 24,
   },
   errorText: {
-    fontSize: 15,
+    fontSize: 18,
     textAlign: 'center',
     marginBottom: 32,
-    lineHeight: 20,
+    lineHeight: 24,
     paddingHorizontal: 16,
   },
 });
-
-
-
-
-
 
