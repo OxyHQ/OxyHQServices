@@ -1,11 +1,13 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { KeyManager, useOxy } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
 import * as Crypto from 'expo-crypto';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authenticate, canUseBiometrics, getErrorMessage } from '@/lib/biometricAuth';
 
 interface IdentityTransferQRProps {
   onError?: (error: string) => void;
@@ -19,7 +21,7 @@ interface IdentityTransferQRProps {
 export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransferQRProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { getPublicKey } = useOxy();
+  const { getPublicKey, sessions, activeSessionId } = useOxy();
 
   const [qrData, setQrData] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(true);
@@ -30,6 +32,33 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
   const generateQRData = useCallback(async () => {
     try {
       setIsGenerating(true);
+
+      // Check if biometric authentication is enabled and required
+      if (Platform.OS !== 'web') {
+        try {
+          const biometricEnabled = await AsyncStorage.getItem('oxy_biometric_enabled');
+          if (biometricEnabled === 'true') {
+            // Check if biometrics can be used
+            const canUse = await canUseBiometrics();
+            if (canUse) {
+              // Perform biometric authentication
+              const authResult = await authenticate('Authenticate to generate identity transfer QR code');
+              
+              if (!authResult.success) {
+                const errorMsg = getErrorMessage(authResult.error);
+                throw new Error(errorMsg || 'Biometric authentication failed');
+              }
+            }
+          }
+        } catch (err: any) {
+          // If it's a user cancellation, throw to prevent QR generation
+          if (err?.message?.includes('cancelled') || err?.message?.includes('cancel') || err?.message?.includes('user_cancel')) {
+            throw new Error('Transfer cancelled');
+          }
+          // For other errors, re-throw
+          throw err;
+        }
+      }
 
       // Get public key for display
       const pk = await getPublicKey();
@@ -80,6 +109,20 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
 
       const encryptedBase64 = Buffer.from(encrypted).toString('base64');
 
+      // Generate transfer ID (UUID v4)
+      const transferId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${Crypto.getRandomBytes(4).toString('hex')}`;
+      
+      // Get source device ID from active session
+      const activeSession = activeSessionId
+        ? sessions?.find((session) => session.sessionId === activeSessionId)
+        : undefined;
+      const sourceDeviceId = activeSession?.deviceId || null;
+      
+      // Warn if deviceId is not available (deletion notification won't work)
+      if (!sourceDeviceId && __DEV__) {
+        console.warn('[IdentityTransferQR] No deviceId found in active session. Deletion notification may not work.');
+      }
+
       // Create transfer data structure
       const transferData = {
         version: '1.0',
@@ -90,6 +133,8 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
         iv: Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join(''),
         publicKey: pk,
         password: code, // Use 6-character code as password
+        transferId, // Unique ID for this transfer
+        sourceDeviceId, // Device ID of the source device (for deletion notification)
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 minutes expiry
       };

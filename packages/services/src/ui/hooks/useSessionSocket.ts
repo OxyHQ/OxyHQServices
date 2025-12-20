@@ -13,9 +13,10 @@ interface UseSessionSocketProps {
   baseURL: string;
   onRemoteSignOut?: () => void;
   onSessionRemoved?: (sessionId: string) => void;
+  onIdentityTransferComplete?: (data: { transferId: string; sourceDeviceId: string; publicKey: string; completedAt: string }) => void;
 }
 
-export function useSessionSocket({ userId, activeSessionId, currentDeviceId, refreshSessions, logout, clearSessionState, baseURL, onRemoteSignOut, onSessionRemoved }: UseSessionSocketProps) {
+export function useSessionSocket({ userId, activeSessionId, currentDeviceId, refreshSessions, logout, clearSessionState, baseURL, onRemoteSignOut, onSessionRemoved, onIdentityTransferComplete }: UseSessionSocketProps) {
   const socketRef = useRef<any>(null);
   const joinedRoomRef = useRef<string | null>(null);
   
@@ -25,6 +26,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
   const clearSessionStateRef = useRef(clearSessionState);
   const onRemoteSignOutRef = useRef(onRemoteSignOut);
   const onSessionRemovedRef = useRef(onSessionRemoved);
+  const onIdentityTransferCompleteRef = useRef(onIdentityTransferComplete);
   const activeSessionIdRef = useRef(activeSessionId);
   const currentDeviceIdRef = useRef(currentDeviceId);
 
@@ -35,9 +37,10 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
     clearSessionStateRef.current = clearSessionState;
     onRemoteSignOutRef.current = onRemoteSignOut;
     onSessionRemovedRef.current = onSessionRemoved;
+    onIdentityTransferCompleteRef.current = onIdentityTransferComplete;
     activeSessionIdRef.current = activeSessionId;
     currentDeviceIdRef.current = currentDeviceId;
-  }, [refreshSessions, logout, clearSessionState, onRemoteSignOut, onSessionRemoved, activeSessionId, currentDeviceId]);
+  }, [refreshSessions, logout, clearSessionState, onRemoteSignOut, onSessionRemoved, onIdentityTransferComplete, activeSessionId, currentDeviceId]);
 
   useEffect(() => {
     if (!userId || !baseURL) {
@@ -190,6 +193,63 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
             if (__DEV__) {
               logger.debug('Failed to refresh sessions after sessions_removed', { component: 'useSessionSocket' }, error as unknown);
             }
+          });
+        }
+      } else if (data.type === 'identity_transfer_complete') {
+        // Handle identity transfer completion notification
+        const transferData = data as {
+          type: 'identity_transfer_complete';
+          transferId: string;
+          sourceDeviceId: string;
+          publicKey: string;
+          completedAt: string;
+        };
+        
+        if (__DEV__) {
+          logger.debug('Received identity_transfer_complete event', {
+            component: 'useSessionSocket',
+            transferId: transferData.transferId,
+            sourceDeviceId: transferData.sourceDeviceId,
+            currentDeviceId,
+            activeSessionId: activeSessionIdRef.current,
+          });
+        }
+        
+        // Check if this device is the source device
+        // Match by deviceId if available, otherwise show prompt if we have an active session
+        // (user can decide if they want to delete)
+        const isSourceDevice = transferData.sourceDeviceId && (
+          transferData.sourceDeviceId === currentDeviceId ||
+          // Fallback: if we don't have currentDeviceId but have an active session,
+          // show the prompt anyway (user can decide)
+          (currentDeviceId === null && activeSessionIdRef.current !== null)
+        );
+        
+        if (isSourceDevice) {
+          if (__DEV__) {
+            logger.debug('Matched source device, showing deletion prompt', {
+              component: 'useSessionSocket',
+              transferId: transferData.transferId,
+              sourceDeviceId: transferData.sourceDeviceId,
+              currentDeviceId,
+              matchedBy: transferData.sourceDeviceId === currentDeviceId ? 'deviceId' : 'session',
+            });
+          }
+          // This is the source device - notify callback to show deletion prompt
+          if (onIdentityTransferCompleteRef.current) {
+            onIdentityTransferCompleteRef.current({
+              transferId: transferData.transferId,
+              sourceDeviceId: transferData.sourceDeviceId,
+              publicKey: transferData.publicKey,
+              completedAt: transferData.completedAt,
+            });
+          }
+        } else if (__DEV__) {
+          logger.debug('Not the source device, ignoring transfer completion', {
+            component: 'useSessionSocket',
+            sourceDeviceId: transferData.sourceDeviceId,
+            currentDeviceId,
+            hasActiveSession: activeSessionIdRef.current !== null,
           });
         }
       } else {

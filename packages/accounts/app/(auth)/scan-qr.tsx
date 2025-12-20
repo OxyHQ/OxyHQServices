@@ -7,6 +7,8 @@ import {
   Linking,
   Platform,
   ActivityIndicator,
+  Modal,
+  TextInput,
 } from 'react-native';
 import { CameraView, useCameraPermissions, BarcodeScanningResult } from 'expo-camera';
 import { useRouter } from 'expo-router';
@@ -27,10 +29,15 @@ export default function AuthScanQRScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const alert = useAlert();
-  const { importIdentity } = useOxy();
+  const { importIdentity, oxyServices } = useOxy();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [flashOn, setFlashOn] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [processingMessage, setProcessingMessage] = useState('');
+  const [showCodeInput, setShowCodeInput] = useState(false);
+  const [transferCode, setTransferCode] = useState('');
+  const [pendingTransferData, setPendingTransferData] = useState<any>(null);
 
   // Handle barcode scan
   const handleBarCodeScanned = useCallback(async ({ data }: BarcodeScanningResult) => {
@@ -67,83 +74,10 @@ export default function AuthScanQRScreen() {
             }
           }
 
-          // Get transfer code from QR data
-          const password = transferData.password || '';
-          
-          if (!password) {
-            // If no code in QR, show error
-            alert(
-              'Transfer Code Required',
-              'This QR code requires a transfer code. Please check the QR code and try again.',
-              [
-                {
-                  text: 'OK',
-                  onPress: () => {
-                    // Navigate to import screen with transfer data
-                    router.push({
-                      pathname: '/(auth)/import-identity',
-                      params: {
-                        transferData: JSON.stringify(transferData),
-                      },
-                    });
-                  },
-                },
-                {
-                  text: 'Cancel',
-                  onPress: () => setScanned(false),
-                  style: 'cancel',
-                },
-              ]
-            );
-            return;
-          }
-
-          // Import identity using transfer data
-          if (!importIdentity) {
-            throw new Error('Import identity function not available');
-          }
-
-          try {
-            await importIdentity(
-              {
-                encrypted: transferData.encrypted,
-                salt: transferData.salt,
-                iv: transferData.iv,
-                publicKey: transferData.publicKey,
-              },
-              password
-            );
-
-            alert(
-              'Identity Imported',
-              'Your identity has been successfully transferred to this device.',
-              [
-                {
-                  text: 'OK',
-                  onPress: () => {
-                    // Navigate to notifications step (similar to backup import flow)
-                    router.replace('/(auth)/import-identity/notifications');
-                  },
-                },
-              ]
-            );
-          } catch (importError: any) {
-            alert(
-              'Import Failed',
-              importError?.message || 'Failed to import identity. Please check the QR code and try again.',
-              [
-                {
-                  text: 'Scan Again',
-                  onPress: () => setScanned(false),
-                },
-                {
-                  text: 'Cancel',
-                  onPress: () => router.back(),
-                  style: 'cancel',
-                },
-              ]
-            );
-          }
+          // Store transfer data and prompt for transfer code
+          setPendingTransferData(transferData);
+          setShowCodeInput(true);
+          setScanned(false); // Allow scanning again if user cancels
           return;
         }
       } catch {
@@ -181,7 +115,98 @@ export default function AuthScanQRScreen() {
         ]
       );
     }
-  }, [scanned, router, alert, importIdentity]);
+  }, [scanned, router, alert, importIdentity, oxyServices]);
+
+  // Handle transfer code submission
+  const handleTransferCodeSubmit = useCallback(async () => {
+    if (!pendingTransferData || !transferCode || transferCode.length !== 6) {
+      alert('Invalid Code', 'Please enter the 6-character transfer code.');
+      return;
+    }
+
+    // Validate code matches (optional - we can just use what user entered)
+    const code = transferCode.toUpperCase().trim();
+    setShowCodeInput(false);
+    setIsProcessing(true);
+    setProcessingMessage('Decrypting identity...');
+    setScanned(true); // Prevent further scanning
+
+    try {
+      if (!importIdentity) {
+        throw new Error('Import identity function not available');
+      }
+
+      setProcessingMessage('Importing identity...');
+      await importIdentity(
+        {
+          encrypted: pendingTransferData.encrypted,
+          salt: pendingTransferData.salt,
+          iv: pendingTransferData.iv,
+          publicKey: pendingTransferData.publicKey,
+        },
+        code
+      );
+
+      setProcessingMessage('Completing transfer...');
+      
+      // Notify server about successful transfer (if transferId and sourceDeviceId are present)
+      if (pendingTransferData.transferId && pendingTransferData.sourceDeviceId && pendingTransferData.publicKey && oxyServices) {
+        await oxyServices.makeRequest('POST', '/api/identity/transfer-complete', {
+          transferId: pendingTransferData.transferId,
+          sourceDeviceId: pendingTransferData.sourceDeviceId,
+          publicKey: pendingTransferData.publicKey,
+        }, { cache: false }).catch((err: any) => {
+          // Silently fail - this is just a notification, not critical
+          if (__DEV__) {
+            console.warn('Failed to notify server about transfer completion:', err);
+          }
+        });
+      }
+
+      setIsProcessing(false);
+      setProcessingMessage('');
+      setPendingTransferData(null);
+      setTransferCode('');
+
+      alert(
+        'Identity Imported',
+        'Your identity has been successfully transferred to this device.',
+        [
+          {
+            text: 'OK',
+            onPress: () => {
+              router.replace('/(auth)/import-identity/notifications');
+            },
+          },
+        ]
+      );
+    } catch (importError: any) {
+      setIsProcessing(false);
+      setProcessingMessage('');
+      setScanned(false);
+      alert(
+        'Import Failed',
+        importError?.message || 'Failed to import identity. Please check the transfer code and try again.',
+        [
+          {
+            text: 'Try Again',
+            onPress: () => {
+              setShowCodeInput(true);
+              setTransferCode('');
+            },
+          },
+          {
+            text: 'Cancel',
+            onPress: () => {
+              setPendingTransferData(null);
+              setTransferCode('');
+            },
+            style: 'cancel',
+          },
+        ]
+      );
+    }
+  }, [pendingTransferData, transferCode, importIdentity, oxyServices, alert, router]);
 
   // Toggle flash
   const toggleFlash = useCallback(() => {
@@ -257,6 +282,98 @@ export default function AuthScanQRScreen() {
 
   return (
     <View style={styles.container}>
+      {/* Loading Overlay */}
+      {isProcessing && (
+        <Modal
+          transparent
+          visible={isProcessing}
+          animationType="fade"
+        >
+          <View style={styles.loadingOverlay}>
+            <View style={[styles.loadingContent, { backgroundColor: colors.background }]}>
+              <ActivityIndicator size="large" color={colors.tint} />
+              <Text style={[styles.loadingText, { color: colors.text, marginTop: 16 }]}>
+                {processingMessage || 'Processing...'}
+              </Text>
+            </View>
+          </View>
+        </Modal>
+      )}
+
+      {/* Transfer Code Input Modal */}
+      {showCodeInput && (
+        <Modal
+          transparent
+          visible={showCodeInput}
+          animationType="slide"
+          onRequestClose={() => {
+            setShowCodeInput(false);
+            setPendingTransferData(null);
+            setTransferCode('');
+            setScanned(false);
+          }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: colors.background }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                Enter Transfer Code
+              </Text>
+              <Text style={[styles.modalSubtitle, { color: colors.secondaryText }]}>
+                Enter the 6-character code shown on the source device
+              </Text>
+              <TextInput
+                style={[styles.codeInput, { 
+                  backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#F5F5F5',
+                  color: colors.text,
+                  borderColor: colorScheme === 'dark' ? '#2C2C2E' : '#E0E0E0',
+                }]}
+                value={transferCode}
+                onChangeText={(text) => {
+                  // Only allow uppercase alphanumeric, max 6 characters
+                  const cleaned = text.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+                  setTransferCode(cleaned);
+                }}
+                placeholder="ABCD12"
+                placeholderTextColor={colors.secondaryText}
+                maxLength={6}
+                autoCapitalize="characters"
+                autoCorrect={false}
+                keyboardType="default"
+                returnKeyType="done"
+                onSubmitEditing={handleTransferCodeSubmit}
+              />
+              <View style={styles.modalButtons}>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonCancel]}
+                  onPress={() => {
+                    setShowCodeInput(false);
+                    setPendingTransferData(null);
+                    setTransferCode('');
+                    setScanned(false);
+                  }}
+                >
+                  <Text style={[styles.modalButtonText, { color: colors.secondaryText }]}>
+                    Cancel
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalButton, styles.modalButtonSubmit, { 
+                    backgroundColor: colors.tint,
+                    opacity: transferCode.length !== 6 ? 0.5 : 1,
+                  }]}
+                  onPress={handleTransferCodeSubmit}
+                  disabled={transferCode.length !== 6}
+                >
+                  <Text style={[styles.modalButtonText, { color: '#FFFFFF' }]}>
+                    Continue
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+      )}
+
       <CameraView
         style={styles.camera}
         facing="back"
@@ -469,6 +586,83 @@ const styles = StyleSheet.create({
   },
   linkText: {
     fontSize: 16,
+  },
+  loadingOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingContent: {
+    padding: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    minWidth: 200,
+  },
+  loadingText: {
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 400,
+    borderRadius: 16,
+    padding: 24,
+    alignItems: 'center',
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '600',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  modalSubtitle: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 24,
+    lineHeight: 20,
+  },
+  codeInput: {
+    width: '100%',
+    height: 56,
+    borderRadius: 12,
+    borderWidth: 2,
+    paddingHorizontal: 16,
+    fontSize: 24,
+    fontWeight: '700',
+    letterSpacing: 4,
+    textAlign: 'center',
+    fontFamily: 'monospace',
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    width: '100%',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalButtonCancel: {
+    backgroundColor: 'transparent',
+  },
+  modalButtonSubmit: {
+    opacity: 1,
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
   },
 });
 

@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Platform } from 'react-native';
+import { Platform, Alert } from 'react-native';
 import { OxyServices } from '../../core';
 import type { User, ApiError } from '../../models/interfaces';
 import type { ClientSession } from '../../models/session';
@@ -631,6 +631,43 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     logout().catch((remoteError) => logger('Failed to process remote sign out', remoteError));
   }, [logger, logout]);
 
+  const handleIdentityTransferComplete = useCallback(
+    async (data: { transferId: string; sourceDeviceId: string; publicKey: string; completedAt: string }) => {
+      // Show confirmation dialog asking if user wants to delete identity from this device
+      return new Promise<void>((resolve) => {
+        Alert.alert(
+          'Identity Transfer Complete',
+          'Your identity has been successfully transferred to another device. Would you like to remove it from this device?',
+          [
+            {
+              text: 'Keep on This Device',
+              style: 'cancel',
+              onPress: () => resolve(),
+            },
+            {
+              text: 'Remove from This Device',
+              style: 'destructive',
+              onPress: async () => {
+                try {
+                  // Delete identity with user confirmation
+                  await deleteIdentityAndClearAccount(false, false, true);
+                  toast.success('Identity removed from this device');
+                } catch (error: any) {
+                  logger('Failed to delete identity after transfer', error);
+                  toast.error(error?.message || 'Failed to remove identity from this device');
+                } finally {
+                  resolve();
+                }
+              },
+            },
+          ],
+          { cancelable: true, onDismiss: () => resolve() }
+        );
+      });
+    },
+    [deleteIdentityAndClearAccount, logger]
+  );
+
   useSessionSocket({
     userId,
     activeSessionId,
@@ -641,6 +678,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     baseURL: oxyServices.getBaseURL(),
     onRemoteSignOut: handleRemoteSignOut,
     onSessionRemoved: handleSessionRemoved,
+    onIdentityTransferComplete: handleIdentityTransferComplete,
   });
 
   const switchSessionForContext = useCallback(

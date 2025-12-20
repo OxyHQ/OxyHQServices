@@ -24,6 +24,7 @@ import developerRoutes from './routes/developer';
 import devicesRouter from './routes/devices';
 import securityRoutes from './routes/security';
 import subscriptionRoutes from './routes/subscription.routes';
+import identityRoutes from './routes/identity';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
 import { Response } from 'express';
@@ -319,6 +320,7 @@ app.use('/api/developer', developerRoutes);
 app.use('/api/devices', userRateLimiter, devicesRouter);
 app.use('/api/security', userRateLimiter, securityRoutes);
 app.use('/api/subscription', userRateLimiter, subscriptionRoutes);
+app.use('/api/identity', userRateLimiter, identityRoutes);
 
 // Add a protected route for testing
 app.get('/api/protected-server-route', authMiddleware, (req: any, res: Response) => {
