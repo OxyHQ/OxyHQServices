@@ -32,8 +32,9 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   // OxyServices integration
-  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, isIdentitySynced, syncIdentity, identitySyncState, openAvatarPicker, sessions } = useOxy();
+  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, isIdentitySynced, syncIdentity, identitySyncState, openAvatarPicker, sessions, hasIdentity } = useOxy();
   const alert = useAlert();
+  const [hasLocalIdentity, setHasLocalIdentity] = useState<boolean | null>(null);
 
   // Fetch devices for stats
   const { data: devices = [] } = useUserDevices({ enabled: isAuthenticated });
@@ -68,6 +69,23 @@ export default function HomeScreen() {
 
   // Use reactive state from Zustand store (with defaults)
   const { isSynced, isSyncing } = identitySyncState || { isSynced: true, isSyncing: false };
+
+  // Check if device has local identity
+  useEffect(() => {
+    const checkIdentity = async () => {
+      if (hasIdentity) {
+        try {
+          const exists = await hasIdentity();
+          setHasLocalIdentity(exists);
+        } catch (error) {
+          setHasLocalIdentity(false);
+        }
+      } else {
+        setHasLocalIdentity(false);
+      }
+    };
+    checkIdentity();
+  }, [hasIdentity]);
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
 
@@ -346,8 +364,8 @@ export default function HomeScreen() {
   ], [colors.sidebarIconPersonalInfo, colors.sidebarIconData, displayName, accountCreatedDate, handleEditName]);
 
   const identityCards = useMemo<IdentityCard[]>(() => {
-    // Only show identity items on native platforms
-    if (Platform.OS === 'web') {
+    // Only show identity items on native platforms AND when device has local identity
+    if (Platform.OS === 'web' || hasLocalIdentity !== true) {
       return [];
     }
     return [
@@ -376,7 +394,7 @@ export default function HomeScreen() {
         showChevron: true,
       },
     ];
-  }, [handleAboutIdentity, colors.identityIconSelfCustody, colors.identityIconPublicKey]);
+  }, [handleAboutIdentity, colors.identityIconSelfCustody, colors.identityIconPublicKey, hasLocalIdentity]);
 
   // Recent activity items - use real security activities
   const recentActivityItems = useMemo<RecentActivityItem[]>(() => {

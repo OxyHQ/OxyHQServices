@@ -21,9 +21,23 @@ export interface OxyConfig {
   onRequestError?: (url: string, method: string, error: Error) => void;
 }
 
+/**
+ * User Model
+ * 
+ * IMPORTANT: 
+ * - id: MongoDB ObjectId (24 hex characters) - PRIMARY IDENTIFIER for all internal operations
+ * - publicKey: Cryptographic public key (130 hex characters) - LOOKUP KEY for authentication and identity operations
+ * 
+ * Never use publicKey as an ID. Always use id (ObjectId) for:
+ * - Database queries
+ * - Session userId
+ * - Token userId
+ * - Socket room names
+ * - API route parameters (unless explicitly doing publicKey lookup)
+ */
 export interface User {
-  id: string;
-  publicKey: string;
+  id: string;           // MongoDB ObjectId - PRIMARY IDENTIFIER (always 24 hex chars)
+  publicKey: string;    // Cryptographic public key - LOOKUP KEY (130 hex chars for secp256k1)
   username: string;
   email?: string;
   // Avatar file id (asset id)

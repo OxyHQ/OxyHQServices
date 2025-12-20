@@ -91,8 +91,23 @@ io.use((socket: AuthenticatedSocket, next) => {
   
   try {
     // Verify the token
-    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET || 'default_secret');
-    socket.user = decoded as { id: string, [key: string]: any };
+    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET || 'default_secret') as any;
+    
+    // Extract userId from token payload (token has 'userId', not 'id')
+    const userId = decoded.userId || decoded.id;
+    
+    if (!userId) {
+      logger.warn('Socket authentication: No userId in token', { decoded });
+      return next(new Error('Invalid token: missing userId'));
+    }
+    
+    // Set socket.user with id mapped from userId
+    socket.user = {
+      id: userId,
+      ...decoded,
+    };
+    
+    logger.debug('Socket authenticated', { socketId: socket.id, userId });
     next();
   } catch (error) {
     logger.error('Socket authentication error:', error);

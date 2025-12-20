@@ -204,9 +204,17 @@ export const useAuthOperations = ({
         // Get full user data
         fullUser = await oxyServices.getUserBySession(sessionResponse.sessionId);
         
-        // Ensure id is set to publicKey (per migration document)
-        if (fullUser.id !== fullUser.publicKey) {
-          fullUser.id = fullUser.publicKey;
+        // IMPORTANT: user.id should be MongoDB ObjectId, not publicKey
+        // The API should return the correct id (ObjectId) from the database
+        // If it doesn't, we need to fix the API, not work around it here
+        // Validate that id is ObjectId format (24 hex characters)
+        if (fullUser.id && !/^[0-9a-fA-F]{24}$/.test(fullUser.id)) {
+          console.warn('[useAuthOperations] User.id is not MongoDB ObjectId format:', {
+            id: fullUser.id.substring(0, 20),
+            publicKey: fullUser.publicKey.substring(0, 20),
+            message: 'API should return MongoDB ObjectId as user.id, not publicKey'
+          });
+          // Don't override - let the API fix this issue
         }
 
         // Fetch device sessions

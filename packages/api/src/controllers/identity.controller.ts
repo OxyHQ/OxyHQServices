@@ -20,11 +20,16 @@ export class IdentityController {
         return res.status(401).json({ error: 'Authentication required' });
       }
 
-      const { transferId, sourceDeviceId, publicKey } = req.body;
+      const { transferId, sourceDeviceId, publicKey, transferCode } = req.body;
 
       // Validate required fields
       if (!transferId || !sourceDeviceId || !publicKey) {
         throw new BadRequestError('transferId, sourceDeviceId, and publicKey are required');
+      }
+
+      // Validate transfer code format if provided
+      if (transferCode && (typeof transferCode !== 'string' || transferCode.length !== 6 || !/^[A-Z0-9]{6}$/.test(transferCode.toUpperCase()))) {
+        throw new BadRequestError('transferCode must be a 6-character alphanumeric code');
       }
 
       // Verify that the public key matches the authenticated user (efficient single query)
@@ -41,6 +46,7 @@ export class IdentityController {
         transferId,
         sourceDeviceId,
         publicKey,
+        transferCode: transferCode || undefined, // Include transfer code if provided
         completedAt: new Date().toISOString(),
       };
 
@@ -55,7 +61,9 @@ export class IdentityController {
         transferId,
         sourceDeviceId,
         publicKey: publicKey.substring(0, 16) + '...',
+        hasTransferCode: !!transferCode,
         room: `user:${userId}`,
+        completedAt: payload.completedAt,
       });
 
       return res.status(200).json({

@@ -1,6 +1,6 @@
 import { Slot, useRouter, usePathname } from 'expo-router';
 import { Drawer } from 'expo-router/drawer';
-import React, { useMemo, useRef, useCallback, useState } from 'react';
+import React, { useMemo, useRef, useCallback, useState, useEffect } from 'react';
 import { View, ScrollView, StyleSheet, Platform, useWindowDimensions, TextInput, TouchableOpacity } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -33,7 +33,25 @@ export default function TabLayout() {
   const { toggleColorScheme } = useThemeContext();
   const [showGoToTopButton, setShowGoToTopButton] = useState(false);
 
-  const { showBottomSheet, refreshSessions } = useOxy();
+  const { showBottomSheet, refreshSessions, hasIdentity } = useOxy();
+  const [hasLocalIdentity, setHasLocalIdentity] = useState<boolean | null>(null);
+
+  // Check if device has local identity
+  useEffect(() => {
+    const checkIdentity = async () => {
+      if (hasIdentity) {
+        try {
+          const exists = await hasIdentity();
+          setHasLocalIdentity(exists);
+        } catch (error) {
+          setHasLocalIdentity(false);
+        }
+      } else {
+        setHasLocalIdentity(false);
+      }
+    };
+    checkIdentity();
+  }, [hasIdentity]);
   const { scrollRef } = useScrollContext();
 
   const handlePressIn = useHapticPress();
@@ -188,7 +206,7 @@ export default function TabLayout() {
             title: 'Security & sign-in',
           }}
         />
-        {Platform.OS !== 'web' && (
+        {Platform.OS !== 'web' && hasLocalIdentity === true && (
           <Drawer.Screen
             name="about-identity"
             options={{

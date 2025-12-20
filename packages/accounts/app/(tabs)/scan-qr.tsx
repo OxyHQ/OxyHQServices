@@ -194,17 +194,39 @@ export default function ScanQRScreen() {
       setProcessingMessage('Completing transfer...');
       
       // Notify server about successful transfer (if transferId and sourceDeviceId are present)
+      // Include transfer code for verification on source device
+      // Retry with exponential backoff if it fails
+      // Note: User should already be authenticated in tabs flow, but check anyway
+      let notificationSuccess = false;
       if (pendingTransferData.transferId && pendingTransferData.sourceDeviceId && pendingTransferData.publicKey && oxyServices) {
-        await oxyServices.makeRequest('POST', '/api/identity/transfer-complete', {
-          transferId: pendingTransferData.transferId,
-          sourceDeviceId: pendingTransferData.sourceDeviceId,
-          publicKey: pendingTransferData.publicKey,
-        }, { cache: false }).catch((err: any) => {
-          // Silently fail - this is just a notification, not critical
-          if (__DEV__) {
-            console.warn('Failed to notify server about transfer completion:', err);
+        let retries = 3;
+        let delay = 1000; // Start with 1 second
+        
+        while (retries > 0) {
+          try {
+            await oxyServices.makeRequest('POST', '/api/identity/transfer-complete', {
+              transferId: pendingTransferData.transferId,
+              sourceDeviceId: pendingTransferData.sourceDeviceId,
+              publicKey: pendingTransferData.publicKey,
+              transferCode: code, // Include transfer code for verification
+            }, { cache: false });
+            notificationSuccess = true;
+            break; // Success, exit retry loop
+          } catch (err: any) {
+            retries--;
+            if (retries > 0) {
+              // Wait before retrying with exponential backoff
+              await new Promise(resolve => setTimeout(resolve, delay));
+              delay *= 2; // Double the delay for next retry
+            } else {
+              // Final failure - log but don't block user
+              if (__DEV__) {
+                console.warn('Failed to notify server about transfer completion after retries:', err);
+              }
+              notificationSuccess = false;
+            }
           }
-        });
+        }
       }
 
       setIsProcessing(false);
@@ -212,18 +234,35 @@ export default function ScanQRScreen() {
       setPendingTransferData(null);
       setTransferCode('');
 
-      alert(
-        'Identity Imported',
-        'Your identity has been successfully transferred to this device.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              router.replace('/(tabs)');
+      // Show appropriate message based on notification success
+      if (notificationSuccess) {
+        alert(
+          'Identity Imported',
+          'Your identity has been successfully transferred to this device. The source device will be notified to remove the identity.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                router.replace('/(tabs)');
+              },
             },
-          },
-        ]
-      );
+          ]
+        );
+      } else {
+        // Transfer succeeded but notification failed - still show success but warn user
+        alert(
+          'Identity Imported',
+          'Your identity has been successfully transferred to this device. However, we were unable to notify the source device automatically. Please manually delete the identity from the source device.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                router.replace('/(tabs)');
+              },
+            },
+          ]
+        );
+      }
     } catch (importError: any) {
       setIsProcessing(false);
       setProcessingMessage('');

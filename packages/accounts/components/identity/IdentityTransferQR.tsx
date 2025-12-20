@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from 'react';
-import { View, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import { View, StyleSheet, ActivityIndicator, Platform, TouchableOpacity } from 'react-native';
 import QRCode from 'react-native-qrcode-svg';
 import { KeyManager, useOxy } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -21,12 +21,16 @@ interface IdentityTransferQRProps {
 export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransferQRProps) {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
-  const { getPublicKey, sessions, activeSessionId } = useOxy();
+  const { getPublicKey, currentDeviceId, activeSessionId, oxyServices, storeTransferCode, getTransferCode, hasIdentity, isAuthenticated } = useOxy();
 
   const [qrData, setQrData] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(true);
   const [publicKey, setPublicKey] = useState<string | null>(null);
   const [transferCode, setTransferCode] = useState<string | null>(null);
+  const [transferId, setTransferId] = useState<string | null>(null);
+  const [transferStatus, setTransferStatus] = useState<'pending' | 'completed' | 'checking'>('pending');
+  const [transferCodeStored, setTransferCodeStored] = useState<boolean>(false);
+  const [wasAuthenticated, setWasAuthenticated] = useState<boolean>(false);
 
   // Generate QR code data with encrypted identity
   const generateQRData = useCallback(async () => {
@@ -43,7 +47,7 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
             if (canUse) {
               // Perform biometric authentication
               const authResult = await authenticate('Authenticate to generate identity transfer QR code');
-              
+
               if (!authResult.success) {
                 const errorMsg = getErrorMessage(authResult.error);
                 throw new Error(errorMsg || 'Biometric authentication failed');
@@ -110,17 +114,55 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
       const encryptedBase64 = Buffer.from(encrypted).toString('base64');
 
       // Generate transfer ID (UUID v4)
-      const transferId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${Crypto.getRandomBytes(4).toString('hex')}`;
+      const randomBytes = Crypto.getRandomBytes(4);
+      const randomHex = Array.from(randomBytes).map(b => b.toString(16).padStart(2, '0')).join('');
+      const generatedTransferId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${randomHex}`;
       
-      // Get source device ID from active session
-      const activeSession = activeSessionId
-        ? sessions?.find((session) => session.sessionId === activeSessionId)
-        : undefined;
-      const sourceDeviceId = activeSession?.deviceId || null;
-      
-      // Warn if deviceId is not available (deletion notification won't work)
+      // Reset state for new transfer
+      setTransferCodeStored(false);
+      setWasAuthenticated(false);
+      setTransferStatus('pending');
+      setTransferId(generatedTransferId);
+
+      // Get source device ID from current device (exposed by OxyContext)
+      // If not available, try to fetch it from the API
+      let sourceDeviceId = currentDeviceId || null;
+
+      // If deviceId is not available from session, try to get it from API
+      if (!sourceDeviceId && activeSessionId && oxyServices) {
+        try {
+          const deviceSessions = await oxyServices.getDeviceSessions(activeSessionId);
+          // Find the current session in the device sessions list
+          const currentDeviceSession = deviceSessions.find(
+            (session: any) => session.sessionId === activeSessionId
+          );
+          if (currentDeviceSession?.deviceId) {
+            sourceDeviceId = currentDeviceSession.deviceId;
+          }
+        } catch (error) {
+          // Silently fail - deviceId is optional for transfer
+          if (__DEV__) {
+            console.warn('[IdentityTransferQR] Failed to fetch deviceId from API:', error);
+          }
+        }
+      }
+
+      // Warn if deviceId is still not available (deletion notification won't work)
       if (!sourceDeviceId && __DEV__) {
-        console.warn('[IdentityTransferQR] No deviceId found in active session. Deletion notification may not work.');
+        console.warn('[IdentityTransferQR] No deviceId found. Deletion notification may not work. The identity will still be transferred successfully.');
+      }
+
+      // Store transfer code for verification when transfer completes
+      storeTransferCode(generatedTransferId, code, sourceDeviceId, pk);
+      setTransferCodeStored(true);
+      setWasAuthenticated(isAuthenticated);
+
+      if (__DEV__) {
+        console.log('[IdentityTransferQR] Transfer code stored', {
+          transferId: generatedTransferId,
+          sourceDeviceId,
+          publicKey: pk.substring(0, 16) + '...',
+        });
       }
 
       // Create transfer data structure
@@ -133,7 +175,7 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
         iv: Array.from(iv).map(b => b.toString(16).padStart(2, '0')).join(''),
         publicKey: pk,
         password: code, // Use 6-character code as password
-        transferId, // Unique ID for this transfer
+        transferId: generatedTransferId, // Unique ID for this transfer
         sourceDeviceId, // Device ID of the source device (for deletion notification)
         createdAt: new Date().toISOString(),
         expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(), // 10 minutes expiry
@@ -148,11 +190,46 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
     } finally {
       setIsGenerating(false);
     }
-  }, [getPublicKey, onError, onCodeGenerated]);
+  }, [getPublicKey, onError, onCodeGenerated, storeTransferCode, activeSessionId, oxyServices, currentDeviceId]);
 
   useEffect(() => {
     generateQRData();
   }, [generateQRData]);
+
+  // Listen for socket-triggered deletion
+  // Socket event triggers deletion which clears the transfer code and logs user out
+  useEffect(() => {
+    // Only check if transfer code was stored and we're not already completed
+    if (!transferId || transferStatus === 'completed' || !transferCodeStored) return;
+
+    const storedTransfer = getTransferCode(transferId);
+    
+    // Mark as completed only if:
+    // 1. Transfer code was stored (we confirmed it existed)
+    // 2. Transfer code is now cleared (socket event triggered deletion)
+    // 3. User was authenticated and is now logged out (identity deleted)
+    if (!storedTransfer && wasAuthenticated && !isAuthenticated) {
+      if (__DEV__) {
+        console.log('[IdentityTransferQR] Transfer completed via socket - transfer code cleared and user logged out', { transferId });
+      }
+      setTransferStatus('completed');
+    }
+  }, [transferId, transferStatus, transferCodeStored, wasAuthenticated, isAuthenticated, getTransferCode]);
+
+  // Manual check function
+  const handleCheckStatus = useCallback(() => {
+    if (!transferId || !transferCodeStored) return;
+    
+    setTransferStatus('checking');
+    
+    // Check if transfer code exists - it's cleared after successful deletion
+    const storedTransfer = getTransferCode(transferId);
+    if (!storedTransfer && wasAuthenticated && !isAuthenticated) {
+      setTransferStatus('completed');
+    } else {
+      setTransferStatus('pending');
+    }
+  }, [transferId, transferCodeStored, wasAuthenticated, isAuthenticated, getTransferCode]);
 
   if (isGenerating) {
     return (
@@ -190,7 +267,7 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
           <ThemedText style={[styles.codeLabel, { color: colors.secondaryText }]}>
             Transfer Code
           </ThemedText>
-          <View style={[styles.codeBox, { 
+          <View style={[styles.codeBox, {
             backgroundColor: colorScheme === 'dark' ? '#1C1C1E' : '#F5F5F5',
             borderColor: colorScheme === 'dark' ? '#2C2C2E' : '#E0E0E0',
           }]}>
@@ -211,6 +288,51 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
       <ThemedText style={[styles.instructionText, { color: colors.secondaryText }]}>
         Scan this QR code with another device to transfer your identity.
       </ThemedText>
+
+      {/* Transfer Status Indicator */}
+      {transferId && transferStatus !== 'completed' && (
+        <View style={styles.statusContainer}>
+          <ThemedText style={[styles.statusLabel, { color: colors.secondaryText }]}>
+            Transfer Status:
+          </ThemedText>
+          <View style={[styles.statusBadge, {
+            backgroundColor: transferStatus === 'checking' 
+              ? colors.tint + '40' 
+              : colorScheme === 'dark' ? '#2C2C2E' : '#F5F5F5',
+          }]}>
+            {transferStatus === 'checking' && (
+              <ActivityIndicator size="small" color={colors.tint} style={{ marginRight: 8 }} />
+            )}
+            <ThemedText style={[styles.statusText, { color: colors.text }]}>
+              {transferStatus === 'checking' ? 'Checking...' : 'Waiting for transfer...'}
+            </ThemedText>
+          </View>
+          <TouchableOpacity
+            style={[styles.checkButton, {
+              backgroundColor: colorScheme === 'dark' ? '#2C2C2E' : '#F5F5F5',
+            }]}
+            onPress={handleCheckStatus}
+            disabled={transferStatus === 'checking'}
+          >
+            <ThemedText style={[styles.checkButtonText, { color: colors.tint }]}>
+              Check Status
+            </ThemedText>
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {transferStatus === 'completed' && (
+        <View style={[styles.completedContainer, {
+          backgroundColor: colorScheme === 'dark' ? 'rgba(52, 199, 89, 0.15)' : 'rgba(52, 199, 89, 0.1)',
+        }]}>
+          <ThemedText style={[styles.completedText, { color: '#34C759' }]}>
+            ✓ Transfer completed successfully
+          </ThemedText>
+          <ThemedText style={[styles.completedSubtext, { color: colors.secondaryText }]}>
+            Your identity has been removed from this device.
+          </ThemedText>
+        </View>
+      )}
     </View>
   );
 }
@@ -275,6 +397,58 @@ const styles = StyleSheet.create({
     marginTop: 8,
     textAlign: 'center',
     lineHeight: 16,
+  },
+  statusContainer: {
+    marginTop: 24,
+    alignItems: 'center',
+    width: '100%',
+  },
+  statusLabel: {
+    fontSize: 12,
+    marginBottom: 8,
+    fontWeight: '500',
+  },
+  statusBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    marginBottom: 12,
+    minWidth: 200,
+    justifyContent: 'center',
+  },
+  statusText: {
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  checkButton: {
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    minWidth: 120,
+    alignItems: 'center',
+  },
+  checkButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
+  },
+  completedContainer: {
+    marginTop: 24,
+    alignItems: 'center',
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: 'rgba(52, 199, 89, 0.1)',
+    width: '100%',
+  },
+  completedText: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  completedSubtext: {
+    fontSize: 12,
+    textAlign: 'center',
   },
 });
 

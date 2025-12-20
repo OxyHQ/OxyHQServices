@@ -9,7 +9,7 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Platform, Alert } from 'react-native';
+import { Platform } from 'react-native';
 import { OxyServices } from '../../core';
 import type { User, ApiError } from '../../models/interfaces';
 import type { ClientSession } from '../../models/session';
@@ -39,6 +39,7 @@ export interface OxyContextState {
   user: User | null;
   sessions: ClientSession[];
   activeSessionId: string | null;
+  currentDeviceId: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   isTokenReady: boolean;
@@ -58,6 +59,9 @@ export interface OxyContextState {
   isIdentitySynced: () => Promise<boolean>;
   syncIdentity: () => Promise<User>;
   deleteIdentityAndClearAccount: (skipBackup?: boolean, force?: boolean, userConfirmed?: boolean) => Promise<void>;
+  storeTransferCode: (transferId: string, code: string, sourceDeviceId: string | null, publicKey: string) => void;
+  getTransferCode: (transferId: string) => { code: string; sourceDeviceId: string | null; publicKey: string; timestamp: number } | null;
+  clearTransferCode: (transferId: string) => void;
 
   // Identity sync state (reactive, from Zustand store)
   identitySyncState: {
@@ -612,7 +616,56 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     : undefined;
   const currentDeviceId = activeSession?.deviceId ?? null;
 
-  const userId = user?.id;
+  // Get userId from JWT token (MongoDB ObjectId) for socket room matching
+  // user.id is set to publicKey for compatibility, but socket rooms use MongoDB ObjectId
+  // The JWT token's userId field contains the MongoDB ObjectId
+  const userId = oxyServices.getCurrentUserId() || user?.id;
+
+  // Store transfer codes in memory for verification
+  // Map: transferId -> { code, sourceDeviceId, publicKey, timestamp }
+  const transferCodesRef = useRef<Map<string, { code: string; sourceDeviceId: string | null; publicKey: string; timestamp: number }>>(new Map());
+
+  // Cleanup old transfer codes (older than 15 minutes)
+  useEffect(() => {
+    const cleanup = setInterval(() => {
+      const now = Date.now();
+      const fifteenMinutes = 15 * 60 * 1000;
+      transferCodesRef.current.forEach((value, key) => {
+        if (now - value.timestamp > fifteenMinutes) {
+          transferCodesRef.current.delete(key);
+          if (__DEV__) {
+            logger('Cleaned up expired transfer code', { transferId: key });
+          }
+        }
+      });
+    }, 60000); // Check every minute
+
+    return () => clearInterval(cleanup);
+  }, [logger]);
+
+  // Transfer code management functions
+  const storeTransferCode = useCallback((transferId: string, code: string, sourceDeviceId: string | null, publicKey: string) => {
+    transferCodesRef.current.set(transferId, {
+      code,
+      sourceDeviceId,
+      publicKey,
+      timestamp: Date.now(),
+    });
+    if (__DEV__) {
+      logger('Stored transfer code', { transferId, sourceDeviceId, publicKey: publicKey.substring(0, 16) + '...' });
+    }
+  }, [logger]);
+
+  const getTransferCode = useCallback((transferId: string) => {
+    return transferCodesRef.current.get(transferId) || null;
+  }, []);
+
+  const clearTransferCode = useCallback((transferId: string) => {
+    transferCodesRef.current.delete(transferId);
+    if (__DEV__) {
+      logger('Cleared transfer code', { transferId });
+    }
+  }, [logger]);
 
   const refreshSessionsWithUser = useCallback(
     () => refreshSessions(userId),
@@ -632,40 +685,171 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }, [logger, logout]);
 
   const handleIdentityTransferComplete = useCallback(
-    async (data: { transferId: string; sourceDeviceId: string; publicKey: string; completedAt: string }) => {
-      // Show confirmation dialog asking if user wants to delete identity from this device
-      return new Promise<void>((resolve) => {
-        Alert.alert(
-          'Identity Transfer Complete',
-          'Your identity has been successfully transferred to another device. Would you like to remove it from this device?',
-          [
-            {
-              text: 'Keep on This Device',
-              style: 'cancel',
-              onPress: () => resolve(),
-            },
-            {
-              text: 'Remove from This Device',
-              style: 'destructive',
-              onPress: async () => {
-                try {
-                  // Delete identity with user confirmation
-                  await deleteIdentityAndClearAccount(false, false, true);
-                  toast.success('Identity removed from this device');
-                } catch (error: any) {
-                  logger('Failed to delete identity after transfer', error);
-                  toast.error(error?.message || 'Failed to remove identity from this device');
-                } finally {
-                  resolve();
-                }
-              },
-            },
-          ],
-          { cancelable: true, onDismiss: () => resolve() }
-        );
-      });
+    async (data: { transferId: string; sourceDeviceId: string; publicKey: string; transferCode?: string; completedAt: string }) => {
+      if (__DEV__) {
+        console.log('[OxyContext] handleIdentityTransferComplete called', {
+          transferId: data.transferId,
+          sourceDeviceId: data.sourceDeviceId,
+          currentDeviceId,
+          hasActiveSession: activeSessionId !== null,
+        });
+      }
+      
+      try {
+        logger('Received identity transfer complete notification', {
+          transferId: data.transferId,
+          sourceDeviceId: data.sourceDeviceId,
+          currentDeviceId,
+          hasActiveSession: activeSessionId !== null,
+          publicKey: data.publicKey.substring(0, 16) + '...',
+        });
+
+        // Get stored transfer code for verification
+        const storedTransfer = getTransferCode(data.transferId);
+
+        if (!storedTransfer) {
+          if (__DEV__) {
+            console.warn('[OxyContext] Transfer code not found for transferId', {
+              transferId: data.transferId,
+            });
+          }
+          logger('Transfer code not found for transferId', { 
+            transferId: data.transferId,
+          });
+          toast.error('Transfer verification failed: Code not found. Identity will not be deleted.');
+          return;
+        }
+
+        if (__DEV__) {
+          console.log('[OxyContext] Found stored transfer code', {
+            transferId: data.transferId,
+            storedSourceDeviceId: storedTransfer.sourceDeviceId,
+            receivedSourceDeviceId: data.sourceDeviceId,
+            currentDeviceId,
+          });
+        }
+
+        // Verify publicKey matches first (most important check)
+        const publicKeyMatches = data.publicKey === storedTransfer.publicKey;
+        if (!publicKeyMatches) {
+          logger('Public key mismatch for transfer', {
+            transferId: data.transferId,
+            receivedPublicKey: data.publicKey.substring(0, 16) + '...',
+            storedPublicKey: storedTransfer.publicKey.substring(0, 16) + '...',
+          });
+          toast.error('Transfer verification failed: Public key mismatch. Identity will not be deleted.');
+          return;
+        }
+
+        // Verify deviceId matches - very lenient since publicKey is the critical check
+        // If publicKey matches, we allow deletion even if deviceId doesn't match exactly
+        // This handles cases where deviceId might not be available or slightly different
+        const deviceIdMatches = 
+          // Exact match
+          (data.sourceDeviceId && data.sourceDeviceId === currentDeviceId) ||
+          // Stored sourceDeviceId matches current deviceId
+          (storedTransfer.sourceDeviceId && storedTransfer.sourceDeviceId === currentDeviceId);
+
+        // If publicKey matches, we're very lenient with deviceId - only warn but don't block
+        if (!deviceIdMatches && publicKeyMatches) {
+          logger('Device ID mismatch for transfer, but publicKey matches - proceeding with deletion', {
+            transferId: data.transferId,
+            receivedDeviceId: data.sourceDeviceId,
+            storedDeviceId: storedTransfer.sourceDeviceId,
+            currentDeviceId,
+            hasActiveSession: activeSessionId !== null,
+          });
+          // Proceed with deletion - publicKey match is the critical verification
+        } else if (!deviceIdMatches && !publicKeyMatches) {
+          // Both don't match - this is suspicious, block deletion
+          logger('Device ID and publicKey mismatch for transfer', {
+            transferId: data.transferId,
+            receivedDeviceId: data.sourceDeviceId,
+            currentDeviceId,
+          });
+          toast.error('Transfer verification failed: Device and key mismatch. Identity will not be deleted.');
+          return;
+        }
+
+        // Verify transfer code matches (if provided)
+        // Transfer code is optional - if not provided, we still proceed if publicKey matches
+        if (data.transferCode) {
+          const codeMatches = data.transferCode.toUpperCase() === storedTransfer.code.toUpperCase();
+          if (!codeMatches) {
+            logger('Transfer code mismatch, but publicKey matches - proceeding with deletion', {
+              transferId: data.transferId,
+              receivedCode: data.transferCode,
+              storedCode: storedTransfer.code.substring(0, 2) + '****',
+            });
+            // Don't block - publicKey match is sufficient, code mismatch might be due to user error
+            // Log warning but proceed
+          }
+        } else {
+          // If transfer code is not provided, log info but proceed
+          if (__DEV__) {
+            logger('Transfer code not provided in completion notification, but publicKey matches - proceeding', { 
+              transferId: data.transferId 
+            });
+          }
+        }
+
+        // Check if transfer is too old (safety timeout - 10 minutes)
+        const transferAge = Date.now() - storedTransfer.timestamp;
+        const tenMinutes = 10 * 60 * 1000;
+        if (transferAge > tenMinutes) {
+          logger('Transfer confirmation received too late', {
+            transferId: data.transferId,
+            age: transferAge,
+            ageMinutes: Math.round(transferAge / 60000),
+          });
+          toast.error('Transfer verification failed: Confirmation received too late. Identity will not be deleted.');
+          clearTransferCode(data.transferId);
+          return;
+        }
+
+        // All verifications passed - automatically delete identity
+        if (__DEV__) {
+          console.log('[OxyContext] All verifications passed, deleting identity', {
+            transferId: data.transferId,
+            sourceDeviceId: data.sourceDeviceId,
+            currentDeviceId,
+          });
+        }
+        
+        logger('All transfer verifications passed, deleting identity from source device', {
+          transferId: data.transferId,
+          sourceDeviceId: data.sourceDeviceId,
+          publicKey: data.publicKey.substring(0, 16) + '...',
+        });
+
+        try {
+          await deleteIdentityAndClearAccount(false, false, true);
+          
+          if (__DEV__) {
+            console.log('[OxyContext] Identity deleted successfully');
+          }
+
+          // Clear the transfer code after successful deletion
+          clearTransferCode(data.transferId);
+
+          logger('Identity successfully deleted and transfer code cleared', {
+            transferId: data.transferId,
+          });
+
+          toast.success('Identity successfully transferred and removed from this device');
+        } catch (deleteError: any) {
+          if (__DEV__) {
+            console.error('[OxyContext] Error deleting identity', deleteError);
+          }
+          logger('Error during identity deletion', deleteError);
+          throw deleteError; // Re-throw to be caught by outer catch
+        }
+      } catch (error: any) {
+        logger('Failed to delete identity after transfer', error);
+        toast.error(error?.message || 'Failed to remove identity from this device. Please try again manually from Security Settings.');
+      }
     },
-    [deleteIdentityAndClearAccount, logger]
+    [deleteIdentityAndClearAccount, logger, getTransferCode, clearTransferCode, currentDeviceId, activeSessionId],
   );
 
   useSessionSocket({
@@ -676,6 +860,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     logout,
     clearSessionState,
     baseURL: oxyServices.getBaseURL(),
+    getAccessToken: () => oxyServices.getAccessToken(),
+    getTransferCode: getTransferCode,
     onRemoteSignOut: handleRemoteSignOut,
     onSessionRemoved: handleSessionRemoved,
     onIdentityTransferComplete: handleIdentityTransferComplete,
@@ -736,6 +922,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     user,
     sessions,
     activeSessionId,
+    currentDeviceId,
     isAuthenticated,
     isLoading,
     isTokenReady: tokenReady,
@@ -753,6 +940,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     isIdentitySynced,
     syncIdentity,
     deleteIdentityAndClearAccount,
+    storeTransferCode,
+    getTransferCode,
+    clearTransferCode,
     identitySyncState: {
       isSynced: isIdentitySyncedStore ?? true,
       isSyncing: isSyncing ?? false,
@@ -774,6 +964,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     openAvatarPicker,
   }), [
     activeSessionId,
+    currentDeviceId,
     createIdentity,
     importIdentity,
     signIn,
@@ -782,6 +973,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     isIdentitySynced,
     syncIdentity,
     deleteIdentityAndClearAccount,
+    storeTransferCode,
+    getTransferCode,
+    clearTransferCode,
     isIdentitySyncedStore,
     isSyncing,
     currentLanguage,

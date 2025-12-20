@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { BlurView } from 'expo-blur';
 import { useRouter, usePathname } from 'expo-router';
@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { darkenColor } from '@/utils/color-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+import { useOxy } from '@oxyhq/services';
 import type { MaterialCommunityIconName } from '@/types/icons';
 
 export interface MenuItem {
@@ -30,14 +31,6 @@ const baseMenuItems: MenuItem[] = [
     { path: '/(tabs)/storage', icon: 'cloud-outline', label: 'Oxy storage', iconColor: 'sidebarIconStorage' },
 ];
 
-// Filter menu items based on platform - about-identity only on native
-export const menuItems: MenuItem[] = baseMenuItems.filter(item => {
-    if (item.path === '/(tabs)/about-identity') {
-        return Platform.OS !== 'web';
-    }
-    return true;
-});
-
 interface SidebarContentProps {
     onNavigate?: () => void;
 }
@@ -47,8 +40,38 @@ export function SidebarContent({ onNavigate }: SidebarContentProps) {
     const colors = Colors[colorScheme];
     const router = useRouter();
     const pathname = usePathname();
+    const { hasIdentity } = useOxy();
+    const [hasLocalIdentity, setHasLocalIdentity] = useState<boolean | null>(null);
 
     const handlePressIn = useHapticPress();
+
+    // Check if device has local identity
+    useEffect(() => {
+        const checkIdentity = async () => {
+            if (hasIdentity) {
+                try {
+                    const exists = await hasIdentity();
+                    setHasLocalIdentity(exists);
+                } catch (error) {
+                    setHasLocalIdentity(false);
+                }
+            } else {
+                setHasLocalIdentity(false);
+            }
+        };
+        checkIdentity();
+    }, [hasIdentity]);
+
+    // Filter menu items based on platform and identity existence
+    const menuItems = useMemo(() => {
+        return baseMenuItems.filter(item => {
+            // About identity only on native AND when device has local identity
+            if (item.path === '/(tabs)/about-identity') {
+                return Platform.OS !== 'web' && hasLocalIdentity === true;
+            }
+            return true;
+        });
+    }, [hasLocalIdentity]);
 
     const handleNavigate = (path: string) => {
         router.push(path as any);

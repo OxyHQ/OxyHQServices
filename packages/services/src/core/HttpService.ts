@@ -17,16 +17,7 @@ import { TTLCache, registerCacheForCleanup } from '../utils/cache';
 import { RequestDeduplicator, RequestQueue, SimpleLogger } from '../utils/requestUtils';
 import { retryAsync } from '../utils/asyncUtils';
 import { handleHttpError } from '../utils/errorUtils';
-import { jwtDecode } from 'jwt-decode';
 import type { OxyConfig } from '../models/interfaces';
-
-interface JwtPayload {
-  exp?: number;
-  userId?: string;
-  id?: string;
-  sessionId?: string;
-  [key: string]: any;
-}
 
 export interface RequestOptions {
   cache?: boolean;
@@ -46,45 +37,8 @@ interface RequestConfig extends RequestOptions {
   params?: Record<string, unknown>;
 }
 
-/**
- * Token store for authentication (singleton)
- */
-class TokenStore {
-  private static instance: TokenStore;
-  private accessToken: string | null = null;
-  private refreshToken: string | null = null;
-
-  private constructor() {}
-
-  static getInstance(): TokenStore {
-    if (!TokenStore.instance) {
-      TokenStore.instance = new TokenStore();
-    }
-    return TokenStore.instance;
-  }
-
-  setTokens(accessToken: string, refreshToken = ''): void {
-    this.accessToken = accessToken;
-    this.refreshToken = refreshToken;
-  }
-
-  getAccessToken(): string | null {
-    return this.accessToken;
-  }
-
-  getRefreshToken(): string | null {
-    return this.refreshToken;
-  }
-
-  clearTokens(): void {
-    this.accessToken = null;
-    this.refreshToken = null;
-  }
-
-  hasAccessToken(): boolean {
-    return !!this.accessToken;
-  }
-}
+// Token management moved to TokenService - import it instead
+import { tokenService } from './services/TokenService';
 
 /**
  * Unified HTTP Service
@@ -94,7 +48,6 @@ class TokenStore {
  */
 export class HttpService {
   private baseURL: string;
-  private tokenStore: TokenStore;
   private cache: TTLCache<any>;
   private deduplicator: RequestDeduplicator;
   private requestQueue: RequestQueue;
@@ -114,7 +67,9 @@ export class HttpService {
   constructor(config: OxyConfig) {
     this.config = config;
     this.baseURL = config.baseURL;
-    this.tokenStore = TokenStore.getInstance();
+    
+    // Initialize TokenService with baseURL
+    tokenService.initialize(this.baseURL);
     
     this.logger = new SimpleLogger(
       config.enableLogging || false,
@@ -261,7 +216,7 @@ export class HttpService {
         // Handle response
         if (!response.ok) {
           if (response.status === 401) {
-            this.tokenStore.clearTokens();
+            tokenService.clearTokens();
           }
           
           // Try to parse error response (handle empty/malformed JSON)
@@ -415,45 +370,10 @@ export class HttpService {
 
   /**
    * Get auth header with automatic token refresh
+   * Uses TokenService for all token operations
    */
   private async getAuthHeader(): Promise<string | null> {
-    const accessToken = this.tokenStore.getAccessToken();
-    if (!accessToken) {
-      return null;
-    }
-
-    try {
-      const decoded = jwtDecode<JwtPayload>(accessToken);
-      const currentTime = Math.floor(Date.now() / 1000);
-
-      // If token expires in less than 60 seconds, refresh it
-      if (decoded.exp && decoded.exp - currentTime < 60 && decoded.sessionId) {
-        try {
-          const refreshUrl = `${this.baseURL}/api/session/token/${decoded.sessionId}`;
-          
-          // Use AbortSignal.timeout for consistent timeout handling
-          const response = await fetch(refreshUrl, {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' },
-            signal: AbortSignal.timeout(5000),
-          });
-
-          if (response.ok) {
-            const { accessToken: newToken } = await response.json();
-            this.tokenStore.setTokens(newToken);
-            this.logger.debug('Token refreshed');
-            return `Bearer ${newToken}`;
-          }
-        } catch (refreshError) {
-          this.logger.warn('Token refresh failed, using current token');
-        }
-      }
-
-      return `Bearer ${accessToken}`;
-    } catch (error) {
-      this.logger.error('Error processing token:', error);
-      return `Bearer ${accessToken}`;
-    }
+    return await tokenService.getAuthHeader();
   }
 
   /**
@@ -558,21 +478,21 @@ export class HttpService {
     return { data: result as T };
   }
 
-  // Token management
+  // Token management - delegates to TokenService
   setTokens(accessToken: string, refreshToken = ''): void {
-    this.tokenStore.setTokens(accessToken, refreshToken);
+    tokenService.setTokens(accessToken, refreshToken);
   }
 
   clearTokens(): void {
-    this.tokenStore.clearTokens();
+    tokenService.clearTokens();
   }
 
   getAccessToken(): string | null {
-    return this.tokenStore.getAccessToken();
+    return tokenService.getAccessToken();
   }
 
   hasAccessToken(): boolean {
-    return this.tokenStore.hasAccessToken();
+    return tokenService.hasAccessToken();
   }
 
   getBaseURL(): string {
@@ -606,10 +526,10 @@ export class HttpService {
   // Test-only utility
   static __resetTokensForTests(): void {
     try {
-      TokenStore.getInstance().clearTokens();
+      tokenService.clearTokens();
     } catch (error) {
       // Silently fail in test cleanup - this is expected behavior
-      // TokenStore might not be initialized in some test scenarios
+      // TokenService might not be initialized in some test scenarios
     }
   }
 }

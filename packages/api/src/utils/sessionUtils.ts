@@ -5,15 +5,42 @@ const ACCESS_TOKEN_EXPIRES_IN = '15m'; // Short-lived access tokens
 const REFRESH_TOKEN_EXPIRES_IN = '7d'; // Longer refresh tokens
 
 /**
+ * JWT Token Payload Types
+ * userId is always MongoDB ObjectId (24 hex characters), never publicKey
+ */
+export interface AccessTokenPayload {
+  userId: string;      // MongoDB ObjectId - PRIMARY IDENTIFIER
+  sessionId: string;   // Session UUID
+  deviceId: string;   // Device identifier
+  type: 'access';
+  iat?: number;        // Issued at (added by JWT)
+  exp?: number;        // Expiration (added by JWT)
+}
+
+export interface RefreshTokenPayload {
+  userId: string;      // MongoDB ObjectId - PRIMARY IDENTIFIER
+  sessionId: string;   // Session UUID
+  deviceId: string;   // Device identifier
+  type: 'refresh';    // Different from AccessTokenPayload
+  iat?: number;        // Issued at (added by JWT)
+  exp?: number;        // Expiration (added by JWT)
+}
+
+/**
  * Generate JWT tokens for a session
- * @param userId - The user ID
+ * @param userId - The user ID (MongoDB ObjectId, not publicKey)
  * @param sessionId - The session ID
  * @param deviceId - The device ID
  * @returns Object containing access and refresh tokens
  */
 export const generateSessionTokens = (userId: string, sessionId: string, deviceId: string) => {
-  const payload = { 
-    userId, 
+  // Validate userId is ObjectId format (24 hex characters)
+  if (!/^[0-9a-fA-F]{24}$/.test(userId)) {
+    throw new Error(`Invalid userId format: expected MongoDB ObjectId (24 hex chars), got: ${userId.substring(0, 20)}...`);
+  }
+  
+  const payload: AccessTokenPayload = { 
+    userId,  // Always ObjectId, never publicKey
     sessionId,
     deviceId,
     type: 'access'
@@ -37,7 +64,7 @@ export const generateSessionTokens = (userId: string, sessionId: string, deviceI
  */
 export interface TokenValidationResult {
   valid: boolean;
-  payload?: any;
+  payload?: AccessTokenPayload | RefreshTokenPayload;
   error?: 'expired' | 'invalid' | 'malformed';
 }
 
@@ -52,7 +79,14 @@ export interface TokenValidationResult {
  */
 export const validateAccessToken = (token: string): TokenValidationResult => {
   try {
-    const payload = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as any;
+    const payload = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET!) as AccessTokenPayload;
+    
+    // Validate userId is ObjectId format
+    if (payload.userId && !/^[0-9a-fA-F]{24}$/.test(payload.userId)) {
+      logger.warn('[SessionUtils] Invalid userId format in token', { userId: payload.userId?.substring(0, 20) });
+      return { valid: false, error: 'invalid' };
+    }
+    
     return { valid: true, payload };
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {
@@ -81,7 +115,14 @@ export const validateAccessToken = (token: string): TokenValidationResult => {
  */
 export const validateRefreshToken = (token: string): TokenValidationResult => {
   try {
-    const payload = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET!) as any;
+    const payload = jwt.verify(token, process.env.REFRESH_TOKEN_SECRET!) as RefreshTokenPayload;
+    
+    // Validate userId is ObjectId format
+    if (payload.userId && !/^[0-9a-fA-F]{24}$/.test(payload.userId)) {
+      logger.warn('[SessionUtils] Invalid userId format in refresh token', { userId: payload.userId?.substring(0, 20) });
+      return { valid: false, error: 'invalid' };
+    }
+    
     return { valid: true, payload };
   } catch (error) {
     if (error instanceof jwt.TokenExpiredError) {

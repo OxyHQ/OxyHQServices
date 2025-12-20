@@ -3,22 +3,14 @@
  * 
  * Contains core infrastructure, HTTP client, request management, and error handling
  */
-import { jwtDecode } from 'jwt-decode';
 import type { OxyConfig as OxyConfigBase, ApiError, User } from '../models/interfaces';
 import { handleHttpError } from '../utils/errorUtils';
 import { HttpService, type RequestOptions } from './HttpService';
 import { OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices.errors';
+import { tokenService } from './services/TokenService';
 
 export interface OxyConfig extends OxyConfigBase {
   cloudURL?: string;
-}
-
-interface JwtPayload {
-  exp?: number;
-  userId?: string;
-  id?: string;
-  sessionId?: string;
-  [key: string]: any;
 }
 
 /**
@@ -135,19 +127,10 @@ export class OxyServicesBase {
 
   /**
    * Get the current user ID from the access token
+   * Returns MongoDB ObjectId (never publicKey)
    */
   public getCurrentUserId(): string | null {
-    const accessToken = this.httpService.getAccessToken();
-    if (!accessToken) {
-      return null;
-    }
-    
-    try {
-      const decoded = jwtDecode<JwtPayload>(accessToken);
-      return decoded.userId || decoded.id || null;
-    } catch (error) {
-      return null;
-    }
+    return tokenService.getUserIdFromToken();
   }
 
   /**

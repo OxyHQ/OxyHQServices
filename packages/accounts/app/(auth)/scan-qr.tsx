@@ -29,7 +29,7 @@ export default function AuthScanQRScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const alert = useAlert();
-  const { importIdentity, oxyServices } = useOxy();
+  const { importIdentity, oxyServices, signIn, isAuthenticated } = useOxy();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [flashOn, setFlashOn] = useState(false);
@@ -147,20 +147,55 @@ export default function AuthScanQRScreen() {
         code
       );
 
+      setProcessingMessage('Signing in...');
+      
+      // Sign in to authenticate before calling transfer-complete endpoint
+      if (signIn && !isAuthenticated) {
+        try {
+          await signIn();
+        } catch (signInError: any) {
+          if (__DEV__) {
+            console.warn('Failed to sign in after import:', signInError);
+          }
+          // Continue anyway - notification might still work if user is already authenticated
+        }
+      }
+
       setProcessingMessage('Completing transfer...');
       
       // Notify server about successful transfer (if transferId and sourceDeviceId are present)
+      // Include transfer code for verification on source device
+      // Retry with exponential backoff if it fails
+      let notificationSuccess = false;
       if (pendingTransferData.transferId && pendingTransferData.sourceDeviceId && pendingTransferData.publicKey && oxyServices) {
-        await oxyServices.makeRequest('POST', '/api/identity/transfer-complete', {
-          transferId: pendingTransferData.transferId,
-          sourceDeviceId: pendingTransferData.sourceDeviceId,
-          publicKey: pendingTransferData.publicKey,
-        }, { cache: false }).catch((err: any) => {
-          // Silently fail - this is just a notification, not critical
-          if (__DEV__) {
-            console.warn('Failed to notify server about transfer completion:', err);
+        let retries = 3;
+        let delay = 1000; // Start with 1 second
+        
+        while (retries > 0) {
+          try {
+            await oxyServices.makeRequest('POST', '/api/identity/transfer-complete', {
+              transferId: pendingTransferData.transferId,
+              sourceDeviceId: pendingTransferData.sourceDeviceId,
+              publicKey: pendingTransferData.publicKey,
+              transferCode: code, // Include transfer code for verification
+            }, { cache: false });
+            notificationSuccess = true;
+            break; // Success, exit retry loop
+          } catch (err: any) {
+            retries--;
+            if (retries > 0) {
+              // Wait before retrying with exponential backoff
+              await new Promise(resolve => setTimeout(resolve, delay));
+              delay *= 2; // Double the delay for next retry
+            } else {
+              // Final failure - log but don't block user
+              if (__DEV__) {
+                console.warn('Failed to notify server about transfer completion after retries:', err);
+              }
+              notificationSuccess = false;
+            }
           }
-        });
+        }
       }
 
       setIsProcessing(false);
@@ -168,18 +203,35 @@ export default function AuthScanQRScreen() {
       setPendingTransferData(null);
       setTransferCode('');
 
-      alert(
-        'Identity Imported',
-        'Your identity has been successfully transferred to this device.',
-        [
-          {
-            text: 'OK',
-            onPress: () => {
-              router.replace('/(auth)/import-identity/notifications');
+      // Show appropriate message based on notification success
+      if (notificationSuccess) {
+        alert(
+          'Identity Imported',
+          'Your identity has been successfully transferred to this device. The source device will be notified to remove the identity.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                router.replace('/(auth)/import-identity/notifications');
+              },
             },
-          },
-        ]
-      );
+          ]
+        );
+      } else {
+        // Transfer succeeded but notification failed - still show success but warn user
+        alert(
+          'Identity Imported',
+          'Your identity has been successfully transferred to this device. However, we were unable to notify the source device automatically. Please manually delete the identity from the source device.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                router.replace('/(auth)/import-identity/notifications');
+              },
+            },
+          ]
+        );
+      }
     } catch (importError: any) {
       setIsProcessing(false);
       setProcessingMessage('');
@@ -206,7 +258,7 @@ export default function AuthScanQRScreen() {
         ]
       );
     }
-  }, [pendingTransferData, transferCode, importIdentity, oxyServices, alert, router]);
+  }, [pendingTransferData, transferCode, importIdentity, oxyServices, signIn, isAuthenticated, alert, router]);
 
   // Toggle flash
   const toggleFlash = useCallback(() => {

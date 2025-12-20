@@ -1,9 +1,16 @@
+/**
+ * Client Session Model
+ * 
+ * IMPORTANT:
+ * - userId: MongoDB ObjectId (24 hex characters), never publicKey
+ * - Used for session management and user identification
+ */
 export interface ClientSession {
   sessionId: string;
   deviceId: string;
   expiresAt: string;
   lastActive: string;
-  userId?: string;
+  userId?: string;  // MongoDB ObjectId - PRIMARY IDENTIFIER (never publicKey)
   isCurrent?: boolean;
 }
 

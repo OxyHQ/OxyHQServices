@@ -32,6 +32,24 @@ export default function SecurityScreen() {
     const [enhancedSafeBrowsing, setEnhancedSafeBrowsing] = useState(false);
     const [darkWebReport, setDarkWebReport] = useState(false);
     const [isLoggingOutAll, setIsLoggingOutAll] = useState(false);
+    const [hasLocalIdentity, setHasLocalIdentity] = useState<boolean | null>(null);
+
+    // Check if device has local identity
+    useEffect(() => {
+        const checkIdentity = async () => {
+            if (hasIdentity) {
+                try {
+                    const exists = await hasIdentity();
+                    setHasLocalIdentity(exists);
+                } catch (error) {
+                    setHasLocalIdentity(false);
+                }
+            } else {
+                setHasLocalIdentity(false);
+            }
+        };
+        checkIdentity();
+    }, [hasIdentity]);
 
     // Fetch devices using TanStack Query hook
     const { data: devices = [], isLoading: loading, error: devicesError } = useUserDevices({
@@ -582,7 +600,7 @@ export default function SecurityScreen() {
                 </AccountCard>
             </Section>
 
-            {Platform.OS !== 'web' && (
+            {Platform.OS !== 'web' && hasLocalIdentity === true && (
                 <Section title="Account recovery">
                     <ThemedText style={styles.sectionSubtitle}>Manage your recovery options</ThemedText>
                     <AccountCard>
