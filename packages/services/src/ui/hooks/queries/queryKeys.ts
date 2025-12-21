@@ -53,6 +53,8 @@ export const queryKeys = {
   privacy: {
     all: ['privacy'] as const,
     settings: (userId?: string) => [...queryKeys.privacy.all, 'settings', userId || 'current'] as const,
+    blocked: () => [...queryKeys.privacy.all, 'blocked'] as const,
+    restricted: () => [...queryKeys.privacy.all, 'restricted'] as const,
   },
 
   // Security activity queries

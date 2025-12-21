@@ -499,3 +499,39 @@ export const useUploadFile = () => {
   });
 };
 
+/**
+ * Unblock a user with query invalidation
+ */
+export const useUnblockUser = () => {
+  const { oxyServices } = useOxy();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (userId: string) => {
+      return await oxyServices.unblockUser(userId);
+    },
+    onSuccess: () => {
+      // Invalidate blocked users query to refetch the list
+      queryClient.invalidateQueries({ queryKey: queryKeys.privacy.blocked() });
+    },
+  });
+};
+
+/**
+ * Unrestrict a user with query invalidation
+ */
+export const useUnrestrictUser = () => {
+  const { oxyServices } = useOxy();
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (userId: string) => {
+      return await oxyServices.unrestrictUser(userId);
+    },
+    onSuccess: () => {
+      // Invalidate restricted users query to refetch the list
+      queryClient.invalidateQueries({ queryKey: queryKeys.privacy.restricted() });
+    },
+  });
+};
+

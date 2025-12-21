@@ -12,6 +12,8 @@ export {
   useUpdateAccountSettings,
   useUpdatePrivacySettings,
   useUploadFile,
+  useUnblockUser,
+  useUnrestrictUser,
 } from './useAccountMutations';
 
 // Service mutation hooks (sessions, devices)

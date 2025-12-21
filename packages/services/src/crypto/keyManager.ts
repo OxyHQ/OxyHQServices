@@ -124,8 +124,9 @@ export class KeyManager {
   /**
    * Invalidate cached identity state
    * Called internally when identity is created/deleted/imported
+   * Can also be called externally to force a fresh state check (e.g., on app startup)
    */
-  private static invalidateCache(): void {
+  static invalidateCache(): void {
     KeyManager.cachedPublicKey = null;
     KeyManager.cachedHasIdentity = null;
   }
@@ -434,6 +435,9 @@ export class KeyManager {
       return false; // Identity storage is only available on native platforms
     }
     try {
+      // Invalidate cache before restoring to ensure fresh state
+      KeyManager.invalidateCache();
+      
       const store = await initSecureStore();
       
       // Check if backup exists

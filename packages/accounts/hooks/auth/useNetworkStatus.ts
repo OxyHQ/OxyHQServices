@@ -4,10 +4,10 @@ import { checkIfOffline } from '@/utils/auth/networkUtils';
 /**
  * Hook for managing network status
  * 
- * @param checkOnMount - Whether to check network status on mount
+ * @param checkOnMount - Whether to check network status on mount (default: true)
  * @returns Network status state and check function
  */
-export function useNetworkStatus(checkOnMount = false) {
+export function useNetworkStatus(checkOnMount = true) {
   const [isOffline, setIsOffline] = useState<boolean>(false);
 
   const checkNetworkStatus = useCallback(async () => {

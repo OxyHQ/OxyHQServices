@@ -195,3 +195,37 @@ export const usePrivacySettings = (userId?: string, options?: { enabled?: boolea
   });
 };
 
+/**
+ * Get blocked users
+ */
+export const useBlockedUsers = (options?: { enabled?: boolean }) => {
+  const { oxyServices, isAuthenticated } = useOxy();
+
+  return useQuery({
+    queryKey: queryKeys.privacy.blocked(),
+    queryFn: async () => {
+      return await oxyServices.getBlockedUsers();
+    },
+    enabled: (options?.enabled !== false) && isAuthenticated,
+    staleTime: 1 * 60 * 1000, // 1 minute
+    gcTime: 5 * 60 * 1000, // 5 minutes
+  });
+};
+
+/**
+ * Get restricted users
+ */
+export const useRestrictedUsers = (options?: { enabled?: boolean }) => {
+  const { oxyServices, isAuthenticated } = useOxy();
+
+  return useQuery({
+    queryKey: queryKeys.privacy.restricted(),
+    queryFn: async () => {
+      return await oxyServices.getRestrictedUsers();
+    },
+    enabled: (options?.enabled !== false) && isAuthenticated,
+    staleTime: 1 * 60 * 1000, // 1 minute
+    gcTime: 5 * 60 * 1000, // 5 minutes
+  });
+};
+

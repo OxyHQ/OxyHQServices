@@ -137,6 +137,8 @@ export {
 export { useSessionSocket } from './ui/hooks/useSessionSocket';
 export { useAssets, setOxyAssetInstance } from './ui/hooks/useAssets';
 export { useFileDownloadUrl, setOxyFileUrlInstance } from './ui/hooks/useFileDownloadUrl';
+export { useUsernameValidation, USERNAME_MIN_LENGTH, USERNAME_REGEX, USERNAME_FORMAT_ERROR, USERNAME_DEBOUNCE_MS } from './ui/hooks/auth';
+export type { UsernameValidationResult } from './ui/hooks/auth';
 
 // UI hooks - Query hooks (TanStack Query)
 export {
@@ -148,6 +150,8 @@ export {
   useUserByUsername,
   useUsersBySessions,
   usePrivacySettings,
+  useBlockedUsers,
+  useRestrictedUsers,
   // Service queries
   useSessions,
   useSession,
@@ -167,6 +171,8 @@ export {
   useUpdateAccountSettings,
   useUpdatePrivacySettings,
   useUploadFile,
+  useUnblockUser,
+  useUnrestrictUser,
   // Service mutations
   useSwitchSession,
   useLogoutSession,

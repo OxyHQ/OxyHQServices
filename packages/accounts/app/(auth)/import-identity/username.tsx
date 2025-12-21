@@ -32,6 +32,7 @@ export default function ImportIdentityUsernameScreen() {
   const [username, setUsername] = useState<string>('');
   const hasInitializedUsername = useRef(false);
   const isInitializingRef = useRef(false);
+  const hasCheckedOffline = useRef(false);
 
   // Initialize suggested username on mount (only once)
   useEffect(() => {
@@ -54,10 +55,26 @@ export default function ImportIdentityUsernameScreen() {
     usernameRef.current = username;
   }, [username, usernameRef]);
 
-  // Check network state on mount
+  // Check network state on mount and auto-skip if offline (only once)
   useEffect(() => {
-    checkNetworkStatus();
-  }, [checkNetworkStatus]);
+    if (hasCheckedOffline.current) return;
+    
+    const checkAndSkip = async () => {
+      hasCheckedOffline.current = true;
+      const offline = await checkNetworkStatus();
+      
+      // Small delay to ensure UI is ready
+      await new Promise(resolve => setTimeout(resolve, 150));
+      
+      // If offline, auto-skip username step and go to notifications
+      if (offline) {
+        handleSkip();
+      }
+    };
+    
+    checkAndSkip();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run once on mount
 
   const handleContinue = useCallback(() => {
     // Save username to ref for later use after sign-in

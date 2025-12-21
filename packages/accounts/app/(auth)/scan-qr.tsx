@@ -19,6 +19,11 @@ import { useOxy } from '@oxyhq/services';
 import { useAlert } from '@/components/ui';
 import { notifyTransferComplete } from '@/utils/transferUtils';
 
+// Constants for delays
+const IDENTITY_PERSIST_DELAY_MS = 100;
+const STATE_STABILIZATION_DELAY_MS = 200;
+const NAVIGATION_DELAY_MS = 100;
+
 /**
  * QR Scanner Screen (Auth Flow)
  * 
@@ -30,7 +35,7 @@ export default function AuthScanQRScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const alert = useAlert();
-  const { importIdentity, oxyServices, signIn, isAuthenticated } = useOxy();
+  const { importIdentity, oxyServices, hasIdentity } = useOxy();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [flashOn, setFlashOn] = useState(false);
@@ -148,18 +153,12 @@ export default function AuthScanQRScreen() {
         code
       );
 
-      setProcessingMessage('Signing in...');
-      
-      // Sign in to authenticate before calling transfer-complete endpoint
-      if (signIn && !isAuthenticated) {
-        try {
-          await signIn();
-        } catch (signInError: any) {
-          if (__DEV__) {
-            console.warn('Failed to sign in after import:', signInError);
-          }
-          // Continue anyway - notification might still work if user is already authenticated
-        }
+      // Verify identity was successfully imported before proceeding
+      // Small delay to ensure identity is fully persisted
+      await new Promise(resolve => setTimeout(resolve, IDENTITY_PERSIST_DELAY_MS));
+      const identityExists = await hasIdentity();
+      if (!identityExists) {
+        throw new Error('Identity import failed - identity not found on device');
       }
 
       setProcessingMessage('Completing transfer...');
@@ -180,6 +179,24 @@ export default function AuthScanQRScreen() {
       setPendingTransferData(null);
       setTransferCode('');
 
+      // Small delay to ensure state is fully stable before showing alert
+      await new Promise(resolve => setTimeout(resolve, STATE_STABILIZATION_DELAY_MS));
+
+      // Shared handler for alert navigation with identity verification
+      const handleAlertNavigation = async () => {
+        const identityVerified = await hasIdentity();
+        if (identityVerified) {
+          await new Promise(resolve => setTimeout(resolve, NAVIGATION_DELAY_MS));
+          router.replace('/(auth)/import-identity/notifications');
+        } else {
+          alert(
+            'Error',
+            'Identity verification failed. Please try importing again.',
+            [{ text: 'OK' }]
+          );
+        }
+      };
+
       // Show appropriate message based on notification success
       if (notificationSuccess) {
         alert(
@@ -188,9 +205,7 @@ export default function AuthScanQRScreen() {
           [
             {
               text: 'OK',
-              onPress: () => {
-                router.replace('/(auth)/import-identity/notifications');
-              },
+              onPress: handleAlertNavigation,
             },
           ]
         );
@@ -202,9 +217,7 @@ export default function AuthScanQRScreen() {
           [
             {
               text: 'OK',
-              onPress: () => {
-                router.replace('/(auth)/import-identity/notifications');
-              },
+              onPress: handleAlertNavigation,
             },
           ]
         );
@@ -235,7 +248,7 @@ export default function AuthScanQRScreen() {
         ]
       );
     }
-  }, [pendingTransferData, transferCode, importIdentity, oxyServices, signIn, isAuthenticated, alert, router]);
+  }, [pendingTransferData, transferCode, importIdentity, oxyServices, hasIdentity, alert, router]);
 
   // Toggle flash
   const toggleFlash = useCallback(() => {

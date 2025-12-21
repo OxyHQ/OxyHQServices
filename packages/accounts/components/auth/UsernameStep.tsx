@@ -2,7 +2,7 @@ import React from 'react';
 import { View, Text, TextInput, StyleSheet } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, KeyboardAwareScrollViewWrapper } from '@/components/ui';
-import { useUsernameValidation } from '@/hooks/auth/useUsernameValidation';
+import { useUsernameValidation } from '@oxyhq/services';
 import { sanitizeUsernameInput } from '@/utils/auth/usernameUtils';
 import { USERNAME_INVALID_ERROR } from '@/constants/auth';
 import type { OxyServices } from '@oxyhq/services';
@@ -37,16 +37,18 @@ export function UsernameStep({
   const validation = useUsernameValidation(username, oxyServices);
 
   const isUsernameValid = validation.isValid;
-  
+
   // Can continue if:
   // 1. Username is valid AND
   // 2. Either: available === true, available === null (not checked yet), or offline AND
   // 3. Not currently checking availability
-  const canContinue = isUsernameValid && (
-    validation.isAvailable === true ||
-    validation.isAvailable === null ||
-    isOffline
-  ) && !validation.isChecking;
+  // When offline, allow continuing even if username validation fails (user can set it later)
+  const canContinue = isOffline ? true : (
+    isUsernameValid && (
+      validation.isAvailable === true ||
+      validation.isAvailable === null
+    ) && !validation.isChecking
+  );
 
   const handleTextChange = (text: string) => {
     const sanitized = sanitizeUsernameInput(text);
@@ -54,16 +56,22 @@ export function UsernameStep({
   };
 
   const handleContinue = () => {
+    // When offline, allow continuing even without a valid username
+    if (isOffline) {
+      onContinue();
+      return;
+    }
+
     // Validate username format
     if (!isUsernameValid) {
       return;
     }
-    
+
     // Don't proceed if username is explicitly unavailable or currently being checked
     if (validation.isAvailable === false || validation.isChecking) {
       return;
     }
-    
+
     // Proceed to next step
     onContinue();
   };
@@ -118,10 +126,10 @@ export function UsernameStep({
         <Button
           variant="primary"
           onPress={handleContinue}
-          disabled={!canContinue && !isOffline}
+          disabled={!canContinue}
           style={styles.primaryButton}
         >
-          Confirm
+          {isOffline ? 'Continue' : 'Confirm'}
         </Button>
 
         {isOffline && (

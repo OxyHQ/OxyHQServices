@@ -14,6 +14,8 @@ export {
   useUserByUsername,
   useUsersBySessions,
   usePrivacySettings,
+  useBlockedUsers,
+  useRestrictedUsers,
 } from './useAccountQueries';
 
 // Service query hooks (sessions, devices, security)

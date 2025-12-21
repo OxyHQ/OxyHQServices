@@ -34,6 +34,8 @@ import { translate } from '../../i18n';
 import { updateAvatarVisibility, updateProfileWithAvatar } from '../utils/avatarUtils';
 import { useAccountStore } from '../stores/accountStore';
 import { logger as loggerUtil } from '../../utils/loggerUtils';
+import { useTransferStore, useTransferCodesForPersistence } from '../stores/transferStore';
+import { useCheckPendingTransfers } from '../hooks/useTransferQueries';
 
 export interface OxyContextState {
   user: User | null;
@@ -163,7 +165,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const {
     user,
-    isAuthenticated,
+    isAuthenticated: isAuthenticatedFromStore,
     isLoading,
     error,
     loginSuccess,
@@ -217,12 +219,16 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
     const checkAndRestoreIdentity = async () => {
       try {
+        // CRITICAL: Invalidate cache on app startup to ensure fresh state check
+        // This prevents stale cache from previous session from showing incorrect state
+        KeyManager.invalidateCache();
+        
         // Check if identity exists and verify integrity
         const hasIdentity = await KeyManager.hasIdentity();
         if (hasIdentity) {
           const isValid = await KeyManager.verifyIdentityIntegrity();
           if (!isValid) {
-            // Try to restore from backup
+            // Try to restore from backup (cache will be invalidated inside restoreIdentityFromBackup)
             const restored = await KeyManager.restoreIdentityFromBackup();
             if (__DEV__) {
               logger(restored
@@ -235,7 +241,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             await KeyManager.backupIdentity();
           }
         } else {
-          // No identity - try to restore from backup
+          // No identity - try to restore from backup (cache will be invalidated inside restoreIdentityFromBackup)
           const restored = await KeyManager.restoreIdentityFromBackup();
           if (restored && __DEV__) {
             logger('Identity restored from backup on startup');
@@ -251,9 +257,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
     checkAndRestoreIdentity();
   }, [storage, isStorageReady, logger]);
-
-  // Offline queuing is now handled by TanStack Query mutations
-  // No need for custom offline queue
 
   const {
     currentLanguage,
@@ -274,7 +277,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const {
     sessions,
     activeSessionId,
-    setActiveSessionId,
+    setActiveSessionId: setActiveSessionIdFromHook,
     updateSessions,
     switchSession,
     refreshSessions,
@@ -311,7 +314,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     storage,
     sessions,
     activeSessionId,
-    setActiveSessionId,
+    setActiveSessionId: setActiveSessionIdFromHook,
     updateSessions,
     saveActiveSessionId,
     clearSessionState,
@@ -387,20 +390,22 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     oxyServices.clearCache();
   }, [queryClient, storage, clearSessionState, logger, oxyServices]);
 
+  // Extract Zustand store functions early (before they're used in callbacks)
+  const getAllPendingTransfersStore = useTransferStore((state) => state.getAllPendingTransfers);
+  const getActiveTransferIdStore = useTransferStore((state) => state.getActiveTransferId);
+  const storeTransferCodeStore = useTransferStore((state) => state.storeTransferCode);
+  const getTransferCodeStore = useTransferStore((state) => state.getTransferCode);
+  const updateTransferStateStore = useTransferStore((state) => state.updateTransferState);
+  const clearTransferCodeStore = useTransferStore((state) => state.clearTransferCode);
+
   // Transfer code management functions (must be defined before deleteIdentityAndClearAccount)
   const getAllPendingTransfers = useCallback(() => {
-    const pending: Array<{ transferId: string; data: TransferCodeData }> = [];
-    transferCodesRef.current.forEach((data, transferId) => {
-      if (data.state === 'pending') {
-        pending.push({ transferId, data });
-      }
-    });
-    return pending;
-  }, []);
+    return getAllPendingTransfersStore();
+  }, [getAllPendingTransfersStore]);
 
   const getActiveTransferId = useCallback(() => {
-    return activeTransferIdRef.current;
-  }, []);
+    return getActiveTransferIdStore();
+  }, [getActiveTransferIdStore]);
 
   // Delete identity and clear all account data
   // In accounts app, deleting identity means losing the account completely
@@ -415,7 +420,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       const pendingTransfers = getAllPendingTransfers();
       if (pendingTransfers.length > 0) {
         const activeTransferId = getActiveTransferId();
-        const hasActiveTransfer = activeTransferId && pendingTransfers.some(t => t.transferId === activeTransferId);
+        const hasActiveTransfer = activeTransferId && pendingTransfers.some((t: { transferId: string; data: any }) => t.transferId === activeTransferId);
         
         if (hasActiveTransfer) {
           throw new Error(
@@ -510,6 +515,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
                 loggerUtil.debug('Identity sync timeout (expected when offline)', { component: 'OxyContext', method: 'checkNetworkAndSync' }, syncError as unknown);
               }
             }
+
+            // Check for pending transfers that may have completed while offline
+            // This is handled by useCheckPendingTransfers hook which runs automatically
+            // when authenticated and online
           }
           
           // TanStack Query will automatically retry pending mutations
@@ -551,7 +560,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         clearTimeout(checkTimeout);
       }
     };
-  }, [oxyServices, storage, syncIdentity, logger]);
+  }, [oxyServices, storage, syncIdentity, logger, hasIdentity]);
 
   const { getDeviceSessions, logoutAllDeviceSessions, updateDeviceName } = useDeviceManagement({
     oxyServices,
@@ -623,12 +632,50 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             // Don't log expected session errors during restoration
           } else if (isTimeoutOrNetworkError(switchError)) {
             // Timeout/network error - non-critical, don't block
+            // However, if we have valid sessions, we should still set activeSessionId
+            // so that isAuthenticated can be computed correctly
+            if (validSessions.length > 0) {
+              const matchingSession = validSessions.find(s => s.sessionId === storedActiveSessionId);
+              if (matchingSession) {
+                // Set active session even if validation timed out (offline scenario)
+                setActiveSessionIdFromHook(storedActiveSessionId);
+                // Try to get user from session if possible (might fail offline, but that's OK)
+                try {
+                  const validation = await oxyServices.validateSession(storedActiveSessionId, { useHeaderValidation: false });
+                  if (validation?.valid && validation.user) {
+                    loginSuccess(validation.user);
+                  }
+                } catch {
+                  // Ignore - we're offline, will sync when online
+                }
+              }
+            }
             if (__DEV__) {
               loggerUtil.debug('Active session validation timeout (expected when offline)', { component: 'OxyContext', method: 'restoreSessionsFromStorage' }, switchError as unknown);
             }
           } else {
             // Only log unexpected errors
             logger('Active session validation error', switchError);
+          }
+        }
+      } else if (validSessions.length > 0) {
+        // No stored active session, but we have valid sessions - activate the first one
+        const firstSession = validSessions[0];
+        try {
+          await switchSession(firstSession.sessionId);
+        } catch (switchError) {
+          // If switch fails, at least set the activeSessionId so UI can show sessions
+          if (isTimeoutOrNetworkError(switchError)) {
+            setActiveSessionIdFromHook(firstSession.sessionId);
+            // Try to get user from session
+            try {
+              const validation = await oxyServices.validateSession(firstSession.sessionId, { useHeaderValidation: false });
+              if (validation?.valid && validation.user) {
+                loginSuccess(validation.user);
+              }
+            } catch {
+              // Ignore - offline scenario
+            }
           }
         }
       }
@@ -649,6 +696,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     storageKeys.sessionIds,
     switchSession,
     updateSessions,
+    setActiveSessionIdFromHook,
+    loginSuccess,
   ]);
 
   useEffect(() => {
@@ -665,212 +714,127 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     : undefined;
   const currentDeviceId = activeSession?.deviceId ?? null;
 
+  // Compute isAuthenticated from actual session state, not just auth store
+  // This ensures UI shows correct state even if loginSuccess wasn't called during restoration
+  const isAuthenticatedFromSessions = useMemo(() => {
+    return !!(activeSessionId && sessions.length > 0 && user);
+  }, [activeSessionId, sessions.length, user]);
+
+  // Use session-based authentication state if auth store says not authenticated but we have sessions
+  // This handles the case where sessions were restored but loginSuccess wasn't called
+  const computedIsAuthenticated = useMemo(() => {
+    return isAuthenticatedFromStore || isAuthenticatedFromSessions;
+  }, [isAuthenticatedFromStore, isAuthenticatedFromSessions]);
+
   // Get userId from JWT token (MongoDB ObjectId) for socket room matching
   // user.id is set to publicKey for compatibility, but socket rooms use MongoDB ObjectId
   // The JWT token's userId field contains the MongoDB ObjectId
   const userId = oxyServices.getCurrentUserId() || user?.id;
 
-  // Transfer code storage interface
-  interface TransferCodeData {
-    code: string;
-    sourceDeviceId: string | null;
-    publicKey: string;
-    timestamp: number;
-    state: 'pending' | 'completed' | 'failed';
-  }
-
-  // Store transfer codes in memory for verification (also persisted to storage)
-  // Map: transferId -> TransferCodeData
-  const transferCodesRef = useRef<Map<string, TransferCodeData>>(new Map());
-  const activeTransferIdRef = useRef<string | null>(null);
+  // Use Zustand store for transfer state management
   const TRANSFER_CODES_STORAGE_KEY = `${storageKeyPrefix}_transfer_codes`;
   const ACTIVE_TRANSFER_STORAGE_KEY = `${storageKeyPrefix}_active_transfer_id`;
+  const isRestored = useTransferStore((state) => state.isRestored);
+  const restoreFromStorage = useTransferStore((state) => state.restoreFromStorage);
+  const markRestored = useTransferStore((state) => state.markRestored);
+  const cleanupExpired = useTransferStore((state) => state.cleanupExpired);
 
-  // Load transfer codes from storage on startup
+  // Load transfer codes from storage on startup (only once)
   useEffect(() => {
-    if (!storage || !isStorageReady) return;
+    if (!storage || !isStorageReady || isRestored) return;
 
     const loadTransferCodes = async () => {
       try {
         // Load transfer codes
         const storedCodes = await storage.getItem(TRANSFER_CODES_STORAGE_KEY);
-        if (storedCodes) {
-          const parsed = JSON.parse(storedCodes);
-          const now = Date.now();
-          const fifteenMinutes = 15 * 60 * 1000;
-          
-          // Only restore non-expired pending transfers
-          Object.entries(parsed).forEach(([transferId, data]: [string, any]) => {
-            if (data.state === 'pending' && (now - data.timestamp) < fifteenMinutes) {
-              transferCodesRef.current.set(transferId, data);
-              if (__DEV__) {
-                logger('Restored pending transfer from storage', { transferId });
-              }
-            }
+        const storedActiveTransferId = await storage.getItem(ACTIVE_TRANSFER_STORAGE_KEY);
+        
+        const parsedCodes = storedCodes ? JSON.parse(storedCodes) : {};
+        const activeTransferId = storedActiveTransferId || null;
+        
+        // Restore to Zustand store (store handles validation and expiration)
+        restoreFromStorage(parsedCodes, activeTransferId);
+        markRestored();
+        
+        if (__DEV__ && Object.keys(parsedCodes).length > 0) {
+          logger('Restored transfer codes from storage', { 
+            count: Object.keys(parsedCodes).length,
+            hasActiveTransfer: !!activeTransferId,
           });
-        }
-
-        // Load active transfer ID
-        const activeTransferId = await storage.getItem(ACTIVE_TRANSFER_STORAGE_KEY);
-        if (activeTransferId) {
-          // Verify it's still valid
-          const transferData = transferCodesRef.current.get(activeTransferId);
-          if (transferData && transferData.state === 'pending') {
-            activeTransferIdRef.current = activeTransferId;
-            if (__DEV__) {
-              logger('Restored active transfer ID from storage', { transferId: activeTransferId });
-            }
-          } else {
-            // Clear invalid active transfer
-            await storage.removeItem(ACTIVE_TRANSFER_STORAGE_KEY);
-          }
         }
       } catch (error) {
         if (__DEV__) {
           logger('Failed to load transfer codes from storage', error);
         }
+        // Mark as restored even on error to prevent retries
+        markRestored();
       }
     };
 
     loadTransferCodes();
-  }, [storage, isStorageReady, logger, storageKeyPrefix]);
+  }, [storage, isStorageReady, isRestored, restoreFromStorage, markRestored, logger, storageKeyPrefix]);
 
-  // Persist transfer codes to storage whenever they change
-  const persistTransferCodes = useCallback(async () => {
-    if (!storage) return;
-    
-    try {
-      const codesToStore: Record<string, TransferCodeData> = {};
-      transferCodesRef.current.forEach((value, key) => {
-        codesToStore[key] = value;
-      });
-      await storage.setItem(TRANSFER_CODES_STORAGE_KEY, JSON.stringify(codesToStore));
-    } catch (error) {
-      if (__DEV__) {
-        logger('Failed to persist transfer codes', error);
-      }
-    }
-  }, [storage, logger]);
-
-  // Cleanup old transfer codes (older than 15 minutes)
+  // Persist transfer codes to storage whenever store changes
+  const { transferCodes, activeTransferId } = useTransferCodesForPersistence();
   useEffect(() => {
-    const cleanup = setInterval(async () => {
-      const now = Date.now();
-      const fifteenMinutes = 15 * 60 * 1000;
-      let needsPersist = false;
+    if (!storage || !isStorageReady || !isRestored) return;
 
-      transferCodesRef.current.forEach((value, key) => {
-        if (now - value.timestamp > fifteenMinutes) {
-          transferCodesRef.current.delete(key);
-          needsPersist = true;
-          if (__DEV__) {
-            logger('Cleaned up expired transfer code', { transferId: key });
-          }
+    const persistTransferCodes = async () => {
+      try {
+        await storage.setItem(TRANSFER_CODES_STORAGE_KEY, JSON.stringify(transferCodes));
+        
+        if (activeTransferId) {
+          await storage.setItem(ACTIVE_TRANSFER_STORAGE_KEY, activeTransferId);
+        } else {
+          await storage.removeItem(ACTIVE_TRANSFER_STORAGE_KEY);
         }
-      });
-
-      // Clear active transfer if it was deleted
-      if (activeTransferIdRef.current && !transferCodesRef.current.has(activeTransferIdRef.current)) {
-        activeTransferIdRef.current = null;
-        if (storage) {
-          try {
-            await storage.removeItem(ACTIVE_TRANSFER_STORAGE_KEY);
-          } catch (error) {
-            // Ignore storage errors
-          }
+      } catch (error) {
+        if (__DEV__) {
+          logger('Failed to persist transfer codes', error);
         }
       }
+    };
 
-      if (needsPersist) {
-        await persistTransferCodes();
-      }
+    persistTransferCodes();
+  }, [transferCodes, activeTransferId, storage, isStorageReady, isRestored, logger]);
+
+  // Cleanup expired transfer codes (every minute)
+  useEffect(() => {
+    const cleanup = setInterval(() => {
+      cleanupExpired();
     }, 60000); // Check every minute
 
     return () => clearInterval(cleanup);
-  }, [logger, persistTransferCodes, storage]);
+  }, [cleanupExpired]);
 
-  // Transfer code management functions
+  // Transfer code management functions using Zustand store
   const storeTransferCode = useCallback(async (transferId: string, code: string, sourceDeviceId: string | null, publicKey: string) => {
-    const transferData: TransferCodeData = {
-      code,
-      sourceDeviceId,
-      publicKey,
-      timestamp: Date.now(),
-      state: 'pending',
-    };
-    
-    transferCodesRef.current.set(transferId, transferData);
-    activeTransferIdRef.current = transferId;
-    
-    // Persist to storage
-    await persistTransferCodes();
-    if (storage) {
-      try {
-        await storage.setItem(ACTIVE_TRANSFER_STORAGE_KEY, transferId);
-      } catch (error) {
-        if (__DEV__) {
-          logger('Failed to persist active transfer ID', error);
-        }
-      }
-    }
+    storeTransferCodeStore(transferId, code, sourceDeviceId, publicKey);
     
     if (__DEV__) {
       logger('Stored transfer code', { transferId, sourceDeviceId, publicKey: publicKey.substring(0, 16) + '...' });
     }
-  }, [logger, persistTransferCodes, storage]);
+  }, [logger, storeTransferCodeStore]);
 
   const getTransferCode = useCallback((transferId: string) => {
-    return transferCodesRef.current.get(transferId) || null;
-  }, []);
+    return getTransferCodeStore(transferId);
+  }, [getTransferCodeStore]);
 
   const updateTransferState = useCallback(async (transferId: string, state: 'pending' | 'completed' | 'failed') => {
-    const transferData = transferCodesRef.current.get(transferId);
-    if (transferData) {
-      transferData.state = state;
-      transferCodesRef.current.set(transferId, transferData);
-      
-      // Clear active transfer if completed or failed
-      if (state === 'completed' || state === 'failed') {
-        if (activeTransferIdRef.current === transferId) {
-          activeTransferIdRef.current = null;
-          if (storage) {
-            try {
-              await storage.removeItem(ACTIVE_TRANSFER_STORAGE_KEY);
-            } catch (error) {
-              // Ignore storage errors
-            }
-          }
-        }
-      }
-      
-      await persistTransferCodes();
-      
-      if (__DEV__) {
-        logger('Updated transfer state', { transferId, state });
-      }
+    updateTransferStateStore(transferId, state);
+    
+    if (__DEV__) {
+      logger('Updated transfer state', { transferId, state });
     }
-  }, [logger, persistTransferCodes, storage]);
+  }, [logger, updateTransferStateStore]);
 
   const clearTransferCode = useCallback(async (transferId: string) => {
-    transferCodesRef.current.delete(transferId);
-    
-    if (activeTransferIdRef.current === transferId) {
-      activeTransferIdRef.current = null;
-      if (storage) {
-        try {
-          await storage.removeItem(ACTIVE_TRANSFER_STORAGE_KEY);
-        } catch (error) {
-          // Ignore storage errors
-        }
-      }
-    }
-    
-    await persistTransferCodes();
+    clearTransferCodeStore(transferId);
     
     if (__DEV__) {
       logger('Cleared transfer code', { transferId });
     }
-  }, [logger, persistTransferCodes, storage]);
+  }, [logger, clearTransferCodeStore]);
 
   const refreshSessionsWithUser = useCallback(
     () => refreshSessions(userId),
@@ -888,6 +852,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     toast.info('You have been signed out remotely.');
     logout().catch((remoteError) => logger('Failed to process remote sign out', remoteError));
   }, [logger, logout]);
+
+  // Check pending transfers when authenticated and online using TanStack Query
+  // Check for pending transfers that may have completed while offline
+  // Results are processed via socket events (onIdentityTransferComplete), so we don't need to process query results here
+  useCheckPendingTransfers(oxyServices, computedIsAuthenticated);
 
   const handleIdentityTransferComplete = useCallback(
     async (data: { transferId: string; sourceDeviceId: string; publicKey: string; transferCode?: string; completedAt: string }) => {
@@ -1108,7 +1077,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     sessions,
     activeSessionId,
     currentDeviceId,
-    isAuthenticated,
+    isAuthenticated: computedIsAuthenticated,
     isLoading,
     isTokenReady: tokenReady,
     isStorageReady,
@@ -1175,7 +1144,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     currentNativeLanguageName,
     error,
     getDeviceSessions,
-    isAuthenticated,
+    computedIsAuthenticated,
     isLoading,
     logout,
     logoutAll,

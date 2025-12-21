@@ -5,6 +5,108 @@ import { BadRequestError } from '../utils/error';
 import { emitSessionUpdate } from '../server';
 import User from '../models/User';
 
+/**
+ * In-memory store for transfer completion records
+ * Used for offline-first support - allows source devices to check if transfers completed while offline
+ */
+interface TransferCompletionRecord {
+  transferId: string;
+  sourceDeviceId: string;
+  publicKey: string;
+  transferCode?: string;
+  completedAt: string;
+  timestamp: number;
+}
+
+class TransferCompletionStore {
+  private completions: Map<string, TransferCompletionRecord> = new Map();
+  private cleanupTimer: NodeJS.Timeout | null = null;
+  private readonly TTL = 15 * 60 * 1000; // 15 minutes
+  private readonly CLEANUP_INTERVAL = 60 * 1000; // 1 minute
+
+  constructor() {
+    this.startCleanupTimer();
+  }
+
+  /**
+   * Store a transfer completion record
+   */
+  store(record: TransferCompletionRecord): void {
+    this.completions.set(record.transferId, record);
+  }
+
+  /**
+   * Get a transfer completion record by transferId
+   */
+  get(transferId: string): TransferCompletionRecord | null {
+    const record = this.completions.get(transferId);
+    if (!record) {
+      return null;
+    }
+
+    // Check if expired
+    const now = Date.now();
+    if (now - record.timestamp > this.TTL) {
+      this.completions.delete(transferId);
+      return null;
+    }
+
+    return record;
+  }
+
+  /**
+   * Check if a transfer was completed
+   */
+  isCompleted(transferId: string): boolean {
+    return this.get(transferId) !== null;
+  }
+
+  /**
+   * Clean up expired records
+   */
+  private cleanup(): void {
+    const now = Date.now();
+    let cleaned = 0;
+
+    for (const [transferId, record] of this.completions.entries()) {
+      if (now - record.timestamp > this.TTL) {
+        this.completions.delete(transferId);
+        cleaned++;
+      }
+    }
+
+    if (cleaned > 0) {
+      logger.debug(`Cleaned up ${cleaned} expired transfer completion records`);
+    }
+  }
+
+  /**
+   * Start automatic cleanup timer
+   */
+  private startCleanupTimer(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+    }
+
+    this.cleanupTimer = setInterval(() => {
+      this.cleanup();
+    }, this.CLEANUP_INTERVAL);
+  }
+
+  /**
+   * Stop cleanup timer (for testing)
+   */
+  stopCleanupTimer(): void {
+    if (this.cleanupTimer) {
+      clearInterval(this.cleanupTimer);
+      this.cleanupTimer = null;
+    }
+  }
+}
+
+// Singleton instance
+const transferCompletionStore = new TransferCompletionStore();
+
 export class IdentityController {
   /**
    * Notify server about successful identity transfer
@@ -50,13 +152,24 @@ export class IdentityController {
         completedAt: new Date().toISOString(),
       };
 
+      // Store completion record for offline-first support
+      // This allows source devices to check if transfer completed while they were offline
+      transferCompletionStore.store({
+        transferId,
+        sourceDeviceId,
+        publicKey,
+        transferCode: transferCode || undefined,
+        completedAt: payload.completedAt,
+        timestamp: Date.now(),
+      });
+
       // Emit to the user's room - the source device should be listening
       emitSessionUpdate(userId, {
         type: 'identity_transfer_complete',
         ...payload,
       });
 
-      logger.info('Identity transfer completed - socket event emitted', {
+      logger.info('Identity transfer completed - socket event emitted and stored', {
         userId,
         transferId,
         sourceDeviceId,
@@ -137,6 +250,66 @@ export class IdentityController {
       logger.error('Error verifying transfer', {
         error: error.message,
         userId: req.user?.id,
+      });
+
+      if (error.statusCode) {
+        return res.status(error.statusCode).json({ error: error.message });
+      }
+
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  /**
+   * Check if a transfer was completed (for offline-first support)
+   * GET /api/identity/check-transfer/:transferId
+   * 
+   * This endpoint allows source devices to check if a transfer was completed
+   * while they were offline. Returns the completion record if found.
+   */
+  static async checkTransfer(req: AuthRequest, res: Response) {
+    try {
+      const user = req.user;
+      if (!user || !user._id) {
+        return res.status(401).json({ error: 'Authentication required' });
+      }
+
+      const { transferId } = req.params;
+
+      if (!transferId) {
+        throw new BadRequestError('transferId parameter is required');
+      }
+
+      // Check if transfer was completed
+      const completion = transferCompletionStore.get(transferId);
+
+      if (!completion) {
+        return res.status(200).json({
+          completed: false,
+          message: 'Transfer not found or expired',
+        });
+      }
+
+      logger.info('Transfer completion check', {
+        userId: user._id.toString(),
+        transferId,
+        completed: true,
+        completedAt: completion.completedAt,
+      });
+
+      return res.status(200).json({
+        completed: true,
+        transferId: completion.transferId,
+        sourceDeviceId: completion.sourceDeviceId,
+        publicKey: completion.publicKey,
+        transferCode: completion.transferCode,
+        completedAt: completion.completedAt,
+      });
+    } catch (error: any) {
+      logger.error('Error checking transfer completion', {
+        error: error.message,
+        userId: req.user?.id,
+        transferId: req.params?.transferId,
       });
 
       if (error.statusCode) {

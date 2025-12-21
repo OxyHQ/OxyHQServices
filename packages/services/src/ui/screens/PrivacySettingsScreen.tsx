@@ -1,10 +1,9 @@
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     ScrollView,
-    ActivityIndicator,
     TouchableOpacity,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
@@ -15,6 +14,8 @@ import { useThemeStyles } from '../hooks/useThemeStyles';
 import { normalizeTheme } from '../utils/themeUtils';
 import type { BlockedUser, RestrictedUser } from '../../models/interfaces';
 import { useOxy } from '../context/OxyContext';
+import { usePrivacySettings, useBlockedUsers, useRestrictedUsers } from '../hooks/queries';
+import { useUpdatePrivacySettings, useUnblockUser, useUnrestrictUser } from '../hooks/mutations';
 
 interface PrivacySettings {
     isPrivateAccount: boolean;
@@ -44,8 +45,20 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     goBack,
 }) => {
     // Use useOxy() hook for OxyContext values
-    const { oxyServices, user } = useOxy();
+    const { oxyServices } = useOxy();
     const { t } = useI18n();
+    
+    // TanStack Query hooks for server state
+    const { data: privacySettingsData, isLoading: isLoadingSettings, error: settingsError } = usePrivacySettings();
+    const { data: blockedUsers = [], isLoading: isLoadingBlocked } = useBlockedUsers();
+    const { data: restrictedUsers = [], isLoading: isLoadingRestricted } = useRestrictedUsers();
+    
+    // Mutations
+    const updatePrivacySettingsMutation = useUpdatePrivacySettings();
+    const unblockUserMutation = useUnblockUser();
+    const unrestrictUserMutation = useUnrestrictUser();
+    
+    // Client state for optimistic UI updates
     const [settings, setSettings] = useState<PrivacySettings>({
         isPrivateAccount: false,
         hideOnlineStatus: false,
@@ -67,111 +80,64 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         autoFilter: true,
         muteKeywords: false,
     });
-    const [isLoading, setIsLoading] = useState(true);
-    const [isSaving, setIsSaving] = useState(false);
-    const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
-    const [restrictedUsers, setRestrictedUsers] = useState<RestrictedUser[]>([]);
-    const [isLoadingUsers, setIsLoadingUsers] = useState(false);
-
-    // Load settings and users
-    useEffect(() => {
-        const loadSettings = async () => {
-            try {
-                setIsLoading(true);
-                // Use getCurrentUserId() which returns MongoDB ObjectId from JWT token
-                // Never use user?.id as it may be set to publicKey
-                const userId = oxyServices?.getCurrentUserId();
-                if (userId && oxyServices) {
-                    const privacySettings = await oxyServices.getPrivacySettings(userId);
-                    if (privacySettings) {
-                        setSettings(privacySettings);
-                    }
-                }
-            } catch (error) {
-                console.error('Failed to load privacy settings:', error);
-                toast.error(t('privacySettings.loadError') || 'Failed to load privacy settings');
-            } finally {
-                setIsLoading(false);
-            }
-        };
-
-        loadSettings();
-    }, [oxyServices, t]);
-
-    // Load blocked and restricted users
-    useEffect(() => {
-        const loadUsers = async () => {
-            if (!oxyServices) return;
-            try {
-                setIsLoadingUsers(true);
-                const [blocked, restricted] = await Promise.all([
-                    oxyServices.getBlockedUsers(),
-                    oxyServices.getRestrictedUsers(),
-                ]);
-                setBlockedUsers(blocked);
-                setRestrictedUsers(restricted);
-            } catch (error) {
-                console.error('Failed to load blocked/restricted users:', error);
-            } finally {
-                setIsLoadingUsers(false);
-            }
-        };
-
-        loadUsers();
-    }, [oxyServices]);
+    
+    // Update local state when server data changes
+    React.useEffect(() => {
+        if (privacySettingsData) {
+            setSettings(privacySettingsData as PrivacySettings);
+        }
+    }, [privacySettingsData]);
+    
+    // Show error toast if settings failed to load
+    React.useEffect(() => {
+        if (settingsError) {
+            toast.error(t('privacySettings.loadError') || 'Failed to load privacy settings');
+        }
+    }, [settingsError, t]);
+    
+    const isLoading = isLoadingSettings;
+    const isSaving = updatePrivacySettingsMutation.isPending;
+    const isLoadingUsers = isLoadingBlocked || isLoadingRestricted;
 
     const updateSetting = useCallback(async (key: keyof PrivacySettings, value: boolean) => {
-        try {
-            setIsSaving(true);
-            const newSettings = { ...settings, [key]: value };
-            setSettings(newSettings);
-            
-            // Use getCurrentUserId() which returns MongoDB ObjectId from JWT token
-            // Never use user?.id as it may be set to publicKey
-            const userId = oxyServices?.getCurrentUserId();
-            if (userId && oxyServices) {
-                await oxyServices.updatePrivacySettings({ [key]: value }, userId);
-                toast.success(t('privacySettings.updated') || 'Privacy settings updated');
+        // Optimistic update
+        const newSettings = { ...settings, [key]: value };
+        setSettings(newSettings);
+        
+        // Use mutation hook
+        updatePrivacySettingsMutation.mutate(
+            { settings: { [key]: value } },
+            {
+                onError: () => {
+                    // Revert on error
+                    setSettings(settings);
+                    toast.error(t('privacySettings.updateError') || 'Failed to update privacy setting');
+                },
             }
-        } catch (error) {
-            console.error(`Failed to update ${key}:`, error);
-            toast.error(t('privacySettings.updateError') || 'Failed to update privacy setting');
-            // Revert on error
-            setSettings(settings);
-        } finally {
-            setIsSaving(false);
-        }
-    }, [settings, oxyServices, t]);
+        );
+    }, [settings, updatePrivacySettingsMutation, t]);
 
     const handleUnblock = useCallback(async (userId: string) => {
-        if (!oxyServices) return;
-        try {
-            await oxyServices.unblockUser(userId);
-            setBlockedUsers(prev => prev.filter(u => {
-                const id = typeof u.blockedId === 'string' ? u.blockedId : u.blockedId._id;
-                return id !== userId;
-            }));
-            toast.success(t('privacySettings.userUnblocked') || 'User unblocked');
-        } catch (error) {
-            console.error('Failed to unblock user:', error);
-            toast.error(t('privacySettings.unblockError') || 'Failed to unblock user');
-        }
-    }, [oxyServices, t]);
+        unblockUserMutation.mutate(userId, {
+            onSuccess: () => {
+                toast.success(t('privacySettings.userUnblocked') || 'User unblocked');
+            },
+            onError: () => {
+                toast.error(t('privacySettings.unblockError') || 'Failed to unblock user');
+            },
+        });
+    }, [unblockUserMutation, t]);
 
     const handleUnrestrict = useCallback(async (userId: string) => {
-        if (!oxyServices) return;
-        try {
-            await oxyServices.unrestrictUser(userId);
-            setRestrictedUsers(prev => prev.filter(u => {
-                const id = typeof u.restrictedId === 'string' ? u.restrictedId : u.restrictedId._id;
-                return id !== userId;
-            }));
-            toast.success(t('privacySettings.userUnrestricted') || 'User unrestricted');
-        } catch (error) {
-            console.error('Failed to unrestrict user:', error);
-            toast.error(t('privacySettings.unrestrictError') || 'Failed to unrestrict user');
-        }
-    }, [oxyServices, t]);
+        unrestrictUserMutation.mutate(userId, {
+            onSuccess: () => {
+                toast.success(t('privacySettings.userUnrestricted') || 'User unrestricted');
+            },
+            onError: () => {
+                toast.error(t('privacySettings.unrestrictError') || 'Failed to unrestrict user');
+            },
+        });
+    }, [unrestrictUserMutation, t]);
 
     // Helper to extract user info from blocked/restricted objects
     const extractUserInfo = useCallback((
