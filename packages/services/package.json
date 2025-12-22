@@ -29,6 +29,11 @@
       "require": "./lib/commonjs/core/index.js",
       "types": "./lib/typescript/core/index.d.ts"
     },
+    "./node": {
+      "import": "./lib/module/node/index.js",
+      "require": "./lib/commonjs/node/index.js",
+      "types": "./lib/typescript/node/index.d.ts"
+    },
     "./ui": {
       "react-native": "./src/ui/index.ts",
       "import": "./lib/module/ui/index.js",
