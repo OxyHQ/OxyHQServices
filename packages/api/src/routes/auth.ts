@@ -53,27 +53,6 @@ const verifyLimiter = rateLimit({
 router.post('/verify', verifyLimiter, SessionController.verifyChallenge);
 
 // ============================================
-// Legacy Routes (Deprecated)
-// ============================================
-
-/**
- * POST /auth/signup - Deprecated
- * Returns error directing users to use /auth/register
- */
-router.post('/signup', (req, res) => {
-  res.status(410).json({
-    error: 'Password-based signup is no longer supported',
-    hint: 'Use POST /auth/register with your public key and signature'
-  });
-});
-
-/**
- * POST /auth/login - Deprecated
- * Returns error directing users to use challenge-response flow
- */
-router.post('/login', SessionController.signIn);
-
-// ============================================
 // Validation Routes
 // ============================================
 

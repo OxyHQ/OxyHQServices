@@ -1,8 +1,20 @@
 /**
  * Key Manager - ECDSA secp256k1 Key Generation and Storage
  * 
- * Handles secure generation, storage, and retrieval of cryptographic keys.
+ * ⚠️ **FOR OXY ACCOUNTS APP ONLY**
+ * 
+ * This module handles secure generation, storage, and retrieval of cryptographic keys.
  * Private keys are stored securely using expo-secure-store and never leave the device.
+ * 
+ * **IMPORTANT**: Third-party apps should NOT use KeyManager directly.
+ * Instead, use the OxyServices authentication flows which communicate with the
+ * Oxy Accounts app via deep links/QR codes to obtain user authorization.
+ * 
+ * The Oxy Accounts app is the sole owner of the user's private key and identity.
+ * Other apps request authentication from the Accounts app, which signs challenges
+ * and returns authorization to the requesting app via the API.
+ * 
+ * @see {@link https://github.com/OxyHQ/OxyHQServices/blob/main/packages/services/src/crypto/README.md|Crypto Module Documentation}
  */
 
 import { ec as EC } from 'elliptic';
