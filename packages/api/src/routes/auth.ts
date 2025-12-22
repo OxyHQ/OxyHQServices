@@ -12,7 +12,7 @@ import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError } from '../utils/error';
 import { logger } from '../utils/logger';
-import SignatureService from '../services/signature.service';
+import { SignatureService } from '@oxyhq/services/node';
 import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
 
 const router = express.Router();

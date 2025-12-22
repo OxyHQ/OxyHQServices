@@ -11,7 +11,7 @@ import {
 } from '../utils/deviceUtils';
 import { emitSessionUpdate } from '../server';
 import Notification from '../models/Notification';
-import SignatureService from '../services/signature.service';
+import { SignatureService } from '@oxyhq/services/node';
 import sessionService from '../services/session.service';
 import sessionCache from '../utils/sessionCache';
 import { logger } from '../utils/logger';

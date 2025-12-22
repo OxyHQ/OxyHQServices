@@ -96,19 +96,25 @@ This document summarizes the refactoring work completed to improve the Oxy codeb
 5. `MIGRATION.md` - Migration guide for developers (190 lines)
 6. `REFACTORING_SUMMARY.md` - This document
 
-### Modified (9 files)
-1. `packages/api/src/services/signature.service.ts` - Reduced from 145 lines to 9 (re-export)
-2. `packages/services/src/crypto/signatureService.ts` - Refactored to use core
-3. `packages/services/src/crypto/keyManager.ts` - Uses core utilities
-4. `packages/services/src/crypto/index.ts` - Exports core module
-5. `packages/services/src/node/index.ts` - Exports SignatureService
-6. `packages/api/src/routes/auth.ts` - Removed legacy routes
-7. `packages/api/src/controllers/session.controller.ts` - Removed signIn method
+### Modified (15 files)
+1. `packages/api/src/controllers/session.controller.ts` - Direct import from @oxyhq/services/node
+2. `packages/api/src/routes/auth.ts` - Direct import from @oxyhq/services/node
+3. `packages/api/src/routes/users.ts` - Direct import from @oxyhq/services/node
+4. `packages/services/src/crypto/signatureService.ts` - Refactored to use core
+5. `packages/services/src/crypto/keyManager.ts` - Uses core utilities
+6. `packages/services/src/crypto/index.ts` - Exports core module
+7. `packages/services/src/node/index.ts` - Exports SignatureService
 8. `packages/api/package.json` - Added @oxyhq/services dependency
 9. `README.md` - Enhanced architecture documentation
+10. **Accounts app files updated with professional logging:**
+  - `app/(tabs)/sessions.tsx`
+  - `app/(tabs)/index.tsx`
+  - `app/(tabs)/devices/index.tsx`
+  - `components/identity/IdentityTransferQR.tsx`
 
 ### Deleted
-- Legacy auth endpoint handlers (effectively ~30 lines of error-returning code)
+- `packages/api/src/services/signature.service.ts` - Removed re-export layer, using direct imports
+- Legacy auth endpoint handlers (~30 lines of error-returning code)
 
 ## Statistics
 

@@ -54,13 +54,11 @@ import SignatureService from '../services/signature.service';
 
 **After:**
 ```typescript
-// No change needed - the import path still works!
-// But now it's re-exported from @oxyhq/services/node
-import SignatureService from '../services/signature.service';
-
-// Or import directly (recommended for new code):
+// Direct import from shared module (professional approach)
 import { SignatureService } from '@oxyhq/services/node';
 ```
+
+The signature.service.ts file has been removed from the API package. All imports now directly use the shared module from @oxyhq/services/node. This eliminates the unnecessary re-export layer and provides a more direct, professional implementation.
 
 The API surface is identical:
 - `SignatureService.generateChallenge()`
