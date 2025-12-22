@@ -13,5 +13,8 @@ export { OxyServices, OXY_CLOUD_URL, oxyClient };
 export { Models };  // Export all models as a namespace
 export * from '../models/interfaces'; // Export all models directly
 
+// ------------- Node-Specific Crypto Exports -------------
+export { SignatureService } from './signatureService';
+
 // Default export for consistency or specific use cases if needed
 export default OxyServices;

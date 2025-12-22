@@ -8,12 +8,19 @@
 import { ec as EC } from 'elliptic';
 import type { ECKeyPair } from 'elliptic';
 import { Platform } from 'react-native';
+import {
+  isValidPublicKey as validatePublicKey,
+  isValidPrivateKey as validatePrivateKey,
+  derivePublicKey as derivePublicKeyFromPrivate,
+  shortenPublicKey as shortenKey,
+  getEllipticCurve,
+} from './core';
 
 // Lazy imports for React Native specific modules
 let SecureStore: typeof import('expo-secure-store') | null = null;
 let ExpoCrypto: typeof import('expo-crypto') | null = null;
 
-const ec = new EC('secp256k1');
+const ec = getEllipticCurve();
 
 const STORAGE_KEYS = {
   PRIVATE_KEY: 'oxy_identity_private_key',
@@ -504,34 +511,21 @@ export class KeyManager {
    * Derive public key from a private key (without storing)
    */
   static derivePublicKey(privateKey: string): string {
-    const keyPair = ec.keyFromPrivate(privateKey);
-    return keyPair.getPublic('hex');
+    return derivePublicKeyFromPrivate(privateKey);
   }
 
   /**
    * Validate that a string is a valid public key
    */
   static isValidPublicKey(publicKey: string): boolean {
-    try {
-      ec.keyFromPublic(publicKey, 'hex');
-      return true;
-    } catch {
-      return false;
-    }
+    return validatePublicKey(publicKey);
   }
 
   /**
    * Validate that a string is a valid private key
    */
   static isValidPrivateKey(privateKey: string): boolean {
-    try {
-      const keyPair = ec.keyFromPrivate(privateKey);
-      // Verify it can derive a public key
-      keyPair.getPublic('hex');
-      return true;
-    } catch {
-      return false;
-    }
+    return validatePrivateKey(privateKey);
   }
 
   /**
@@ -539,8 +533,7 @@ export class KeyManager {
    * Format: first 8 chars...last 8 chars
    */
   static shortenPublicKey(publicKey: string): string {
-    if (publicKey.length <= 20) return publicKey;
-    return `${publicKey.slice(0, 8)}...${publicKey.slice(-8)}`;
+    return shortenKey(publicKey);
   }
 }
 

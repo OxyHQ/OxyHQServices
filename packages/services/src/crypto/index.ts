@@ -16,7 +16,9 @@ export {
 } from './signatureService';
 export { type BackupData } from './types';
 
+// Export core crypto utilities (shared across platforms)
+export * from './core';
+
 // Re-export for convenience
 export { KeyManager as default } from './keyManager';
-
 

@@ -3,15 +3,27 @@
  * 
  * Handles signing and verification of messages using ECDSA secp256k1.
  * Used for authenticating requests and proving identity ownership.
+ * 
+ * This service provides async methods for cross-platform compatibility (React Native + Node).
+ * For Node.js-only synchronous operations, use the node/signatureService module.
  */
 
-import { ec as EC } from 'elliptic';
 import { KeyManager } from './keyManager';
+import {
+  verifySignatureCore,
+  isValidPublicKey as validatePublicKey,
+  isTimestampFresh,
+  buildAuthMessage,
+  buildRegistrationMessage,
+  buildRequestMessage,
+  shortenPublicKey as shortenKey,
+  getEllipticCurve,
+} from './core';
 
 // Lazy import for expo-crypto
 let ExpoCrypto: typeof import('expo-crypto') | null = null;
 
-const ec = new EC('secp256k1');
+const ec = getEllipticCurve();
 
 /**
  * Check if we're in a React Native environment
@@ -150,9 +162,8 @@ export class SignatureService {
    */
   static async verify(message: string, signature: string, publicKey: string): Promise<boolean> {
     try {
-      const key = ec.keyFromPublic(publicKey, 'hex');
       const messageHash = await sha256(message);
-      return key.verify(messageHash, signature);
+      return verifySignatureCore(messageHash, signature, publicKey);
     } catch {
       return false;
     }
@@ -173,9 +184,8 @@ export class SignatureService {
       // eslint-disable-next-line @typescript-eslint/no-implied-eval
       const getCrypto = new Function('return require("crypto")');
       const crypto = getCrypto();
-      const key = ec.keyFromPublic(publicKey, 'hex');
       const messageHash = crypto.createHash('sha256').update(message).digest('hex');
-      return key.verify(messageHash, signature);
+      return verifySignatureCore(messageHash, signature, publicKey);
     } catch {
       return false;
     }
@@ -213,8 +223,7 @@ export class SignatureService {
     const { message, signature, publicKey, timestamp } = signedMessage;
 
     // Check timestamp freshness
-    const now = Date.now();
-    if (now - timestamp > maxAgeMs) {
+    if (!isTimestampFresh(timestamp, maxAgeMs)) {
       return false;
     }
 
@@ -234,7 +243,7 @@ export class SignatureService {
     }
 
     const timestamp = Date.now();
-    const message = `auth:${publicKey}:${challenge}:${timestamp}`;
+    const message = buildAuthMessage(publicKey, challenge, timestamp);
     const signature = await SignatureService.sign(message);
 
     return {
@@ -255,12 +264,11 @@ export class SignatureService {
     const { challenge: signature, publicKey, timestamp } = response;
 
     // Check timestamp freshness
-    const now = Date.now();
-    if (now - timestamp > maxAgeMs) {
+    if (!isTimestampFresh(timestamp, maxAgeMs)) {
       return false;
     }
 
-    const message = `auth:${publicKey}:${originalChallenge}:${timestamp}`;
+    const message = buildAuthMessage(publicKey, originalChallenge, timestamp);
     return SignatureService.verify(message, signature, publicKey);
   }
 
@@ -276,7 +284,7 @@ export class SignatureService {
     }
 
     const timestamp = Date.now();
-    const message = `oxy:register:${publicKey}:${timestamp}`;
+    const message = buildRegistrationMessage(publicKey, timestamp);
     const signature = await SignatureService.sign(message);
 
     return {
@@ -301,13 +309,7 @@ export class SignatureService {
     }
 
     const timestamp = Date.now();
-    
-    // Create canonical string representation
-    const sortedKeys = Object.keys(data).sort();
-    const canonicalParts = sortedKeys.map(key => `${key}:${JSON.stringify(data[key])}`);
-    const canonicalString = canonicalParts.join('|');
-    
-    const message = `request:${publicKey}:${timestamp}:${canonicalString}`;
+    const message = buildRequestMessage(publicKey, timestamp, data);
     const signature = await SignatureService.sign(message);
 
     return {
