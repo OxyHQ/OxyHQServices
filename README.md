@@ -68,14 +68,94 @@ npm run api:start
 
 ```
 ├── packages/
-│   ├── services/          # @oxyhq/services - React Native/Web library
-│   │   ├── src/          # Source code
+│   ├── accounts/          # Oxy Accounts - Identity wallet app (React Native/Expo)
+│   │   ├── app/          # App screens and navigation
+│   │   ├── components/   # UI components
+│   │   └── lib/          # Identity management logic
+│   ├── services/          # @oxyhq/services - SDK for authentication & API access
+│   │   ├── src/
+│   │   │   ├── core/     # Core API client (platform-agnostic)
+│   │   │   ├── crypto/   # Cryptographic operations (ECDSA, signatures)
+│   │   │   ├── node/     # Node.js-specific exports (for backends)
+│   │   │   └── ui/       # React Native UI components
 │   │   ├── lib/          # Built output
-│   │   └── package.json  # Package configuration
-│   └── api/              # @oxyhq/api - Express.js API server
-│       ├── src/          # Source code
-│       ├── dist/         # Built output
-│       └── package.json  # Package configuration
+│   │   └── docs/         # Documentation
+│   ├── api/              # @oxyhq/api - Express.js backend
+│   │   ├── src/
+│   │   │   ├── controllers/  # Request handlers
+│   │   │   ├── models/       # MongoDB models
+│   │   │   ├── routes/       # API routes
+│   │   │   └── services/     # Business logic
+│   │   └── dist/         # Built output
+│   └── test-app/         # Test application for SDK integration
+├── package.json          # Root package.json with workspace configuration
+└── README.md            # This file
+```
+
+## 🏗️ Architecture Overview
+
+### Oxy Accounts (Identity Wallet)
+The **Oxy Accounts** app is a self-custodial identity wallet built with React Native/Expo. It:
+- Generates and securely stores ECDSA secp256k1 key pairs
+- Never shares the private key (stored in device secure storage)
+- Signs authentication challenges when users log into other apps
+- Manages identity backup and recovery
+
+**Key principle**: The user's private key never leaves their device.
+
+### Oxy Services (SDK)
+The **@oxyhq/services** package provides:
+- **Core API Client**: Network communication with the Oxy backend
+- **Crypto Module**: Shared cryptographic utilities (signature verification, key validation)
+- **UI Components**: Pre-built components for "Sign in with Oxy" flows
+- **Node.js Support**: Optimized exports for backend use
+
+Third-party apps integrate this SDK to enable passwordless authentication via Oxy Accounts.
+
+### Oxy API (Backend)
+The **API** server handles:
+- Challenge-response authentication (generates challenges, verifies signatures)
+- User profile and session management
+- Real-time updates via Socket.IO
+- File storage and social features
+
+The backend uses the shared crypto module from `@oxyhq/services/node` to ensure signature verification is consistent across the ecosystem.
+
+## 🔐 Authentication Flow
+
+1. **Third-party app** displays "Sign in with Oxy" button (QR code + deep link)
+2. **User** scans QR or taps link, opening Oxy Accounts app
+3. **Oxy Accounts** shows the requesting app and prompts user to approve
+4. **User approves** → Accounts app signs a challenge with the private key
+5. **API** verifies the signature and creates a session
+6. **Third-party app** receives authentication confirmation and user data
+
+This flow ensures the private key stays secure while enabling seamless cross-app authentication.
+
+## 📁 Project Structure
+
+```
+├── packages/
+│   ├── accounts/          # Oxy Accounts - Identity wallet app (React Native/Expo)
+│   │   ├── app/          # App screens and navigation
+│   │   ├── components/   # UI components
+│   │   └── lib/          # Identity management logic
+│   ├── services/          # @oxyhq/services - SDK for authentication & API access
+│   │   ├── src/
+│   │   │   ├── core/     # Core API client (platform-agnostic)
+│   │   │   ├── crypto/   # Cryptographic operations (ECDSA, signatures)
+│   │   │   ├── node/     # Node.js-specific exports (for backends)
+│   │   │   └── ui/       # React Native UI components
+│   │   ├── lib/          # Built output
+│   │   └── docs/         # Documentation
+│   ├── api/              # @oxyhq/api - Express.js backend
+│   │   ├── src/
+│   │   │   ├── controllers/  # Request handlers
+│   │   │   ├── models/       # MongoDB models
+│   │   │   ├── routes/       # API routes
+│   │   │   └── services/     # Business logic
+│   │   └── dist/         # Built output
+│   └── test-app/         # Test application for SDK integration
 ├── package.json          # Root package.json with workspace configuration
 └── README.md            # This file
 ```

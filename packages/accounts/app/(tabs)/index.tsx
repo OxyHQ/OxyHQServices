@@ -23,6 +23,7 @@ import { AccountInfoGrid, type AccountInfoCard } from '@/components/account-info
 import { IdentityCardsSection, type IdentityCard } from '@/components/identity-cards-section';
 import { RecentActivitySection, type RecentActivityItem } from '@/components/recent-activity-section';
 import { UsernameRequiredModal } from '@/components/UsernameRequiredModal';
+import { logDebug, logError } from '@/lib/logger';
 
 export default function HomeScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -137,7 +138,7 @@ export default function HomeScreen() {
               setShowUsernameModal(true);
             } else {
               // Silent fail for other errors - will try again later
-              console.log('[Home] Auto-sync failed:', err);
+              logDebug('Auto-sync failed', 'HomeScreen', err);
             }
           }
         }
@@ -179,7 +180,7 @@ export default function HomeScreen() {
     try {
       await refreshSessions();
     } catch (error) {
-      console.error('Failed to refresh sessions', error);
+      logError('Failed to refresh sessions', 'HomeScreen', error);
     }
   }, [refreshSessions]);
 
@@ -194,7 +195,7 @@ export default function HomeScreen() {
         await syncIdentity();
       }
     } catch (error) {
-      console.error('Failed to refresh', error);
+      logError('Failed to refresh', 'HomeScreen', error);
     } finally {
       setRefreshing(false);
     }

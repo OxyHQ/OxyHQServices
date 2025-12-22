@@ -12,6 +12,7 @@ import { useOxy } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import type { MaterialCommunityIconName } from '@/types/icons';
+import { logDebug, logError, logInfo } from '@/lib/logger';
 
 interface Device {
   id?: string;
@@ -52,15 +53,14 @@ export default function DevicesScreen() {
         const devicesData = await oxyServices.getUserDevices();
 
         // Debug logging to verify data consistency
-        console.log('[Devices Screen] Fetched devices:', {
+        logDebug('Fetched devices', 'DevicesScreen', {
           count: devicesData?.length || 0,
           deviceIds: devicesData?.map((d: any) => d.deviceId || d.id),
-          devices: devicesData,
         });
 
         setDevices(devicesData || []);
       } catch (err: any) {
-        console.error('Failed to fetch devices:', err);
+        logError('Failed to fetch devices', 'DevicesScreen', err);
         setError(err?.message || 'Failed to load devices');
       } finally {
         setLoading(false);
@@ -131,13 +131,12 @@ export default function DevicesScreen() {
               // Refresh devices list
               const devicesData = await oxyServices?.getUserDevices();
               setDevices(devicesData || []);
-              if (Platform.OS === 'web') {
-                console.log('Device removed successfully');
-              } else {
+              logInfo('Device removed successfully', 'DevicesScreen', { deviceId });
+              if (Platform.OS !== 'web') {
                 alert('Success', 'Device removed successfully');
               }
             } catch (err: any) {
-              console.error('Failed to remove device:', err);
+              logError('Failed to remove device', 'DevicesScreen', err);
               alert('Error', err?.message || 'Failed to remove device. Please try again.');
             } finally {
               setActionLoading(null);

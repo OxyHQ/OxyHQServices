@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import * as Crypto from 'expo-crypto';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { authenticate, canUseBiometrics, getErrorMessage } from '@/lib/biometricAuth';
+import { logDebug, logWarn } from '@/lib/logger';
 
 interface IdentityTransferQRProps {
   onError?: (error: string) => void;
@@ -58,18 +59,14 @@ export function IdentityTransferQR({ onError, onCodeGenerated }: IdentityTransfe
         setIsGenerating(false);
         isGeneratingRef.current = false;
         onError?.(errorMsg);
-        if (__DEV__) {
-          console.warn('[IdentityTransferQR] Active transfer lock detected', { activeTransferId });
-        }
+        logWarn('Active transfer lock detected', 'IdentityTransferQR', { activeTransferId });
         return;
       }
     }
 
     // Prevent multiple simultaneous generation attempts
     if (isGeneratingRef.current) {
-      if (__DEV__) {
-        console.log('[IdentityTransferQR] Generation already in progress, skipping');
-      }
+      logDebug('Generation already in progress, skipping', 'IdentityTransferQR');
       return;
     }
 

@@ -30,6 +30,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.857.0",
     "@aws-sdk/s3-request-presigner": "^3.857.0",
+    "@oxyhq/services": "workspace:*",
     "@types/cheerio": "^0.22.35",
     "@types/uuid": "^10.0.0",
     "axios": "^1.7.9",

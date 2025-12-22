@@ -1,20 +1,22 @@
 /**
- * Signature Verification Service
+ * Node.js Signature Service
  * 
- * Handles ECDSA signature verification for the backend.
- * Used to authenticate users via their public key and digital signatures.
+ * Provides synchronous signature operations for Node.js backend.
+ * Uses Node's crypto module for hashing and the shared core for verification.
  */
 
-import { ec as EC } from 'elliptic';
 import crypto from 'crypto';
-
-const ec = new EC('secp256k1');
-
-// Challenge expiration time in milliseconds (5 minutes)
-const CHALLENGE_TTL_MS = 5 * 60 * 1000;
-
-// Maximum age for signed requests (5 minutes)
-const MAX_SIGNATURE_AGE_MS = 5 * 60 * 1000;
+import {
+  verifySignatureCore,
+  isValidPublicKey,
+  isTimestampFresh,
+  buildAuthMessage,
+  buildRegistrationMessage,
+  buildRequestMessage,
+  shortenPublicKey,
+  CHALLENGE_TTL_MS,
+  MAX_SIGNATURE_AGE_MS,
+} from '../crypto/core';
 
 export class SignatureService {
   /**
@@ -25,14 +27,14 @@ export class SignatureService {
   }
 
   /**
-   * Compute SHA-256 hash of a message
+   * Compute SHA-256 hash of a message (synchronous)
    */
   static hashMessage(message: string): string {
     return crypto.createHash('sha256').update(message).digest('hex');
   }
 
   /**
-   * Verify an ECDSA signature
+   * Verify an ECDSA signature (synchronous)
    * 
    * @param message - The original message that was signed
    * @param signature - The signature in DER format (hex encoded)
@@ -40,13 +42,8 @@ export class SignatureService {
    * @returns true if the signature is valid
    */
   static verifySignature(message: string, signature: string, publicKey: string): boolean {
-    try {
-      const key = ec.keyFromPublic(publicKey, 'hex');
-      const messageHash = SignatureService.hashMessage(message);
-      return key.verify(messageHash, signature);
-    } catch (error) {
-      return false;
-    }
+    const messageHash = SignatureService.hashMessage(message);
+    return verifySignatureCore(messageHash, signature, publicKey);
   }
 
   /**
@@ -65,13 +62,12 @@ export class SignatureService {
     timestamp: number
   ): boolean {
     // Check timestamp is not too old
-    const now = Date.now();
-    if (now - timestamp > CHALLENGE_TTL_MS) {
+    if (!isTimestampFresh(timestamp, CHALLENGE_TTL_MS)) {
       return false;
     }
 
-    // Verify the signature
-    const message = `auth:${publicKey}:${challenge}:${timestamp}`;
+    // Build the message and verify signature
+    const message = buildAuthMessage(publicKey, challenge, timestamp);
     return SignatureService.verifySignature(message, signature, publicKey);
   }
 
@@ -85,12 +81,11 @@ export class SignatureService {
     timestamp: number
   ): boolean {
     // Check timestamp freshness
-    const now = Date.now();
-    if (now - timestamp > MAX_SIGNATURE_AGE_MS) {
+    if (!isTimestampFresh(timestamp, MAX_SIGNATURE_AGE_MS)) {
       return false;
     }
 
-    const message = `oxy:register:${publicKey}:${timestamp}`;
+    const message = buildRegistrationMessage(publicKey, timestamp);
     return SignatureService.verifySignature(message, signature, publicKey);
   }
 
@@ -105,17 +100,11 @@ export class SignatureService {
     timestamp: number
   ): boolean {
     // Check timestamp freshness
-    const now = Date.now();
-    if (now - timestamp > MAX_SIGNATURE_AGE_MS) {
+    if (!isTimestampFresh(timestamp, MAX_SIGNATURE_AGE_MS)) {
       return false;
     }
 
-    // Create canonical string representation
-    const sortedKeys = Object.keys(data).sort();
-    const canonicalParts = sortedKeys.map(key => `${key}:${JSON.stringify(data[key])}`);
-    const canonicalString = canonicalParts.join('|');
-    
-    const message = `request:${publicKey}:${timestamp}:${canonicalString}`;
+    const message = buildRequestMessage(publicKey, timestamp, data);
     return SignatureService.verifySignature(message, signature, publicKey);
   }
 
@@ -123,23 +112,15 @@ export class SignatureService {
    * Validate that a string is a valid public key
    */
   static isValidPublicKey(publicKey: string): boolean {
-    try {
-      ec.keyFromPublic(publicKey, 'hex');
-      return true;
-    } catch {
-      return false;
-    }
+    return isValidPublicKey(publicKey);
   }
 
   /**
    * Get a shortened display version of a public key
    */
   static shortenPublicKey(publicKey: string): string {
-    if (publicKey.length <= 16) return publicKey;
-    return `${publicKey.slice(0, 8)}...${publicKey.slice(-8)}`;
+    return shortenPublicKey(publicKey);
   }
 }
 
 export default SignatureService;
-
-

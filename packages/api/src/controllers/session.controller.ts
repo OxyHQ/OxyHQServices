@@ -11,7 +11,7 @@ import {
 } from '../utils/deviceUtils';
 import { emitSessionUpdate } from '../server';
 import Notification from '../models/Notification';
-import SignatureService from '../services/signature.service';
+import { SignatureService } from '@oxyhq/services/node';
 import sessionService from '../services/session.service';
 import sessionCache from '../utils/sessionCache';
 import { logger } from '../utils/logger';
@@ -276,17 +276,6 @@ export class SessionController {
       logger.error('Verify challenge error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
-  }
-
-  /**
-   * Legacy signIn method - now redirects to challenge-response flow
-   * Kept for backwards compatibility during transition
-   */
-  static async signIn(req: Request, res: Response) {
-    return res.status(400).json({
-      error: 'Password authentication is no longer supported. Please use challenge-response authentication.',
-      hint: 'Use POST /auth/challenge to request a challenge, then POST /auth/verify to authenticate.'
-    });
   }
 
   // Get user data by session ID

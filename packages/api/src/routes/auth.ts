@@ -12,7 +12,7 @@ import { rateLimit } from '../middleware/rateLimiter';
 import { asyncHandler, sendSuccess } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError } from '../utils/error';
 import { logger } from '../utils/logger';
-import SignatureService from '../services/signature.service';
+import { SignatureService } from '@oxyhq/services/node';
 import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
 
 const router = express.Router();
@@ -51,27 +51,6 @@ const verifyLimiter = rateLimit({
   max: process.env.NODE_ENV === 'development' ? 50 : 5 // 5 per minute (50 in dev)
 });
 router.post('/verify', verifyLimiter, SessionController.verifyChallenge);
-
-// ============================================
-// Legacy Routes (Deprecated)
-// ============================================
-
-/**
- * POST /auth/signup - Deprecated
- * Returns error directing users to use /auth/register
- */
-router.post('/signup', (req, res) => {
-  res.status(410).json({
-    error: 'Password-based signup is no longer supported',
-    hint: 'Use POST /auth/register with your public key and signature'
-  });
-});
-
-/**
- * POST /auth/login - Deprecated
- * Returns error directing users to use challenge-response flow
- */
-router.post('/login', SessionController.signIn);
 
 // ============================================
 // Validation Routes
