@@ -13,6 +13,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { formatDate } from '@/utils/date-utils';
 import type { ClientSession } from '@oxyhq/services';
 import { useHapticPress } from '@/hooks/use-haptic-press';
+import { logInfo, logError } from '@/lib/logger';
 
 export default function SessionsScreen() {
     const colorScheme = useColorScheme() ?? 'light';
@@ -65,14 +66,12 @@ export default function SessionsScreen() {
                         try {
                             setActionLoading(sessionId);
                             await removeSession(sessionId);
-                            if (Platform.OS === 'web') {
-                                // Toast would be shown here if toast library is available
-                                console.log('Session removed successfully');
-                            } else {
+                            logInfo('Session removed successfully', 'SessionsScreen', { sessionId });
+                            if (Platform.OS !== 'web') {
                                 alert('Success', 'Session removed successfully');
                             }
                         } catch (error) {
-                            console.error('Failed to remove session:', error);
+                            logError('Failed to remove session', 'SessionsScreen', error);
                             alert('Error', 'Failed to remove session. Please try again.');
                         } finally {
                             setActionLoading(null);
@@ -90,13 +89,12 @@ export default function SessionsScreen() {
         try {
             setActionLoading(sessionId);
             await switchSession(sessionId);
-            if (Platform.OS === 'web') {
-                console.log('Session switched successfully');
-            } else {
+            logInfo('Session switched successfully', 'SessionsScreen', { sessionId });
+            if (Platform.OS !== 'web') {
                 alert('Success', 'Session switched successfully');
             }
         } catch (error) {
-            console.error('Failed to switch session:', error);
+            logError('Failed to switch session', 'SessionsScreen', error);
             alert('Error', 'Failed to switch session. Please try again.');
         } finally {
             setActionLoading(null);
