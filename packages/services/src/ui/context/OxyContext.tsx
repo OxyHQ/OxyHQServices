@@ -211,6 +211,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const { storage, isReady: isStorageReady } = useStorage({ onError, logger });
 
+  // CRITICAL: Invalidate KeyManager cache immediately on module load (synchronous)
+  // This must happen BEFORE any async operations to prevent stale cache issues
+  // Do this outside of useEffect to ensure it happens before any identity checks
+  const cacheInvalidatedRef = useRef(false);
+  if (!cacheInvalidatedRef.current && Platform.OS !== 'web') {
+    KeyManager.invalidateCache();
+    cacheInvalidatedRef.current = true;
+  }
+
   // Identity integrity check and auto-restore on startup
   // Skip on web platform - identity storage is only available on native platforms
   useEffect(() => {
@@ -219,9 +228,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
     const checkAndRestoreIdentity = async () => {
       try {
-        // CRITICAL: Invalidate cache on app startup to ensure fresh state check
-        // This prevents stale cache from previous session from showing incorrect state
-        KeyManager.invalidateCache();
+        // Cache was already invalidated synchronously above
         
         // Check if identity exists and verify integrity
         const hasIdentity = await KeyManager.hasIdentity();
@@ -355,6 +362,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // Clear all account data when identity is lost (for accounts app)
   // In accounts app, identity = account, so losing identity means losing everything
   const clearAllAccountData = useCallback(async (): Promise<void> => {
+    if (__DEV__) {
+      logger('Clearing all account data - identity changed or lost');
+    }
+
     // Clear TanStack Query cache (in-memory)
     queryClient.clear();
 
@@ -386,9 +397,32 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // Reset account store
     useAccountStore.getState().reset();
 
+    // CRITICAL: Clear ALL transfer codes and active transfer state
+    // This prevents transfer state from previous identity from lingering
+    if (storage) {
+      try {
+        const TRANSFER_CODES_STORAGE_KEY = `${storageKeyPrefix}_transfer_codes`;
+        const ACTIVE_TRANSFER_STORAGE_KEY = `${storageKeyPrefix}_active_transfer_id`;
+        await storage.removeItem(TRANSFER_CODES_STORAGE_KEY);
+        await storage.removeItem(ACTIVE_TRANSFER_STORAGE_KEY);
+        
+        // Also clear Zustand transfer store
+        useTransferStore.getState().clearAll();
+        
+        if (__DEV__) {
+          logger('Cleared all transfer state');
+        }
+      } catch (error) {
+        logger('Failed to clear transfer state', error);
+      }
+    }
+
     // Clear HTTP service cache
     oxyServices.clearCache();
-  }, [queryClient, storage, clearSessionState, logger, oxyServices]);
+    
+    // Force KeyManager cache invalidation
+    KeyManager.invalidateCache();
+  }, [queryClient, storage, clearSessionState, logger, oxyServices, storageKeyPrefix]);
 
   // Extract Zustand store functions early (before they're used in callbacks)
   const getAllPendingTransfersStore = useTransferStore((state) => state.getAllPendingTransfers);
@@ -582,6 +616,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     try {
       // CRITICAL: Get current identity's public key first
       // Only restore sessions that belong to this identity
+      // Force cache invalidation to ensure we get the actual current identity
+      KeyManager.invalidateCache();
       const currentPublicKey = await KeyManager.getPublicKey().catch(() => null);
       
       const storedSessionIdsJson = await storage.getItem(storageKeys.sessionIds);
@@ -591,10 +627,17 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // If no identity exists, clear all sessions and return
       if (!currentPublicKey) {
         if (storedSessionIds.length > 0 || storedActiveSessionId) {
+          if (__DEV__) {
+            logger('No identity found - clearing all stored sessions to prevent cross-identity data leak');
+          }
           await clearSessionState();
         }
         setTokenReady(true);
         return;
+      }
+
+      if (__DEV__) {
+        logger('Restoring sessions for identity', { publicKey: currentPublicKey.substring(0, 16) + '...', sessionCount: storedSessionIds.length });
       }
 
       const validSessions: ClientSession[] = [];
@@ -609,9 +652,20 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               // This is different from the JWT's userId field which contains MongoDB ObjectId
               // We compare user.id (publicKey) to currentPublicKey to ensure session ownership
               if (validation.user.id !== currentPublicKey) {
-                // Session belongs to different identity - skip it
+                // Session belongs to different identity - skip it and log warning
                 if (__DEV__) {
-                  logger('Skipping session from different identity during restoration');
+                  logger('CRITICAL: Skipping session from different identity during restoration', {
+                    sessionPublicKey: validation.user.id?.substring(0, 16) + '...',
+                    currentPublicKey: currentPublicKey.substring(0, 16) + '...',
+                    sessionId: sessionId.substring(0, 16) + '...',
+                  });
+                }
+                // Remove this invalid session from storage
+                try {
+                  const updatedIds = storedSessionIds.filter(id => id !== sessionId);
+                  await storage.setItem(storageKeys.sessionIds, JSON.stringify(updatedIds));
+                } catch (cleanupError) {
+                  // Ignore cleanup errors - will be cleaned on next restart
                 }
                 continue;
               }

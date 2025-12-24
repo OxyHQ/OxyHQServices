@@ -31,6 +31,7 @@ export interface TransferState {
   markRestored: () => void;
   cleanupExpired: () => void;
   reset: () => void;
+  clearAll: () => void; // Alias for reset for semantic clarity
 }
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;
@@ -176,6 +177,11 @@ export const useTransferStore = create<TransferState>((set, get) => ({
   },
   
   reset: () => {
+    set(initialState);
+  },
+  
+  clearAll: () => {
+    // Alias for reset - clears all transfer codes and active transfer
     set(initialState);
   },
 }));
