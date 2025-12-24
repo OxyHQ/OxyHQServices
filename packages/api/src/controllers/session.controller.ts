@@ -38,6 +38,11 @@ export class SessionController {
         });
       }
 
+      // Ensure publicKey is a string to prevent query object injection
+      if (typeof publicKey !== 'string') {
+        return res.status(400).json({ error: 'Invalid public key format' });
+      }
+
       // Validate public key format
       if (!SignatureService.isValidPublicKey(publicKey)) {
         return res.status(400).json({ error: 'Invalid public key format' });
@@ -78,7 +83,7 @@ export class SessionController {
       }
 
       // Check if user already exists (by publicKey only - that's the identity)
-      const existingUser = await User.findOne({ publicKey });
+      const existingUser = await User.findOne({ publicKey: { $eq: publicKey } });
 
       if (existingUser) {
         return res.status(409).json({
