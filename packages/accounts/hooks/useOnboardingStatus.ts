@@ -101,14 +101,15 @@ export function useOnboardingStatus(): OnboardingState {
       return 'none';
     }
 
-    // Identity exists - check if onboarding is complete
-    if (isAuthenticated && user?.username) {
+    // Identity exists - check if user is authenticated (has session)
+    // Username is NOT required - it's just an optional display name
+    if (isAuthenticated) {
       return 'complete';
     }
 
-    // Identity exists but no username - onboarding in progress
+    // Identity exists but not authenticated - onboarding in progress
     return 'in_progress';
-  }, [identityExists, isChecking, isAuthenticated, user, oxyLoading]);
+  }, [identityExists, isChecking, isAuthenticated, oxyLoading]);
 
   // Determine if auth flow is needed
   const needsAuth = useMemo(() => {
@@ -117,11 +118,11 @@ export function useOnboardingStatus(): OnboardingState {
       return false;
     }
 
-    // If authenticated with username, we don't need auth flow
+    // If authenticated (has valid session), we don't need auth flow
     // This prevents welcome screen flash on app reopen when sessions are restored
-    // NOTE: In OxyAccounts, username is required to complete onboarding
-    // A user with identity but no username is still in onboarding flow
-    if (isAuthenticated && user?.username) {
+    // NOTE: Username is NOT required for authentication - it's just a display name
+    // Authentication is identity-based (public key), username is optional
+    if (isAuthenticated) {
       return false;
     }
 
@@ -133,13 +134,13 @@ export function useOnboardingStatus(): OnboardingState {
 
     // Show auth if no identity or onboarding in progress
     return status === 'none' || status === 'in_progress';
-  }, [status, isAuthenticated, user?.username]);
+  }, [status, isAuthenticated]);
 
   return {
     status,
     needsAuth,
     isLoading: isChecking || oxyLoading,
     hasIdentity: identityExists ?? false,
-    hasUsername: !!(isAuthenticated && user?.username),
+    hasUsername: !!(user?.username), // Username is optional display name, not auth requirement
   };
 }
