@@ -31,7 +31,7 @@ export class UsersController {
       // Sanitize search query (basic injection prevention)
       const sanitizedQuery = query.trim().substring(0, 100); // Limit length
 
-      // Search for users where username or name matches the query
+      // Search for users where username or name matches the query (use explicit $regex operator)
       const users = await User.find({
         $or: [
           { username: { $regex: sanitizedQuery, $options: 'i' } },

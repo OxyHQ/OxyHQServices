@@ -14,6 +14,7 @@ import { BadRequestError, NotFoundError } from '../utils/error';
 import { logger } from '../utils/logger';
 import { SignatureService } from '@oxyhq/services/node';
 import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
+import { validateUsername } from '../utils/usernameValidation';
 
 const router = express.Router();
 
@@ -69,24 +70,28 @@ router.get('/validate', asyncHandler(async (req, res) => {
  * Check if username is available
  */
 router.get('/check-username/:username', asyncHandler(async (req, res) => {
-  let { username } = req.params;
+  const { username } = req.params;
   
-  // Sanitize username: only allow alphanumeric characters
-  username = username.replace(/[^a-zA-Z0-9]/g, '');
+  // Validate username format
+  const validationResult = validateUsername(username);
   
-  if (!username || username.length < 3) {
+  if (!validationResult.valid) {
+    logger.debug('Username validation failed', {
+      error: validationResult.error,
+      providedUsername: typeof username === 'string' ? username.substring(0, 20) : typeof username,
+    });
+    
     throw new BadRequestError(
-      'Username must be at least 3 characters long and contain only letters and numbers'
+      validationResult.error || 'Invalid username format'
     );
   }
-
-  if (!/^[a-zA-Z0-9]{3,30}$/.test(username)) {
-    throw new BadRequestError('Username can only contain letters and numbers');
-  }
-
-  const existingUser = await User.findOne({ username });
   
-  logger.debug('GET /auth/check-username', { username, available: !existingUser });
+  const trimmedUsername = validationResult.trimmedUsername!;
+
+  // Check if username exists (use explicit $eq operator to prevent NoSQL injection)
+  const existingUser = await User.findOne({ username: { $eq: trimmedUsername } });
+  
+  logger.debug('GET /auth/check-username', { username: trimmedUsername, available: !existingUser });
   
   sendSuccess(res, { 
     available: !existingUser, 
