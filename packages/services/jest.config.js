@@ -20,8 +20,7 @@ module.exports = {
   testTimeout: 10000,
   globals: {
     'ts-jest': {
-      useESM: false,
-      isolatedModules: true
+      useESM: false
     }
   }
 };

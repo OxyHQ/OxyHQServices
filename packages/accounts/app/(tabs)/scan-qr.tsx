@@ -31,7 +31,7 @@ export default function ScanQRScreen() {
   const colors = Colors[colorScheme];
   const alert = useAlert();
   const oxyContext = useOxy();
-  const { hasIdentity, isLoading, importIdentity, oxyServices } = oxyContext;
+  const { hasIdentity, isLoading, importIdentity, oxyServices, signIn } = oxyContext;
   // @ts-ignore - isStorageReady may not be in type definition yet due to build cache
   const isStorageReady = oxyContext.isStorageReady ?? false;
   const [permission, requestPermission] = useCameraPermissions();
@@ -192,6 +192,19 @@ export default function ScanQRScreen() {
         code
       );
 
+      // Sign in to create a session before calling notifyTransferComplete
+      // This is required because notifyTransferComplete requires authentication
+      setProcessingMessage('Signing in...');
+      try {
+        await signIn();
+      } catch (signInError: any) {
+        // If sign-in fails, we still have the identity imported locally
+        // Log the error but continue - the notification might still work if there's a cached session
+        if (__DEV__) {
+          console.warn('[scan-qr] Sign-in failed after import, continuing anyway:', signInError);
+        }
+      }
+
       setProcessingMessage('Completing transfer...');
       
       const notificationResult = await notifyTransferComplete(
@@ -265,7 +278,7 @@ export default function ScanQRScreen() {
         ]
       );
     }
-  }, [pendingTransferData, transferCode, importIdentity, oxyServices, alert, router]);
+  }, [pendingTransferData, transferCode, importIdentity, oxyServices, signIn, alert, router]);
 
   // Toggle flash
   const toggleFlash = useCallback(() => {

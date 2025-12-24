@@ -35,7 +35,7 @@ export default function AuthScanQRScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const alert = useAlert();
-  const { importIdentity, oxyServices, hasIdentity } = useOxy();
+  const { importIdentity, oxyServices, hasIdentity, signIn } = useOxy();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [flashOn, setFlashOn] = useState(false);
@@ -161,6 +161,19 @@ export default function AuthScanQRScreen() {
         throw new Error('Identity import failed - identity not found on device');
       }
 
+      // Sign in to create a session before calling notifyTransferComplete
+      // This is required because notifyTransferComplete requires authentication
+      setProcessingMessage('Signing in...');
+      try {
+        await signIn();
+      } catch (signInError: any) {
+        // If sign-in fails, we still have the identity imported locally
+        // Log the error but continue - the notification might still work if there's a cached session
+        if (__DEV__) {
+          console.warn('[scan-qr] Sign-in failed after import, continuing anyway:', signInError);
+        }
+      }
+
       setProcessingMessage('Completing transfer...');
       
       const notificationResult = await notifyTransferComplete(
@@ -248,7 +261,7 @@ export default function AuthScanQRScreen() {
         ]
       );
     }
-  }, [pendingTransferData, transferCode, importIdentity, oxyServices, hasIdentity, alert, router]);
+  }, [pendingTransferData, transferCode, importIdentity, oxyServices, hasIdentity, signIn, alert, router]);
 
   // Toggle flash
   const toggleFlash = useCallback(() => {
