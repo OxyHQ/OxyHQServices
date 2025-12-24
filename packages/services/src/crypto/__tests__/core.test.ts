@@ -21,7 +21,8 @@ import {
 describe('Crypto Core Module', () => {
   // Test key pair (for testing only - never use in production)
   const testPrivateKey = '1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef';
-  const testPublicKey = '04bfcab8722991ae774db48f934ca79cfb7dd991229153b9f732ba5334aafcd8237a502f532f619efe630e388e1a69e1dca0f2fc8d7e4d8b3d7e4b3dd9d09a5d21';
+  // Public key derived from the private key above
+  const testPublicKey = '04bb50e2d89a4ed70663d080659fe0ad4b9bc3e06c17a227433966cb59ceee020decddbf6e00192011648d13b1c00af770c0c1bb609d4d3a5c98a43772e0e18ef4';
   
   describe('Public/Private Key Validation', () => {
     it('should validate correct public keys', () => {
@@ -53,7 +54,7 @@ describe('Crypto Core Module', () => {
   describe('Utility Functions', () => {
     it('should shorten public keys correctly', () => {
       const shortened = shortenPublicKey(testPublicKey);
-      expect(shortened).toBe('04bfcab8...9d09a5d21');
+      expect(shortened).toBe('04bb50e2...e0e18ef4');
       expect(shortened.length).toBeLessThan(testPublicKey.length);
     });
 

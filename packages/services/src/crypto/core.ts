@@ -7,6 +7,7 @@
  */
 
 import { ec as EC } from 'elliptic';
+import type { EC as ECType } from 'elliptic';
 
 const ec = new EC('secp256k1');
 
@@ -35,6 +36,11 @@ export function verifySignatureCore(
  * Validate that a string is a valid public key
  */
 export function isValidPublicKey(publicKey: string): boolean {
+  // Reject empty strings
+  if (!publicKey || publicKey.trim().length === 0) {
+    return false;
+  }
+  
   try {
     ec.keyFromPublic(publicKey, 'hex');
     return true;
@@ -47,10 +53,25 @@ export function isValidPublicKey(publicKey: string): boolean {
  * Validate that a string is a valid private key
  */
 export function isValidPrivateKey(privateKey: string): boolean {
+  // Reject empty strings
+  if (!privateKey || privateKey.trim().length === 0) {
+    return false;
+  }
+  
+  // Private keys must be 64 hex characters (32 bytes)
+  if (!/^[0-9a-fA-F]{64}$/.test(privateKey)) {
+    return false;
+  }
+  
   try {
     const keyPair = ec.keyFromPrivate(privateKey);
-    // Verify it can derive a public key
+    // Verify it can derive a public key and the key is valid
     keyPair.getPublic('hex');
+    // Check that the private key is not zero (which would be invalid)
+    const priv = keyPair.getPrivate();
+    if (!priv || priv.isZero()) {
+      return false;
+    }
     return true;
   } catch {
     return false;
@@ -116,6 +137,6 @@ export function buildRequestMessage(
 /**
  * Get the elliptic curve instance (for key generation)
  */
-export function getEllipticCurve(): EC {
+export function getEllipticCurve(): ECType {
   return ec;
 }

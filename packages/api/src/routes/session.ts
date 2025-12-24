@@ -5,7 +5,7 @@ const router = express.Router();
 
 // Authentication routes
 router.post('/register', SessionController.register);
-router.post('/login', SessionController.signIn);
+router.post('/login', SessionController.verifyChallenge);
 
 // Session-based data retrieval routes
 router.get('/user/:sessionId', SessionController.getUserBySession);

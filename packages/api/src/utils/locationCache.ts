@@ -16,7 +16,7 @@ interface LocationCacheConfig {
 class LocationCache {
   private cache: Map<string, CachedLocation> = new Map();
   private config: LocationCacheConfig;
-  private cleanupTimer: NodeJS.Timeout | null = null;
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: Partial<LocationCacheConfig> = {}) {
     this.config = {

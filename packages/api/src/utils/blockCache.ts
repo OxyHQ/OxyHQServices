@@ -13,7 +13,7 @@ interface BlockCacheConfig {
 class BlockCache {
   private cache: Map<string, CachedBlock> = new Map();
   private config: BlockCacheConfig;
-  private cleanupTimer: NodeJS.Timeout | null = null;
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: Partial<BlockCacheConfig> = {}) {
     this.config = {

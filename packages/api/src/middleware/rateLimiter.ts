@@ -53,12 +53,13 @@ export function rateLimit(options: RateLimitOptions) {
 }
 
 // Optional periodic cleanup to avoid unbounded growth
-setInterval(() => {
+const cleanupInterval = setInterval(() => {
   const now = Date.now();
   for (const [key, bucket] of buckets.entries()) {
     if (now - bucket.first > 60 * 60 * 1000) {
       buckets.delete(key);
     }
   }
-}, 30 * 60 * 1000).unref();
+}, 30 * 60 * 1000) as unknown as NodeJS.Timeout;
+cleanupInterval.unref();
 

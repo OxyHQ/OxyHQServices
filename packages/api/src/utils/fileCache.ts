@@ -15,7 +15,7 @@ interface FileCacheConfig {
 class FileCache {
   private cache: Map<string, CachedFile> = new Map();
   private config: FileCacheConfig;
-  private cleanupTimer: NodeJS.Timeout | null = null;
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: Partial<FileCacheConfig> = {}) {
     this.config = {

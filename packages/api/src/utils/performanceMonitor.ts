@@ -21,7 +21,7 @@ class PerformanceMonitor {
   private metrics: PerformanceMetric[] = [];
   private stats: Map<string, PerformanceStats> = new Map();
   private maxMetrics: number = 1000;
-  private cleanupInterval: NodeJS.Timeout | null = null;
+  private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor() {
     this.startCleanupTimer();

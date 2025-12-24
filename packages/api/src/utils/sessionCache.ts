@@ -18,7 +18,7 @@ interface SessionCacheConfig {
 class SessionCache {
   private cache: Map<string, CachedSession> = new Map();
   private config: SessionCacheConfig;
-  private cleanupTimer: NodeJS.Timeout | null = null;
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
   private pendingLastActiveUpdates: Map<string, Date> = new Map();
 
   constructor(config: Partial<SessionCacheConfig> = {}) {

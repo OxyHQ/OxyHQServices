@@ -16,7 +16,7 @@ interface UserCacheConfig {
 class UserCache {
   private cache: Map<string, CachedUser> = new Map();
   private config: UserCacheConfig;
-  private cleanupTimer: NodeJS.Timeout | null = null;
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
 
   constructor(config: Partial<UserCacheConfig> = {}) {
     this.config = {

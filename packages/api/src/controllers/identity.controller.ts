@@ -20,7 +20,7 @@ interface TransferCompletionRecord {
 
 class TransferCompletionStore {
   private completions: Map<string, TransferCompletionRecord> = new Map();
-  private cleanupTimer: NodeJS.Timeout | null = null;
+  private cleanupTimer: ReturnType<typeof setInterval> | null = null;
   private readonly TTL = 15 * 60 * 1000; // 15 minutes
   private readonly CLEANUP_INTERVAL = 60 * 1000; // 1 minute
 
