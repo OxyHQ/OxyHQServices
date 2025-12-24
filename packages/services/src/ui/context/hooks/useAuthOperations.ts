@@ -352,27 +352,31 @@ export const useAuthOperations = ({
         setIdentitySynced(false);
 
         // If username provided, try to register immediately (online only)
-        if (username && username.trim()) {
-          try {
-            const { signature, timestamp } = await SignatureService.createRegistrationSignature();
-            await oxyServices.register(publicKey, signature, timestamp, username);
-            
-            // Mark as synced (Zustand store + storage)
-            await storage.setItem('oxy_identity_synced', 'true');
-            setIdentitySynced(true);
-            
-            if (__DEV__ && logger) {
-              logger('Identity synced with server successfully with username');
-            }
+        if (username) {
+          // Validate username format before attempting registration
+          const trimmedUsername = username.trim();
+          if (trimmedUsername && /^[a-zA-Z0-9]{3,30}$/.test(trimmedUsername)) {
+            try {
+              const { signature, timestamp } = await SignatureService.createRegistrationSignature();
+              await oxyServices.register(publicKey, signature, timestamp, trimmedUsername);
+              
+              // Mark as synced (Zustand store + storage)
+              await storage.setItem('oxy_identity_synced', 'true');
+              setIdentitySynced(true);
+              
+              if (__DEV__ && logger) {
+                logger('Identity synced with server successfully with username');
+              }
 
-            return { synced: true };
-          } catch (syncError) {
-            // Offline or server error - identity created locally but not synced
-            if (__DEV__ && logger) {
-              logger('Identity created locally with username (offline), will sync when online', syncError);
+              return { synced: true };
+            } catch (syncError) {
+              // Offline or server error - identity created locally but not synced
+              if (__DEV__ && logger) {
+                logger('Identity created locally with username (offline), will sync when online', syncError);
+              }
+              
+              return { synced: false };
             }
-            
-            return { synced: false };
           }
         }
 

@@ -44,7 +44,7 @@ export class SessionController {
       }
 
       // Validate username if provided
-      if (username !== undefined && username !== null && username !== '') {
+      if (username !== undefined && username !== null) {
         // Username validation: alphanumeric only, 3-30 characters
         if (typeof username !== 'string' || !/^[a-zA-Z0-9]{3,30}$/.test(username)) {
           return res.status(400).json({ 
