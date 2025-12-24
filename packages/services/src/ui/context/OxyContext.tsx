@@ -212,13 +212,32 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const { storage, isReady: isStorageReady } = useStorage({ onError, logger });
 
   // CRITICAL: Invalidate KeyManager cache immediately on module load (synchronous)
-  // This must happen BEFORE any async operations to prevent stale cache issues
-  // Do this outside of useEffect to ensure it happens before any identity checks
-  // SAFETY: This is safe during render because:
-  // 1. It only updates static class variables (no React state)
-  // 2. It's idempotent (can be called multiple times safely)
-  // 3. Platform check is synchronous and deterministic
-  // 4. Must happen before any async identity checks to be effective
+  // 
+  // IMPORTANT: This MUST happen BEFORE any async operations to prevent stale cache issues
+  // This is intentionally done during render phase (not in useEffect) because:
+  //
+  // 1. **Timing Critical**: Must happen before any async identity checks start
+  //    - useEffect runs after render, allowing async operations to start first
+  //    - This creates a race condition where stale cache could be read
+  //
+  // 2. **Safety Guarantees**:
+  //    - Only updates static class variables (KeyManager.cachedPublicKey, KeyManager.cachedHasIdentity)
+  //    - No React state updates (doesn't trigger re-renders)
+  //    - Idempotent (safe to call multiple times)
+  //    - Platform.OS check is synchronous and deterministic
+  //    - Protected by ref to ensure single execution
+  //
+  // 3. **React Compliance**:
+  //    - Does not violate React's rules because it doesn't read/write React state
+  //    - Similar to how Date.now() or Math.random() can be used during render
+  //    - Static class variable updates are outside React's state system
+  //
+  // 4. **Alternatives Considered**:
+  //    - useLayoutEffect: Still too late, async operations could start
+  //    - useMemo: Same timing as current approach, less clear intent
+  //    - Module-level code: Would run during import, not per-component
+  //
+  // This pattern is necessary for correct behavior and doesn't cause React issues.
   const cacheInvalidatedRef = useRef(false);
   if (!cacheInvalidatedRef.current && Platform.OS !== 'web') {
     KeyManager.invalidateCache();
@@ -698,7 +717,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         // Batch remove invalid sessions from storage (performance optimization)
         if (invalidSessionIds.length > 0) {
           try {
-            const updatedIds = storedSessionIds.filter(id => !invalidSessionIds.includes(id));
+            // Use Set for O(n) lookup instead of O(n²) with includes()
+            const invalidSessionSet = new Set(invalidSessionIds);
+            const updatedIds = storedSessionIds.filter(id => !invalidSessionSet.has(id));
             await storage.setItem(storageKeys.sessionIds, JSON.stringify(updatedIds));
             if (__DEV__) {
               logger('Removed invalid sessions from storage', { count: invalidSessionIds.length });

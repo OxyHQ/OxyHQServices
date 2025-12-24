@@ -119,6 +119,8 @@ export function useOnboardingStatus(): OnboardingState {
 
     // If authenticated with username, we don't need auth flow
     // This prevents welcome screen flash on app reopen when sessions are restored
+    // NOTE: In OxyAccounts, username is required to complete onboarding
+    // A user with identity but no username is still in onboarding flow
     if (isAuthenticated && user?.username) {
       return false;
     }
