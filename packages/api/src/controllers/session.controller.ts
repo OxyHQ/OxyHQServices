@@ -140,6 +140,13 @@ export class SessionController {
               }
             });
           }
+          // Fallback for other duplicate key errors to avoid generic 500 responses
+          return res.status(409).json({
+            error: 'Identity already registered',
+            details: {
+              message: 'A user with the provided information already exists'
+            }
+          });
         }
         throw saveError;
       }
