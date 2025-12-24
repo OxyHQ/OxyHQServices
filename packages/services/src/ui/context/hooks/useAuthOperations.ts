@@ -292,9 +292,21 @@ export const useAuthOperations = ({
       setAuthState({ isLoading: true, error: null });
 
       try {
+        // CRITICAL: Get old public key before creating new identity
+        // If identity changes, we must clear all session data to prevent data leakage
+        const oldPublicKey = await KeyManager.getPublicKey().catch(() => null);
+
         // Generate new key pair directly (works offline)
         const { publicKey, privateKey } = await KeyManager.generateKeyPair();
         await KeyManager.importKeyPair(privateKey);
+
+        // If old identity existed and public key changed, clear all session data
+        if (oldPublicKey && oldPublicKey !== publicKey) {
+          // Clear all session state to prevent old identity's data from showing up
+          await clearSessionState();
+          // Logout from auth store
+          logoutStore();
+        }
 
         // Mark as not synced
         await storage.setItem('oxy_identity_synced', 'false');
@@ -358,7 +370,7 @@ export const useAuthOperations = ({
         setAuthState({ isLoading: false });
       }
     },
-    [oxyServices, storage, setAuthState, loginFailure, onError, logger, setIdentitySynced],
+    [oxyServices, storage, setAuthState, loginFailure, onError, logger, setIdentitySynced, clearSessionState, logoutStore],
   );
 
   /**
@@ -463,6 +475,10 @@ export const useAuthOperations = ({
       setAuthState({ isLoading: true, error: null });
 
       try {
+        // CRITICAL: Get old public key before importing new identity
+        // If identity changes, we must clear all session data to prevent data leakage
+        const oldPublicKey = await KeyManager.getPublicKey().catch(() => null);
+
         // Decrypt private key from backup data
         const Crypto = await import('expo-crypto');
         
@@ -502,6 +518,14 @@ export const useAuthOperations = ({
         // Verify public key matches
         if (publicKey !== backupData.publicKey) {
           throw new Error('Backup file is corrupted or password is incorrect');
+        }
+
+        // If old identity existed and public key changed, clear all session data
+        if (oldPublicKey && oldPublicKey !== publicKey) {
+          // Clear all session state to prevent old identity's data from showing up
+          await clearSessionState();
+          // Logout from auth store
+          logoutStore();
         }
 
         // Mark as not synced
@@ -548,7 +572,7 @@ export const useAuthOperations = ({
         setAuthState({ isLoading: false });
       }
     },
-    [oxyServices, storage, setAuthState, loginFailure, onError, logger, setIdentitySynced],
+    [oxyServices, storage, setAuthState, loginFailure, onError, logger, setIdentitySynced, clearSessionState, logoutStore],
   );
 
   /**

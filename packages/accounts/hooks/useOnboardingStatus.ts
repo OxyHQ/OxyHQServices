@@ -36,7 +36,7 @@ export interface OnboardingState {
  * @returns OnboardingState with status, needsAuth flag, and loading state
  */
 export function useOnboardingStatus(): OnboardingState {
-  const { hasIdentity: checkIdentity, user, isAuthenticated, isLoading: oxyLoading, isStorageReady, isTokenReady } = useOxy();
+  const { hasIdentity: checkIdentity, user, isAuthenticated, isLoading: oxyLoading, isStorageReady, isTokenReady, sessions, activeSessionId } = useOxy();
   const [identityExists, setIdentityExists] = useState<boolean | null>(null);
   const [isChecking, setIsChecking] = useState(true);
   const previousIdentityStateRef = useRef<boolean | null>(null);
@@ -155,6 +155,14 @@ export function useOnboardingStatus(): OnboardingState {
       return false;
     }
 
+    // CRITICAL: If we have active sessions restored with valid user data,
+    // don't show auth screen even while checking identity
+    // This prevents welcome screen flash on app reopen
+    const hasActiveSession = !!(activeSessionId && sessions && sessions.length > 0 && user);
+    if (hasActiveSession) {
+      return false;
+    }
+
     // If checking, be cautious - only show auth if we're sure there's no identity
     // If we previously found identity but are now checking, don't redirect yet
     if (status === 'checking') {
@@ -167,7 +175,7 @@ export function useOnboardingStatus(): OnboardingState {
 
     // Show auth if no identity or onboarding in progress
     return status === 'none' || status === 'in_progress';
-  }, [status]);
+  }, [status, activeSessionId, sessions, user]);
 
   return {
     status,
