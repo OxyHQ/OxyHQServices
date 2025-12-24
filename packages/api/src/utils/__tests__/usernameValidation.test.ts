@@ -6,8 +6,6 @@ import {
   validateUsername,
   validateAndSanitizeUsername,
   isValidUsername,
-  USERNAME_MIN_LENGTH,
-  USERNAME_MAX_LENGTH,
 } from '../usernameValidation';
 
 describe('validateUsername', () => {
