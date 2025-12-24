@@ -198,7 +198,6 @@ export * from './utils/validationUtils';
 export { 
   logger, 
   LogLevel, 
-  LogContext,
   logAuth,
   logApi,
   logSession,
@@ -207,5 +206,6 @@ export {
   logPayment,
   logPerformance
 } from './utils/loggerUtils';
+export type { LogContext } from './utils/loggerUtils';
 export * from './utils/asyncUtils';
 export * from './utils/hookUtils';
