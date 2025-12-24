@@ -23,7 +23,7 @@ export default function ImportIdentityNotificationsScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const alert = useAlert();
-  const { signIn, oxyServices, isAuthenticated, hasIdentity } = useOxy();
+  const { signIn, oxyServices, isAuthenticated, hasIdentity, isIdentitySynced, syncIdentity } = useOxy();
   const { error, isSigningIn, setAuthError, setSigningIn, usernameRef } = useAuthFlowContext();
 
   // Verify identity exists on mount - if not, redirect back to import
@@ -93,6 +93,8 @@ export default function ImportIdentityNotificationsScreen() {
     setAuthError,
     setSigningIn,
     isAuthenticated,
+    isIdentitySynced,
+    syncIdentity,
   });
 
   return (

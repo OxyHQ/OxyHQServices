@@ -29,6 +29,8 @@ interface UseAuthHandlersOptions {
   setAuthError: (error: string | null) => void;
   setSigningIn: (signingIn: boolean) => void;
   isAuthenticated: boolean;
+  isIdentitySynced: () => Promise<boolean>;
+  syncIdentity: (username?: string) => Promise<unknown>;
 }
 
 /**
@@ -47,6 +49,8 @@ export function useAuthHandlers({
   setAuthError,
   setSigningIn,
   isAuthenticated,
+  isIdentitySynced,
+  syncIdentity,
 }: UseAuthHandlersOptions) {
   const router = useRouter();
   const [isRequestingNotifications, setIsRequestingNotifications] = useState(false);
@@ -122,14 +126,14 @@ export function useAuthHandlers({
     for (let attempt = 0; attempt <= MAX_SIGN_IN_RETRIES; attempt++) {
       try {
         // Check if identity is synced
-        const isSynced = oxyServices && await oxyServices.isIdentitySynced();
+        const isSynced = await isIdentitySynced();
         
-        if (!isSynced && oxyServices) {
+        if (!isSynced) {
           // Identity not synced yet - sync it with username if available
           if (__DEV__) {
             console.log('[Auth] Syncing identity with username:', usernameToSave || '(none)');
           }
-          await oxyServices.syncIdentity(usernameToSave);
+          await syncIdentity(usernameToSave);
         } else {
           // Identity already synced - just sign in
           await signIn();
@@ -201,7 +205,7 @@ export function useAuthHandlers({
 
     // Navigate to tabs - use push as per Expo Router 54 standard
     router.push('/(tabs)');
-  }, [router, signIn, oxyServices, usernameRef, setAuthError, setSigningIn, waitForAuthState]);
+  }, [router, signIn, oxyServices, usernameRef, setAuthError, setSigningIn, waitForAuthState, isIdentitySynced, syncIdentity]);
 
   /**
    * Handle notification permission request

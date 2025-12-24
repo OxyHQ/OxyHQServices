@@ -14,7 +14,7 @@ import { Colors } from '@/constants/theme';
  */
 export default function CreateIdentityNotificationsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
-  const { signIn, oxyServices, isAuthenticated } = useOxy();
+  const { signIn, oxyServices, isAuthenticated, isIdentitySynced, syncIdentity } = useOxy();
   const { error, isSigningIn, setAuthError, setSigningIn, usernameRef } = useAuthFlowContext();
 
   const backgroundColor = useMemo(
@@ -34,6 +34,8 @@ export default function CreateIdentityNotificationsScreen() {
     setAuthError,
     setSigningIn,
     isAuthenticated,
+    isIdentitySynced,
+    syncIdentity,
   });
 
   return (
