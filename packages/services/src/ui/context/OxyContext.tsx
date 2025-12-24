@@ -580,9 +580,22 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     setTokenReady(false);
 
     try {
+      // CRITICAL: Get current identity's public key first
+      // Only restore sessions that belong to this identity
+      const currentPublicKey = await KeyManager.getPublicKey().catch(() => null);
+      
       const storedSessionIdsJson = await storage.getItem(storageKeys.sessionIds);
       const storedSessionIds: string[] = storedSessionIdsJson ? JSON.parse(storedSessionIdsJson) : [];
       const storedActiveSessionId = await storage.getItem(storageKeys.activeSessionId);
+
+      // If no identity exists, clear all sessions and return
+      if (!currentPublicKey) {
+        if (storedSessionIds.length > 0 || storedActiveSessionId) {
+          await clearSessionState();
+        }
+        setTokenReady(true);
+        return;
+      }
 
       const validSessions: ClientSession[] = [];
 
@@ -591,6 +604,18 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
           try {
             const validation = await oxyServices.validateSession(sessionId, { useHeaderValidation: true });
             if (validation?.valid && validation.user) {
+              // CRITICAL: Verify session belongs to current identity
+              // IMPORTANT: In OxyAccounts, user.id is set to the publicKey (as confirmed by line 754 comment below)
+              // This is different from the JWT's userId field which contains MongoDB ObjectId
+              // We compare user.id (publicKey) to currentPublicKey to ensure session ownership
+              if (validation.user.id !== currentPublicKey) {
+                // Session belongs to different identity - skip it
+                if (__DEV__) {
+                  logger('Skipping session from different identity during restoration');
+                }
+                continue;
+              }
+              
               const now = new Date();
               validSessions.push({
                 sessionId,
