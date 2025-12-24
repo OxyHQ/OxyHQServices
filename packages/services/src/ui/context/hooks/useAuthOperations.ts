@@ -316,7 +316,10 @@ export const useAuthOperations = ({
    * Create a new identity (offline-first)
    * Identity is purely cryptographic - no username or email required
    * 
-   * @param username - Optional username to set during registration
+   * This function generates keys locally and does NOT register with the server yet.
+   * Registration will happen during syncIdentity() or when username is provided.
+   * 
+   * @param username - Optional username to set during registration (if online)
    */
   const createIdentity = useCallback(
     async (username?: string): Promise<{ synced: boolean }> => {
@@ -344,36 +347,41 @@ export const useAuthOperations = ({
         // Clear sessions if identity changed (prevents data leakage)
         await clearSessionsIfIdentityChanged(oldPublicKey, publicKey);
 
-        // Mark as not synced
+        // Mark as not synced initially
         await storage.setItem('oxy_identity_synced', 'false');
         setIdentitySynced(false);
 
-        // Try to sync with server (will succeed if online)
-        try {
-          const { signature, timestamp } = await SignatureService.createRegistrationSignature();
-          await oxyServices.register(publicKey, signature, timestamp, username);
-          
-          // Mark as synced (Zustand store + storage)
-          await storage.setItem('oxy_identity_synced', 'true');
-          setIdentitySynced(true);
-          
-          if (__DEV__ && logger) {
-            logger('Identity synced with server successfully');
-          }
+        // If username provided, try to register immediately (online only)
+        if (username && username.trim()) {
+          try {
+            const { signature, timestamp } = await SignatureService.createRegistrationSignature();
+            await oxyServices.register(publicKey, signature, timestamp, username);
+            
+            // Mark as synced (Zustand store + storage)
+            await storage.setItem('oxy_identity_synced', 'true');
+            setIdentitySynced(true);
+            
+            if (__DEV__ && logger) {
+              logger('Identity synced with server successfully with username');
+            }
 
-          return {
-            synced: true,
-          };
-        } catch (syncError) {
-          // Offline or server error - identity is created locally but not synced
-          if (__DEV__ && logger) {
-            logger('Identity created locally (offline), will sync when online', syncError);
+            return { synced: true };
+          } catch (syncError) {
+            // Offline or server error - identity created locally but not synced
+            if (__DEV__ && logger) {
+              logger('Identity created locally with username (offline), will sync when online', syncError);
+            }
+            
+            return { synced: false };
           }
-          
-          return {
-            synced: false,
-          };
         }
+
+        // No username provided - defer registration until later
+        if (__DEV__ && logger) {
+          logger('Identity created locally without username, will register during sync');
+        }
+
+        return { synced: false };
       } catch (error) {
         // CRITICAL: Never delete identity on error - it may have been successfully created
         // Only log the error and let the user recover using their backup file
@@ -389,7 +397,7 @@ export const useAuthOperations = ({
           await storage.setItem('oxy_identity_synced', 'false').catch(() => {});
           setIdentitySynced(false);
           if (__DEV__ && logger) {
-            logger('Identity was created but sync failed - user can sync later using backup file');
+            logger('Identity was created but sync failed - user can sync later');
           }
         } else {
           // No identity exists - this was a generation failure, safe to clean up sync flag
