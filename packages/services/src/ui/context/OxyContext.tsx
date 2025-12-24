@@ -605,8 +605,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             const validation = await oxyServices.validateSession(sessionId, { useHeaderValidation: true });
             if (validation?.valid && validation.user) {
               // CRITICAL: Verify session belongs to current identity
-              // ASSUMPTION: user.id is set to publicKey for accounts (identity = public key)
-              // This is enforced by the API when creating sessions - user.id is always the public key
+              // IMPORTANT: In OxyAccounts, user.id is set to the publicKey (as confirmed by line 754 comment below)
+              // This is different from the JWT's userId field which contains MongoDB ObjectId
+              // We compare user.id (publicKey) to currentPublicKey to ensure session ownership
               if (validation.user.id !== currentPublicKey) {
                 // Session belongs to different identity - skip it
                 if (__DEV__) {
