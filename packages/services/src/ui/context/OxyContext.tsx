@@ -605,7 +605,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             const validation = await oxyServices.validateSession(sessionId, { useHeaderValidation: true });
             if (validation?.valid && validation.user) {
               // CRITICAL: Verify session belongs to current identity
-              // user.id is set to publicKey for accounts, so check it matches current identity
+              // ASSUMPTION: user.id is set to publicKey for accounts (identity = public key)
+              // This is enforced by the API when creating sessions - user.id is always the public key
               if (validation.user.id !== currentPublicKey) {
                 // Session belongs to different identity - skip it
                 if (__DEV__) {

@@ -85,6 +85,22 @@ export const useAuthOperations = ({
 }: UseAuthOperationsOptions): UseAuthOperationsResult => {
   
   /**
+   * Clear session data if identity has changed
+   * Internal helper to avoid code duplication
+   */
+  const clearSessionsIfIdentityChanged = useCallback(
+    async (oldPublicKey: string | null, newPublicKey: string): Promise<void> => {
+      if (oldPublicKey && oldPublicKey !== newPublicKey) {
+        // Clear all session state to prevent old identity's data from showing up
+        await clearSessionState();
+        // Logout from auth store
+        logoutStore();
+      }
+    },
+    [clearSessionState, logoutStore]
+  );
+  
+  /**
    * Internal function to perform challenge-response sign in (works offline)
    */
   const performSignIn = useCallback(
@@ -300,13 +316,8 @@ export const useAuthOperations = ({
         const { publicKey, privateKey } = await KeyManager.generateKeyPair();
         await KeyManager.importKeyPair(privateKey);
 
-        // If old identity existed and public key changed, clear all session data
-        if (oldPublicKey && oldPublicKey !== publicKey) {
-          // Clear all session state to prevent old identity's data from showing up
-          await clearSessionState();
-          // Logout from auth store
-          logoutStore();
-        }
+        // Clear sessions if identity changed (prevents data leakage)
+        await clearSessionsIfIdentityChanged(oldPublicKey, publicKey);
 
         // Mark as not synced
         await storage.setItem('oxy_identity_synced', 'false');
@@ -370,7 +381,7 @@ export const useAuthOperations = ({
         setAuthState({ isLoading: false });
       }
     },
-    [oxyServices, storage, setAuthState, loginFailure, onError, logger, setIdentitySynced, clearSessionState, logoutStore],
+    [oxyServices, storage, setAuthState, loginFailure, onError, logger, setIdentitySynced, clearSessionsIfIdentityChanged],
   );
 
   /**
@@ -520,13 +531,8 @@ export const useAuthOperations = ({
           throw new Error('Backup file is corrupted or password is incorrect');
         }
 
-        // If old identity existed and public key changed, clear all session data
-        if (oldPublicKey && oldPublicKey !== publicKey) {
-          // Clear all session state to prevent old identity's data from showing up
-          await clearSessionState();
-          // Logout from auth store
-          logoutStore();
-        }
+        // Clear sessions if identity changed (prevents data leakage)
+        await clearSessionsIfIdentityChanged(oldPublicKey, publicKey);
 
         // Mark as not synced
         await storage.setItem('oxy_identity_synced', 'false');
@@ -572,7 +578,7 @@ export const useAuthOperations = ({
         setAuthState({ isLoading: false });
       }
     },
-    [oxyServices, storage, setAuthState, loginFailure, onError, logger, setIdentitySynced, clearSessionState, logoutStore],
+    [oxyServices, storage, setAuthState, loginFailure, onError, logger, setIdentitySynced, clearSessionsIfIdentityChanged],
   );
 
   /**

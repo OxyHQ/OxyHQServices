@@ -158,6 +158,8 @@ export function useOnboardingStatus(): OnboardingState {
     // CRITICAL: If we have active sessions restored with valid user data,
     // don't show auth screen even while checking identity
     // This prevents welcome screen flash on app reopen
+    // Note: Check both activeSessionId (definitive) and sessions array (defensive)
+    // to handle edge cases during state updates
     const hasActiveSession = !!(activeSessionId && sessions && sessions.length > 0 && user);
     if (hasActiveSession) {
       return false;
