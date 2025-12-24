@@ -31,7 +31,7 @@ export interface TransferState {
   markRestored: () => void;
   cleanupExpired: () => void;
   reset: () => void;
-  clearAll: () => void; // Alias for reset for semantic clarity
+  clearAll: () => void; // Alias for reset - use when clearing on identity change for semantic clarity
 }
 
 const FIFTEEN_MINUTES = 15 * 60 * 1000;

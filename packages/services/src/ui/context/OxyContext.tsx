@@ -214,6 +214,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // CRITICAL: Invalidate KeyManager cache immediately on module load (synchronous)
   // This must happen BEFORE any async operations to prevent stale cache issues
   // Do this outside of useEffect to ensure it happens before any identity checks
+  // SAFETY: This is safe during render because:
+  // 1. It only updates static class variables (no React state)
+  // 2. It's idempotent (can be called multiple times safely)
+  // 3. Platform check is synchronous and deterministic
+  // 4. Must happen before any async identity checks to be effective
   const cacheInvalidatedRef = useRef(false);
   if (!cacheInvalidatedRef.current && Platform.OS !== 'web') {
     KeyManager.invalidateCache();
@@ -359,6 +364,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     [importIdentityBase]
   );
 
+  // Storage key constants - centralized to avoid duplication
+  const TRANSFER_CODES_STORAGE_KEY = useMemo(() => `${storageKeyPrefix}_transfer_codes`, [storageKeyPrefix]);
+  const ACTIVE_TRANSFER_STORAGE_KEY = useMemo(() => `${storageKeyPrefix}_active_transfer_id`, [storageKeyPrefix]);
+
   // Clear all account data when identity is lost (for accounts app)
   // In accounts app, identity = account, so losing identity means losing everything
   const clearAllAccountData = useCallback(async (): Promise<void> => {
@@ -401,8 +410,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // This prevents transfer state from previous identity from lingering
     if (storage) {
       try {
-        const TRANSFER_CODES_STORAGE_KEY = `${storageKeyPrefix}_transfer_codes`;
-        const ACTIVE_TRANSFER_STORAGE_KEY = `${storageKeyPrefix}_active_transfer_id`;
         await storage.removeItem(TRANSFER_CODES_STORAGE_KEY);
         await storage.removeItem(ACTIVE_TRANSFER_STORAGE_KEY);
         
@@ -422,7 +429,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     
     // Force KeyManager cache invalidation
     KeyManager.invalidateCache();
-  }, [queryClient, storage, clearSessionState, logger, oxyServices, storageKeyPrefix]);
+  }, [queryClient, storage, clearSessionState, logger, oxyServices, TRANSFER_CODES_STORAGE_KEY, ACTIVE_TRANSFER_STORAGE_KEY]);
 
   // Extract Zustand store functions early (before they're used in callbacks)
   const getAllPendingTransfersStore = useTransferStore((state) => state.getAllPendingTransfers);
@@ -641,6 +648,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       }
 
       const validSessions: ClientSession[] = [];
+      const invalidSessionIds: string[] = []; // Track invalid sessions for batch removal
 
       if (storedSessionIds.length > 0) {
         for (const sessionId of storedSessionIds) {
@@ -660,13 +668,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
                     sessionId: sessionId.substring(0, 16) + '...',
                   });
                 }
-                // Remove this invalid session from storage
-                try {
-                  const updatedIds = storedSessionIds.filter(id => id !== sessionId);
-                  await storage.setItem(storageKeys.sessionIds, JSON.stringify(updatedIds));
-                } catch (cleanupError) {
-                  // Ignore cleanup errors - will be cleaned on next restart
-                }
+                // Mark for batch removal
+                invalidSessionIds.push(sessionId);
                 continue;
               }
               
@@ -688,6 +691,22 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             } else if (__DEV__ && isTimeoutOrNetworkError(validationError)) {
               // Only log timeouts in dev mode for debugging
               loggerUtil.debug('Session validation timeout (expected when offline)', { component: 'OxyContext', method: 'restoreSessionsFromStorage' }, validationError as unknown);
+            }
+          }
+        }
+
+        // Batch remove invalid sessions from storage (performance optimization)
+        if (invalidSessionIds.length > 0) {
+          try {
+            const updatedIds = storedSessionIds.filter(id => !invalidSessionIds.includes(id));
+            await storage.setItem(storageKeys.sessionIds, JSON.stringify(updatedIds));
+            if (__DEV__) {
+              logger('Removed invalid sessions from storage', { count: invalidSessionIds.length });
+            }
+          } catch (cleanupError) {
+            // Ignore cleanup errors - will be cleaned on next restart
+            if (__DEV__) {
+              logger('Failed to remove invalid sessions from storage', cleanupError);
             }
           }
         }
@@ -811,8 +830,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   const userId = oxyServices.getCurrentUserId() || user?.id;
 
   // Use Zustand store for transfer state management
-  const TRANSFER_CODES_STORAGE_KEY = `${storageKeyPrefix}_transfer_codes`;
-  const ACTIVE_TRANSFER_STORAGE_KEY = `${storageKeyPrefix}_active_transfer_id`;
+  // Storage keys are defined above (TRANSFER_CODES_STORAGE_KEY, ACTIVE_TRANSFER_STORAGE_KEY)
   const isRestored = useTransferStore((state) => state.isRestored);
   const restoreFromStorage = useTransferStore((state) => state.restoreFromStorage);
   const markRestored = useTransferStore((state) => state.markRestored);
