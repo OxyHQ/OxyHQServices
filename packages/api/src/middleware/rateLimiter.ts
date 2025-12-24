@@ -52,14 +52,13 @@ export function rateLimit(options: RateLimitOptions) {
   };
 }
 
-// Optional periodic cleanup to avoid unbounded growth
-const cleanupInterval = setInterval(() => {
+// Periodic cleanup to prevent unbounded growth
+setInterval(() => {
   const now = Date.now();
+  const maxAge = 60 * 60 * 1000; // 1 hour
   for (const [key, bucket] of buckets.entries()) {
-    if (now - bucket.first > 60 * 60 * 1000) {
+    if (now - bucket.first > maxAge) {
       buckets.delete(key);
     }
   }
-}, 30 * 60 * 1000) as unknown as NodeJS.Timeout;
-cleanupInterval.unref();
-
+}, 30 * 60 * 1000);
