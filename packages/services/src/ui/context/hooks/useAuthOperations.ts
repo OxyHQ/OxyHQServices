@@ -91,13 +91,28 @@ export const useAuthOperations = ({
   const clearSessionsIfIdentityChanged = useCallback(
     async (oldPublicKey: string | null, newPublicKey: string): Promise<void> => {
       if (oldPublicKey && oldPublicKey !== newPublicKey) {
+        if (__DEV__ && logger) {
+          logger('CRITICAL: Identity changed - clearing all session data', {
+            oldPublicKey: oldPublicKey.substring(0, 16) + '...',
+            newPublicKey: newPublicKey.substring(0, 16) + '...',
+          });
+        }
+        
         // Clear all session state to prevent old identity's data from showing up
         await clearSessionState();
-        // Logout from auth store
+        
+        // Logout from auth store (clears user, isAuthenticated, etc.)
         logoutStore();
+        
+        // Force KeyManager cache invalidation
+        KeyManager.invalidateCache();
+        
+        if (__DEV__ && logger) {
+          logger('Session state cleared for new identity');
+        }
       }
     },
-    [clearSessionState, logoutStore]
+    [clearSessionState, logoutStore, logger]
   );
   
   /**
@@ -311,10 +326,18 @@ export const useAuthOperations = ({
         // CRITICAL: Get old public key before creating new identity
         // If identity changes, we must clear all session data to prevent data leakage
         const oldPublicKey = await KeyManager.getPublicKey().catch(() => null);
+        
+        if (__DEV__ && logger) {
+          logger('Creating new identity', { hadPreviousIdentity: !!oldPublicKey });
+        }
 
         // Generate new key pair directly (works offline)
         const { publicKey, privateKey } = await KeyManager.generateKeyPair();
         await KeyManager.importKeyPair(privateKey);
+        
+        if (__DEV__ && logger) {
+          logger('Identity keys generated', { publicKey: publicKey.substring(0, 16) + '...' });
+        }
 
         // Clear sessions if identity changed (prevents data leakage)
         await clearSessionsIfIdentityChanged(oldPublicKey, publicKey);
@@ -331,14 +354,18 @@ export const useAuthOperations = ({
           // Mark as synced (Zustand store + storage)
           await storage.setItem('oxy_identity_synced', 'true');
           setIdentitySynced(true);
+          
+          if (__DEV__ && logger) {
+            logger('Identity synced with server successfully');
+          }
 
           return {
             synced: true,
           };
         } catch (syncError) {
           // Offline or server error - identity is created locally but not synced
-          if (__DEV__) {
-            console.log('[Auth] Identity created locally, will sync when online:', syncError);
+          if (__DEV__ && logger) {
+            logger('Identity created locally (offline), will sync when online', syncError);
           }
           
           return {
@@ -489,6 +516,13 @@ export const useAuthOperations = ({
         // CRITICAL: Get old public key before importing new identity
         // If identity changes, we must clear all session data to prevent data leakage
         const oldPublicKey = await KeyManager.getPublicKey().catch(() => null);
+        
+        if (__DEV__ && logger) {
+          logger('Importing identity from backup', { 
+            hadPreviousIdentity: !!oldPublicKey,
+            backupPublicKey: backupData.publicKey.substring(0, 16) + '...'
+          });
+        }
 
         // Decrypt private key from backup data
         const Crypto = await import('expo-crypto');
@@ -525,6 +559,10 @@ export const useAuthOperations = ({
 
         // Import the key pair
         const publicKey = await KeyManager.importKeyPair(privateKey);
+        
+        if (__DEV__ && logger) {
+          logger('Identity keys imported', { publicKey: publicKey.substring(0, 16) + '...' });
+        }
 
         // Verify public key matches
         if (publicKey !== backupData.publicKey) {
