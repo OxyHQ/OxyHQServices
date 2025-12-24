@@ -29,7 +29,7 @@ export class SessionController {
    */
   static async register(req: Request, res: Response) {
     try {
-      const { publicKey, signature, timestamp } = req.body;
+      const { publicKey, signature, timestamp, username } = req.body;
 
       // Validate required fields
       if (!publicKey || !signature || !timestamp) {
@@ -38,9 +38,35 @@ export class SessionController {
         });
       }
 
+      // Ensure publicKey is a string to prevent query object injection
+      if (typeof publicKey !== 'string') {
+        return res.status(400).json({ error: 'Invalid public key format' });
+      }
+
       // Validate public key format
       if (!SignatureService.isValidPublicKey(publicKey)) {
         return res.status(400).json({ error: 'Invalid public key format' });
+      }
+
+      // Validate username if provided
+      if (username !== undefined && username !== null) {
+        // Username validation: alphanumeric only, 3-30 characters
+        if (typeof username !== 'string' || !/^[a-zA-Z0-9]{3,30}$/.test(username)) {
+          return res.status(400).json({ 
+            error: 'Username must be 3-30 characters long and contain only letters and numbers' 
+          });
+        }
+
+        // Check if username is already taken
+        const existingUsername = await User.findOne({ username });
+        if (existingUsername) {
+          return res.status(409).json({
+            error: 'Username already taken',
+            details: {
+              username: 'This username is already registered'
+            }
+          });
+        }
       }
 
       // Verify the registration signature
@@ -57,7 +83,7 @@ export class SessionController {
       }
 
       // Check if user already exists (by publicKey only - that's the identity)
-      const existingUser = await User.findOne({ publicKey });
+      const existingUser = await User.findOne({ publicKey: { $eq: publicKey } });
 
       if (existingUser) {
         return res.status(409).json({
@@ -68,10 +94,13 @@ export class SessionController {
         });
       }
 
-      // Create new user (identity is just the publicKey)
-      const user = new User({
-        publicKey,
-      });
+      // Create new user with publicKey and optional username
+      const userData: any = { publicKey };
+      if (username && username.trim()) {
+        userData.username = username.trim();
+      }
+
+      const user = new User(userData);
 
       await user.save();
 

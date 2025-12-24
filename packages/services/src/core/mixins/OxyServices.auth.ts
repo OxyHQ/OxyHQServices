@@ -49,18 +49,27 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
      * @param publicKey - The user's ECDSA public key (hex)
      * @param signature - Signature of the registration request
      * @param timestamp - Timestamp when the signature was created
+     * @param username - Optional username to set during registration
      */
     async register(
       publicKey: string,
       signature: string,
-      timestamp: number
+      timestamp: number,
+      username?: string
     ): Promise<{ message: string; user: User }> {
       try {
-        const res = await this.makeRequest<{ message: string; user: User }>('POST', '/api/auth/register', {
+        const payload: any = {
           publicKey,
           signature,
           timestamp,
-        }, { cache: false });
+        };
+        
+        // Include username if provided
+        if (username && username.trim()) {
+          payload.username = username.trim();
+        }
+
+        const res = await this.makeRequest<{ message: string; user: User }>('POST', '/api/auth/register', payload, { cache: false });
 
         if (!res || (typeof res === 'object' && Object.keys(res).length === 0)) {
           throw new OxyAuthenticationError('Registration failed', 'REGISTER_FAILED', 400);

@@ -54,13 +54,13 @@ export interface OxyContextState {
   currentNativeLanguageName: string;
 
   // Identity management (public key authentication - offline-first)
-  createIdentity: () => Promise<{ synced: boolean }>;
-  importIdentity: (backupData: BackupData, password: string) => Promise<{ synced: boolean }>;
+  createIdentity: (username?: string) => Promise<{ synced: boolean }>;
+  importIdentity: (backupData: BackupData, password: string, username?: string) => Promise<{ synced: boolean }>;
   signIn: (deviceName?: string) => Promise<User>;
   hasIdentity: () => Promise<boolean>;
   getPublicKey: () => Promise<string | null>;
   isIdentitySynced: () => Promise<boolean>;
-  syncIdentity: () => Promise<User>;
+  syncIdentity: (username?: string) => Promise<User>;
   deleteIdentityAndClearAccount: (skipBackup?: boolean, force?: boolean, userConfirmed?: boolean) => Promise<void>;
   storeTransferCode: (transferId: string, code: string, sourceDeviceId: string | null, publicKey: string) => Promise<void>;
   getTransferCode: (transferId: string) => { code: string; sourceDeviceId: string | null; publicKey: string; timestamp: number; state: 'pending' | 'completed' | 'failed' } | null;

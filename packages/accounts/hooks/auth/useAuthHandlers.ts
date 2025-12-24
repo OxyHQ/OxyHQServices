@@ -105,7 +105,7 @@ export function useAuthHandlers({
    * 
    * Signs in the user with retry logic for network errors:
    * - Retries once if network error occurs
-   * - Updates profile with username if online
+   * - Syncs identity with username if not yet synced
    * - Waits for auth state to be confirmed before navigation
    * 
    * Updates the auth store and navigates to home screen on success
@@ -116,11 +116,25 @@ export function useAuthHandlers({
 
     let lastError: unknown = null;
     let signInSuccess = false;
+    const usernameToSave = usernameRef.current;
 
     // Retry logic for sign-in
     for (let attempt = 0; attempt <= MAX_SIGN_IN_RETRIES; attempt++) {
       try {
-        await signIn();
+        // Check if identity is synced
+        const isSynced = oxyServices && await oxyServices.isIdentitySynced();
+        
+        if (!isSynced && oxyServices) {
+          // Identity not synced yet - sync it with username if available
+          if (__DEV__) {
+            console.log('[Auth] Syncing identity with username:', usernameToSave || '(none)');
+          }
+          await oxyServices.syncIdentity(usernameToSave);
+        } else {
+          // Identity already synced - just sign in
+          await signIn();
+        }
+        
         signInSuccess = true;
         break;
       } catch (err: unknown) {
@@ -150,17 +164,21 @@ export function useAuthHandlers({
     // Wait for auth state to be confirmed
     await waitForAuthState();
 
-    // Now that we're authenticated, update profile with username if online
-    const usernameToSave = usernameRef.current;
+    // If username was provided and sync didn't happen (already synced), try to update it
+    // This handles the case where identity was synced before without username
     if (usernameToSave && oxyServices) {
       try {
-        // Check if online before trying to save username
-        const offline = await checkIfOffline();
-        if (!offline) {
-          const updatedUser = await oxyServices.updateProfile({ username: usernameToSave });
-          // Update authStore so home screen shows username immediately
-          if (updatedUser) {
-            useAuthStore.getState().setUser(updatedUser);
+        // Get current user to check if username is already set
+        const currentUser = useAuthStore.getState().user;
+        if (!currentUser?.username || currentUser.username === '') {
+          // Check if online before trying to save username
+          const offline = await checkIfOffline();
+          if (!offline) {
+            const updatedUser = await oxyServices.updateProfile({ username: usernameToSave });
+            // Update authStore so home screen shows username immediately
+            if (updatedUser) {
+              useAuthStore.getState().setUser(updatedUser);
+            }
           }
         }
       } catch (err: unknown) {
