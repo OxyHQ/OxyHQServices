@@ -11,6 +11,7 @@ import { logger } from '../utils/logger';
 import { Types } from 'mongoose';
 import securityActivityService from './securityActivityService';
 import { Request } from 'express';
+import { validateUsername } from '../utils/usernameValidation';
 import {
   PaginationParams,
   PaginatedResponse,
@@ -180,15 +181,19 @@ export class UserService {
   }
 
   /**
-   * Validate unique fields (email, username)
+   * Validate unique fields (email, username).
+   * 
+   * Validates format and checks database for conflicts.
+   * Uses explicit MongoDB operators to prevent NoSQL injection.
    */
   private async validateUniqueFields(
     userId: string,
     updates: Partial<ProfileUpdateInput>
   ): Promise<void> {
+    // Validate email uniqueness
     if (updates.email) {
       const existing = await User.findOne({
-        email: updates.email,
+        email: { $eq: updates.email },
         _id: { $ne: userId },
       });
       if (existing) {
@@ -196,14 +201,38 @@ export class UserService {
       }
     }
 
+    // Validate username format and uniqueness
     if (updates.username) {
+      // First validate format
+      const validationResult = validateUsername(updates.username);
+      
+      if (!validationResult.valid) {
+        logger.warn('Username validation failed during profile update', {
+          userId,
+          error: validationResult.error,
+          providedUsername: typeof updates.username === 'string' 
+            ? updates.username.substring(0, 20) 
+            : typeof updates.username,
+        });
+        
+        throw new Error(validationResult.error || 'Invalid username format');
+      }
+      
+      // Use trimmed username for uniqueness check
+      const trimmedUsername = validationResult.trimmedUsername!;
+      
+      // Check uniqueness with explicit operators
       const existing = await User.findOne({
-        username: updates.username,
+        username: { $eq: trimmedUsername },
         _id: { $ne: userId },
       });
+      
       if (existing) {
         throw new Error('Username already exists');
       }
+      
+      // Update the username in updates to use the trimmed version
+      updates.username = trimmedUsername;
     }
   }
 

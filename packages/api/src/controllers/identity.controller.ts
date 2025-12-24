@@ -109,11 +109,18 @@ const transferCompletionStore = new TransferCompletionStore();
 
 export class IdentityController {
   /**
-   * Notify server about successful identity transfer
-   * POST /api/identity/transfer-complete
+   * Notify server about successful identity transfer.
    * 
    * This endpoint is called by the target device after successfully importing
-   * an identity. It notifies the source device via socket to prompt for deletion.
+   * an identity. It notifies the source device via WebSocket to prompt for deletion.
+   * Also stores the completion record for offline-first support.
+   * 
+   * POST /api/identity/transfer-complete
+   * 
+   * @body transferId - Unique identifier for this transfer
+   * @body sourceDeviceId - Device ID of the source device
+   * @body publicKey - Public key of the transferred identity
+   * @body transferCode - Optional 6-character verification code
    */
   static async transferComplete(req: AuthRequest, res: Response) {
     try {
@@ -198,12 +205,16 @@ export class IdentityController {
   }
 
   /**
-   * Verify that target device has active session with transferred identity
-   * GET /api/identity/verify-transfer
+   * Verify that target device has active session with transferred identity.
    * 
    * This endpoint is called by the source device before deleting identity
    * to verify that the target device has successfully imported the identity
    * and has an active session.
+   * 
+   * GET /api/identity/verify-transfer
+   * 
+   * @query publicKey - Public key of the transferred identity
+   * @returns Verification status and session information
    */
   static async verifyTransfer(req: AuthRequest, res: Response) {
     try {
@@ -261,11 +272,16 @@ export class IdentityController {
   }
 
   /**
-   * Check if a transfer was completed (for offline-first support)
-   * GET /api/identity/check-transfer/:transferId
+   * Check if a transfer was completed (for offline-first support).
    * 
    * This endpoint allows source devices to check if a transfer was completed
    * while they were offline. Returns the completion record if found.
+   * Records are kept for 15 minutes.
+   * 
+   * GET /api/identity/check-transfer/:transferId
+   * 
+   * @param transferId - Unique identifier for the transfer
+   * @returns Completion status and transfer details if found
    */
   static async checkTransfer(req: AuthRequest, res: Response) {
     try {

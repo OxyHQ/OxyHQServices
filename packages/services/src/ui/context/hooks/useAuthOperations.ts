@@ -313,13 +313,17 @@ export const useAuthOperations = ({
   );
 
   /**
-   * Create a new identity (offline-first)
-   * Identity is purely cryptographic - no username or email required
+   * Create a new identity (offline-first).
    * 
-   * This function generates keys locally and does NOT register with the server yet.
-   * Registration will happen during syncIdentity() or when username is provided.
+   * Generates cryptographic keys locally without requiring server connection.
+   * Identity is based on the public/private key pair - no username or email required.
+   * 
+   * IMPORTANT: This function only clears session data if the identity actually changes
+   * (i.e., a new key pair is generated). Retrying registration with the same identity
+   * will NOT clear session data.
    * 
    * @param username - Optional username to set during registration (if online)
+   * @returns Object with synced status indicating if identity was registered with server
    */
   const createIdentity = useCallback(
     async (username?: string): Promise<{ synced: boolean }> => {
@@ -328,8 +332,8 @@ export const useAuthOperations = ({
       setAuthState({ isLoading: true, error: null });
 
       try {
-        // CRITICAL: Get old public key before creating new identity
-        // If identity changes, we must clear all session data to prevent data leakage
+        // Get old public key before creating new identity
+        // This is used to detect if identity actually changed
         const oldPublicKey = await KeyManager.getPublicKey().catch(() => null);
         
         if (__DEV__ && logger) {
@@ -344,7 +348,8 @@ export const useAuthOperations = ({
           logger('Identity keys generated', { publicKey: publicKey.substring(0, 16) + '...' });
         }
 
-        // Clear sessions if identity changed (prevents data leakage)
+        // Only clear sessions if identity actually changed
+        // This prevents clearing sessions on registration retries
         await clearSessionsIfIdentityChanged(oldPublicKey, publicKey);
 
         // Mark as not synced initially
@@ -377,10 +382,17 @@ export const useAuthOperations = ({
               
               return { synced: false };
             }
+          } else {
+            // Invalid username format - log the issue
+            if (__DEV__ && logger) {
+              logger('Invalid username format, identity created without username', {
+                providedUsername: username.substring(0, 20),
+              });
+            }
           }
         }
 
-        // No username provided - defer registration until later
+        // No username provided or invalid format - defer registration until later
         if (__DEV__ && logger) {
           logger('Identity created locally without username, will register during sync');
         }
@@ -437,10 +449,16 @@ export const useAuthOperations = ({
   }, [storage, setIdentitySynced]);
 
   /**
-   * Sync local identity with server (call when online)
-   * TanStack Query handles offline mutations automatically
+   * Sync local identity with server.
    * 
-   * @param username - Optional username to set during sync
+   * Registers the identity with the server if not already registered.
+   * This function is idempotent - calling it multiple times is safe.
+   * 
+   * TanStack Query handles offline mutations automatically, so this will
+   * retry automatically when connection is restored.
+   * 
+   * @param username - Optional username to set during sync/registration
+   * @returns User object after successful sync and sign-in
    */
   const syncIdentity = useCallback(
     async (username?: string): Promise<User> => {
@@ -459,6 +477,7 @@ export const useAuthOperations = ({
         const alreadySynced = await storage.getItem('oxy_identity_synced');
         if (alreadySynced === 'true') {
           setIdentitySynced(true);
+          // Identity is already synced, just sign in
           return await performSignIn(publicKey);
         }
 
@@ -500,11 +519,19 @@ export const useAuthOperations = ({
   );
 
   /**
-   * Import identity from backup file data (offline-first)
+   * Import identity from encrypted backup file.
    * 
-   * @param backupData - The backup data to import
+   * Restores a previously created identity from an encrypted backup.
+   * The backup is decrypted using the provided password.
+   * 
+   * IMPORTANT: This function clears session data only if importing a different
+   * identity than the one currently stored. Re-importing the same identity
+   * will NOT clear session data.
+   * 
+   * @param backupData - The encrypted backup data object
    * @param password - Password to decrypt the backup
-   * @param username - Optional username to set during registration
+   * @param username - Optional username to set during registration if not yet registered
+   * @returns Object with synced status indicating if identity was registered with server
    */
   const importIdentity = useCallback(
     async (backupData: BackupData, password: string, username?: string): Promise<{ synced: boolean }> => {
@@ -526,8 +553,8 @@ export const useAuthOperations = ({
       setAuthState({ isLoading: true, error: null });
 
       try {
-        // CRITICAL: Get old public key before importing new identity
-        // If identity changes, we must clear all session data to prevent data leakage
+        // Get old public key before importing identity
+        // This is used to detect if identity actually changed
         const oldPublicKey = await KeyManager.getPublicKey().catch(() => null);
         
         if (__DEV__ && logger) {
@@ -582,10 +609,11 @@ export const useAuthOperations = ({
           throw new Error('Backup file is corrupted or password is incorrect');
         }
 
-        // Clear sessions if identity changed (prevents data leakage)
+        // Only clear sessions if identity actually changed
+        // This prevents clearing sessions when re-importing the same identity
         await clearSessionsIfIdentityChanged(oldPublicKey, publicKey);
 
-        // Mark as not synced
+        // Mark as not synced initially (will check server status below)
         await storage.setItem('oxy_identity_synced', 'false');
         setIdentitySynced(false);
 
@@ -595,12 +623,12 @@ export const useAuthOperations = ({
           const { registered } = await oxyServices.checkPublicKeyRegistered(publicKey);
 
           if (registered) {
-            // Identity exists, mark as synced
+            // Identity exists on server, mark as synced
             await storage.setItem('oxy_identity_synced', 'true');
             setIdentitySynced(true);
             return { synced: true };
           } else {
-            // Need to register this identity (identity is just the publicKey)
+            // Need to register this identity
             const { signature, timestamp } = await SignatureService.createRegistrationSignature();
             await oxyServices.register(publicKey, signature, timestamp, username);
             
@@ -609,7 +637,7 @@ export const useAuthOperations = ({
             return { synced: true };
           }
         } catch (syncError) {
-          // Offline - identity restored locally but not synced
+          // Offline or server error - identity restored locally but not synced
           if (__DEV__) {
             console.log('[Auth] Identity imported locally, will sync when online:', syncError);
           }

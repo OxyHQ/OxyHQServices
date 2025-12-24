@@ -17,6 +17,7 @@ import sessionCache from '../utils/sessionCache';
 import { logger } from '../utils/logger';
 import { normalizeUser } from '../utils/userTransform';
 import securityActivityService from '../services/securityActivityService';
+import { validateUsername } from '../utils/usernameValidation';
 
 // Challenge expiration time (5 minutes)
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
@@ -24,8 +25,15 @@ const CHALLENGE_TTL_MS = 5 * 60 * 1000;
 export class SessionController {
   
   /**
-   * Register a new user with public key authentication
-   * No passwords needed - identity is verified via signature
+   * Register a new user with public key authentication.
+   * 
+   * Identity is based on the public key - no passwords required.
+   * Username is optional and can be set during registration or later.
+   * 
+   * @param publicKey - ECDSA public key (primary identifier)
+   * @param signature - Registration signature for verification
+   * @param timestamp - Timestamp for signature verification
+   * @param username - Optional username (3-30 alphanumeric characters)
    */
   static async register(req: Request, res: Response) {
     try {
@@ -38,7 +46,7 @@ export class SessionController {
         });
       }
 
-      // Ensure publicKey is a string to prevent query object injection
+      // Ensure publicKey is a string to prevent NoSQL injection
       if (typeof publicKey !== 'string') {
         return res.status(400).json({ error: 'Invalid public key format' });
       }
@@ -48,17 +56,26 @@ export class SessionController {
         return res.status(400).json({ error: 'Invalid public key format' });
       }
 
-      // Validate username if provided
+      // Validate and sanitize username if provided
+      let trimmedUsername: string | undefined;
       if (username !== undefined && username !== null) {
-        // Username validation: alphanumeric only, 3-30 characters
-        if (typeof username !== 'string' || !/^[a-zA-Z0-9]{3,30}$/.test(username)) {
+        const validationResult = validateUsername(username);
+        
+        if (!validationResult.valid) {
+          logger.warn('Username validation failed during registration', {
+            error: validationResult.error,
+            providedUsername: typeof username === 'string' ? username.substring(0, 20) : typeof username,
+          });
+          
           return res.status(400).json({ 
-            error: 'Username must be 3-30 characters long and contain only letters and numbers' 
+            error: validationResult.error || 'Invalid username format'
           });
         }
+        
+        trimmedUsername = validationResult.trimmedUsername;
 
-        // Check if username is already taken
-        const existingUsername = await User.findOne({ username });
+        // Check if username is already taken (use explicit $eq operator to prevent NoSQL injection)
+        const existingUsername = await User.findOne({ username: { $eq: trimmedUsername } });
         if (existingUsername) {
           return res.status(409).json({
             error: 'Username already taken',
@@ -82,7 +99,7 @@ export class SessionController {
         });
       }
 
-      // Check if user already exists (by publicKey only - that's the identity)
+      // Check if user already exists by publicKey (use explicit $eq operator to prevent NoSQL injection)
       const existingUser = await User.findOne({ publicKey: { $eq: publicKey } });
 
       if (existingUser) {
@@ -96,13 +113,36 @@ export class SessionController {
 
       // Create new user with publicKey and optional username
       const userData: any = { publicKey };
-      if (username && username.trim()) {
-        userData.username = username.trim();
+      if (trimmedUsername) {
+        userData.username = trimmedUsername;
       }
 
       const user = new User(userData);
 
-      await user.save();
+      try {
+        await user.save();
+      } catch (saveError: any) {
+        // Handle duplicate key errors (race condition where username was taken between check and save)
+        if (saveError.code === 11000) {
+          if (saveError.message.includes('username')) {
+            return res.status(409).json({
+              error: 'Username already taken',
+              details: {
+                username: 'This username is already registered'
+              }
+            });
+          }
+          if (saveError.message.includes('publicKey')) {
+            return res.status(409).json({
+              error: 'Identity already registered',
+              details: {
+                publicKey: 'This identity is already registered'
+              }
+            });
+          }
+        }
+        throw saveError;
+      }
 
       // Create welcome notification (non-blocking - don't fail registration if this fails)
       try {
@@ -116,13 +156,18 @@ export class SessionController {
         }).save();
       } catch (notificationError) {
         // Log but don't fail registration if notification creation fails
-        // (e.g., duplicate notification, validation error, etc.)
         logger.error('Failed to create welcome notification during registration', notificationError, {
           component: 'SessionController',
           method: 'register',
           userId: user._id.toString(),
         });
       }
+
+      logger.info('User registered successfully', {
+        userId: user._id.toString(),
+        publicKey: publicKey.substring(0, 16) + '...',
+        hasUsername: !!trimmedUsername,
+      });
 
       return res.status(201).json({
         success: true,
@@ -145,8 +190,12 @@ export class SessionController {
   }
 
   /**
-   * Request an authentication challenge
-   * The client will sign this challenge to prove ownership of the private key
+   * Request an authentication challenge.
+   * 
+   * The client will sign this challenge to prove ownership of the private key.
+   * Challenge expires after 5 minutes.
+   * 
+   * @param publicKey - The public key to request a challenge for
    */
   static async requestChallenge(req: Request, res: Response) {
     try {
@@ -160,8 +209,8 @@ export class SessionController {
         return res.status(400).json({ error: 'Invalid public key format' });
       }
 
-      // Check if user exists (optional - can allow challenges for unregistered keys)
-      const user = await User.findOne({ publicKey });
+      // Check if user exists (use explicit $eq operator to prevent NoSQL injection)
+      const user = await User.findOne({ publicKey: { $eq: publicKey } });
       if (!user) {
         return res.status(404).json({ error: 'User not found. Please register first.' });
       }
@@ -189,8 +238,17 @@ export class SessionController {
   }
 
   /**
-   * Verify a signed challenge and create a session
-   * This is the main authentication endpoint
+   * Verify a signed challenge and create a session.
+   * 
+   * This is the main authentication endpoint. Validates the signature,
+   * marks the challenge as used, and creates/reuses a session for the device.
+   * 
+   * @param publicKey - User's public key
+   * @param challenge - The challenge string that was signed
+   * @param signature - The signature of the challenge
+   * @param timestamp - Timestamp for signature verification
+   * @param deviceName - Optional device name
+   * @param deviceFingerprint - Optional device fingerprint for security
    */
   static async verifyChallenge(req: Request, res: Response) {
     try {
@@ -202,11 +260,11 @@ export class SessionController {
         });
       }
 
-      // Find and validate the challenge (read-only query with .lean() for performance)
+      // Find and validate the challenge (use explicit operators for query)
       const authChallenge = await AuthChallenge.findOne({
-        publicKey,
-        challenge,
-        used: false,
+        publicKey: { $eq: publicKey },
+        challenge: { $eq: challenge },
+        used: { $eq: false },
         expiresAt: { $gt: new Date() }
       }).lean();
 
@@ -235,8 +293,8 @@ export class SessionController {
         { new: false }
       );
 
-      // Find user by public key (read-only query with .lean() for performance)
-      const user = await User.findOne({ publicKey }).lean();
+      // Find user by public key (use explicit $eq operator)
+      const user = await User.findOne({ publicKey: { $eq: publicKey } }).lean();
       if (!user) {
         return res.status(404).json({ error: 'User not found' });
       }
@@ -250,10 +308,7 @@ export class SessionController {
       );
       const sessionAfterCreate = Date.now();
 
-      // Log security event for sign-in only if this is a new session
-      // More reliable detection: check if session was created during this request
-      // New sessions will have createdAt very close to current time
-      // Reused sessions will have createdAt much older
+      // Detect if this is a new session by checking creation time
       const sessionCreatedAt = new Date(session.createdAt).getTime();
       const sessionAge = sessionAfterCreate - sessionCreatedAt;
       const isNewSession = sessionAge < 10000; // If session was created within last 10 seconds, it's new
@@ -288,7 +343,6 @@ export class SessionController {
       });
 
       // Return session data
-      // Use publicKey as id (per migration document: publicKey is the primary identifier)
       const response: SessionAuthResponse = {
         sessionId: session.sessionId,
         deviceId: session.deviceId,
