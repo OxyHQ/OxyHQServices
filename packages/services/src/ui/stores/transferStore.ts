@@ -181,8 +181,8 @@ export const useTransferStore = create<TransferState>((set, get) => ({
   },
   
   clearAll: () => {
-    // Alias for reset - clears all transfer codes and active transfer
-    set(initialState);
+    // Delegate to reset to maintain single source of truth
+    get().reset();
   },
 }));
 

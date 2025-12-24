@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -211,38 +212,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const { storage, isReady: isStorageReady } = useStorage({ onError, logger });
 
-  // CRITICAL: Invalidate KeyManager cache immediately on module load (synchronous)
-  // 
-  // IMPORTANT: This MUST happen BEFORE any async operations to prevent stale cache issues
-  // This is intentionally done during render phase (not in useEffect) because:
-  //
-  // 1. **Timing Critical**: Must happen before any async identity checks start
-  //    - useEffect runs after render, allowing async operations to start first
-  //    - This creates a race condition where stale cache could be read
-  //
-  // 2. **Safety Guarantees**:
-  //    - Only updates static class variables (KeyManager.cachedPublicKey, KeyManager.cachedHasIdentity)
-  //    - No React state updates (doesn't trigger re-renders)
-  //    - Idempotent (safe to call multiple times)
-  //    - Platform.OS check is synchronous and deterministic
-  //    - Protected by ref to ensure single execution
-  //
-  // 3. **React Compliance**:
-  //    - Does not violate React's rules because it doesn't read/write React state
-  //    - Similar to how Date.now() or Math.random() can be used during render
-  //    - Static class variable updates are outside React's state system
-  //
-  // 4. **Alternatives Considered**:
-  //    - useLayoutEffect: Still too late, async operations could start
-  //    - useMemo: Same timing as current approach, less clear intent
-  //    - Module-level code: Would run during import, not per-component
-  //
-  // This pattern is necessary for correct behavior and doesn't cause React issues.
-  const cacheInvalidatedRef = useRef(false);
-  if (!cacheInvalidatedRef.current && Platform.OS !== 'web') {
-    KeyManager.invalidateCache();
-    cacheInvalidatedRef.current = true;
-  }
+  // Invalidate KeyManager cache on mount to prevent stale cache issues
+  // useLayoutEffect runs synchronously after render but before paint, ensuring cache
+  // invalidation happens before any async operations start
+  useLayoutEffect(() => {
+    if (Platform.OS !== 'web') {
+      KeyManager.invalidateCache();
+    }
+  }, []);
 
   // Identity integrity check and auto-restore on startup
   // Skip on web platform - identity storage is only available on native platforms
@@ -383,9 +360,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     [importIdentityBase]
   );
 
-  // Storage key constants - centralized to avoid duplication
-  const TRANSFER_CODES_STORAGE_KEY = useMemo(() => `${storageKeyPrefix}_transfer_codes`, [storageKeyPrefix]);
-  const ACTIVE_TRANSFER_STORAGE_KEY = useMemo(() => `${storageKeyPrefix}_active_transfer_id`, [storageKeyPrefix]);
+  // Storage keys for transfer codes
+  const TRANSFER_CODES_STORAGE_KEY = `${storageKeyPrefix}_transfer_codes`;
+  const ACTIVE_TRANSFER_STORAGE_KEY = `${storageKeyPrefix}_active_transfer_id`;
 
   // Clear all account data when identity is lost (for accounts app)
   // In accounts app, identity = account, so losing identity means losing everything
@@ -675,14 +652,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
             const validation = await oxyServices.validateSession(sessionId, { useHeaderValidation: true });
             if (validation?.valid && validation.user) {
               // CRITICAL: Verify session belongs to current identity
-              // IMPORTANT: In OxyAccounts, user.id is set to the publicKey (as confirmed by line 754 comment below)
-              // This is different from the JWT's userId field which contains MongoDB ObjectId
-              // We compare user.id (publicKey) to currentPublicKey to ensure session ownership
-              if (validation.user.id !== currentPublicKey) {
+              // Compare session's publicKey to current identity's publicKey
+              if (validation.user.publicKey !== currentPublicKey) {
                 // Session belongs to different identity - skip it and log warning
                 if (__DEV__) {
                   logger('CRITICAL: Skipping session from different identity during restoration', {
-                    sessionPublicKey: validation.user.id?.substring(0, 16) + '...',
+                    sessionPublicKey: validation.user.publicKey?.substring(0, 16) + '...',
                     currentPublicKey: currentPublicKey.substring(0, 16) + '...',
                     sessionId: sessionId.substring(0, 16) + '...',
                   });
@@ -846,8 +821,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }, [isAuthenticatedFromStore, isAuthenticatedFromSessions]);
 
   // Get userId from JWT token (MongoDB ObjectId) for socket room matching
-  // user.id is set to publicKey for compatibility, but socket rooms use MongoDB ObjectId
-  // The JWT token's userId field contains the MongoDB ObjectId
+  // user.id contains the MongoDB ObjectId, user.publicKey contains the cryptographic public key
   const userId = oxyServices.getCurrentUserId() || user?.id;
 
   // Use Zustand store for transfer state management
