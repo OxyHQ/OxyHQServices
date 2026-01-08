@@ -1,23 +1,25 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'expo-router';
-import { useOxy } from '@oxyhq/services';
+import { useOxy, useAuthStore } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { UsernameStep } from '@/components/auth/UsernameStep';
 import { useNetworkStatus } from '@/hooks/auth/useNetworkStatus';
 import { generateSuggestedUsername } from '@/utils/auth/usernameUtils';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
+import { checkIfOffline } from '@/utils/auth/networkUtils';
+import { extractAuthErrorMessage, isNetworkOrTimeoutError } from '@/utils/auth/errorUtils';
 import { Colors } from '@/constants/theme';
 
 /**
  * Create Identity - Username Screen
  * 
- * Allows user to choose a username (skippable if offline)
+ * Allows user to choose a username (mandatory when online)
  */
 export default function CreateIdentityUsernameScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
-  const { oxyServices, getPublicKey } = useOxy();
-  const { isOffline, checkNetworkStatus } = useNetworkStatus();
+  const { oxyServices, getPublicKey, activeSessionId } = useOxy();
+  const { isOffline } = useNetworkStatus();
   const { usernameRef } = useAuthFlowContext();
 
   const backgroundColor = useMemo(
@@ -30,9 +32,10 @@ export default function CreateIdentityUsernameScreen() {
   );
 
   const [username, setUsername] = useState<string>('');
+  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const [updateError, setUpdateError] = useState<string | null>(null);
   const hasInitializedUsername = useRef(false);
   const isInitializingRef = useRef(false);
-  const hasCheckedOffline = useRef(false);
 
   // Initialize suggested username on mount (only once)
   useEffect(() => {
@@ -55,51 +58,55 @@ export default function CreateIdentityUsernameScreen() {
     usernameRef.current = username;
   }, [username, usernameRef]);
 
-  // Check network state on mount and auto-skip if offline (only once)
-  useEffect(() => {
-    if (hasCheckedOffline.current) return;
-    
-    const checkAndSkip = async () => {
-      hasCheckedOffline.current = true;
-      const offline = await checkNetworkStatus();
-      
-      // Small delay to ensure UI is ready
-      await new Promise(resolve => setTimeout(resolve, 150));
-      
-      // If offline, auto-skip username step and go to notifications
-      if (offline) {
-        handleSkip();
+  const handleContinue = useCallback(async () => {
+    if (!oxyServices || !username.trim()) {
+      return;
+    }
+
+    setIsUpdatingProfile(true);
+    setUpdateError(null);
+
+    try {
+      if (!oxyServices.hasValidToken() && activeSessionId) {
+        await oxyServices.getTokenBySession(activeSessionId);
       }
-    };
-    
-    checkAndSkip();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run once on mount
 
-  const handleContinue = useCallback(() => {
-    // Save username to ref for later use after sign-in
-    usernameRef.current = username;
-    // Navigate to notifications step
-    router.replace('/(auth)/create-identity/notifications');
-  }, [username, usernameRef, router]);
+      const updatedUser = await oxyServices.updateProfile({ username: username.trim() });
 
-  const handleSkip = useCallback(() => {
-    // Skip username step - user can set it later
-    usernameRef.current = '';
-    router.replace('/(auth)/create-identity/notifications');
-  }, [usernameRef, router]);
+      if (updatedUser) {
+        useAuthStore.getState().setUser(updatedUser);
+        router.replace('/(auth)/create-identity/notifications');
+      } else {
+        setUpdateError('Failed to update profile. Please try again.');
+        setIsUpdatingProfile(false);
+      }
+    } catch (err: unknown) {
+      const errorMessage = extractAuthErrorMessage(err, 'Failed to update username. Please try again.');
+
+      const offline = await checkIfOffline();
+      if (offline && isNetworkOrTimeoutError(err)) {
+        usernameRef.current = username.trim();
+        router.replace('/(auth)/create-identity/notifications');
+      } else {
+        setUpdateError(errorMessage);
+        setIsUpdatingProfile(false);
+      }
+    }
+  }, [username, oxyServices, activeSessionId, router, usernameRef]);
 
   return (
     <UsernameStep
       username={username}
       onUsernameChange={setUsername}
       onContinue={handleContinue}
-      onSkip={handleSkip}
+      onSkip={undefined}
       isOffline={isOffline}
       oxyServices={oxyServices}
       backgroundColor={backgroundColor}
       textColor={textColor}
       colorScheme={colorScheme}
+      isUpdating={isUpdatingProfile}
+      updateError={updateError}
     />
   );
 }

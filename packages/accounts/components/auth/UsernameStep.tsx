@@ -11,12 +11,14 @@ interface UsernameStepProps {
   username: string;
   onUsernameChange: (username: string) => void;
   onContinue: () => void;
-  onSkip: () => void;
+  onSkip?: () => void; // Optional - username is mandatory when online
   isOffline: boolean;
   oxyServices: OxyServices | null;
   backgroundColor: string;
   textColor: string;
   colorScheme: 'light' | 'dark';
+  isUpdating?: boolean;
+  updateError?: string | null;
 }
 
 /**
@@ -32,6 +34,8 @@ export function UsernameStep({
   backgroundColor,
   textColor,
   colorScheme,
+  isUpdating = false,
+  updateError = null,
 }: UsernameStepProps) {
   const insets = useSafeAreaInsets();
   const validation = useUsernameValidation(username, oxyServices);
@@ -74,8 +78,8 @@ export function UsernameStep({
         <Text style={[styles.title, { color: textColor }]}>Choose your username</Text>
         <Text style={[styles.subtitle, { color: textColor, opacity: 0.6 }]}>
           {isOffline
-            ? 'You\'re offline. You can skip this step and set your username later.'
-            : 'You can change this later in the settings'}
+            ? 'You\'re offline. You can set your username later when online.'
+            : 'Your username is required. You can change this later in settings.'}
         </Text>
 
         <View style={styles.inputWrapper}>
@@ -111,24 +115,27 @@ export function UsernameStep({
           </Text>
         )}
 
-        {validation.error && (
-          <Text style={styles.errorText}>{validation.error}</Text>
+        {(validation.error || updateError) && (
+          <Text style={styles.errorText}>{validation.error || updateError}</Text>
         )}
 
         <Button
           variant="primary"
           onPress={handleContinue}
-          disabled={!canContinue && !isOffline}
+          disabled={(!canContinue && !isOffline) || isUpdating}
+          loading={isUpdating}
           style={styles.primaryButton}
         >
-          Confirm
+          {isUpdating ? 'Saving...' : 'Confirm'}
         </Button>
 
-        {isOffline && (
+        {/* Only show skip button if offline and onSkip is provided (for offline fallback) */}
+        {isOffline && onSkip && (
           <Button
             variant="ghost"
             onPress={onSkip}
             style={styles.skipButton}
+            disabled={isUpdating}
           >
             Skip for now
           </Button>
@@ -138,6 +145,7 @@ export function UsernameStep({
           <Button
             variant="ghost"
             onPress={() => { }}
+            disabled={isUpdating}
           >
             Learn more about usernames
           </Button>

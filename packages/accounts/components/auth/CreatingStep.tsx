@@ -16,15 +16,30 @@ interface CreatingStepProps {
   progress: number;
   backgroundColor: string;
   textColor: string;
+  isSyncing?: boolean;
+  isSigningIn?: boolean;
 }
 
 const TOTAL_PROGRESS_STEPS = 3; // 0, 1, 2
 
 /**
- * Creating step component showing progress during identity creation
+ * Creating step component showing progress during identity creation, sync, and sign-in
  */
-export function CreatingStep({ progress, backgroundColor, textColor }: CreatingStepProps) {
-  const currentMessage = CREATING_PROGRESS_MESSAGES[progress] || CREATING_PROGRESS_MESSAGES[0];
+export function CreatingStep({ progress, backgroundColor, textColor, isSyncing, isSigningIn }: CreatingStepProps) {
+  // Determine message based on current state
+  let currentMessage: string;
+  let subtitle: string = CREATING_SUBTITLE;
+  
+  if (isSigningIn) {
+    currentMessage = 'Signing in...';
+    subtitle = 'Almost there!';
+  } else if (isSyncing) {
+    currentMessage = 'Syncing your identity...';
+    subtitle = 'Connecting to Oxy servers';
+  } else {
+    currentMessage = CREATING_PROGRESS_MESSAGES[progress] || CREATING_PROGRESS_MESSAGES[0];
+  }
+  
   const progressValue = useSharedValue(0);
 
   useEffect(() => {
@@ -71,7 +86,7 @@ export function CreatingStep({ progress, backgroundColor, textColor }: CreatingS
           </Text>
         </Animated.View>
         <Text style={[styles.creatingSubtitle, { color: textColor, opacity: 0.6 }]}>
-          {CREATING_SUBTITLE}
+          {subtitle}
         </Text>
 
         {/* Progress Bar */}

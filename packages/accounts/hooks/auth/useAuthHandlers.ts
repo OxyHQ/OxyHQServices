@@ -186,56 +186,40 @@ export function useAuthHandlers({
   }, [router, signIn, oxyServices, usernameRef, setAuthError, setSigningIn, waitForAuthState]);
 
   /**
-   * Handle notification permission request
-   * 
-   * Checks existing permissions first (fast path), then requests if needed.
-   * Proceeds with sign-in regardless of permission result.
-   * 
-   * Note: In Expo Go, push notifications are not available (SDK 53+),
-   * so we skip notification requests and proceed directly to sign-in.
+   * Handle notification permission request and complete onboarding
+   * User should already be authenticated at this point
    */
   const handleRequestNotifications = useCallback(async () => {
-    // Skip notification requests in Expo Go (push notifications not available)
+    if (!isAuthenticated) {
+      setAuthError('Please sign in first');
+      return;
+    }
+
     if (isExpoGo()) {
-      await handleSignIn();
+      router.push('/(tabs)');
       return;
     }
 
     try {
-      // Check permissions first (this is usually fast)
+      setIsRequestingNotifications(true);
+      setAuthError(null);
+
       const { status: existingStatus } = await Notifications.getPermissionsAsync();
 
       if (existingStatus === 'granted') {
-        // Already granted, proceed directly to sign in
-        await handleSignIn();
+        router.push('/(tabs)');
         return;
       }
 
-      // Only show spinner when actually requesting permissions
-      setIsRequestingNotifications(true);
-      try {
-        await Notifications.requestPermissionsAsync();
-        await handleSignIn();
-      } catch (err: unknown) {
-        // Still proceed with sign in even if permission request fails
-        // This handles cases where notifications might not be available
-        handleAuthError(err, 'requestNotifications');
-        await handleSignIn();
-      } finally {
-        setIsRequestingNotifications(false);
-      }
+      await Notifications.requestPermissionsAsync();
+      router.push('/(tabs)');
     } catch (err: unknown) {
-      // If permission check fails, proceed with sign in anyway
-      // This ensures the auth flow continues even if notifications fail
-      handleAuthError(err, 'checkNotificationPermissions');
-      setIsRequestingNotifications(true);
-      try {
-        await handleSignIn();
-      } finally {
-        setIsRequestingNotifications(false);
-      }
+      handleAuthError(err, 'requestNotifications');
+      router.push('/(tabs)');
+    } finally {
+      setIsRequestingNotifications(false);
     }
-  }, [handleSignIn]);
+  }, [isAuthenticated, router, setAuthError]);
 
   return {
     handleSignIn,
