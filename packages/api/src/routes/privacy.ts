@@ -5,6 +5,7 @@ import Restricted from "../models/Restricted";
 import { authMiddleware } from '../middleware/auth';
 import { asyncHandler } from '../utils/asyncHandler';
 import { BadRequestError, NotFoundError, ConflictError, UnauthorizedError } from '../utils/error';
+import { resolveUserIdToObjectId } from '../utils/validation';
 import { z } from "zod";
 import { logger } from '../utils/logger';
 
@@ -43,12 +44,24 @@ const privacySettingsSchema = z.object({
 const getPrivacySettings = async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
-    const user = await User.findById(id).select('privacySettings');
+    // Resolve user ID (ObjectId or publicKey) to MongoDB ObjectId
+    const objectId = await resolveUserIdToObjectId(id);
+    const user = await User.findById(objectId).select('privacySettings');
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
     res.json(user.privacySettings);
   } catch (error) {
+    if (error instanceof BadRequestError) {
+      return res.status(400).json({ 
+        message: error.message
+      });
+    }
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({ 
+        message: error.message
+      });
+    }
     logger.error('Error fetching privacy settings:', error);
     res.status(500).json({ 
       message: "Error fetching privacy settings",
@@ -64,12 +77,20 @@ const updatePrivacySettings = async (req: Request, res: Response) => {
     const settings = privacySettingsSchema.parse(req.body);
     const authUser = (req as AuthenticatedRequest).user;
 
-    if (authUser?.id !== id) {
+    if (!authUser?.id) {
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    // Resolve both IDs (ObjectId or publicKey) to MongoDB ObjectIds for comparison
+    const objectId = await resolveUserIdToObjectId(id);
+    const authUserObjectId = await resolveUserIdToObjectId(authUser.id);
+
+    if (authUserObjectId !== objectId) {
       return res.status(403).json({ message: "Not authorized to update these settings" });
     }
 
     const user = await User.findByIdAndUpdate(
-      id,
+      objectId,
       { $set: { privacySettings: settings } },
       { new: true }
     ).select('privacySettings');
@@ -80,6 +101,16 @@ const updatePrivacySettings = async (req: Request, res: Response) => {
 
     res.json(user.privacySettings);
   } catch (error) {
+    if (error instanceof BadRequestError) {
+      return res.status(400).json({ 
+        message: error.message
+      });
+    }
+    if (error instanceof NotFoundError) {
+      return res.status(404).json({ 
+        message: error.message
+      });
+    }
     logger.error('Error updating privacy settings:', error);
     res.status(500).json({ 
       message: "Error updating privacy settings",

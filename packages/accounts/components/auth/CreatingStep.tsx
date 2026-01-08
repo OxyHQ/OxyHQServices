@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
+import LottieView from 'lottie-react-native';
 import Animated, {
   FadeIn,
   FadeOut,
@@ -9,8 +10,8 @@ import Animated, {
   interpolate,
   Easing
 } from 'react-native-reanimated';
-import { LoadingSpinner } from '@/components/ui/Loading';
 import { CREATING_PROGRESS_MESSAGES, CREATING_SUBTITLE } from '@/constants/auth';
+import hedgehogAnimation from '@/assets/lottie/Hedgehog.json';
 
 interface CreatingStepProps {
   progress: number;
@@ -74,7 +75,12 @@ export function CreatingStep({ progress, backgroundColor, textColor, isSyncing, 
   return (
     <View style={[styles.container, { backgroundColor }]}>
       <View style={styles.centeredContainer}>
-        <LoadingSpinner iconSize={48} color={textColor} />
+        <LottieView
+          source={hedgehogAnimation}
+          autoPlay
+          loop
+          style={styles.lottieAnimation}
+        />
         <Animated.View
           key={progress}
           entering={FadeIn.duration(300)}
@@ -123,6 +129,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     padding: 20,
+  },
+  lottieAnimation: {
+    width: 120,
+    height: 120,
   },
   progressMessageContainer: {
     marginTop: 20,
