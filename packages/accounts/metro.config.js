@@ -50,6 +50,9 @@ config.resolver.extraNodeModules = {
 // 6. Enable better platform resolution
 config.resolver.platforms = ['native', 'android', 'ios', 'tsx', 'ts', 'web'];
 
+// 7. Optimize cache for better hot reload performance
+config.cacheStores = config.cacheStores || [];
+
 module.exports = config;
 
 

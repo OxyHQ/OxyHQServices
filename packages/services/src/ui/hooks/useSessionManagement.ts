@@ -144,8 +144,7 @@ export const useSessionManagement = ({
     try {
       await storage.removeItem(storageKeys.activeSessionId);
       await storage.removeItem(storageKeys.sessionIds);
-      // Clear identity sync state
-      await storage.removeItem('oxy_identity_synced').catch(() => {});
+      // Note: Identity sync state ('oxy_identity_synced') is managed by accounts app
     } catch (error) {
       handleAuthError(error, {
         defaultMessage: CLEAR_STORAGE_ERROR,

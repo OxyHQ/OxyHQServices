@@ -89,7 +89,7 @@ export const useDeviceSessions = (options?: { enabled?: boolean }) => {
  * Get user devices
  */
 export const useUserDevices = (options?: { enabled?: boolean }) => {
-  const { oxyServices, isAuthenticated, activeSessionId, syncIdentity } = useOxy();
+  const { oxyServices, isAuthenticated, activeSessionId } = useOxy();
 
   return useQuery({
     queryKey: queryKeys.devices.list(),
@@ -103,13 +103,8 @@ export const useUserDevices = (options?: { enabled?: boolean }) => {
           // If getting token fails, might be an offline session - try syncing
           const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
           if (errorMessage.includes('AUTH_REQUIRED_OFFLINE_SESSION') || errorMessage.includes('offline')) {
-            try {
-              await syncIdentity();
-              // Retry getting token after sync
-              await oxyServices.getTokenBySession(activeSessionId);
-            } catch (syncError) {
-              throw new Error('Session needs to be synced. Please try again.');
-            }
+            // Session sync should be handled by the app layer
+            throw new Error('Session needs to be synced. Please try again.');
           } else {
             throw tokenError;
           }
@@ -124,19 +119,8 @@ export const useUserDevices = (options?: { enabled?: boolean }) => {
         
         // Handle authentication errors
         if (status === 401 || errorMessage.includes('Authentication required') || errorMessage.includes('Invalid or missing authorization header')) {
-          // Try to sync session and get token
-          if (activeSessionId) {
-            try {
-              await syncIdentity();
-              await oxyServices.getTokenBySession(activeSessionId);
-              // Retry the request after getting token
-              return await oxyServices.getUserDevices();
-            } catch (retryError) {
-              throw new Error('Authentication failed. Please sign in again.');
-            }
-          } else {
-            throw new Error('No active session. Please sign in.');
-          }
+          // Session sync should be handled by the app layer
+          throw new Error('Authentication failed. Please sign in again.');
         }
         
         // TanStack Query will automatically retry on network errors

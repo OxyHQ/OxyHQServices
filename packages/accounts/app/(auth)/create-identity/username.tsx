@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useRouter } from 'expo-router';
 import { useOxy, useAuthStore } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -18,7 +18,7 @@ import { Colors } from '@/constants/theme';
 export default function CreateIdentityUsernameScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
-  const { oxyServices, getPublicKey } = useOxy();
+  const { oxyServices } = useOxy();
   const { isOffline } = useNetworkStatus();
   const { usernameRef } = useAuthFlowContext();
 
@@ -34,24 +34,11 @@ export default function CreateIdentityUsernameScreen() {
   const [username, setUsername] = useState<string>('');
   const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
   const [updateError, setUpdateError] = useState<string | null>(null);
-  const hasInitializedUsername = useRef(false);
-  const isInitializingRef = useRef(false);
 
-  // Initialize suggested username on mount (only once)
+  // Generate random suggested username on mount
   useEffect(() => {
-    if (!hasInitializedUsername.current && !isInitializingRef.current) {
-      isInitializingRef.current = true;
-      getPublicKey().then((publicKey) => {
-        if (!hasInitializedUsername.current) {
-          setUsername(generateSuggestedUsername(publicKey));
-          hasInitializedUsername.current = true;
-        }
-        isInitializingRef.current = false;
-      }).catch(() => {
-        isInitializingRef.current = false;
-      });
-    }
-  }, [getPublicKey]);
+    setUsername(generateSuggestedUsername(null));
+  }, []);
 
   // Update username ref whenever username changes
   useEffect(() => {
@@ -73,7 +60,7 @@ export default function CreateIdentityUsernameScreen() {
 
       if (updatedUser) {
         useAuthStore.getState().setUser(updatedUser);
-        router.replace('/(auth)/create-identity/notifications');
+        router.push('/(auth)/create-identity/notifications');
       } else {
         setUpdateError('Failed to update profile. Please try again.');
         setIsUpdatingProfile(false);
@@ -84,7 +71,7 @@ export default function CreateIdentityUsernameScreen() {
       const offline = await checkIfOffline();
       if (offline && isNetworkOrTimeoutError(err)) {
         usernameRef.current = username.trim();
-        router.replace('/(auth)/create-identity/notifications');
+        router.push('/(auth)/create-identity/notifications');
       } else {
         setUpdateError(errorMessage);
         setIsUpdatingProfile(false);

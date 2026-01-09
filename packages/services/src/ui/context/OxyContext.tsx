@@ -9,7 +9,6 @@ import {
   useState,
   type ReactNode,
 } from 'react';
-import { Platform } from 'react-native';
 import { OxyServices } from '../../core';
 import type { User, ApiError } from '../../models/interfaces';
 import type { ClientSession } from '../../models/session';
@@ -18,18 +17,16 @@ import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useSessionSocket } from '../hooks/useSessionSocket';
 import type { UseFollowHook } from '../hooks/useFollow.types';
-import { useStorage } from '../hooks/useStorage';
 import { useLanguageManagement } from '../hooks/useLanguageManagement';
 import { useSessionManagement } from '../hooks/useSessionManagement';
 import { useAuthOperations } from './hooks/useAuthOperations';
 import { useDeviceManagement } from '../hooks/useDeviceManagement';
-import { getStorageKeys } from '../utils/storageHelpers';
+import { getStorageKeys, createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
 import { isInvalidSessionError, isTimeoutOrNetworkError } from '../utils/errorHandlers';
 import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
 import { useQueryClient } from '@tanstack/react-query';
 import { clearQueryCache } from '../hooks/queryClient';
-import { KeyManager } from '../../crypto/keyManager';
 import { translate } from '../../i18n';
 import { updateAvatarVisibility, updateProfileWithAvatar } from '../utils/avatarUtils';
 import { useAccountStore } from '../stores/accountStore';
@@ -42,28 +39,14 @@ export interface OxyContextState {
   isAuthenticated: boolean;
   isLoading: boolean;
   isTokenReady: boolean;
-  isStorageReady: boolean;
   error: string | null;
   currentLanguage: string;
   currentLanguageMetadata: ReturnType<typeof useLanguageManagement>['metadata'];
   currentLanguageName: string;
   currentNativeLanguageName: string;
 
-  // Identity management (public key authentication - offline-first)
-  createIdentity: () => Promise<{ recoveryPhrase: string[]; synced: boolean }>;
-  importIdentity: (phrase: string) => Promise<{ synced: boolean }>;
-  signIn: (deviceName?: string) => Promise<User>;
-  hasIdentity: () => Promise<boolean>;
-  getPublicKey: () => Promise<string | null>;
-  isIdentitySynced: () => Promise<boolean>;
-  syncIdentity: () => Promise<User>;
-  deleteIdentityAndClearAccount: (skipBackup?: boolean, force?: boolean, userConfirmed?: boolean) => Promise<void>;
-
-  // Identity sync state (reactive, from Zustand store)
-  identitySyncState: {
-    isSynced: boolean;
-    isSyncing: boolean;
-  };
+  // Authentication
+  signIn: (publicKey: string, deviceName?: string) => Promise<User>;
 
   // Session management
   logout: (targetSessionId?: string) => Promise<void>;
@@ -162,11 +145,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     loginSuccess,
     loginFailure,
     logoutStore,
-    // Identity sync state and actions
-    isIdentitySyncedStore,
-    isSyncing,
-    setIdentitySynced,
-    setSyncing,
   } = useAuthStore(
     useShallow((state: AuthState) => ({
       user: state.user,
@@ -176,11 +154,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       loginSuccess: state.loginSuccess,
       loginFailure: state.loginFailure,
       logoutStore: state.logout,
-      // Identity sync state and actions
-      isIdentitySyncedStore: state.isIdentitySynced,
-      isSyncing: state.isSyncing,
-      setIdentitySynced: state.setIdentitySynced,
-      setSyncing: state.setSyncing,
     })),
   );
 
@@ -196,50 +169,35 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
 
   const storageKeys = useMemo(() => getStorageKeys(storageKeyPrefix), [storageKeyPrefix]);
 
-  const { storage, isReady: isStorageReady } = useStorage({ onError, logger });
+  // Simple storage initialization - no complex hook needed
+  const storageRef = useRef<StorageInterface | null>(null);
+  const [storage, setStorage] = useState<StorageInterface | null>(null);
 
-  // Identity integrity check and auto-restore on startup
-  // Skip on web platform - identity storage is only available on native platforms
   useEffect(() => {
-    if (!storage || !isStorageReady) return;
-    if (Platform.OS === 'web') return; // Identity operations are native-only
+    let mounted = true;
+    createPlatformStorage()
+      .then((storageInstance) => {
+        if (mounted) {
+          storageRef.current = storageInstance;
+          setStorage(storageInstance);
+        }
+      })
+      .catch((err) => {
+        if (mounted) {
+          logger('Failed to initialize storage', err);
+          onError?.({
+            message: 'Failed to initialize storage',
+            code: 'STORAGE_INIT_ERROR',
+            status: 500,
+          });
+        }
+      });
 
-    const checkAndRestoreIdentity = async () => {
-      try {
-        // Check if identity exists and verify integrity
-        const hasIdentity = await KeyManager.hasIdentity();
-        if (hasIdentity) {
-          const isValid = await KeyManager.verifyIdentityIntegrity();
-          if (!isValid) {
-            // Try to restore from backup
-            const restored = await KeyManager.restoreIdentityFromBackup();
-            if (__DEV__) {
-              logger(restored
-                ? 'Identity restored from backup successfully'
-                : 'Identity integrity check failed - user may need to restore from recovery phrase'
-              );
-            }
-          } else {
-            // Identity is valid - ensure backup is up to date
-            await KeyManager.backupIdentity();
-          }
-        } else {
-          // No identity - try to restore from backup
-          const restored = await KeyManager.restoreIdentityFromBackup();
-          if (restored && __DEV__) {
-            logger('Identity restored from backup on startup');
-          }
-        }
-      } catch (error) {
-        if (__DEV__) {
-          logger('Error during identity integrity check', error);
-        }
-        // Don't block app startup - user can recover with recovery phrase
-      }
+    return () => {
+      mounted = false;
     };
+  }, [logger, onError]);
 
-    checkAndRestoreIdentity();
-  }, [storage, isStorageReady, logger]);
 
   // Offline queuing is now handled by TanStack Query mutations
   // No need for custom offline queue
@@ -286,15 +244,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   });
 
   const {
-    createIdentity,
-    importIdentity,
     signIn,
     logout,
     logoutAll,
-    hasIdentity,
-    getPublicKey,
-    isIdentitySynced,
-    syncIdentity: syncIdentityBase,
   } = useAuthOperations({
     oxyServices,
     storage,
@@ -312,16 +264,10 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     loginFailure,
     logoutStore,
     setAuthState,
-    setIdentitySynced,
-    setSyncing,
     logger,
   });
 
-  // syncIdentity - TanStack Query handles offline mutations automatically
-  const syncIdentity = useCallback(() => syncIdentityBase(), [syncIdentityBase]);
-
-  // Clear all account data when identity is lost (for accounts app)
-  // In accounts app, identity = account, so losing identity means losing everything
+  // Clear all account data (sessions, cache, etc.)
   const clearAllAccountData = useCallback(async (): Promise<void> => {
     // Clear TanStack Query cache (in-memory)
     queryClient.clear();
@@ -338,149 +284,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     // Clear session state (sessions, activeSessionId, storage)
     await clearSessionState();
 
-    // Clear identity sync state from storage
-    if (storage) {
-      try {
-        await storage.removeItem('oxy_identity_synced');
-      } catch (error) {
-        logger('Failed to clear identity sync state', error);
-      }
-    }
-
-    // Reset auth store identity sync state
-    useAuthStore.getState().setIdentitySynced(false);
-    useAuthStore.getState().setSyncing(false);
-
     // Reset account store
     useAccountStore.getState().reset();
 
     // Clear HTTP service cache
     oxyServices.clearCache();
   }, [queryClient, storage, clearSessionState, logger, oxyServices]);
-
-  // Delete identity and clear all account data
-  // In accounts app, deleting identity means losing the account completely
-  const deleteIdentityAndClearAccount = useCallback(async (
-    skipBackup: boolean = false,
-    force: boolean = false,
-    userConfirmed: boolean = false
-  ): Promise<void> => {
-    // First, clear all account data
-    await clearAllAccountData();
-
-    // Then delete the identity keys
-    await KeyManager.deleteIdentity(skipBackup, force, userConfirmed);
-  }, [clearAllAccountData]);
-
-  // Network reconnect sync - TanStack Query automatically retries mutations on reconnect
-  // We only need to sync identity if it's not synced
-  useEffect(() => {
-    if (!storage) return;
-
-    let wasOffline = false;
-    let checkTimeout: NodeJS.Timeout | null = null;
-
-    // Circuit breaker and exponential backoff state
-    const stateRef = {
-      consecutiveFailures: 0,
-      currentInterval: 10000, // Start with 10 seconds
-      baseInterval: 10000, // Base interval in milliseconds
-      maxInterval: 60000, // Maximum interval (60 seconds)
-      maxFailures: 5, // Circuit breaker threshold
-    };
-
-    const scheduleNextCheck = () => {
-      if (checkTimeout) {
-        clearTimeout(checkTimeout);
-      }
-      checkTimeout = setTimeout(() => {
-        checkNetworkAndSync();
-      }, stateRef.currentInterval);
-    };
-
-    const checkNetworkAndSync = async () => {
-      try {
-        // Try a lightweight health check to see if we're online
-        await oxyServices.healthCheck().catch(() => {
-          wasOffline = true;
-          throw new Error('Health check failed');
-        });
-
-        // Health check succeeded - reset circuit breaker and backoff
-        if (stateRef.consecutiveFailures > 0) {
-          stateRef.consecutiveFailures = 0;
-          stateRef.currentInterval = stateRef.baseInterval;
-        }
-
-        // If we were offline and now we're online, sync identity if needed
-        if (wasOffline) {
-          logger('Network reconnected, checking identity sync...');
-
-          // Sync identity first (if not synced)
-          try {
-            const hasIdentityValue = await hasIdentity();
-            if (hasIdentityValue) {
-              // Check sync status directly - sync if not explicitly 'true'
-              // undefined = not synced yet, 'false' = explicitly not synced, 'true' = synced
-              const syncStatus = await storage.getItem('oxy_identity_synced');
-              if (syncStatus !== 'true') {
-                await syncIdentity();
-              }
-            }
-          } catch (syncError: any) {
-            // Skip sync silently if username is required (expected when offline onboarding)
-            if (syncError?.code === 'USERNAME_REQUIRED' || syncError?.message === 'USERNAME_REQUIRED') {
-              if (__DEV__) {
-                loggerUtil.debug('Sync skipped - username required', { component: 'OxyContext', method: 'checkNetworkAndSync' }, syncError as unknown);
-              }
-              // Don't log or show error - username will be set later
-            } else if (!isTimeoutOrNetworkError(syncError)) {
-              // Only log unexpected errors - timeouts/network issues are expected when offline
-              logger('Error syncing identity on reconnect', syncError);
-            } else if (__DEV__) {
-              loggerUtil.debug('Identity sync timeout (expected when offline)', { component: 'OxyContext', method: 'checkNetworkAndSync' }, syncError as unknown);
-            }
-          }
-
-          // TanStack Query will automatically retry pending mutations
-          wasOffline = false;
-        }
-      } catch (error) {
-        // Network check failed - we're offline
-        wasOffline = true;
-
-        // Increment failure count and apply exponential backoff
-        stateRef.consecutiveFailures++;
-
-        // Calculate new interval with exponential backoff, capped at maxInterval
-        const backoffMultiplier = Math.min(
-          Math.pow(2, stateRef.consecutiveFailures - 1),
-          stateRef.maxInterval / stateRef.baseInterval
-        );
-        stateRef.currentInterval = Math.min(
-          stateRef.baseInterval * backoffMultiplier,
-          stateRef.maxInterval
-        );
-
-        // If we hit the circuit breaker threshold, use max interval
-        if (stateRef.consecutiveFailures >= stateRef.maxFailures) {
-          stateRef.currentInterval = stateRef.maxInterval;
-        }
-      } finally {
-        // Always schedule next check (will use updated interval)
-        scheduleNextCheck();
-      }
-    };
-
-    // Check immediately
-    checkNetworkAndSync();
-
-    return () => {
-      if (checkTimeout) {
-        clearTimeout(checkTimeout);
-      }
-    };
-  }, [oxyServices, storage, syncIdentity, logger]);
 
   const { getDeviceSessions, logoutAllDeviceSessions, updateDeviceName } = useDeviceManagement({
     oxyServices,
@@ -663,8 +472,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
               { avatar: file.id },
               oxyServices,
               activeSessionId,
-              queryClient,
-              syncIdentity
+              queryClient
             );
 
             toast.success(translate(currentLanguage, 'editProfile.toasts.avatarUpdated') || 'Avatar updated');
@@ -674,7 +482,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         },
       },
     });
-  }, [oxyServices, currentLanguage, showBottomSheetForContext, activeSessionId, queryClient, syncIdentity]);
+  }, [oxyServices, currentLanguage, showBottomSheetForContext, activeSessionId, queryClient]);
 
   const contextValue: OxyContextState = useMemo(() => ({
     user,
@@ -683,24 +491,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     isAuthenticated,
     isLoading,
     isTokenReady: tokenReady,
-    isStorageReady,
     error,
     currentLanguage,
     currentLanguageMetadata,
     currentLanguageName,
     currentNativeLanguageName,
-    createIdentity,
-    importIdentity,
     signIn,
-    hasIdentity,
-    getPublicKey,
-    isIdentitySynced,
-    syncIdentity,
-    deleteIdentityAndClearAccount,
-    identitySyncState: {
-      isSynced: isIdentitySyncedStore ?? true,
-      isSyncing: isSyncing ?? false,
-    },
     logout,
     logoutAll,
     switchSession: switchSessionForContext,
@@ -718,16 +514,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     openAvatarPicker,
   }), [
     activeSessionId,
-    createIdentity,
-    importIdentity,
     signIn,
-    hasIdentity,
-    getPublicKey,
-    isIdentitySynced,
-    syncIdentity,
-    deleteIdentityAndClearAccount,
-    isIdentitySyncedStore,
-    isSyncing,
     currentLanguage,
     currentLanguageMetadata,
     currentLanguageName,
@@ -745,7 +532,6 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     setLanguage,
     switchSessionForContext,
     tokenReady,
-    isStorageReady,
     updateDeviceName,
     clearAllAccountData,
     useFollowHook,

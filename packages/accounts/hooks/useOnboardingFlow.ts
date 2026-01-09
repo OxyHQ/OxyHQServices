@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useOxy } from '@oxyhq/services';
+import { useIdentity } from './useIdentity';
 import { useOnboardingStatus, type OnboardingStatus } from './useOnboardingStatus';
 
 export type OnboardingStep = 'creating' | 'username' | 'notifications';
@@ -13,7 +14,8 @@ export type OnboardingStep = 'creating' | 'username' | 'notifications';
  * - Determining current step based on onboarding status
  */
 export function useOnboardingFlow() {
-  const { createIdentity, hasIdentity, user, isAuthenticated } = useOxy();
+  const { user, isAuthenticated } = useOxy();
+  const { createIdentity, hasIdentity } = useIdentity();
   const { status, hasIdentity: identityExists } = useOnboardingStatus();
   
   const [step, setStep] = useState<OnboardingStep>('creating');

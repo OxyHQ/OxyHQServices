@@ -62,7 +62,7 @@ export function refreshAvatarInStore(
  * @param oxyServices - OxyServices instance
  * @param activeSessionId - Active session ID
  * @param queryClient - TanStack Query client
- * @param syncIdentity - Optional sync identity function for handling auth errors
+ * @param syncSession - Optional function to sync session/refresh token when auth errors occur
  * @returns Promise that resolves with updated user data
  */
 export async function updateProfileWithAvatar(
@@ -70,7 +70,7 @@ export async function updateProfileWithAvatar(
   oxyServices: OxyServices,
   activeSessionId: string | null,
   queryClient: QueryClient,
-  syncIdentity?: () => Promise<User>
+  syncSession?: () => Promise<User>
 ): Promise<User> {
   // Ensure we have a valid token before making the request
   if (!oxyServices.hasValidToken() && activeSessionId) {
@@ -79,9 +79,9 @@ export async function updateProfileWithAvatar(
     } catch (tokenError) {
       const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
       if (errorMessage.includes('AUTH_REQUIRED_OFFLINE_SESSION') || errorMessage.includes('offline')) {
-        if (syncIdentity) {
+        if (syncSession) {
           try {
-            await syncIdentity();
+            await syncSession();
             await oxyServices.getTokenBySession(activeSessionId);
           } catch (syncError) {
             throw new Error('Session needs to be synced. Please try again.');
@@ -123,12 +123,12 @@ export async function updateProfileWithAvatar(
     
     // Handle authentication errors
     if (status === 401 || errorMessage.includes('Authentication required') || errorMessage.includes('Invalid or missing authorization header')) {
-      if (activeSessionId && syncIdentity) {
+      if (activeSessionId && syncSession) {
         try {
-          await syncIdentity();
+          await syncSession();
           await oxyServices.getTokenBySession(activeSessionId);
           // Retry the update after getting token
-          return await updateProfileWithAvatar(updates, oxyServices, activeSessionId, queryClient, syncIdentity);
+          return await updateProfileWithAvatar(updates, oxyServices, activeSessionId, queryClient, syncSession);
         } catch (retryError) {
           throw new Error('Authentication failed. Please sign in again.');
         }

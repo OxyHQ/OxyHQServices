@@ -10,7 +10,7 @@ import { setupFonts } from './FontLoader';
 import BottomSheetRouter from './BottomSheetRouter';
 import { Toaster } from '../../lib/sonner';
 import { createQueryClient } from '../hooks/queryClient';
-import { useStorage } from '../hooks/useStorage';
+import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
 
 // Initialize fonts automatically
 setupFonts();
@@ -34,10 +34,8 @@ const OxyProvider: FC<OxyProviderProps> = ({
     // bottom sheet experience is removed. At the moment both modes behave the same.
     void contextOnly;
 
-    // Get storage for query persistence
-    const { storage, isReady: isStorageReady } = useStorage();
-    
-    // Initialize React Query Client with persistence
+    // Simple storage initialization for query persistence
+    const storageRef = useRef<StorageInterface | null>(null);
     const queryClientRef = useRef<ReturnType<typeof createQueryClient> | null>(null);
     const [queryClient, setQueryClient] = useState<ReturnType<typeof createQueryClient> | null>(null);
 
@@ -45,15 +43,36 @@ const OxyProvider: FC<OxyProviderProps> = ({
         if (providedQueryClient) {
             queryClientRef.current = providedQueryClient;
             setQueryClient(providedQueryClient);
-        } else if (isStorageReady) {
-            // Create query client with persistence once storage is ready
-            if (!queryClientRef.current) {
-                const client = createQueryClient(storage);
-                queryClientRef.current = client;
-                setQueryClient(client);
-            }
+            return;
         }
-    }, [providedQueryClient, isStorageReady, storage]);
+
+        // Initialize storage and create query client
+        let mounted = true;
+        createPlatformStorage()
+            .then((storage) => {
+                if (mounted && !queryClientRef.current) {
+                    storageRef.current = storage;
+                    const client = createQueryClient(storage);
+                    queryClientRef.current = client;
+                    setQueryClient(client);
+                }
+            })
+            .catch((error) => {
+                // If storage fails, create query client without persistence
+                if (mounted && !queryClientRef.current) {
+                    if (__DEV__) {
+                        console.warn('[OxyProvider] Failed to initialize storage for query persistence', error);
+                    }
+                    const client = createQueryClient(null);
+                    queryClientRef.current = client;
+                    setQueryClient(client);
+                }
+            });
+
+        return () => {
+            mounted = false;
+        };
+    }, [providedQueryClient]);
 
     // Hook React Query focus manager into React Native AppState
     useEffect(() => {

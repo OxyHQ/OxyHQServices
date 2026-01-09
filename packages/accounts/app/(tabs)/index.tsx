@@ -15,6 +15,7 @@ import { AccountCard, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, useUserDevices, useRecentSecurityActivity } from '@oxyhq/services';
 import { formatDate, getDisplayName, getShortDisplayName } from '@/utils/date-utils';
+import { useIdentity } from '@/hooks/useIdentity';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useBiometricSettings } from '@/hooks/useBiometricSettings';
 import { formatEventDescription, getEventIcon, getSeverityColor } from '@/utils/security-utils';
@@ -32,7 +33,8 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
 
   // OxyServices integration
-  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, isIdentitySynced, syncIdentity, identitySyncState, openAvatarPicker, sessions } = useOxy();
+  const { user, isAuthenticated, oxyServices, isLoading: oxyLoading, showBottomSheet, refreshSessions, openAvatarPicker, sessions } = useOxy();
+  const { syncIdentity, isIdentitySynced, identitySyncState } = useIdentity();
   const alert = useAlert();
 
   // Fetch devices for stats

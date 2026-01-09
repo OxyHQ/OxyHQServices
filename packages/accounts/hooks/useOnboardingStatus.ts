@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Platform } from 'react-native';
-import { useOxy } from '@oxyhq/services';
+import { useOxy, KeyManager } from '@oxyhq/services';
 
 export type OnboardingStatus = 'checking' | 'none' | 'in_progress' | 'complete';
 
@@ -29,7 +29,7 @@ export interface OnboardingState {
  * @returns OnboardingState with status, needsAuth flag, and loading state
  */
 export function useOnboardingStatus(): OnboardingState {
-  const { hasIdentity: checkIdentity, user, isAuthenticated, isLoading: oxyLoading } = useOxy();
+  const { user, isAuthenticated, isLoading: oxyLoading } = useOxy();
   const [identityExists, setIdentityExists] = useState<boolean | null>(null);
   const [isChecking, setIsChecking] = useState(true);
 
@@ -41,7 +41,7 @@ export function useOnboardingStatus(): OnboardingState {
     const check = async () => {
       try {
         setIsChecking(true);
-        const exists = await checkIdentity();
+        const exists = await KeyManager.hasIdentity();
         if (mounted) {
           setIdentityExists(exists);
         }
@@ -61,7 +61,7 @@ export function useOnboardingStatus(): OnboardingState {
     return () => {
       mounted = false;
     };
-  }, [checkIdentity, oxyLoading]);
+  }, [oxyLoading]);
 
   // Compute onboarding status
   const status = useMemo<OnboardingStatus>(() => {

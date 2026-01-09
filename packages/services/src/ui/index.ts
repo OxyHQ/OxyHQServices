@@ -7,7 +7,7 @@
 import isFrontend from './isFrontend';
 
 // Real UI exports
-let OxyProvider, OxySignInButton, OxyLogo, Avatar, FollowButton, OxyPayButton, FontLoader, setupFonts, OxyIcon, useOxy, useOxyAuth, useOxyUser, useOxyKarma, useOxyPayments, useOxyDevices, useOxyNotifications, useOxySocket, useOxyQR, OxyContextProvider, OxyContextState, OxyContextProviderProps, useFollow, ProfileScreen, useAuthStore, useAccountStore, fontFamilies, fontStyles, toast;
+let OxyProvider, OxySignInButton, OxyLogo, Avatar, FollowButton, OxyPayButton, FontLoader, setupFonts, OxyIcon, useOxy, useOxyAuth, useOxyUser, useOxyKarma, useOxyPayments, useOxyDevices, useOxyNotifications, useOxySocket, useOxyQR, OxyContextProvider, OxyContextState, OxyContextProviderProps, useFollow, ProfileScreen, useAuthStore, useAccountStore, fontFamilies, fontStyles, toast, useStorage;
 
 if (isFrontend) {
   OxyProvider = require('./components/OxyProvider').default;
@@ -30,10 +30,18 @@ if (isFrontend) {
   fontFamilies = require('./styles/fonts').fontFamilies;
   fontStyles = require('./styles/fonts').fontStyles;
   toast = require('../lib/sonner').toast;
+  useStorage = require('./hooks/useStorage').useStorage;
 } else {
   // Backend: no-op fallbacks
   const noopComponent = () => null;
   const noopHook = () => ({});
+  
+  // Stable no-op result object for useStorage (same reference every time)
+  const noopStorageResult = {
+    storage: null,
+    isReady: false,
+  };
+  
   OxyProvider = noopComponent;
   OxySignInButton = noopComponent;
   OxyLogo = noopComponent;
@@ -54,6 +62,7 @@ if (isFrontend) {
   fontFamilies = {};
   fontStyles = {};
   toast = () => {};
+  useStorage = () => noopStorageResult;
 }
 
 export {
@@ -76,9 +85,22 @@ export {
   useAccountStore,
   fontFamilies,
   fontStyles,
-  toast
+  toast,
+  useStorage
 };
 
 // Re-export core services for convenience in UI context
 export { OxyServices } from '../core';
 export type { User, LoginResponse, ApiError } from '../models/interfaces';
+
+// Export error handler utilities (pure functions, no conditional needed)
+export {
+  handleAuthError,
+  isInvalidSessionError,
+  isTimeoutOrNetworkError,
+  extractErrorMessage,
+} from './utils/errorHandlers';
+export type { HandleAuthErrorOptions } from './utils/errorHandlers';
+
+// Export useStorage hook and types (kept for external consumers)
+export type { UseStorageOptions, UseStorageResult } from './hooks/useStorage';

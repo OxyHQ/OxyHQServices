@@ -11,10 +11,6 @@ export interface SessionStorageKeys {
   language: string;
 }
 
-export interface CreateStorageOptions {
-  prefix?: string;
-}
-
 /**
  * Create an in-memory storage implementation used as a safe fallback.
  */

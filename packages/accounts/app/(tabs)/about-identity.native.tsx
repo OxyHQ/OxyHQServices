@@ -17,6 +17,7 @@ import { AccountCard, ScreenHeader, useAlert, Button, ImportantBanner } from '@/
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, KeyManager } from '@oxyhq/services';
+import { useIdentity } from '@/hooks/useIdentity';
 import * as Print from 'expo-print';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { formatDate, getDisplayName } from '@/utils/date-utils';
@@ -27,7 +28,8 @@ export default function AboutIdentityScreen() {
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const router = useRouter();
   const alert = useAlert();
-  const { user, isAuthenticated, isLoading: oxyLoading, getPublicKey, oxyServices, showBottomSheet } = useOxy();
+  const { user, isAuthenticated, isLoading: oxyLoading, oxyServices, showBottomSheet } = useOxy();
+  const { getPublicKey } = useIdentity();
 
   const displayName = useMemo(() => getDisplayName(user), [user]);
   const avatarUrl = useMemo(() => {

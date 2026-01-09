@@ -1,12 +1,13 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'expo-router';
-import { useOxy, RecoveryPhraseService } from '@oxyhq/services';
+import { RecoveryPhraseService } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ImportPhraseStep } from '@/components/auth/ImportPhraseStep';
 import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';
 import { RECOVERY_PHRASE_LENGTH } from '@/constants/auth';
 import { useAuthFlowContext } from '@/contexts/auth-flow-context';
 import { Colors } from '@/constants/theme';
+import { useIdentity } from '@/hooks/useIdentity';
 
 /**
  * Import Identity - Phrase Screen (Index)
@@ -16,7 +17,9 @@ import { Colors } from '@/constants/theme';
 export default function ImportIdentityPhraseScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
-  const { importIdentity, isLoading } = useOxy();
+  const { importIdentity } = useIdentity();
+  const { oxyServices } = useOxy();
+  const isLoading = oxyServices ? false : false; // Identity operations manage their own loading state
   const { error, setAuthError } = useAuthFlowContext();
 
   const backgroundColor = useMemo(
