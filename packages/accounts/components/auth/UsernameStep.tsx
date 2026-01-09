@@ -1,11 +1,12 @@
-import React from 'react';
-import { View, Text, TextInput, StyleSheet } from 'react-native';
+import React, { useState, useRef, useEffect } from 'react';
+import { View, Text, TextInput, StyleSheet, TouchableOpacity } from 'react-native';
+import LottieView from 'lottie-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, KeyboardAwareScrollViewWrapper } from '@/components/ui';
 import { useUsernameValidation } from '@/hooks/auth/useUsernameValidation';
 import { sanitizeUsernameInput } from '@/utils/auth/usernameUtils';
-import { USERNAME_INVALID_ERROR } from '@/constants/auth';
 import type { OxyServices } from '@oxyhq/services';
+import telescopeAnimation from '@/assets/lottie/telescope.json';
 
 interface UsernameStepProps {
   username: string;
@@ -39,9 +40,45 @@ export function UsernameStep({
 }: UsernameStepProps) {
   const insets = useSafeAreaInsets();
   const validation = useUsernameValidation(username, oxyServices);
+  const lottieRef = useRef<LottieView>(null);
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [shouldLoop, setShouldLoop] = useState(false);
+  const [isAnimationPlaying, setIsAnimationPlaying] = useState(true); // Start as true since autoPlay will start it
 
   const isUsernameValid = validation.isValid;
-  
+
+  // Play animation when checking username availability
+  useEffect(() => {
+    if (validation.isChecking && lottieRef.current) {
+      setShouldLoop(true);
+      setIsAnimationPlaying(true);
+      lottieRef.current.reset();
+      lottieRef.current.play();
+    } else if (!validation.isChecking && !isConfirming) {
+      setShouldLoop(false);
+    }
+  }, [validation.isChecking, isConfirming]);
+
+  // Handle animation finish
+  const handleAnimationFinish = () => {
+    // Only mark as finished if not looping
+    if (!shouldLoop && !validation.isChecking && !isConfirming) {
+      setIsAnimationPlaying(false);
+    }
+  };
+
+  // Handle tap on animation - only allow when animation has ended
+  const handleAnimationPress = () => {
+    // Only allow tap when animation is not playing and not looping
+    if (!isAnimationPlaying && !shouldLoop && !validation.isChecking && !isConfirming) {
+      if (lottieRef.current) {
+        setIsAnimationPlaying(true);
+        lottieRef.current.reset();
+        lottieRef.current.play();
+      }
+    }
+  };
+
   // Can continue if:
   // 1. Username is valid AND
   // 2. Either: available === true, available === null (not checked yet), or offline AND
@@ -50,7 +87,7 @@ export function UsernameStep({
     validation.isAvailable === true ||
     validation.isAvailable === null ||
     isOffline
-  ) && !validation.isChecking;
+  ) && !validation.isChecking && !isConfirming;
 
   const handleTextChange = (text: string) => {
     const sanitized = sanitizeUsernameInput(text);
@@ -62,19 +99,49 @@ export function UsernameStep({
     if (!isUsernameValid) {
       return;
     }
-    
+
     // Don't proceed if username is explicitly unavailable or currently being checked
     if (validation.isAvailable === false || validation.isChecking) {
       return;
     }
-    
-    // Proceed to next step
-    onContinue();
+
+    // Start confirmation animation
+    setIsConfirming(true);
+    setShouldLoop(true);
+    setIsAnimationPlaying(true);
+
+    // Reset and play animation from start
+    if (lottieRef.current) {
+      lottieRef.current.reset();
+      lottieRef.current.play();
+    }
+
+    // Wait 4 seconds before proceeding to next step
+    setTimeout(() => {
+      setShouldLoop(false);
+      onContinue();
+    }, 4000);
   };
 
   return (
     <View style={[styles.container, { backgroundColor, paddingTop: insets.top }]}>
       <KeyboardAwareScrollViewWrapper contentContainerStyle={styles.stepContainer}>
+        <View style={styles.animationContainer}>
+          <TouchableOpacity
+            onPress={handleAnimationPress}
+            activeOpacity={0.8}
+            disabled={isAnimationPlaying || shouldLoop || validation.isChecking || isConfirming}
+          >
+            <LottieView
+              ref={lottieRef}
+              source={telescopeAnimation}
+              autoPlay
+              loop={shouldLoop || validation.isChecking}
+              style={styles.lottieAnimation}
+              onAnimationFinish={handleAnimationFinish}
+            />
+          </TouchableOpacity>
+        </View>
         <Text style={[styles.title, { color: textColor }]}>Choose your username</Text>
         <Text style={[styles.subtitle, { color: textColor, opacity: 0.6 }]}>
           {isOffline
@@ -122,11 +189,11 @@ export function UsernameStep({
         <Button
           variant="primary"
           onPress={handleContinue}
-          disabled={(!canContinue && !isOffline) || isUpdating}
-          loading={isUpdating}
+          disabled={(!canContinue && !isOffline) || isUpdating || isConfirming}
+          loading={isUpdating || isConfirming}
           style={styles.primaryButton}
         >
-          {isUpdating ? 'Saving...' : 'Confirm'}
+          {isUpdating ? 'Saving...' : isConfirming ? 'Confirming...' : 'Confirm'}
         </Button>
 
         {/* Only show skip button if offline and onSkip is provided (for offline fallback) */}
@@ -164,6 +231,14 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingTop: 60,
     justifyContent: 'center',
+  },
+  animationContainer: {
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  lottieAnimation: {
+    width: 150,
+    height: 150,
   },
   title: {
     fontSize: 38,

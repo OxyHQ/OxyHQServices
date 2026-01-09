@@ -168,9 +168,20 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
       
       try {
         const formData = new FormData();
-        // In React Native, pass filename as third parameter to avoid read-only name property error
-        // This prevents "Cannot assign to property 'name' which has only a getter" error
-        formData.append('file', file as any, fileName);
+        // Convert File to Blob to avoid read-only 'name' property error in Expo 54
+        // This is a known issue in Expo SDK 52+ where FormData tries to set the read-only 'name' property
+        let fileBlob: Blob;
+        if (file instanceof Blob) {
+          // Already a Blob, use directly
+          fileBlob = file;
+        } else if (typeof (file as any).blob === 'function') {
+          // Use async blob() method if available (Expo 54+ recommended approach)
+          fileBlob = await (file as any).blob();
+        } else {
+          // Fallback: create Blob from File (works in all environments)
+          fileBlob = new Blob([file], { type: file.type || 'application/octet-stream' });
+        }
+        formData.append('file', fileBlob, fileName);
         if (visibility) {
           formData.append('visibility', visibility);
         }
