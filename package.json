@@ -4,23 +4,28 @@
   "description": "OxyHQ Monorepo containing services and API packages",
   "private": true,
   "workspaces": [
-    "packages/api"
+    "packages/api",
+    "packages/services",
+    "packages/accounts"
   ],
   "scripts": {
     "build": "npm run build:all",
-    "build:workspaces": "npm run build --workspaces",
-    "build:all": "npm run build --workspaces && npm run accounts:build",
+    "build:workspaces": "npm run build --workspaces --if-present",
+    "build:all": "npm run services:build && npm run build --workspaces --if-present && npm run accounts:build",
     "start": "cd packages/api && npm start",
-    "dev": "npm run dev --workspaces",
-    "test": "npm run test --workspaces",
-    "clean": "npm run clean --workspaces",
+    "dev": "npm run dev --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "clean": "npm run clean --workspaces --if-present",
     "install:all": "npm install",
     "api:build": "npm run build -w @oxyhq/api",
     "api:dev": "npm run dev -w @oxyhq/api",
     "api:start": "npm run start -w @oxyhq/api",
-    "accounts:build": "cd packages/accounts && npm install --legacy-peer-deps && npm run build",
-    "services:build": "echo 'Skipping services build' && exit 0",
+    "services:build": "npm run build -w @oxyhq/services",
+    "services:dev": "npm run dev -w @oxyhq/services --if-present",
     "services:test": "npm run test -w @oxyhq/services",
+    "accounts:build": "npm run build -w accounts",
+    "accounts:dev": "npm run start -w accounts",
+    "accounts:start": "npm run start -w accounts",
     "heroku-postbuild": "npm run build:all"
   },
   "devDependencies": {
