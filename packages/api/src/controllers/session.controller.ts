@@ -86,8 +86,6 @@ export class SessionController {
           read: false
         }).save();
       } catch (notificationError) {
-        // Log but don't fail registration if notification creation fails
-        // (e.g., duplicate notification, validation error, etc.)
         logger.error('Failed to create welcome notification during registration', notificationError, {
           component: 'SessionController',
           method: 'register',
@@ -99,18 +97,32 @@ export class SessionController {
         success: true,
         message: 'Identity registered successfully',
         user: {
-          id: user.publicKey, // Use publicKey as id (per migration document)
+          id: user.publicKey,
           publicKey: user.publicKey,
           username: user.username,
           name: user.name,
           privacySettings: user.privacySettings
         }
       });
-    } catch (error) {
+    } catch (error: any) {
+      // Handle MongoDB duplicate key error (E11000) - handles race condition where user was created between check and save
+      const isMongoDuplicateKey = error.code === 11000 || 
+                                   error.code === 'E11000' ||
+                                   (error.name === 'MongoServerError' && error.code === 11000);
+      
+      if (isMongoDuplicateKey && error.keyPattern?.publicKey) {
+        return res.status(409).json({
+          error: 'Identity already registered',
+          details: {
+            publicKey: 'This identity is already registered'
+          }
+        });
+      }
+
       logger.error('Registration error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Internal server error';
-      const errorStack = error instanceof Error ? error.stack : undefined;
-      logger.error('Registration error details:', { errorMessage, errorStack });
+      logger.error('Registration error details:', { errorMessage });
+      
       res.status(500).json({ error: 'Internal server error' });
     }
   }

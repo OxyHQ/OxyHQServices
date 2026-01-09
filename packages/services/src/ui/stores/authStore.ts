@@ -8,20 +8,11 @@ export interface AuthState {
   error: string | null;
   lastUserFetch: number | null; // Timestamp of last user fetch for caching
   
-  // Identity sync state (accounts-app specific - used by accounts app's useIdentity hook)
-  // Note: This is kept for accounts app compatibility but is not used by oxy services
-  isIdentitySynced: boolean;
-  isSyncing: boolean;
-  
   loginSuccess: (user: User) => void;
   loginFailure: (error: string) => void;
   logout: () => void;
   fetchUser: (oxyServices: { getCurrentUser: () => Promise<User> }, forceRefresh?: boolean) => Promise<void>;
   setUser: (user: User) => void; // Direct user setter for caching
-  
-  // Identity sync actions (accounts-app specific)
-  setIdentitySynced: (synced: boolean) => void;
-  setSyncing: (syncing: boolean) => void;
 }
 
 export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) => void, get: () => AuthState) => ({
@@ -31,31 +22,19 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
   error: null,
   lastUserFetch: null,
   
-  // Identity sync state (accounts-app specific - kept for compatibility)
-  isIdentitySynced: true, // Assume synced until proven otherwise
-  isSyncing: false,
-  
   loginSuccess: (user: User) => set({ 
     isLoading: false, 
     isAuthenticated: true, 
     user, 
     lastUserFetch: Date.now(),
-    isIdentitySynced: true, // If login succeeded, identity is synced (accounts app)
   }),
   loginFailure: (error: string) => set({ isLoading: false, error }),
   logout: () => set({ 
     user: null, 
     isAuthenticated: false, 
     lastUserFetch: null,
-    // Reset identity sync state when logging out (accounts app)
-    isIdentitySynced: false,
-    isSyncing: false,
   }),
   setUser: (user: User) => set({ user, lastUserFetch: Date.now() }),
-  
-  // Identity sync actions (accounts-app specific)
-  setIdentitySynced: (synced: boolean) => set({ isIdentitySynced: synced }),
-  setSyncing: (syncing: boolean) => set({ isSyncing: syncing }),
   fetchUser: async (oxyServices, forceRefresh = false) => {
     const state = get();
     const now = Date.now();

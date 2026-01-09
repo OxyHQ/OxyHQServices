@@ -8,13 +8,13 @@
 import { useCallback } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useOxy } from '@oxyhq/services';
+import { useOxy, KeyManager } from '@oxyhq/services';
 import { authenticate, canUseBiometrics, getErrorMessage } from '@/lib/biometricAuth';
 
 export function useBiometricSignIn() {
   const { signIn: originalSignIn } = useOxy();
 
-  const signIn = useCallback(async (deviceName?: string) => {
+  const signIn = useCallback(async (publicKey?: string, deviceName?: string) => {
     // Check if biometric authentication is enabled
     if (Platform.OS !== 'web') {
       try {
@@ -43,7 +43,16 @@ export function useBiometricSignIn() {
     }
 
     // Proceed with normal sign-in
-    return await originalSignIn(deviceName);
+    // If no publicKey provided, get it from KeyManager
+    const keyToUse = publicKey || await KeyManager.getPublicKey();
+    if (!keyToUse) {
+      throw new Error('No identity found on this device');
+    }
+    
+    if (deviceName) {
+      return await originalSignIn(keyToUse, deviceName);
+    }
+    return await originalSignIn(keyToUse);
   }, [originalSignIn]);
 
   return { signIn };

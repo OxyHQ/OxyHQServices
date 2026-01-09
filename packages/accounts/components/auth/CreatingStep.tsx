@@ -30,7 +30,7 @@ export function CreatingStep({ progress, backgroundColor, textColor, isSyncing, 
   // Determine message based on current state
   let currentMessage: string;
   let subtitle: string = CREATING_SUBTITLE;
-  
+
   if (isSigningIn) {
     currentMessage = 'Signing in...';
     subtitle = 'Almost there!';
@@ -40,7 +40,7 @@ export function CreatingStep({ progress, backgroundColor, textColor, isSyncing, 
   } else {
     currentMessage = CREATING_PROGRESS_MESSAGES[progress] || CREATING_PROGRESS_MESSAGES[0];
   }
-  
+
   const progressValue = useSharedValue(0);
 
   useEffect(() => {

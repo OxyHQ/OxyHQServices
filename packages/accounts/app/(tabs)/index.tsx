@@ -68,7 +68,7 @@ export default function HomeScreen() {
     return formatDate(dateString);
   }, []);
 
-  // Use reactive state from Zustand store (with defaults)
+  // Use reactive state from identity store (with defaults)
   const { isSynced, isSyncing } = identitySyncState || { isSynced: true, isSyncing: false };
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
@@ -108,7 +108,7 @@ export default function HomeScreen() {
   useEffect(() => {
     const checkAndSync = async () => {
       if (isIdentitySynced) {
-        // This updates the Zustand store internally
+        // This updates the identity store internally
         const synced = await isIdentitySynced();
 
         // Auto-sync if not synced (store will update isSyncing)
