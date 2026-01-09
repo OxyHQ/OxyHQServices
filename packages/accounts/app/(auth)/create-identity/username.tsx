@@ -18,7 +18,7 @@ import { Colors } from '@/constants/theme';
 export default function CreateIdentityUsernameScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
-  const { oxyServices, getPublicKey, activeSessionId } = useOxy();
+  const { oxyServices, getPublicKey } = useOxy();
   const { isOffline } = useNetworkStatus();
   const { usernameRef } = useAuthFlowContext();
 
@@ -67,10 +67,8 @@ export default function CreateIdentityUsernameScreen() {
     setUpdateError(null);
 
     try {
-      if (!oxyServices.hasValidToken() && activeSessionId) {
-        await oxyServices.getTokenBySession(activeSessionId);
-      }
-
+      // Sync should have already happened in the previous step, so we should have a valid token
+      // Just update the profile - if token is missing, updateProfile will handle the error
       const updatedUser = await oxyServices.updateProfile({ username: username.trim() });
 
       if (updatedUser) {
@@ -92,7 +90,7 @@ export default function CreateIdentityUsernameScreen() {
         setIsUpdatingProfile(false);
       }
     }
-  }, [username, oxyServices, activeSessionId, router, usernameRef]);
+  }, [username, oxyServices, router, usernameRef]);
 
   return (
     <UsernameStep

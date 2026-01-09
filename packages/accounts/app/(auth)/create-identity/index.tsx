@@ -18,7 +18,7 @@ import { Colors } from '@/constants/theme';
 export default function CreateIdentityScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
-  const { createIdentity, syncIdentity, signIn, oxyServices } = useOxy();
+  const { createIdentity, syncIdentity } = useOxy();
   const { status, hasIdentity } = useOnboardingStatus();
   const { setAuthError } = useAuthFlowContext();
 
@@ -33,7 +33,6 @@ export default function CreateIdentityScreen() {
 
   const [creatingProgress, setCreatingProgress] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isSigningIn, setIsSigningIn] = useState(false);
   const creatingProgressRef = useRef<NodeJS.Timeout | null>(null);
   const finalDelayTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isMountedRef = useRef(true);
@@ -68,40 +67,28 @@ export default function CreateIdentityScreen() {
         const offline = await checkIfOffline();
         if (!isMountedRef.current) return;
 
-        if (!offline && syncIdentity && signIn) {
+        if (!offline && syncIdentity) {
           try {
             setIsSyncing(true);
+            // syncIdentity already calls performSignIn internally, creating session and activating it
             await syncIdentity();
 
             if (!isMountedRef.current) return;
 
             setIsSyncing(false);
-
-            const authStore = useAuthStore.getState();
-            if (!authStore.isAuthenticated) {
-              setIsSigningIn(true);
-              await signIn();
-              if (!isMountedRef.current) return;
-
-              if (oxyServices) {
-                let attempts = 0;
-                while (!oxyServices.hasValidToken() && attempts < 20) {
-                  await new Promise(resolve => setTimeout(resolve, 100));
-                  attempts++;
-                }
-              }
-
-              setIsSigningIn(false);
-            }
-
             router.replace('/(auth)/create-identity/username');
-          } catch {
+          } catch (syncErr: unknown) {
             setIsSyncing(false);
-            setIsSigningIn(false);
 
             if (!isMountedRef.current) return;
 
-            router.replace('/(auth)/create-identity/username');
+            const errorMessage = extractAuthErrorMessage(syncErr);
+            // If network error, still navigate to username step (user can set username later when online)
+            if (isNetworkOrTimeoutError(syncErr)) {
+              router.replace('/(auth)/create-identity/username');
+            } else {
+              setAuthError(errorMessage);
+            }
           }
         } else {
           router.replace('/(auth)/create-identity/username');
@@ -145,43 +132,27 @@ export default function CreateIdentityScreen() {
 
           if (!isMountedRef.current) return;
 
-          if (!isOffline && syncIdentity && signIn) {
+          if (!isOffline && syncIdentity) {
             try {
               setIsSyncing(true);
               setCreatingProgress(2);
 
+              // syncIdentity already calls performSignIn internally, creating session and activating it
               await syncIdentity();
 
               if (!isMountedRef.current) return;
 
               setIsSyncing(false);
-              setIsSigningIn(true);
-              setCreatingProgress(2);
-
-              await signIn();
-
-              if (!isMountedRef.current) return;
-
-              if (oxyServices) {
-                let attempts = 0;
-                while (!oxyServices.hasValidToken() && attempts < 20) {
-                  await new Promise(resolve => setTimeout(resolve, 100));
-                  attempts++;
-                }
-              }
-
-              setIsSigningIn(false);
               setCreatingProgress(0);
-
               router.replace('/(auth)/create-identity/username');
             } catch (syncErr: unknown) {
               setIsSyncing(false);
-              setIsSigningIn(false);
 
               if (!isMountedRef.current) return;
 
               const errorMessage = extractAuthErrorMessage(syncErr);
 
+              // If network error, still navigate to username step (user can set username later when online)
               if (isNetworkOrTimeoutError(syncErr)) {
                 setCreatingProgress(0);
                 router.replace('/(auth)/create-identity/username');
@@ -204,30 +175,26 @@ export default function CreateIdentityScreen() {
             const offline = await checkIfOffline();
             if (!isMountedRef.current) return;
 
-            if (!offline && syncIdentity && signIn) {
+            if (!offline && syncIdentity) {
               try {
                 setIsSyncing(true);
+                // syncIdentity already calls performSignIn internally, creating session and activating it
                 await syncIdentity();
                 if (!isMountedRef.current) return;
                 setIsSyncing(false);
-                setIsSigningIn(true);
-                await signIn();
+                router.replace('/(auth)/create-identity/username');
+              } catch (syncErr: unknown) {
+                setIsSyncing(false);
                 if (!isMountedRef.current) return;
 
-                if (oxyServices) {
-                  let attempts = 0;
-                  while (!oxyServices.hasValidToken() && attempts < 20) {
-                    await new Promise(resolve => setTimeout(resolve, 100));
-                    attempts++;
-                  }
+                // If network error, still navigate to username step
+                if (isNetworkOrTimeoutError(syncErr)) {
+                  router.replace('/(auth)/create-identity/username');
+                } else {
+                  const errorMessage = extractAuthErrorMessage(syncErr);
+                  setAuthError(errorMessage);
+                  router.replace('/(auth)/create-identity/username');
                 }
-
-                setIsSigningIn(false);
-                router.replace('/(auth)/create-identity/username');
-              } catch {
-                setIsSyncing(false);
-                setIsSigningIn(false);
-                router.replace('/(auth)/create-identity/username');
               }
             } else {
               router.replace('/(auth)/create-identity/username');
@@ -243,7 +210,7 @@ export default function CreateIdentityScreen() {
     }
 
     return cleanupTimers;
-  }, [status, hasIdentity, createIdentity, syncIdentity, signIn, oxyServices, router, setAuthError, cleanupTimers]);
+  }, [status, hasIdentity, createIdentity, syncIdentity, router, setAuthError, cleanupTimers]);
 
   return (
     <CreatingStep
@@ -251,7 +218,6 @@ export default function CreateIdentityScreen() {
       backgroundColor={backgroundColor}
       textColor={textColor}
       isSyncing={isSyncing}
-      isSigningIn={isSigningIn}
     />
   );
 }

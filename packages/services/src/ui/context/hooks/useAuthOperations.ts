@@ -199,15 +199,19 @@ export const useAuthOperations = ({
         );
 
         // Get token for the session
-        await oxyServices.getTokenBySession(sessionResponse.sessionId);
+        try {
+          await oxyServices.getTokenBySession(sessionResponse.sessionId);
+        } catch (tokenError: unknown) {
+          const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
+          const status = (tokenError as any)?.status;
+          if (status === 404 || errorMessage.includes('404')) {
+            throw new Error(`Session was created but token could not be retrieved. Session ID: ${sessionResponse.sessionId.substring(0, 8)}...`);
+          }
+          throw tokenError;
+        }
 
         // Get full user data
         fullUser = await oxyServices.getUserBySession(sessionResponse.sessionId);
-        
-        // Ensure id is set to publicKey (per migration document)
-        if (fullUser.id !== fullUser.publicKey) {
-          fullUser.id = fullUser.publicKey;
-        }
 
         // Fetch device sessions
         let allDeviceSessions: ClientSession[] = [];
@@ -218,12 +222,12 @@ export const useAuthOperations = ({
             logger,
           });
         } catch (error) {
-          if (__DEV__) {
-            console.warn('Failed to fetch device sessions after login:', error);
+          if (__DEV__ && logger) {
+            logger('Failed to fetch device sessions after login', error);
           }
         }
 
-        // Check for existing session for same user
+        // Check for existing session for same user and switch to it to avoid duplicates
         const existingSession = allDeviceSessions.find(
           (session) =>
             session.userId?.toString() === fullUser.id?.toString() &&
@@ -231,12 +235,13 @@ export const useAuthOperations = ({
         );
 
         if (existingSession) {
-          // Logout duplicate session
+          // Switch to existing session instead of creating duplicate
           try {
             await oxyServices.logoutSession(sessionResponse.sessionId, sessionResponse.sessionId);
           } catch (logoutError) {
-            if (__DEV__) {
-              console.warn('Failed to logout duplicate session:', logoutError);
+            // Non-critical - continue to switch session even if logout fails
+            if (__DEV__ && logger) {
+              logger('Failed to logout duplicate session, continuing with switch', logoutError);
             }
           }
           await switchSession(existingSession.sessionId);
@@ -306,8 +311,8 @@ export const useAuthOperations = ({
           };
         } catch (syncError) {
           // Offline or server error - identity is created locally but not synced
-          if (__DEV__) {
-            console.log('[Auth] Identity created locally, will sync when online:', syncError);
+          if (__DEV__ && logger) {
+            logger('Identity created locally, will sync when online', syncError);
           }
           
           return {
@@ -390,47 +395,75 @@ export const useAuthOperations = ({
         }
 
         // Check if already registered on server
-        const { registered } = await oxyServices.checkPublicKeyRegistered(publicKey);
+        try {
+          const { registered } = await oxyServices.checkPublicKeyRegistered(publicKey);
 
-        if (!registered) {
-          // Register with server (identity is just the publicKey)
-          const { signature, timestamp } = await SignatureService.createRegistrationSignature();
-          await oxyServices.register(publicKey, signature, timestamp);
+          if (!registered) {
+            // Register with server (identity is just the publicKey)
+            try {
+              const { signature, timestamp } = await SignatureService.createRegistrationSignature();
+              await oxyServices.register(publicKey, signature, timestamp);
+            } catch (registerError: unknown) {
+              const errorMessage = registerError instanceof Error ? registerError.message : String(registerError);
+              // If already registered (409), that's OK - continue with sync
+              const status = (registerError as any)?.status;
+              if (status !== 409 && !errorMessage.includes('already') && !errorMessage.includes('409')) {
+                throw registerError;
+              }
+              // Already registered - continue with sync
+              if (__DEV__ && logger) {
+                logger('Identity already registered, continuing with sync', registerError);
+              }
+            }
+          }
+        } catch (checkError: unknown) {
+          // If check fails, try to register anyway (might be network issue)
+          try {
+            const { signature, timestamp } = await SignatureService.createRegistrationSignature();
+            await oxyServices.register(publicKey, signature, timestamp);
+          } catch (registerError: unknown) {
+            const errorMessage = registerError instanceof Error ? registerError.message : String(registerError);
+            const status = (registerError as any)?.status;
+            // If already registered (409), that's OK - continue with sync
+            if (status !== 409 && !errorMessage.includes('already') && !errorMessage.includes('409')) {
+              throw registerError;
+            }
+            // Already registered - continue with sync
+            if (__DEV__ && logger) {
+              logger('Identity already registered, continuing with sync', registerError);
+            }
+          }
         }
 
         // Mark as synced (Zustand store + storage)
         await storage.setItem('oxy_identity_synced', 'true');
         setIdentitySynced(true);
 
-        // Sign in
+        // Sign in to create session and activate it
         const user = await performSignIn(publicKey);
 
-        // Check if user has username - required for syncing
-        if (!user.username) {
-          const usernameError = new Error('USERNAME_REQUIRED');
-          (usernameError as any).code = 'USERNAME_REQUIRED';
-          throw usernameError;
-        }
-
         // TanStack Query will automatically retry any pending mutations
+        // Note: Username may not be set yet - that's OK, it will be set in the username step
 
         return user;
       } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
         const message = handleAuthError(error, {
-          defaultMessage: 'Failed to sync identity',
+          defaultMessage: `Failed to sync identity: ${errorMessage}`,
           code: REGISTER_ERROR_CODE,
           onError,
           setAuthError: (msg: string) => setAuthState({ error: msg }),
           logger,
         });
-        loginFailure(message);
+        // Don't call loginFailure for sync errors - sync and login are different operations
+        setAuthState({ error: message });
         throw error;
       } finally {
         setAuthState({ isLoading: false });
         setSyncing(false);
       }
     },
-    [oxyServices, storage, setAuthState, performSignIn, loginFailure, onError, logger, setSyncing, setIdentitySynced],
+    [oxyServices, storage, setAuthState, performSignIn, onError, logger, setSyncing, setIdentitySynced],
   );
 
   /**
@@ -471,8 +504,8 @@ export const useAuthOperations = ({
           }
         } catch (syncError) {
           // Offline - identity restored locally but not synced
-          if (__DEV__) {
-            console.log('[Auth] Identity imported locally, will sync when online:', syncError);
+          if (__DEV__ && logger) {
+            logger('Identity imported locally, will sync when online', syncError);
           }
           return { synced: false };
         }
