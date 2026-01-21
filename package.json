@@ -56,7 +56,10 @@
   ],
   "author": "OxyHQ",
   "license": "MIT",
-  "dependencies": {},
+  "dependencies": {
+    "react": "19.1.0",
+    "react-dom": "19.1.0"
+  },
   "overrides": {
     "send": "0.19.1"
   }
