@@ -40,64 +40,14 @@ class AnomalyDetectionService {
   /**
    * Detect if login is from a new location
    * Returns true if location is suspiciously far from previous locations
+   * NOTE: Currently disabled - location field is stored as string, not coordinates object
    */
   async detectNewLocation(
     userId: string,
     currentLocation?: { lat: number; lon: number }
   ): Promise<{ isAnomaly: boolean; reason?: string; distance?: number }> {
-    if (!currentLocation) {
-      return { isAnomaly: false };
-    }
-
-    try {
-      // Get recent sessions with location data
-      const recentSessions = await Session.find({
-        userId,
-        'deviceInfo.location.coordinates': { $exists: true },
-        createdAt: { $gt: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) }, // Last 30 days
-      })
-        .sort({ createdAt: -1 })
-        .limit(10)
-        .lean();
-
-      if (recentSessions.length === 0) {
-        // First session with location - not an anomaly
-        return { isAnomaly: false };
-      }
-
-      // Check if current location is far from any recent location
-      const MIN_SUSPICIOUS_DISTANCE = 500; // km
-      let minDistance = Infinity;
-
-      for (const session of recentSessions) {
-        const prevLat = session.deviceInfo?.location?.coordinates?.lat;
-        const prevLon = session.deviceInfo?.location?.coordinates?.lon;
-
-        if (prevLat && prevLon) {
-          const distance = this.calculateDistance(
-            prevLat,
-            prevLon,
-            currentLocation.lat,
-            currentLocation.lon
-          );
-
-          minDistance = Math.min(minDistance, distance);
-        }
-      }
-
-      if (minDistance > MIN_SUSPICIOUS_DISTANCE) {
-        return {
-          isAnomaly: true,
-          reason: 'Login from unusual location',
-          distance: Math.round(minDistance),
-        };
-      }
-
-      return { isAnomaly: false };
-    } catch (error) {
-      logger.error('Error detecting new location:', error);
-      return { isAnomaly: false };
-    }
+    // Location-based detection disabled until Session model is updated to store coordinates
+    return { isAnomaly: false };
   }
 
   /**
@@ -135,59 +85,14 @@ class AnomalyDetectionService {
   /**
    * Detect impossible travel
    * Two logins from different locations within time that's impossible to travel
+   * NOTE: Currently disabled - location field is stored as string, not coordinates object
    */
   async detectImpossibleTravel(
     userId: string,
     currentLocation?: { lat: number; lon: number }
   ): Promise<{ isAnomaly: boolean; reason?: string; details?: string }> {
-    if (!currentLocation) {
-      return { isAnomaly: false };
-    }
-
-    try {
-      // Get most recent session with location
-      const lastSession = await Session.findOne({
-        userId,
-        'deviceInfo.location.coordinates': { $exists: true },
-      })
-        .sort({ createdAt: -1 })
-        .lean();
-
-      if (!lastSession || !lastSession.deviceInfo?.location?.coordinates) {
-        return { isAnomaly: false };
-      }
-
-      const prevLat = lastSession.deviceInfo.location.coordinates.lat;
-      const prevLon = lastSession.deviceInfo.location.coordinates.lon;
-      const prevTime = lastSession.createdAt;
-
-      const distance = this.calculateDistance(
-        prevLat,
-        prevLon,
-        currentLocation.lat,
-        currentLocation.lon
-      );
-
-      const timeDiffHours = (Date.now() - new Date(prevTime).getTime()) / (1000 * 60 * 60);
-
-      // Average commercial flight speed: ~900 km/h
-      // Add buffer for check-in, security, etc.
-      const MAX_TRAVEL_SPEED = 1000; // km/h
-      const possibleDistance = timeDiffHours * MAX_TRAVEL_SPEED;
-
-      if (distance > possibleDistance && timeDiffHours < 12) {
-        return {
-          isAnomaly: true,
-          reason: 'Impossible travel detected',
-          details: `${Math.round(distance)}km in ${timeDiffHours.toFixed(1)} hours`,
-        };
-      }
-
-      return { isAnomaly: false };
-    } catch (error) {
-      logger.error('Error detecting impossible travel:', error);
-      return { isAnomaly: false };
-    }
+    // Impossible travel detection disabled until Session model is updated to store coordinates
+    return { isAnomaly: false };
   }
 
   /**
@@ -209,8 +114,8 @@ class AnomalyDetectionService {
 
       const uniqueIps = new Set<string>();
       recentSessions.forEach(session => {
-        if (session.deviceInfo?.ip) {
-          uniqueIps.add(session.deviceInfo.ip);
+        if (session.deviceInfo?.ipAddress) {
+          uniqueIps.add(session.deviceInfo.ipAddress);
         }
       });
 
@@ -284,15 +189,16 @@ class AnomalyDetectionService {
 
     // Log suspicious activity if anomalies detected
     if (anomalies.length > 0) {
-      await securityActivityService.logActivity({
+      await securityActivityService.logSecurityEvent({
         userId,
         eventType: 'suspicious_activity',
+        eventDescription: 'Suspicious activity detected during login',
         metadata: {
           anomalies,
           deviceInfo,
         },
-        ipAddress: req.ip,
-        userAgent: req.headers['user-agent'],
+        req,
+        severity: 'critical',
       });
 
       logger.warn('Anomalies detected for user login', {

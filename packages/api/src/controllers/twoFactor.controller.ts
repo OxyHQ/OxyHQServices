@@ -102,16 +102,16 @@ export async function enable2FA(req: Request, res: Response) {
     await user.save();
 
     // Log security activity
-    await securityActivityService.logActivity({
-      userId: user._id,
+    await securityActivityService.logSecurityEvent({
+      userId: user._id.toString(),
       eventType: 'security_settings_changed',
+      eventDescription: 'Two-factor authentication enabled',
       metadata: {
         setting: 'two_factor_auth',
         action: 'enabled',
         deviceInfo: (req as any).deviceInfo,
       },
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
+      req,
     });
 
     return res.json({
@@ -151,7 +151,7 @@ export async function disable2FA(req: Request, res: Response) {
     }
 
     // Verify password
-    const { verifyPassword } = await import('../utils/password');
+    const { verifyPassword } = await import('../utils/password.js');
     if (!user.password || !(await verifyPassword(password, user.password))) {
       return res.status(401).json({ message: 'Invalid password' });
     }
@@ -173,16 +173,16 @@ export async function disable2FA(req: Request, res: Response) {
     await user.save();
 
     // Log security activity
-    await securityActivityService.logActivity({
-      userId: user._id,
+    await securityActivityService.logSecurityEvent({
+      userId: user._id.toString(),
       eventType: 'security_settings_changed',
+      eventDescription: 'Two-factor authentication disabled',
       metadata: {
         setting: 'two_factor_auth',
         action: 'disabled',
         deviceInfo: (req as any).deviceInfo,
       },
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
+      req,
     });
 
     return res.json({
@@ -245,16 +245,16 @@ export async function verify2FAToken(req: Request, res: Response) {
         await user.save();
 
         // Log backup code usage
-        await securityActivityService.logActivity({
-          userId: user._id,
+        await securityActivityService.logSecurityEvent({
+          userId: user._id.toString(),
           eventType: 'security_settings_changed',
+          eventDescription: 'Two-factor authentication backup code used',
           metadata: {
             setting: 'two_factor_auth',
             action: 'backup_code_used',
             remainingCodes: user.twoFactorAuth.backupCodes.length,
           },
-          ipAddress: req.ip,
-          userAgent: req.headers['user-agent'],
+          req,
         });
       }
     }
@@ -343,15 +343,15 @@ export async function regenerateBackupCodes(req: Request, res: Response) {
     await user.save();
 
     // Log activity
-    await securityActivityService.logActivity({
-      userId: user._id,
+    await securityActivityService.logSecurityEvent({
+      userId: user._id.toString(),
       eventType: 'security_settings_changed',
+      eventDescription: 'Two-factor authentication backup codes regenerated',
       metadata: {
         setting: 'two_factor_auth',
         action: 'backup_codes_regenerated',
       },
-      ipAddress: req.ip,
-      userAgent: req.headers['user-agent'],
+      req,
     });
 
     return res.json({
