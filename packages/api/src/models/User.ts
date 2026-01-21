@@ -6,6 +6,12 @@ export interface IUser extends Document {
   publicKey?: string; // ECDSA secp256k1 public key (hex) - primary identifier for local identity
   password?: string; // Hashed password for password-based accounts
   refreshToken?: string | null;
+  twoFactorAuth?: {
+    enabled: boolean;
+    secret?: string; // TOTP secret (encrypted)
+    backupCodes?: string[]; // Hashed backup codes
+    verifiedAt?: Date; // When 2FA was last verified
+  };
   following?: mongoose.Types.ObjectId[];
   followers?: mongoose.Types.ObjectId[];
   name?: {
@@ -168,6 +174,12 @@ const UserSchema: Schema = new Schema(
       type: String,
       default: null,
       select: false,
+    },
+    twoFactorAuth: {
+      enabled: { type: Boolean, default: false },
+      secret: { type: String, select: false }, // TOTP secret
+      backupCodes: { type: [String], select: false, default: [] }, // Hashed backup codes
+      verifiedAt: { type: Date },
     },
     verified: {
       type: Boolean,

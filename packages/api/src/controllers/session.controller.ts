@@ -17,21 +17,68 @@ import sessionService from '../services/session.service';
 import sessionCache from '../utils/sessionCache';
 import { logger } from '../utils/logger';
 import { formatUserResponse } from '../utils/userTransform';
-import { generateNumericCode, hashPassword, verifyPassword } from '../utils/password';
+import { generateNumericCode, generateAlphanumericCode, hashPassword, verifyPassword, validatePasswordStrength, PASSWORD_MIN_LENGTH } from '../utils/password';
 import securityActivityService from '../services/securityActivityService';
+import anomalyDetectionService from '../services/anomalyDetection.service';
 
 // Challenge expiration time (5 minutes)
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
-const PASSWORD_MIN_LENGTH = 8;
-const RECOVERY_CODE_LENGTH = 6;
+const RECOVERY_CODE_LENGTH = 8;
 const RECOVERY_CODE_TTL_MS = 10 * 60 * 1000;
 const RECOVERY_TOKEN_TTL_MS = 15 * 60 * 1000;
 const MAX_RECOVERY_ATTEMPTS = 5;
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// More robust email validation regex (RFC 5322 compliant)
+// Validates: local-part@domain with proper character restrictions
+const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
 const USERNAME_REGEX = /^[a-zA-Z0-9]{3,30}$/;
 
 function normalizeEmail(email: string): string {
   return email.trim().toLowerCase();
+}
+
+function validateEmail(email: string): { valid: boolean; error?: string } {
+  if (!email || typeof email !== 'string') {
+    return { valid: false, error: 'Email is required' };
+  }
+
+  const normalized = normalizeEmail(email);
+
+  // Check length constraints (RFC 5321)
+  if (normalized.length > 254) {
+    return { valid: false, error: 'Email address is too long' };
+  }
+
+  const [localPart, domain] = normalized.split('@');
+
+  if (!localPart || !domain) {
+    return { valid: false, error: 'Invalid email format' };
+  }
+
+  if (localPart.length > 64) {
+    return { valid: false, error: 'Email local part is too long' };
+  }
+
+  // Check for consecutive dots
+  if (normalized.includes('..')) {
+    return { valid: false, error: 'Email cannot contain consecutive dots' };
+  }
+
+  // Check regex pattern
+  if (!EMAIL_REGEX.test(normalized)) {
+    return { valid: false, error: 'Invalid email format' };
+  }
+
+  // Additional checks for common mistakes
+  if (localPart.startsWith('.') || localPart.endsWith('.')) {
+    return { valid: false, error: 'Email local part cannot start or end with a dot' };
+  }
+
+  if (domain.startsWith('-') || domain.endsWith('-')) {
+    return { valid: false, error: 'Email domain cannot start or end with a hyphen' };
+  }
+
+  return { valid: true };
 }
 
 function normalizeUsername(username: string): string {
@@ -232,14 +279,19 @@ export class SessionController {
         });
       }
 
-      const normalizedEmail = normalizeEmail(email);
-      if (!EMAIL_REGEX.test(normalizedEmail)) {
-        return res.status(400).json({ message: 'Please provide a valid email address' });
+      // Validate email with comprehensive checks
+      const emailValidation = validateEmail(email);
+      if (!emailValidation.valid) {
+        return res.status(400).json({ message: emailValidation.error });
       }
+      const normalizedEmail = normalizeEmail(email);
 
-      if (typeof password !== 'string' || password.length < PASSWORD_MIN_LENGTH) {
+      // Validate password strength
+      const passwordValidation = validatePasswordStrength(password);
+      if (!passwordValidation.valid) {
         return res.status(400).json({
-          message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters long`
+          message: 'Password does not meet security requirements',
+          errors: passwordValidation.errors
         });
       }
 
@@ -531,6 +583,12 @@ export class SessionController {
         return res.status(401).json({ message: 'Invalid credentials' });
       }
 
+      // Check for anomalous login patterns
+      const anomalyCheck = await anomalyDetectionService.checkForAnomalies(
+        user._id.toString(),
+        req
+      );
+
       const session = await sessionService.createSession(
         user._id.toString(),
         req,
@@ -538,6 +596,14 @@ export class SessionController {
       );
 
       const response = buildSessionAuthResponse(session, user);
+
+      // Include anomaly information in response if detected
+      if (anomalyCheck.hasAnomalies && response) {
+        (response as any).securityAlert = {
+          message: 'Unusual activity detected on your account',
+          anomalies: anomalyCheck.anomalies,
+        };
+      }
       if (!response) {
         return res.status(500).json({ message: 'Failed to format user data' });
       }
@@ -598,7 +664,7 @@ export class SessionController {
         });
       }
 
-      const code = generateNumericCode(RECOVERY_CODE_LENGTH);
+      const code = generateAlphanumericCode(RECOVERY_CODE_LENGTH);
       const codeHash = await hashPassword(code);
       const expiresAt = new Date(Date.now() + RECOVERY_CODE_TTL_MS);
 
@@ -705,9 +771,12 @@ export class SessionController {
         return res.status(400).json({ message: 'Recovery token and password are required' });
       }
 
-      if (typeof password !== 'string' || password.length < PASSWORD_MIN_LENGTH) {
+      // Validate password strength
+      const passwordValidation = validatePasswordStrength(password);
+      if (!passwordValidation.valid) {
         return res.status(400).json({
-          message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters long`
+          message: 'Password does not meet security requirements',
+          errors: passwordValidation.errors
         });
       }
 

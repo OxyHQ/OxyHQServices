@@ -36,16 +36,23 @@ function AuthCallbackContent() {
         return;
       }
 
-      // Determine target origin from redirect_uri or use the opener's origin
-      let targetOrigin = '*'; // Fallback to wildcard (less secure)
+      // Determine target origin from redirect_uri - required for security
+      let targetOrigin: string | null = null;
 
       if (redirectUri) {
         try {
           const url = new URL(redirectUri);
           targetOrigin = url.origin;
         } catch (e) {
-          console.error('Invalid redirect_uri:', redirectUri);
+          console.error('[AuthCallback] Invalid redirect_uri:', redirectUri);
         }
+      }
+
+      // Require valid redirect_uri for security
+      if (!targetOrigin) {
+        console.error('[AuthCallback] No valid redirect_uri provided - cannot send postMessage');
+        // Don't send postMessage without valid origin
+        return;
       }
 
       // Build response object

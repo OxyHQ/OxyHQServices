@@ -9,7 +9,7 @@ import sessionRouter from "./routes/session";
 import dotenv from "dotenv";
 import { User } from "./models/User";
 import searchRoutes from "./routes/search";
-import { rateLimiter, authRateLimiter, userRateLimiter, bruteForceProtection } from "./middleware/security";
+import { rateLimiter, authRateLimiter, userRateLimiter, bruteForceProtection, securityHeaders } from "./middleware/security";
 import privacyRoutes from "./routes/privacy";
 import analyticsRoutes from "./routes/analytics.routes";
 import paymentRoutes from './routes/payment.routes';
@@ -24,10 +24,13 @@ import developerRoutes from './routes/developer';
 import devicesRouter from './routes/devices';
 import securityRoutes from './routes/security';
 import subscriptionRoutes from './routes/subscription.routes';
+import fedcmRoutes from './routes/fedcm';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
 import { Response } from 'express';
 import { authMiddleware } from './middleware/auth';
+import cookieParser from 'cookie-parser';
+import { csrfProtection, getCsrfToken } from './middleware/csrf';
 import { createCorsMiddleware, SOCKET_IO_CORS_CONFIG } from './config/cors';
 import { validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './config/env';
 import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from './middleware/performance';
@@ -47,6 +50,12 @@ try {
 }
 
 const app = express();
+
+// Security headers middleware (first, before any other middleware)
+app.use(securityHeaders);
+
+// Cookie parser middleware (before CSRF and body parsing)
+app.use(cookieParser());
 
 // Body parsing middleware - IMPORTANT: Add this before any routes
 app.use(express.json());
@@ -298,28 +307,32 @@ app.get("/api/metrics", authMiddleware, (req: any, res: Response) => {
 app.use(rateLimiter);
 app.use(bruteForceProtection);
 
+// CSRF token endpoint (must be before CSRF protection)
+app.get('/api/csrf-token', getCsrfToken);
+
 // API Routes with /api prefix
 // Apply stricter rate limiting to auth routes
 app.use("/auth", authRateLimiter, authRoutes);
 app.use("/api/auth", authRateLimiter, authRoutes);
 app.use("/api/assets", assetRoutes);
-app.use("/api/storage", userRateLimiter, storageRoutes);
+app.use("/api/storage", userRateLimiter, csrfProtection, storageRoutes);
 app.use("/api/search", searchRoutes);
-app.use("/api/profiles", profilesRouter);
-app.use("/api/users", userRateLimiter, usersRouter); // Per-user rate limiting for authenticated routes
-app.use("/api/session", userRateLimiter, sessionRouter);
-app.use("/api/privacy", userRateLimiter, privacyRoutes);
+app.use("/api/profiles", csrfProtection, profilesRouter);
+app.use("/api/users", userRateLimiter, csrfProtection, usersRouter); // Per-user rate limiting for authenticated routes
+app.use("/api/session", userRateLimiter, sessionRouter); // No CSRF on session routes (auth flow)
+app.use("/api/privacy", userRateLimiter, csrfProtection, privacyRoutes);
 app.use("/api/analytics", userRateLimiter, analyticsRoutes);
-app.use('/api/payments', userRateLimiter, paymentRoutes);
-app.use('/api/notifications', userRateLimiter, notificationsRouter);
-app.use('/api/karma', karmaRoutes);
-app.use('/api/wallet', userRateLimiter, walletRoutes);
+app.use('/api/payments', userRateLimiter, csrfProtection, paymentRoutes);
+app.use('/api/notifications', userRateLimiter, csrfProtection, notificationsRouter);
+app.use('/api/karma', csrfProtection, karmaRoutes);
+app.use('/api/wallet', userRateLimiter, csrfProtection, walletRoutes);
 app.use('/api/link-metadata', linkMetadataRoutes);
 app.use('/api/location-search', locationSearchRoutes);
-app.use('/api/developer', developerRoutes);
-app.use('/api/devices', userRateLimiter, devicesRouter);
-app.use('/api/security', userRateLimiter, securityRoutes);
-app.use('/api/subscription', userRateLimiter, subscriptionRoutes);
+app.use('/api/developer', csrfProtection, developerRoutes);
+app.use('/api/devices', userRateLimiter, csrfProtection, devicesRouter);
+app.use('/api/security', userRateLimiter, csrfProtection, securityRoutes);
+app.use('/api/subscription', userRateLimiter, csrfProtection, subscriptionRoutes);
+app.use('/api/fedcm', fedcmRoutes);
 
 // Add a protected route for testing
 app.get('/api/protected-server-route', authMiddleware, (req: any, res: Response) => {

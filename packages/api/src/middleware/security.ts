@@ -59,4 +59,48 @@ const bruteForceProtection = slowDown({
   }
 });
 
-export { rateLimiter, authRateLimiter, userRateLimiter, bruteForceProtection };
+/**
+ * Security headers middleware
+ * Implements HTTPS security headers following OWASP recommendations
+ */
+const securityHeaders = (req: Request, res: Response, next: NextFunction) => {
+  // Strict-Transport-Security: Enforce HTTPS for 1 year including subdomains
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
+  }
+
+  // X-Content-Type-Options: Prevent MIME type sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+
+  // X-Frame-Options: Prevent clickjacking attacks
+  res.setHeader('X-Frame-Options', 'DENY');
+
+  // X-XSS-Protection: Enable browser XSS protection (legacy browsers)
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+
+  // Referrer-Policy: Control referrer information
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+
+  // Content-Security-Policy: Prevent XSS and data injection attacks
+  // Adjust this based on your specific needs
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; " +
+    "script-src 'self'; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data: https:; " +
+    "font-src 'self'; " +
+    "connect-src 'self'; " +
+    "frame-ancestors 'none';"
+  );
+
+  // Permissions-Policy: Control browser features and APIs
+  res.setHeader(
+    'Permissions-Policy',
+    'geolocation=(), microphone=(), camera=(), payment=()'
+  );
+
+  next();
+};
+
+export { rateLimiter, authRateLimiter, userRateLimiter, bruteForceProtection, securityHeaders };
