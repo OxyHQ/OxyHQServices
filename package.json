@@ -33,11 +33,9 @@
     "heroku-postbuild": "npm run build:all"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
     "@types/express": "^5.0.3",
     "@types/express-serve-static-core": "^5.0.7",
     "@types/node": "^20.0.0",
-    "tailwindcss": "^4",
     "typescript": "^5.9.2"
   },
   "engines": {
@@ -59,8 +57,10 @@
   "author": "OxyHQ",
   "license": "MIT",
   "dependencies": {
+    "@tailwindcss/postcss": "^4",
     "react": "19.1.0",
-    "react-dom": "19.1.0"
+    "react-dom": "19.1.0",
+    "tailwindcss": "^4"
   },
   "overrides": {
     "send": "0.19.1"
