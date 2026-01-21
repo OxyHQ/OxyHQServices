@@ -143,7 +143,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
 
     React.useEffect(() => {
         if (usersData && usersData.length > 0) {
-            const accountsData = usersData.map(({ sessionId, user: userProfile }) => {
+            const accountsData = usersData.map(({ sessionId, user: userProfile }: { sessionId: string; user: any }) => {
                 if (!userProfile) {
                     return {
                         id: sessionId,

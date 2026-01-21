@@ -8,9 +8,6 @@
     "scheme": "accounts",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-    "ios": {
-      "supportsTablet": true
-    },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
@@ -25,7 +22,12 @@
         "android.permission.USE_BIOMETRIC",
         "android.permission.USE_FINGERPRINT"
       ],
-      "package": "so.oxy.accounts"
+      "package": "so.oxy.accounts",
+      "jsEngine": "jsc"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "jsEngine": "jsc"
     },
     "web": {
       "output": "static",

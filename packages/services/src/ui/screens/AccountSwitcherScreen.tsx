@@ -130,7 +130,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
 
                 // Create a map for O(1) lookup
                 const userProfileMap = new Map<string, User | null>();
-                batchResults.forEach(({ sessionId, user }) => {
+                batchResults.forEach(({ sessionId, user }: { sessionId: string; user: any }) => {
                     userProfileMap.set(sessionId, user);
                 });
 

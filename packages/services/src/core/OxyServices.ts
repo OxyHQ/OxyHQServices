@@ -96,14 +96,18 @@ import { composeOxyServices } from './mixins';
  * ```
  */
 // Compose all mixins into the final OxyServices class
-const OxyServicesComposed = composeOxyServices() as any;
+const OxyServicesComposed = composeOxyServices();
 
 // Export as a named class to avoid TypeScript issues with anonymous class types
-export class OxyServices extends OxyServicesComposed {
+export class OxyServices extends (OxyServicesComposed as any) {
   constructor(config: OxyConfig) {
     super(config);
   }
 }
+
+// Type augmentation to expose mixin methods to TypeScript
+// This allows proper type checking while avoiding complex mixin type inference
+export interface OxyServices extends InstanceType<ReturnType<typeof composeOxyServices>> {}
 
 // Re-export error classes for convenience
 export { OxyAuthenticationError, OxyAuthenticationTimeoutError };

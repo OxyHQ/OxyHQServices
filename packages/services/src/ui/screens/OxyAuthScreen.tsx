@@ -228,12 +228,12 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
       if (isProcessingRef.current) return;
 
       try {
-        const response = await oxyServices.makeRequest<{
+        const response: {
           authorized: boolean;
           sessionId?: string;
           publicKey?: string;
           status?: string;
-        }>('GET', `/api/auth/session/status/${sessionToken}`, undefined, { cache: false });
+        } = await oxyServices.makeRequest('GET', `/api/auth/session/status/${sessionToken}`, undefined, { cache: false });
 
         if (response.authorized && response.sessionId) {
           cleanup();

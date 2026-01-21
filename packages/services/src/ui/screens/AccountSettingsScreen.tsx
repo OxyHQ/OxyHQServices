@@ -233,7 +233,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
                 // Handle locations - convert single location to array format
                 if (finalUser.locations && Array.isArray(finalUser.locations)) {
-                    setLocations(finalUser.locations.map((loc, index) => ({
+                    setLocations(finalUser.locations.map((loc: any, index: number) => ({
                         id: loc.id || `existing-${index}`,
                         name: loc.name,
                         label: loc.label,
@@ -252,17 +252,17 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
                 // Handle links - simple and direct like other fields
                 if (finalUser.linksMetadata && Array.isArray(finalUser.linksMetadata)) {
-                    const urls = finalUser.linksMetadata.map(l => l.url);
+                    const urls = finalUser.linksMetadata.map((l: any) => l.url);
                     setLinks(urls);
-                    const metadataWithIds = finalUser.linksMetadata.map((link, index) => ({
+                    const metadataWithIds = finalUser.linksMetadata.map((link: any, index: number) => ({
                         ...link,
                         id: link.id || `existing-${index}`
                     }));
                     setLinksMetadata(metadataWithIds);
                 } else if (Array.isArray(finalUser.links)) {
-                    const simpleLinks = finalUser.links.map(l => typeof l === 'string' ? l : l.link).filter(Boolean);
+                    const simpleLinks = finalUser.links.map((l: any) => typeof l === 'string' ? l : l.link).filter(Boolean);
                     setLinks(simpleLinks);
-                    const linksWithMetadata = simpleLinks.map((url, index) => ({
+                    const linksWithMetadata = simpleLinks.map((url: string, index: number) => ({
                         url,
                         title: url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
                         description: `Link to ${url}`,

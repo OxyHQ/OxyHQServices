@@ -179,7 +179,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
           fileBlob = await (file as any).blob();
         } else {
           // Fallback: create Blob from File (works in all environments)
-          fileBlob = new Blob([file], { type: file.type || 'application/octet-stream' });
+          fileBlob = new Blob([file], { type: (file as any).type || 'application/octet-stream' });
         }
         formData.append('file', fileBlob, fileName);
         if (visibility) {
