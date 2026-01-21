@@ -1,0 +1,13 @@
+{
+  "accounts_endpoint": "/api/fedcm/accounts",
+  "client_metadata_endpoint": "/api/fedcm/client_metadata",
+  "id_assertion_endpoint": "/api/fedcm/assertion",
+  "branding": {
+    "background_color": "#000000",
+    "color": "#ffffff",
+    "icons": [{
+      "url": "https://auth.oxy.so/icon-512.png",
+      "size": 512
+    }]
+  }
+}

@@ -7,6 +7,9 @@
 
 import { OxyServicesBase } from '../OxyServices.base';
 import { OxyServicesAuthMixin } from './OxyServices.auth';
+import { OxyServicesFedCMMixin } from './OxyServices.fedcm';
+import { OxyServicesPopupAuthMixin } from './OxyServices.popup';
+import { OxyServicesRedirectAuthMixin } from './OxyServices.redirect';
 import { OxyServicesUserMixin } from './OxyServices.user';
 import { OxyServicesPrivacyMixin } from './OxyServices.privacy';
 import { OxyServicesLanguageMixin } from './OxyServices.language';
@@ -22,10 +25,15 @@ import { OxyServicesUtilityMixin } from './OxyServices.utility';
 
 /**
  * Composes all OxyServices mixins in the correct order
- * 
+ *
  * Order matters for mixins - dependencies should be applied first.
  * This function ensures consistent composition across the codebase.
- * 
+ *
+ * New cross-domain auth mixins added:
+ * - FedCM: Modern browser-native identity federation (Google-style)
+ * - Popup: OAuth2-style popup authentication
+ * - Redirect: Traditional redirect-based authentication
+ *
  * @returns The fully composed OxyServices class with all mixins applied
  */
 export function composeOxyServices() {
@@ -41,7 +49,15 @@ export function composeOxyServices() {
                     OxyServicesLanguageMixin(
                       OxyServicesPrivacyMixin(
                         OxyServicesUserMixin(
-                          OxyServicesAuthMixin(OxyServicesBase)
+                          // Cross-domain authentication mixins (web-only)
+                          OxyServicesRedirectAuthMixin(
+                            OxyServicesPopupAuthMixin(
+                              OxyServicesFedCMMixin(
+                                // Base authentication mixin
+                                OxyServicesAuthMixin(OxyServicesBase)
+                              )
+                            )
+                          )
                         )
                       )
                     )
