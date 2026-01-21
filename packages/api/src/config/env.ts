@@ -18,7 +18,7 @@ export interface RequiredEnvVars {
   
   // Authentication
   ACCESS_TOKEN_SECRET: string;
-  REFRESH_TOKEN_SECRET?: string;
+  REFRESH_TOKEN_SECRET: string;
   
   // AWS/S3 Configuration
   AWS_REGION: string;
@@ -60,6 +60,7 @@ export function validateRequiredEnvVars(): void {
   const required: (keyof RequiredEnvVars)[] = [
     'MONGODB_URI',
     'ACCESS_TOKEN_SECRET',
+    'REFRESH_TOKEN_SECRET',
     'AWS_REGION',
     'AWS_ACCESS_KEY_ID',
     'AWS_SECRET_ACCESS_KEY',

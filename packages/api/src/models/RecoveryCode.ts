@@ -3,7 +3,7 @@ import mongoose, { Document, Schema } from 'mongoose';
 export interface IRecoveryCode extends Document {
   userId: mongoose.Types.ObjectId;
   identifier: string; // email or username used for request
-  codeHash: string; // bcrypt hash of 6-digit code
+  codeHash: string; // scrypt hash of recovery code
   expiresAt: Date;
   used: boolean;
   attempts: number;
@@ -26,4 +26,3 @@ const RecoveryCodeSchema = new Schema<IRecoveryCode>({
 RecoveryCodeSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
 export default mongoose.model<IRecoveryCode>('RecoveryCode', RecoveryCodeSchema);
-

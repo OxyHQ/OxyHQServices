@@ -80,6 +80,8 @@ export interface OxyContextProviderProps {
   children: ReactNode;
   oxyServices?: OxyServices;
   baseURL?: string;
+  authWebUrl?: string;
+  authRedirectUri?: string;
   storageKeyPrefix?: string;
   onAuthStateChange?: (user: User | null) => void;
   onError?: (error: ApiError) => void;
@@ -119,6 +121,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   children,
   oxyServices: providedOxyServices,
   baseURL,
+  authWebUrl,
+  authRedirectUri,
   storageKeyPrefix = 'oxy_session',
   onAuthStateChange,
   onError,
@@ -129,7 +133,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     if (providedOxyServices) {
       oxyServicesRef.current = providedOxyServices;
     } else if (baseURL) {
-      oxyServicesRef.current = new OxyServices({ baseURL });
+      oxyServicesRef.current = new OxyServices({
+        baseURL,
+        authWebUrl,
+        authRedirectUri,
+      });
     } else {
       throw new Error('Either oxyServices or baseURL must be provided to OxyContextProvider');
     }
@@ -558,5 +566,4 @@ export const useOxy = (): OxyContextState => {
 };
 
 export default OxyContext;
-
 

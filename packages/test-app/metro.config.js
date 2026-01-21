@@ -3,7 +3,7 @@ const path = require('path');
 
 // Find the project and services directories
 const projectRoot = __dirname;
-const monorepoRoot = path.resolve(projectRoot, '..');
+const monorepoRoot = path.resolve(projectRoot, '..', '..');
 const servicesRoot = path.resolve(projectRoot, '..', 'services');
 const servicesSrc = path.resolve(servicesRoot, 'src');
 const servicesNodeModules = path.resolve(servicesRoot, 'node_modules');
@@ -28,8 +28,8 @@ config.resolver.nodeModulesPaths = [
   servicesNodeModules,
 ];
 
-// 3. Force Metro to resolve (sub)dependencies in the workspace
-config.resolver.disableHierarchicalLookup = true;
+// 3. Allow nested node_modules to resolve expo-router's web deps (e.g. Radix)
+config.resolver.disableHierarchicalLookup = false;
 
 // 4. Ensure source extensions include TypeScript files
 config.resolver.sourceExts = [

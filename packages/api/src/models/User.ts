@@ -3,7 +3,8 @@ import mongoose, { Document, Schema } from "mongoose";
 export interface IUser extends Document {
   username?: string;
   email?: string;
-  publicKey: string; // ECDSA secp256k1 public key (hex) - primary identifier
+  publicKey?: string; // ECDSA secp256k1 public key (hex) - primary identifier for local identity
+  password?: string; // Hashed password for password-based accounts
   refreshToken?: string | null;
   following?: mongoose.Types.ObjectId[];
   followers?: mongoose.Types.ObjectId[];
@@ -148,14 +149,20 @@ const UserSchema: Schema = new Schema(
       unique: true,
       sparse: true, // Allows null/undefined values while maintaining uniqueness
       trim: true,
+      lowercase: true,
       select: true,
     },
     publicKey: {
       type: String,
-      required: true,
+      required: false,
       unique: true,
+      sparse: true,
       trim: true,
       select: true,
+    },
+    password: {
+      type: String,
+      select: false,
     },
     refreshToken: {
       type: String,
@@ -275,9 +282,12 @@ const UserSchema: Schema = new Schema(
   }
 );
 
-// Virtual for id - use publicKey as the identifier (per migration document)
+// Virtual for id - prefer publicKey for local identity, fallback to MongoDB _id
 UserSchema.virtual('id').get(function() {
-  return this.publicKey;
+  if (this.publicKey) {
+    return this.publicKey;
+  }
+  return this._id?.toString();
 });
 
 // Remove transforms and rely on select options
@@ -285,8 +295,9 @@ UserSchema.set("toJSON", {
   virtuals: true,
   versionKey: false,
   transform: function(doc, ret) {
-    // Ensure id is set to publicKey
-    ret.id = ret.publicKey || ret.id;
+    // Ensure id is set to publicKey or fallback to _id
+    ret.id = ret.publicKey || ret.id || ret._id?.toString();
+    delete ret.password;
     delete ret._id;
     return ret;
   },
@@ -295,8 +306,9 @@ UserSchema.set("toJSON", {
 UserSchema.set("toObject", {
   virtuals: true,
   transform: function(doc, ret) {
-    // Ensure id is set to publicKey
-    ret.id = ret.publicKey || ret.id;
+    // Ensure id is set to publicKey or fallback to _id
+    ret.id = ret.publicKey || ret.id || ret._id?.toString();
+    delete ret.password;
     delete ret._id;
     return ret;
   },

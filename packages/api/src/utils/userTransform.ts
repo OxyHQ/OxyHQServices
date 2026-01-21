@@ -1,69 +1,49 @@
 /**
- * Utilities for normalizing user objects across controllers and utilities.
- * Ensures we consistently return an `id` field and a `name.full` value,
- * regardless of whether the source is a Mongoose document or a lean object.
+ * Simple utility to format user objects for API responses.
+ * Returns clean, explicit user object with id (MongoDB ObjectId) and publicKey as separate fields.
  */
 
 import type { IUser } from '../models/User';
 
-type UserLike = Partial<IUser> & {
-  _id?: string | { toString(): string };
-  id?: string;
-  toObject?: () => any;
-};
-
-interface NormalizeUserOptions {
-  /**
-   * Keep the raw `_id` value on the returned object.
-   * Useful for internal use when both `_id` and `id` are required.
-   */
-  keepMongoId?: boolean;
-}
+type UserLike = IUser | { _id: any; [key: string]: any } | null | undefined;
 
 /**
- * Normalize a user-like object into a plain response-friendly shape.
+ * Format user object for API response.
+ * id = MongoDB ObjectId (_id.toString())
+ * publicKey = separate field for authentication
  */
-export function normalizeUser(user: UserLike | null | undefined, options: NormalizeUserOptions = {}) {
+export function formatUserResponse(user: UserLike) {
   if (!user) {
     return null;
   }
 
-  const raw = typeof user.toObject === 'function' ? user.toObject() : { ...user };
+  const userId = user._id?.toString();
+  if (!userId) {
+    return null;
+  }
 
-  const id = raw.id || normalizeId(raw._id);
-  const name = normalizeName(raw.name);
-
-  const normalized: Record<string, any> = {
-    ...raw,
-    id,
-    name,
+  return {
+    id: userId,
+    publicKey: user.publicKey,
+    username: user.username,
+    email: user.email,
+    avatar: user.avatar,
+    name: user.name,
+    privacySettings: user.privacySettings,
+    verified: user.verified,
+    language: user.language,
+    bio: user.bio,
+    description: user.description,
+    locations: user.locations,
+    links: user.links,
+    linksMetadata: user.linksMetadata,
   };
-
-  if (!options.keepMongoId && '_id' in normalized) {
-    delete normalized._id;
-  }
-
-  return normalized;
 }
 
-function normalizeId(id: any): string | undefined {
-  if (!id) return undefined;
-  if (typeof id === 'string') return id;
-  if (typeof id.toString === 'function') return id.toString();
-  return undefined;
-}
-
-function normalizeName(name: any) {
-  if (!name || typeof name !== 'object') {
-    return name;
-  }
-
-  const first = typeof name.first === 'string' ? name.first : '';
-  const last = typeof name.last === 'string' ? name.last : '';
-  const full =
-    typeof name.full === 'string' && name.full.length > 0
-      ? name.full
-      : [first, last].filter(Boolean).join(' ').trim() || undefined;
-
-  return { ...name, full };
+/**
+ * Legacy function - redirects to formatUserResponse for backwards compatibility.
+ * @deprecated Use formatUserResponse instead
+ */
+export function normalizeUser(user: UserLike) {
+  return formatUserResponse(user);
 }

@@ -104,7 +104,8 @@ app.use(express.json());
 // Optional: create your own client (e.g., different baseURL per env)
 const services = new OxyServices({ baseURL: process.env.OXY_CLOUD_URL || 'https://api.oxy.so' });
 
-app.post('/api/auth/login', async (req, res) => {
+// /api/auth/login works too (alias)
+app.post('/auth/login', async (req, res) => {
   try {
     const { username, password } = req.body;
     const session = await oxyClient.signIn(username, password);
@@ -489,7 +490,7 @@ const oxy = new OxyServices({
 
 ## 🔐 Authentication
 
-Oxy uses **public/private key cryptography** (ECDSA secp256k1) instead of passwords. Users manage their cryptographic identity in the **Oxy Accounts** app, and other apps can integrate "Sign in with Oxy" for seamless authentication.
+Oxy supports **public/private key cryptography** (ECDSA secp256k1) as the primary identity system, with optional password-based accounts for the web gateway. Users manage their cryptographic identity in the **Oxy Accounts** app, and other apps can integrate "Sign in with Oxy" for seamless authentication.
 
 ### Public Key Authentication
 
@@ -520,6 +521,15 @@ function AuthScreen() {
 }
 ```
 
+### Password Authentication (Web Gateway)
+
+For web-only or legacy flows, Oxy also supports password sign-in (email/username + password). Use the auth gateway (`/login`, `/signup`, `/recover`) for browser-based flows, or call the API directly:
+
+```typescript
+const session = await oxyServices.signUp('username', 'email@example.com', 'password');
+const session2 = await oxyServices.signIn('username-or-email', 'password');
+```
+
 ### Cross-App Authentication (Sign in with Oxy)
 
 For third-party apps that want to allow users to sign in with their Oxy identity:
@@ -535,6 +545,8 @@ function LoginScreen() {
 This displays:
 - A QR code that users can scan with Oxy Accounts
 - A button to open Oxy Accounts directly via deep link
+
+Web fallback: send users to the auth gateway at `https://accounts.oxy.so/authorize?token=...` to approve the session.
 
 ### Documentation
 

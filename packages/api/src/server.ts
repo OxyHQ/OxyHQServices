@@ -300,6 +300,7 @@ app.use(bruteForceProtection);
 
 // API Routes with /api prefix
 // Apply stricter rate limiting to auth routes
+app.use("/auth", authRateLimiter, authRoutes);
 app.use("/api/auth", authRateLimiter, authRoutes);
 app.use("/api/assets", assetRoutes);
 app.use("/api/storage", userRateLimiter, storageRoutes);

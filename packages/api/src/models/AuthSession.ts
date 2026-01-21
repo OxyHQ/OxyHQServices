@@ -12,6 +12,7 @@ export interface IAuthSession extends Document {
   appId: string;             // Identifier for the requesting app
   status: 'pending' | 'authorized' | 'expired' | 'cancelled';
   authorizedBy?: string;     // Public key of the user who authorized
+  authorizedUserId?: mongoose.Types.ObjectId; // MongoDB user ID of the authorizing user
   authorizedSessionId?: string; // The actual session ID after authorization
   expiresAt: Date;
   createdAt: Date;
@@ -39,6 +40,11 @@ const AuthSessionSchema: Schema = new Schema(
       type: String, // Public key
       default: null,
     },
+    authorizedUserId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     authorizedSessionId: {
       type: String,
       default: null,
@@ -61,5 +67,4 @@ AuthSessionSchema.index({ sessionToken: 1, status: 1 });
 
 export const AuthSession = mongoose.model<IAuthSession>("AuthSession", AuthSessionSchema);
 export default AuthSession;
-
 

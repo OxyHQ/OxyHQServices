@@ -1,6 +1,6 @@
 # Public Key Authentication
 
-Oxy uses **public/private key cryptography** (ECDSA secp256k1) for authentication instead of traditional passwords. This provides superior security and a seamless user experience across the Oxy ecosystem.
+Oxy uses **public/private key cryptography** (ECDSA secp256k1) as the primary identity system. Password-based auth is available for the web gateway, but this guide focuses on public key flows across the Oxy ecosystem.
 
 ## Overview
 
@@ -86,6 +86,8 @@ When you see "Sign in with Oxy" in any app:
 3. Review permissions and click "Authorize"
 4. You're signed in!
 
+Web fallback: if the user is on the web, apps can send them to the auth gateway at `https://accounts.oxy.so/authorize?token=...` to complete the flow.
+
 ## For Developers
 
 ### Cross-App Authentication Flow
@@ -167,6 +169,8 @@ Response: { challenge, expiresAt }
 POST /api/auth/verify
 Body: { publicKey, challenge, signature, timestamp, deviceName?, deviceFingerprint? }
 Response: { sessionId, deviceId, user }
+
+Note: These endpoints are also available under `/auth` (e.g., `POST /auth/verify`).
 ```
 
 #### Example: User Registration
@@ -449,5 +453,4 @@ The crypto module automatically polyfills the `Buffer` global required by the BI
 - [BIP39 Specification](https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki)
 - [secp256k1 Curve](https://en.bitcoin.it/wiki/Secp256k1)
 - [Digital Signatures Guide](https://www.cloudflare.com/learning/ssl/what-is-a-digital-signature/)
-
 

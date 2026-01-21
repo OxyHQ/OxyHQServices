@@ -54,8 +54,9 @@ export interface OxyProviderProps {
     onAuthStateChange?: (user: unknown) => void;
     storageKeyPrefix?: string;
     baseURL?: string;
+    authWebUrl?: string;
+    authRedirectUri?: string;
     queryClient?: QueryClient;
 }
-
 
 

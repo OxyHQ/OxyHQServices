@@ -1,6 +1,8 @@
 export interface OxyConfig {
   baseURL: string;
   cloudURL?: string;
+  authWebUrl?: string;
+  authRedirectUri?: string;
   // Performance & caching options
   enableCache?: boolean;
   cacheTTL?: number; // Cache TTL in milliseconds (default: 5 minutes)

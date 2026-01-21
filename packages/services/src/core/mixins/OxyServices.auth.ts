@@ -1,8 +1,7 @@
 /**
  * Authentication Methods Mixin
  * 
- * Public key authentication using ECDSA signatures.
- * No passwords required - authentication is done via challenge-response.
+ * Supports password-based login (email/username) and public key challenge-response.
  */
 import type { User } from '../../models/interfaces';
 import type { SessionLoginResponse } from '../../models/session';
@@ -300,35 +299,60 @@ export function OxyServicesAuthMixin<T extends typeof OxyServicesBase>(Base: T) 
       }
     }
 
-    // ==========================================
-    // Deprecated methods - kept for reference
-    // ==========================================
-
     /**
-     * @deprecated Use register() with public key authentication instead
+     * Register a new user with email/username and password
      */
-    async signUp(username: string, email: string, password: string): Promise<{ message: string; token: string; user: User }> {
-      throw new OxyAuthenticationError(
-        'Password-based signup is no longer supported. Use register() with public key.',
-        'DEPRECATED',
-        410
-      );
-    }
-
-    /**
-     * @deprecated Use requestChallenge() and verifyChallenge() instead
-     */
-    async signIn(
+    async signUp(
       username: string,
+      email: string,
       password: string,
       deviceName?: string,
       deviceFingerprint?: any
-    ): Promise<SessionLoginResponse | { mfaRequired: true; mfaToken: string; expiresAt: string }> {
-      throw new OxyAuthenticationError(
-        'Password-based login is no longer supported. Use challenge-response authentication.',
-        'DEPRECATED',
-        410
-      );
+    ): Promise<SessionLoginResponse> {
+      try {
+        return await this.makeRequest<SessionLoginResponse>('POST', '/api/auth/signup', {
+          username,
+          email,
+          password,
+          deviceName,
+          deviceFingerprint,
+        }, { cache: false });
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Sign in with email or username and password
+     */
+    async signIn(
+      identifier: string,
+      password: string,
+      deviceName?: string,
+      deviceFingerprint?: any
+    ): Promise<SessionLoginResponse> {
+      try {
+        return await this.makeRequest<SessionLoginResponse>('POST', '/api/auth/login', {
+          identifier,
+          password,
+          deviceName,
+          deviceFingerprint,
+        }, { cache: false });
+      } catch (error) {
+        throw this.handleError(error);
+      }
+    }
+
+    /**
+     * Convenience helper for email sign-in
+     */
+    async signInWithEmail(
+      email: string,
+      password: string,
+      deviceName?: string,
+      deviceFingerprint?: any
+    ): Promise<SessionLoginResponse> {
+      return this.signIn(email, password, deviceName, deviceFingerprint);
     }
   };
 }

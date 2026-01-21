@@ -4,7 +4,7 @@
  * This screen is used by OTHER apps in the Oxy ecosystem to authenticate users.
  * It presents two options:
  * 1. Scan QR code with Oxy Accounts app
- * 2. Open Oxy Accounts app directly (via deep link)
+ * 2. Open the Oxy Auth web flow
  * 
  * Uses WebSocket for real-time authorization updates (with polling fallback).
  * The Oxy Accounts app is where users manage their cryptographic identity.
@@ -29,9 +29,8 @@ import { useOxy } from '../context/OxyContext';
 import QRCode from 'react-native-qrcode-svg';
 import OxyLogo from '../components/OxyLogo';
 
-// Deep link scheme for Oxy Accounts app
-const OXY_ACCOUNTS_SCHEME = 'oxyaccounts://';
 const OXY_ACCOUNTS_WEB_URL = 'https://accounts.oxy.so';
+const OXY_AUTH_WEB_URL = 'https://auth.oxy.so';
 
 // Auth session expiration (5 minutes)
 const AUTH_SESSION_EXPIRY_MS = 5 * 60 * 1000;
@@ -52,6 +51,63 @@ interface AuthUpdatePayload {
   username?: string;
 }
 
+const resolveAuthWebBaseUrl = (baseURL: string, authWebUrl?: string): string => {
+  if (authWebUrl) {
+    return authWebUrl;
+  }
+
+  try {
+    const url = new URL(baseURL);
+    if (url.port === '3001') {
+      url.port = '3000';
+      return url.origin;
+    }
+    if (url.hostname.startsWith('api.')) {
+      url.hostname = `auth.${url.hostname.slice(4)}`;
+      return url.origin;
+    }
+  } catch {
+    // Ignore parsing errors, fall back to default.
+  }
+  return OXY_AUTH_WEB_URL;
+};
+
+const resolveAuthRedirectUri = async (authRedirectUri?: string): Promise<string | null> => {
+  if (authRedirectUri) {
+    return authRedirectUri;
+  }
+
+  try {
+    const initialUrl = await Linking.getInitialURL();
+    if (!initialUrl) {
+      return null;
+    }
+
+    const parsed = new URL(initialUrl);
+    parsed.search = '';
+    parsed.hash = '';
+    return parsed.toString();
+  } catch {
+    return null;
+  }
+};
+
+const getRedirectParams = (url: string): { sessionId?: string; error?: string } | null => {
+  try {
+    const parsed = new URL(url);
+    const sessionId = parsed.searchParams.get('session_id') ?? undefined;
+    const error = parsed.searchParams.get('error') ?? undefined;
+
+    if (!sessionId && !error) {
+      return null;
+    }
+
+    return { sessionId, error };
+  } catch {
+    return null;
+  }
+};
+
 const OxyAuthScreen: React.FC<BaseScreenProps> = ({
   navigate,
   goBack,
@@ -71,6 +127,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
   const socketRef = useRef<Socket | null>(null);
   const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isProcessingRef = useRef(false);
+  const linkingHandledRef = useRef(false);
 
   // Handle successful authorization
   const handleAuthSuccess = useCallback(async (sessionId: string) => {
@@ -281,37 +338,76 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
     return `oxyauth://${authSession.sessionToken}`;
   };
 
-  // Open Oxy Accounts app
-  const handleOpenAccounts = useCallback(async () => {
+  // Open Oxy Auth web flow
+  const handleOpenAuth = useCallback(async () => {
     if (!authSession) return;
 
-    const deepLinkUrl = `${OXY_ACCOUNTS_SCHEME}authorize?token=${authSession.sessionToken}`;
-    const webUrl = `${OXY_ACCOUNTS_WEB_URL}/authorize?token=${authSession.sessionToken}`;
+    const authBaseUrl = resolveAuthWebBaseUrl(
+      oxyServices.getBaseURL(),
+      oxyServices.config?.authWebUrl
+    );
+    const webUrl = new URL('/authorize', authBaseUrl);
+    webUrl.searchParams.set('token', authSession.sessionToken);
+    const redirectUri = await resolveAuthRedirectUri(oxyServices.config?.authRedirectUri);
+    if (redirectUri) {
+      webUrl.searchParams.set('redirect_uri', redirectUri);
+    }
 
     try {
-      const canOpen = await Linking.canOpenURL(deepLinkUrl);
-
-      if (canOpen) {
-        await Linking.openURL(deepLinkUrl);
-      } else {
-        // Fallback to web URL
-        await Linking.openURL(webUrl);
-      }
+      await Linking.openURL(webUrl.toString());
     } catch (err) {
-      // Fallback to web URL
-      try {
-        await Linking.openURL(webUrl);
-      } catch {
-        setError('Unable to open Oxy Accounts. Please install the app or use QR code.');
-      }
+      setError('Unable to open Oxy Auth. Please try again or use the QR code.');
     }
-  }, [authSession]);
+  }, [authSession, oxyServices]);
 
   // Refresh session
   const handleRefresh = useCallback(() => {
     cleanup();
     generateAuthSession();
   }, [generateAuthSession, cleanup]);
+
+  const handleAuthRedirect = useCallback((url: string) => {
+    const params = getRedirectParams(url);
+    if (!params) {
+      return;
+    }
+
+    if (params.error) {
+      cleanup();
+      setError('Authorization was denied.');
+      return;
+    }
+
+    if (params.sessionId) {
+      cleanup();
+      handleAuthSuccess(params.sessionId);
+    }
+  }, [cleanup, handleAuthSuccess]);
+
+  useEffect(() => {
+    if (Platform.OS === 'web') {
+      return;
+    }
+
+    const subscription = Linking.addEventListener('url', ({ url }) => {
+      linkingHandledRef.current = true;
+      handleAuthRedirect(url);
+    });
+
+    Linking.getInitialURL()
+      .then((url) => {
+        if (url && !linkingHandledRef.current) {
+          handleAuthRedirect(url);
+        }
+      })
+      .catch(() => {
+        // Ignore linking errors; auth will still resolve via socket/polling.
+      });
+
+    return () => {
+      subscription.remove();
+    };
+  }, [handleAuthRedirect]);
 
   if (isLoading) {
     return (
@@ -364,26 +460,21 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
         </Text>
       </View>
 
-      {/* Divider and Open Accounts Button - Only show on native platforms */}
-      {Platform.OS !== 'web' && (
-        <>
-          {/* Divider */}
-          <View style={styles.dividerContainer}>
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-            <Text style={[styles.dividerText, { color: colors.secondaryText }]}>or</Text>
-            <View style={[styles.divider, { backgroundColor: colors.border }]} />
-          </View>
+      {/* Divider */}
+      <View style={styles.dividerContainer}>
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+        <Text style={[styles.dividerText, { color: colors.secondaryText }]}>or</Text>
+        <View style={[styles.divider, { backgroundColor: colors.border }]} />
+      </View>
 
-          {/* Open Accounts Button */}
-          <TouchableOpacity
-            style={[styles.button, { backgroundColor: colors.primary }]}
-            onPress={handleOpenAccounts}
-          >
-            <OxyLogo width={20} height={20} fillColor="white" style={styles.buttonIcon} />
-            <Text style={styles.buttonText}>Open Oxy Accounts</Text>
-          </TouchableOpacity>
-        </>
-      )}
+      {/* Open Oxy Auth Button */}
+      <TouchableOpacity
+        style={[styles.button, { backgroundColor: colors.primary }]}
+        onPress={handleOpenAuth}
+      >
+        <OxyLogo width={20} height={20} fillColor="white" style={styles.buttonIcon} />
+        <Text style={styles.buttonText}>Open Oxy Auth</Text>
+      </TouchableOpacity>
 
       {/* Status */}
       {isWaiting && (
@@ -523,5 +614,3 @@ const styles = StyleSheet.create({
 });
 
 export default OxyAuthScreen;
-
-

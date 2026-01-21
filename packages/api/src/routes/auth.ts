@@ -1,8 +1,8 @@
 /**
  * Authentication Routes
  * 
- * RESTful API routes for public key authentication.
- * Uses challenge-response for secure authentication without passwords.
+ * Supports both password-based auth (email/username + password)
+ * and public key challenge-response for local identity wallets.
  */
 
 import express from 'express';
@@ -16,6 +16,46 @@ import SignatureService from '../services/signature.service';
 import { emitAuthSessionUpdate } from '../utils/authSessionSocket';
 
 const router = express.Router();
+const USERNAME_REGEX = /^[a-zA-Z0-9]{3,30}$/;
+
+// ============================================
+// Password Authentication Routes
+// ============================================
+
+/**
+ * POST /auth/signup
+ * Register a new user with email/username and password
+ * Body: { email, username, password, deviceName?, deviceFingerprint? }
+ */
+router.post('/signup', SessionController.signUp);
+
+/**
+ * POST /auth/login
+ * Login with email/username and password
+ * Body: { identifier | email | username, password, deviceName?, deviceFingerprint? }
+ */
+router.post('/login', SessionController.signIn);
+
+/**
+ * POST /auth/recover/request
+ * Request a password recovery code
+ * Body: { identifier | email | username }
+ */
+router.post('/recover/request', SessionController.requestPasswordReset);
+
+/**
+ * POST /auth/recover/verify
+ * Verify recovery code and return a reset token
+ * Body: { identifier | email | username, code }
+ */
+router.post('/recover/verify', SessionController.verifyRecoveryCode);
+
+/**
+ * POST /auth/recover/reset
+ * Reset password using recovery token
+ * Body: { recoveryToken, password }
+ */
+router.post('/recover/reset', SessionController.resetPassword);
 
 // ============================================
 // Public Key Authentication Routes
@@ -53,27 +93,6 @@ const verifyLimiter = rateLimit({
 router.post('/verify', verifyLimiter, SessionController.verifyChallenge);
 
 // ============================================
-// Legacy Routes (Deprecated)
-// ============================================
-
-/**
- * POST /auth/signup - Deprecated
- * Returns error directing users to use /auth/register
- */
-router.post('/signup', (req, res) => {
-  res.status(410).json({
-    error: 'Password-based signup is no longer supported',
-    hint: 'Use POST /auth/register with your public key and signature'
-  });
-});
-
-/**
- * POST /auth/login - Deprecated
- * Returns error directing users to use challenge-response flow
- */
-router.post('/login', SessionController.signIn);
-
-// ============================================
 // Validation Routes
 // ============================================
 
@@ -92,16 +111,15 @@ router.get('/validate', asyncHandler(async (req, res) => {
 router.get('/check-username/:username', asyncHandler(async (req, res) => {
   let { username } = req.params;
   
-  // Sanitize username: only allow alphanumeric characters
-  username = username.replace(/[^a-zA-Z0-9]/g, '');
-  
-  if (!username || username.length < 3) {
+  if (!username) {
     throw new BadRequestError(
       'Username must be at least 3 characters long and contain only letters and numbers'
     );
   }
 
-  if (!/^[a-zA-Z0-9]{3,30}$/.test(username)) {
+  username = username.trim();
+
+  if (!USERNAME_REGEX.test(username)) {
     throw new BadRequestError('Username can only contain letters and numbers');
   }
 
@@ -126,9 +144,10 @@ router.get('/check-email/:email', asyncHandler(async (req, res) => {
     throw new BadRequestError('Please provide a valid email address');
   }
 
-  const existingUser = await User.findOne({ email });
+  const normalizedEmail = email.trim().toLowerCase();
+  const existingUser = await User.findOne({ email: normalizedEmail });
   
-  logger.debug('GET /auth/check-email', { email, available: !existingUser });
+  logger.debug('GET /auth/check-email', { email: normalizedEmail, available: !existingUser });
   
   sendSuccess(res, { 
     available: !existingUser, 
@@ -185,8 +204,16 @@ import sessionService from '../services/session.service';
 router.post('/session/create', asyncHandler(async (req, res) => {
   const { sessionToken, expiresAt, appId } = req.body;
 
-  if (!sessionToken || !expiresAt || !appId) {
-    throw new BadRequestError('sessionToken, expiresAt, and appId are required');
+  if (!sessionToken || !appId) {
+    throw new BadRequestError('sessionToken and appId are required');
+  }
+
+  const now = Date.now();
+  const defaultExpiresAt = new Date(now + 5 * 60 * 1000);
+  let expiresAtDate = expiresAt ? new Date(expiresAt) : defaultExpiresAt;
+
+  if (Number.isNaN(expiresAtDate.getTime()) || expiresAtDate.getTime() < now + 30 * 1000) {
+    expiresAtDate = defaultExpiresAt;
   }
 
   // Check if session token already exists
@@ -199,7 +226,7 @@ router.post('/session/create', asyncHandler(async (req, res) => {
   const authSession = await AuthSession.create({
     sessionToken,
     appId,
-    expiresAt: new Date(expiresAt),
+    expiresAt: expiresAtDate,
     status: 'pending',
   });
 
@@ -235,8 +262,12 @@ router.get('/session/status/:sessionToken', asyncHandler(async (req, res) => {
   sendSuccess(res, {
     status: authSession.status,
     authorized: authSession.status === 'authorized',
+    sessionToken: authSession.sessionToken,
+    appId: authSession.appId,
+    expiresAt: authSession.expiresAt.toISOString(),
     sessionId: authSession.authorizedSessionId || null,
     publicKey: authSession.authorizedBy || null,
+    userId: authSession.authorizedUserId ? authSession.authorizedUserId.toString() : null,
   });
 }));
 
@@ -282,7 +313,8 @@ router.post('/session/authorize/:sessionToken', asyncHandler(async (req, res) =>
 
   // Update auth session
   authSession.status = 'authorized';
-  authSession.authorizedBy = validation.user.publicKey;
+  authSession.authorizedBy = validation.user.publicKey || null;
+  authSession.authorizedUserId = validation.user._id;
   authSession.authorizedSessionId = newSession.sessionId;
   await authSession.save();
 
@@ -305,7 +337,7 @@ router.post('/session/authorize/:sessionToken', asyncHandler(async (req, res) =>
     success: true,
     sessionId: newSession.sessionId,
     user: {
-      id: validation.user._id,
+      id: validation.user._id.toString(),
       username: validation.user.username,
       publicKey: validation.user.publicKey,
     },

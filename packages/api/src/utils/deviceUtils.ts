@@ -2,7 +2,7 @@ import crypto from 'crypto';
 import { Request } from 'express';
 import Session from '../models/Session';
 import { logger } from './logger';
-import { normalizeUser } from './userTransform';
+import { formatUserResponse } from './userTransform';
 import sessionCache from './sessionCache';
 
 export interface DeviceFingerprint {
@@ -183,10 +183,10 @@ export const getDeviceActiveSessions = async (deviceId: string, currentSessionId
       const user = session.userId as any;
       if (!user || typeof user !== 'object') continue;
 
-      const normalizedUser = normalizeUser(user);
-      if (!normalizedUser?.id) continue;
+      const formattedUser = formatUserResponse(user);
+      if (!formattedUser?.id) continue;
 
-      const userId = normalizedUser.id;
+      const userId = formattedUser.id;
 
       // If we already have a session for this user, keep the one with more recent lastActive
       const existing = userSessionMap.get(userId);
@@ -198,7 +198,7 @@ export const getDeviceActiveSessions = async (deviceId: string, currentSessionId
         }
       }
       
-      const userData = normalizedUser;
+      const userData = formattedUser;
 
       userSessionMap.set(userId, {
         sessionId: session.sessionId,

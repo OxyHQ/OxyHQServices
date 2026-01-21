@@ -28,6 +28,8 @@ const OxyProvider: FC<OxyProviderProps> = ({
     onAuthStateChange,
     storageKeyPrefix,
     baseURL,
+    authWebUrl,
+    authRedirectUri,
     queryClient: providedQueryClient,
 }) => {
     // contextOnly is retained for backwards compatibility while the UI-only
@@ -148,6 +150,8 @@ const OxyProvider: FC<OxyProviderProps> = ({
                             <OxyContextProvider
                                 oxyServices={oxyServices as any}
                                 baseURL={baseURL}
+                                authWebUrl={authWebUrl}
+                                authRedirectUri={authRedirectUri}
                                 storageKeyPrefix={storageKeyPrefix}
                                 onAuthStateChange={onAuthStateChange as any}
                             >

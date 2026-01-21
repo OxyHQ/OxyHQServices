@@ -269,9 +269,12 @@ export class HttpService {
           const contentType = response.headers.get('content-type');
           if (contentType && contentType.includes('application/json')) {
             try {
-              const errorData = await response.json() as { message?: string } | null;
+              const errorData = await response.json() as { message?: string; error?: string } | null;
+              // Check both 'message' and 'error' fields for backwards compatibility
               if (errorData?.message) {
                 errorMessage = errorData.message;
+              } else if (errorData?.error) {
+                errorMessage = errorData.error;
               }
             } catch (parseError) {
               // Malformed JSON or empty response - use status text

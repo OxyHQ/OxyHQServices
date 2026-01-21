@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { User } from '../models/User';
 import Session from '../models/Session';
 import AuthChallenge from '../models/AuthChallenge';
+import RecoveryCode from '../models/RecoveryCode';
 import crypto from 'crypto';
 import { SessionAuthResponse, ClientSession } from '../types/session';
 import { 
@@ -15,11 +16,58 @@ import SignatureService from '../services/signature.service';
 import sessionService from '../services/session.service';
 import sessionCache from '../utils/sessionCache';
 import { logger } from '../utils/logger';
-import { normalizeUser } from '../utils/userTransform';
+import { formatUserResponse } from '../utils/userTransform';
+import { generateNumericCode, hashPassword, verifyPassword } from '../utils/password';
 import securityActivityService from '../services/securityActivityService';
 
 // Challenge expiration time (5 minutes)
 const CHALLENGE_TTL_MS = 5 * 60 * 1000;
+const PASSWORD_MIN_LENGTH = 8;
+const RECOVERY_CODE_LENGTH = 6;
+const RECOVERY_CODE_TTL_MS = 10 * 60 * 1000;
+const RECOVERY_TOKEN_TTL_MS = 15 * 60 * 1000;
+const MAX_RECOVERY_ATTEMPTS = 5;
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const USERNAME_REGEX = /^[a-zA-Z0-9]{3,30}$/;
+
+function normalizeEmail(email: string): string {
+  return email.trim().toLowerCase();
+}
+
+function normalizeUsername(username: string): string {
+  return username.trim();
+}
+
+function parseIdentifier(identifier: string): { field: 'email' | 'username'; value: string } | null {
+  const trimmed = identifier.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (EMAIL_REGEX.test(trimmed)) {
+    return { field: 'email', value: normalizeEmail(trimmed) };
+  }
+
+  return { field: 'username', value: normalizeUsername(trimmed) };
+}
+
+function buildSessionAuthResponse(session: { sessionId: string; deviceId: string; expiresAt: Date }, user: unknown): SessionAuthResponse | null {
+  const userData = formatUserResponse(user as any);
+  if (!userData) {
+    return null;
+  }
+
+  return {
+    sessionId: session.sessionId,
+    deviceId: session.deviceId,
+    expiresAt: session.expiresAt.toISOString(),
+    user: {
+      id: userData.id,
+      username: userData.username,
+      avatar: userData.avatar,
+    },
+  };
+}
 
 export class SessionController {
   
@@ -29,18 +77,18 @@ export class SessionController {
    */
   static async register(req: Request, res: Response) {
     try {
-      const { publicKey, signature, timestamp } = req.body;
+      const { publicKey, signature, timestamp, email, username } = req.body;
 
       // Validate required fields
       if (!publicKey || !signature || !timestamp) {
         return res.status(400).json({ 
-          error: 'Public key, signature, and timestamp are required' 
+          message: 'Public key, signature, and timestamp are required' 
         });
       }
 
       // Validate public key format
       if (!SignatureService.isValidPublicKey(publicKey)) {
-        return res.status(400).json({ error: 'Invalid public key format' });
+        return res.status(400).json({ message: 'Invalid public key format' });
       }
 
       // Verify the registration signature
@@ -52,7 +100,7 @@ export class SessionController {
 
       if (!isValidSignature) {
         return res.status(401).json({ 
-          error: 'Invalid signature. Please sign the registration request with your private key.' 
+          message: 'Invalid signature. Please sign the registration request with your private key.' 
         });
       }
 
@@ -61,16 +109,55 @@ export class SessionController {
 
       if (existingUser) {
         return res.status(409).json({
-          error: 'Identity already registered',
-          details: {
-            publicKey: 'This identity is already registered'
-          }
+          message: 'Identity already registered'
         });
       }
 
-      // Create new user (identity is just the publicKey)
+      let normalizedEmail: string | undefined;
+      if (email) {
+        if (typeof email !== 'string') {
+          return res.status(400).json({ message: 'Please provide a valid email address' });
+        }
+
+        normalizedEmail = normalizeEmail(email);
+        if (!EMAIL_REGEX.test(normalizedEmail)) {
+          return res.status(400).json({ message: 'Please provide a valid email address' });
+        }
+      }
+
+      let normalizedUsername: string | undefined;
+      if (username) {
+        if (typeof username !== 'string') {
+          return res.status(400).json({ message: 'Username must be a string' });
+        }
+
+        normalizedUsername = normalizeUsername(username);
+        if (!USERNAME_REGEX.test(normalizedUsername)) {
+          return res.status(400).json({
+            message: 'Username must be 3-30 characters and contain only letters and numbers'
+          });
+        }
+      }
+
+      if (normalizedEmail) {
+        const existingEmail = await User.findOne({ email: normalizedEmail }).select('_id').lean();
+        if (existingEmail) {
+          return res.status(409).json({ message: 'Email already registered' });
+        }
+      }
+
+      if (normalizedUsername) {
+        const existingUsername = await User.findOne({ username: normalizedUsername }).select('_id').lean();
+        if (existingUsername) {
+          return res.status(409).json({ message: 'Username already taken' });
+        }
+      }
+
+      // Create new user (identity is the publicKey)
       const user = new User({
         publicKey,
+        email: normalizedEmail,
+        username: normalizedUsername,
       });
 
       await user.save();
@@ -93,37 +180,156 @@ export class SessionController {
         });
       }
 
+      const userData = formatUserResponse(user);
+      if (!userData) {
+        return res.status(500).json({ message: 'Failed to format user data' });
+      }
+
       return res.status(201).json({
-        success: true,
         message: 'Identity registered successfully',
-        user: {
-          id: user.publicKey,
-          publicKey: user.publicKey,
-          username: user.username,
-          name: user.name,
-          privacySettings: user.privacySettings
-        }
+        user: userData
       });
     } catch (error: any) {
       // Handle MongoDB duplicate key error (E11000) - handles race condition where user was created between check and save
-      const isMongoDuplicateKey = error.code === 11000 || 
-                                   error.code === 'E11000' ||
-                                   (error.name === 'MongoServerError' && error.code === 11000);
-      
-      if (isMongoDuplicateKey && error.keyPattern?.publicKey) {
-        return res.status(409).json({
-          error: 'Identity already registered',
-          details: {
-            publicKey: 'This identity is already registered'
-          }
-        });
+      if (error.code === 11000) {
+        if (error.keyPattern?.publicKey) {
+          return res.status(409).json({
+            message: 'Identity already registered'
+          });
+        }
+        if (error.keyPattern?.email) {
+          return res.status(409).json({ message: 'Email already registered' });
+        }
+        if (error.keyPattern?.username) {
+          return res.status(409).json({ message: 'Username already taken' });
+        }
       }
 
       logger.error('Registration error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Internal server error';
       logger.error('Registration error details:', { errorMessage });
       
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  /**
+   * Register a new user with email/username and password
+   */
+  static async signUp(req: Request, res: Response) {
+    try {
+      const { email, username, password, name, deviceName, deviceFingerprint } = req.body;
+
+      if (
+        !email ||
+        !username ||
+        !password ||
+        typeof email !== 'string' ||
+        typeof username !== 'string'
+      ) {
+        return res.status(400).json({
+          message: 'Email, username, and password are required'
+        });
+      }
+
+      const normalizedEmail = normalizeEmail(email);
+      if (!EMAIL_REGEX.test(normalizedEmail)) {
+        return res.status(400).json({ message: 'Please provide a valid email address' });
+      }
+
+      if (typeof password !== 'string' || password.length < PASSWORD_MIN_LENGTH) {
+        return res.status(400).json({
+          message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters long`
+        });
+      }
+
+      const normalizedUsername = normalizeUsername(username);
+      if (!USERNAME_REGEX.test(normalizedUsername)) {
+        return res.status(400).json({
+          message: 'Username must be 3-30 characters and contain only letters and numbers'
+        });
+      }
+
+      const existingEmail = await User.findOne({ email: normalizedEmail }).select('_id').lean();
+      if (existingEmail) {
+        return res.status(409).json({ message: 'Email already registered' });
+      }
+
+      const existingUsername = await User.findOne({ username: normalizedUsername }).select('_id').lean();
+      if (existingUsername) {
+        return res.status(409).json({ message: 'Username already taken' });
+      }
+
+      const passwordHash = await hashPassword(password);
+
+      const user = new User({
+        email: normalizedEmail,
+        username: normalizedUsername,
+        password: passwordHash,
+      });
+
+      if (name && typeof name === 'object') {
+        user.name = name;
+      }
+
+      await user.save();
+
+      try {
+        await new Notification({
+          recipientId: user._id,
+          actorId: user._id,
+          type: 'welcome',
+          entityId: user._id,
+          entityType: 'profile',
+          read: false
+        }).save();
+      } catch (notificationError) {
+        logger.error('Failed to create welcome notification during signup', notificationError, {
+          component: 'SessionController',
+          method: 'signUp',
+          userId: user._id.toString(),
+        });
+      }
+
+      const session = await sessionService.createSession(
+        user._id.toString(),
+        req,
+        { deviceName, deviceFingerprint }
+      );
+
+      const response = buildSessionAuthResponse(session, user);
+      if (!response) {
+        return res.status(500).json({ message: 'Failed to format user data' });
+      }
+
+      try {
+        await securityActivityService.logSignIn(
+          user._id.toString(),
+          req,
+          session.deviceId,
+          {
+            deviceName: deviceName || session.deviceInfo?.deviceName,
+            deviceType: session.deviceInfo?.deviceType,
+            platform: session.deviceInfo?.platform,
+          }
+        );
+      } catch (error) {
+        logger.error('Failed to log security event for signup sign-in', error instanceof Error ? error : new Error(String(error)), {
+          component: 'SessionController',
+          method: 'signUp',
+          userId: user._id.toString(),
+        });
+      }
+
+      return res.status(201).json(response);
+    } catch (error: any) {
+      if (error.code === 11000 && (error.keyPattern?.email || error.keyPattern?.username)) {
+        const field = error.keyPattern?.email ? 'email' : 'username';
+        return res.status(409).json({ message: `${field} already exists` });
+      }
+
+      logger.error('Signup error:', error);
+      return res.status(500).json({ message: 'Internal server error' });
     }
   }
 
@@ -136,17 +342,17 @@ export class SessionController {
       const { publicKey } = req.body;
 
       if (!publicKey) {
-        return res.status(400).json({ error: 'Public key is required' });
+        return res.status(400).json({ message: 'Public key is required' });
       }
 
       if (!SignatureService.isValidPublicKey(publicKey)) {
-        return res.status(400).json({ error: 'Invalid public key format' });
+        return res.status(400).json({ message: 'Invalid public key format' });
       }
 
       // Check if user exists (optional - can allow challenges for unregistered keys)
       const user = await User.findOne({ publicKey });
       if (!user) {
-        return res.status(404).json({ error: 'User not found. Please register first.' });
+        return res.status(404).json({ message: 'User not found. Please register first.' });
       }
 
       // Generate challenge
@@ -167,7 +373,7 @@ export class SessionController {
       });
     } catch (error) {
       logger.error('Request challenge error:', error);
-      return res.status(500).json({ error: 'Internal server error' });
+      return res.status(500).json({ message: 'Internal server error' });
     }
   }
 
@@ -181,7 +387,7 @@ export class SessionController {
 
       if (!publicKey || !challenge || !signature || !timestamp) {
         return res.status(400).json({ 
-          error: 'Public key, challenge, signature, and timestamp are required' 
+          message: 'Public key, challenge, signature, and timestamp are required' 
         });
       }
 
@@ -195,7 +401,7 @@ export class SessionController {
 
       if (!authChallenge) {
         return res.status(401).json({ 
-          error: 'Invalid or expired challenge. Please request a new one.' 
+          message: 'Invalid or expired challenge. Please request a new one.' 
         });
       }
 
@@ -208,7 +414,7 @@ export class SessionController {
       );
 
       if (!isValid) {
-        return res.status(401).json({ error: 'Invalid signature' });
+        return res.status(401).json({ message: 'Invalid signature' });
       }
 
       // Atomically mark challenge as used (prevents race conditions)
@@ -221,7 +427,7 @@ export class SessionController {
       // Find user by public key (read-only query with .lean() for performance)
       const user = await User.findOne({ publicKey }).lean();
       if (!user) {
-        return res.status(404).json({ error: 'User not found' });
+        return res.status(404).json({ message: 'User not found' });
       }
 
       // Create session
@@ -270,35 +476,289 @@ export class SessionController {
         deviceId: session.deviceId
       });
 
-      // Return session data
-      // Use publicKey as id (per migration document: publicKey is the primary identifier)
+      const userData = formatUserResponse(user);
+      if (!userData) {
+        return res.status(500).json({ message: 'Failed to format user data' });
+      }
+
       const response: SessionAuthResponse = {
         sessionId: session.sessionId,
         deviceId: session.deviceId,
         expiresAt: session.expiresAt.toISOString(),
         user: {
-          id: user.publicKey, // Use publicKey as id (per migration document)
-          username: user.username,
-          avatar: user.avatar
+          id: userData.id,
+          username: userData.username,
+          avatar: userData.avatar
         }
       };
 
       res.json(response);
     } catch (error) {
       logger.error('Verify challenge error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 
   /**
-   * Legacy signIn method - now redirects to challenge-response flow
-   * Kept for backwards compatibility during transition
+   * Sign in with email/username and password
    */
   static async signIn(req: Request, res: Response) {
-    return res.status(400).json({
-      error: 'Password authentication is no longer supported. Please use challenge-response authentication.',
-      hint: 'Use POST /auth/challenge to request a challenge, then POST /auth/verify to authenticate.'
-    });
+    try {
+      const { identifier, email, username, password, deviceName, deviceFingerprint } = req.body;
+      const loginIdentifier = identifier || email || username;
+
+      if (!loginIdentifier || !password || typeof password !== 'string') {
+        return res.status(400).json({ message: 'Identifier and password are required' });
+      }
+
+      const parsedIdentifier = parseIdentifier(String(loginIdentifier));
+      if (!parsedIdentifier) {
+        return res.status(400).json({ message: 'Invalid identifier' });
+      }
+
+      const query = parsedIdentifier.field === 'email'
+        ? { email: parsedIdentifier.value }
+        : { username: parsedIdentifier.value };
+
+      const user = await User.findOne(query).select('+password');
+
+      if (!user?.password) {
+        return res.status(401).json({ message: 'Invalid credentials' });
+      }
+
+      const isValidPassword = await verifyPassword(password, user.password);
+      if (!isValidPassword) {
+        return res.status(401).json({ message: 'Invalid credentials' });
+      }
+
+      const session = await sessionService.createSession(
+        user._id.toString(),
+        req,
+        { deviceName, deviceFingerprint }
+      );
+
+      const response = buildSessionAuthResponse(session, user);
+      if (!response) {
+        return res.status(500).json({ message: 'Failed to format user data' });
+      }
+
+      try {
+        await securityActivityService.logSignIn(
+          user._id.toString(),
+          req,
+          session.deviceId,
+          {
+            deviceName: deviceName || session.deviceInfo?.deviceName,
+            deviceType: session.deviceInfo?.deviceType,
+            platform: session.deviceInfo?.platform,
+          }
+        );
+      } catch (error) {
+        logger.error('Failed to log security event for sign-in', error instanceof Error ? error : new Error(String(error)), {
+          component: 'SessionController',
+          method: 'signIn',
+          userId: user._id.toString(),
+        });
+      }
+
+      res.json(response);
+    } catch (error) {
+      logger.error('Password sign-in error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  /**
+   * Request a password recovery code
+   */
+  static async requestPasswordReset(req: Request, res: Response) {
+    try {
+      const { identifier, email, username } = req.body;
+      const rawIdentifier = identifier || email || username;
+
+      if (!rawIdentifier) {
+        return res.status(400).json({ message: 'Identifier is required' });
+      }
+
+      const parsedIdentifier = parseIdentifier(String(rawIdentifier));
+      if (!parsedIdentifier) {
+        return res.status(400).json({ message: 'Invalid identifier' });
+      }
+
+      const query = parsedIdentifier.field === 'email'
+        ? { email: parsedIdentifier.value }
+        : { username: parsedIdentifier.value };
+
+      const user = await User.findOne(query).select('+password').lean();
+
+      if (!user || !user.password) {
+        return res.json({
+          success: true,
+          message: 'If an account exists, a recovery code has been sent'
+        });
+      }
+
+      const code = generateNumericCode(RECOVERY_CODE_LENGTH);
+      const codeHash = await hashPassword(code);
+      const expiresAt = new Date(Date.now() + RECOVERY_CODE_TTL_MS);
+
+      await RecoveryCode.updateMany(
+        { userId: user._id, used: false },
+        { $set: { used: true } }
+      );
+
+      await RecoveryCode.create({
+        userId: user._id,
+        identifier: parsedIdentifier.value,
+        codeHash,
+        expiresAt,
+        used: false,
+      });
+
+      const response: Record<string, any> = {
+        success: true,
+        message: 'Recovery code sent',
+        expiresAt: expiresAt.toISOString(),
+      };
+
+      if (process.env.NODE_ENV !== 'production') {
+        response.devCode = code;
+      }
+
+      return res.json(response);
+    } catch (error) {
+      logger.error('Request password reset error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  /**
+   * Verify a recovery code and issue a reset token
+   */
+  static async verifyRecoveryCode(req: Request, res: Response) {
+    try {
+      const { identifier, email, username, code } = req.body;
+      const rawIdentifier = identifier || email || username;
+
+      if (!rawIdentifier || !code) {
+        return res.status(400).json({ message: 'Identifier and code are required' });
+      }
+
+      const parsedIdentifier = parseIdentifier(String(rawIdentifier));
+      if (!parsedIdentifier) {
+        return res.status(400).json({ message: 'Invalid identifier' });
+      }
+
+      const recovery = await RecoveryCode.findOne({
+        identifier: parsedIdentifier.value,
+        used: false,
+        expiresAt: { $gt: new Date() },
+      }).sort({ createdAt: -1 });
+
+      if (!recovery) {
+        return res.status(400).json({ message: 'Invalid or expired code' });
+      }
+
+      if (recovery.attempts >= MAX_RECOVERY_ATTEMPTS) {
+        return res.status(429).json({ message: 'Too many attempts. Request a new code.' });
+      }
+
+      const isValid = await verifyPassword(String(code), recovery.codeHash);
+      if (!isValid) {
+        recovery.attempts += 1;
+        if (recovery.attempts >= MAX_RECOVERY_ATTEMPTS) {
+          recovery.used = true;
+        }
+        await recovery.save();
+
+        return res.status(400).json({ message: 'Invalid or expired code' });
+      }
+
+      const recoveryToken = jwt.sign(
+        {
+          type: 'recovery',
+          recoveryId: recovery._id.toString(),
+          userId: recovery.userId.toString(),
+        },
+        process.env.ACCESS_TOKEN_SECRET as string,
+        { expiresIn: Math.floor(RECOVERY_TOKEN_TTL_MS / 1000) }
+      );
+
+      return res.json({
+        recoveryToken,
+        expiresAt: new Date(Date.now() + RECOVERY_TOKEN_TTL_MS).toISOString(),
+      });
+    } catch (error) {
+      logger.error('Verify recovery code error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
+  }
+
+  /**
+   * Reset password using a verified recovery token
+   */
+  static async resetPassword(req: Request, res: Response) {
+    try {
+      const { recoveryToken, password } = req.body;
+
+      if (!recoveryToken || !password) {
+        return res.status(400).json({ message: 'Recovery token and password are required' });
+      }
+
+      if (typeof password !== 'string' || password.length < PASSWORD_MIN_LENGTH) {
+        return res.status(400).json({
+          message: `Password must be at least ${PASSWORD_MIN_LENGTH} characters long`
+        });
+      }
+
+      let payload: any;
+      try {
+        payload = jwt.verify(recoveryToken, process.env.ACCESS_TOKEN_SECRET as string);
+      } catch {
+        return res.status(401).json({ message: 'Invalid or expired recovery token' });
+      }
+
+      if (!payload || payload.type !== 'recovery') {
+        return res.status(400).json({ message: 'Invalid recovery token' });
+      }
+
+      const recovery = await RecoveryCode.findById(payload.recoveryId);
+      if (!recovery || recovery.used || recovery.expiresAt < new Date()) {
+        return res.status(400).json({ message: 'Invalid or expired recovery token' });
+      }
+
+      const user = await User.findById(recovery.userId).select('+password');
+      if (!user) {
+        return res.status(404).json({ message: 'User not found' });
+      }
+
+      user.password = await hashPassword(password);
+      await user.save();
+
+      await sessionService.deactivateAllUserSessions(user._id.toString());
+
+      recovery.used = true;
+      await recovery.save();
+
+      try {
+        await securityActivityService.logAccountRecovery(
+          user._id.toString(),
+          'recovery_code',
+          req
+        );
+      } catch (error) {
+        logger.error('Failed to log security event for password reset', error instanceof Error ? error : new Error(String(error)), {
+          component: 'SessionController',
+          method: 'resetPassword',
+          userId: user._id.toString(),
+        });
+      }
+
+      res.json({ success: true });
+    } catch (error) {
+      logger.error('Reset password error:', error);
+      res.status(500).json({ message: 'Internal server error' });
+    }
   }
 
   // Get user data by session ID
@@ -307,7 +767,7 @@ export class SessionController {
       const { sessionId } = req.params;
 
       if (!sessionId) {
-        return res.status(400).json({ error: 'Session ID is required' });
+        return res.status(400).json({ message: 'Session ID is required' });
       }
 
       // Use session service for optimized lookup with caching
@@ -315,17 +775,20 @@ export class SessionController {
 
       if (!result || !result.session || !result.user) {
         return res.status(401).json({ 
-          error: 'Invalid or expired session',
+          message: 'Invalid or expired session',
           sessionId: sessionId.substring(0, 8) + '...'
         });
       }
 
-      const userData = normalizeUser(result.user);
+      const userData = formatUserResponse(result.user);
+      if (!userData) {
+        return res.status(500).json({ message: 'Failed to format user data' });
+      }
 
       res.json(userData);
     } catch (error) {
       logger.error('Get user by session error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 
@@ -335,7 +798,7 @@ export class SessionController {
       const { sessionId } = req.params;
 
       if (!sessionId) {
-        return res.status(400).json({ error: 'Session ID is required' });
+        return res.status(400).json({ message: 'Session ID is required' });
       }
 
       // Use session service which handles auto-refresh
@@ -343,7 +806,7 @@ export class SessionController {
 
       if (!result) {
         return res.status(401).json({ 
-          error: 'Invalid or expired session',
+          message: 'Invalid or expired session',
           sessionId: sessionId.substring(0, 8) + '...'
         });
       }
@@ -354,7 +817,7 @@ export class SessionController {
       });
     } catch (error) {
       logger.error('Get token by session error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 
@@ -364,14 +827,14 @@ export class SessionController {
       const { sessionId } = req.params;
 
       if (!sessionId) {
-        return res.status(400).json({ error: 'Session ID is required' });
+        return res.status(400).json({ message: 'Session ID is required' });
       }
 
       // Find current session to get user ID
       const currentSessionResult = await sessionService.validateSessionById(sessionId, false);
 
       if (!currentSessionResult || !currentSessionResult.session) {
-        return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
+        return res.status(401).json({ message: 'Invalid session', code: 'INVALID_SESSION' });
       }
 
       // Get all active sessions for this user using service
@@ -391,7 +854,7 @@ export class SessionController {
       res.json(clientSessions);
     } catch (error) {
       logger.error('Get user sessions error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 
@@ -405,7 +868,7 @@ export class SessionController {
       const sessionIdToLogout = targetSessionId || bodyTargetSessionId || sessionId;
 
       if (!sessionId) {
-        return res.status(400).json({ error: 'Session ID is required' });
+        return res.status(400).json({ message: 'Session ID is required' });
       }
 
       // Get session info before deactivating to retrieve userId and deviceId for socket notification
@@ -418,7 +881,7 @@ export class SessionController {
       const success = await sessionService.deactivateSession(sessionIdToLogout);
 
       if (!success) {
-        return res.status(404).json({ error: 'Session not found' });
+        return res.status(404).json({ message: 'Session not found' });
       }
 
       // Emit socket notification to notify remote devices
@@ -448,7 +911,7 @@ export class SessionController {
       res.json({ success: true, message: 'Session logged out successfully' });
     } catch (error) {
       logger.error('Logout session error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 
@@ -458,14 +921,14 @@ export class SessionController {
       const { sessionId } = req.params;
 
       if (!sessionId) {
-        return res.status(400).json({ error: 'Session ID is required' });
+        return res.status(400).json({ message: 'Session ID is required' });
       }
 
       // Find current session to get user ID
       const currentSessionResult = await sessionService.validateSessionById(sessionId, false);
 
       if (!currentSessionResult || !currentSessionResult.session) {
-        return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
+        return res.status(401).json({ message: 'Invalid session', code: 'INVALID_SESSION' });
       }
 
       const userId = currentSessionResult.session.userId.toString();
@@ -501,7 +964,7 @@ export class SessionController {
       });
     } catch (error) {
       logger.error('Logout all sessions error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 
@@ -513,7 +976,7 @@ export class SessionController {
 
       if (!sessionId) {
         return res.status(400).json({ 
-          error: 'Session ID is required',
+          message: 'Session ID is required',
           hint: 'Provide sessionId in URL parameter or x-session-id header'
         });
       }
@@ -523,12 +986,15 @@ export class SessionController {
 
       if (!result || !result.session || !result.user) {
         return res.status(401).json({ 
-          error: 'Invalid or expired session',
+          message: 'Invalid or expired session',
           sessionId: sessionId.substring(0, 8) + '...'
         });
       }
 
-      const userData = normalizeUser(result.user);
+      const userData = formatUserResponse(result.user);
+      if (!userData) {
+        return res.status(500).json({ message: 'Failed to format user data' });
+      }
 
       res.json({ 
         valid: true,
@@ -538,7 +1004,7 @@ export class SessionController {
       });
     } catch (error) {
       logger.error('Validate session error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 
@@ -549,7 +1015,7 @@ export class SessionController {
 
       if (!sessionId) {
         return res.status(400).json({ 
-          error: 'Session ID is required',
+          message: 'Session ID is required',
           hint: 'Provide sessionId as URL parameter'
         });
       }
@@ -559,7 +1025,7 @@ export class SessionController {
 
       if (!result || !result.session || !result.user) {
         return res.status(401).json({ 
-          error: 'Invalid or expired session',
+          message: 'Invalid or expired session',
           sessionId: sessionId.substring(0, 8) + '...'
         });
       }
@@ -572,7 +1038,10 @@ export class SessionController {
         }
       }
 
-      const userData = normalizeUser(result.user);
+      const userData = formatUserResponse(result.user);
+      if (!userData) {
+        return res.status(500).json({ message: 'Failed to format user data' });
+      }
 
       res.json({ 
         valid: true,
@@ -583,7 +1052,7 @@ export class SessionController {
       });
     } catch (error) {
       logger.error('Validate session from header error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 
@@ -593,19 +1062,19 @@ export class SessionController {
       const { sessionId } = req.params;
 
       if (!sessionId) {
-        return res.status(400).json({ error: 'Session ID is required' });
+        return res.status(400).json({ message: 'Session ID is required' });
       }
 
       const currentSessionResult = await sessionService.validateSessionById(sessionId, false);
       if (!currentSessionResult || !currentSessionResult.session) {
-        return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
+        return res.status(401).json({ message: 'Invalid session', code: 'INVALID_SESSION' });
       }
 
       const deviceSessions = await getDeviceActiveSessions(currentSessionResult.session.deviceId, sessionId);
       res.json(deviceSessions);
     } catch (error) {
       logger.error('Get device sessions error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 
@@ -615,7 +1084,7 @@ export class SessionController {
       const { sessionIds } = req.body;
 
       if (!Array.isArray(sessionIds) || sessionIds.length === 0) {
-        return res.status(400).json({ error: 'sessionIds array is required' });
+        return res.status(400).json({ message: 'sessionIds array is required' });
       }
 
       // Deduplicate sessionIds before processing
@@ -642,7 +1111,7 @@ export class SessionController {
         if (!session.userId || typeof session.userId !== 'object') continue;
         
         const user = session.userId as any;
-        const userData = normalizeUser(user);
+        const userData = formatUserResponse(user);
         if (!userData?.id) continue;
         
         usersMap.set(session.sessionId, userData);
@@ -657,7 +1126,7 @@ export class SessionController {
       res.json(result);
     } catch (error) {
       logger.error('Get users by sessions batch error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 
@@ -667,13 +1136,13 @@ export class SessionController {
       const { sessionId } = req.params;
 
       if (!sessionId) {
-        return res.status(400).json({ error: 'Session ID is required' });
+        return res.status(400).json({ message: 'Session ID is required' });
       }
 
       // Get current session using service
       const currentSessionResult = await sessionService.validateSessionById(sessionId, false);
       if (!currentSessionResult || !currentSessionResult.session) {
-        return res.status(401).json({ error: 'Invalid session', code: 'INVALID_SESSION' });
+        return res.status(401).json({ message: 'Invalid session', code: 'INVALID_SESSION' });
       }
 
       // Logout all sessions for this device
@@ -682,7 +1151,7 @@ export class SessionController {
       res.json(result);
     } catch (error) {
       logger.error('Logout all device sessions error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 
@@ -693,17 +1162,17 @@ export class SessionController {
       const { deviceName } = req.body;
 
       if (!sessionId) {
-        return res.status(400).json({ error: 'Session ID is required' });
+        return res.status(400).json({ message: 'Session ID is required' });
       }
 
       if (!deviceName) {
-        return res.status(400).json({ error: 'Device name is required' });
+        return res.status(400).json({ message: 'Device name is required' });
       }
 
       // Get session using service
       const result = await sessionService.validateSessionById(sessionId, false);
       if (!result || !result.session) {
-        return res.status(404).json({ error: 'Session not found' });
+        return res.status(404).json({ message: 'Session not found' });
       }
 
       // Update device name in database
@@ -727,7 +1196,7 @@ export class SessionController {
       });
     } catch (error) {
       logger.error('Update device name error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 
@@ -740,24 +1209,28 @@ export class SessionController {
       const { publicKey } = req.params;
 
       if (!publicKey) {
-        return res.status(400).json({ error: 'Public key is required' });
+        return res.status(400).json({ message: 'Public key is required' });
       }
 
       if (!SignatureService.isValidPublicKey(publicKey)) {
-        return res.status(400).json({ error: 'Invalid public key format' });
+        return res.status(400).json({ message: 'Invalid public key format' });
       }
 
       const user = await User.findOne({ publicKey });
 
       if (!user) {
-        return res.status(404).json({ error: 'User not found' });
+        return res.status(404).json({ message: 'User not found' });
       }
 
-      const userData = normalizeUser(user);
+      const userData = formatUserResponse(user);
+      if (!userData) {
+        return res.status(500).json({ message: 'Failed to format user data' });
+      }
+
       res.json(userData);
     } catch (error) {
       logger.error('Get user by public key error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+      res.status(500).json({ message: 'Internal server error' });
     }
   }
 }

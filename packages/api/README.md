@@ -62,8 +62,11 @@ npm run dev
 ### Authentication
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `/api/auth/register` | POST | Register new user |
-| `/api/auth/login` | POST | Login with credentials |
+| `/api/auth/register` | POST | Register new public-key identity |
+| `/api/auth/signup` | POST | Password sign-up (email + username + password) |
+| `/api/auth/login` | POST | Password login (email/username + password) |
+| `/api/auth/challenge` | POST | Request public-key challenge |
+| `/api/auth/verify` | POST | Verify signed challenge |
 | `/api/auth/totp/verify-login` | POST | Verify TOTP after password |
 | `/api/auth/refresh` | POST | Refresh access token |
 | `/api/auth/logout` | POST | Logout user |
@@ -71,6 +74,8 @@ npm run dev
 | `/api/auth/recover/request` | POST | Request account recovery code |
 | `/api/auth/recover/verify` | POST | Verify recovery code |
 | `/api/auth/recover/reset` | POST | Reset password with verified code |
+
+Note: All auth endpoints are also available under `/auth` (e.g., `POST /auth/login`).
 
 ### TOTP (Two-Factor)
 | Endpoint | Method | Description |
