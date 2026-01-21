@@ -39,8 +39,8 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     constructor(...args: any[]) {
       super(...(args as [any]));
     }
-  private static readonly DEFAULT_CONFIG_URL = 'https://auth.oxy.so/fedcm.json';
-  private static readonly FEDCM_TIMEOUT = 60000; // 1 minute
+  public static readonly DEFAULT_CONFIG_URL = 'https://auth.oxy.so/fedcm.json';
+  public static readonly FEDCM_TIMEOUT = 60000; // 1 minute
 
   /**
    * Check if FedCM is supported in the current browser
@@ -192,7 +192,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
    *
    * @private
    */
-  private async requestIdentityCredential(options: {
+  public async requestIdentityCredential(options: {
     configURL: string;
     clientId: string;
     nonce: string;
@@ -237,7 +237,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
    *
    * @private
    */
-  private async exchangeIdTokenForSession(idToken: string): Promise<SessionLoginResponse> {
+  public async exchangeIdTokenForSession(idToken: string): Promise<SessionLoginResponse> {
     return this.makeRequest<SessionLoginResponse>(
       'POST',
       '/api/auth/fedcm/exchange',
@@ -289,7 +289,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
    *
    * @private
    */
-  private generateNonce(): string {
+  public generateNonce(): string {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
       return window.crypto.randomUUID();
     }
@@ -302,7 +302,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
    *
    * @private
    */
-  private getClientId(): string {
+  public getClientId(): string {
     if (typeof window === 'undefined') {
       return 'unknown';
     }

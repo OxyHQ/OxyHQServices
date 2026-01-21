@@ -37,12 +37,12 @@ export function OxyServicesRedirectAuthMixin<T extends typeof OxyServicesBase>(B
     constructor(...args: any[]) {
       super(...(args as [any]));
     }
-  private static readonly AUTH_URL = 'https://auth.oxy.so';
-  private static readonly TOKEN_STORAGE_KEY = 'oxy_access_token';
-  private static readonly SESSION_STORAGE_KEY = 'oxy_session_id';
-  private static readonly STATE_STORAGE_KEY = 'oxy_auth_state';
-  private static readonly PRE_AUTH_URL_KEY = 'oxy_pre_auth_url';
-  private static readonly NONCE_STORAGE_KEY = 'oxy_auth_nonce';
+  public static readonly AUTH_URL = 'https://auth.oxy.so';
+  public static readonly TOKEN_STORAGE_KEY = 'oxy_access_token';
+  public static readonly SESSION_STORAGE_KEY = 'oxy_session_id';
+  public static readonly STATE_STORAGE_KEY = 'oxy_auth_state';
+  public static readonly PRE_AUTH_URL_KEY = 'oxy_pre_auth_url';
+  public static readonly NONCE_STORAGE_KEY = 'oxy_auth_nonce';
 
   /**
    * Sign in using full page redirect
@@ -263,7 +263,7 @@ export function OxyServicesRedirectAuthMixin<T extends typeof OxyServicesBase>(B
    *
    * @private
    */
-  private buildAuthUrl(params: {
+  public buildAuthUrl(params: {
     mode: string;
     redirectUri: string;
     state: string;
@@ -284,7 +284,7 @@ export function OxyServicesRedirectAuthMixin<T extends typeof OxyServicesBase>(B
    *
    * @private
    */
-  private storeTokens(accessToken: string, sessionId: string): void {
+  public storeTokens(accessToken: string, sessionId: string): void {
     if (typeof window === 'undefined') {
       return;
     }
@@ -298,7 +298,7 @@ export function OxyServicesRedirectAuthMixin<T extends typeof OxyServicesBase>(B
    *
    * @private
    */
-  private generateState(): string {
+  public generateState(): string {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
       return window.crypto.randomUUID();
     }
@@ -310,7 +310,7 @@ export function OxyServicesRedirectAuthMixin<T extends typeof OxyServicesBase>(B
    *
    * @private
    */
-  private generateNonce(): string {
+  public generateNonce(): string {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
       return window.crypto.randomUUID();
     }
@@ -322,7 +322,7 @@ export function OxyServicesRedirectAuthMixin<T extends typeof OxyServicesBase>(B
    *
    * @private
    */
-  private storeAuthState(state: string, nonce: string): void {
+  public storeAuthState(state: string, nonce: string): void {
     if (typeof window === 'undefined') {
       return;
     }
@@ -336,7 +336,7 @@ export function OxyServicesRedirectAuthMixin<T extends typeof OxyServicesBase>(B
    *
    * @private
    */
-  private getStoredState(): string | null {
+  public getStoredState(): string | null {
     if (typeof window === 'undefined') {
       return null;
     }
@@ -349,7 +349,7 @@ export function OxyServicesRedirectAuthMixin<T extends typeof OxyServicesBase>(B
    *
    * @private
    */
-  private clearAuthState(): void {
+  public clearAuthState(): void {
     if (typeof window === 'undefined') {
       return;
     }
@@ -364,7 +364,7 @@ export function OxyServicesRedirectAuthMixin<T extends typeof OxyServicesBase>(B
    *
    * @private
    */
-  private savePreAuthUrl(url: string): void {
+  public savePreAuthUrl(url: string): void {
     if (typeof window === 'undefined') {
       return;
     }
@@ -377,7 +377,7 @@ export function OxyServicesRedirectAuthMixin<T extends typeof OxyServicesBase>(B
    *
    * @private
    */
-  private cleanAuthCallbackUrl(url: URL): void {
+  public cleanAuthCallbackUrl(url: URL): void {
     // Remove auth parameters
     url.searchParams.delete('access_token');
     url.searchParams.delete('session_id');

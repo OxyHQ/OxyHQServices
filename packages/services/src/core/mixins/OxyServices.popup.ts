@@ -40,11 +40,11 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
     constructor(...args: any[]) {
       super(...(args as [any]));
     }
-  private static readonly AUTH_URL = 'https://auth.oxy.so';
-  private static readonly POPUP_WIDTH = 500;
-  private static readonly POPUP_HEIGHT = 700;
-  private static readonly POPUP_TIMEOUT = 60000; // 1 minute
-  private static readonly SILENT_TIMEOUT = 5000; // 5 seconds
+  public static readonly AUTH_URL = 'https://auth.oxy.so';
+  public static readonly POPUP_WIDTH = 500;
+  public static readonly POPUP_HEIGHT = 700;
+  public static readonly POPUP_TIMEOUT = 60000; // 1 minute
+  public static readonly SILENT_TIMEOUT = 5000; // 5 seconds
 
   /**
    * Sign in using popup window
@@ -201,7 +201,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
    *
    * @private
    */
-  private openCenteredPopup(url: string, title: string, width: number, height: number): Window | null {
+  public openCenteredPopup(url: string, title: string, width: number, height: number): Window | null {
     const left = window.screenX + (window.outerWidth - width) / 2;
     const top = window.screenY + (window.outerHeight - height) / 2;
 
@@ -226,7 +226,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
    *
    * @private
    */
-  private async waitForPopupAuth(
+  public async waitForPopupAuth(
     popup: Window,
     expectedState: string,
     timeout: number
@@ -293,7 +293,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
    *
    * @private
    */
-  private async waitForIframeAuth(
+  public async waitForIframeAuth(
     iframe: HTMLIFrameElement,
     timeout: number,
     expectedOrigin: string
@@ -334,7 +334,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
    *
    * @private
    */
-  private buildAuthUrl(params: {
+  public buildAuthUrl(params: {
     mode: string;
     state: string;
     nonce: string;
@@ -355,7 +355,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
    *
    * @private
    */
-  private generateState(): string {
+  public generateState(): string {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
       return window.crypto.randomUUID();
     }
@@ -367,7 +367,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
    *
    * @private
    */
-  private generateNonce(): string {
+  public generateNonce(): string {
     if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
       return window.crypto.randomUUID();
     }
@@ -379,7 +379,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
    *
    * @private
    */
-  private storeAuthState(state: string, nonce: string): void {
+  public storeAuthState(state: string, nonce: string): void {
     if (typeof window !== 'undefined' && window.sessionStorage) {
       sessionStorage.setItem(`oxy_auth_state_${state}`, JSON.stringify({ nonce, timestamp: Date.now() }));
     }
@@ -390,7 +390,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
    *
    * @private
    */
-  private clearAuthState(state: string): void {
+  public clearAuthState(state: string): void {
     if (typeof window !== 'undefined' && window.sessionStorage) {
       sessionStorage.removeItem(`oxy_auth_state_${state}`);
     }
