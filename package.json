@@ -34,9 +34,7 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.3",
-    "@types/express-serve-static-core": "^5.0.7",
-    "@types/node": "^20.0.0",
-    "typescript": "^5.9.2"
+    "@types/express-serve-static-core": "^5.0.7"
   },
   "engines": {
     "node": "18.x || 20.x",
@@ -58,9 +56,13 @@
   "license": "MIT",
   "dependencies": {
     "@tailwindcss/postcss": "^4",
+    "@types/node": "^20.0.0",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
     "react": "19.1.0",
     "react-dom": "19.1.0",
-    "tailwindcss": "^4"
+    "tailwindcss": "^4",
+    "typescript": "^5.9.2"
   },
   "overrides": {
     "send": "0.19.1"
