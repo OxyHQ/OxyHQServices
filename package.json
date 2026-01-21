@@ -6,13 +6,12 @@
   "workspaces": [
     "packages/api",
     "packages/services",
-    "packages/accounts",
-    "packages/auth"
+    "packages/accounts"
   ],
   "scripts": {
     "build": "npm run build:all",
     "build:workspaces": "npm run build --workspaces --if-present",
-    "build:all": "npm run services:build && npm run build --workspaces --if-present && npm run accounts:build && npm run auth:build",
+    "build:all": "npm run services:build && npm run build --workspaces --if-present && npm run accounts:build",
     "start": "cd packages/api && npm start",
     "dev": "npm run dev --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
@@ -27,9 +26,6 @@
     "accounts:build": "npm run build -w accounts",
     "accounts:dev": "npm run start -w accounts",
     "accounts:start": "npm run start -w accounts",
-    "auth:build": "npm run build -w auth",
-    "auth:dev": "npm run dev -w auth",
-    "auth:start": "npm run start -w auth",
     "heroku-postbuild": "npm run build:all"
   },
   "devDependencies": {
@@ -54,17 +50,6 @@
   ],
   "author": "OxyHQ",
   "license": "MIT",
-  "dependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/node": "^20.0.0",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "next": "16.1.4",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "tailwindcss": "^4",
-    "typescript": "^5.9.2"
-  },
   "overrides": {
     "send": "0.19.1",
     "react": "19.2.3",
