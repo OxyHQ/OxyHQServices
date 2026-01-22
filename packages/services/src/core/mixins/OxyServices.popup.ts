@@ -111,6 +111,25 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
         this.httpService.setTokens((session as any).accessToken);
       }
 
+      // Fetch user data using the session ID
+      // The callback page only sends sessionId/accessToken, not user data
+      if (session && session.sessionId && !session.user) {
+        try {
+          const userData = await this.makeRequest<any>(
+            'GET',
+            `/api/session/user/${session.sessionId}`,
+            undefined,
+            { cache: false }
+          );
+          if (userData) {
+            (session as any).user = userData;
+          }
+        } catch (userError) {
+          console.warn('[PopupAuth] Failed to fetch user data:', userError);
+          // Continue without user data - caller can fetch separately
+        }
+      }
+
       return session;
     } catch (error) {
       throw error;
