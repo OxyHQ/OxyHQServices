@@ -19,6 +19,22 @@ export const dynamic = 'force-dynamic';
 // Shared secret for signing FedCM tokens - must match api.oxy.so
 const FEDCM_TOKEN_SECRET = process.env.FEDCM_TOKEN_SECRET || process.env.ACCESS_TOKEN_SECRET || 'fedcm-shared-secret';
 
+/**
+ * Get CORS headers for FedCM responses
+ * IMPORTANT: When Access-Control-Allow-Credentials is true,
+ * Access-Control-Allow-Origin CANNOT be '*' - must be specific origin
+ */
+function getCorsHeaders(request: NextRequest): Record<string, string> {
+  const origin = request.headers.get('origin');
+  // FedCM requests always include an origin header
+  const allowOrigin = origin || 'https://oxy.so';
+
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
+
 interface User {
   id: string;
   username: string;
@@ -78,6 +94,18 @@ function generateIdToken(userId: string, clientId: string, nonce?: string): stri
 }
 
 export async function POST(request: NextRequest) {
+  const corsHeaders = getCorsHeaders(request);
+
+  // Validate this is a FedCM request (optional but recommended for security)
+  const secFetchDest = request.headers.get('sec-fetch-dest');
+  if (secFetchDest && secFetchDest !== 'webidentity') {
+    console.warn('[FedCM Assertion] Non-FedCM request blocked:', secFetchDest);
+    return NextResponse.json(
+      { error: 'Invalid request' },
+      { status: 400, headers: corsHeaders }
+    );
+  }
+
   try {
     // Parse request body
     const body = await request.json();
@@ -88,7 +116,7 @@ export async function POST(request: NextRequest) {
     if (!account_id || !client_id) {
       return NextResponse.json(
         { error: 'account_id and client_id are required' },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       );
     }
 
@@ -99,7 +127,7 @@ export async function POST(request: NextRequest) {
     if (!sessionCookie) {
       return NextResponse.json(
         { error: 'No active session' },
-        { status: 401 }
+        { status: 401, headers: corsHeaders }
       );
     }
 
@@ -110,7 +138,7 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       return NextResponse.json(
         { error: 'Invalid session' },
-        { status: 401 }
+        { status: 401, headers: corsHeaders }
       );
     }
 
@@ -118,7 +146,7 @@ export async function POST(request: NextRequest) {
     if (user.id !== account_id) {
       return NextResponse.json(
         { error: 'Account ID mismatch' },
-        { status: 403 }
+        { status: 403, headers: corsHeaders }
       );
     }
 
@@ -131,8 +159,7 @@ export async function POST(request: NextRequest) {
       {
         headers: {
           'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
-          'Access-Control-Allow-Credentials': 'true',
+          ...corsHeaders,
           // Confirm login status for FedCM
           'Set-Login': 'logged-in',
         },
@@ -144,23 +171,22 @@ export async function POST(request: NextRequest) {
       { error: 'Internal server error' },
       {
         status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
-          'Access-Control-Allow-Credentials': 'true',
-        },
+        headers: corsHeaders,
       }
     );
   }
 }
 
 export async function OPTIONS(request: NextRequest) {
+  const origin = request.headers.get('origin');
+  const allowOrigin = origin || 'https://oxy.so';
+
   return new NextResponse(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
+      'Access-Control-Allow-Origin': allowOrigin,
       'Access-Control-Allow-Methods': 'POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, Sec-Fetch-Dest',
       'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Max-Age': '86400',
     },

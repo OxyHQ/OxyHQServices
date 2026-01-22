@@ -22,22 +22,57 @@ interface User {
   avatarUrl?: string;
 }
 
+/**
+ * Get CORS headers for FedCM responses
+ * IMPORTANT: When Access-Control-Allow-Credentials is true,
+ * Access-Control-Allow-Origin CANNOT be '*' - must be specific origin
+ */
+function getCorsHeaders(request: NextRequest): Record<string, string> {
+  const origin = request.headers.get('origin');
+  // FedCM requests always include an origin header
+  // If no origin, use a safe default (won't work with credentials but prevents errors)
+  const allowOrigin = origin || 'https://oxy.so';
+
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
+
+/**
+ * Create a JSON response with proper FedCM headers
+ */
+function createFedCMResponse(
+  data: { accounts: any[] },
+  request: NextRequest,
+  status: number = 200
+): NextResponse {
+  return NextResponse.json(data, {
+    status,
+    headers: {
+      'Content-Type': 'application/json',
+      ...getCorsHeaders(request),
+    },
+  });
+}
+
 export async function GET(request: NextRequest) {
+  // Validate this is a FedCM request (optional but recommended for security)
+  const secFetchDest = request.headers.get('sec-fetch-dest');
+  if (secFetchDest && secFetchDest !== 'webidentity') {
+    // Not a FedCM request - could be a regular API call or CSRF attempt
+    console.warn('[FedCM Accounts] Non-FedCM request blocked:', secFetchDest);
+    return createFedCMResponse({ accounts: [] }, request);
+  }
+
   try {
     // Check for oxy_session_id cookie
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
 
     if (!sessionCookie) {
-      // No session - return empty accounts list
-      return NextResponse.json({ accounts: [] }, {
-        headers: {
-          'Content-Type': 'application/json',
-          // FedCM requires specific CORS headers
-          'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
-          'Access-Control-Allow-Credentials': 'true',
-        },
-      });
+      // No session - return empty accounts list (not an error)
+      return createFedCMResponse({ accounts: [] }, request);
     }
 
     // Fetch user data from session
@@ -45,14 +80,9 @@ export async function GET(request: NextRequest) {
     try {
       user = await apiGet<User>(`/api/session/user/${sessionCookie.value}`);
     } catch (error) {
-      // Invalid session - return empty accounts
-      return NextResponse.json({ accounts: [] }, {
-        headers: {
-          'Content-Type': 'application/json',
-          'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
-          'Access-Control-Allow-Credentials': 'true',
-        },
-      });
+      // Invalid session - return empty accounts (not an error for FedCM)
+      console.log('[FedCM Accounts] Session lookup failed, returning empty accounts');
+      return createFedCMResponse({ accounts: [] }, request);
     }
 
     // Approved clients for auto sign-in (no UI prompt)
@@ -84,34 +114,26 @@ export async function GET(request: NextRequest) {
       },
     ];
 
-    return NextResponse.json({ accounts }, {
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
-        'Access-Control-Allow-Credentials': 'true',
-      },
-    });
+    return createFedCMResponse({ accounts }, request);
   } catch (error) {
-    console.error('[FedCM Accounts] Error:', error);
-    return NextResponse.json({ accounts: [] }, {
-      status: 500,
-      headers: {
-        'Content-Type': 'application/json',
-        'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
-        'Access-Control-Allow-Credentials': 'true',
-      },
-    });
+    // IMPORTANT: Return 200 with empty accounts instead of 500
+    // FedCM interprets 500 as network error and shows "Check your internet connection"
+    console.error('[FedCM Accounts] Unexpected error:', error);
+    return createFedCMResponse({ accounts: [] }, request);
   }
 }
 
 // Handle CORS preflight
 export async function OPTIONS(request: NextRequest) {
+  const origin = request.headers.get('origin');
+  const allowOrigin = origin || 'https://oxy.so';
+
   return new NextResponse(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
+      'Access-Control-Allow-Origin': allowOrigin,
       'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, Sec-Fetch-Dest',
       'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Max-Age': '86400',
     },
