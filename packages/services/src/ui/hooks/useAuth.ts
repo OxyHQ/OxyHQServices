@@ -91,6 +91,7 @@ export function useAuth(): UseAuthReturn {
     isTokenReady,
     error,
     signIn: oxySignIn,
+    handlePopupSession,
     logout,
     logoutAll,
     refreshSessions,
@@ -115,6 +116,8 @@ export function useAuth(): UseAuthReturn {
       try {
         const popupSession = await (oxyServices as any).signInWithPopup?.();
         if (popupSession?.user) {
+          // Update context state with the session (this updates user, sessions, storage)
+          await handlePopupSession(popupSession);
           return popupSession.user;
         }
         throw new Error('Sign-in failed. Please try again.');
@@ -161,7 +164,7 @@ export function useAuth(): UseAuthReturn {
     }
 
     throw new Error('No authentication method available');
-  }, [oxySignIn, hasIdentity, getPublicKey, showBottomSheet, oxyServices]);
+  }, [oxySignIn, hasIdentity, getPublicKey, showBottomSheet, oxyServices, handlePopupSession]);
 
   const signOut = useCallback(async (): Promise<void> => {
     await logout();
