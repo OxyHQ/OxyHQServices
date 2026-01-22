@@ -28,15 +28,38 @@ function redirectWithError(
 }
 
 export async function POST(request: NextRequest) {
-    const formData = await request.formData()
-    const email = String(formData.get("email") || "").trim()
-    const password = String(formData.get("password") || "")
-    const username = String(formData.get("username") || "").trim()
-    const sessionToken = String(formData.get("session_token") || "")
-    const redirectUri = String(formData.get("redirect_uri") || "")
-    const state = String(formData.get("state") || "")
+    const contentType = request.headers.get("content-type") || ""
+    const isJson = contentType.includes("application/json")
+
+    let email: string
+    let password: string
+    let username: string
+    let sessionToken = ""
+    let redirectUri = ""
+    let state = ""
+
+    if (isJson) {
+        const body = await request.json()
+        email = String(body.email || "").trim()
+        password = String(body.password || "")
+        username = String(body.username || "").trim()
+    } else {
+        const formData = await request.formData()
+        email = String(formData.get("email") || "").trim()
+        password = String(formData.get("password") || "")
+        username = String(formData.get("username") || "").trim()
+        sessionToken = String(formData.get("session_token") || "")
+        redirectUri = String(formData.get("redirect_uri") || "")
+        state = String(formData.get("state") || "")
+    }
 
     if (!email || !password || !username) {
+        if (isJson) {
+            return NextResponse.json(
+                { message: "Email, username, and password are required" },
+                { status: 400 }
+            )
+        }
         return redirectWithError(request, "Email, username, and password are required", {
             token: sessionToken,
             redirect_uri: redirectUri,
@@ -52,6 +75,13 @@ export async function POST(request: NextRequest) {
             payload,
             { headers: getForwardHeaders(request) }
         )
+
+        if (isJson) {
+            return NextResponse.json({
+                sessionId: session.sessionId,
+                expiresAt: session.expiresAt,
+            })
+        }
 
         const response = NextResponse.redirect(
             new URL(
@@ -81,6 +111,9 @@ export async function POST(request: NextRequest) {
     } catch (error) {
         const message =
             error instanceof Error ? error.message : "Unable to sign up"
+        if (isJson) {
+            return NextResponse.json({ message }, { status: 400 })
+        }
         return redirectWithError(request, message, {
             token: sessionToken,
             redirect_uri: redirectUri,

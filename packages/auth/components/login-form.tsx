@@ -15,7 +15,6 @@ import {
     FieldSeparator,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { buildAuthUrl } from "@/lib/oxy-api-client"
 
 type LoginFormProps = React.ComponentProps<"div"> & {
     error?: string
@@ -38,7 +37,7 @@ export function LoginForm({
     const [errorMessage, setErrorMessage] = useState(error)
     const [noticeMessage, setNoticeMessage] = useState(notice)
     const [isSubmitting, setIsSubmitting] = useState(false)
-    const formAction = buildAuthUrl("/login")
+    const formAction = "/api/auth/login"
 
     useEffect(() => {
         setErrorMessage(error)
@@ -72,7 +71,7 @@ export function LoginForm({
         let didRedirect = false
 
         try {
-            const response = await fetch(buildAuthUrl("/login"), {
+            const response = await fetch("/api/auth/login", {
                 method: "POST",
                 headers: {
                     "content-type": "application/json",

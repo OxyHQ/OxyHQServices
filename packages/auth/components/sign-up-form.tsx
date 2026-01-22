@@ -17,7 +17,6 @@ import {
     FieldSeparator,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { buildAuthUrl } from "@/lib/oxy-api-client"
 
 type SignUpFormProps = React.ComponentProps<"div"> & {
     error?: string
@@ -37,7 +36,7 @@ export function SignUpForm({
     const router = useRouter()
     const [errorMessage, setErrorMessage] = useState(error)
     const [isSubmitting, setIsSubmitting] = useState(false)
-    const formAction = buildAuthUrl("/signup")
+    const formAction = "/api/auth/signup"
 
     useEffect(() => {
         setErrorMessage(error)
@@ -61,7 +60,7 @@ export function SignUpForm({
         let didRedirect = false
 
         try {
-            const response = await fetch(buildAuthUrl("/signup"), {
+            const response = await fetch("/api/auth/signup", {
                 method: "POST",
                 headers: {
                     "content-type": "application/json",

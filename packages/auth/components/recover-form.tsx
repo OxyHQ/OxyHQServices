@@ -16,7 +16,6 @@ import {
     FieldLabel,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
-import { buildAuthUrl } from "@/lib/oxy-api-client"
 
 type RecoverFormProps = React.ComponentProps<"div"> & {
     error?: string
@@ -61,7 +60,7 @@ export function RecoverForm({
 
         try {
             if (stepValue === "request") {
-                const response = await fetch(buildAuthUrl("/recover/request"), {
+                const response = await fetch("/api/auth/recover/request", {
                     method: "POST",
                     headers: {
                         "content-type": "application/json",
@@ -95,7 +94,7 @@ export function RecoverForm({
 
             if (stepValue === "verify") {
                 const code = String(formData.get("code") || "").trim()
-                const response = await fetch(buildAuthUrl("/recover/verify"), {
+                const response = await fetch("/api/auth/recover/verify", {
                     method: "POST",
                     headers: {
                         "content-type": "application/json",
@@ -141,7 +140,7 @@ export function RecoverForm({
                     return
                 }
 
-                const response = await fetch(buildAuthUrl("/recover/reset"), {
+                const response = await fetch("/api/auth/recover/reset", {
                     method: "POST",
                     headers: {
                         "content-type": "application/json",
