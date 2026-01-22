@@ -28,6 +28,7 @@ export const OxyIcon = noopComponent;
 export const useOxy = noopHook;
 
 // Hooks (all return empty objects)
+export const useAuth = noopHook;
 export const useFollow = noopHook;
 export const useStorage = () => noopStorageResult;
 

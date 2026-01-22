@@ -32,6 +32,7 @@ import { translate } from '../../i18n';
 import { updateAvatarVisibility, updateProfileWithAvatar } from '../utils/avatarUtils';
 import { useAccountStore } from '../stores/accountStore';
 import { logger as loggerUtil } from '../../utils/loggerUtils';
+import { useWebSSO, isWebBrowser } from '../hooks/useWebSSO';
 
 export interface OxyContextState {
   user: User | null;
@@ -411,6 +412,53 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     initializedRef.current = true;
     void restoreSessionsFromStorage();
   }, [restoreSessionsFromStorage, storage]);
+
+  // Web SSO: Automatically check for cross-domain session on web platforms
+  const handleWebSSOSession = useCallback(async (session: any) => {
+    if (!session?.user || !session?.sessionId) {
+      return;
+    }
+
+    // Update sessions state
+    const clientSession = {
+      sessionId: session.sessionId,
+      deviceId: session.deviceId || '',
+      expiresAt: session.expiresAt || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+      lastActive: new Date().toISOString(),
+      userId: session.user.id?.toString() ?? '',
+      isCurrent: true,
+    };
+
+    updateSessions([clientSession], { merge: true });
+    setActiveSessionId(session.sessionId);
+    loginSuccess(session.user);
+    onAuthStateChange?.(session.user);
+
+    // Persist to storage
+    if (storage) {
+      await storage.setItem(storageKeys.activeSessionId, session.sessionId);
+      const existingIds = await storage.getItem(storageKeys.sessionIds);
+      const sessionIds = existingIds ? JSON.parse(existingIds) : [];
+      if (!sessionIds.includes(session.sessionId)) {
+        sessionIds.push(session.sessionId);
+        await storage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
+      }
+    }
+  }, [updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, storage, storageKeys]);
+
+  // Enable web SSO only after local storage check completes and no user found
+  const shouldTryWebSSO = isWebBrowser() && tokenReady && !user && initializedRef.current;
+
+  useWebSSO({
+    oxyServices,
+    onSessionFound: handleWebSSOSession,
+    onError: (error) => {
+      if (__DEV__) {
+        loggerUtil.debug('Web SSO check failed (non-critical)', { component: 'OxyContext' }, error);
+      }
+    },
+    enabled: shouldTryWebSSO,
+  });
 
   const activeSession = activeSessionId
     ? sessions.find((session) => session.sessionId === activeSessionId)

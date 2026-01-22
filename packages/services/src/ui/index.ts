@@ -19,7 +19,7 @@
 import isFrontend from './isFrontend';
 
 // UI exports
-let OxyProvider, OxySignInButton, OxyLogo, Avatar, FollowButton, OxyPayButton, FontLoader, setupFonts, OxyIcon, useOxy, useFollow, ProfileScreen, useAuthStore, useAccountStore, fontFamilies, fontStyles, toast, useStorage;
+let OxyProvider, OxySignInButton, OxyLogo, Avatar, FollowButton, OxyPayButton, FontLoader, setupFonts, OxyIcon, useOxy, useAuth, useFollow, ProfileScreen, useAuthStore, useAccountStore, fontFamilies, fontStyles, toast, useStorage;
 
 if (isFrontend) {
   OxyProvider = require('./components/OxyProvider').default;
@@ -32,6 +32,7 @@ if (isFrontend) {
   setupFonts = require('./components/FontLoader').setupFonts;
   OxyIcon = require('./components/icon').OxyIcon;
   useOxy = require('./context/OxyContext').useOxy;
+  useAuth = require('./hooks/useAuth').useAuth;
   useFollow = require('./hooks').useFollow;
   ProfileScreen = require('./screens/ProfileScreen').default;
   useAuthStore = require('./stores/authStore').useAuthStore;
@@ -56,6 +57,7 @@ if (isFrontend) {
   setupFonts = () => {};
   OxyIcon = noopComponent;
   useOxy = noopHook;
+  useAuth = noopHook;
   useFollow = noopHook;
   ProfileScreen = noopComponent;
   useAuthStore = noopHook;
@@ -77,6 +79,7 @@ export {
   setupFonts,
   OxyIcon,
   useOxy,
+  useAuth,
   useFollow,
   ProfileScreen,
   useAuthStore,

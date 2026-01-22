@@ -31,8 +31,10 @@ export type {
   RecoveryPhraseResult 
 } from './crypto';
 
-// React context
+// React context and auth hooks
 export { useOxy } from './ui/context/OxyContext';
+export { useAuth } from './ui/hooks/useAuth';
+export type { AuthState, AuthActions, UseAuthReturn } from './ui/hooks/useAuth';
 
 // Streamlined provider with built-in bottom sheet
 export { default as OxyProvider } from './ui/components/OxyProvider';

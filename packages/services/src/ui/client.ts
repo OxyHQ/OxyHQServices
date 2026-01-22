@@ -22,6 +22,8 @@ export { OxyIcon } from './components/icon';
 export { useOxy } from './context/OxyContext';
 
 // Hooks
+export { useAuth } from './hooks/useAuth';
+export type { AuthState, AuthActions, UseAuthReturn } from './hooks/useAuth';
 export { useFollow } from './hooks';
 export { useStorage } from './hooks/useStorage';
 export type { UseStorageOptions, UseStorageResult } from './hooks/useStorage';

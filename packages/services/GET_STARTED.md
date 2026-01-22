@@ -1,6 +1,6 @@
 # Getting Started with @oxyhq/services
 
-Quick guide to integrate Oxy authentication and services into any Oxy app.
+Zero-config authentication for all Oxy apps. Just wrap with `OxyProvider` and use `useAuth`.
 
 ## Installation
 
@@ -19,43 +19,32 @@ npm install react-native-reanimated react-native-gesture-handler \
 
 ---
 
-## Native Apps (React Native / Expo)
+## Quick Start (All Platforms)
 
-### 1. Setup Entry Point
-
-Add polyfill at the very top of your entry file:
-
-```javascript
-// index.js or App.js (first line)
-import 'react-native-url-polyfill/auto';
-```
-
-### 2. Wrap App with OxyProvider
+### 1. Wrap with OxyProvider
 
 ```tsx
-// app/_layout.tsx (Expo Router) or App.tsx
+// app/_layout.tsx or App.tsx
 import { OxyProvider } from '@oxyhq/services';
-import * as Linking from 'expo-linking';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
-const AUTH_REDIRECT_URI = Linking.createURL('/');
-
-export default function RootLayout() {
+export default function App() {
   return (
-    <OxyProvider baseURL={API_URL} authRedirectUri={AUTH_REDIRECT_URI}>
+    <OxyProvider baseURL="https://api.oxy.so">
       <YourApp />
     </OxyProvider>
   );
 }
 ```
 
-### 3. Use Authentication
+### 2. Use Authentication
 
 ```tsx
-import { OxySignInButton, useOxy } from '@oxyhq/services';
+import { useAuth, OxySignInButton } from '@oxyhq/services';
 
 function HomeScreen() {
-  const { isAuthenticated, user, logout, showBottomSheet } = useOxy();
+  const { user, isAuthenticated, isLoading, signOut } = useAuth();
+
+  if (isLoading) return <Loading />;
 
   if (!isAuthenticated) {
     return (
@@ -69,179 +58,181 @@ function HomeScreen() {
   return (
     <View>
       <Text>Welcome, {user?.username}!</Text>
-      <Button title="Account Settings" onPress={() => showBottomSheet('AccountCenter')} />
-      <Button title="Sign Out" onPress={logout} />
+      <Button title="Sign Out" onPress={signOut} />
     </View>
   );
 }
 ```
 
-### 4. Available Bottom Sheet Screens
+**That's it!** Cross-domain SSO is automatic. If user is signed in on any Oxy domain (accounts.oxy.so, mention.earth, homiio.com, etc.), they're automatically signed in on your app.
+
+---
+
+## useAuth Hook Reference
 
 ```tsx
+import { useAuth } from '@oxyhq/services';
+
+const {
+  // State
+  user,              // User | null - current user
+  isAuthenticated,   // boolean - is user signed in
+  isLoading,         // boolean - initial auth check
+  isReady,           // boolean - ready for API calls
+  error,             // string | null - error message
+
+  // Actions
+  signIn,            // () => Promise<User> - trigger sign in
+  signOut,           // () => Promise<void> - sign out current session
+  signOutAll,        // () => Promise<void> - sign out all devices
+  refresh,           // () => Promise<void> - refresh auth state
+
+  // Advanced
+  oxyServices,       // OxyServices instance
+} = useAuth();
+```
+
+---
+
+## Native Apps (React Native / Expo)
+
+### Setup Entry Point
+
+Add polyfill at the very top of your entry file:
+
+```javascript
+// index.js or App.js (first line)
+import 'react-native-url-polyfill/auto';
+```
+
+### Full Example
+
+```tsx
+// app/_layout.tsx
+import 'react-native-url-polyfill/auto';
+import { OxyProvider } from '@oxyhq/services';
+import * as Linking from 'expo-linking';
+
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'https://api.oxy.so';
+
+export default function RootLayout() {
+  return (
+    <OxyProvider
+      baseURL={API_URL}
+      authRedirectUri={Linking.createURL('/')}
+    >
+      <YourApp />
+    </OxyProvider>
+  );
+}
+```
+
+### Bottom Sheet Screens
+
+```tsx
+import { useOxy } from '@oxyhq/services';
+
 const { showBottomSheet } = useOxy();
 
-// Account screens
+// Account
 showBottomSheet('AccountCenter');      // Main account hub
-showBottomSheet('AccountOverview');    // Overview with all features
-showBottomSheet('AccountSwitcher');    // Switch between accounts
-showBottomSheet('SessionManagement');  // Manage device sessions
+showBottomSheet('AccountSwitcher');    // Switch accounts
+showBottomSheet('SessionManagement');  // Manage devices
 showBottomSheet('EditProfile');        // Edit profile
-showBottomSheet('PrivacySettings');    // Privacy controls
 
-// Auth screens
-showBottomSheet('OxyAuth');            // QR code authentication
-showBottomSheet('WelcomeNewUser');     // New user welcome
+// Auth
+showBottomSheet('OxyAuth');            // QR code auth
 
 // Features
-showBottomSheet('FileManagement');     // File management
-showBottomSheet('LanguageSelector');   // Change language
-showBottomSheet('KarmaCenter');        // Karma system
+showBottomSheet('FileManagement');     // Files
+showBottomSheet('LanguageSelector');   // Language
+showBottomSheet('KarmaCenter');        // Karma
 
-// Payments (with props)
-showBottomSheet({
-  screen: 'PaymentGateway',
-  props: { amount: 10, currency: 'FAIR' }
-});
+// Payments
+showBottomSheet({ screen: 'PaymentGateway', props: { amount: 10 } });
 ```
 
 ---
 
 ## Web Apps (Next.js / React)
 
-For web apps, use `CrossDomainAuth` for SSO across all Oxy domains.
+Web apps use the same `OxyProvider` and `useAuth`. SSO is automatic via hidden iframe.
 
-### 1. Setup CrossDomainAuth
-
-```tsx
-import { OxyServices, createCrossDomainAuth } from '@oxyhq/services';
-
-const oxyServices = new OxyServices({
-  baseURL: 'https://api.oxy.so',
-});
-
-const auth = createCrossDomainAuth(oxyServices);
-```
-
-### 2. Initialize on App Startup
+### Next.js Example
 
 ```tsx
-// Check for existing session
-useEffect(() => {
-  const initAuth = async () => {
-    const session = await auth.initialize();
-    if (session) {
-      setUser(session.user);
-    }
-    setLoading(false);
-  };
-  initAuth();
-}, []);
-```
+// app/providers.tsx
+'use client';
+import { OxyProvider } from '@oxyhq/services';
 
-### 3. Sign In
+export function Providers({ children }) {
+  return (
+    <OxyProvider baseURL="https://api.oxy.so">
+      {children}
+    </OxyProvider>
+  );
+}
 
-```tsx
-const handleSignIn = async () => {
-  try {
-    // Auto-selects best method: FedCM -> Popup -> Redirect
-    const session = await auth.signIn();
-    setUser(session.user);
-  } catch (error) {
-    console.error('Sign in failed:', error);
-  }
-};
-```
+// app/layout.tsx
+import { Providers } from './providers';
 
-### 4. Complete React Example
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+}
 
-```tsx
-import { useEffect, useState } from 'react';
-import { OxyServices, createCrossDomainAuth } from '@oxyhq/services';
+// app/page.tsx
+'use client';
+import { useAuth } from '@oxyhq/services';
 
-const oxyServices = new OxyServices({ baseURL: 'https://api.oxy.so' });
-const auth = createCrossDomainAuth(oxyServices);
+export default function Home() {
+  const { user, isAuthenticated, isLoading } = useAuth();
 
-function App() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  if (isLoading) return <div>Loading...</div>;
 
-  useEffect(() => {
-    auth.initialize().then((session) => {
-      if (session) setUser(session.user);
-      setLoading(false);
-    });
-  }, []);
-
-  const handleSignIn = async () => {
-    const session = await auth.signIn();
-    if (session) setUser(session.user);
-  };
-
-  const handleSignOut = async () => {
-    await oxyServices.logout();
-    setUser(null);
-  };
-
-  if (loading) return <div>Loading...</div>;
-
-  return user ? (
-    <div>
-      <h1>Welcome, {user.username}!</h1>
-      <button onClick={handleSignOut}>Sign Out</button>
-    </div>
+  return isAuthenticated ? (
+    <h1>Welcome, {user?.username}!</h1>
   ) : (
-    <button onClick={handleSignIn}>Sign In with Oxy</button>
+    <a href="https://accounts.oxy.so/login">Sign In</a>
   );
 }
 ```
+
+### How Web SSO Works
+
+1. User signs in on `accounts.oxy.so` (or any Oxy domain)
+2. Your app's `OxyProvider` loads a hidden iframe to `auth.oxy.so/auth/silent`
+3. If valid session exists, user is automatically authenticated
+4. No manual setup required - it just works
 
 ---
 
 ## Backend (Node.js / Express / Next.js API)
 
-For server-side usage, import from the core module to avoid React dependencies.
+For server-side, import from `/core` to avoid React dependencies.
 
-### 1. Pre-configured Client (Quick Start)
-
-```typescript
-// Use the pre-configured oxyClient
-import { oxyClient } from '@oxyhq/services/core';
-
-// Express route example
-app.get('/api/users/:id', async (req, res) => {
-  try {
-    const user = await oxyClient.getUserById(req.params.id);
-    res.json(user);
-  } catch (error) {
-    res.status(404).json({ error: error.message });
-  }
-});
-
-app.get('/api/profiles/:username', async (req, res) => {
-  const profile = await oxyClient.getProfileByUsername(req.params.username);
-  res.json(profile);
-});
-```
-
-### 2. Custom Instance
-
-```typescript
-import { OxyServices, OXY_CLOUD_URL } from '@oxyhq/services/core';
-
-const oxy = new OxyServices({
-  baseURL: process.env.OXY_API_URL || OXY_CLOUD_URL,
-});
-
-export { oxy };
-```
-
-### 3. Session Validation (Middleware)
+### Quick Start
 
 ```typescript
 import { oxyClient } from '@oxyhq/services/core';
 
-// Express middleware to validate session
+// Get user
+const user = await oxyClient.getUserById('123');
+
+// Validate session
+const { valid, user } = await oxyClient.validateSession(sessionId);
+```
+
+### Express Middleware
+
+```typescript
+import { oxyClient } from '@oxyhq/services/core';
+
 async function authMiddleware(req, res, next) {
   const sessionId = req.headers['x-session-id'] || req.cookies.sessionId;
 
@@ -251,106 +242,46 @@ async function authMiddleware(req, res, next) {
 
   try {
     const { valid, user } = await oxyClient.validateSession(sessionId);
-    if (!valid) {
-      return res.status(401).json({ error: 'Invalid session' });
-    }
+    if (!valid) return res.status(401).json({ error: 'Invalid session' });
     req.user = user;
     next();
-  } catch (error) {
-    res.status(401).json({ error: 'Session validation failed' });
+  } catch {
+    res.status(401).json({ error: 'Auth failed' });
   }
 }
 
-// Protected route
-app.get('/api/me', authMiddleware, (req, res) => {
-  res.json(req.user);
-});
+app.get('/api/me', authMiddleware, (req, res) => res.json(req.user));
 ```
 
-### 4. Next.js API Routes
+### Next.js API Route
 
 ```typescript
 // app/api/user/[id]/route.ts
 import { oxyClient } from '@oxyhq/services/core';
 import { NextResponse } from 'next/server';
 
-export async function GET(
-  request: Request,
-  { params }: { params: { id: string } }
-) {
+export async function GET(req, { params }) {
   try {
     const user = await oxyClient.getUserById(params.id);
     return NextResponse.json(user);
-  } catch (error) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+  } catch {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 }
 ```
 
-### 5. Complete Express Server
+### Available Methods
 
 ```typescript
-import express from 'express';
-import { oxyClient } from '@oxyhq/services/core';
-
-const app = express();
-app.use(express.json());
-
-// Auth routes
-app.post('/api/auth/challenge', async (req, res) => {
-  const { publicKey } = req.body;
-  const challenge = await oxyClient.requestChallenge(publicKey);
-  res.json(challenge);
-});
-
-app.post('/api/auth/verify', async (req, res) => {
-  const { publicKey, challenge, signature, timestamp } = req.body;
-  const session = await oxyClient.verifyChallenge(publicKey, challenge, signature, timestamp);
-  res.json(session);
-});
-
-// User routes
-app.get('/api/users/:id', async (req, res) => {
-  const user = await oxyClient.getUserById(req.params.id);
-  res.json(user);
-});
-
-app.get('/api/users/:id/followers', async (req, res) => {
-  const followers = await oxyClient.getUserFollowers(req.params.id);
-  res.json(followers);
-});
-
-app.get('/api/users/:id/following', async (req, res) => {
-  const following = await oxyClient.getUserFollowing(req.params.id);
-  res.json(following);
-});
-
-// Karma routes
-app.get('/api/karma/leaderboard', async (req, res) => {
-  const leaderboard = await oxyClient.getKarmaLeaderboard();
-  res.json(leaderboard);
-});
-
-app.listen(3000, () => console.log('Server running on :3000'));
-```
-
-### Available Backend Methods
-
-```typescript
-import { oxyClient } from '@oxyhq/services/core';
-
 // Users
 await oxyClient.getUserById(id);
 await oxyClient.getUserByUsername(username);
 await oxyClient.getProfileByUsername(username);
 await oxyClient.getCurrentUser();
-await oxyClient.updateProfile(updates);
 
 // Sessions
 await oxyClient.validateSession(sessionId);
 await oxyClient.logoutSession(sessionId);
-await oxyClient.requestChallenge(publicKey);
-await oxyClient.verifyChallenge(publicKey, challenge, signature, timestamp);
 
 // Social
 await oxyClient.getUserFollowers(userId);
@@ -361,7 +292,6 @@ await oxyClient.unfollowUser(userId);
 // Karma
 await oxyClient.getKarma();
 await oxyClient.getKarmaLeaderboard();
-await oxyClient.getKarmaHistory();
 
 // Wallet
 await oxyClient.getWallet();
@@ -369,147 +299,38 @@ await oxyClient.transferFunds(request);
 
 // Files
 await oxyClient.listFiles();
-await oxyClient.getFileMetadata(fileId);
+await oxyClient.uploadFile(file);
 await oxyClient.deleteFile(fileId);
-
-// Notifications
-await oxyClient.getNotifications();
-await oxyClient.markNotificationRead(id);
 ```
 
 ---
 
-## Native Cross-App SSO (iOS/Android)
+## Advanced: useOxy Hook
 
-For sharing authentication across multiple native Oxy apps.
-
-### iOS: Keychain Sharing
-
-1. Enable "Keychain Sharing" in Xcode
-2. Add keychain group: `group.com.oxy.shared`
+For full control, use `useOxy` instead of `useAuth`:
 
 ```tsx
-import { KeyManager, SignatureService, OxyServices } from '@oxyhq/services';
+import { useOxy } from '@oxyhq/services';
 
-const oxyServices = new OxyServices({ baseURL: 'https://api.oxy.so' });
-
-// Check for shared session from other Oxy apps
-async function initializeAuth() {
-  const sharedSession = await KeyManager.getSharedSession();
-  if (sharedSession) {
-    oxyServices.setTokens(sharedSession.accessToken);
-    return await oxyServices.getCurrentUser();
-  }
-
-  // Check for existing identity
-  const hasIdentity = await KeyManager.hasSharedIdentity();
-  if (hasIdentity) {
-    const publicKey = await KeyManager.getSharedPublicKey();
-    const { challenge } = await oxyServices.requestChallenge(publicKey);
-    const signature = await SignatureService.signChallenge(challenge);
-    const session = await oxyServices.verifyChallenge(publicKey, challenge, signature, Date.now());
-
-    // Store for other apps
-    await KeyManager.storeSharedSession(session.sessionId, session.accessToken);
-    return session.user;
-  }
-
-  return null; // User needs to create identity
-}
-```
-
-### Android: Shared User ID
-
-Add to `AndroidManifest.xml` in ALL Oxy apps:
-
-```xml
-<manifest android:sharedUserId="com.oxy.shared">
-```
-
----
-
-## useOxy Hook Reference
-
-```tsx
 const {
-  // Auth state
-  isAuthenticated,          // boolean
-  isLoading,               // boolean
-  user,                    // User | null
-  error,                   // string | null
-
-  // Session management
-  sessions,                // ClientSession[]
-  activeSessionId,         // string | null
-  switchSession,           // (sessionId: string) => Promise<void>
-  refreshSessions,         // () => Promise<void>
-
-  // Auth actions
-  signIn,                  // (publicKey: string) => Promise<User>
-  logout,                  // () => Promise<void>
-  logoutAll,               // () => Promise<void>
+  // All useAuth properties plus:
+  sessions,            // All active sessions
+  activeSessionId,     // Current session ID
+  switchSession,       // Switch between accounts
+  refreshSessions,     // Refresh session list
 
   // Language
-  currentLanguage,         // string (e.g., 'en')
-  currentLanguageName,     // string (e.g., 'English')
-  setLanguage,             // (code: string) => Promise<void>
+  currentLanguage,     // 'en', 'es', etc.
+  setLanguage,         // Change language
 
   // UI
-  showBottomSheet,         // (screen: string | config) => void
-  openAvatarPicker,        // () => void
+  showBottomSheet,     // Show bottom sheet screens
+  openAvatarPicker,    // Open avatar picker
 
-  // Services instance
-  oxyServices,             // OxyServices
+  // Identity
+  hasIdentity,         // Check for crypto identity
+  getPublicKey,        // Get public key
 } = useOxy();
-```
-
----
-
-## OxyServices API
-
-```tsx
-const { oxyServices } = useOxy();
-
-// User
-const user = await oxyServices.getCurrentUser();
-await oxyServices.updateProfile({ name: { first: 'John' } });
-
-// Sessions
-await oxyServices.validateSession(sessionId);
-await oxyServices.logoutSession(sessionId);
-
-// Karma
-const karma = await oxyServices.getKarma();
-const leaderboard = await oxyServices.getKarmaLeaderboard();
-
-// Wallet
-const wallet = await oxyServices.getWallet();
-await oxyServices.transferFunds({ toUserId: '...', amount: 10 });
-
-// Files
-const files = await oxyServices.listFiles();
-await oxyServices.uploadFile(file);
-```
-
----
-
-## Query Hooks (TanStack Query)
-
-```tsx
-import {
-  useCurrentUser,
-  useUserProfile,
-  useDeviceSessions,
-  useSecurityActivity,
-} from '@oxyhq/services';
-
-function Profile() {
-  const { data: user, isLoading } = useCurrentUser();
-  const { data: sessions } = useDeviceSessions();
-
-  if (isLoading) return <Loading />;
-  return <Text>{user?.username}</Text>;
-}
 ```
 
 ---
@@ -517,10 +338,10 @@ function Profile() {
 ## Environment Variables
 
 ```bash
-# .env (React Native/Expo)
+# React Native/Expo
 EXPO_PUBLIC_API_URL=https://api.oxy.so
 
-# .env (Backend/Node.js)
+# Node.js
 OXY_API_URL=https://api.oxy.so
 ```
 
@@ -528,31 +349,25 @@ OXY_API_URL=https://api.oxy.so
 
 ## Troubleshooting
 
-### "useOxy must be used within OxyProvider"
+### "useAuth/useOxy must be used within OxyProvider"
 
-Ensure your component is inside `<OxyProvider>`.
+Wrap your app with `<OxyProvider>`.
 
-### Cross-domain auth not working
+### SSO not working on web
 
-1. Check browser supports FedCM (Chrome 108+, Safari 16.4+)
-2. Ensure HTTPS
-3. Fallback: `auth.signIn({ method: 'popup' })`
+1. Ensure you're using HTTPS
+2. Check browser dev tools for iframe errors
+3. Session cookies require `sameSite: none` (already configured server-side)
 
-### iOS Keychain sharing not working
+### Native keychain issues
 
-1. Verify keychain group in ALL apps: `group.com.oxy.shared`
-2. Check apps signed with same Team ID
-3. Test on real device (not Simulator)
-
-### Android shared storage not working
-
-1. Verify `sharedUserId` matches in ALL apps
-2. Apps must be signed with same certificate
-3. Reinstall apps after adding `sharedUserId`
+1. iOS: Enable "Keychain Sharing" in Xcode with group `group.com.oxy.shared`
+2. Android: Add `android:sharedUserId="com.oxy.shared"` to manifest
+3. Both: Apps must be signed with same certificate/team
 
 ---
 
 ## Full Documentation
 
-- [CROSS_DOMAIN_AUTH.md](../../CROSS_DOMAIN_AUTH.md) - Complete cross-domain SSO guide
 - [README.md](./README.md) - Full API reference
+- [CROSS_DOMAIN_AUTH.md](../../CROSS_DOMAIN_AUTH.md) - SSO deep dive
