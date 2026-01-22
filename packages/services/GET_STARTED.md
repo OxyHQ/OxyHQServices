@@ -198,6 +198,187 @@ function App() {
 
 ---
 
+## Backend (Node.js / Express / Next.js API)
+
+For server-side usage, import from the core module to avoid React dependencies.
+
+### 1. Pre-configured Client (Quick Start)
+
+```typescript
+// Use the pre-configured oxyClient
+import { oxyClient } from '@oxyhq/services/core';
+
+// Express route example
+app.get('/api/users/:id', async (req, res) => {
+  try {
+    const user = await oxyClient.getUserById(req.params.id);
+    res.json(user);
+  } catch (error) {
+    res.status(404).json({ error: error.message });
+  }
+});
+
+app.get('/api/profiles/:username', async (req, res) => {
+  const profile = await oxyClient.getProfileByUsername(req.params.username);
+  res.json(profile);
+});
+```
+
+### 2. Custom Instance
+
+```typescript
+import { OxyServices, OXY_CLOUD_URL } from '@oxyhq/services/core';
+
+const oxy = new OxyServices({
+  baseURL: process.env.OXY_API_URL || OXY_CLOUD_URL,
+});
+
+export { oxy };
+```
+
+### 3. Session Validation (Middleware)
+
+```typescript
+import { oxyClient } from '@oxyhq/services/core';
+
+// Express middleware to validate session
+async function authMiddleware(req, res, next) {
+  const sessionId = req.headers['x-session-id'] || req.cookies.sessionId;
+
+  if (!sessionId) {
+    return res.status(401).json({ error: 'No session' });
+  }
+
+  try {
+    const { valid, user } = await oxyClient.validateSession(sessionId);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid session' });
+    }
+    req.user = user;
+    next();
+  } catch (error) {
+    res.status(401).json({ error: 'Session validation failed' });
+  }
+}
+
+// Protected route
+app.get('/api/me', authMiddleware, (req, res) => {
+  res.json(req.user);
+});
+```
+
+### 4. Next.js API Routes
+
+```typescript
+// app/api/user/[id]/route.ts
+import { oxyClient } from '@oxyhq/services/core';
+import { NextResponse } from 'next/server';
+
+export async function GET(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    const user = await oxyClient.getUserById(params.id);
+    return NextResponse.json(user);
+  } catch (error) {
+    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+  }
+}
+```
+
+### 5. Complete Express Server
+
+```typescript
+import express from 'express';
+import { oxyClient } from '@oxyhq/services/core';
+
+const app = express();
+app.use(express.json());
+
+// Auth routes
+app.post('/api/auth/challenge', async (req, res) => {
+  const { publicKey } = req.body;
+  const challenge = await oxyClient.requestChallenge(publicKey);
+  res.json(challenge);
+});
+
+app.post('/api/auth/verify', async (req, res) => {
+  const { publicKey, challenge, signature, timestamp } = req.body;
+  const session = await oxyClient.verifyChallenge(publicKey, challenge, signature, timestamp);
+  res.json(session);
+});
+
+// User routes
+app.get('/api/users/:id', async (req, res) => {
+  const user = await oxyClient.getUserById(req.params.id);
+  res.json(user);
+});
+
+app.get('/api/users/:id/followers', async (req, res) => {
+  const followers = await oxyClient.getUserFollowers(req.params.id);
+  res.json(followers);
+});
+
+app.get('/api/users/:id/following', async (req, res) => {
+  const following = await oxyClient.getUserFollowing(req.params.id);
+  res.json(following);
+});
+
+// Karma routes
+app.get('/api/karma/leaderboard', async (req, res) => {
+  const leaderboard = await oxyClient.getKarmaLeaderboard();
+  res.json(leaderboard);
+});
+
+app.listen(3000, () => console.log('Server running on :3000'));
+```
+
+### Available Backend Methods
+
+```typescript
+import { oxyClient } from '@oxyhq/services/core';
+
+// Users
+await oxyClient.getUserById(id);
+await oxyClient.getUserByUsername(username);
+await oxyClient.getProfileByUsername(username);
+await oxyClient.getCurrentUser();
+await oxyClient.updateProfile(updates);
+
+// Sessions
+await oxyClient.validateSession(sessionId);
+await oxyClient.logoutSession(sessionId);
+await oxyClient.requestChallenge(publicKey);
+await oxyClient.verifyChallenge(publicKey, challenge, signature, timestamp);
+
+// Social
+await oxyClient.getUserFollowers(userId);
+await oxyClient.getUserFollowing(userId);
+await oxyClient.followUser(userId);
+await oxyClient.unfollowUser(userId);
+
+// Karma
+await oxyClient.getKarma();
+await oxyClient.getKarmaLeaderboard();
+await oxyClient.getKarmaHistory();
+
+// Wallet
+await oxyClient.getWallet();
+await oxyClient.transferFunds(request);
+
+// Files
+await oxyClient.listFiles();
+await oxyClient.getFileMetadata(fileId);
+await oxyClient.deleteFile(fileId);
+
+// Notifications
+await oxyClient.getNotifications();
+await oxyClient.markNotificationRead(id);
+```
+
+---
+
 ## Native Cross-App SSO (iOS/Android)
 
 For sharing authentication across multiple native Oxy apps.
@@ -336,8 +517,11 @@ function Profile() {
 ## Environment Variables
 
 ```bash
-# .env
+# .env (React Native/Expo)
 EXPO_PUBLIC_API_URL=https://api.oxy.so
+
+# .env (Backend/Node.js)
+OXY_API_URL=https://api.oxy.so
 ```
 
 ---
