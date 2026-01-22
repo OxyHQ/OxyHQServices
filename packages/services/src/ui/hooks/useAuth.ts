@@ -107,12 +107,31 @@ export function useAuth(): UseAuthReturn {
     const isIdentityProvider = isWebBrowser() &&
       window.location.hostname === 'auth.oxy.so';
 
-    // Web (not on IdP): Use popup-based authentication
-    // We skip FedCM here because:
-    // 1. Silent FedCM already ran on page load (via useWebSSO)
-    // 2. If user is clicking "Sign In", they need interactive auth
-    // 3. Doing FedCM first loses the "user gesture" needed for popups
+    // Web (not on IdP): Try FedCM first, then fall back to popup
+    // FedCM provides the best UX (browser-native account picker) and enables
+    // future silent SSO once the user consents
     if (isWebBrowser() && !publicKey && !isIdentityProvider) {
+      // Try FedCM (interactive) first - this shows browser's native account picker
+      // If user consents via FedCM, future visits will have silent SSO
+      const fedCMSupported = (oxyServices as any).isFedCMSupported?.();
+
+      if (fedCMSupported) {
+        try {
+          const fedCMSession = await (oxyServices as any).signInWithFedCM?.();
+          if (fedCMSession?.user) {
+            await handlePopupSession(fedCMSession);
+            return fedCMSession.user;
+          }
+        } catch (fedCMError) {
+          // FedCM failed (user cancelled, not supported, etc.) - fall back to popup
+          // This is expected and not an error
+          if (typeof __DEV__ !== 'undefined' && __DEV__) {
+            console.log('[useAuth] FedCM failed, falling back to popup:', fedCMError);
+          }
+        }
+      }
+
+      // FedCM not available or failed - use popup-based authentication
       try {
         const popupSession = await (oxyServices as any).signInWithPopup?.();
         if (popupSession?.user) {
