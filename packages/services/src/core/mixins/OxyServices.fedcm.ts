@@ -17,6 +17,7 @@ export interface FedCMConfig {
 // FedCM only allows one navigator.credentials.get request at a time
 let fedCMRequestInProgress = false;
 let fedCMRequestPromise: Promise<any> | null = null;
+let currentMediationMode: string | null = null;
 
 /**
  * Federated Credential Management (FedCM) Authentication Mixin
@@ -198,6 +199,8 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
    * Uses a global lock to prevent concurrent requests, as FedCM only
    * allows one navigator.credentials.get request at a time.
    *
+   * Interactive requests (optional/required) wait for any silent request to finish first.
+   *
    * @private
    */
   public async requestIdentityCredential(options: {
@@ -207,16 +210,32 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     context?: string;
     mediation?: 'silent' | 'optional' | 'required';
   }): Promise<{ token: string } | null> {
-    // If a request is already in progress, wait for it instead of starting a new one
+    const requestedMediation = options.mediation || 'optional';
+    const isInteractive = requestedMediation !== 'silent';
+
+    // If a request is already in progress...
     if (fedCMRequestInProgress && fedCMRequestPromise) {
-      try {
-        return await fedCMRequestPromise;
-      } catch {
-        return null;
+      // If current request is silent and new request is interactive,
+      // wait for silent to finish, then make the interactive request
+      if (currentMediationMode === 'silent' && isInteractive) {
+        try {
+          await fedCMRequestPromise;
+        } catch {
+          // Ignore silent request errors
+        }
+        // Now fall through to make the interactive request
+      } else {
+        // Same type of request - wait for the existing one
+        try {
+          return await fedCMRequestPromise;
+        } catch {
+          return null;
+        }
       }
     }
 
     fedCMRequestInProgress = true;
+    currentMediationMode = requestedMediation;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), (this.constructor as any).FEDCM_TIMEOUT);
 
@@ -234,7 +253,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
               },
             ],
           },
-          mediation: options.mediation || 'optional',
+          mediation: requestedMediation,
           signal: controller.signal,
         })) as any;
 
@@ -247,6 +266,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         clearTimeout(timeout);
         fedCMRequestInProgress = false;
         fedCMRequestPromise = null;
+        currentMediationMode = null;
       }
     })();
 
