@@ -226,7 +226,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: colors.iconStorage,
                                 title: t('accountCenter.items.notifications.title') || 'Notifications',
                                 subtitle: t('accountCenter.items.notifications.subtitle') || 'Manage notification settings',
-                                onPress: () => toast.info(t('accountCenter.items.notifications.coming') || 'Notifications feature coming soon!'),
+                                onPress: () => navigate?.('EditProfile', { activeTab: 'notifications' }),
                             }] : []),
                             {
                                 id: 'language',
@@ -242,7 +242,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: colors.iconSecurity,
                                 title: t('accountOverview.items.help.title') || 'Help & Support',
                                 subtitle: t('accountOverview.items.help.subtitle') || 'Get help and contact support',
-                                onPress: () => toast.info(t('accountOverview.items.help.coming') || 'Help & Support feature coming soon!'),
+                                onPress: () => navigate?.('HelpSupport'),
                             },
                             {
                                 id: 'appinfo',

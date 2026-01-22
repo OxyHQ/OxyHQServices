@@ -36,6 +36,8 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
     const themeStyles = useThemeStyles(theme || 'light', colorScheme);
     // Override primaryColor for Karma screens (purple instead of blue)
     const primaryColor = '#d169e5';
+    const dangerColor = themeStyles.dangerColor || '#D32F2F';
+    const mutedTextColor = themeStyles.isDarkTheme ? '#BBBBBB' : '#888888';
 
     // Icon colors from theme
     const iconLeaderboard = themeStyles.colors.iconPayments;
@@ -92,19 +94,19 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                                 <View style={[styles.actionIcon, { backgroundColor: iconLeaderboard }]}>
                                     <Ionicons name="trophy-outline" size={28} color={darkenColor(iconLeaderboard)} />
                                 </View>
-                                <Text style={styles.actionLabel}>{t('karma.center.actions.leaderboard') || 'Leaderboard'}</Text>
+                                <Text style={[styles.actionLabel, { color: mutedTextColor }]}>{t('karma.center.actions.leaderboard') || 'Leaderboard'}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaRules')}>
                                 <View style={[styles.actionIcon, { backgroundColor: iconRules }]}>
                                     <Ionicons name="document-text-outline" size={28} color={darkenColor(iconRules)} />
                                 </View>
-                                <Text style={styles.actionLabel}>{t('karma.center.actions.rules') || 'Rules'}</Text>
+                                <Text style={[styles.actionLabel, { color: mutedTextColor }]}>{t('karma.center.actions.rules') || 'Rules'}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('AboutKarma')}>
                                 <View style={[styles.actionIcon, { backgroundColor: iconAbout }]}>
                                     <Ionicons name="star-outline" size={28} color={darkenColor(iconAbout)} />
                                 </View>
-                                <Text style={styles.actionLabel}>{t('karma.center.actions.about') || 'About'}</Text>
+                                <Text style={[styles.actionLabel, { color: mutedTextColor }]}>{t('karma.center.actions.about') || 'About'}</Text>
                             </TouchableOpacity>
                         </View>
                         <View style={styles.actionRow}>
@@ -112,17 +114,17 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                                 <View style={[styles.actionIcon, { backgroundColor: iconRewards }]}>
                                     <Ionicons name="gift-outline" size={28} color={darkenColor(iconRewards)} />
                                 </View>
-                                <Text style={styles.actionLabel}>{t('karma.center.actions.rewards') || 'Rewards'}</Text>
+                                <Text style={[styles.actionLabel, { color: mutedTextColor }]}>{t('karma.center.actions.rewards') || 'Rewards'}</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={styles.actionIconWrapper} onPress={() => navigate && navigate('KarmaFAQ')}>
                                 <View style={[styles.actionIcon, { backgroundColor: iconFAQ }]}>
                                     <Ionicons name="help-circle-outline" size={28} color={darkenColor(iconFAQ)} />
                                 </View>
-                                <Text style={styles.actionLabel}>{t('karma.center.actions.faq') || 'FAQ'}</Text>
+                                <Text style={[styles.actionLabel, { color: mutedTextColor }]}>{t('karma.center.actions.faq') || 'FAQ'}</Text>
                             </TouchableOpacity>
                         </View>
                     </View>
-                    <Text style={styles.infoText}>
+                    <Text style={[styles.infoText, { color: mutedTextColor }]}>
                         {t('karma.center.info') || 'Karma can only be earned by positive actions in the Oxy Ecosystem. It cannot be sent or received directly.'}
                     </Text>
                 </View>
@@ -137,7 +139,7 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                     ) : (
                         karmaHistory.map((entry: any) => (
                             <View key={entry.id} style={[styles.historyItem, { borderColor: themeStyles.borderColor }]}>
-                                <Text style={[styles.historyPoints, { color: entry.points > 0 ? primaryColor : '#D32F2F' }]}>
+                                <Text style={[styles.historyPoints, { color: entry.points > 0 ? primaryColor : dangerColor }]}>
                                     {entry.points > 0 ? '+' : ''}{entry.points}
                                 </Text>
                                 <Text style={[styles.historyDesc, { color: themeStyles.textColor }]}>
@@ -150,7 +152,7 @@ const KarmaCenterScreen: React.FC<BaseScreenProps> = ({
                         ))
                     )}
                 </View>
-                {error && <Text style={{ color: '#D32F2F', marginTop: 16, textAlign: 'center' }}>{error}</Text>}
+                {error && <Text style={{ color: dangerColor, marginTop: 16, textAlign: 'center' }}>{error}</Text>}
             </ScrollView>
         </View>
     );
@@ -211,11 +213,9 @@ const styles = StyleSheet.create({
     },
     actionLabel: {
         fontSize: 10,
-        color: '#888',
     },
     infoText: {
         fontSize: 13,
-        color: '#888',
         textAlign: 'center',
         marginTop: 8,
         marginBottom: 8,

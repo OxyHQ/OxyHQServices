@@ -18,23 +18,25 @@ const HelpSupportScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     goBack,
+    navigate,
 }) => {
     const { t } = useI18n();
     const colorScheme = useColorScheme();
     const themeStyles = useThemeStyles(theme || 'light', colorScheme);
 
     const handleContactSupport = useMemo(() => () => {
-        // In a real implementation, this would open a contact form or email
         Linking.openURL('mailto:support@oxy.so?subject=Support Request').catch(() => {
             toast.error(t('help.contactError') || 'Failed to open email client');
         });
     }, [t]);
 
-    // TODO: Implement FAQ screen navigation
-    // Currently shows a placeholder toast. Should navigate to a dedicated FAQ screen or modal.
     const handleFAQ = useMemo(() => () => {
-        toast.info(t('help.faqComing') || 'FAQ coming soon');
-    }, [t]);
+        if (navigate) {
+            navigate('FAQ');
+        } else {
+            toast.info(t('help.faqComing') || 'FAQ coming soon');
+        }
+    }, [navigate, t]);
 
     const handleReportBug = useMemo(() => () => {
         // TODO: Consider implementing a dedicated bug report form instead of just email

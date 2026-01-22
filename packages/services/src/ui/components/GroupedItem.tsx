@@ -22,6 +22,10 @@ interface GroupedItemProps {
     disabled?: boolean;
     customContent?: React.ReactNode;
     customIcon?: React.ReactNode;
+    /** Accessibility label (defaults to title) */
+    accessibilityLabel?: string;
+    /** Accessibility hint for what happens on press */
+    accessibilityHint?: string;
 }
 
 const GroupedItemComponent = ({
@@ -36,6 +40,8 @@ const GroupedItemComponent = ({
     disabled = false,
     customContent,
     customIcon,
+    accessibilityLabel,
+    accessibilityHint,
 }: GroupedItemProps) => {
     const hookColorScheme = useColorScheme();
     const colorScheme = normalizeColorScheme(hookColorScheme);
@@ -90,13 +96,25 @@ const GroupedItemComponent = ({
                 onPressIn={disabled ? undefined : handlePressIn}
                 onPress={onPress}
                 activeOpacity={0.7}
+                accessibilityRole="button"
+                accessibilityLabel={accessibilityLabel || title}
+                accessibilityHint={accessibilityHint || subtitle}
+                accessibilityState={{ disabled }}
             >
                 {content}
             </TouchableOpacity>
         );
     }
 
-    return <View style={itemStyles}>{content}</View>;
+    return (
+        <View
+            style={itemStyles}
+            accessibilityRole="text"
+            accessibilityLabel={accessibilityLabel || title}
+        >
+            {content}
+        </View>
+    );
 };
 
 GroupedItemComponent.displayName = 'GroupedItem';

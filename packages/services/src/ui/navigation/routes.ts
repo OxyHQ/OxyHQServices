@@ -22,6 +22,7 @@ export type RouteName =
     | 'SearchSettings'
     | 'FileManagement'
     | 'HelpSupport'
+    | 'FAQ'
     | 'Feedback'
     | 'LegalDocuments'
     | 'AppInfo'
@@ -59,6 +60,7 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     SearchSettings: () => require('../screens/SearchSettingsScreen').default,
     FileManagement: () => require('../screens/FileManagementScreen').default,
     HelpSupport: () => require('../screens/HelpSupportScreen').default,
+    FAQ: () => require('../screens/FAQScreen').default,
     Feedback: () => require('../screens/FeedbackScreen').default,
     LegalDocuments: () => require('../screens/LegalDocumentsScreen').default,
     AppInfo: () => require('../screens/AppInfoScreen').default,

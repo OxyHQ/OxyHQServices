@@ -34,6 +34,7 @@ import {
     HEADER_PADDING_TOP_OVERVIEW,
     createScreenContentStyle,
 } from '../constants/spacing';
+import { DeleteAccountModal } from '../components/modals';
 
 // Optional Lottie import - gracefully handle if not available
 let LottieView: any = null;
@@ -83,6 +84,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
     const [showMoreAccounts, setShowMoreAccounts] = useState(false);
     const [additionalAccountsData, setAdditionalAccountsData] = useState<any[]>([]);
     const [loadingAdditionalAccounts, setLoadingAdditionalAccounts] = useState(false);
+    const [showDeleteModal, setShowDeleteModal] = useState(false);
     const lottieRef = useRef<any>(null);
     const hasPlayedRef = useRef(false);
     const insets = useSafeAreaInsets();
@@ -289,45 +291,22 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
             toast.error(t('accountOverview.items.deleteAccount.error') || 'User not available');
             return;
         }
+        setShowDeleteModal(true);
+    }, [user, t]);
 
-        confirmAction(
-            t('accountOverview.items.deleteAccount.confirmMessage') || `This action cannot be undone. This will permanently delete your account and all associated data.\n\nAre you sure you want to delete your account?`,
-            async () => {
-                // For React Native, we'd need a separate modal for password/confirmation input
-                // For now, we'll use a simplified confirmation
-                // In production, you'd want to create a modal with password and username confirmation fields
-                if (!oxyServices) {
-                    toast.error(t('accountOverview.items.deleteAccount.error') || 'Service not available');
-                    return;
-                }
+    const handleConfirmDelete = useCallback(async (password: string) => {
+        if (!oxyServices || !user) {
+            throw new Error(t('accountOverview.items.deleteAccount.error') || 'Service not available');
+        }
 
-                Alert.alert(
-                    t('accountOverview.items.deleteAccount.confirmTitle') || 'Delete Account',
-                    t('accountOverview.items.deleteAccount.finalConfirm') || `This is your final warning. Your account will be permanently deleted and cannot be recovered. Type "${user.username}" to confirm.`,
-                    [
-                        {
-                            text: t('common.cancel') || 'Cancel',
-                            style: 'cancel',
-                        },
-                        {
-                            text: t('accountOverview.items.deleteAccount.confirm') || 'Delete Forever',
-                            style: 'destructive',
-                            onPress: async () => {
-                                try {
-                                    // Note: In a production app, you'd want to show a modal with password and username confirmation fields
-                                    // For now, we'll require the user to enter these via a custom modal or prompt
-                                    toast.error(t('accountOverview.items.deleteAccount.passwordRequired') || 'Password confirmation required. This feature needs a modal with password input.');
-                                } catch (error: any) {
-                                    console.error('Failed to delete account:', error);
-                                    toast.error(error?.message || t('accountOverview.items.deleteAccount.error') || 'Failed to delete account');
-                                }
-                            },
-                        },
-                    ]
-                );
-            }
-        );
-    }, [user, oxyServices, logout, onClose, t]);
+        await oxyServices.deleteAccount(password);
+        toast.success(t('accountOverview.items.deleteAccount.success') || 'Account deleted successfully');
+        setShowDeleteModal(false);
+        await logout();
+        if (onClose) {
+            onClose();
+        }
+    }, [oxyServices, user, logout, onClose, t]);
 
     if (!isAuthenticated) {
         return (
@@ -703,6 +682,25 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                     />
                 </Section>
             </ScrollView>
+
+            {/* Delete Account Modal */}
+            {user && (
+                <DeleteAccountModal
+                    visible={showDeleteModal}
+                    username={user.username || ''}
+                    onClose={() => setShowDeleteModal(false)}
+                    onDelete={handleConfirmDelete}
+                    colors={{
+                        background: themeStyles.backgroundColor,
+                        text: themeStyles.textColor,
+                        secondaryText: themeStyles.isDarkTheme ? '#888888' : '#666666',
+                        border: themeStyles.borderColor,
+                        danger: '#FF3B30',
+                        inputBackground: themeStyles.isDarkTheme ? '#333333' : '#F5F5F5',
+                    }}
+                    t={t}
+                />
+            )}
         </View>
     );
 };

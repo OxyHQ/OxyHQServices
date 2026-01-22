@@ -77,7 +77,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
         setIsLoading(true);
         setError(null);
 
-        // Load user profile and karma total
+        // Load user profile, karma total, and stats
         Promise.all([
             oxyServices.getUserById(userId).catch((err: unknown) => {
                 // If this is the current user and the API call fails, use current user data as fallback
@@ -92,9 +92,14 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                 oxyServices.getUserKarmaTotal(userId).catch(() => {
                     return { total: undefined };
                 }) :
-                Promise.resolve({ total: undefined })
+                Promise.resolve({ total: undefined }),
+            oxyServices.getUserStats ?
+                oxyServices.getUserStats(userId).catch(() => {
+                    return { postCount: 0, commentCount: 0 };
+                }) :
+                Promise.resolve({ postCount: 0, commentCount: 0 })
         ])
-            .then(([profileRes, karmaRes]) => {
+            .then(([profileRes, karmaRes, statsRes]) => {
                 if (!profileRes) {
                     setError('Profile data is not available');
                     setIsLoading(false);
@@ -135,9 +140,9 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
 
                 // Follower/following counts are managed by the `useFollow` hook.
 
-                // Mock data for other stats (these would come from separate API endpoints)
-                setPostsCount(Math.floor(Math.random() * 50));
-                setCommentsCount(Math.floor(Math.random() * 100));
+                // User stats from API
+                setPostsCount(statsRes?.postCount ?? 0);
+                setCommentsCount(statsRes?.commentCount ?? 0);
             })
             .catch((err: unknown) => {
                 logger.error('Profile loading error', err instanceof Error ? err : new Error(String(err)), { component: 'ProfileScreen' });

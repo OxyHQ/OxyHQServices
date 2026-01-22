@@ -49,21 +49,30 @@ const SavesCollectionsScreen: React.FC<BaseScreenProps> = ({
     const tabActiveColor = themeStyles.colors.iconSecurity;
     const tabInactiveColor = themeStyles.isDarkTheme ? '#888888' : '#666666';
 
-    // TODO: Implement API integration for saved items and collections
-    // Currently sets empty arrays. Should fetch from oxyServices.getSavedItems() and oxyServices.getCollections()
-    // Load saved items and collections
+    // Load saved items and collections from API
     useEffect(() => {
         const loadData = async () => {
             try {
                 setIsLoading(true);
                 if (user?.id && oxyServices) {
-                    // TODO: Replace with actual API calls
-                    // const saved = await oxyServices.getSavedItems(user.id);
-                    // const cols = await oxyServices.getCollections(user.id);
-                    // setSavedItems(saved);
-                    // setCollections(cols);
-                    setSavedItems([]);
-                    setCollections([]);
+                    const [saved, cols] = await Promise.all([
+                        oxyServices.getSavedItems(user.id),
+                        oxyServices.getCollections(user.id),
+                    ]);
+                    setSavedItems(saved.map((item: any) => ({
+                        id: item.id,
+                        title: item.title,
+                        type: item.itemType === 'post' ? 'post' : 'collection',
+                        savedAt: new Date(item.createdAt),
+                        url: item.url,
+                    })));
+                    setCollections(cols.map((col: any) => ({
+                        id: col.id,
+                        name: col.name,
+                        description: col.description,
+                        itemCount: col.itemCount,
+                        createdAt: col.createdAt ? new Date(col.createdAt) : undefined,
+                    })));
                 }
             } catch (error) {
                 toast.error(t('saves.loadError') || 'Failed to load saved items');

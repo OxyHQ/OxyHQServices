@@ -10,6 +10,12 @@ export interface SettingRowProps {
     textColor?: string;
     mutedTextColor?: string;
     borderColor?: string;
+    /** Active color for the switch track (default: #d169e5) */
+    activeColor?: string;
+    /** Inactive color for the switch track (default: #767577) */
+    inactiveColor?: string;
+    /** Accessibility label for the switch */
+    accessibilityLabel?: string;
 }
 
 /**
@@ -25,15 +31,27 @@ const SettingRow: React.FC<SettingRowProps> = ({
     textColor,
     mutedTextColor,
     borderColor,
+    activeColor = '#d169e5',
+    inactiveColor = '#767577',
+    accessibilityLabel,
 }) => {
     return (
-        <View style={[styles.settingRow, borderColor ? { borderBottomColor: borderColor } : undefined]}>
+        <View
+            style={[styles.settingRow, borderColor ? { borderBottomColor: borderColor } : undefined]}
+            accessibilityRole="none"
+        >
             <View style={styles.settingInfo}>
-                <Text style={[styles.settingTitle, textColor ? { color: textColor } : undefined]}>
+                <Text
+                    style={[styles.settingTitle, textColor ? { color: textColor } : undefined]}
+                    accessibilityRole="text"
+                >
                     {title}
                 </Text>
                 {description && (
-                    <Text style={[styles.settingDescription, mutedTextColor ? { color: mutedTextColor } : undefined]}>
+                    <Text
+                        style={[styles.settingDescription, mutedTextColor ? { color: mutedTextColor } : undefined]}
+                        accessibilityRole="text"
+                    >
                         {description}
                     </Text>
                 )}
@@ -42,8 +60,12 @@ const SettingRow: React.FC<SettingRowProps> = ({
                 value={value}
                 onValueChange={onValueChange}
                 disabled={disabled}
-                trackColor={{ false: '#767577', true: '#d169e5' }}
+                trackColor={{ false: inactiveColor, true: activeColor }}
                 thumbColor={value ? '#fff' : '#f4f3f4'}
+                accessibilityRole="switch"
+                accessibilityLabel={accessibilityLabel || title}
+                accessibilityState={{ checked: value, disabled }}
+                accessibilityHint={description}
             />
         </View>
     );
