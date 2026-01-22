@@ -2,6 +2,7 @@
   "accounts_endpoint": "/api/fedcm/accounts",
   "client_metadata_endpoint": "/api/fedcm/client_metadata",
   "id_assertion_endpoint": "/api/fedcm/assertion",
+  "login_url": "/login",
   "branding": {
     "background_color": "#000000",
     "color": "#ffffff",
