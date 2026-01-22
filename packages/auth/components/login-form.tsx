@@ -206,6 +206,7 @@ export function LoginForm({
                 setExistingSessionId(null)
                 setShowLoginForm(true)
                 toast.error("Session expired", { description: "Please sign in again" })
+                setIsSubmitting(false)
                 return
             }
 
@@ -218,7 +219,15 @@ export function LoginForm({
                 if (state) {
                     callbackUrl.searchParams.set("state", state)
                 }
-                callbackUrl.searchParams.set("redirect_uri", clientId || window.location.origin)
+                // Use clientId for postMessage origin - this is the client app's origin
+                // If clientId is not set, we can't send postMessage to the right origin
+                if (!clientId) {
+                    console.error("[LoginForm] clientId is not set - cannot determine postMessage target")
+                    toast.error("Configuration error", { description: "Missing client ID" })
+                    setIsSubmitting(false)
+                    return
+                }
+                callbackUrl.searchParams.set("redirect_uri", clientId)
                 window.location.href = callbackUrl.toString()
                 return
             }
