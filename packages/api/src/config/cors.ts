@@ -14,7 +14,9 @@ import { Request, Response, NextFunction } from 'express';
 export const ALLOWED_ORIGINS = [
   'https://mention.earth',
   'https://homiio.com',
+  'https://alia.onl',
   'https://api.oxy.so',
+  'https://auth.oxy.so',
   'https://authenticator.oxy.so',
   'https://noted.oxy.so',
   'http://localhost:8081',
@@ -29,6 +31,7 @@ export const ALLOWED_ORIGIN_PATTERNS = [
   /\.homiio\.com$/,
   /\.mention\.earth$/,
   /\.oxy\.so$/,
+  /\.alia\.onl$/,
 ] as const;
 
 /**
