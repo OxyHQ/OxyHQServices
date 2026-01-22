@@ -16,11 +16,17 @@
  *   return <Welcome user={user} />;
  * }
  * ```
+ *
+ * Cross-domain SSO:
+ * - Web: Automatic via FedCM (Chrome 108+, Safari 16.4+)
+ * - Native: Automatic via shared Keychain/Account Manager
+ * - Manual sign-in: signIn() opens popup (web) or auth sheet (native)
  */
 
-import { useCallback } from 'react';
+import { useCallback, useState } from 'react';
 import { useOxy } from '../context/OxyContext';
 import type { User } from '../../models/interfaces';
+import { isWebBrowser } from './useWebSSO';
 
 export interface AuthState {
   /** Current authenticated user, null if not authenticated */
@@ -41,9 +47,9 @@ export interface AuthState {
 
 export interface AuthActions {
   /**
-   * Sign in with cryptographic identity
-   * On native: Uses device keychain
-   * On web: Opens auth popup/redirect
+   * Sign in
+   * - Web: Opens popup to auth.oxy.so (no public key needed)
+   * - Native: Uses cryptographic identity from keychain
    */
   signIn: (publicKey?: string) => Promise<User>;
 
@@ -95,6 +101,35 @@ export function useAuth(): UseAuthReturn {
   } = useOxy();
 
   const signIn = useCallback(async (publicKey?: string): Promise<User> => {
+    // Web: Use popup-based authentication
+    if (isWebBrowser() && !publicKey) {
+      try {
+        // Try FedCM first (instant if user already signed in)
+        if ((oxyServices as any).isFedCMSupported?.()) {
+          const fedcmSession = await (oxyServices as any).signInWithFedCM?.();
+          if (fedcmSession?.user) {
+            return fedcmSession.user;
+          }
+        }
+
+        // Fallback to popup (opens auth.oxy.so in popup window)
+        const popupSession = await (oxyServices as any).signInWithPopup?.();
+        if (popupSession?.user) {
+          return popupSession.user;
+        }
+
+        throw new Error('Sign-in failed');
+      } catch (error) {
+        // If popup blocked or FedCM failed, suggest redirect
+        throw new Error(
+          error instanceof Error && error.message.includes('blocked')
+            ? 'Popup blocked. Please allow popups or try again.'
+            : 'Sign-in failed. Please try again.'
+        );
+      }
+    }
+
+    // Native: Use cryptographic identity
     // If public key provided, use it directly
     if (publicKey) {
       return oxySignIn(publicKey);
@@ -110,19 +145,14 @@ export function useAuth(): UseAuthReturn {
       }
     }
 
-    // No identity - show auth UI
-    // On native: shows bottom sheet for identity creation
-    // On web: could trigger popup auth
+    // No identity - show auth UI (native bottom sheet)
     showBottomSheet?.('OxyAuth');
 
     // Return a promise that resolves when auth completes
-    // This is a simplified version - real implementation would
-    // wait for the auth flow to complete
-    return new Promise((resolve, reject) => {
-      // For now, just reject - the bottom sheet handles the flow
+    return new Promise((_, reject) => {
       reject(new Error('Please complete sign-in in the auth sheet'));
     });
-  }, [oxySignIn, hasIdentity, getPublicKey, showBottomSheet]);
+  }, [oxySignIn, hasIdentity, getPublicKey, showBottomSheet, oxyServices]);
 
   const signOut = useCallback(async (): Promise<void> => {
     await logout();
