@@ -22,6 +22,8 @@ type LoginFormProps = React.ComponentProps<"div"> & {
     sessionToken?: string
     redirectUri?: string
     state?: string
+    responseType?: string
+    clientId?: string
 }
 
 export function LoginForm({
@@ -31,8 +33,12 @@ export function LoginForm({
     sessionToken,
     redirectUri,
     state,
+    responseType,
+    clientId,
     ...props
 }: LoginFormProps) {
+    // Check if this is a popup OAuth flow (response_type=token)
+    const isOAuthFlow = responseType === "token" && redirectUri
     const router = useRouter()
     const [errorMessage, setErrorMessage] = useState(error)
     const [noticeMessage, setNoticeMessage] = useState(notice)
@@ -104,6 +110,23 @@ export function LoginForm({
             }
             document.cookie = cookieParts.join("; ")
 
+            // OAuth popup flow: redirect directly to callback with session data
+            if (isOAuthFlow && redirectUri) {
+                const callbackUrl = new URL(redirectUri)
+                callbackUrl.searchParams.set("session_id", payload.sessionId)
+                callbackUrl.searchParams.set("access_token", payload.accessToken || "")
+                callbackUrl.searchParams.set("expires_at", payload.expiresAt || "")
+                if (state) {
+                    callbackUrl.searchParams.set("state", state)
+                }
+                // Also include redirect_uri for postMessage origin validation
+                callbackUrl.searchParams.set("redirect_uri", clientId || window.location.origin)
+                didRedirect = true
+                window.location.href = callbackUrl.toString()
+                return
+            }
+
+            // Standard auth flow: go to authorize page
             const nextUrl = new URL("/authorize", window.location.origin)
             if (sessionToken) {
                 nextUrl.searchParams.set("token", sessionToken)
