@@ -378,12 +378,37 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
    * @private
    */
   public async exchangeIdTokenForSession(idToken: string): Promise<SessionLoginResponse> {
-    return this.makeRequest<SessionLoginResponse>(
-      'POST',
-      '/api/fedcm/exchange',
-      { id_token: idToken },
-      { cache: false }
-    );
+    console.log('[FedCM] exchangeIdTokenForSession: Starting exchange...');
+    console.log('[FedCM] exchangeIdTokenForSession: Token length:', idToken?.length);
+    console.log('[FedCM] exchangeIdTokenForSession: Token preview:', idToken?.substring(0, 50) + '...');
+
+    try {
+      const response = await this.makeRequest<SessionLoginResponse>(
+        'POST',
+        '/api/fedcm/exchange',
+        { id_token: idToken },
+        { cache: false }
+      );
+
+      console.log('[FedCM] exchangeIdTokenForSession: Response received:', {
+        hasResponse: !!response,
+        hasSessionId: !!(response as any)?.sessionId,
+        hasUser: !!(response as any)?.user,
+        hasAccessToken: !!(response as any)?.accessToken,
+        userId: (response as any)?.user?.id,
+        username: (response as any)?.user?.username,
+        responseKeys: response ? Object.keys(response) : [],
+      });
+
+      return response;
+    } catch (error) {
+      console.error('[FedCM] exchangeIdTokenForSession: Error:', {
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined,
+      });
+      throw error;
+    }
   }
 
   /**
