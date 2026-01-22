@@ -187,16 +187,28 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
 
       console.log('[FedCM] Silent SSO: Attempting silent mediation for', clientId);
 
-      // Request credential with silent mediation (no UI)
-      const credential = await this.requestIdentityCredential({
+      // First try silent mediation (no UI) - works if user previously consented
+      let credential = await this.requestIdentityCredential({
         configURL: (this.constructor as any).DEFAULT_CONFIG_URL,
         clientId,
         nonce,
         mediation: 'silent',
       });
 
+      // If silent failed, try optional mediation which shows browser UI if needed
+      // This enables first-time FedCM sign-in without requiring a separate button click
       if (!credential || !credential.token) {
-        console.log('[FedCM] Silent SSO: No credential returned (user may not have previously consented or is in quiet period)');
+        console.log('[FedCM] Silent SSO: Silent mediation failed, trying optional (may show browser UI)...');
+        credential = await this.requestIdentityCredential({
+          configURL: (this.constructor as any).DEFAULT_CONFIG_URL,
+          clientId,
+          nonce: this.generateNonce(), // Generate fresh nonce for retry
+          mediation: 'optional',
+        });
+      }
+
+      if (!credential || !credential.token) {
+        console.log('[FedCM] Silent SSO: No credential returned (user may have dismissed prompt or is not logged in at IdP)');
         return null;
       }
 
@@ -269,8 +281,15 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     const requestedMediation = options.mediation || 'optional';
     const isInteractive = requestedMediation !== 'silent';
 
+    console.log('[FedCM] requestIdentityCredential called:', {
+      mediation: requestedMediation,
+      clientId: options.clientId,
+      inProgress: fedCMRequestInProgress,
+    });
+
     // If a request is already in progress...
     if (fedCMRequestInProgress && fedCMRequestPromise) {
+      console.log('[FedCM] Request already in progress, waiting...');
       // If current request is silent and new request is interactive,
       // wait for silent to finish, then make the interactive request
       if (currentMediationMode === 'silent' && isInteractive) {
@@ -293,10 +312,14 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     fedCMRequestInProgress = true;
     currentMediationMode = requestedMediation;
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), (this.constructor as any).FEDCM_TIMEOUT);
+    const timeout = setTimeout(() => {
+      console.log('[FedCM] Request timed out after', (this.constructor as any).FEDCM_TIMEOUT, 'ms');
+      controller.abort();
+    }, (this.constructor as any).FEDCM_TIMEOUT);
 
     fedCMRequestPromise = (async () => {
       try {
+        console.log('[FedCM] Calling navigator.credentials.get with mediation:', requestedMediation);
         // Type assertion needed as FedCM types may not be in all TypeScript versions
         const credential = (await (navigator.credentials as any).get({
           identity: {
@@ -317,11 +340,24 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
           signal: controller.signal,
         })) as any;
 
+        console.log('[FedCM] navigator.credentials.get returned:', {
+          hasCredential: !!credential,
+          type: credential?.type,
+          hasToken: !!credential?.token,
+        });
+
         if (!credential || credential.type !== 'identity') {
+          console.log('[FedCM] No valid identity credential returned');
           return null;
         }
 
+        console.log('[FedCM] Got valid identity credential with token');
         return { token: credential.token };
+      } catch (error) {
+        const errorName = error instanceof Error ? error.name : 'Unknown';
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.log('[FedCM] navigator.credentials.get error:', { name: errorName, message: errorMessage });
+        throw error;
       } finally {
         clearTimeout(timeout);
         fedCMRequestInProgress = false;
