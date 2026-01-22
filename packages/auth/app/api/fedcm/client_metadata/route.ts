@@ -12,13 +12,29 @@ import { NextRequest, NextResponse } from 'next/server';
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
+/**
+ * Get CORS headers for FedCM responses
+ * IMPORTANT: When Access-Control-Allow-Credentials is true,
+ * Access-Control-Allow-Origin CANNOT be '*' - must be specific origin
+ */
+function getCorsHeaders(request: NextRequest): Record<string, string> {
+  const origin = request.headers.get('origin');
+  const allowOrigin = origin || 'https://oxy.so';
+
+  return {
+    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Credentials': 'true',
+  };
+}
+
 export async function GET(request: NextRequest) {
+  const corsHeaders = getCorsHeaders(request);
   const clientId = request.nextUrl.searchParams.get('client_id');
 
   if (!clientId) {
     return NextResponse.json(
       { error: 'client_id parameter is required' },
-      { status: 400 }
+      { status: 400, headers: corsHeaders }
     );
   }
 
@@ -35,6 +51,10 @@ export async function GET(request: NextRequest) {
     'https://alia.onl': {
       privacy_policy_url: 'https://alia.onl/privacy',
       terms_of_service_url: 'https://alia.onl/terms',
+    },
+    'https://oxy.so': {
+      privacy_policy_url: 'https://oxy.so/privacy',
+      terms_of_service_url: 'https://oxy.so/terms',
     },
     'http://localhost:3000': {
       privacy_policy_url: 'https://oxy.so/privacy',
@@ -55,19 +75,21 @@ export async function GET(request: NextRequest) {
   return NextResponse.json(metadata, {
     headers: {
       'Content-Type': 'application/json',
-      'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
-      'Access-Control-Allow-Credentials': 'true',
+      ...corsHeaders,
     },
   });
 }
 
 export async function OPTIONS(request: NextRequest) {
+  const origin = request.headers.get('origin');
+  const allowOrigin = origin || 'https://oxy.so';
+
   return new NextResponse(null, {
     status: 204,
     headers: {
-      'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
+      'Access-Control-Allow-Origin': allowOrigin,
       'Access-Control-Allow-Methods': 'GET, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type',
+      'Access-Control-Allow-Headers': 'Content-Type, Sec-Fetch-Dest',
       'Access-Control-Allow-Credentials': 'true',
       'Access-Control-Max-Age': '86400',
     },
