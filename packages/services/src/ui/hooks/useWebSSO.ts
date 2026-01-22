@@ -85,12 +85,20 @@ export function useWebSSO({
   const fedCMSupported = isWebBrowser() && (oxyServices as any).isFedCMSupported?.();
 
   const checkSSO = useCallback(async (): Promise<SessionLoginResponse | null> => {
+    console.log('[useWebSSO] checkSSO called', {
+      isWebBrowser: isWebBrowser(),
+      isChecking: isCheckingRef.current,
+      isIdP: isIdentityProvider(),
+      fedCMSupported,
+    });
+
     if (!isWebBrowser() || isCheckingRef.current) {
       return null;
     }
 
     // Don't use FedCM on the auth domain itself - it would authenticate against itself
     if (isIdentityProvider()) {
+      console.log('[useWebSSO] Skipping - on identity provider domain');
       onSSOUnavailable?.();
       return null;
     }
@@ -98,27 +106,39 @@ export function useWebSSO({
     // FedCM is the only reliable cross-domain SSO mechanism
     // Third-party cookies are deprecated and unreliable
     if (!fedCMSupported) {
+      console.log('[useWebSSO] Skipping - FedCM not supported');
       onSSOUnavailable?.();
       return null;
     }
 
     isCheckingRef.current = true;
+    console.log('[useWebSSO] Starting FedCM silent sign-in...');
 
     try {
       // Use FedCM for cross-domain SSO
       // This works because browser treats IdP requests as first-party
       const session = await (oxyServices as any).silentSignInWithFedCM?.();
 
+      console.log('[useWebSSO] FedCM result:', {
+        hasSession: !!session,
+        hasUser: !!session?.user,
+        hasSessionId: !!session?.sessionId,
+      });
+
       if (session) {
+        console.log('[useWebSSO] Session found, calling onSessionFound...');
         await onSessionFound(session);
+        console.log('[useWebSSO] onSessionFound completed');
         return session;
       }
 
       // No session found - user needs to sign in
+      console.log('[useWebSSO] No session returned from FedCM');
       onSSOUnavailable?.();
       return null;
     } catch (error) {
       // FedCM failed - could be network error, user not signed in, etc.
+      console.error('[useWebSSO] FedCM error:', error);
       onSSOUnavailable?.();
       onError?.(error instanceof Error ? error : new Error(String(error)));
       return null;
