@@ -98,7 +98,7 @@ function parseIdentifier(identifier: string): { field: 'email' | 'username'; val
   return { field: 'username', value: normalizeUsername(trimmed) };
 }
 
-function buildSessionAuthResponse(session: { sessionId: string; deviceId: string; expiresAt: Date }, user: unknown): SessionAuthResponse | null {
+function buildSessionAuthResponse(session: { sessionId: string; deviceId: string; expiresAt: Date; accessToken?: string }, user: unknown): SessionAuthResponse | null {
   const userData = formatUserResponse(user as any);
   if (!userData) {
     return null;
@@ -108,6 +108,7 @@ function buildSessionAuthResponse(session: { sessionId: string; deviceId: string
     sessionId: session.sessionId,
     deviceId: session.deviceId,
     expiresAt: session.expiresAt.toISOString(),
+    accessToken: session.accessToken,
     user: {
       id: userData.id,
       username: userData.username,
@@ -537,6 +538,7 @@ export class SessionController {
         sessionId: session.sessionId,
         deviceId: session.deviceId,
         expiresAt: session.expiresAt.toISOString(),
+        accessToken: session.accessToken,
         user: {
           id: userData.id,
           username: userData.username,
