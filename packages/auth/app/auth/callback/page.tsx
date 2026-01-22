@@ -61,6 +61,9 @@ function AuthCallbackContent() {
         state,
       };
 
+      // Debug logging
+      console.log('[AuthCallback] Params:', { sessionId, accessToken: accessToken ? '[present]' : '[missing]', state, redirectUri, targetOrigin });
+
       if (error) {
         response.error = errorDescription || error;
       } else if (sessionId && accessToken) {
@@ -70,6 +73,7 @@ function AuthCallbackContent() {
           expiresAt: expiresAt || new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
         };
       } else {
+        console.error('[AuthCallback] Missing session data:', { sessionId: !!sessionId, accessToken: !!accessToken });
         response.error = 'No session data received';
       }
 
