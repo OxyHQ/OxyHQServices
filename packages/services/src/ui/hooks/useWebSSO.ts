@@ -2,8 +2,9 @@
  * Web SSO Hook
  *
  * Automatically handles cross-domain SSO for web apps.
- * Uses the OxyServices.silentSignIn() method which loads a hidden iframe
- * to check for existing session at auth.oxy.so.
+ * Uses a progressive enhancement strategy:
+ * 1. Try FedCM (browser-native, works across domains, no cookies needed)
+ * 2. Fallback to iframe-based silentSignIn (for browsers without FedCM)
  *
  * This is called automatically by OxyContext on web platforms.
  */
@@ -38,7 +39,11 @@ function isWebBrowser(): boolean {
  * Hook for automatic web SSO
  *
  * Automatically checks for existing cross-domain session on mount.
- * Only runs on web platforms. Uses OxyServices.silentSignIn() internally.
+ * Only runs on web platforms.
+ *
+ * Strategy:
+ * 1. Try FedCM silentSignIn (browser-native, no cookies, works across TLDs)
+ * 2. Fallback to iframe-based silentSignIn (needs third-party cookies)
  */
 export function useWebSSO({
   oxyServices,
@@ -57,9 +62,27 @@ export function useWebSSO({
     isCheckingRef.current = true;
 
     try {
-      // Use the existing silentSignIn method from OxyServices
-      // which handles iframe creation, postMessage, and token storage
-      const session = await (oxyServices as any).silentSignIn?.();
+      let session: SessionLoginResponse | null = null;
+
+      // Strategy 1: Try FedCM first (works across different domains without cookies)
+      // FedCM is the proper solution for cross-domain SSO in modern browsers
+      if ((oxyServices as any).isFedCMSupported?.()) {
+        try {
+          session = await (oxyServices as any).silentSignInWithFedCM?.();
+        } catch {
+          // FedCM silent sign-in failed, will try iframe fallback
+        }
+      }
+
+      // Strategy 2: Fallback to iframe-based silentSignIn
+      // This works for same-domain or when third-party cookies are allowed
+      if (!session) {
+        try {
+          session = await (oxyServices as any).silentSignIn?.();
+        } catch {
+          // Iframe-based silent sign-in also failed
+        }
+      }
 
       if (session) {
         await onSessionFound(session);
