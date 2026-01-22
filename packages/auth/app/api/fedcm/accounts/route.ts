@@ -55,8 +55,22 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Get the requesting origin for dynamic approval
-    const requestOrigin = request.headers.get('origin') || '';
+    // Approved clients for auto sign-in (no UI prompt)
+    // SECURITY: Only pre-approved Oxy ecosystem domains are allowed
+    // Do NOT dynamically add arbitrary origins
+    const APPROVED_CLIENTS = [
+      'https://homiio.com',
+      'https://mention.earth',
+      'https://alia.onl',
+      'https://oxy.so',
+      'https://accounts.oxy.so',
+      'https://auth.oxy.so',
+      'https://api.oxy.so',
+      ...(process.env.NODE_ENV === 'development' ? [
+        'http://localhost:3000',
+        'http://localhost:8081',
+      ] : []),
+    ];
 
     // Return account information
     const accounts = [
@@ -65,22 +79,8 @@ export async function GET(request: NextRequest) {
         name: user.username,
         email: user.email,
         picture: user.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`,
-        // List of origins that have previously used this account
-        // This allows auto sign-in without showing UI
-        // Include all known Oxy ecosystem domains + the requesting origin
-        approved_clients: [
-          'https://homiio.com',
-          'https://mention.earth',
-          'https://alia.onl',
-          'https://oxy.so',
-          'https://accounts.oxy.so',
-          'https://auth.oxy.so',
-          'https://api.oxy.so',
-          'http://localhost:3000', // Dev environment
-          'http://localhost:8081', // Expo dev
-          // Include the requesting origin if it's not already in the list
-          ...(requestOrigin && !['https://homiio.com', 'https://mention.earth', 'https://alia.onl', 'https://oxy.so'].includes(requestOrigin) ? [requestOrigin] : []),
-        ],
+        // List of origins approved for auto sign-in (no UI prompt)
+        approved_clients: APPROVED_CLIENTS,
       },
     ];
 
