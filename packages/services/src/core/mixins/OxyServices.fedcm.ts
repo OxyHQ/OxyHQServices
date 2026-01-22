@@ -98,6 +98,10 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       const nonce = options.nonce || this.generateNonce();
       const clientId = this.getClientId();
 
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[FedCM] Interactive sign-in: Requesting credential for', clientId);
+      }
+
       // Request credential from browser's native identity flow
       const credential = await this.requestIdentityCredential({
         configURL: (this.constructor as any).DEFAULT_CONFIG_URL,
@@ -110,6 +114,10 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         throw new OxyAuthenticationError('No credential received from browser');
       }
 
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[FedCM] Interactive sign-in: Got credential, exchanging for session');
+      }
+
       // Exchange FedCM ID token for Oxy session
       const session = await this.exchangeIdTokenForSession(credential.token);
 
@@ -118,8 +126,15 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         this.httpService.setTokens((session as any).accessToken);
       }
 
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[FedCM] Interactive sign-in: Success!', { userId: (session as any)?.user?.id });
+      }
+
       return session;
     } catch (error) {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[FedCM] Interactive sign-in failed:', error);
+      }
       if ((error as any).name === 'AbortError') {
         throw new OxyAuthenticationError('Sign-in was cancelled by user');
       }
@@ -162,12 +177,19 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
    */
   async silentSignInWithFedCM(): Promise<SessionLoginResponse | null> {
     if (!this.isFedCMSupported()) {
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[FedCM] Silent SSO: FedCM not supported in this browser');
+      }
       return null;
     }
 
     try {
       const nonce = this.generateNonce();
       const clientId = this.getClientId();
+
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[FedCM] Silent SSO: Attempting silent mediation for', clientId);
+      }
 
       // Request credential with silent mediation (no UI)
       const credential = await this.requestIdentityCredential({
@@ -178,7 +200,14 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       });
 
       if (!credential || !credential.token) {
+        if (typeof __DEV__ !== 'undefined' && __DEV__) {
+          console.log('[FedCM] Silent SSO: No credential returned (user may not have previously consented)');
+        }
         return null;
+      }
+
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[FedCM] Silent SSO: Got credential, exchanging for session');
       }
 
       const session = await this.exchangeIdTokenForSession(credential.token);
@@ -186,9 +215,16 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         this.httpService.setTokens((session as any).accessToken);
       }
 
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[FedCM] Silent SSO: Success!', { userId: (session as any)?.user?.id });
+      }
+
       return session;
     } catch (error) {
       // Silent failures are expected and should not throw
+      if (typeof __DEV__ !== 'undefined' && __DEV__) {
+        console.log('[FedCM] Silent SSO failed (expected):', error);
+      }
       return null;
     }
   }
