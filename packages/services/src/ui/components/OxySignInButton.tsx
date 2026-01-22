@@ -1,6 +1,7 @@
 import type React from 'react';
+import { useState } from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyle, type StyleProp, Platform } from 'react-native';
-import { useOxy } from '../context/OxyContext';
+import { useAuth } from '../hooks/useAuth';
 import OxyLogo from './OxyLogo';
 
 export interface OxySignInButtonProps {
@@ -79,30 +80,36 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     disabled = false,
     showWhenAuthenticated = false,
 }) => {
-    // Get all needed values from context in a single call
-    const { isAuthenticated, showBottomSheet } = useOxy();
+    const { isAuthenticated, signIn, isLoading } = useAuth();
+    const [isSigningIn, setIsSigningIn] = useState(false);
 
     // Don't show the button if already authenticated (unless explicitly overridden)
     if (isAuthenticated && !showWhenAuthenticated) return null;
 
-    // Default handler that uses the context methods
-    const handlePress = () => {
+    // Default handler that uses useAuth's signIn method
+    // This works for both web (popup) and native (bottom sheet)
+    const handlePress = async () => {
         if (onPress) {
             onPress();
             return;
         }
 
-        // Use the new bottom sheet system to show the OxyAuth screen
-        if (showBottomSheet) {
-            showBottomSheet('OxyAuth');
-        } else {
+        if (isSigningIn) return;
+
+        setIsSigningIn(true);
+        try {
+            await signIn();
+        } catch (error) {
+            // Sign-in handled by the auth flow
             if (__DEV__) {
-                console.warn(
-                    `OxySignInButton: showBottomSheet is not available. Make sure OxyProvider is set up correctly.`
-                );
+                console.log('OxySignInButton: Sign-in flow initiated', error);
             }
+        } finally {
+            setIsSigningIn(false);
         }
     };
+
+    const isButtonDisabled = disabled || isLoading || isSigningIn;
 
     // Determine the button style based on the variant
     const getButtonStyle = () => {
@@ -130,9 +137,9 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
 
     return (
         <TouchableOpacity
-            style={[styles.button, getButtonStyle(), disabled && styles.buttonDisabled]}
+            style={[styles.button, getButtonStyle(), isButtonDisabled && styles.buttonDisabled]}
             onPress={handlePress}
-            disabled={disabled}
+            disabled={isButtonDisabled}
         >
             <View style={styles.buttonContent}>
                 <OxyLogo
@@ -140,10 +147,10 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
                     height={20}
                     fillColor={variant === 'contained' ? 'white' : '#d169e5'}
                     secondaryFillColor={variant === 'contained' ? '#d169e5' : undefined}
-                    style={disabled ? { opacity: 0.6 } : undefined}
+                    style={isButtonDisabled ? { opacity: 0.6 } : undefined}
                 />
-                <Text style={[styles.text, getTextStyle(), disabled && styles.textDisabled]}>
-                    {text}
+                <Text style={[styles.text, getTextStyle(), isButtonDisabled && styles.textDisabled]}>
+                    {isSigningIn ? 'Signing in...' : text}
                 </Text>
             </View>
         </TouchableOpacity>

@@ -209,10 +209,14 @@ export default function Home() {
 
 ### How Web SSO Works
 
-1. User signs in on `accounts.oxy.so` (or any Oxy domain)
-2. Your app's `WebOxyProvider` loads a hidden iframe to `auth.oxy.so/auth/silent`
-3. If valid session exists, user is automatically authenticated
-4. No manual setup required - it just works
+Cross-domain SSO uses **FedCM** (Federated Credential Management) - the modern browser-native identity API that works without third-party cookies.
+
+1. User signs in on `auth.oxy.so` (or any Oxy app)
+2. Your app's `WebOxyProvider` uses FedCM to check for existing session
+3. Browser mediates the identity request (privacy-preserving, no tracking)
+4. If signed in, user is automatically authenticated across all Oxy domains
+
+**Browser Support:** Chrome 108+, Safari 16.4+, Edge 108+. For older browsers, users click "Sign In" which opens a popup.
 
 ---
 

@@ -3,6 +3,41 @@ import fedcmService from '../services/fedcm.service';
 import { logger } from '../utils/logger';
 
 /**
+ * Exchange FedCM ID token for an Oxy session
+ *
+ * This endpoint enables cross-domain SSO without cookies:
+ * - Client receives ID token from FedCM (browser-native identity API)
+ * - Client exchanges token here for a full Oxy session with access token
+ * - Works across any domain (alia.onl, mention.earth, homiio.com, etc.)
+ */
+export async function exchangeIdToken(req: Request, res: Response) {
+  try {
+    const { id_token } = req.body;
+
+    if (!id_token) {
+      return res.status(400).json({
+        message: 'id_token is required',
+      });
+    }
+
+    const result = await fedcmService.exchangeIdToken(id_token, req);
+
+    if (!result) {
+      return res.status(401).json({
+        message: 'Invalid or expired ID token',
+      });
+    }
+
+    return res.json(result);
+  } catch (error) {
+    logger.error('FedCM token exchange error:', error);
+    return res.status(500).json({
+      message: 'Internal server error',
+    });
+  }
+}
+
+/**
  * Get approved FedCM client origins
  */
 export async function getApprovedClients(req: Request, res: Response) {

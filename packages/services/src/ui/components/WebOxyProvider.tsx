@@ -3,9 +3,11 @@
  *
  * This provider is specifically for web environments and doesn't include
  * React Native-specific dependencies. It provides:
- * - Automatic cross-domain SSO via hidden iframe
+ * - Automatic cross-domain SSO via FedCM (Chrome 108+, Safari 16.4+, Edge 108+)
  * - Session management
  * - All useOxy/useAuth functionality
+ *
+ * Zero-config: Just wrap your app and SSO works automatically across domains.
  *
  * Usage:
  * ```tsx
@@ -17,6 +19,12 @@
  *       <YourApp />
  *     </WebOxyProvider>
  *   );
+ * }
+ *
+ * function LoginButton() {
+ *   const { isAuthenticated, signIn, user } = useAuth();
+ *   if (isAuthenticated) return <span>Welcome, {user?.username}!</span>;
+ *   return <button onClick={() => signIn()}>Sign In</button>;
  * }
  * ```
  */
@@ -40,7 +48,8 @@ export interface WebOxyProviderProps {
  * OxyProvider for web applications
  *
  * Features:
- * - Automatic cross-domain SSO (checks auth.oxy.so/auth/silent on mount)
+ * - Automatic cross-domain SSO via FedCM (browser-native identity API)
+ * - Works across different TLDs (alia.onl, mention.earth, homiio.com, etc.)
  * - Session persistence in localStorage
  * - TanStack Query for data fetching
  * - No React Native dependencies

@@ -240,7 +240,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
   public async exchangeIdTokenForSession(idToken: string): Promise<SessionLoginResponse> {
     return this.makeRequest<SessionLoginResponse>(
       'POST',
-      '/api/auth/fedcm/exchange',
+      '/api/fedcm/exchange',
       { id_token: idToken },
       { cache: false }
     );
