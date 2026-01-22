@@ -45,15 +45,20 @@ function getCorsHeaders(request: NextRequest): Record<string, string> {
 function createFedCMResponse(
   data: { accounts: any[] },
   request: NextRequest,
-  status: number = 200
+  options: { loggedIn?: boolean } = {}
 ): NextResponse {
-  return NextResponse.json(data, {
-    status,
-    headers: {
-      'Content-Type': 'application/json',
-      ...getCorsHeaders(request),
-    },
-  });
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...getCorsHeaders(request),
+  };
+
+  // Set login status for FedCM - critical for silent mediation to work
+  // This tells the browser the user is logged in at this IdP
+  if (options.loggedIn && data.accounts.length > 0) {
+    headers['Set-Login'] = 'logged-in';
+  }
+
+  return NextResponse.json(data, { headers });
 }
 
 export async function GET(request: NextRequest) {
@@ -114,7 +119,8 @@ export async function GET(request: NextRequest) {
       },
     ];
 
-    return createFedCMResponse({ accounts }, request);
+    console.log('[FedCM Accounts] Returning account for user:', user.id);
+    return createFedCMResponse({ accounts }, request, { loggedIn: true });
   } catch (error) {
     // IMPORTANT: Return 200 with empty accounts instead of 500
     // FedCM interprets 500 as network error and shows "Check your internet connection"
