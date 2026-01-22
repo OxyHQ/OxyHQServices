@@ -1,6 +1,6 @@
 # Getting Started with @oxyhq/services
 
-Zero-config authentication for all Oxy apps. Just wrap with `OxyProvider` and use `useAuth`.
+Zero-config authentication for all Oxy apps. Cross-domain SSO is automatic.
 
 ## Installation
 
@@ -8,7 +8,7 @@ Zero-config authentication for all Oxy apps. Just wrap with `OxyProvider` and us
 npm install @oxyhq/services
 ```
 
-### Peer Dependencies (React Native/Expo)
+### Peer Dependencies (React Native/Expo only)
 
 ```bash
 npm install react-native-reanimated react-native-gesture-handler \
@@ -19,16 +19,20 @@ npm install react-native-reanimated react-native-gesture-handler \
 
 ---
 
-## Quick Start (All Platforms)
+## Quick Start
 
-### 1. Wrap with OxyProvider
+### 1. Wrap with Provider
 
 ```tsx
-// app/_layout.tsx or App.tsx
+// React Native / Expo
 import { OxyProvider } from '@oxyhq/services';
+
+// Web (Next.js / React)
+import { WebOxyProvider } from '@oxyhq/services';
 
 export default function App() {
   return (
+    // Use OxyProvider for native, WebOxyProvider for web
     <OxyProvider baseURL="https://api.oxy.so">
       <YourApp />
     </OxyProvider>
@@ -156,20 +160,20 @@ showBottomSheet({ screen: 'PaymentGateway', props: { amount: 10 } });
 
 ## Web Apps (Next.js / React)
 
-Web apps use the same `OxyProvider` and `useAuth`. SSO is automatic via hidden iframe.
+Web apps use `WebOxyProvider` (no React Native dependencies). SSO is automatic via hidden iframe.
 
 ### Next.js Example
 
 ```tsx
 // app/providers.tsx
 'use client';
-import { OxyProvider } from '@oxyhq/services';
+import { WebOxyProvider } from '@oxyhq/services';
 
 export function Providers({ children }) {
   return (
-    <OxyProvider baseURL="https://api.oxy.so">
+    <WebOxyProvider baseURL="https://api.oxy.so">
       {children}
-    </OxyProvider>
+    </WebOxyProvider>
   );
 }
 
@@ -206,7 +210,7 @@ export default function Home() {
 ### How Web SSO Works
 
 1. User signs in on `accounts.oxy.so` (or any Oxy domain)
-2. Your app's `OxyProvider` loads a hidden iframe to `auth.oxy.so/auth/silent`
+2. Your app's `WebOxyProvider` loads a hidden iframe to `auth.oxy.so/auth/silent`
 3. If valid session exists, user is automatically authenticated
 4. No manual setup required - it just works
 

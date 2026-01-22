@@ -39,6 +39,9 @@ export type { AuthState, AuthActions, UseAuthReturn } from './ui/hooks/useAuth';
 // Streamlined provider with built-in bottom sheet
 export { default as OxyProvider } from './ui/components/OxyProvider';
 
+// Web-only provider (no React Native dependencies)
+export { default as WebOxyProvider } from './ui/components/WebOxyProvider';
+
 // Device management
 export { DeviceManager } from './utils/deviceManager';
 export type { DeviceFingerprint, StoredDeviceInfo } from './utils/deviceManager';
