@@ -12,13 +12,19 @@ import { Request, Response, NextFunction } from 'express';
  * Production origins are explicitly allow-listed for security
  */
 export const ALLOWED_ORIGINS = [
-  'https://mention.earth',
-  'https://homiio.com',
-  'https://alia.onl',
+  // Oxy ecosystem domains (root + subdomains not matched by pattern)
+  'https://oxy.so',
+  'https://accounts.oxy.so',
   'https://api.oxy.so',
   'https://auth.oxy.so',
   'https://authenticator.oxy.so',
   'https://noted.oxy.so',
+  // Partner domains
+  'https://mention.earth',
+  'https://homiio.com',
+  'https://alia.onl',
+  // Development
+  'http://localhost:3000',
   'http://localhost:8081',
   'http://localhost:8082',
   'http://localhost:19006',

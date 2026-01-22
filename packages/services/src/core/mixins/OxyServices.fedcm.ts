@@ -177,9 +177,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
    */
   async silentSignInWithFedCM(): Promise<SessionLoginResponse | null> {
     if (!this.isFedCMSupported()) {
-      if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        console.log('[FedCM] Silent SSO: FedCM not supported in this browser');
-      }
+      console.log('[FedCM] Silent SSO: FedCM not supported in this browser');
       return null;
     }
 
@@ -187,9 +185,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       const nonce = this.generateNonce();
       const clientId = this.getClientId();
 
-      if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        console.log('[FedCM] Silent SSO: Attempting silent mediation for', clientId);
-      }
+      console.log('[FedCM] Silent SSO: Attempting silent mediation for', clientId);
 
       // Request credential with silent mediation (no UI)
       const credential = await this.requestIdentityCredential({
@@ -200,31 +196,55 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       });
 
       if (!credential || !credential.token) {
-        if (typeof __DEV__ !== 'undefined' && __DEV__) {
-          console.log('[FedCM] Silent SSO: No credential returned (user may not have previously consented)');
-        }
+        console.log('[FedCM] Silent SSO: No credential returned (user may not have previously consented or is in quiet period)');
         return null;
       }
 
-      if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        console.log('[FedCM] Silent SSO: Got credential, exchanging for session');
+      console.log('[FedCM] Silent SSO: Got credential, exchanging for session...');
+
+      let session: SessionLoginResponse;
+      try {
+        session = await this.exchangeIdTokenForSession(credential.token);
+      } catch (exchangeError) {
+        console.error('[FedCM] Silent SSO: Token exchange failed:', exchangeError);
+        return null;
       }
 
-      const session = await this.exchangeIdTokenForSession(credential.token);
-      if (session && (session as any).accessToken) {
+      // Validate session response has required fields
+      if (!session) {
+        console.error('[FedCM] Silent SSO: Exchange returned null session');
+        return null;
+      }
+
+      if (!session.sessionId) {
+        console.error('[FedCM] Silent SSO: Exchange returned session without sessionId:', session);
+        return null;
+      }
+
+      if (!session.user) {
+        console.error('[FedCM] Silent SSO: Exchange returned session without user:', session);
+        return null;
+      }
+
+      // Set the access token
+      if ((session as any).accessToken) {
         this.httpService.setTokens((session as any).accessToken);
+        console.log('[FedCM] Silent SSO: Access token set');
+      } else {
+        console.warn('[FedCM] Silent SSO: No accessToken in session response');
       }
 
-      if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        console.log('[FedCM] Silent SSO: Success!', { userId: (session as any)?.user?.id });
-      }
+      console.log('[FedCM] Silent SSO: Success!', {
+        sessionId: session.sessionId?.substring(0, 8) + '...',
+        userId: session.user?.id
+      });
 
       return session;
     } catch (error) {
-      // Silent failures are expected and should not throw
-      if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        console.log('[FedCM] Silent SSO failed (expected):', error);
-      }
+      // Log the actual error for debugging
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorName = error instanceof Error ? error.name : 'Unknown';
+      console.log('[FedCM] Silent SSO failed:', { name: errorName, message: errorMessage });
       return null;
     }
   }
