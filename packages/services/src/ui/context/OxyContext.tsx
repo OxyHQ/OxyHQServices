@@ -55,6 +55,18 @@ export interface OxyContextState {
   // Authentication
   signIn: (publicKey: string, deviceName?: string) => Promise<User>;
 
+  /**
+   * Handle session from popup authentication
+   * Updates auth state, persists session to storage
+   */
+  handlePopupSession: (session: {
+    sessionId: string;
+    accessToken?: string;
+    expiresAt?: string;
+    user: User;
+    deviceId?: string;
+  }) => Promise<void>;
+
   // Session management
   logout: (targetSessionId?: string) => Promise<void>;
   logoutAll: () => Promise<void>;
@@ -414,9 +426,17 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }, [restoreSessionsFromStorage, storage]);
 
   // Web SSO: Automatically check for cross-domain session on web platforms
+  // Also used for popup auth - updates all state and persists session
   const handleWebSSOSession = useCallback(async (session: any) => {
     if (!session?.user || !session?.sessionId) {
+      if (__DEV__) {
+        loggerUtil.warn('handleWebSSOSession called with invalid session', { component: 'OxyContext' }, { session });
+      }
       return;
+    }
+
+    if (__DEV__) {
+      loggerUtil.debug('handleWebSSOSession: Updating auth state', { component: 'OxyContext' }, { sessionId: session.sessionId, userId: session.user?.id });
     }
 
     // Update sessions state
@@ -442,6 +462,9 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       if (!sessionIds.includes(session.sessionId)) {
         sessionIds.push(session.sessionId);
         await storage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
+      }
+      if (__DEV__) {
+        loggerUtil.debug('handleWebSSOSession: Session persisted to storage', { component: 'OxyContext' });
       }
     }
   }, [updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, storage, storageKeys]);
@@ -571,6 +594,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     hasIdentity,
     getPublicKey,
     signIn,
+    handlePopupSession: handleWebSSOSession,
     logout,
     logoutAll,
     switchSession: switchSessionForContext,
@@ -589,6 +613,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }), [
     activeSessionId,
     signIn,
+    handleWebSSOSession,
     currentLanguage,
     currentLanguageMetadata,
     currentLanguageName,
