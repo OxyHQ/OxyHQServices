@@ -78,10 +78,13 @@ export async function POST(request: NextRequest) {
         )
 
         if (isJson) {
-            return NextResponse.json({
+            const jsonResponse = NextResponse.json({
                 sessionId: session.sessionId,
                 expiresAt: session.expiresAt,
             })
+            // Set FedCM login status for API responses
+            jsonResponse.headers.set("Set-Login", "logged-in")
+            return jsonResponse
         }
 
         const response = NextResponse.redirect(
@@ -111,6 +114,9 @@ export async function POST(request: NextRequest) {
             ...(cookieDomain ? { domain: cookieDomain } : {}),
             ...(expiresAt ? { expires: expiresAt } : {}),
         })
+
+        // Set FedCM login status - tells browser user is logged in at this IdP
+        response.headers.set("Set-Login", "logged-in")
 
         return response
     } catch (error) {

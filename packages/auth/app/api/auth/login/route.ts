@@ -74,11 +74,14 @@ export async function POST(request: NextRequest) {
         )
 
         if (isJson) {
-            return NextResponse.json({
+            const jsonResponse = NextResponse.json({
                 sessionId: session.sessionId,
                 expiresAt: session.expiresAt,
                 accessToken: session.accessToken,
             })
+            // Set FedCM login status for API responses too
+            jsonResponse.headers.set("Set-Login", "logged-in")
+            return jsonResponse
         }
 
         const response = NextResponse.redirect(
@@ -95,6 +98,10 @@ export async function POST(request: NextRequest) {
             ),
             303
         )
+
+        // Set FedCM login status - tells browser user is logged in at this IdP
+        // This is required for FedCM silent mediation to work
+        response.headers.set("Set-Login", "logged-in")
 
         const expiresAt = session.expiresAt ? new Date(session.expiresAt) : undefined
         // Get the domain for cookie sharing across oxy.so subdomains
