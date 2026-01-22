@@ -30,6 +30,8 @@ interface UseWebSSOOptions {
 interface UseWebSSOResult {
   /** Manually trigger SSO check */
   checkSSO: () => Promise<SessionLoginResponse | null>;
+  /** Trigger interactive FedCM sign-in (shows browser UI) */
+  signInWithFedCM: () => Promise<SessionLoginResponse | null>;
   /** Whether SSO check is in progress */
   isChecking: boolean;
   /** Whether FedCM is supported in this browser */
@@ -147,6 +149,54 @@ export function useWebSSO({
     }
   }, [oxyServices, onSessionFound, onSSOUnavailable, onError, fedCMSupported]);
 
+  /**
+   * Trigger interactive FedCM sign-in
+   * This shows the browser's native "Sign in with Oxy" prompt.
+   * Use this when silent mediation fails (user hasn't previously consented).
+   */
+  const signInWithFedCM = useCallback(async (): Promise<SessionLoginResponse | null> => {
+    console.log('[useWebSSO] signInWithFedCM called');
+
+    if (!isWebBrowser() || isCheckingRef.current) {
+      return null;
+    }
+
+    if (!fedCMSupported) {
+      console.log('[useWebSSO] FedCM not supported for interactive sign-in');
+      onError?.(new Error('FedCM is not supported in this browser'));
+      return null;
+    }
+
+    isCheckingRef.current = true;
+    console.log('[useWebSSO] Starting interactive FedCM sign-in...');
+
+    try {
+      // Use interactive sign-in (shows browser UI)
+      const session = await (oxyServices as any).signInWithFedCM?.();
+
+      console.log('[useWebSSO] Interactive FedCM result:', {
+        hasSession: !!session,
+        hasUser: !!session?.user,
+        hasSessionId: !!session?.sessionId,
+      });
+
+      if (session) {
+        console.log('[useWebSSO] Interactive session found, calling onSessionFound...');
+        await onSessionFound(session);
+        console.log('[useWebSSO] onSessionFound completed');
+        return session;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('[useWebSSO] Interactive FedCM error:', error);
+      onError?.(error instanceof Error ? error : new Error(String(error)));
+      return null;
+    } finally {
+      isCheckingRef.current = false;
+    }
+  }, [oxyServices, onSessionFound, onError, fedCMSupported]);
+
   // Auto-check SSO on mount (web only, FedCM only, not on auth domain)
   useEffect(() => {
     if (!enabled || !isWebBrowser() || hasCheckedRef.current || isIdentityProvider()) {
@@ -168,6 +218,7 @@ export function useWebSSO({
 
   return {
     checkSSO,
+    signInWithFedCM,
     isChecking: isCheckingRef.current,
     isFedCMSupported: fedCMSupported,
   };
