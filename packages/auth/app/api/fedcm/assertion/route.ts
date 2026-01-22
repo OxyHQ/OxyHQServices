@@ -81,7 +81,9 @@ export async function POST(request: NextRequest) {
   try {
     // Parse request body
     const body = await request.json();
-    const { account_id, client_id, nonce, disclosure_text_shown } = body;
+    const { account_id, client_id, disclosure_text_shown } = body;
+    // nonce can be at top level or in params object (Chrome 145+)
+    const nonce = body.nonce || body.params?.nonce;
 
     if (!account_id || !client_id) {
       return NextResponse.json(
