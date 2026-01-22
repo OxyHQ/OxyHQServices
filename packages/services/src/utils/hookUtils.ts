@@ -4,6 +4,12 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 
+// Platform detection for SSR/Node.js/React Native safety
+const isBrowser = typeof window !== 'undefined';
+const hasLocalStorage = isBrowser && typeof window.localStorage !== 'undefined';
+const hasSessionStorage = isBrowser && typeof window.sessionStorage !== 'undefined';
+const hasNavigator = typeof navigator !== 'undefined';
+
 /**
  * Hook for managing async operations with loading, error, and data states
  */
@@ -158,10 +164,11 @@ export function useCounter(initialValue = 0) {
 }
 
 /**
- * Hook for local storage
+ * Hook for local storage (platform-safe)
  */
 export function useLocalStorage<T>(key: string, initialValue: T) {
   const [storedValue, setStoredValue] = useState<T>(() => {
+    if (!hasLocalStorage) return initialValue;
     try {
       const item = window.localStorage.getItem(key);
       return item ? JSON.parse(item) : initialValue;
@@ -175,7 +182,9 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
     try {
       const valueToStore = value instanceof Function ? value(storedValue) : value;
       setStoredValue(valueToStore);
-      window.localStorage.setItem(key, JSON.stringify(valueToStore));
+      if (hasLocalStorage) {
+        window.localStorage.setItem(key, JSON.stringify(valueToStore));
+      }
     } catch (error) {
       console.error(`Error setting localStorage key "${key}":`, error);
     }
@@ -185,10 +194,11 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
 }
 
 /**
- * Hook for session storage
+ * Hook for session storage (platform-safe)
  */
 export function useSessionStorage<T>(key: string, initialValue: T) {
   const [storedValue, setStoredValue] = useState<T>(() => {
+    if (!hasSessionStorage) return initialValue;
     try {
       const item = window.sessionStorage.getItem(key);
       return item ? JSON.parse(item) : initialValue;
@@ -202,7 +212,9 @@ export function useSessionStorage<T>(key: string, initialValue: T) {
     try {
       const valueToStore = value instanceof Function ? value(storedValue) : value;
       setStoredValue(valueToStore);
-      window.sessionStorage.setItem(key, JSON.stringify(valueToStore));
+      if (hasSessionStorage) {
+        window.sessionStorage.setItem(key, JSON.stringify(valueToStore));
+      }
     } catch (error) {
       console.error(`Error setting sessionStorage key "${key}":`, error);
     }
@@ -212,15 +224,17 @@ export function useSessionStorage<T>(key: string, initialValue: T) {
 }
 
 /**
- * Hook for window size
+ * Hook for window size (platform-safe)
  */
 export function useWindowSize() {
   const [windowSize, setWindowSize] = useState({
-    width: window.innerWidth,
-    height: window.innerHeight,
+    width: isBrowser ? window.innerWidth : 0,
+    height: isBrowser ? window.innerHeight : 0,
   });
 
   useEffect(() => {
+    if (!isBrowser) return;
+
     const handleResize = () => {
       setWindowSize({
         width: window.innerWidth,
@@ -236,12 +250,14 @@ export function useWindowSize() {
 }
 
 /**
- * Hook for scroll position
+ * Hook for scroll position (platform-safe)
  */
 export function useScrollPosition() {
   const [scrollPosition, setScrollPosition] = useState(0);
 
   useEffect(() => {
+    if (!isBrowser) return;
+
     const handleScroll = () => {
       setScrollPosition(window.pageYOffset);
     };
@@ -254,12 +270,14 @@ export function useScrollPosition() {
 }
 
 /**
- * Hook for online/offline status
+ * Hook for online/offline status (platform-safe)
  */
 export function useOnlineStatus() {
-  const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [isOnline, setIsOnline] = useState(hasNavigator ? navigator.onLine : true);
 
   useEffect(() => {
+    if (!isBrowser) return;
+
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
 
@@ -276,12 +294,14 @@ export function useOnlineStatus() {
 }
 
 /**
- * Hook for media queries
+ * Hook for media queries (platform-safe)
  */
 export function useMediaQuery(query: string): boolean {
   const [matches, setMatches] = useState(false);
 
   useEffect(() => {
+    if (!isBrowser) return;
+
     const media = window.matchMedia(query);
     if (media.matches !== matches) {
       setMatches(media.matches);
@@ -289,7 +309,7 @@ export function useMediaQuery(query: string): boolean {
 
     const listener = () => setMatches(media.matches);
     media.addEventListener('change', listener);
-    
+
     return () => media.removeEventListener('change', listener);
   }, [matches, query]);
 
@@ -297,12 +317,14 @@ export function useMediaQuery(query: string): boolean {
 }
 
 /**
- * Hook for keyboard events
+ * Hook for keyboard events (platform-safe)
  */
 export function useKeyPress(targetKey: string): boolean {
   const [keyPressed, setKeyPressed] = useState(false);
 
   useEffect(() => {
+    if (!isBrowser) return;
+
     const downHandler = ({ key }: KeyboardEvent) => {
       if (key === targetKey) {
         setKeyPressed(true);
@@ -328,10 +350,12 @@ export function useKeyPress(targetKey: string): boolean {
 }
 
 /**
- * Hook for click outside detection
+ * Hook for click outside detection (platform-safe)
  */
 export function useClickOutside(ref: React.RefObject<HTMLElement>, handler: () => void) {
   useEffect(() => {
+    if (!isBrowser) return;
+
     const listener = (event: MouseEvent | TouchEvent) => {
       if (!ref.current || ref.current.contains(event.target as Node)) {
         return;

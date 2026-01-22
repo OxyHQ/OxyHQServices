@@ -4,7 +4,6 @@ import {
     Text,
     StyleSheet,
     ScrollView,
-    ActivityIndicator,
     TouchableOpacity,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
@@ -12,6 +11,7 @@ import { toast } from '../../lib/sonner';
 import { Header, Section, Avatar, SettingRow, LoadingState, EmptyState, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
+import { useSettingToggles } from '../hooks/useSettingToggle';
 import { normalizeTheme } from '../utils/themeUtils';
 import type { BlockedUser, RestrictedUser } from '../../models/interfaces';
 import { useOxy } from '../context/OxyContext';
@@ -38,42 +38,53 @@ interface PrivacySettings {
     muteKeywords: boolean;
 }
 
+const DEFAULT_PRIVACY_SETTINGS: PrivacySettings = {
+    isPrivateAccount: false,
+    hideOnlineStatus: false,
+    hideLastSeen: false,
+    profileVisibility: true,
+    loginAlerts: true,
+    blockScreenshots: false,
+    login: true,
+    biometricLogin: false,
+    showActivity: true,
+    allowTagging: true,
+    allowMentions: true,
+    hideReadReceipts: false,
+    allowDirectMessages: true,
+    dataSharing: true,
+    locationSharing: false,
+    analyticsSharing: true,
+    sensitiveContent: false,
+    autoFilter: true,
+    muteKeywords: false,
+};
+
 const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
     onClose,
     theme,
     goBack,
 }) => {
-    // Use useOxy() hook for OxyContext values
     const { oxyServices, user } = useOxy();
     const { t } = useI18n();
-    const [settings, setSettings] = useState<PrivacySettings>({
-        isPrivateAccount: false,
-        hideOnlineStatus: false,
-        hideLastSeen: false,
-        profileVisibility: true,
-        loginAlerts: true,
-        blockScreenshots: false,
-        login: true,
-        biometricLogin: false,
-        showActivity: true,
-        allowTagging: true,
-        allowMentions: true,
-        hideReadReceipts: false,
-        allowDirectMessages: true,
-        dataSharing: true,
-        locationSharing: false,
-        analyticsSharing: true,
-        sensitiveContent: false,
-        autoFilter: true,
-        muteKeywords: false,
-    });
     const [isLoading, setIsLoading] = useState(true);
-    const [isSaving, setIsSaving] = useState(false);
     const [blockedUsers, setBlockedUsers] = useState<BlockedUser[]>([]);
     const [restrictedUsers, setRestrictedUsers] = useState<RestrictedUser[]>([]);
     const [isLoadingUsers, setIsLoadingUsers] = useState(false);
 
-    // Load settings and users
+    // Use the existing useSettingToggles hook for toggle management
+    const { values: settings, toggle, savingKeys, setValues } = useSettingToggles<PrivacySettings>({
+        initialValues: DEFAULT_PRIVACY_SETTINGS,
+        onSave: async (key, value) => {
+            if (!user?.id || !oxyServices) return;
+            await oxyServices.updatePrivacySettings({ [key]: value }, user.id);
+        },
+        errorMessage: t('privacySettings.updateError') || 'Failed to update privacy setting',
+    });
+
+    const isSaving = savingKeys.size > 0;
+
+    // Load settings
     useEffect(() => {
         const loadSettings = async () => {
             try {
@@ -81,7 +92,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                 if (user?.id && oxyServices) {
                     const privacySettings = await oxyServices.getPrivacySettings(user.id);
                     if (privacySettings) {
-                        setSettings(privacySettings);
+                        setValues(privacySettings);
                     }
                 }
             } catch (error) {
@@ -93,7 +104,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
         };
 
         loadSettings();
-    }, [user?.id, oxyServices, t]);
+    }, [user?.id, oxyServices, t, setValues]);
 
     // Load blocked and restricted users
     useEffect(() => {
@@ -116,26 +127,6 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
 
         loadUsers();
     }, [oxyServices]);
-
-    const updateSetting = useCallback(async (key: keyof PrivacySettings, value: boolean) => {
-        try {
-            setIsSaving(true);
-            const newSettings = { ...settings, [key]: value };
-            setSettings(newSettings);
-            
-            if (user?.id && oxyServices) {
-                await oxyServices.updatePrivacySettings({ [key]: value }, user.id);
-                toast.success(t('privacySettings.updated') || 'Privacy settings updated');
-            }
-        } catch (error) {
-            console.error(`Failed to update ${key}:`, error);
-            toast.error(t('privacySettings.updateError') || 'Failed to update privacy setting');
-            // Revert on error
-            setSettings(settings);
-        } finally {
-            setIsSaving(false);
-        }
-    }, [settings, user?.id, oxyServices, t]);
 
     const handleUnblock = useCallback(async (userId: string) => {
         if (!oxyServices) return;
@@ -295,7 +286,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.isPrivateAccount') || 'Private Account'}
                         description={t('privacySettings.isPrivateAccountDesc') || 'Only approved followers can see your posts'}
                         value={settings.isPrivateAccount}
-                        onValueChange={(value) => updateSetting('isPrivateAccount', value)}
+                        onValueChange={() => toggle('isPrivateAccount')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -305,7 +296,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.profileVisibility') || 'Profile Visibility'}
                         description={t('privacySettings.profileVisibilityDesc') || 'Control who can view your profile'}
                         value={settings.profileVisibility}
-                        onValueChange={(value) => updateSetting('profileVisibility', value)}
+                        onValueChange={() => toggle('profileVisibility')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -315,7 +306,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.hideOnlineStatus') || 'Hide Online Status'}
                         description={t('privacySettings.hideOnlineStatusDesc') || 'Don\'t show when you\'re online'}
                         value={settings.hideOnlineStatus}
-                        onValueChange={(value) => updateSetting('hideOnlineStatus', value)}
+                        onValueChange={() => toggle('hideOnlineStatus')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -325,7 +316,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.hideLastSeen') || 'Hide Last Seen'}
                         description={t('privacySettings.hideLastSeenDesc') || 'Don\'t show when you were last active'}
                         value={settings.hideLastSeen}
-                        onValueChange={(value) => updateSetting('hideLastSeen', value)}
+                        onValueChange={() => toggle('hideLastSeen')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -339,7 +330,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.allowTagging') || 'Allow Tagging'}
                         description={t('privacySettings.allowTaggingDesc') || 'Let others tag you in posts'}
                         value={settings.allowTagging}
-                        onValueChange={(value) => updateSetting('allowTagging', value)}
+                        onValueChange={() => toggle('allowTagging')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -349,7 +340,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.allowMentions') || 'Allow Mentions'}
                         description={t('privacySettings.allowMentionsDesc') || 'Let others mention you'}
                         value={settings.allowMentions}
-                        onValueChange={(value) => updateSetting('allowMentions', value)}
+                        onValueChange={() => toggle('allowMentions')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -359,7 +350,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.allowDirectMessages') || 'Allow Direct Messages'}
                         description={t('privacySettings.allowDirectMessagesDesc') || 'Let others send you direct messages'}
                         value={settings.allowDirectMessages}
-                        onValueChange={(value) => updateSetting('allowDirectMessages', value)}
+                        onValueChange={() => toggle('allowDirectMessages')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -369,7 +360,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.hideReadReceipts') || 'Hide Read Receipts'}
                         description={t('privacySettings.hideReadReceiptsDesc') || 'Don\'t show read receipts in messages'}
                         value={settings.hideReadReceipts}
-                        onValueChange={(value) => updateSetting('hideReadReceipts', value)}
+                        onValueChange={() => toggle('hideReadReceipts')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -383,7 +374,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.showActivity') || 'Show Activity Status'}
                         description={t('privacySettings.showActivityDesc') || 'Display your activity on your profile'}
                         value={settings.showActivity}
-                        onValueChange={(value) => updateSetting('showActivity', value)}
+                        onValueChange={() => toggle('showActivity')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -393,7 +384,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.dataSharing') || 'Data Sharing'}
                         description={t('privacySettings.dataSharingDesc') || 'Allow sharing data for personalization'}
                         value={settings.dataSharing}
-                        onValueChange={(value) => updateSetting('dataSharing', value)}
+                        onValueChange={() => toggle('dataSharing')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -403,7 +394,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.locationSharing') || 'Location Sharing'}
                         description={t('privacySettings.locationSharingDesc') || 'Share your location'}
                         value={settings.locationSharing}
-                        onValueChange={(value) => updateSetting('locationSharing', value)}
+                        onValueChange={() => toggle('locationSharing')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -413,7 +404,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.analyticsSharing') || 'Analytics Sharing'}
                         description={t('privacySettings.analyticsSharingDesc') || 'Allow analytics data collection'}
                         value={settings.analyticsSharing}
-                        onValueChange={(value) => updateSetting('analyticsSharing', value)}
+                        onValueChange={() => toggle('analyticsSharing')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -427,7 +418,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.sensitiveContent') || 'Show Sensitive Content'}
                         description={t('privacySettings.sensitiveContentDesc') || 'Allow sensitive or explicit content'}
                         value={settings.sensitiveContent}
-                        onValueChange={(value) => updateSetting('sensitiveContent', value)}
+                        onValueChange={() => toggle('sensitiveContent')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -437,7 +428,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.autoFilter') || 'Auto Filter'}
                         description={t('privacySettings.autoFilterDesc') || 'Automatically filter inappropriate content'}
                         value={settings.autoFilter}
-                        onValueChange={(value) => updateSetting('autoFilter', value)}
+                        onValueChange={() => toggle('autoFilter')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -447,7 +438,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.muteKeywords') || 'Mute Keywords'}
                         description={t('privacySettings.muteKeywordsDesc') || 'Hide posts containing muted keywords'}
                         value={settings.muteKeywords}
-                        onValueChange={(value) => updateSetting('muteKeywords', value)}
+                        onValueChange={() => toggle('muteKeywords')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}
@@ -457,7 +448,7 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                         title={t('privacySettings.blockScreenshots') || 'Block Screenshots'}
                         description={t('privacySettings.blockScreenshotsDesc') || 'Prevent screenshots of your content'}
                         value={settings.blockScreenshots}
-                        onValueChange={(value) => updateSetting('blockScreenshots', value)}
+                        onValueChange={() => toggle('blockScreenshots')}
                         disabled={isSaving}
                         textColor={themeStyles.textColor}
                         mutedTextColor={themeStyles.mutedTextColor}

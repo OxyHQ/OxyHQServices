@@ -1,8 +1,20 @@
 /**
  * UI Component exports - Frontend Only (with backend-safe fallbacks)
- * 
+ *
  * This module exports all React/React Native UI components and hooks.
  * In backend, all exports are no-ops or empty objects.
+ *
+ * NOTE: This entry point uses runtime detection which prevents tree-shaking.
+ * For better bundle optimization, use:
+ * - '@oxyhq/services/ui/client' for client bundles (tree-shakeable)
+ * - '@oxyhq/services/ui/server' for SSR environments (all noops)
+ *
+ * @example
+ * // Client bundle (tree-shakeable)
+ * import { OxyProvider, useOxy } from '@oxyhq/services/ui/client';
+ *
+ * // SSR (noops)
+ * import { OxyProvider, useOxy } from '@oxyhq/services/ui/server';
  */
 import isFrontend from './isFrontend';
 

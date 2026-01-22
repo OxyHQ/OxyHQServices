@@ -91,7 +91,7 @@ export function useSettingToggle(options: UseSettingToggleOptions): UseSettingTo
  * Hook for managing multiple toggle settings at once.
  * Useful when you have several related boolean settings.
  */
-export function useSettingToggles<T extends Record<string, boolean>>(options: {
+export function useSettingToggles<T extends { [K in keyof T]: boolean }>(options: {
     initialValues: T;
     onSave: (key: keyof T, value: boolean) => Promise<void>;
     errorMessage?: string | ((key: keyof T) => string);
@@ -100,7 +100,7 @@ export function useSettingToggles<T extends Record<string, boolean>>(options: {
     values: T;
     savingKeys: Set<keyof T>;
     toggle: (key: keyof T) => Promise<void>;
-    setValues: (values: T) => void;
+    setValues: (values: Partial<T>) => void;
 } {
     const { initialValues, onSave, errorMessage = 'Failed to save setting', revertOnError = true } = options;
 
@@ -141,7 +141,11 @@ export function useSettingToggles<T extends Record<string, boolean>>(options: {
         }
     }, [values, onSave, errorMessage, revertOnError]);
 
-    return { values, savingKeys, toggle, setValues };
+    const setValuesExternal = useCallback((newValues: Partial<T>) => {
+        setValues(prev => ({ ...prev, ...newValues }));
+    }, []);
+
+    return { values, savingKeys, toggle, setValues: setValuesExternal };
 }
 
 export default useSettingToggle;

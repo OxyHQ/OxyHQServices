@@ -1,4 +1,3 @@
-import type { OxyServices } from '../../core';
 import type { ClientSession } from '../../models/session';
 
 interface DeviceSession {
@@ -11,6 +10,14 @@ interface DeviceSession {
   userId?: string;
   isCurrent?: boolean;
 }
+
+/**
+ * Service type for session helpers.
+ * Uses 'any' to work around TypeScript mixin composition type inference issues.
+ * The OxyServices class has these methods but TypeScript can't see them due to the mixin pattern.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type OxyServicesAny = any;
 
 export interface FetchSessionsWithFallbackOptions {
   fallbackDeviceId?: string;
@@ -68,7 +75,7 @@ export const mapSessionsToClient = (
  * @param options - Optional fallback options
  */
 export const fetchSessionsWithFallback = async (
-  oxyServices: Pick<OxyServices, 'getDeviceSessions' | 'getSessionsBySessionId'>,
+  oxyServices: OxyServicesAny,
   sessionId: string,
   {
     fallbackDeviceId,
@@ -97,7 +104,7 @@ export const fetchSessionsWithFallback = async (
  * @param options - Validation options
  */
 export const validateSessionBatch = async (
-  oxyServices: Pick<OxyServices, 'validateSession'>,
+  oxyServices: OxyServicesAny,
   sessionIds: string[],
   { useHeaderValidation = true, maxConcurrency = 5 }: ValidateSessionBatchOptions = {},
 ): Promise<SessionValidationResult[]> => {

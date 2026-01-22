@@ -11,6 +11,7 @@ import {
 } from 'react';
 import { OxyServices } from '../../core';
 import type { User, ApiError } from '../../models/interfaces';
+import { KeyManager } from '../../crypto/keyManager';
 import type { ClientSession } from '../../models/session';
 import { toast } from '../../lib/sonner';
 import { useAuthStore, type AuthState } from '../stores/authStore';
@@ -39,11 +40,16 @@ export interface OxyContextState {
   isAuthenticated: boolean;
   isLoading: boolean;
   isTokenReady: boolean;
+  isStorageReady: boolean;
   error: string | null;
   currentLanguage: string;
   currentLanguageMetadata: ReturnType<typeof useLanguageManagement>['metadata'];
   currentLanguageName: string;
   currentNativeLanguageName: string;
+
+  // Identity (cryptographic key pair)
+  hasIdentity: () => Promise<boolean>;
+  getPublicKey: () => Promise<string | null>;
 
   // Authentication
   signIn: (publicKey: string, deviceName?: string) => Promise<User>;
@@ -449,6 +455,15 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     [switchSession],
   );
 
+  // Identity management wrappers (delegate to KeyManager)
+  const hasIdentity = useCallback(async (): Promise<boolean> => {
+    return KeyManager.hasIdentity();
+  }, []);
+
+  const getPublicKey = useCallback(async (): Promise<string | null> => {
+    return KeyManager.getPublicKey();
+  }, []);
+
   // Create showBottomSheet function that uses the global function
   const showBottomSheetForContext = useCallback(
     (screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> }) => {
@@ -499,11 +514,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     isAuthenticated,
     isLoading,
     isTokenReady: tokenReady,
+    isStorageReady: storage !== null,
     error,
     currentLanguage,
     currentLanguageMetadata,
     currentLanguageName,
     currentNativeLanguageName,
+    hasIdentity,
+    getPublicKey,
     signIn,
     logout,
     logoutAll,
@@ -529,6 +547,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     currentNativeLanguageName,
     error,
     getDeviceSessions,
+    getPublicKey,
+    hasIdentity,
     isAuthenticated,
     isLoading,
     logout,
@@ -538,6 +558,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     refreshSessionsWithUser,
     sessions,
     setLanguage,
+    storage,
     switchSessionForContext,
     tokenReady,
     updateDeviceName,

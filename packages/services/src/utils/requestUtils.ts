@@ -162,12 +162,15 @@ export class RequestQueue {
   }
 }
 
+/** Log level type for SimpleLogger */
+export type LogLevel = 'none' | 'error' | 'warn' | 'info' | 'debug';
+
 /**
  * Simple logger with level support
- * 
+ *
  * Lightweight logger for HTTP clients and utilities.
  * For more advanced logging, use loggerUtils.ts
- * 
+ *
  * @example
  * ```typescript
  * const logger = new SimpleLogger(true, 'debug');
@@ -178,7 +181,7 @@ export class RequestQueue {
  */
 export class SimpleLogger {
   private enabled: boolean;
-  private level: 'none' | 'error' | 'warn' | 'info' | 'debug';
+  private level: LogLevel;
   private prefix: string;
 
   /**
@@ -189,17 +192,17 @@ export class SimpleLogger {
    */
   constructor(
     enabled: boolean = false,
-    level: string = 'error',
+    level: LogLevel = 'error',
     prefix: string = ''
   ) {
     this.enabled = enabled;
-    this.level = level as any;
+    this.level = level;
     this.prefix = prefix;
   }
 
-  private shouldLog(level: string): boolean {
+  private shouldLog(level: LogLevel): boolean {
     if (!this.enabled || this.level === 'none') return false;
-    const levels = ['none', 'error', 'warn', 'info', 'debug'];
+    const levels: LogLevel[] = ['none', 'error', 'warn', 'info', 'debug'];
     return levels.indexOf(level) <= levels.indexOf(this.level);
   }
 

@@ -27,10 +27,7 @@ export default function ScanQRScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const colors = Colors[colorScheme];
   const alert = useAlert();
-  const oxyContext = useOxy();
-  const { hasIdentity, isLoading } = oxyContext;
-  // @ts-ignore - isStorageReady may not be in type definition yet due to build cache
-  const isStorageReady = oxyContext.isStorageReady ?? false;
+  const { hasIdentity, isLoading, isStorageReady } = useOxy();
   const [permission, requestPermission] = useCameraPermissions();
   const [scanned, setScanned] = useState(false);
   const [flashOn, setFlashOn] = useState(false);
