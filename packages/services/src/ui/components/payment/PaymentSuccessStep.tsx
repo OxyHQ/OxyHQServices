@@ -44,7 +44,6 @@ const PaymentSuccessStep: React.FC<PaymentSuccessStepProps> = ({
                             size={64}
                             color={colors.success || '#4BB543'}
                             style={styles.successIcon}
-                            accessibilityLabel="Success checkmark"
                         />
                         <Text style={styles.successMainTitle}>Payment Successful!</Text>
                         <Text style={styles.successSubtitle}>Thank you for your payment.</Text>

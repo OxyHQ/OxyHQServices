@@ -105,7 +105,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
 
             {/* Search bar */}
             <View style={styles.searchContainer}>
-                <View style={[styles.searchInputWrapper, { backgroundColor: themeStyles.cardBackground, borderColor: themeStyles.borderColor }]}>
+                <View style={[styles.searchInputWrapper, { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor: themeStyles.borderColor }]}>
                     <Ionicons name="search" size={20} color={themeStyles.mutedTextColor} style={styles.searchIcon} />
                     <TextInput
                         style={[styles.searchInput, { color: themeStyles.textColor }]}
@@ -139,7 +139,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                         style={[
                             styles.categoryChip,
                             !selectedCategory && styles.categoryChipActive,
-                            { backgroundColor: !selectedCategory ? themeStyles.primaryColor : themeStyles.cardBackground }
+                            { backgroundColor: !selectedCategory ? themeStyles.primaryColor : themeStyles.secondaryBackgroundColor }
                         ]}
                         onPress={() => setSelectedCategory(null)}
                         accessibilityRole="button"
@@ -159,7 +159,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                             style={[
                                 styles.categoryChip,
                                 selectedCategory === cat && styles.categoryChipActive,
-                                { backgroundColor: selectedCategory === cat ? themeStyles.primaryColor : themeStyles.cardBackground }
+                                { backgroundColor: selectedCategory === cat ? themeStyles.primaryColor : themeStyles.secondaryBackgroundColor }
                             ]}
                             onPress={() => setSelectedCategory(cat)}
                             accessibilityRole="button"
@@ -196,7 +196,7 @@ const FAQScreen: React.FC<BaseScreenProps> = ({
                                 key={faq.id}
                                 style={[
                                     styles.faqItem,
-                                    { backgroundColor: themeStyles.cardBackground, borderColor: themeStyles.borderColor },
+                                    { backgroundColor: themeStyles.secondaryBackgroundColor, borderColor: themeStyles.borderColor },
                                     index === 0 && styles.faqItemFirst,
                                 ]}
                             >
