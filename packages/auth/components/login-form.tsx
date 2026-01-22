@@ -134,13 +134,26 @@ export function LoginForm({
                 return
             }
 
-            const cookieParts = [`oxy_session_id=${payload.sessionId}`, "path=/", "samesite=lax"]
+            // Set cookie with SameSite=None for FedCM cross-origin requests
+            // Requires Secure flag, and domain for cross-subdomain access
+            const isSecure = window.location.protocol === "https:"
+            const host = window.location.hostname
+            const cookieDomain = host.endsWith(".oxy.so") || host === "oxy.so" ? ".oxy.so" : undefined
+
+            const cookieParts = [
+                `oxy_session_id=${payload.sessionId}`,
+                "path=/",
+                "samesite=none", // Required for FedCM cross-origin requests
+            ]
             if (payload.expiresAt) {
                 const expiresAt = new Date(payload.expiresAt).toUTCString()
                 cookieParts.push(`expires=${expiresAt}`)
             }
-            if (window.location.protocol === "https:") {
-                cookieParts.push("secure")
+            if (isSecure) {
+                cookieParts.push("secure") // Required for SameSite=None
+            }
+            if (cookieDomain) {
+                cookieParts.push(`domain=${cookieDomain}`)
             }
             document.cookie = cookieParts.join("; ")
 
