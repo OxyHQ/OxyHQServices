@@ -49,6 +49,10 @@ export const Colors = {
     // Identity icon colors
     identityIconSelfCustody: '#10B981',
     identityIconPublicKey: '#8B5CF6',
+    // Semantic colors
+    danger: '#FF3B30',
+    success: '#34C759',
+    warning: '#FF9500',
   },
   dark: {
     text: '#ECEDEE',
@@ -90,6 +94,10 @@ export const Colors = {
     // Identity icon colors
     identityIconSelfCustody: '#34D399',
     identityIconPublicKey: '#A78BFA',
+    // Semantic colors
+    danger: '#FF453A',
+    success: '#30D158',
+    warning: '#FF9F0A',
   },
 };
 

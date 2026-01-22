@@ -239,7 +239,7 @@ export default function HomeScreen() {
         id: 'set-username',
         priority: 1,
         icon: 'account-outline',
-        iconColor: '#fbbc04',
+        iconColor: colors.warning,
         title: 'Set your username',
         subtitle: 'A username is needed to use the Oxy ecosystem. Without it, you can only use Oxy Identity accounts app.',
         onPress: handleSetUsername,
@@ -460,7 +460,7 @@ export default function HomeScreen() {
       items.push({
         id: 'biometric',
         icon: Platform.OS === 'ios' ? 'face-recognition' : 'fingerprint',
-        iconColor: biometricEnabled ? '#34C759' : colors.sidebarIconSecurity,
+        iconColor: biometricEnabled ? colors.success : colors.sidebarIconSecurity,
         title: Platform.OS === 'ios' ? 'Face ID / Touch ID' : 'Biometric Auth',
         subtitle: biometricSubtitle,
         onPress: () => router.push('/(tabs)/security' as any),
@@ -471,7 +471,7 @@ export default function HomeScreen() {
     items.push({
       id: 'recovery-email',
       icon: 'email-check-outline',
-      iconColor: user?.email ? '#34C759' : colors.sidebarIconSecurity,
+      iconColor: user?.email ? colors.success : colors.sidebarIconSecurity,
       title: 'Recovery Email',
       subtitle: user?.email ? 'Set' : 'Not set',
       onPress: () => router.push('/(tabs)/security' as any),
@@ -482,7 +482,7 @@ export default function HomeScreen() {
     items.push({
       id: 'security-status',
       icon: 'shield-lock-outline',
-      iconColor: hasSecurityIssues ? colors.sidebarIconPayments : '#34C759',
+      iconColor: hasSecurityIssues ? colors.sidebarIconPayments : colors.success,
       title: 'Security Status',
       subtitle: hasSecurityIssues ? 'Needs attention' : 'Protected',
       onPress: () => router.push('/(tabs)/security' as any),

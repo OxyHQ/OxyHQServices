@@ -65,12 +65,7 @@ export default function SessionsScreen() {
                         try {
                             setActionLoading(sessionId);
                             await removeSession(sessionId);
-                            if (Platform.OS === 'web') {
-                                // Toast would be shown here if toast library is available
-                                console.log('Session removed successfully');
-                            } else {
-                                alert('Success', 'Session removed successfully');
-                            }
+                            alert('Success', 'Session removed successfully');
                         } catch (error) {
                             console.error('Failed to remove session:', error);
                             alert('Error', 'Failed to remove session. Please try again.');
@@ -90,11 +85,7 @@ export default function SessionsScreen() {
         try {
             setActionLoading(sessionId);
             await switchSession(sessionId);
-            if (Platform.OS === 'web') {
-                console.log('Session switched successfully');
-            } else {
-                alert('Success', 'Session switched successfully');
-            }
+            alert('Success', 'Session switched successfully');
         } catch (error) {
             console.error('Failed to switch session:', error);
             alert('Error', 'Failed to switch session. Please try again.');

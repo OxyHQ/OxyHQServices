@@ -1,5 +1,6 @@
-import React, { useMemo, useCallback } from 'react';
+import React, { useMemo, useCallback, useState } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions, ActivityIndicator } from 'react-native';
+import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { ThemedText } from '@/components/themed-text';
@@ -14,12 +15,14 @@ export default function DataScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const { width } = useWindowDimensions();
   const alert = useAlert();
+  const router = useRouter();
+  const [isDownloading, setIsDownloading] = useState(false);
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
 
   // OxyServices integration
-  const { user, isAuthenticated, isLoading: oxyLoading } = useOxy();
+  const { user, isAuthenticated, isLoading: oxyLoading, oxyServices } = useOxy();
   const { data: privacySettings, isLoading: privacyLoading } = usePrivacySettings(user?.id, {
     enabled: !!user?.id && isAuthenticated,
   });
@@ -49,45 +52,80 @@ export default function DataScreen() {
   const handleDownloadData = useCallback(() => {
     alert(
       'Download Your Data',
-      'This will prepare a copy of your account data including profile information, activity history, and settings. The download will be available shortly.',
+      'Choose a format for your data export:',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Request Download',
-          onPress: () => {
-            // TODO: Implement data download API call
-            alert('Request Submitted', 'Your data download request has been submitted. You will receive a notification when it\'s ready.');
+          text: 'JSON',
+          onPress: async () => {
+            if (!oxyServices) return;
+            setIsDownloading(true);
+            try {
+              const blob = await oxyServices.downloadAccountData('json');
+              if (Platform.OS === 'web') {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `account-data-${Date.now()}.json`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+              }
+              alert('Download Complete', 'Your data has been downloaded successfully.');
+            } catch (error: any) {
+              alert('Download Failed', error?.message || 'Failed to download your data. Please try again.');
+            } finally {
+              setIsDownloading(false);
+            }
+          },
+        },
+        {
+          text: 'CSV',
+          onPress: async () => {
+            if (!oxyServices) return;
+            setIsDownloading(true);
+            try {
+              const blob = await oxyServices.downloadAccountData('csv');
+              if (Platform.OS === 'web') {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `account-data-${Date.now()}.csv`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+              }
+              alert('Download Complete', 'Your data has been downloaded successfully.');
+            } catch (error: any) {
+              alert('Download Failed', error?.message || 'Failed to download your data. Please try again.');
+            } finally {
+              setIsDownloading(false);
+            }
           },
         },
       ]
     );
-  }, [alert]);
+  }, [alert, oxyServices]);
 
   // Handle delete account
   const handleDeleteAccount = useCallback(() => {
     alert(
       'Delete Account',
-      'This will permanently delete your account and all associated data. This action cannot be undone. Are you sure you want to continue?',
+      'This will permanently delete your account and all associated data. This action cannot be undone.\n\nTo proceed, you will need to enter your password for verification.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Continue',
           style: 'destructive',
           onPress: () => {
+            // For proper account deletion, we need a dedicated screen with password input
+            // Navigate to a delete account flow or show a modal
             alert(
-              'Confirm Deletion',
-              'Please type "DELETE" to confirm account deletion. This action is permanent and irreversible.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Delete Account',
-                  style: 'destructive',
-                  onPress: () => {
-                    // TODO: Implement account deletion API call
-                    alert('Account Deletion', 'Account deletion has been requested. You will receive a confirmation email.');
-                  },
-                },
-              ]
+              'Password Required',
+              'Account deletion requires password verification. Please use the Oxy Services app or contact support to delete your account securely.',
+              [{ text: 'OK' }]
             );
           },
         },
@@ -168,6 +206,31 @@ export default function DataScreen() {
     },
   ], [colors, dataSharing, locationSharing, analyticsSharing, showActivity, handlePrivacyUpdate, updatePrivacyMutation.isPending]);
 
+  // Handle clear history
+  const handleClearHistory = useCallback(async (type: 'activity' | 'location') => {
+    const title = type === 'activity' ? 'Clear Activity History' : 'Clear Location History';
+    const message = type === 'activity'
+      ? 'This will permanently delete all your activity history. This action cannot be undone.'
+      : 'This will permanently delete all your location history. This action cannot be undone.';
+
+    alert(title, message, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Clear',
+        style: 'destructive',
+        onPress: async () => {
+          if (!oxyServices) return;
+          try {
+            await oxyServices.clearUserHistory();
+            alert('History Cleared', `Your ${type} history has been cleared.`);
+          } catch (error: any) {
+            alert('Error', error?.message || `Failed to clear ${type} history.`);
+          }
+        },
+      },
+    ]);
+  }, [alert, oxyServices]);
+
   // Activity management section
   const activityItems = useMemo(() => [
     {
@@ -176,9 +239,7 @@ export default function DataScreen() {
       iconColor: colors.sidebarIconData,
       title: 'Activity history',
       subtitle: 'View and manage your activity history',
-      onPress: () => {
-        alert('Activity History', 'Your activity history shows your recent actions and interactions. This feature is coming soon.');
-      },
+      onPress: () => handleClearHistory('activity'),
       showChevron: true,
     },
     {
@@ -187,25 +248,23 @@ export default function DataScreen() {
       iconColor: colors.sidebarIconData,
       title: 'Location history',
       subtitle: 'View and manage your location data',
-      onPress: () => {
-        alert('Location History', 'Your location history shows places you\'ve been. This feature is coming soon.');
-      },
+      onPress: () => handleClearHistory('location'),
       showChevron: true,
     },
-  ], [colors, alert]);
+  ], [colors, handleClearHistory]);
 
   // Account management section
   const accountManagementItems = useMemo(() => [
     {
       id: 'delete-account',
       icon: 'delete-outline',
-      iconColor: '#FF3B30',
+      iconColor: colors.danger,
       title: 'Delete account',
       subtitle: 'Permanently delete your account and all data',
       onPress: handleDeleteAccount,
       showChevron: false,
     },
-  ], [handleDeleteAccount]);
+  ], [colors.danger, handleDeleteAccount]);
 
 
   // Show loading state

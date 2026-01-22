@@ -97,7 +97,7 @@ export default function SecurityScreen() {
                 id: 'biometric',
                 priority: 1,
                 icon: Platform.OS === 'ios' ? 'face-recognition' : 'fingerprint',
-                iconColor: '#fbbc04',
+                iconColor: colors.warning,
                 title: 'Enable biometric authentication',
                 subtitle: 'Add an extra layer of security to your account',
                 onPress: () => {
@@ -127,7 +127,7 @@ export default function SecurityScreen() {
                 id: 'recovery-email',
                 priority: 1,
                 icon: 'email-alert-outline',
-                iconColor: '#fbbc04',
+                iconColor: colors.warning,
                 title: 'Add a recovery email',
                 subtitle: 'Help secure your account and enable account recovery',
                 onPress: () => {
@@ -170,7 +170,7 @@ export default function SecurityScreen() {
                 id: 'old-sessions',
                 priority: 2,
                 icon: 'clock-alert-outline',
-                iconColor: '#fbbc04',
+                iconColor: colors.warning,
                 title: `Review ${oldSessions.length} inactive session${oldSessions.length !== 1 ? 's' : ''}`,
                 subtitle: `Some sessions haven't been used in over 30 days`,
                 onPress: () => {
@@ -186,7 +186,7 @@ export default function SecurityScreen() {
                 id: 'many-devices',
                 priority: 3,
                 icon: 'devices',
-                iconColor: '#5AC8FA',
+                iconColor: colors.sidebarIconDevices,
                 title: `You're signed in on ${devices.length} devices`,
                 subtitle: 'Review your active devices to ensure they\'re all yours',
                 onPress: () => {
@@ -208,7 +208,7 @@ export default function SecurityScreen() {
                 id: 'suspicious-activity',
                 priority: 0,
                 icon: 'alert-octagon',
-                iconColor: '#FF3B30',
+                iconColor: colors.danger,
                 title: `${recentSuspiciousActivity.length} critical security event${recentSuspiciousActivity.length !== 1 ? 's' : ''} detected`,
                 subtitle: 'Review your security activity immediately',
                 onPress: () => {
@@ -317,7 +317,7 @@ export default function SecurityScreen() {
             items.push({
                 id: 'biometric',
                 icon: Platform.OS === 'ios' ? 'face-recognition' : 'fingerprint',
-                iconColor: biometricEnabled ? '#34C759' : colors.sidebarIconSecurity,
+                iconColor: biometricEnabled ? colors.success : colors.sidebarIconSecurity,
                 title: Platform.OS === 'ios' ? 'Face ID / Touch ID' : 'Biometric Authentication',
                 subtitle: biometricSubtitle,
                 customContent: canEnableBiometric ? (
@@ -338,7 +338,7 @@ export default function SecurityScreen() {
         items.push({
             id: 'public-key-auth',
             icon: 'key-outline',
-            iconColor: '#34C759',
+            iconColor: colors.success,
             title: 'Public key authentication',
             subtitle: 'Your account uses cryptographic keys for secure sign-in',
             showChevron: false,
@@ -442,7 +442,7 @@ export default function SecurityScreen() {
             items.push({
                 id: 'logout-all',
                 icon: 'logout',
-                iconColor: '#FF3B30',
+                iconColor: colors.danger,
                 title: 'Sign out of all other devices',
                 subtitle: `Sign out of ${activeSessionsCount - 1} other active session${activeSessionsCount - 1 !== 1 ? 's' : ''}`,
                 onPress: handleLogoutAll,
@@ -589,7 +589,7 @@ export default function SecurityScreen() {
                         <GroupedSection items={[{
                             id: 'manage-recovery',
                             icon: 'shield-key-outline',
-                            iconColor: '#F59E0B',
+                            iconColor: colors.warning,
                             title: 'Recovery phrase & settings',
                             subtitle: 'View recovery phrase and manage account settings',
                             onPress: () => router.push('/(tabs)/about-identity'),
