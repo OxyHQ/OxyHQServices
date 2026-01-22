@@ -15,6 +15,15 @@ import {
     FieldSeparator,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { AccountSwitcher } from "@/components/account-switcher"
+
+type Account = {
+    id: string
+    username?: string
+    email?: string
+    avatar?: string
+    displayName?: string
+}
 
 type LoginFormProps = React.ComponentProps<"div"> & {
     error?: string
@@ -43,7 +52,32 @@ export function LoginForm({
     const [errorMessage, setErrorMessage] = useState(error)
     const [noticeMessage, setNoticeMessage] = useState(notice)
     const [isSubmitting, setIsSubmitting] = useState(false)
+    const [isLoading, setIsLoading] = useState(true)
+    const [existingAccount, setExistingAccount] = useState<Account | null>(null)
+    const [existingSessionId, setExistingSessionId] = useState<string | null>(null)
+    const [showLoginForm, setShowLoginForm] = useState(false)
     const formAction = "/api/auth/login"
+
+    // Check for existing session on mount
+    useEffect(() => {
+        async function checkExistingSession() {
+            try {
+                const response = await fetch("/api/auth/me", {
+                    credentials: "include",
+                })
+                const data = await response.json()
+                if (data.user && data.sessionId) {
+                    setExistingAccount(data.user)
+                    setExistingSessionId(data.sessionId)
+                }
+            } catch {
+                // No existing session or error - show login form
+            } finally {
+                setIsLoading(false)
+            }
+        }
+        checkExistingSession()
+    }, [])
 
     useEffect(() => {
         setErrorMessage(error)
@@ -155,6 +189,82 @@ export function LoginForm({
                 setIsSubmitting(false)
             }
         }
+    }
+
+    const handleContinueWithAccount = async () => {
+        if (!existingSessionId) return
+
+        setIsSubmitting(true)
+        try {
+            // Get access token for existing session
+            const tokenResponse = await fetch(`/api/auth/token/${existingSessionId}`)
+            const tokenData = await tokenResponse.json()
+
+            if (!tokenResponse.ok || !tokenData.accessToken) {
+                // Session expired or invalid - show login form
+                setExistingAccount(null)
+                setExistingSessionId(null)
+                setShowLoginForm(true)
+                toast.error("Session expired", { description: "Please sign in again" })
+                return
+            }
+
+            // OAuth popup flow: redirect directly to callback with session data
+            if (isOAuthFlow && redirectUri) {
+                const callbackUrl = new URL(redirectUri)
+                callbackUrl.searchParams.set("session_id", existingSessionId)
+                callbackUrl.searchParams.set("access_token", tokenData.accessToken)
+                callbackUrl.searchParams.set("expires_at", tokenData.expiresAt || "")
+                if (state) {
+                    callbackUrl.searchParams.set("state", state)
+                }
+                callbackUrl.searchParams.set("redirect_uri", clientId || window.location.origin)
+                window.location.href = callbackUrl.toString()
+                return
+            }
+
+            // Standard auth flow: go to authorize page
+            const nextUrl = new URL("/authorize", window.location.origin)
+            if (sessionToken) {
+                nextUrl.searchParams.set("token", sessionToken)
+            }
+            if (redirectUri) {
+                nextUrl.searchParams.set("redirect_uri", redirectUri)
+            }
+            if (state) {
+                nextUrl.searchParams.set("state", state)
+            }
+            router.push(`${nextUrl.pathname}${nextUrl.search}`)
+        } catch (err) {
+            setErrorMessage(
+                err instanceof Error ? err.message : "Unable to continue"
+            )
+            setIsSubmitting(false)
+        }
+    }
+
+    // Show loading state while checking for existing session
+    if (isLoading) {
+        return (
+            <div className={cn("flex flex-col gap-6 items-center justify-center min-h-[300px]", className)} {...props}>
+                <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full" />
+            </div>
+        )
+    }
+
+    // Show account switcher if user has existing session and hasn't chosen to use another account
+    if (existingAccount && existingSessionId && !showLoginForm) {
+        return (
+            <AccountSwitcher
+                className={className}
+                account={existingAccount}
+                sessionId={existingSessionId}
+                onContinue={handleContinueWithAccount}
+                onUseAnother={() => setShowLoginForm(true)}
+                isLoading={isSubmitting}
+                {...props}
+            />
+        )
     }
 
     return (
