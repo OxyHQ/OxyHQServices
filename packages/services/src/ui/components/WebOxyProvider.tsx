@@ -1,16 +1,18 @@
 /**
- * WebOxyProvider - OxyProvider for web apps (Next.js, React)
+ * WebOxyProvider - Lightweight provider for pure React/Next.js apps
  *
- * This provider is specifically for web environments and doesn't include
- * React Native-specific dependencies. It provides:
+ * Use this provider for web apps that DON'T use Expo/React Native.
+ * For Expo apps (native + web), use `OxyProvider` instead - it works on all platforms.
+ *
+ * Features:
  * - Automatic cross-domain SSO via FedCM (Chrome 108+, Safari 16.4+, Edge 108+)
+ * - No React Native dependencies
  * - Session management
  * - All useOxy/useAuth functionality
  *
- * Zero-config: Just wrap your app and SSO works automatically across domains.
- *
  * Usage:
  * ```tsx
+ * // For pure React/Next.js apps (no Expo):
  * import { WebOxyProvider, useAuth } from '@oxyhq/services';
  *
  * function App() {
@@ -21,11 +23,8 @@
  *   );
  * }
  *
- * function LoginButton() {
- *   const { isAuthenticated, signIn, user } = useAuth();
- *   if (isAuthenticated) return <span>Welcome, {user?.username}!</span>;
- *   return <button onClick={() => signIn()}>Sign In</button>;
- * }
+ * // For Expo apps (native + web), use OxyProvider instead:
+ * import { OxyProvider, useAuth } from '@oxyhq/services';
  * ```
  */
 

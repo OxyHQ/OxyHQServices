@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState, type FC } from 'react';
-import { AppState } from 'react-native';
+import { AppState, Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { KeyboardProvider } from 'react-native-keyboard-controller';
 import type { OxyProviderProps } from '../types/navigation';
 import { OxyContextProvider } from '../context/OxyContext';
 import { QueryClientProvider, focusManager, onlineManager } from '@tanstack/react-query';
 import { setupFonts } from './FontLoader';
-import BottomSheetRouter from './BottomSheetRouter';
 import { Toaster } from '../../lib/sonner';
 import { createQueryClient } from '../hooks/queryClient';
 import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
@@ -15,11 +13,51 @@ import { createPlatformStorage, type StorageInterface } from '../utils/storageHe
 // Initialize fonts automatically
 setupFonts();
 
+// Detect if running on web
+const isWeb = Platform.OS === 'web';
+
+// Conditionally import native-only components
+let KeyboardProvider: any = ({ children }: any) => children;
+let BottomSheetRouter: any = () => null;
+
+if (!isWeb) {
+    try {
+        // Only import on native platforms
+        KeyboardProvider = require('react-native-keyboard-controller').KeyboardProvider;
+        BottomSheetRouter = require('./BottomSheetRouter').default;
+    } catch {
+        // Fallback if imports fail
+    }
+}
+
 /**
- * OxyProvider component
+ * OxyProvider - Universal provider for Expo apps (native + web)
  *
- * Provides the authentication/session context used across the app.
- * UI composition (e.g. OxyRouter inside a bottom sheet) can be added externally.
+ * Zero-config authentication and session management:
+ * - Native (iOS/Android): Keychain-based identity, bottom sheet auth UI
+ * - Web: FedCM cross-domain SSO, popup fallback
+ *
+ * Usage:
+ * ```tsx
+ * import { OxyProvider, useAuth } from '@oxyhq/services';
+ *
+ * function App() {
+ *   return (
+ *     <OxyProvider baseURL="https://api.oxy.so">
+ *       <YourApp />
+ *     </OxyProvider>
+ *   );
+ * }
+ *
+ * function MyComponent() {
+ *   const { isAuthenticated, user, signIn, signOut } = useAuth();
+ *
+ *   if (!isAuthenticated) {
+ *     return <OxySignInButton />;
+ *   }
+ *   return <Text>Welcome, {user?.username}!</Text>;
+ * }
+ * ```
  */
 const OxyProvider: FC<OxyProviderProps> = ({
     oxyServices,
@@ -72,14 +110,26 @@ const OxyProvider: FC<OxyProviderProps> = ({
         };
     }, [providedQueryClient]);
 
-    // Hook React Query focus manager into React Native AppState
+    // Hook React Query focus manager into app state (native) or visibility (web)
     useEffect(() => {
-        const subscription = AppState.addEventListener('change', (state) => {
-            focusManager.setFocused(state === 'active');
-        });
-        return () => {
-            subscription.remove();
-        };
+        if (isWeb) {
+            // Web: use document visibility
+            const handleVisibilityChange = () => {
+                focusManager.setFocused(document.visibilityState === 'visible');
+            };
+            document.addEventListener('visibilitychange', handleVisibilityChange);
+            return () => {
+                document.removeEventListener('visibilitychange', handleVisibilityChange);
+            };
+        } else {
+            // Native: use AppState
+            const subscription = AppState.addEventListener('change', (state) => {
+                focusManager.setFocused(state === 'active');
+            });
+            return () => {
+                subscription.remove();
+            };
+        }
     }, []);
 
     // Setup network status monitoring for offline detection
@@ -88,35 +138,35 @@ const OxyProvider: FC<OxyProviderProps> = ({
 
         const setupNetworkMonitoring = async () => {
             try {
-                // For React Native, try to use NetInfo
-                if (typeof window === 'undefined' || (typeof navigator !== 'undefined' && navigator.product === 'ReactNative')) {
+                if (isWeb) {
+                    // Web: use navigator.onLine
+                    onlineManager.setOnline(navigator.onLine);
+                    const handleOnline = () => onlineManager.setOnline(true);
+                    const handleOffline = () => onlineManager.setOnline(false);
+
+                    window.addEventListener('online', handleOnline);
+                    window.addEventListener('offline', handleOffline);
+
+                    cleanup = () => {
+                        window.removeEventListener('online', handleOnline);
+                        window.removeEventListener('offline', handleOffline);
+                    };
+                } else {
+                    // Native: try to use NetInfo
                     try {
                         const NetInfo = await import('@react-native-community/netinfo');
                         const state = await NetInfo.default.fetch();
                         onlineManager.setOnline(state.isConnected ?? true);
-                        
+
                         const unsubscribe = NetInfo.default.addEventListener((state: { isConnected: boolean | null }) => {
                             onlineManager.setOnline(state.isConnected ?? true);
                         });
-                        
+
                         cleanup = () => unsubscribe();
                     } catch {
                         // NetInfo not available, default to online
                         onlineManager.setOnline(true);
                     }
-                } else {
-                    // For web, use navigator.onLine
-                    onlineManager.setOnline(navigator.onLine);
-                    const handleOnline = () => onlineManager.setOnline(true);
-                    const handleOffline = () => onlineManager.setOnline(false);
-                    
-                    window.addEventListener('online', handleOnline);
-                    window.addEventListener('offline', handleOffline);
-                    
-                    cleanup = () => {
-                        window.removeEventListener('online', handleOnline);
-                        window.removeEventListener('offline', handleOffline);
-                    };
                 }
             } catch (error) {
                 // Default to online if detection fails
@@ -133,30 +183,45 @@ const OxyProvider: FC<OxyProviderProps> = ({
 
     // Ensure we have a valid QueryClient
     if (!queryClient) {
-        // Return loading state or fallback
         return null;
     }
 
+    // Core content that works on all platforms
+    const coreContent = (
+        <QueryClientProvider client={queryClient}>
+            <OxyContextProvider
+                oxyServices={oxyServices as any}
+                baseURL={baseURL}
+                authWebUrl={authWebUrl}
+                authRedirectUri={authRedirectUri}
+                storageKeyPrefix={storageKeyPrefix}
+                onAuthStateChange={onAuthStateChange as any}
+            >
+                {children}
+                {/* Only render bottom sheet router on native */}
+                {!isWeb && <BottomSheetRouter />}
+                <Toaster />
+            </OxyContextProvider>
+        </QueryClientProvider>
+    );
+
+    // On web, minimal wrappers (GestureHandler and SafeArea work via react-native-web)
+    if (isWeb) {
+        return (
+            <SafeAreaProvider>
+                <GestureHandlerRootView style={{ flex: 1 }}>
+                    {coreContent}
+                </GestureHandlerRootView>
+            </SafeAreaProvider>
+        );
+    }
+
+    // On native, full wrappers including KeyboardProvider
     return (
         <SafeAreaProvider>
             <GestureHandlerRootView style={{ flex: 1 }}>
                 <KeyboardProvider>
-                    {queryClient && (
-                        <QueryClientProvider client={queryClient}>
-                            <OxyContextProvider
-                                oxyServices={oxyServices as any}
-                                baseURL={baseURL}
-                                authWebUrl={authWebUrl}
-                                authRedirectUri={authRedirectUri}
-                                storageKeyPrefix={storageKeyPrefix}
-                                onAuthStateChange={onAuthStateChange as any}
-                            >
-                                {children}
-                                <BottomSheetRouter />
-                                <Toaster />
-                            </OxyContextProvider>
-                        </QueryClientProvider>
-                    )}
+                    {coreContent}
                 </KeyboardProvider>
             </GestureHandlerRootView>
         </SafeAreaProvider>
