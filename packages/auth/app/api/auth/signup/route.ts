@@ -101,8 +101,8 @@ export async function POST(request: NextRequest) {
         const expiresAt = session.expiresAt ? new Date(session.expiresAt) : undefined
         response.cookies.set(SESSION_COOKIE_NAME, session.sessionId, {
             httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "lax",
+            secure: true, // Required for sameSite: none
+            sameSite: "none", // Allow cross-site for SSO iframe auth
             path: "/",
             ...(expiresAt ? { expires: expiresAt } : {}),
         })
