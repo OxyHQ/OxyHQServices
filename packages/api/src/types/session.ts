@@ -17,6 +17,7 @@ export interface SessionAuthResponse {
   sessionId: string;
   deviceId: string;
   expiresAt: string;
+  accessToken?: string;
   user: {
     id: string;
     username?: string; // Optional - users may not have a username set
