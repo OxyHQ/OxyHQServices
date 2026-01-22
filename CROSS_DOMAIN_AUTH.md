@@ -641,11 +641,14 @@ await KeyManager.migrateToSharedIdentity();
 
 **Symptom:** `silentSignIn()` always returns null
 
+**Note:** As of v5.19+, FedCM is the primary cross-domain SSO mechanism. The iframe-based approach is deprecated due to third-party cookie blocking in modern browsers.
+
 **Solutions:**
-1. Check if user has session at `auth.oxy.so` (visit in browser)
-2. Verify CORS headers on silent auth endpoint
-3. Check iframe not blocked by CSP
-4. Try FedCM silent auth: `auth.silentSignInWithFedCM()`
+1. Ensure browser supports FedCM (Chrome 108+, Safari 16.4+, Edge 108+)
+2. Verify user has signed in at `auth.oxy.so` (visit in browser)
+3. Check FedCM config is accessible: `https://auth.oxy.so/fedcm.json`
+4. Verify `/.well-known/web-identity` returns correct provider URLs
+5. For browsers without FedCM support (Firefox), use popup-based sign-in
 
 ### Session Expires Immediately
 
