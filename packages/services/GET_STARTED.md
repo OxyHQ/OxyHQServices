@@ -8,7 +8,7 @@ Zero-config authentication for all Oxy apps. Cross-domain SSO is automatic.
 npm install @oxyhq/services
 ```
 
-### Peer Dependencies (React Native/Expo only)
+### Peer Dependencies (Expo only)
 
 ```bash
 npm install react-native-reanimated react-native-gesture-handler \
@@ -24,21 +24,23 @@ npm install react-native-reanimated react-native-gesture-handler \
 ### 1. Wrap with Provider
 
 ```tsx
-// React Native / Expo
 import { OxyProvider } from '@oxyhq/services';
-
-// Web (Next.js / React)
-import { WebOxyProvider } from '@oxyhq/services';
 
 export default function App() {
   return (
-    // Use OxyProvider for native, WebOxyProvider for web
     <OxyProvider baseURL="https://api.oxy.so">
       <YourApp />
     </OxyProvider>
   );
 }
 ```
+
+**Which provider to use:**
+
+| App Type | Provider | Notes |
+|----------|----------|-------|
+| **Expo (native + web)** | `OxyProvider` | Works on iOS, Android, and Web |
+| **Pure React/Next.js** | `WebOxyProvider` | No React Native dependencies |
 
 ### 2. Use Authentication
 
@@ -160,7 +162,7 @@ showBottomSheet({ screen: 'PaymentGateway', props: { amount: 10 } });
 
 ## Web Apps (Next.js / React)
 
-Web apps use `WebOxyProvider` (no React Native dependencies). SSO is automatic via hidden iframe.
+For pure web apps without Expo/React Native, use `WebOxyProvider`:
 
 ### Next.js Example
 
@@ -195,28 +197,29 @@ export default function RootLayout({ children }) {
 import { useAuth } from '@oxyhq/services';
 
 export default function Home() {
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { user, isAuthenticated, isLoading, signIn } = useAuth();
 
   if (isLoading) return <div>Loading...</div>;
 
   return isAuthenticated ? (
     <h1>Welcome, {user?.username}!</h1>
   ) : (
-    <a href="https://accounts.oxy.so/login">Sign In</a>
+    <button onClick={() => signIn()}>Sign In</button>
   );
 }
 ```
 
 ### How Web SSO Works
 
-Cross-domain SSO uses **FedCM** (Federated Credential Management) - the modern browser-native identity API that works without third-party cookies.
+Cross-domain SSO uses **FedCM** (Federated Credential Management) - the browser-native identity API that works without third-party cookies.
 
 1. User signs in on `auth.oxy.so` (or any Oxy app)
-2. Your app's `WebOxyProvider` uses FedCM to check for existing session
-3. Browser mediates the identity request (privacy-preserving, no tracking)
-4. If signed in, user is automatically authenticated across all Oxy domains
+2. Browser stores FedCM credential
+3. Your app's provider uses FedCM to request identity
+4. Browser returns ID token instantly (no network request to IdP)
+5. Your app exchanges token for session
 
-**Browser Support:** Chrome 108+, Safari 16.4+, Edge 108+. For older browsers, users click "Sign In" which opens a popup.
+**Browser Support:** Chrome 108+, Safari 16.4+, Edge 108+. For Firefox and older browsers, users click "Sign In" which opens a popup.
 
 ---
 
@@ -359,13 +362,14 @@ OXY_API_URL=https://api.oxy.so
 
 ### "useAuth/useOxy must be used within OxyProvider"
 
-Wrap your app with `<OxyProvider>`.
+Wrap your app with `<OxyProvider>` (Expo) or `<WebOxyProvider>` (pure web).
 
 ### SSO not working on web
 
-1. Ensure you're using HTTPS
-2. Check browser dev tools for iframe errors
-3. Session cookies require `sameSite: none` (already configured server-side)
+1. Ensure you're using HTTPS (required for FedCM)
+2. Check browser version: Chrome 108+, Safari 16.4+, Edge 108+
+3. For Firefox: FedCM not supported, users must click "Sign In" (uses popup)
+4. Verify FedCM config: `https://auth.oxy.so/fedcm.json`
 
 ### Native keychain issues
 

@@ -22,12 +22,13 @@ A comprehensive TypeScript client library for the Oxy API providing authenticati
 ## ✨ Features
 
 - 🔐 **Zero-Config Authentication**: Automatic token management and refresh
-- 📱 **React Native First**: Optimized for React Native and Expo applications
-- 🎨 **UI Components**: Pre-built React Native components and router ready for custom presentation layers
-- 🔄 **Cross-Platform**: Works seamlessly in React Native, Expo, and Node.js
+- 🌐 **Cross-Domain SSO**: Sign in once, authenticated everywhere (FedCM-based)
+- 📱 **Universal Provider**: Single `OxyProvider` works on iOS, Android, and Web
+- 🎨 **UI Components**: Pre-built components for auth, profiles, and more
+- 🔄 **Cross-Platform**: Works in Expo, React Native, and Node.js
 - 📱 **Multi-Session Support**: Manage multiple user sessions simultaneously
 - 🔧 **TypeScript First**: Full type safety and IntelliSense support
-- 🚀 **Performance Optimized**: Automatic caching and state management
+- 🚀 **Performance Optimized**: Automatic caching with TanStack Query
 - 🛡️ **Production Ready**: Error handling, retry logic, and security best practices
 
 ## 📦 Installation
@@ -65,10 +66,10 @@ import 'react-native-url-polyfill/auto';
 
 ## 🚀 Quick Start
 
-### React Native/Expo
+### Expo Apps (Native + Web)
 
 ```typescript
-import { OxyProvider, useOxy } from '@oxyhq/services';
+import { OxyProvider, useAuth } from '@oxyhq/services';
 
 function App() {
   return (
@@ -79,13 +80,32 @@ function App() {
 }
 
 function UserProfile() {
-  const { oxyServices, user, isAuthenticated } = useOxy();
-  
+  const { user, isAuthenticated, signIn, signOut } = useAuth();
+
   if (!isAuthenticated) {
-    return <Text>Please sign in</Text>;
+    return <Button onPress={() => signIn()} title="Sign In" />;
   }
-  
-  return <Text>Welcome, {user?.name}!</Text>;
+
+  return (
+    <View>
+      <Text>Welcome, {user?.username}!</Text>
+      <Button onPress={signOut} title="Sign Out" />
+    </View>
+  );
+}
+```
+
+### Pure React/Next.js (No Expo)
+
+```typescript
+import { WebOxyProvider, useAuth } from '@oxyhq/services';
+
+function App() {
+  return (
+    <WebOxyProvider baseURL="https://api.oxy.so">
+      <YourApp />
+    </WebOxyProvider>
+  );
 }
 ```
 
@@ -129,19 +149,19 @@ app.listen(3000);
 
 ## 📖 Usage Patterns
 
-### React Native/Expo
+### Expo Apps (Native + Web)
 
-#### 1. **OxyProvider + useOxy Hook (Recommended)**
+#### 1. **OxyProvider + useAuth Hook (Recommended)**
 
-This pattern provides full React Native integration with automatic state management, UI components, and authentication flow.
+`OxyProvider` works on all platforms (iOS, Android, Web). Use `useAuth` for authentication.
 
 ```typescript
-import { OxyProvider, useOxy } from '@oxyhq/services';
+import { OxyProvider, useAuth, OxySignInButton } from '@oxyhq/services';
 
 // App.tsx - Setup the provider
 function App() {
   return (
-    <OxyProvider 
+    <OxyProvider
       baseURL="https://api.oxy.so"
       onAuthStateChange={(user) => {
         console.log('Auth state changed:', user ? 'logged in' : 'logged out');
@@ -154,36 +174,25 @@ function App() {
 
 // Component.tsx - Use the hook
 function UserProfile() {
-  const { 
-    oxyServices,    // OxyServices instance
-    user,           // Current user data
-    isAuthenticated, // Authentication state
-    login,          // Login method
-    logout          // Logout method
-  } = useOxy();
+  const { user, isAuthenticated, signIn, signOut, isLoading } = useAuth();
 
-  const handleLogin = async () => {
-    try {
-      await login('username', 'password');
-    } catch (error) {
-      console.error('Login failed:', error);
-    }
-  };
+  if (isLoading) return <ActivityIndicator />;
+
+  if (!isAuthenticated) {
+    return (
+      <View>
+        <Text>Welcome! Please sign in.</Text>
+        <OxySignInButton />
+        {/* Or use signIn() directly: */}
+        <Button onPress={() => signIn()} title="Sign In" />
+      </View>
+    );
+  }
 
   return (
     <View>
-      {isAuthenticated ? (
-        <View>
-          <Text style={styles.title}>Welcome, {user?.name}!</Text>
-          <TouchableOpacity onPress={logout} style={styles.button}>
-            <Text>Sign Out</Text>
-          </TouchableOpacity>
-        </View>
-      ) : (
-        <TouchableOpacity onPress={handleLogin} style={styles.button}>
-          <Text>Sign In</Text>
-        </TouchableOpacity>
-      )}
+      <Text style={styles.title}>Welcome, {user?.username}!</Text>
+      <Button onPress={signOut} title="Sign Out" />
     </View>
   );
 }

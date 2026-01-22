@@ -1,300 +1,177 @@
 # Cross-Domain Authentication for Oxy Ecosystem
 
-Complete guide to implementing Google-style cross-domain SSO across all your Oxy apps (homiio.com, mention.earth, alia.onl, etc.) **without third-party cookies**.
-
-## 📖 Table of Contents
-
-- [Overview](#overview)
-- [How It Works](#how-it-works)
-- [Quick Start](#quick-start)
-- [Web Implementation](#web-implementation)
-- [Native Implementation (iOS/Android)](#native-implementation-iosandroid)
-- [Auth Server Setup](#auth-server-setup)
-- [API Reference](#api-reference)
-- [Migration Guide](#migration-guide)
-- [Troubleshooting](#troubleshooting)
-
----
+Zero-config cross-domain SSO across all Oxy apps (homiio.com, mention.earth, alia.onl, oxy.so, etc.) **without third-party cookies**.
 
 ## Overview
 
-This system enables **true cross-domain SSO** where users sign in once and are automatically authenticated across all Oxy apps, just like Google does with YouTube, Gmail, Maps, etc.
+Sign in once at `auth.oxy.so` and be automatically authenticated across all Oxy domains. Works like Google's SSO across YouTube, Gmail, and Maps.
+
+### How It Works
+
+- **Web**: Uses FedCM (Federated Credential Management) - browser-native identity API
+- **Native**: Uses iOS Keychain Sharing / Android Account Manager
 
 ### Key Features
 
-✅ **Works without third-party cookies** - Future-proof for Chrome's cookie deprecation
-✅ **Three authentication methods** - FedCM, Popup, Redirect (automatic fallback)
-✅ **Native cross-app sharing** - iOS Keychain Groups & Android Account Manager
-✅ **Silent sign-in** - Users authenticated instantly across apps
-✅ **Privacy-preserving** - Browser mediates identity, IdP can't track
-✅ **Easy to use** - One simple API, automatic method selection
+- **No third-party cookies** - Works in all modern browsers
+- **Zero config** - Just wrap with `OxyProvider` and SSO works automatically
+- **Cross-TLD** - Works across completely different domains (not just subdomains)
+- **Privacy-preserving** - Browser mediates identity flow
+- **Automatic fallback** - FedCM → Popup → Redirect
 
 ### Browser Support
 
-| Method | Chrome | Safari | Firefox | Edge | Mobile |
-|--------|--------|--------|---------|------|--------|
-| **FedCM** | 108+ | 16.4+ | ❌ | 108+ | Partial |
-| **Popup** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Redirect** | ✅ | ✅ | ✅ | ✅ | ✅ |
-
----
-
-## How It Works
-
-### Web (Cross-Domain)
-
-```
-┌─────────────┐         ┌──────────────┐         ┌─────────────┐
-│ homiio.com  │         │ auth.oxy.so  │         │mention.earth│
-│             │         │  (IdP)       │         │             │
-│  1. Visit   ├────────▶│              │         │             │
-│  2. Check   │  FedCM  │ 3. Has       │         │             │
-│     session │ /Popup  │    session?  │         │             │
-│             │◀────────┤ 4. Send      │         │             │
-│  5. Got     │  Token  │    token     │         │             │
-│     token!  │         │              │         │             │
-│             │         │              │         │  6. Visit   │
-│             │         │              │◀────────┤  7. Instant │
-│             │         │  8. Already  │  FedCM  │     auth!   │
-│             │         │     signed   ├────────▶│             │
-│             │         │     in!      │  Token  │             │
-└─────────────┘         └──────────────┘         └─────────────┘
-```
-
-### Native (Shared Storage)
-
-```
-┌────────────┐         ┌──────────────────┐         ┌────────────┐
-│  Homiio    │         │  iOS Keychain    │         │  Mention   │
-│   App      │         │  Shared Group    │         │   App      │
-│            │         │ (group.com.oxy)  │         │            │
-│ 1. Sign in ├────────▶│                  │         │            │
-│ 2. Store   │  Write  │ 3. Identity +    │         │            │
-│    shared  │         │    Session       │         │            │
-│            │         │                  │         │  4. Launch │
-│            │         │                  │◀────────┤  5. Read   │
-│            │         │  6. Instant      │  Read   │     shared │
-│            │         │     auth!        ├────────▶│  7. Signed │
-│            │         │                  │         │     in!    │
-└────────────┘         └──────────────────┘         └────────────┘
-```
+| Method | Chrome | Safari | Firefox | Edge |
+|--------|--------|--------|---------|------|
+| **FedCM** | 108+ | 16.4+ | - | 108+ |
+| **Popup** | All | All | All | All |
 
 ---
 
 ## Quick Start
 
-### 1. Install Package
+### Expo Apps (Recommended)
 
-```bash
-npm install @oxyhq/services
-```
+For Expo 54+ apps (native + web), use `OxyProvider` - it works on all platforms:
 
-### 2. Web App Integration
-
-```typescript
-import { OxyServices, createCrossDomainAuth } from '@oxyhq/services';
-
-// Initialize OxyServices
-const oxyServices = new OxyServices({
-  baseURL: 'https://api.oxy.so',
-});
-
-// Create cross-domain auth helper
-const auth = createCrossDomainAuth(oxyServices);
-
-// On app startup - check for existing session
-const session = await auth.initialize();
-if (session) {
-  console.log('User is signed in:', session.user);
-} else {
-  console.log('User needs to sign in');
-}
-
-// Sign in button click
-const handleSignIn = async () => {
-  try {
-    const session = await auth.signIn(); // Auto-selects best method
-    console.log('Signed in:', session.user);
-  } catch (error) {
-    console.error('Sign in failed:', error);
-  }
-};
-```
-
-### 3. React Example
-
-```typescript
-import { useEffect, useState } from 'react';
-import { createCrossDomainAuth, OxyServices } from '@oxyhq/services';
-
-const oxyServices = new OxyServices({ baseURL: 'https://api.oxy.so' });
-const auth = createCrossDomainAuth(oxyServices);
+```tsx
+import { OxyProvider, useAuth } from '@oxyhq/services';
 
 function App() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  return (
+    <OxyProvider baseURL="https://api.oxy.so">
+      <YourApp />
+    </OxyProvider>
+  );
+}
 
-  useEffect(() => {
-    // Check for existing session on mount
-    const initAuth = async () => {
-      const session = await auth.initialize();
-      if (session) {
-        setUser(session.user);
-      }
-      setLoading(false);
-    };
+function MyComponent() {
+  const { user, isAuthenticated, signIn, signOut } = useAuth();
 
-    initAuth();
-  }, []);
-
-  const handleSignIn = async () => {
-    setLoading(true);
-    try {
-      const session = await auth.signIn();
-      setUser(session.user);
-    } catch (error) {
-      alert('Sign in failed: ' + error.message);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    await oxyServices.logoutSession(oxyServices.getStoredSessionId());
-    setUser(null);
-  };
-
-  if (loading) return <div>Loading...</div>;
-
-  if (user) {
-    return (
-      <div>
-        <h1>Welcome, {user.username}!</h1>
-        <button onClick={handleSignOut}>Sign Out</button>
-      </div>
-    );
+  if (!isAuthenticated) {
+    return <Button onPress={() => signIn()} title="Sign In" />;
   }
 
+  return <Text>Welcome, {user?.username}!</Text>;
+}
+```
+
+**That's it!** Cross-domain SSO is automatic. If a user is signed in on any Oxy domain, they're automatically signed in on your app.
+
+### Pure React/Next.js Apps
+
+For web-only apps that don't use Expo/React Native:
+
+```tsx
+import { WebOxyProvider, useAuth } from '@oxyhq/services';
+
+function App() {
   return (
-    <div>
-      <h1>Please Sign In</h1>
-      <button onClick={handleSignIn}>Sign In with Oxy</button>
-    </div>
+    <WebOxyProvider baseURL="https://api.oxy.so">
+      <YourApp />
+    </WebOxyProvider>
   );
 }
 ```
 
 ---
 
+## How It Works
+
+### Web (FedCM)
+
+```
+┌─────────────┐         ┌──────────────┐         ┌─────────────┐
+│ homiio.com  │         │ auth.oxy.so  │         │mention.earth│
+│             │  FedCM  │    (IdP)     │  FedCM  │             │
+│  User       ├────────▶│              │◀────────┤  User       │
+│  visits     │         │  Browser     │         │  visits     │
+│             │◀────────┤  mediates    ├────────▶│             │
+│  Instant    │  Token  │  identity    │  Token  │  Instant    │
+│  auth!      │         │              │         │  auth!      │
+└─────────────┘         └──────────────┘         └─────────────┘
+```
+
+1. User signs in at `auth.oxy.so`
+2. Browser stores FedCM credential
+3. User visits your app (e.g., homiio.com)
+4. OxyProvider uses FedCM to request identity from browser
+5. Browser returns ID token (no network request to IdP!)
+6. Your app exchanges token for session at `api.oxy.so`
+
+### Native (Keychain Sharing)
+
+```
+┌────────────┐         ┌──────────────────┐         ┌────────────┐
+│  Homiio    │         │  iOS Keychain    │         │  Mention   │
+│   App      │  Write  │  Shared Group    │  Read   │   App      │
+│            ├────────▶│ (group.com.oxy)  │◀────────┤            │
+│ Signs in   │         │                  │         │ Launches   │
+│            │         │  Identity +      │         │            │
+│            │         │  Session stored  │         │ Instant    │
+│            │         │                  │         │ auth!      │
+└────────────┘         └──────────────────┘         └────────────┘
+```
+
+---
+
 ## Web Implementation
 
-### Method 1: FedCM (Recommended for Modern Browsers)
+### Using useAuth Hook (Recommended)
 
-**Best for:** Chrome 108+, Safari 16.4+, Edge 108+
+The `useAuth` hook handles everything automatically:
 
-```typescript
-// Automatic FedCM with fallback
-const session = await auth.signIn({ method: 'auto' });
+```tsx
+import { useAuth } from '@oxyhq/services';
 
-// Force FedCM only
-try {
-  const session = await auth.signInWithFedCM();
-} catch (error) {
-  // Browser doesn't support FedCM
-  console.error(error);
-}
+function LoginButton() {
+  const { isAuthenticated, user, signIn, signOut, isLoading } = useAuth();
 
-// Silent sign-in (no UI)
-const session = await auth.silentSignIn();
-```
+  if (isLoading) return <Spinner />;
 
-**Features:**
-- ✅ No popup, no redirect
-- ✅ Browser-native UI
-- ✅ Privacy-preserving
-- ✅ Instant cross-domain SSO
+  if (isAuthenticated) {
+    return (
+      <div>
+        <span>Hi, {user?.username}!</span>
+        <button onClick={signOut}>Sign Out</button>
+      </div>
+    );
+  }
 
-**Limitations:**
-- ❌ Requires modern browser
-- ❌ Doesn't work in Firefox yet
-
-### Method 2: Popup (Best Compatibility)
-
-**Best for:** All modern browsers, desktop and mobile
-
-```typescript
-// Popup with auto-close
-const session = await auth.signInWithPopup();
-
-// Custom popup size
-const session = await auth.signInWithPopup({
-  popupDimensions: {
-    width: 600,
-    height: 800,
-  },
-});
-
-// Silent refresh (hidden iframe)
-const session = await auth.silentSignIn();
-```
-
-**Features:**
-- ✅ Preserves app state (no page reload)
-- ✅ Works in all browsers
-- ✅ Good UX
-
-**Limitations:**
-- ⚠️ May be blocked by popup blockers
-- ⚠️ Awkward on some mobile browsers
-
-### Method 3: Redirect (Universal Fallback)
-
-**Best for:** Maximum compatibility, including old browsers
-
-```typescript
-// Initiate redirect (doesn't return immediately)
-auth.signInWithRedirect({
-  redirectUri: 'https://yourapp.com/callback',
-});
-
-// On app startup - handle callback
-const session = auth.handleRedirectCallback();
-if (session) {
-  console.log('Returned from auth:', session.user);
-}
-
-// Or restore from localStorage
-if (auth.restoreSession()) {
-  const user = await oxyServices.getCurrentUser();
+  return <button onClick={() => signIn()}>Sign In</button>;
 }
 ```
 
-**Features:**
-- ✅ Works everywhere
-- ✅ Secure (first-party cookies only)
-- ✅ Reliable
+**What happens when `signIn()` is called:**
 
-**Limitations:**
-- ❌ Full page reload (loses app state)
-- ❌ Slower UX
+1. **FedCM check** - If browser supports FedCM and user has signed in before, instant auth
+2. **Popup fallback** - Opens `auth.oxy.so` in popup, user signs in, popup closes
+3. **Session stored** - Token stored locally, user is authenticated
 
-### Progressive Enhancement Strategy
+### Using OxySignInButton Component
 
-```typescript
-const auth = createCrossDomainAuth(oxyServices);
+```tsx
+import { OxySignInButton } from '@oxyhq/services';
 
-// Get recommendation for current environment
-const { method, reason } = auth.getRecommendedMethod();
-console.log(`Using ${method}: ${reason}`);
-
-// Auto mode tries: FedCM → Popup → Redirect
-const session = await auth.signIn({
-  method: 'auto',
-  onMethodSelected: (method) => {
-    console.log(`Authenticating with: ${method}`);
-  },
-});
+function LoginPage() {
+  return (
+    <div>
+      <h1>Sign In</h1>
+      <OxySignInButton />
+    </div>
+  );
+}
 ```
+
+### Authentication Methods
+
+| Method | When Used | User Experience |
+|--------|-----------|-----------------|
+| **FedCM** | Chrome/Safari/Edge 108+ with prior sign-in | Instant, no UI |
+| **Popup** | User clicks sign in, FedCM unavailable | Popup window opens |
+| **Redirect** | Mobile browsers where popups are blocked | Full page redirect |
+
+**The provider handles method selection automatically.** You don't need to configure anything.
 
 ---
 
@@ -445,32 +322,36 @@ Android automatically shares SecureStore data between apps with the same `shared
 
 ## Auth Server Setup
 
-Your auth server must be running at `auth.oxy.so` with the following endpoints:
+The Oxy auth server runs at `auth.oxy.so`. If you're self-hosting, ensure these endpoints are available:
 
-### Required Endpoints
+### FedCM Endpoints (Required for cross-domain SSO)
 
 | Path | Method | Purpose |
 |------|--------|---------|
 | `/fedcm.json` | GET | FedCM configuration |
 | `/.well-known/web-identity` | GET | FedCM provider discovery |
 | `/api/fedcm/accounts` | GET | List user accounts for FedCM |
-| `/api/fedcm/client_metadata` | GET | Client app metadata |
 | `/api/fedcm/assertion` | POST | Issue ID tokens |
-| `/api/auth/fedcm/exchange` | POST | Exchange ID token for session |
-| `/auth/callback` | GET | Popup callback page |
-| `/auth/silent` | GET | Silent auth iframe |
-| `/login` | GET | Login page |
-| `/signup` | GET | Signup page |
 
-### DNS Configuration
+### API Endpoints (at api.oxy.so)
 
-```
-auth.oxy.so  →  Your auth server IP
-```
+| Path | Method | Purpose |
+|------|--------|---------|
+| `/api/fedcm/exchange` | POST | Exchange ID token for session |
+| `/api/sessions/*` | * | Session management |
 
-### SSL Certificate
+### Auth UI Endpoints (at auth.oxy.so)
 
-FedCM and secure contexts require HTTPS. Obtain SSL certificate for `auth.oxy.so`.
+| Path | Purpose |
+|------|---------|
+| `/login` | Login page |
+| `/signup` | Signup page |
+| `/auth/callback` | Popup callback (auto-closes) |
+
+### Requirements
+
+- **HTTPS required** - FedCM only works over HTTPS
+- **CORS configured** - API must accept requests from your domains
 
 ---
 
@@ -596,69 +477,54 @@ await KeyManager.migrateToSharedIdentity();
 
 ## Troubleshooting
 
-### FedCM Not Working
+### SSO Not Working on Web
 
-**Symptom:** `FedCM not supported` error
+**Symptom:** User has to sign in on each domain
 
-**Solutions:**
-1. Check browser version (Chrome 108+, Safari 16.4+)
-2. Ensure HTTPS (required for FedCM)
-3. Check browser flags: `chrome://flags/#fedcm`
-4. Verify `/.well-known/web-identity` is accessible
-5. Use `auth.signIn({ method: 'popup' })` as fallback
+**Check:**
+1. User must have signed in at `auth.oxy.so` at least once
+2. Browser must support FedCM (Chrome 108+, Safari 16.4+, Edge 108+)
+3. Both sites must be served over HTTPS
+4. FedCM config accessible: `https://auth.oxy.so/fedcm.json`
+
+**For Firefox/older browsers:** FedCM is not supported. Users will need to click "Sign In" which opens a popup. This is expected behavior.
 
 ### Popup Blocked
 
-**Symptom:** "Popup blocked" error
+**Symptom:** "Popup blocked" error when signing in
 
 **Solutions:**
-1. Ensure `signInWithPopup()` is called directly from user action (click handler)
-2. Don't call from async callbacks or timeouts
-3. Ask user to allow popups
-4. Fallback to redirect: `auth.signIn({ method: 'redirect' })`
+1. Call `signIn()` directly from a click handler (not from setTimeout/async callback)
+2. Ask user to allow popups for your domain
+3. Mobile browsers may require redirect instead (handled automatically)
+
+### Session Not Persisting
+
+**Symptom:** User signed out after page reload
+
+**Check:**
+1. Ensure you're using `OxyProvider` or `WebOxyProvider` at the root of your app
+2. Check browser localStorage is not blocked
+3. Verify you're not in incognito/private mode
 
 ### iOS Keychain Sharing Not Working
 
-**Symptom:** Shared identity returns null
+**Symptom:** Shared identity returns null across apps
 
-**Solutions:**
-1. Verify all apps have same keychain group: `group.com.oxy.shared`
-2. Check Xcode capability is enabled for ALL targets
-3. Ensure apps are signed with same team ID
+**Requirements:**
+1. All apps must have same keychain group: `group.com.oxy.shared`
+2. Capability must be enabled in Xcode for ALL targets
+3. All apps must be signed with same Apple Team ID
 4. Test on real device (Simulator has limited keychain sharing)
 
 ### Android Shared Storage Not Working
 
 **Symptom:** Sessions not shared between apps
 
-**Solutions:**
-1. Verify ALL apps have same `sharedUserId` in manifest
-2. Apps must be signed with same certificate
-3. Reinstall apps after adding `sharedUserId` (can't change on update)
-4. Check `sharedUserId` format: `com.oxy.shared` (no underscores)
-
-### Silent Sign-In Fails
-
-**Symptom:** `silentSignIn()` always returns null
-
-**Note:** As of v5.19+, FedCM is the primary cross-domain SSO mechanism. The iframe-based approach is deprecated due to third-party cookie blocking in modern browsers.
-
-**Solutions:**
-1. Ensure browser supports FedCM (Chrome 108+, Safari 16.4+, Edge 108+)
-2. Verify user has signed in at `auth.oxy.so` (visit in browser)
-3. Check FedCM config is accessible: `https://auth.oxy.so/fedcm.json`
-4. Verify `/.well-known/web-identity` returns correct provider URLs
-5. For browsers without FedCM support (Firefox), use popup-based sign-in
-
-### Session Expires Immediately
-
-**Symptom:** User signed out after page reload
-
-**Solutions:**
-1. Call `auth.initialize()` on app startup
-2. Check session cookie expiration
-3. Verify token storage: `oxyServices.hasValidToken()`
-4. Check for HTTP→HTTPS mixed content
+**Requirements:**
+1. All apps must have same `android:sharedUserId="com.oxy.shared"` in manifest
+2. All apps must be signed with same certificate
+3. Must reinstall apps after adding `sharedUserId` (can't change on update)
 
 ---
 
