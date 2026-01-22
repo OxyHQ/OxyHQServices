@@ -33,6 +33,31 @@ export function buildRelativeUrl(
     return `${url.pathname}${url.search}`
 }
 
+/**
+ * Get the public base URL for redirects.
+ * Handles proxy scenarios where request.url shows internal URL.
+ */
+export function getPublicBaseUrl(request: NextRequest): string {
+    // Check for forwarded host (from load balancers/proxies)
+    const forwardedHost = request.headers.get("x-forwarded-host")
+    const forwardedProto = request.headers.get("x-forwarded-proto") || "https"
+
+    if (forwardedHost) {
+        return `${forwardedProto}://${forwardedHost}`
+    }
+
+    // Check for host header
+    const host = request.headers.get("host")
+    if (host && !host.includes("localhost")) {
+        const proto = host.includes("localhost") ? "http" : "https"
+        return `${proto}://${host}`
+    }
+
+    // Fall back to request.url
+    const url = new URL(request.url)
+    return url.origin
+}
+
 export function safeRedirectUrl(value?: string | null): string | null {
     if (!value) {
         return null

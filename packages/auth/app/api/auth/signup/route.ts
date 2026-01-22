@@ -4,6 +4,7 @@ import {
     apiPost,
     buildRelativeUrl,
     getForwardHeaders,
+    getPublicBaseUrl,
     SESSION_COOKIE_NAME,
 } from "@/lib/oxy-api"
 
@@ -22,7 +23,7 @@ function redirectWithError(
             ...params,
             error: message,
         }),
-        request.url
+        getPublicBaseUrl(request)
     )
     return NextResponse.redirect(url, 303)
 }
@@ -93,7 +94,7 @@ export async function POST(request: NextRequest) {
                         state: state || undefined,
                     }
                 ),
-                request.url
+                getPublicBaseUrl(request)
             ),
             303
         )

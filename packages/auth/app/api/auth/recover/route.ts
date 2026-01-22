@@ -4,6 +4,7 @@ import {
     apiPost,
     buildRelativeUrl,
     getForwardHeaders,
+    getPublicBaseUrl,
     RECOVERY_COOKIE_NAME,
 } from "@/lib/oxy-api"
 
@@ -27,7 +28,7 @@ function redirectWithError(
             ...params,
             error: message,
         }),
-        request.url
+        getPublicBaseUrl(request)
     )
     return NextResponse.redirect(url, 303)
 }
@@ -56,7 +57,7 @@ export async function POST(request: NextRequest) {
                         identifier,
                         devCode: response.devCode,
                     }),
-                    request.url
+                    getPublicBaseUrl(request)
                 ),
                 303
             )
@@ -83,7 +84,7 @@ export async function POST(request: NextRequest) {
                     step: "reset",
                     identifier,
                 }),
-                request.url
+                getPublicBaseUrl(request)
             )
 
             const res = NextResponse.redirect(redirectUrl, 303)
@@ -127,7 +128,7 @@ export async function POST(request: NextRequest) {
             )
 
             const res = NextResponse.redirect(
-                new URL(buildRelativeUrl("/login", { reset: "1" }), request.url),
+                new URL(buildRelativeUrl("/login", { reset: "1" }), getPublicBaseUrl(request)),
                 303
             )
             res.cookies.delete(RECOVERY_COOKIE_NAME)

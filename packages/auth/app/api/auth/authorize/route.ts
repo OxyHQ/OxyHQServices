@@ -5,6 +5,7 @@ import {
     apiPost,
     buildRelativeUrl,
     getForwardHeaders,
+    getPublicBaseUrl,
     safeRedirectUrl,
     SESSION_COOKIE_NAME,
 } from "@/lib/oxy-api"
@@ -44,7 +45,7 @@ function redirectWithError(
             ...params,
             error: message,
         }),
-        request.url
+        getPublicBaseUrl(request)
     )
     return NextResponse.redirect(url, 303)
 }
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
                 redirect_uri: redirectUri,
                 state,
             }),
-            request.url
+            getPublicBaseUrl(request)
         )
         return NextResponse.redirect(loginUrl, 303)
     }
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
                     token: sessionToken || undefined,
                     status: "denied",
                 }),
-                request.url
+                getPublicBaseUrl(request)
             ),
             303
         )
@@ -163,7 +164,7 @@ export async function POST(request: NextRequest) {
                     token: sessionToken || undefined,
                     status: "approved",
                 }),
-                request.url
+                getPublicBaseUrl(request)
             ),
             303
         )
@@ -176,7 +177,7 @@ export async function POST(request: NextRequest) {
                     state: state || undefined,
                     error: "Session expired. Please sign in again.",
                 }),
-                request.url
+                getPublicBaseUrl(request)
             )
             const response = NextResponse.redirect(loginUrl, 303)
             response.cookies.delete(SESSION_COOKIE_NAME)
