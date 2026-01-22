@@ -257,8 +257,21 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
       }, timeout);
 
       const messageHandler = (event: MessageEvent) => {
+        const authUrl = (this.constructor as any).AUTH_URL;
+
+        // Log all messages for debugging
+        if (event.data && typeof event.data === 'object' && event.data.type) {
+          console.log('[PopupAuth] Message received:', {
+            origin: event.origin,
+            expectedOrigin: authUrl,
+            type: event.data.type,
+            hasSession: !!event.data.session,
+            hasError: !!event.data.error,
+          });
+        }
+
         // CRITICAL: Verify origin to prevent XSS attacks
-        if (event.origin !== (this.constructor as any).AUTH_URL) {
+        if (event.origin !== authUrl) {
           return;
         }
 
@@ -268,9 +281,12 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
           return;
         }
 
+        console.log('[PopupAuth] Valid auth response:', { state, expectedState, hasSession: !!session, error });
+
         // Verify state parameter to prevent CSRF attacks
         if (state !== expectedState) {
           cleanup();
+          console.error('[PopupAuth] State mismatch');
           reject(new OxyAuthenticationError('Invalid state parameter. Possible CSRF attack.'));
           return;
         }
@@ -278,10 +294,13 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
         cleanup();
 
         if (error) {
+          console.error('[PopupAuth] Auth error:', error);
           reject(new OxyAuthenticationError(error));
         } else if (session) {
+          console.log('[PopupAuth] Session received successfully');
           resolve(session);
         } else {
+          console.error('[PopupAuth] No session in response');
           reject(new OxyAuthenticationError('No session received from authentication server'));
         }
       };
