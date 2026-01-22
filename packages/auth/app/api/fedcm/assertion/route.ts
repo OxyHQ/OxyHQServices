@@ -131,6 +131,8 @@ export async function POST(request: NextRequest) {
           'Content-Type': 'application/json',
           'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
           'Access-Control-Allow-Credentials': 'true',
+          // Confirm login status for FedCM
+          'Set-Login': 'logged-in',
         },
       }
     );
