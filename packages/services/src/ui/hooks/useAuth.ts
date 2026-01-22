@@ -101,15 +101,13 @@ export function useAuth(): UseAuthReturn {
   } = useOxy();
 
   const signIn = useCallback(async (publicKey?: string): Promise<User> => {
-    // Check if we're on the auth domain itself (accounts.oxy.so, auth.oxy.so)
-    // In this case, skip FedCM/popup and use local auth flow
-    const isAuthDomain = isWebBrowser() &&
-      (window.location.hostname === 'accounts.oxy.so' ||
-       window.location.hostname === 'auth.oxy.so' ||
-       window.location.hostname === 'localhost');
+    // Check if we're on the identity provider itself (auth.oxy.so)
+    // Only auth.oxy.so has local login forms - accounts.oxy.so is a client app
+    const isIdentityProvider = isWebBrowser() &&
+      window.location.hostname === 'auth.oxy.so';
 
-    // Web (not on auth domain): Use FedCM or popup-based authentication
-    if (isWebBrowser() && !publicKey && !isAuthDomain) {
+    // Web (not on IdP): Use FedCM or popup-based authentication
+    if (isWebBrowser() && !publicKey && !isIdentityProvider) {
       try {
         // Try FedCM first (instant if user already signed in)
         if ((oxyServices as any).isFedCMSupported?.()) {

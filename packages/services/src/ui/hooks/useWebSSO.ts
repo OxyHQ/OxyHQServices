@@ -46,13 +46,13 @@ function isWebBrowser(): boolean {
 }
 
 /**
- * Check if we're on the auth domain (where FedCM would authenticate against itself)
+ * Check if we're on the identity provider domain (where FedCM would authenticate against itself)
+ * Only auth.oxy.so is the IdP - accounts.oxy.so is a client app like any other
  */
-function isAuthDomain(): boolean {
+function isIdentityProvider(): boolean {
   if (!isWebBrowser()) return false;
   const hostname = window.location.hostname;
-  return hostname === 'accounts.oxy.so' ||
-         hostname === 'auth.oxy.so';
+  return hostname === 'auth.oxy.so';
 }
 
 /**
@@ -90,7 +90,7 @@ export function useWebSSO({
     }
 
     // Don't use FedCM on the auth domain itself - it would authenticate against itself
-    if (isAuthDomain()) {
+    if (isIdentityProvider()) {
       onSSOUnavailable?.();
       return null;
     }
@@ -129,8 +129,8 @@ export function useWebSSO({
 
   // Auto-check SSO on mount (web only, FedCM only, not on auth domain)
   useEffect(() => {
-    if (!enabled || !isWebBrowser() || hasCheckedRef.current || isAuthDomain()) {
-      if (isAuthDomain()) {
+    if (!enabled || !isWebBrowser() || hasCheckedRef.current || isIdentityProvider()) {
+      if (isIdentityProvider()) {
         onSSOUnavailable?.();
       }
       return;
