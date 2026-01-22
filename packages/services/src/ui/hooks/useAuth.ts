@@ -101,8 +101,15 @@ export function useAuth(): UseAuthReturn {
   } = useOxy();
 
   const signIn = useCallback(async (publicKey?: string): Promise<User> => {
-    // Web: Use popup-based authentication
-    if (isWebBrowser() && !publicKey) {
+    // Check if we're on the auth domain itself (accounts.oxy.so, auth.oxy.so)
+    // In this case, skip FedCM/popup and use local auth flow
+    const isAuthDomain = isWebBrowser() &&
+      (window.location.hostname === 'accounts.oxy.so' ||
+       window.location.hostname === 'auth.oxy.so' ||
+       window.location.hostname === 'localhost');
+
+    // Web (not on auth domain): Use FedCM or popup-based authentication
+    if (isWebBrowser() && !publicKey && !isAuthDomain) {
       try {
         // Try FedCM first (instant if user already signed in)
         if ((oxyServices as any).isFedCMSupported?.()) {
@@ -145,13 +152,25 @@ export function useAuth(): UseAuthReturn {
       }
     }
 
-    // No identity - show auth UI (native bottom sheet)
-    showBottomSheet?.('OxyAuth');
+    // No identity - show auth UI
+    if (showBottomSheet) {
+      showBottomSheet('OxyAuth');
+      // Return a promise that resolves when auth completes
+      return new Promise((_, reject) => {
+        reject(new Error('Please complete sign-in in the auth sheet'));
+      });
+    }
 
-    // Return a promise that resolves when auth completes
-    return new Promise((_, reject) => {
-      reject(new Error('Please complete sign-in in the auth sheet'));
-    });
+    // Web fallback: navigate to login page on auth domain
+    if (isWebBrowser()) {
+      const loginUrl = window.location.hostname.includes('oxy.so')
+        ? '/login'
+        : 'https://accounts.oxy.so/login';
+      window.location.href = loginUrl;
+      return new Promise(() => {}); // Never resolves, page will redirect
+    }
+
+    throw new Error('No authentication method available');
   }, [oxySignIn, hasIdentity, getPublicKey, showBottomSheet, oxyServices]);
 
   const signOut = useCallback(async (): Promise<void> => {

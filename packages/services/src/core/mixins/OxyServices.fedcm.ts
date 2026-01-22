@@ -13,6 +13,11 @@ export interface FedCMConfig {
   clientId?: string;
 }
 
+// Global lock to prevent concurrent FedCM requests
+// FedCM only allows one navigator.credentials.get request at a time
+let fedCMRequestInProgress = false;
+let fedCMRequestPromise: Promise<any> | null = null;
+
 /**
  * Federated Credential Management (FedCM) Authentication Mixin
  *
@@ -190,6 +195,9 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
   /**
    * Request identity credential from browser using FedCM API
    *
+   * Uses a global lock to prevent concurrent requests, as FedCM only
+   * allows one navigator.credentials.get request at a time.
+   *
    * @private
    */
   public async requestIdentityCredential(options: {
@@ -199,34 +207,50 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     context?: string;
     mediation?: 'silent' | 'optional' | 'required';
   }): Promise<{ token: string } | null> {
+    // If a request is already in progress, wait for it instead of starting a new one
+    if (fedCMRequestInProgress && fedCMRequestPromise) {
+      try {
+        return await fedCMRequestPromise;
+      } catch {
+        return null;
+      }
+    }
+
+    fedCMRequestInProgress = true;
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), (this.constructor as any).FEDCM_TIMEOUT);
 
-    try {
-      // Type assertion needed as FedCM types may not be in all TypeScript versions
-      const credential = (await (navigator.credentials as any).get({
-        identity: {
-          providers: [
-            {
-              configURL: options.configURL,
-              clientId: options.clientId,
-              nonce: options.nonce,
-              ...(options.context && { loginHint: options.context }),
-            },
-          ],
-        },
-        mediation: options.mediation || 'optional',
-        signal: controller.signal,
-      })) as any;
+    fedCMRequestPromise = (async () => {
+      try {
+        // Type assertion needed as FedCM types may not be in all TypeScript versions
+        const credential = (await (navigator.credentials as any).get({
+          identity: {
+            providers: [
+              {
+                configURL: options.configURL,
+                clientId: options.clientId,
+                nonce: options.nonce,
+                ...(options.context && { loginHint: options.context }),
+              },
+            ],
+          },
+          mediation: options.mediation || 'optional',
+          signal: controller.signal,
+        })) as any;
 
-      if (!credential || credential.type !== 'identity') {
-        return null;
+        if (!credential || credential.type !== 'identity') {
+          return null;
+        }
+
+        return { token: credential.token };
+      } finally {
+        clearTimeout(timeout);
+        fedCMRequestInProgress = false;
+        fedCMRequestPromise = null;
       }
+    })();
 
-      return { token: credential.token };
-    } finally {
-      clearTimeout(timeout);
-    }
+    return fedCMRequestPromise;
   }
 
   /**

@@ -46,6 +46,16 @@ function isWebBrowser(): boolean {
 }
 
 /**
+ * Check if we're on the auth domain (where FedCM would authenticate against itself)
+ */
+function isAuthDomain(): boolean {
+  if (!isWebBrowser()) return false;
+  const hostname = window.location.hostname;
+  return hostname === 'accounts.oxy.so' ||
+         hostname === 'auth.oxy.so';
+}
+
+/**
  * Hook for automatic cross-domain web SSO
  *
  * Uses FedCM (Federated Credential Management) - the modern browser-native
@@ -76,6 +86,12 @@ export function useWebSSO({
 
   const checkSSO = useCallback(async (): Promise<SessionLoginResponse | null> => {
     if (!isWebBrowser() || isCheckingRef.current) {
+      return null;
+    }
+
+    // Don't use FedCM on the auth domain itself - it would authenticate against itself
+    if (isAuthDomain()) {
+      onSSOUnavailable?.();
       return null;
     }
 
@@ -111,9 +127,12 @@ export function useWebSSO({
     }
   }, [oxyServices, onSessionFound, onSSOUnavailable, onError, fedCMSupported]);
 
-  // Auto-check SSO on mount (web only, FedCM only)
+  // Auto-check SSO on mount (web only, FedCM only, not on auth domain)
   useEffect(() => {
-    if (!enabled || !isWebBrowser() || hasCheckedRef.current) {
+    if (!enabled || !isWebBrowser() || hasCheckedRef.current || isAuthDomain()) {
+      if (isAuthDomain()) {
+        onSSOUnavailable?.();
+      }
       return;
     }
 
