@@ -24,7 +24,6 @@ setupFonts();
 const OxyProvider: FC<OxyProviderProps> = ({
     oxyServices,
     children,
-    contextOnly = false,
     onAuthStateChange,
     storageKeyPrefix,
     baseURL,
@@ -32,9 +31,6 @@ const OxyProvider: FC<OxyProviderProps> = ({
     authRedirectUri,
     queryClient: providedQueryClient,
 }) => {
-    // contextOnly is retained for backwards compatibility while the UI-only
-    // bottom sheet experience is removed. At the moment both modes behave the same.
-    void contextOnly;
 
     // Simple storage initialization for query persistence
     const storageRef = useRef<StorageInterface | null>(null);

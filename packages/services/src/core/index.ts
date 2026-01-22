@@ -9,6 +9,10 @@
 export { OxyServices, OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices';
 export { OXY_CLOUD_URL, oxyClient } from './OxyServices';
 
+// Cross-domain authentication
+export { CrossDomainAuth, createCrossDomainAuth } from './CrossDomainAuth';
+export type { CrossDomainAuthOptions } from './CrossDomainAuth';
+
 // Re-export all models and types for convenience
 export * from '../models/interfaces';
 export * from '../models/session';

@@ -6,8 +6,8 @@
  */
 import isFrontend from './isFrontend';
 
-// Real UI exports
-let OxyProvider, OxySignInButton, OxyLogo, Avatar, FollowButton, OxyPayButton, FontLoader, setupFonts, OxyIcon, useOxy, useOxyAuth, useOxyUser, useOxyKarma, useOxyPayments, useOxyDevices, useOxyNotifications, useOxySocket, useOxyQR, OxyContextProvider, OxyContextState, OxyContextProviderProps, useFollow, ProfileScreen, useAuthStore, useAccountStore, fontFamilies, fontStyles, toast, useStorage;
+// UI exports
+let OxyProvider, OxySignInButton, OxyLogo, Avatar, FollowButton, OxyPayButton, FontLoader, setupFonts, OxyIcon, useOxy, useFollow, ProfileScreen, useAuthStore, useAccountStore, fontFamilies, fontStyles, toast, useStorage;
 
 if (isFrontend) {
   OxyProvider = require('./components/OxyProvider').default;
@@ -20,9 +20,6 @@ if (isFrontend) {
   setupFonts = require('./components/FontLoader').setupFonts;
   OxyIcon = require('./components/icon').OxyIcon;
   useOxy = require('./context/OxyContext').useOxy;
-  OxyContextProvider = require('./context/OxyContext').OxyContextProvider;
-  OxyContextState = require('./context/OxyContext').OxyContextState;
-  OxyContextProviderProps = require('./context/OxyContext').OxyContextProviderProps;
   useFollow = require('./hooks').useFollow;
   ProfileScreen = require('./screens/ProfileScreen').default;
   useAuthStore = require('./stores/authStore').useAuthStore;
@@ -35,13 +32,8 @@ if (isFrontend) {
   // Backend: no-op fallbacks
   const noopComponent = () => null;
   const noopHook = () => ({});
-  
-  // Stable no-op result object for useStorage (same reference every time)
-  const noopStorageResult = {
-    storage: null,
-    isReady: false,
-  };
-  
+  const noopStorageResult = { storage: null, isReady: false };
+
   OxyProvider = noopComponent;
   OxySignInButton = noopComponent;
   OxyLogo = noopComponent;
@@ -52,9 +44,6 @@ if (isFrontend) {
   setupFonts = () => {};
   OxyIcon = noopComponent;
   useOxy = noopHook;
-  OxyContextProvider = noopComponent;
-  OxyContextState = {};
-  OxyContextProviderProps = {};
   useFollow = noopHook;
   ProfileScreen = noopComponent;
   useAuthStore = noopHook;
@@ -76,9 +65,6 @@ export {
   setupFonts,
   OxyIcon,
   useOxy,
-  OxyContextProvider,
-  OxyContextState,
-  OxyContextProviderProps,
   useFollow,
   ProfileScreen,
   useAuthStore,
@@ -86,7 +72,7 @@ export {
   fontFamilies,
   fontStyles,
   toast,
-  useStorage
+  useStorage,
 };
 
 // Re-export core services for convenience in UI context

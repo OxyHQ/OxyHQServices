@@ -20,6 +20,10 @@ export {
 // Core exports
 export { OxyServices, OxyAuthenticationError, OxyAuthenticationTimeoutError } from './core';
 export { OXY_CLOUD_URL, oxyClient } from './core';
+
+// Cross-domain authentication (Web SSO via FedCM/popup/redirect)
+export { CrossDomainAuth, createCrossDomainAuth } from './core';
+export type { CrossDomainAuthOptions } from './core';
 export type { 
   KeyPair, 
   SignedMessage, 
@@ -28,10 +32,7 @@ export type {
 } from './crypto';
 
 // React context
-export { 
-  OxyContextProvider, // Backward compatibility
-  useOxy 
-} from './ui/context/OxyContext';
+export { useOxy } from './ui/context/OxyContext';
 
 // Streamlined provider with built-in bottom sheet
 export { default as OxyProvider } from './ui/components/OxyProvider';

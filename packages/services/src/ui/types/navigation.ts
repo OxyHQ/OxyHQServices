@@ -50,7 +50,6 @@ export interface BaseScreenProps {
 export interface OxyProviderProps {
     oxyServices?: unknown;
     children?: ReactNode;
-    contextOnly?: boolean;
     onAuthStateChange?: (user: unknown) => void;
     storageKeyPrefix?: string;
     baseURL?: string;
