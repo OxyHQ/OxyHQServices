@@ -108,30 +108,35 @@ export function useAuth(): UseAuthReturn {
 
     // Web (not on IdP): Use FedCM or popup-based authentication
     if (isWebBrowser() && !publicKey && !isIdentityProvider) {
-      try {
-        // Try FedCM first (instant if user already signed in)
-        if ((oxyServices as any).isFedCMSupported?.()) {
+      // Try FedCM first (instant if user already signed in at IdP)
+      if ((oxyServices as any).isFedCMSupported?.()) {
+        try {
           const fedcmSession = await (oxyServices as any).signInWithFedCM?.();
           if (fedcmSession?.user) {
             return fedcmSession.user;
           }
+        } catch (fedcmError) {
+          // FedCM failed (user not signed in at IdP, cancelled, etc.)
+          // Fall through to popup
+          console.debug('FedCM failed, falling back to popup:', fedcmError);
         }
+      }
 
-        // Fallback to popup (opens auth.oxy.so in popup window)
+      // Fallback to popup (opens auth.oxy.so in popup window)
+      try {
         const popupSession = await (oxyServices as any).signInWithPopup?.();
         if (popupSession?.user) {
           return popupSession.user;
         }
-
-        throw new Error('Sign-in failed');
-      } catch (error) {
-        // If popup blocked or FedCM failed, suggest redirect
-        throw new Error(
-          error instanceof Error && error.message.includes('blocked')
-            ? 'Popup blocked. Please allow popups or try again.'
-            : 'Sign-in failed. Please try again.'
-        );
+      } catch (popupError) {
+        // If popup blocked, suggest enabling popups
+        if (popupError instanceof Error && popupError.message.includes('blocked')) {
+          throw new Error('Popup blocked. Please allow popups for this site.');
+        }
+        throw popupError;
       }
+
+      throw new Error('Sign-in failed. Please try again.');
     }
 
     // Native: Use cryptographic identity
