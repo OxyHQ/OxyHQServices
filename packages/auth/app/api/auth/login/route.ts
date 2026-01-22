@@ -11,6 +11,7 @@ import {
 type SessionAuthResponse = {
     sessionId: string
     expiresAt?: string
+    accessToken?: string
 }
 
 function redirectWithError(
@@ -76,6 +77,7 @@ export async function POST(request: NextRequest) {
             return NextResponse.json({
                 sessionId: session.sessionId,
                 expiresAt: session.expiresAt,
+                accessToken: session.accessToken,
             })
         }
 

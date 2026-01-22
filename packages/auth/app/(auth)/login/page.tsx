@@ -28,6 +28,8 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
       sessionToken={getParam(resolvedSearchParams, "token")}
       redirectUri={getParam(resolvedSearchParams, "redirect_uri")}
       state={getParam(resolvedSearchParams, "state")}
+      responseType={getParam(resolvedSearchParams, "response_type")}
+      clientId={getParam(resolvedSearchParams, "client_id")}
     />
   )
 }

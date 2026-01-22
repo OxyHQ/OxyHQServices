@@ -106,37 +106,24 @@ export function useAuth(): UseAuthReturn {
     const isIdentityProvider = isWebBrowser() &&
       window.location.hostname === 'auth.oxy.so';
 
-    // Web (not on IdP): Use FedCM or popup-based authentication
+    // Web (not on IdP): Use popup-based authentication
+    // We skip FedCM here because:
+    // 1. Silent FedCM already ran on page load (via useWebSSO)
+    // 2. If user is clicking "Sign In", they need interactive auth
+    // 3. Doing FedCM first loses the "user gesture" needed for popups
     if (isWebBrowser() && !publicKey && !isIdentityProvider) {
-      // Try FedCM first (instant if user already signed in at IdP)
-      if ((oxyServices as any).isFedCMSupported?.()) {
-        try {
-          const fedcmSession = await (oxyServices as any).signInWithFedCM?.();
-          if (fedcmSession?.user) {
-            return fedcmSession.user;
-          }
-        } catch (fedcmError) {
-          // FedCM failed (user not signed in at IdP, cancelled, etc.)
-          // Fall through to popup
-          console.debug('FedCM failed, falling back to popup:', fedcmError);
-        }
-      }
-
-      // Fallback to popup (opens auth.oxy.so in popup window)
       try {
         const popupSession = await (oxyServices as any).signInWithPopup?.();
         if (popupSession?.user) {
           return popupSession.user;
         }
+        throw new Error('Sign-in failed. Please try again.');
       } catch (popupError) {
-        // If popup blocked, suggest enabling popups
         if (popupError instanceof Error && popupError.message.includes('blocked')) {
           throw new Error('Popup blocked. Please allow popups for this site.');
         }
         throw popupError;
       }
-
-      throw new Error('Sign-in failed. Please try again.');
     }
 
     // Native: Use cryptographic identity
