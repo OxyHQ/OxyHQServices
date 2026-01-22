@@ -11,9 +11,13 @@ import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { apiGet } from '@/lib/oxy-api';
 import { SESSION_COOKIE_NAME } from '@/lib/oxy-api';
+import * as crypto from 'crypto';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
+
+// Shared secret for signing FedCM tokens - must match api.oxy.so
+const FEDCM_TOKEN_SECRET = process.env.FEDCM_TOKEN_SECRET || process.env.ACCESS_TOKEN_SECRET || 'fedcm-shared-secret';
 
 interface User {
   id: string;
@@ -23,12 +27,11 @@ interface User {
 }
 
 /**
- * Generate a simple ID token (JWT-like)
- * In production, you should use a proper JWT library with RS256 signing
+ * Generate a signed ID token (JWT with HS256)
  */
 function generateIdToken(userId: string, clientId: string, nonce?: string): string {
   const header = {
-    alg: 'none', // In production, use RS256 with proper key management
+    alg: 'HS256',
     typ: 'JWT',
   };
 
@@ -36,13 +39,21 @@ function generateIdToken(userId: string, clientId: string, nonce?: string): stri
     iss: 'https://auth.oxy.so', // Issuer
     sub: userId, // Subject (user ID)
     aud: clientId, // Audience (client app)
-    exp: Math.floor(Date.now() / 1000) + 3600, // Expires in 1 hour
+    exp: Math.floor(Date.now() / 1000) + 300, // Expires in 5 minutes (short-lived for exchange)
     iat: Math.floor(Date.now() / 1000), // Issued at
     nonce: nonce || '', // Nonce for replay protection
   };
 
-  // Simple base64url encoding (production should use proper JWT library)
-  const base64UrlEncode = (obj: any) => {
+  const base64UrlEncode = (data: string | Buffer) => {
+    const str = typeof data === 'string' ? data : data.toString('base64');
+    return Buffer.from(typeof data === 'string' ? data : '')
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=/g, '');
+  };
+
+  const base64UrlEncodeJson = (obj: any) => {
     return Buffer.from(JSON.stringify(obj))
       .toString('base64')
       .replace(/\+/g, '-')
@@ -50,11 +61,20 @@ function generateIdToken(userId: string, clientId: string, nonce?: string): stri
       .replace(/=/g, '');
   };
 
-  const headerB64 = base64UrlEncode(header);
-  const payloadB64 = base64UrlEncode(payload);
+  const headerB64 = base64UrlEncodeJson(header);
+  const payloadB64 = base64UrlEncodeJson(payload);
+  const signatureInput = `${headerB64}.${payloadB64}`;
 
-  // In production, add proper signature here
-  return `${headerB64}.${payloadB64}.`; // Empty signature (alg: none)
+  // Sign with HMAC-SHA256
+  const signature = crypto
+    .createHmac('sha256', FEDCM_TOKEN_SECRET)
+    .update(signatureInput)
+    .digest('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+
+  return `${headerB64}.${payloadB64}.${signature}`;
 }
 
 export async function POST(request: NextRequest) {

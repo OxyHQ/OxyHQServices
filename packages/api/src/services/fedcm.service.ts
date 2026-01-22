@@ -3,27 +3,64 @@ import { User } from '../models/User';
 import { logger } from '../utils/logger';
 import sessionService from './session.service';
 import { Request } from 'express';
+import * as crypto from 'crypto';
 
 // FedCM ID token issuer
 const FEDCM_ISSUER = 'https://auth.oxy.so';
 
+// Shared secret for verifying FedCM tokens - must match auth.oxy.so
+const FEDCM_TOKEN_SECRET = process.env.FEDCM_TOKEN_SECRET || process.env.ACCESS_TOKEN_SECRET || 'fedcm-shared-secret';
+
+interface FedCMTokenPayload {
+  iss: string;
+  sub: string;
+  aud: string;
+  exp: number;
+  iat: number;
+  nonce?: string;
+}
+
 /**
- * Decode ID token (simple base64url decode)
- * Note: In production, verify signature using public key
+ * Verify and decode FedCM ID token (JWT with HS256)
+ * @throws Error if token is invalid or signature doesn't match
  */
-function decodeIdToken(token: string): any {
+function verifyIdToken(token: string): FedCMTokenPayload {
   const parts = token.split('.');
   if (parts.length !== 3) {
-    throw new Error('Invalid token format');
+    throw new Error('Invalid token format: expected 3 parts');
   }
 
-  const payload = parts[1];
-  const decoded = Buffer.from(
-    payload.replace(/-/g, '+').replace(/_/g, '/'),
-    'base64'
-  ).toString('utf-8');
+  const [headerB64, payloadB64, signatureB64] = parts;
 
-  return JSON.parse(decoded);
+  // Verify signature
+  const signatureInput = `${headerB64}.${payloadB64}`;
+  const expectedSignature = crypto
+    .createHmac('sha256', FEDCM_TOKEN_SECRET)
+    .update(signatureInput)
+    .digest('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+
+  // Use timing-safe comparison to prevent timing attacks
+  if (!crypto.timingSafeEqual(Buffer.from(signatureB64), Buffer.from(expectedSignature))) {
+    throw new Error('Invalid token signature');
+  }
+
+  // Decode header and verify algorithm
+  const header = JSON.parse(
+    Buffer.from(headerB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8')
+  );
+  if (header.alg !== 'HS256') {
+    throw new Error(`Unsupported algorithm: ${header.alg}`);
+  }
+
+  // Decode and return payload
+  const payload = JSON.parse(
+    Buffer.from(payloadB64.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8')
+  );
+
+  return payload as FedCMTokenPayload;
 }
 
 /**
@@ -179,15 +216,15 @@ class FedCMService {
     deviceId: string;
     expiresAt: string;
     accessToken: string;
-    user: any;
+    user: { id: string; username?: string; email?: string; avatar?: string; name?: string };
   } | null> {
     try {
-      // Decode the ID token
-      let tokenPayload: any;
+      // Verify and decode the ID token (includes signature verification)
+      let tokenPayload: FedCMTokenPayload;
       try {
-        tokenPayload = decodeIdToken(idToken);
+        tokenPayload = verifyIdToken(idToken);
       } catch (error) {
-        logger.error('FedCM: Failed to decode ID token', error);
+        logger.error('FedCM: Token verification failed', error);
         return null;
       }
 
@@ -217,9 +254,9 @@ class FedCMService {
         logger.warn(`FedCM: Client origin not in approved list: ${clientOrigin}`);
       }
 
-      // Get user by ID
+      // Get user by ID (with virtuals to get name.full)
       const userId = tokenPayload.sub;
-      const user = await User.findById(userId).select('-password').lean();
+      const user = await User.findById(userId).select('-password').lean({ virtuals: true });
 
       if (!user) {
         logger.error(`FedCM: User not found: ${userId}`);
@@ -233,17 +270,18 @@ class FedCMService {
 
       logger.info(`FedCM: Created session for user ${userId} from ${clientOrigin}`);
 
+      const userDoc = user as any;
       return {
         sessionId: session.sessionId,
         deviceId: session.deviceId,
         expiresAt: session.expiresAt.toISOString(),
         accessToken: session.accessToken,
         user: {
-          id: (user as any)._id?.toString() || (user as any).id,
-          username: (user as any).username,
-          email: (user as any).email,
-          avatar: (user as any).avatar,
-          name: (user as any).name,
+          id: userDoc._id?.toString() || userDoc.id,
+          username: userDoc.username,
+          email: userDoc.email,
+          avatar: userDoc.avatar,
+          name: userDoc.name?.full || userDoc.name,
         },
       };
     } catch (error) {
