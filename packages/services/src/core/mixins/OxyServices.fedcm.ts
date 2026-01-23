@@ -46,7 +46,8 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       super(...(args as [any]));
     }
   public static readonly DEFAULT_CONFIG_URL = 'https://auth.oxy.so/fedcm.json';
-  public static readonly FEDCM_TIMEOUT = 60000; // 1 minute
+  public static readonly FEDCM_TIMEOUT = 60000; // 1 minute for interactive
+  public static readonly FEDCM_SILENT_TIMEOUT = 10000; // 10 seconds for silent mediation
 
   /**
    * Check if FedCM is supported in the current browser
@@ -326,10 +327,14 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     fedCMRequestInProgress = true;
     currentMediationMode = requestedMediation;
     const controller = new AbortController();
+    // Use shorter timeout for silent mediation since it should be quick
+    const timeoutMs = requestedMediation === 'silent'
+      ? (this.constructor as any).FEDCM_SILENT_TIMEOUT
+      : (this.constructor as any).FEDCM_TIMEOUT;
     const timeout = setTimeout(() => {
-      console.log('[FedCM] Request timed out after', (this.constructor as any).FEDCM_TIMEOUT, 'ms');
+      console.log('[FedCM] Request timed out after', timeoutMs, 'ms (mediation:', requestedMediation + ')');
       controller.abort();
-    }, (this.constructor as any).FEDCM_TIMEOUT);
+    }, timeoutMs);
 
     fedCMRequestPromise = (async () => {
       try {

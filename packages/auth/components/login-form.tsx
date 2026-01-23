@@ -157,6 +157,20 @@ export function LoginForm({
             }
             document.cookie = cookieParts.join("; ")
 
+            // Set FedCM login status via iframe
+            // The browser's FedCM Login Status API only processes Set-Login header
+            // from top-level frame navigations, not from fetch/XHR responses.
+            // Loading this endpoint in an iframe signals to the browser that
+            // the user is logged in at this IdP, enabling FedCM silent SSO.
+            const loginStatusFrame = document.createElement("iframe")
+            loginStatusFrame.style.display = "none"
+            loginStatusFrame.src = "/api/fedcm/login-status"
+            document.body.appendChild(loginStatusFrame)
+            // Clean up after a short delay (browser processes the header immediately)
+            setTimeout(() => {
+                loginStatusFrame.remove()
+            }, 1000)
+
             // OAuth popup flow: redirect directly to callback with session data
             if (isOAuthFlow && redirectUri) {
                 const callbackUrl = new URL(redirectUri)
