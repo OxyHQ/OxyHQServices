@@ -32,6 +32,7 @@ export type RouteName =
     | 'HistoryView'
     | 'SavesCollections'
     | 'EditProfile' // For backward compatibility, maps to AccountSettings
+    | 'EditProfileField' // Dedicated screen for editing a single profile field
     | 'KarmaCenter'
     | 'KarmaLeaderboard'
     | 'KarmaRewards'
@@ -71,6 +72,8 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     SavesCollections: () => require('../screens/SavesCollectionsScreen').default,
     // Backward compatibility - EditProfile maps to AccountSettings
     EditProfile: () => require('../screens/AccountSettingsScreen').default,
+    // Dedicated screen for editing a single profile field
+    EditProfileField: () => require('../screens/EditProfileFieldScreen').default,
     // Karma screens
     KarmaCenter: () => require('../screens/karma/KarmaCenterScreen').default,
     KarmaLeaderboard: () => require('../screens/karma/KarmaLeaderboardScreen').default,

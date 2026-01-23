@@ -28,13 +28,8 @@ import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { Colors } from '../constants/theme';
-import { normalizeColorScheme, normalizeTheme } from '../utils/themeUtils';
-import { EditDisplayNameModal } from '../components/profile/EditDisplayNameModal';
-import { EditUsernameModal } from '../components/profile/EditUsernameModal';
-import { EditEmailModal } from '../components/profile/EditEmailModal';
-import { EditBioModal } from '../components/profile/EditBioModal';
-import { EditLocationModal } from '../components/profile/EditLocationModal';
-import { EditLinksModal } from '../components/profile/EditLinksModal';
+import { normalizeColorScheme } from '../utils/themeUtils';
+import type { ProfileFieldType } from './EditProfileFieldScreen';
 import { getDisplayName } from '../utils/user-utils';
 import { TTLCache, registerCacheForCleanup } from '../../utils/cache';
 import { useOxy } from '../context/OxyContext';
@@ -73,7 +68,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         activeSessionId,
     } = useOxy();
     const { t } = useI18n();
-    const normalizedTheme = normalizeTheme(theme);
 
     // Use TanStack Query for user data
     const { data: user, isLoading: userLoading } = useCurrentUser({ enabled: isAuthenticated });
@@ -119,13 +113,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     const [links, setLinks] = useState<string[]>([]);
     const [avatarFileId, setAvatarFileId] = useState('');
 
-    // Modal visibility states
-    const [showEditDisplayNameModal, setShowEditDisplayNameModal] = useState(false);
-    const [showEditUsernameModal, setShowEditUsernameModal] = useState(false);
-    const [showEditEmailModal, setShowEditEmailModal] = useState(false);
-    const [showEditBioModal, setShowEditBioModal] = useState(false);
-    const [showEditLocationModal, setShowEditLocationModal] = useState(false);
-    const [showEditLinksModal, setShowEditLinksModal] = useState(false);
+    // Navigation helper for editing fields
+    const navigateToEditField = useCallback((fieldType: ProfileFieldType) => {
+        navigate?.('EditProfileField', { fieldType });
+    }, [navigate]);
 
     // Location and links state (for display only - modals handle editing)
     const [locations, setLocations] = useState<Array<{
@@ -503,65 +494,15 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
     const { openAvatarPicker } = useOxy();
 
-    // Handlers to open modals
-    const handleOpenDisplayNameModal = useCallback(() => setShowEditDisplayNameModal(true), []);
-    const handleOpenUsernameModal = useCallback(() => setShowEditUsernameModal(true), []);
-    const handleOpenEmailModal = useCallback(() => setShowEditEmailModal(true), []);
-    const handleOpenBioModal = useCallback(() => setShowEditBioModal(true), []);
-    const handleOpenLocationModal = useCallback(() => setShowEditLocationModal(true), []);
-    const handleOpenLinksModal = useCallback(() => setShowEditLinksModal(true), []);
+    // Handlers to navigate to edit screens
+    const handleOpenDisplayNameModal = useCallback(() => navigateToEditField('displayName'), [navigateToEditField]);
+    const handleOpenUsernameModal = useCallback(() => navigateToEditField('username'), [navigateToEditField]);
+    const handleOpenEmailModal = useCallback(() => navigateToEditField('email'), [navigateToEditField]);
+    const handleOpenBioModal = useCallback(() => navigateToEditField('bio'), [navigateToEditField]);
+    const handleOpenLocationModal = useCallback(() => navigateToEditField('locations'), [navigateToEditField]);
+    const handleOpenLinksModal = useCallback(() => navigateToEditField('links'), [navigateToEditField]);
 
-    // Handler to refresh data after modal saves
-    // Note: Access user directly from store when invoked to get latest value,
-    // not from closure which may be stale after modal saves update the backend
-    const handleModalSave = useCallback(() => {
-        // Get fresh user data from store to ensure we have the latest values
-        // after the modal's save operation updates the backend
-        // Read from store directly (not from closure) to avoid stale data
-        const currentUser = useAuthStore.getState().user;
-
-        // Reload user data to reflect changes
-        if (currentUser) {
-            const userDisplayName = typeof currentUser.name === 'string'
-                ? currentUser.name
-                : currentUser.name?.first || currentUser.name?.full || '';
-            const userLastName = typeof currentUser.name === 'object' ? currentUser.name?.last || '' : '';
-            setDisplayName(userDisplayName);
-            setLastName(userLastName);
-            setUsername(currentUser.username || '');
-            setEmail(currentUser.email || '');
-            setBio(currentUser.bio || '');
-
-            // Reload locations and links
-            if (currentUser.locations && Array.isArray(currentUser.locations)) {
-                setLocations(currentUser.locations.map((loc, index) => ({
-                    id: loc.id || `existing-${index}`,
-                    name: loc.name,
-                    label: loc.label,
-                    coordinates: loc.coordinates
-                })));
-            } else if (currentUser.location) {
-                setLocations([{
-                    id: 'existing-0',
-                    name: currentUser.location,
-                    label: 'Location'
-                }]);
-            } else {
-                setLocations([]);
-            }
-
-            if (currentUser.linksMetadata && Array.isArray(currentUser.linksMetadata)) {
-                setLinksMetadata(currentUser.linksMetadata.map((link, index) => ({
-                    ...link,
-                    id: link.id || `existing-${index}`
-                })));
-            } else {
-                setLinksMetadata([]);
-            }
-        }
-    }, []); // Empty dependency array - callback reads fresh data from store at call time
-
-    // Handle initialField prop - open appropriate modal
+    // Handle initialField prop - navigate to appropriate edit screen
     useEffect(() => {
         if (initialField) {
             // Special handling for avatar - open avatar picker directly
@@ -570,32 +511,25 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                     openAvatarPicker();
                 }, 300);
             } else {
-                // Open appropriate modal
+                // Navigate to edit screen
                 setTimeout(() => {
-                    switch (initialField) {
-                        case 'displayName':
-                            setShowEditDisplayNameModal(true);
-                            break;
-                        case 'username':
-                            setShowEditUsernameModal(true);
-                            break;
-                        case 'email':
-                            setShowEditEmailModal(true);
-                            break;
-                        case 'bio':
-                            setShowEditBioModal(true);
-                            break;
-                        case 'location':
-                            setShowEditLocationModal(true);
-                            break;
-                        case 'links':
-                            setShowEditLinksModal(true);
-                            break;
+                    const fieldTypeMap: Record<string, ProfileFieldType> = {
+                        displayName: 'displayName',
+                        username: 'username',
+                        email: 'email',
+                        bio: 'bio',
+                        location: 'locations',
+                        locations: 'locations',
+                        links: 'links',
+                    };
+                    const fieldType = fieldTypeMap[initialField];
+                    if (fieldType) {
+                        navigateToEditField(fieldType);
                     }
                 }, 300);
             }
         }
-    }, [initialField, openAvatarPicker]);
+    }, [initialField, openAvatarPicker, navigateToEditField]);
 
 
 
@@ -1456,50 +1390,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                 )}
             </ScrollView>
 
-            {/* Modal Components */}
-            <EditDisplayNameModal
-                visible={showEditDisplayNameModal}
-                onClose={() => setShowEditDisplayNameModal(false)}
-                initialDisplayName={displayName}
-                initialLastName={lastName}
-                theme={normalizedTheme}
-                onSave={handleModalSave}
-            />
-            <EditUsernameModal
-                visible={showEditUsernameModal}
-                onClose={() => setShowEditUsernameModal(false)}
-                initialValue={username}
-                theme={normalizedTheme}
-                onSave={handleModalSave}
-            />
-            <EditEmailModal
-                visible={showEditEmailModal}
-                onClose={() => setShowEditEmailModal(false)}
-                initialValue={email}
-                theme={normalizedTheme}
-                onSave={handleModalSave}
-            />
-            <EditBioModal
-                visible={showEditBioModal}
-                onClose={() => setShowEditBioModal(false)}
-                initialValue={bio}
-                theme={normalizedTheme}
-                onSave={handleModalSave}
-            />
-            <EditLocationModal
-                visible={showEditLocationModal}
-                onClose={() => setShowEditLocationModal(false)}
-                initialLocations={locations}
-                theme={normalizedTheme}
-                onSave={handleModalSave}
-            />
-            <EditLinksModal
-                visible={showEditLinksModal}
-                onClose={() => setShowEditLinksModal(false)}
-                initialLinks={linksMetadata}
-                theme={normalizedTheme}
-                onSave={handleModalSave}
-            />
+            {/* Note: Profile field editing now uses dedicated EditProfileField screen */}
         </View>
     );
 };
