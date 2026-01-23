@@ -43,7 +43,7 @@ export function setCsrfToken(req: Request, res: Response, next: NextFunction) {
     res.cookie(CSRF_COOKIE_NAME, csrfToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' required for cross-origin requests
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
     });
   }
@@ -129,7 +129,7 @@ export function getCsrfToken(req: Request, res: Response) {
     res.cookie(CSRF_COOKIE_NAME, csrfToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
-      sameSite: 'strict',
+      sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // 'none' required for cross-origin requests
       maxAge: 24 * 60 * 60 * 1000,
     });
   }

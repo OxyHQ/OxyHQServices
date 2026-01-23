@@ -86,6 +86,7 @@ export const EXPOSED_HEADERS = [
   'Last-Modified',
   'ETag',
   'Cache-Control',
+  'X-CSRF-Token', // Allow client to read CSRF token from responses
 ] as const;
 
 /**
