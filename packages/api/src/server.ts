@@ -25,6 +25,7 @@ import devicesRouter from './routes/devices';
 import securityRoutes from './routes/security';
 import subscriptionRoutes from './routes/subscription.routes';
 import fedcmRoutes from './routes/fedcm';
+import fedcmService from './services/fedcm.service';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
 import { Response } from 'express';
@@ -367,7 +368,10 @@ if (require.main === module) {
   // Wait for MongoDB connection before starting server
   // This prevents queries from executing before the database is ready
   waitForMongoConnection(30000)
-    .then(() => {
+    .then(async () => {
+      // Seed FedCM approved clients (idempotent - only inserts if not exists)
+      await fedcmService.seedApprovedClients();
+
       server.listen(PORT, '0.0.0.0', () => {
         logger.info(`Server running on port ${PORT}`, {
           mongodb: 'connected',
