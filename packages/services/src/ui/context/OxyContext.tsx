@@ -481,6 +481,20 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // Enable web SSO only after local storage check completes and no user found
   const shouldTryWebSSO = isWebBrowser() && tokenReady && !user && initializedRef.current;
 
+  // Debug logging for SSO conditions
+  useEffect(() => {
+    if (isWebBrowser()) {
+      console.log('[OxyContext] Web SSO conditions:', {
+        isWebBrowser: true,
+        tokenReady,
+        hasUser: !!user,
+        initialized: initializedRef.current,
+        shouldTryWebSSO,
+        hostname: typeof window !== 'undefined' ? window.location.hostname : 'unknown',
+      });
+    }
+  }, [tokenReady, user, shouldTryWebSSO]);
+
   useWebSSO({
     oxyServices,
     onSessionFound: handleWebSSOSession,

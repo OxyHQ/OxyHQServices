@@ -199,7 +199,19 @@ export function useWebSSO({
 
   // Auto-check SSO on mount (web only, FedCM only, not on auth domain)
   useEffect(() => {
+    console.log('[useWebSSO] Effect running:', {
+      enabled,
+      isWeb: isWebBrowser(),
+      hasChecked: hasCheckedRef.current,
+      isIdP: isIdentityProvider(),
+      fedCMSupported,
+      hostname: typeof window !== 'undefined' ? window.location.hostname : 'unknown',
+    });
+
     if (!enabled || !isWebBrowser() || hasCheckedRef.current || isIdentityProvider()) {
+      console.log('[useWebSSO] Skipping SSO check:', {
+        reason: !enabled ? 'not enabled' : !isWebBrowser() ? 'not web' : hasCheckedRef.current ? 'already checked' : 'is IdP',
+      });
       if (isIdentityProvider()) {
         onSSOUnavailable?.();
       }
@@ -212,6 +224,7 @@ export function useWebSSO({
       checkSSO();
     } else {
       // Browser doesn't support FedCM - notify caller
+      console.log('[useWebSSO] FedCM not supported');
       onSSOUnavailable?.();
     }
   }, [enabled, checkSSO, fedCMSupported, onSSOUnavailable]);
