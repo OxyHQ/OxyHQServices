@@ -8,7 +8,7 @@ import { OxyProvider } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 
-const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://nate:3001';
+const API_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:3001';
 const AUTH_REDIRECT_URI = Linking.createURL('/');
 
 export const unstable_settings = {

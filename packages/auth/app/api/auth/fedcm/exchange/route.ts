@@ -23,7 +23,7 @@ interface SessionLoginResponse {
     id: string;
     username: string;
     email: string;
-    [key: string]: any;
+    [key: string]: string | number | boolean | null | undefined;
   };
 }
 

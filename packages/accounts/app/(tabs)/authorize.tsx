@@ -46,12 +46,17 @@ export default function AuthorizeScreen() {
     }
 
     try {
-      const response = await oxyServices.makeRequest<{
+      const response = await oxyServices.makeRequest(
+        'GET',
+        `/api/auth/session/status/${params.token}`,
+        undefined,
+        { cache: false }
+      ) as {
         status: string;
         sessionToken: string;
         appId: string;
         expiresAt: string;
-      }>('GET', `/api/auth/session/status/${params.token}`, undefined, { cache: false });
+      };
 
       if (response.status !== 'pending') {
         setError('This authorization request has already been processed or expired');
