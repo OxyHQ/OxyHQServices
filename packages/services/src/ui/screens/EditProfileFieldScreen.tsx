@@ -32,6 +32,9 @@ export type ProfileFieldType =
     | 'username'
     | 'email'
     | 'bio'
+    | 'phone'
+    | 'address'
+    | 'birthday'
     | 'location'
     | 'locations'
     | 'links';
@@ -175,6 +178,57 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                         },
                     ],
                 };
+            case 'phone':
+                return {
+                    title: t('editProfile.items.phone.title') || 'Phone Number',
+                    subtitle: t('editProfile.items.phone.subtitle') || 'Your contact phone number',
+                    fields: [
+                        {
+                            key: 'phone',
+                            label: t('editProfile.items.phone.label') || 'Phone Number',
+                            placeholder: t('editProfile.items.phone.placeholder') || 'Enter your phone number',
+                            inputProps: {
+                                keyboardType: 'phone-pad',
+                                autoCapitalize: 'none',
+                                autoCorrect: false,
+                            },
+                        },
+                    ],
+                };
+            case 'address':
+                return {
+                    title: t('editProfile.items.address.title') || 'Address',
+                    subtitle: t('editProfile.items.address.subtitle') || 'Your physical address',
+                    fields: [
+                        {
+                            key: 'address',
+                            label: t('editProfile.items.address.label') || 'Address',
+                            placeholder: t('editProfile.items.address.placeholder') || 'Enter your address',
+                            type: 'textarea',
+                            inputProps: {
+                                multiline: true,
+                                numberOfLines: 3,
+                                textAlignVertical: 'top',
+                            },
+                        },
+                    ],
+                };
+            case 'birthday':
+                return {
+                    title: t('editProfile.items.birthday.title') || 'Birthday',
+                    subtitle: t('editProfile.items.birthday.subtitle') || 'Your date of birth',
+                    fields: [
+                        {
+                            key: 'birthday',
+                            label: t('editProfile.items.birthday.label') || 'Birthday',
+                            placeholder: t('editProfile.items.birthday.placeholder') || 'YYYY-MM-DD',
+                            inputProps: {
+                                autoCapitalize: 'none',
+                                autoCorrect: false,
+                            },
+                        },
+                    ],
+                };
             case 'locations':
                 return {
                     title: t('editProfile.items.locations.title') || 'Locations',
@@ -241,6 +295,10 @@ const EditProfileFieldScreen: React.FC<EditProfileFieldScreenProps> = ({
                     initialValues[field.key] = String(userData.displayName || userData.name?.first || '');
                 } else if (field.key === 'lastName') {
                     initialValues[field.key] = String(userData.lastName || userData.name?.last || '');
+                } else if (field.key === 'birthday') {
+                    initialValues[field.key] = String(userData.birthday || userData.dateOfBirth || '');
+                } else if (field.key === 'address') {
+                    initialValues[field.key] = String(userData.address || userData.location || '');
                 } else {
                     initialValues[field.key] = String(userData[field.key] || '');
                 }

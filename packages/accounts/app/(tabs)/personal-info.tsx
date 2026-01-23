@@ -24,8 +24,8 @@ export default function PersonalInfoScreen() {
   const handlePressIn = useHapticPress();
   const handleEditField = useCallback((field: string) => {
     showBottomSheet?.({
-      screen: 'EditProfile',
-      props: { initialSection: 'basicInfo', initialField: field }
+      screen: 'EditProfileField',
+      props: { fieldType: field }
     });
   }, [showBottomSheet]);
 

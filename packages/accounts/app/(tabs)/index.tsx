@@ -93,8 +93,8 @@ export default function HomeScreen() {
 
   const handleEditName = useCallback(() => {
     showBottomSheet?.({
-      screen: 'EditProfile',
-      props: { initialSection: 'basicInfo', initialField: 'displayName' }
+      screen: 'EditProfileField',
+      props: { fieldType: 'displayName' }
     });
   }, [showBottomSheet]);
 
@@ -224,8 +224,8 @@ export default function HomeScreen() {
 
   const handleSetUsername = useCallback(() => {
     showBottomSheet?.({
-      screen: 'EditProfile',
-      props: { initialSection: 'basicInfo', initialField: 'username' }
+      screen: 'EditProfileField',
+      props: { fieldType: 'username' }
     });
   }, [showBottomSheet]);
 
