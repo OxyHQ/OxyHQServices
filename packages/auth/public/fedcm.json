@@ -3,11 +3,21 @@
   "id_assertion_endpoint": "/api/fedcm/assertion",
   "login_url": "/login",
   "branding": {
-    "background_color": "#000000",
+    "background_color": "#7C3AED",
     "color": "#ffffff",
-    "icons": [{
-      "url": "https://auth.oxy.so/icon-512.png",
-      "size": 512
-    }]
+    "icons": [
+      {
+        "url": "https://auth.oxy.so/icons/icon-25.png",
+        "size": 25
+      },
+      {
+        "url": "https://auth.oxy.so/icons/icon-40.png",
+        "size": 40
+      },
+      {
+        "url": "https://auth.oxy.so/icons/icon-512.png",
+        "size": 512
+      }
+    ]
   }
 }

@@ -10,7 +10,7 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card"
-import { Avatar } from "@/components/ui/avatar"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 
 type Account = {
     id: string
@@ -28,6 +28,19 @@ type AccountSwitcherProps = React.ComponentProps<"div"> & {
     isLoading?: boolean
 }
 
+function getInitials(name: string): string {
+    return name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
+}
+
+function getAvatarUrl(fileId: string): string {
+    return `https://cloud.oxy.so/assets/${encodeURIComponent(fileId)}/stream?variant=thumb`
+}
+
 export function AccountSwitcher({
     className,
     account,
@@ -38,6 +51,7 @@ export function AccountSwitcher({
     ...props
 }: AccountSwitcherProps) {
     const displayName = account.displayName || account.username || "User"
+    const initials = getInitials(displayName)
 
     return (
         <div className={cn("flex flex-col gap-6", className)} {...props}>
@@ -59,7 +73,14 @@ export function AccountSwitcher({
                         onClick={onContinue}
                         disabled={isLoading}
                     >
-                        <Avatar src={account.avatar} name={displayName} />
+                        <Avatar>
+                            {account.avatar && (
+                                <AvatarImage src={getAvatarUrl(account.avatar)} alt={displayName} />
+                            )}
+                            <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
+                                {initials}
+                            </AvatarFallback>
+                        </Avatar>
                         <div className="flex-1 text-left ml-3 min-w-0">
                             <div className="font-medium truncate">{displayName}</div>
                             {account.email && (
