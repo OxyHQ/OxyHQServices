@@ -95,6 +95,7 @@ function generateIdToken(userId: string, clientId: string, nonce?: string): stri
 
 export async function POST(request: NextRequest) {
   const corsHeaders = getCorsHeaders(request);
+  console.log('[FedCM Assertion] Request received from:', request.headers.get('origin'));
 
   // Validate this is a FedCM request (optional but recommended for security)
   const secFetchDest = request.headers.get('sec-fetch-dest');
@@ -112,8 +113,10 @@ export async function POST(request: NextRequest) {
     const { account_id, client_id, disclosure_text_shown } = body;
     // Prefer params.nonce (Chrome 145+), fallback to top-level nonce (older browsers)
     const nonce = body.params?.nonce || body.nonce;
+    console.log('[FedCM Assertion] Request body:', { account_id, client_id, hasNonce: !!nonce, disclosure_text_shown });
 
     if (!account_id || !client_id) {
+      console.log('[FedCM Assertion] Missing required fields');
       return NextResponse.json(
         { error: 'account_id and client_id are required' },
         { status: 400, headers: corsHeaders }
@@ -123,8 +126,12 @@ export async function POST(request: NextRequest) {
     // Verify session
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
+    const allCookies = cookieStore.getAll();
+    console.log('[FedCM Assertion] All cookies:', allCookies.map(c => c.name));
+    console.log('[FedCM Assertion] Session cookie:', sessionCookie ? `${sessionCookie.value.substring(0, 8)}...` : 'NOT FOUND');
 
     if (!sessionCookie) {
+      console.log('[FedCM Assertion] ERROR: No session cookie found');
       return NextResponse.json(
         { error: 'No active session' },
         { status: 401, headers: corsHeaders }
@@ -134,8 +141,11 @@ export async function POST(request: NextRequest) {
     // Fetch user to verify account_id matches session
     let user: User;
     try {
+      console.log('[FedCM Assertion] Looking up user for session:', sessionCookie.value.substring(0, 8) + '...');
       user = await apiGet<User>(`/api/session/user/${sessionCookie.value}`);
+      console.log('[FedCM Assertion] User found:', { id: user.id, username: user.username });
     } catch (error) {
+      console.log('[FedCM Assertion] ERROR: Session lookup failed:', error);
       return NextResponse.json(
         { error: 'Invalid session' },
         { status: 401, headers: corsHeaders }
@@ -144,6 +154,7 @@ export async function POST(request: NextRequest) {
 
     // Verify account_id matches the authenticated user
     if (user.id !== account_id) {
+      console.log('[FedCM Assertion] ERROR: Account ID mismatch:', { userId: user.id, accountId: account_id });
       return NextResponse.json(
         { error: 'Account ID mismatch' },
         { status: 403, headers: corsHeaders }
@@ -151,7 +162,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate ID token
+    console.log('[FedCM Assertion] Generating token for user:', user.id, 'client:', client_id);
     const token = generateIdToken(user.id, client_id, nonce);
+    console.log('[FedCM Assertion] Token generated successfully, length:', token.length);
 
     // Return the ID assertion
     return NextResponse.json(
@@ -166,7 +179,7 @@ export async function POST(request: NextRequest) {
       }
     );
   } catch (error) {
-    console.error('[FedCM Assertion] Error:', error);
+    console.error('[FedCM Assertion] Unexpected error:', error);
     return NextResponse.json(
       { error: 'Internal server error' },
       {

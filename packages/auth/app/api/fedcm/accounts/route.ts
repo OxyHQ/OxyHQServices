@@ -62,6 +62,9 @@ function createFedCMResponse(
 }
 
 export async function GET(request: NextRequest) {
+  console.log('[FedCM Accounts] Request received from:', request.headers.get('origin'));
+  console.log('[FedCM Accounts] sec-fetch-dest:', request.headers.get('sec-fetch-dest'));
+
   // Validate this is a FedCM request (optional but recommended for security)
   const secFetchDest = request.headers.get('sec-fetch-dest');
   if (secFetchDest && secFetchDest !== 'webidentity') {
@@ -74,9 +77,13 @@ export async function GET(request: NextRequest) {
     // Check for oxy_session_id cookie
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
+    const allCookies = cookieStore.getAll();
+    console.log('[FedCM Accounts] All cookies:', allCookies.map(c => c.name));
+    console.log('[FedCM Accounts] Session cookie:', sessionCookie ? `${sessionCookie.value.substring(0, 8)}...` : 'NOT FOUND');
 
     if (!sessionCookie) {
       // No session - return empty accounts list (not an error)
+      console.log('[FedCM Accounts] No session cookie, returning empty accounts');
       return createFedCMResponse({ accounts: [] }, request);
     }
 
