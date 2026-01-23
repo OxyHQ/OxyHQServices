@@ -51,6 +51,10 @@ try {
 
 const app = express();
 
+// Trust proxy - required when behind a reverse proxy (Cloudflare, nginx, etc.)
+// This is needed for express-rate-limit to work correctly with X-Forwarded-For headers
+app.set('trust proxy', 1);
+
 // Security headers middleware (first, before any other middleware)
 app.use(securityHeaders);
 

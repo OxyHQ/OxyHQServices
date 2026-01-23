@@ -60,15 +60,6 @@ function generateIdToken(userId: string, clientId: string, nonce?: string): stri
     nonce: nonce || '', // Nonce for replay protection
   };
 
-  const base64UrlEncode = (data: string | Buffer) => {
-    const str = typeof data === 'string' ? data : data.toString('base64');
-    return Buffer.from(typeof data === 'string' ? data : '')
-      .toString('base64')
-      .replace(/\+/g, '-')
-      .replace(/\//g, '_')
-      .replace(/=/g, '');
-  };
-
   const base64UrlEncodeJson = (obj: any) => {
     return Buffer.from(JSON.stringify(obj))
       .toString('base64')
@@ -108,12 +99,43 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    // Parse request body
-    const body = await request.json();
-    const { account_id, client_id, disclosure_text_shown } = body;
-    // Prefer params.nonce (Chrome 145+), fallback to top-level nonce (older browsers)
-    const nonce = body.params?.nonce || body.nonce;
-    console.log('[FedCM Assertion] Request body:', { account_id, client_id, hasNonce: !!nonce, disclosure_text_shown });
+    // FedCM sends data as application/x-www-form-urlencoded, NOT JSON
+    // Parse the form data from the request body
+    const contentType = request.headers.get('content-type') || '';
+    let account_id: string | null = null;
+    let client_id: string | null = null;
+    let disclosure_text_shown: string | null = null;
+    let nonce: string | null = null;
+
+    if (contentType.includes('application/x-www-form-urlencoded')) {
+      const formData = await request.formData();
+      account_id = formData.get('account_id') as string;
+      client_id = formData.get('client_id') as string;
+      disclosure_text_shown = formData.get('disclosure_text_shown') as string;
+      nonce = formData.get('nonce') as string;
+      console.log('[FedCM Assertion] Parsed form data:', { account_id, client_id, hasNonce: !!nonce, disclosure_text_shown });
+    } else if (contentType.includes('application/json')) {
+      const body = await request.json();
+      account_id = body.account_id;
+      client_id = body.client_id;
+      disclosure_text_shown = body.disclosure_text_shown;
+      // Prefer params.nonce (Chrome 145+), fallback to top-level nonce (older browsers)
+      nonce = body.params?.nonce || body.nonce;
+      console.log('[FedCM Assertion] Parsed JSON body:', { account_id, client_id, hasNonce: !!nonce, disclosure_text_shown });
+    } else {
+      // Try to parse as form data by default (FedCM standard)
+      try {
+        const text = await request.text();
+        const params = new URLSearchParams(text);
+        account_id = params.get('account_id');
+        client_id = params.get('client_id');
+        disclosure_text_shown = params.get('disclosure_text_shown');
+        nonce = params.get('nonce');
+        console.log('[FedCM Assertion] Parsed URL params:', { account_id, client_id, hasNonce: !!nonce, disclosure_text_shown });
+      } catch (parseError) {
+        console.log('[FedCM Assertion] Failed to parse body:', parseError);
+      }
+    }
 
     if (!account_id || !client_id) {
       console.log('[FedCM Assertion] Missing required fields');
@@ -163,7 +185,7 @@ export async function POST(request: NextRequest) {
 
     // Generate ID token
     console.log('[FedCM Assertion] Generating token for user:', user.id, 'client:', client_id);
-    const token = generateIdToken(user.id, client_id, nonce);
+    const token = generateIdToken(user.id, client_id, nonce || undefined);
     console.log('[FedCM Assertion] Token generated successfully, length:', token.length);
 
     // Return the ID assertion
