@@ -53,6 +53,8 @@ class TokenStore {
   private static instance: TokenStore;
   private accessToken: string | null = null;
   private refreshToken: string | null = null;
+  private csrfToken: string | null = null;
+  private csrfTokenFetchPromise: Promise<string | null> | null = null;
 
   private constructor() {}
 
@@ -83,6 +85,27 @@ class TokenStore {
 
   hasAccessToken(): boolean {
     return !!this.accessToken;
+  }
+
+  setCsrfToken(token: string | null): void {
+    this.csrfToken = token;
+  }
+
+  getCsrfToken(): string | null {
+    return this.csrfToken;
+  }
+
+  setCsrfTokenFetchPromise(promise: Promise<string | null> | null): void {
+    this.csrfTokenFetchPromise = promise;
+  }
+
+  getCsrfTokenFetchPromise(): Promise<string | null> | null {
+    return this.csrfTokenFetchPromise;
+  }
+
+  clearCsrfToken(): void {
+    this.csrfToken = null;
+    this.csrfTokenFetchPromise = null;
   }
 }
 
@@ -206,6 +229,10 @@ export class HttpService {
         // Get auth token (with auto-refresh)
         const authHeader = await this.getAuthHeader();
 
+        // Get CSRF token for state-changing requests
+        const isStateChangingMethod = ['POST', 'PUT', 'PATCH', 'DELETE'].includes(method);
+        const csrfToken = isStateChangingMethod ? await this.fetchCsrfToken() : null;
+
         // Determine if data is FormData using robust detection
         const isFormData = this.isFormData(data);
 
@@ -230,6 +257,11 @@ export class HttpService {
         // Add authorization header if available
         if (authHeader) {
           headers['Authorization'] = authHeader;
+        }
+
+        // Add CSRF token header for state-changing requests
+        if (csrfToken) {
+          headers['X-CSRF-Token'] = csrfToken;
         }
 
         // Merge custom headers if provided
@@ -418,6 +450,62 @@ export class HttpService {
   }
 
   /**
+   * Fetch CSRF token from server (with deduplication)
+   * Required for state-changing requests (POST, PUT, PATCH, DELETE)
+   */
+  private async fetchCsrfToken(): Promise<string | null> {
+    // Return cached token if available
+    const cachedToken = this.tokenStore.getCsrfToken();
+    if (cachedToken) {
+      return cachedToken;
+    }
+
+    // Deduplicate concurrent CSRF token fetches
+    const existingPromise = this.tokenStore.getCsrfTokenFetchPromise();
+    if (existingPromise) {
+      return existingPromise;
+    }
+
+    const fetchPromise = (async () => {
+      try {
+        const response = await fetch(`${this.baseURL}/api/csrf-token`, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          credentials: 'include', // Required to receive and send cookies
+          signal: AbortSignal.timeout(5000),
+        });
+
+        if (response.ok) {
+          const data = await response.json() as { csrfToken?: string };
+          const token = data.csrfToken || null;
+          this.tokenStore.setCsrfToken(token);
+          this.logger.debug('CSRF token fetched');
+          return token;
+        }
+
+        // Also check response header for CSRF token
+        const headerToken = response.headers.get('X-CSRF-Token');
+        if (headerToken) {
+          this.tokenStore.setCsrfToken(headerToken);
+          this.logger.debug('CSRF token from header');
+          return headerToken;
+        }
+
+        this.logger.warn('Failed to fetch CSRF token:', response.status);
+        return null;
+      } catch (error) {
+        this.logger.warn('CSRF token fetch error:', error);
+        return null;
+      } finally {
+        this.tokenStore.setCsrfTokenFetchPromise(null);
+      }
+    })();
+
+    this.tokenStore.setCsrfTokenFetchPromise(fetchPromise);
+    return fetchPromise;
+  }
+
+  /**
    * Get auth header with automatic token refresh
    */
   private async getAuthHeader(): Promise<string | null> {
@@ -570,6 +658,7 @@ export class HttpService {
 
   clearTokens(): void {
     this.tokenStore.clearTokens();
+    this.tokenStore.clearCsrfToken();
   }
 
   getAccessToken(): string | null {
