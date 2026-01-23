@@ -185,7 +185,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   );
 
   const [tokenReady, setTokenReady] = useState(true);
-  const initializedRef = useRef(false);
+  const [initialized, setInitialized] = useState(false);
   const setAuthState = useAuthStore.setState;
 
   const logger = useCallback((message: string, err?: unknown) => {
@@ -417,13 +417,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   ]);
 
   useEffect(() => {
-    if (!storage || initializedRef.current) {
+    if (!storage || initialized) {
       return;
     }
 
-    initializedRef.current = true;
+    setInitialized(true);
     void restoreSessionsFromStorage();
-  }, [restoreSessionsFromStorage, storage]);
+  }, [restoreSessionsFromStorage, storage, initialized]);
 
   // Web SSO: Automatically check for cross-domain session on web platforms
   // Also used for popup auth - updates all state and persists session
@@ -479,7 +479,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   }, [updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, storage, storageKeys]);
 
   // Enable web SSO only after local storage check completes and no user found
-  const shouldTryWebSSO = isWebBrowser() && tokenReady && !user && initializedRef.current;
+  const shouldTryWebSSO = isWebBrowser() && tokenReady && !user && initialized;
 
   // Debug logging for SSO conditions
   useEffect(() => {
@@ -488,7 +488,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         isWebBrowser: true,
         tokenReady,
         hasUser: !!user,
-        initialized: initializedRef.current,
+        initialized,
         shouldTryWebSSO,
         hostname: typeof window !== 'undefined' ? window.location.hostname : 'unknown',
       });

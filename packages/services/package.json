@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/services",
-  "version": "5.21.0",
+  "version": "5.21.4",
   "description": "Reusable OxyHQ module to handle authentication, user management, karma system, device-based session management and more 🚀",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
