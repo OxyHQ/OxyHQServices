@@ -476,6 +476,59 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     enabled: shouldTryWebSSO,
   });
 
+  // IdP session validation via lightweight iframe check
+  // When user returns to tab, verify auth.oxy.so still has their session
+  // If session is gone (cleared/logged out), clear local session too
+  const lastIdPCheckRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (!isWebBrowser() || !user || !initialized) return;
+
+    const checkIdPSession = () => {
+      // Debounce: check at most once per 30 seconds
+      const now = Date.now();
+      if (now - lastIdPCheckRef.current < 30000) return;
+      lastIdPCheckRef.current = now;
+
+      // Load hidden iframe to check IdP session via postMessage
+      const iframe = document.createElement('iframe');
+      iframe.style.cssText = 'display:none;width:0;height:0;border:0';
+      iframe.src = 'https://auth.oxy.so/api/auth/session-check';
+
+      let cleaned = false;
+      const cleanup = () => {
+        if (cleaned) return;
+        cleaned = true;
+        window.removeEventListener('message', handleMessage);
+        iframe.remove();
+      };
+
+      const handleMessage = async (event: MessageEvent) => {
+        if (event.origin !== 'https://auth.oxy.so') return;
+        if (event.data?.type !== 'oxy-session-check') return;
+        cleanup();
+
+        if (!event.data.hasSession) {
+          toast.info('Your session has ended. Please sign in again.');
+          await clearSessionState();
+        }
+      };
+
+      window.addEventListener('message', handleMessage);
+      document.body.appendChild(iframe);
+      setTimeout(cleanup, 5000); // Timeout after 5s
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        checkIdPSession();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [user, initialized, clearSessionState]);
+
   const activeSession = activeSessionId
     ? sessions.find((session) => session.sessionId === activeSessionId)
     : undefined;
