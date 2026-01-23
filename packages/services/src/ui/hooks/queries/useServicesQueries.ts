@@ -3,6 +3,7 @@ import type { ClientSession } from '../../../models/session';
 import { queryKeys } from './queryKeys';
 import { useOxy } from '../../context/OxyContext';
 import { fetchSessionsWithFallback, mapSessionsToClient } from '../../utils/sessionHelpers';
+import { authenticatedApiCall } from '../../utils/authHelpers';
 
 /**
  * Get all active sessions for the current user
@@ -94,38 +95,11 @@ export const useUserDevices = (options?: { enabled?: boolean }) => {
   return useQuery({
     queryKey: queryKeys.devices.list(),
     queryFn: async () => {
-      // Ensure we have a valid token before making the request
-      if (!oxyServices.hasValidToken() && activeSessionId) {
-        try {
-          // Try to get token for the session
-          await oxyServices.getTokenBySession(activeSessionId);
-        } catch (tokenError) {
-          // If getting token fails, might be an offline session - try syncing
-          const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
-          if (errorMessage.includes('AUTH_REQUIRED_OFFLINE_SESSION') || errorMessage.includes('offline')) {
-            // Session sync should be handled by the app layer
-            throw new Error('Session needs to be synced. Please try again.');
-          } else {
-            throw tokenError;
-          }
-        }
-      }
-
-      try {
-        return await oxyServices.getUserDevices();
-      } catch (error: any) {
-        const errorMessage = error?.message || '';
-        const status = error?.status || error?.response?.status;
-        
-        // Handle authentication errors
-        if (status === 401 || errorMessage.includes('Authentication required') || errorMessage.includes('Invalid or missing authorization header')) {
-          // Session sync should be handled by the app layer
-          throw new Error('Authentication failed. Please sign in again.');
-        }
-        
-        // TanStack Query will automatically retry on network errors
-        throw error;
-      }
+      return authenticatedApiCall(
+        oxyServices,
+        activeSessionId,
+        () => oxyServices.getUserDevices()
+      );
     },
     enabled: (options?.enabled !== false) && isAuthenticated,
     staleTime: 5 * 60 * 1000,

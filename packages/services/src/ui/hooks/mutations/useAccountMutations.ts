@@ -5,6 +5,7 @@ import { useOxy } from '../../context/OxyContext';
 import { toast } from '../../../lib/sonner';
 import { refreshAvatarInStore } from '../../utils/avatarUtils';
 import { useAuthStore } from '../../stores/authStore';
+import { authenticatedApiCall } from '../../utils/authHelpers';
 
 /**
  * Update user profile with optimistic updates and offline queue support
@@ -15,38 +16,11 @@ export const useUpdateProfile = () => {
 
   return useMutation({
     mutationFn: async (updates: Partial<User>) => {
-      // Ensure we have a valid token before making the request
-      if (!oxyServices.hasValidToken() && activeSessionId) {
-        try {
-          // Try to get token for the session
-          await oxyServices.getTokenBySession(activeSessionId);
-        } catch (tokenError) {
-          // If getting token fails, might be an offline session - try syncing
-          const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
-          if (errorMessage.includes('AUTH_REQUIRED_OFFLINE_SESSION') || errorMessage.includes('offline')) {
-            // Session sync should be handled by the app layer
-            throw new Error('Session needs to be synced. Please try again.');
-          } else {
-            throw tokenError;
-          }
-        }
-      }
-
-      try {
-        return await oxyServices.updateProfile(updates);
-      } catch (error: any) {
-        const errorMessage = error?.message || '';
-        const status = error?.status || error?.response?.status;
-        
-        // Handle authentication errors
-        if (status === 401 || errorMessage.includes('Authentication required') || errorMessage.includes('Invalid or missing authorization header')) {
-          // Session sync should be handled by the app layer
-          throw new Error('Authentication failed. Please sign in again.');
-        }
-        
-        // TanStack Query will automatically retry on network errors
-        throw error;
-      }
+      return authenticatedApiCall<User>(
+        oxyServices,
+        activeSessionId,
+        () => oxyServices.updateProfile(updates)
+      );
     },
     // Optimistic update
     onMutate: async (updates) => {
@@ -116,22 +90,7 @@ export const useUploadAvatar = () => {
 
   return useMutation({
     mutationFn: async (file: { uri: string; type?: string; name?: string; size?: number }) => {
-      // Ensure we have a valid token before making the request
-      if (!oxyServices.hasValidToken() && activeSessionId) {
-        try {
-          await oxyServices.getTokenBySession(activeSessionId);
-        } catch (tokenError) {
-          const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
-          if (errorMessage.includes('AUTH_REQUIRED_OFFLINE_SESSION') || errorMessage.includes('offline')) {
-            // Session sync should be handled by the app layer
-            throw new Error('Session needs to be synced. Please try again.');
-          } else {
-            throw tokenError;
-          }
-        }
-      }
-
-      try {
+      return authenticatedApiCall<User>(oxyServices, activeSessionId, async () => {
         // Upload file first
         const uploadResult = await oxyServices.assetUpload(file as any, 'public');
         const fileId = uploadResult?.file?.id || uploadResult?.id || uploadResult;
@@ -142,19 +101,7 @@ export const useUploadAvatar = () => {
 
         // Update profile with file ID
         return await oxyServices.updateProfile({ avatar: fileId });
-      } catch (error: any) {
-        const errorMessage = error?.message || '';
-        const status = error?.status || error?.response?.status;
-        
-        // Handle authentication errors
-        if (status === 401 || errorMessage.includes('Authentication required') || errorMessage.includes('Invalid or missing authorization header')) {
-          // Session sync should be handled by the app layer
-          throw new Error('Authentication failed. Please sign in again.');
-        }
-        
-        // TanStack Query will automatically retry on network errors
-        throw error;
-      }
+      });
     },
     onMutate: async (file) => {
       await queryClient.cancelQueries({ queryKey: queryKeys.accounts.current() });
@@ -267,38 +214,11 @@ export const useUpdatePrivacySettings = () => {
         throw new Error('User ID is required');
       }
 
-      // Ensure we have a valid token before making the request
-      if (!oxyServices.hasValidToken() && activeSessionId) {
-        try {
-          // Try to get token for the session
-          await oxyServices.getTokenBySession(activeSessionId);
-        } catch (tokenError) {
-          // If getting token fails, might be an offline session - try syncing
-          const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
-          if (errorMessage.includes('AUTH_REQUIRED_OFFLINE_SESSION') || errorMessage.includes('offline')) {
-            // Session sync should be handled by the app layer
-            throw new Error('Session needs to be synced. Please try again.');
-          } else {
-            throw tokenError;
-          }
-        }
-      }
-
-      try {
-        return await oxyServices.updatePrivacySettings(settings, targetUserId);
-      } catch (error: any) {
-        const errorMessage = error?.message || '';
-        const status = error?.status || error?.response?.status;
-        
-        // Handle authentication errors
-        if (status === 401 || errorMessage.includes('Authentication required') || errorMessage.includes('Invalid or missing authorization header')) {
-          // Session sync should be handled by the app layer
-          throw new Error('Authentication failed. Please sign in again.');
-        }
-        
-        // TanStack Query will automatically retry on network errors
-        throw error;
-      }
+      return authenticatedApiCall<Record<string, unknown>>(
+        oxyServices,
+        activeSessionId,
+        () => oxyServices.updatePrivacySettings(settings, targetUserId)
+      );
     },
     // Optimistic update
     onMutate: async ({ settings, userId }) => {
@@ -354,12 +274,12 @@ export const useUpdatePrivacySettings = () => {
       // Also update account query if it contains privacy settings
       const currentUser = queryClient.getQueryData<User>(queryKeys.accounts.current());
       if (currentUser) {
-        const updatedUser = {
+        const updatedUser: User = {
           ...currentUser,
-          privacySettings: data,
+          privacySettings: data as { [key: string]: unknown },
         };
         queryClient.setQueryData<User>(queryKeys.accounts.current(), updatedUser);
-        
+
         // Update authStore so frontend components see the changes immediately
         useAuthStore.getState().setUser(updatedUser);
       }
@@ -376,6 +296,25 @@ export const useUpdatePrivacySettings = () => {
   });
 };
 
+/** Uploaded file data structure from API */
+interface UploadedFile {
+  id: string;
+  originalName?: string;
+  sha256?: string;
+  mime?: string;
+  size?: number;
+  createdAt?: string;
+  metadata?: Record<string, unknown>;
+  variants?: Array<{ type: string; key: string; width?: number; height?: number; readyAt?: string; metadata?: Record<string, unknown> }>;
+}
+
+/** Upload result type that supports both single file and batch responses */
+interface UploadResult {
+  file?: UploadedFile;
+  files?: UploadedFile[];
+  id?: string;
+}
+
 /**
  * Upload file with authentication handling and progress tracking
  */
@@ -383,49 +322,22 @@ export const useUploadFile = () => {
   const { oxyServices, activeSessionId } = useOxy();
 
   return useMutation({
-    mutationFn: async ({ 
-      file, 
-      visibility, 
-      metadata, 
-      onProgress 
-    }: { 
-      file: File; 
-      visibility?: 'private' | 'public' | 'unlisted'; 
+    mutationFn: async ({
+      file,
+      visibility,
+      metadata,
+      onProgress
+    }: {
+      file: File;
+      visibility?: 'private' | 'public' | 'unlisted';
       metadata?: Record<string, any>;
       onProgress?: (progress: number) => void;
     }) => {
-      // Ensure we have a valid token before making the request
-      if (!oxyServices.hasValidToken() && activeSessionId) {
-        try {
-          // Try to get token for the session
-          await oxyServices.getTokenBySession(activeSessionId);
-        } catch (tokenError) {
-          // If getting token fails, might be an offline session - try syncing
-          const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
-          if (errorMessage.includes('AUTH_REQUIRED_OFFLINE_SESSION') || errorMessage.includes('offline')) {
-            // Session sync should be handled by the app layer
-            throw new Error('Session needs to be synced. Please try again.');
-          } else {
-            throw tokenError;
-          }
-        }
-      }
-
-      try {
-        return await oxyServices.assetUpload(file as any, visibility, metadata, onProgress);
-      } catch (error: any) {
-        const errorMessage = error?.message || '';
-        const status = error?.status || error?.response?.status;
-        
-        // Handle authentication errors
-        if (status === 401 || errorMessage.includes('Authentication required') || errorMessage.includes('Invalid or missing authorization header')) {
-          // Session sync should be handled by the app layer
-          throw new Error('Authentication failed. Please sign in again.');
-        }
-        
-        // TanStack Query will automatically retry on network errors
-        throw error;
-      }
+      return authenticatedApiCall<UploadResult>(
+        oxyServices,
+        activeSessionId,
+        () => oxyServices.assetUpload(file as any, visibility, metadata, onProgress)
+      );
     },
   });
 };

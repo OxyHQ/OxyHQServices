@@ -4,6 +4,7 @@ import { useAccountStore } from '../stores/accountStore';
 import { useAuthStore } from '../stores/authStore';
 import { QueryClient } from '@tanstack/react-query';
 import { queryKeys, invalidateUserQueries, invalidateAccountQueries } from '../hooks/queries/queryKeys';
+import { authenticatedApiCall } from './authHelpers';
 
 /**
  * Updates file visibility to public for avatar use.
@@ -57,7 +58,7 @@ export function refreshAvatarInStore(
 /**
  * Updates user profile with avatar and handles all side effects (query invalidation, accountStore update).
  * This function can be used from within OxyContext provider without requiring useOxy hook.
- * 
+ *
  * @param updates - Profile updates including avatar
  * @param oxyServices - OxyServices instance
  * @param activeSessionId - Active session ID
@@ -72,72 +73,31 @@ export async function updateProfileWithAvatar(
   queryClient: QueryClient,
   syncSession?: () => Promise<User>
 ): Promise<User> {
-  // Ensure we have a valid token before making the request
-  if (!oxyServices.hasValidToken() && activeSessionId) {
-    try {
-      await oxyServices.getTokenBySession(activeSessionId);
-    } catch (tokenError) {
-      const errorMessage = tokenError instanceof Error ? tokenError.message : String(tokenError);
-      if (errorMessage.includes('AUTH_REQUIRED_OFFLINE_SESSION') || errorMessage.includes('offline')) {
-        if (syncSession) {
-          try {
-            await syncSession();
-            await oxyServices.getTokenBySession(activeSessionId);
-          } catch (syncError) {
-            throw new Error('Session needs to be synced. Please try again.');
-          }
-        } else {
-          throw tokenError;
-        }
-      } else {
-        throw tokenError;
-      }
-    }
+  const data = await authenticatedApiCall<User>(
+    oxyServices,
+    activeSessionId,
+    () => oxyServices.updateProfile(updates),
+    syncSession
+  );
+
+  // Update cache with server response
+  queryClient.setQueryData(queryKeys.accounts.current(), data);
+  if (activeSessionId) {
+    queryClient.setQueryData(queryKeys.users.profile(activeSessionId), data);
   }
 
-  try {
-    const data = await oxyServices.updateProfile(updates);
-    
-    // Update cache with server response
-    queryClient.setQueryData(queryKeys.accounts.current(), data);
-    if (activeSessionId) {
-      queryClient.setQueryData(queryKeys.users.profile(activeSessionId), data);
-    }
-    
-    // Update authStore so frontend components see the changes immediately
-    useAuthStore.getState().setUser(data);
-    
-    // If avatar was updated, refresh accountStore with cache-busted URL
-    if (updates.avatar && activeSessionId) {
-      refreshAvatarInStore(activeSessionId, updates.avatar, oxyServices);
-    }
-    
-    // Invalidate all related queries to refresh everywhere
-    invalidateUserQueries(queryClient);
-    invalidateAccountQueries(queryClient);
-    
-    return data;
-  } catch (error: any) {
-    const errorMessage = error?.message || '';
-    const status = error?.status || error?.response?.status;
-    
-    // Handle authentication errors
-    if (status === 401 || errorMessage.includes('Authentication required') || errorMessage.includes('Invalid or missing authorization header')) {
-      if (activeSessionId && syncSession) {
-        try {
-          await syncSession();
-          await oxyServices.getTokenBySession(activeSessionId);
-          // Retry the update after getting token
-          return await updateProfileWithAvatar(updates, oxyServices, activeSessionId, queryClient, syncSession);
-        } catch (retryError) {
-          throw new Error('Authentication failed. Please sign in again.');
-        }
-      } else {
-        throw new Error('No active session. Please sign in.');
-      }
-    }
-    
-    throw error;
+  // Update authStore so frontend components see the changes immediately
+  useAuthStore.getState().setUser(data);
+
+  // If avatar was updated, refresh accountStore with cache-busted URL
+  if (updates.avatar && activeSessionId) {
+    refreshAvatarInStore(activeSessionId, updates.avatar, oxyServices);
   }
+
+  // Invalidate all related queries to refresh everywhere
+  invalidateUserQueries(queryClient);
+  invalidateAccountQueries(queryClient);
+
+  return data;
 }
 

@@ -549,8 +549,8 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     });
 
                     // Attempt to refresh file list incrementally – fetch single file metadata if API allows
-                    if (result?.file || result?.files?.[0]) {
-                        const f = result.file || result.files[0];
+                    const f = result?.file ?? result?.files?.[0];
+                    if (f) {
                         const merged: FileMetadata = {
                             id: f.id,
                             filename: f.originalName || f.sha256 || raw.name,

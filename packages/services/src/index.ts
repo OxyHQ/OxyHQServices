@@ -183,6 +183,31 @@ export {
   useRemoveDevice,
 } from './ui/hooks/mutations';
 
+// Mutation factory utilities
+export {
+  createProfileMutation,
+  createGenericMutation,
+} from './ui/hooks/mutations/mutationFactory';
+export type {
+  ProfileMutationConfig,
+  GenericMutationConfig,
+} from './ui/hooks/mutations/mutationFactory';
+
+// Authentication helpers
+export {
+  ensureValidToken,
+  withAuthErrorHandling,
+  authenticatedApiCall,
+  isAuthenticationError,
+  SessionSyncRequiredError,
+  AuthenticationFailedError,
+} from './ui/utils/authHelpers';
+export type { HandleApiErrorOptions } from './ui/utils/authHelpers';
+
+// File filtering hook
+export { useFileFiltering } from './ui/hooks/useFileFiltering';
+export type { ViewMode, SortBy, SortOrder } from './ui/hooks/useFileFiltering';
+
 // UI components
 export { OxySignInButton } from './ui/components/OxySignInButton';
 export { OxyLogo, FollowButton } from './ui';

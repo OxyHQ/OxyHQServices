@@ -8,6 +8,7 @@
 import { ec as EC } from 'elliptic';
 import type { ECKeyPair } from 'elliptic';
 import { Platform } from 'react-native';
+import { logger } from '../utils/loggerUtils';
 
 // Lazy imports for React Native specific modules
 let SecureStore: typeof import('expo-secure-store') | null = null;
@@ -243,7 +244,7 @@ export class KeyManager {
     KeyManager.cachedHasSharedIdentity = true;
 
     if (__DEV__) {
-      console.log('[KeyManager] Shared identity created successfully');
+      logger.debug('Shared identity created successfully', { component: 'KeyManager' });
     }
 
     return publicKey;
@@ -282,7 +283,7 @@ export class KeyManager {
       return publicKey;
     } catch (error) {
       if (__DEV__) {
-        console.warn('[KeyManager] Failed to get shared public key:', error);
+        logger.warn('Failed to get shared public key', { component: 'KeyManager' }, error);
       }
       KeyManager.cachedSharedPublicKey = null;
       return null;
@@ -317,7 +318,7 @@ export class KeyManager {
       return privateKey;
     } catch (error) {
       if (__DEV__) {
-        console.warn('[KeyManager] Failed to get shared private key:', error);
+        logger.warn('Failed to get shared private key', { component: 'KeyManager' }, error);
       }
       return null;
     }
@@ -348,7 +349,7 @@ export class KeyManager {
       return hasShared;
     } catch (error) {
       if (__DEV__) {
-        console.warn('[KeyManager] Failed to check shared identity:', error);
+        logger.warn('Failed to check shared identity', { component: 'KeyManager' }, error);
       }
       KeyManager.cachedHasSharedIdentity = false;
       return false;
@@ -397,7 +398,7 @@ export class KeyManager {
     KeyManager.cachedHasSharedIdentity = true;
 
     if (__DEV__) {
-      console.log('[KeyManager] Shared identity imported successfully');
+      logger.debug('Shared identity imported successfully', { component: 'KeyManager' });
     }
 
     return publicKey;
@@ -436,11 +437,11 @@ export class KeyManager {
       }
 
       if (__DEV__) {
-        console.log('[KeyManager] Shared session stored successfully');
+        logger.debug('Shared session stored successfully', { component: 'KeyManager' });
       }
     } catch (error) {
       if (__DEV__) {
-        console.error('[KeyManager] Failed to store shared session:', error);
+        logger.error('Failed to store shared session', error, { component: 'KeyManager' });
       }
       throw error;
     }
@@ -484,7 +485,7 @@ export class KeyManager {
       return { sessionId, accessToken };
     } catch (error) {
       if (__DEV__) {
-        console.warn('[KeyManager] Failed to get shared session:', error);
+        logger.warn('Failed to get shared session', { component: 'KeyManager' }, error);
       }
       return null;
     }
@@ -517,11 +518,11 @@ export class KeyManager {
       }
 
       if (__DEV__) {
-        console.log('[KeyManager] Shared session cleared successfully');
+        logger.debug('Shared session cleared successfully', { component: 'KeyManager' });
       }
     } catch (error) {
       if (__DEV__) {
-        console.error('[KeyManager] Failed to clear shared session:', error);
+        logger.error('Failed to clear shared session', error, { component: 'KeyManager' });
       }
     }
   }
@@ -545,7 +546,7 @@ export class KeyManager {
       const hasShared = await KeyManager.hasSharedIdentity();
       if (hasShared) {
         if (__DEV__) {
-          console.log('[KeyManager] Shared identity already exists, skipping migration');
+          logger.debug('Shared identity already exists, skipping migration', { component: 'KeyManager' });
         }
         return true;
       }
@@ -554,7 +555,7 @@ export class KeyManager {
       const privateKey = await KeyManager.getPrivateKey();
       if (!privateKey) {
         if (__DEV__) {
-          console.log('[KeyManager] No local identity to migrate');
+          logger.debug('No local identity to migrate', { component: 'KeyManager' });
         }
         return false;
       }
@@ -563,13 +564,13 @@ export class KeyManager {
       await KeyManager.importSharedIdentity(privateKey);
 
       if (__DEV__) {
-        console.log('[KeyManager] Successfully migrated local identity to shared identity');
+        logger.debug('Successfully migrated local identity to shared identity', { component: 'KeyManager' });
       }
 
       return true;
     } catch (error) {
       if (__DEV__) {
-        console.error('[KeyManager] Failed to migrate to shared identity:', error);
+        logger.error('Failed to migrate to shared identity', error, { component: 'KeyManager' });
       }
       return false;
     }
@@ -640,7 +641,7 @@ export class KeyManager {
       // If secure store is not available, return null (no identity)
       // This allows the app to continue functioning even if secure store fails to load
       if (__DEV__) {
-        console.warn('[KeyManager] Failed to access secure store:', error);
+        logger.warn('Failed to access secure store', { component: 'KeyManager' }, error);
       }
       return null;
     }
@@ -670,7 +671,7 @@ export class KeyManager {
       // Cache null to avoid repeated failed attempts
       KeyManager.cachedPublicKey = null;
       if (__DEV__) {
-        console.warn('[KeyManager] Failed to access secure store:', error);
+        logger.warn('Failed to access secure store', { component: 'KeyManager' }, error);
       }
       return null;
     }
@@ -700,7 +701,7 @@ export class KeyManager {
       // Cache false to avoid repeated failed attempts
       KeyManager.cachedHasIdentity = false;
       if (__DEV__) {
-        console.warn('[KeyManager] Failed to check identity:', error);
+        logger.warn('Failed to check identity', { component: 'KeyManager' }, error);
       }
       return false;
     }
@@ -741,11 +742,11 @@ export class KeyManager {
       try {
         const backupSuccess = await KeyManager.backupIdentity();
         if (!backupSuccess && typeof __DEV__ !== 'undefined' && __DEV__) {
-          console.warn('[KeyManager] Failed to backup identity before deletion - proceeding anyway');
+          logger.warn('Failed to backup identity before deletion - proceeding anyway', { component: 'KeyManager' });
         }
       } catch (backupError) {
         if (typeof __DEV__ !== 'undefined' && __DEV__) {
-          console.warn('[KeyManager] Failed to backup identity before deletion:', backupError);
+          logger.warn('Failed to backup identity before deletion', { component: 'KeyManager' }, backupError);
         }
       }
     }
@@ -795,7 +796,7 @@ export class KeyManager {
       return true;
     } catch (error) {
       if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        console.error('[KeyManager] Failed to backup identity:', error);
+        logger.error('Failed to backup identity', error, { component: 'KeyManager' });
       }
       return false;
     }
@@ -841,7 +842,7 @@ export class KeyManager {
       return true;
     } catch (error) {
       if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        console.error('[KeyManager] Identity integrity check failed:', error);
+        logger.error('Identity integrity check failed', error, { component: 'KeyManager' });
       }
       return false;
     }
@@ -898,7 +899,7 @@ export class KeyManager {
       return false;
     } catch (error) {
       if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        console.error('[KeyManager] Failed to restore identity from backup:', error);
+        logger.error('Failed to restore identity from backup', error, { component: 'KeyManager' });
       }
       return false;
     }
