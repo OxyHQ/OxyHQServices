@@ -153,6 +153,7 @@ const BottomSheet = forwardRef((props: BottomSheetProps, ref: React.ForwardedRef
     }, [colors.border]);
 
     const present = useCallback(() => {
+        if (__DEV__) console.log('[BottomSheet] present() called');
         setRendered(true);
         setVisible(true);
     }, []);

@@ -16,18 +16,24 @@ setupFonts();
 // Detect if running on web
 const isWeb = Platform.OS === 'web';
 
-// Conditionally import native-only components
+// Conditionally import components
 let KeyboardProvider: any = ({ children }: any) => children;
-let BottomSheetRouter: any = () => null;
+let BottomSheetRouter: any = null;
 
+// KeyboardProvider only on native
 if (!isWeb) {
     try {
-        // Only import on native platforms
         KeyboardProvider = require('react-native-keyboard-controller').KeyboardProvider;
-        BottomSheetRouter = require('./BottomSheetRouter').default;
     } catch {
-        // Fallback if imports fail
+        // KeyboardProvider not available
     }
+}
+
+// BottomSheetRouter works on all platforms
+try {
+    BottomSheetRouter = require('./BottomSheetRouter').default;
+} catch {
+    // BottomSheetRouter not available
 }
 
 /**
@@ -199,7 +205,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
             >
                 {children}
                 {/* Only render bottom sheet router on native */}
-                {!isWeb && <BottomSheetRouter />}
+                {BottomSheetRouter && <BottomSheetRouter />}
                 <Toaster />
             </OxyContextProvider>
         </QueryClientProvider>

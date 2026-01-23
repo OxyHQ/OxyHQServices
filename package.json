@@ -6,7 +6,8 @@
   "workspaces": [
     "packages/api",
     "packages/services",
-    "packages/accounts"
+    "packages/accounts",
+    "packages/test-app"
   ],
   "scripts": {
     "build": "npm run build:all",
