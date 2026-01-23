@@ -32,14 +32,6 @@ const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, o
 
     const { currentScreen, screenProps, currentStep, isOpen } = useStore(bottomSheetStore);
 
-    // Log on mount
-    useEffect(() => {
-        if (__DEV__) console.log('[BottomSheetRouter] Mounted');
-        return () => {
-            if (__DEV__) console.log('[BottomSheetRouter] Unmounted');
-        };
-    }, []);
-
     const ScreenComponent = useMemo(
         () => (currentScreen ? getScreenComponent(currentScreen) : null),
         [currentScreen]
@@ -55,15 +47,9 @@ const BottomSheetRouter: React.FC<BottomSheetRouterProps> = ({ onScreenChange, o
 
     // Control visibility
     useEffect(() => {
-        if (__DEV__) {
-            console.log('[BottomSheetRouter] Effect - isOpen:', isOpen, 'ref exists:', !!sheetRef.current);
-        }
-        if (!sheetRef.current) {
-            if (__DEV__) console.warn('[BottomSheetRouter] sheetRef is null!');
-            return;
-        }
+        if (!sheetRef.current) return;
+
         if (isOpen) {
-            if (__DEV__) console.log('[BottomSheetRouter] Calling present()');
             sheetRef.current.present();
         } else {
             sheetRef.current.dismiss();

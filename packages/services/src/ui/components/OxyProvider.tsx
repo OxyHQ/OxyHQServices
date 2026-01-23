@@ -211,18 +211,7 @@ const OxyProvider: FC<OxyProviderProps> = ({
         </QueryClientProvider>
     );
 
-    // On web, minimal wrappers (GestureHandler and SafeArea work via react-native-web)
-    if (isWeb) {
-        return (
-            <SafeAreaProvider>
-                <GestureHandlerRootView style={{ flex: 1 }}>
-                    {coreContent}
-                </GestureHandlerRootView>
-            </SafeAreaProvider>
-        );
-    }
-
-    // On native, full wrappers including KeyboardProvider
+    // All platforms use same wrapper (KeyboardProvider is passthrough on web)
     return (
         <SafeAreaProvider>
             <GestureHandlerRootView style={{ flex: 1 }}>

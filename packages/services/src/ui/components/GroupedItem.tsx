@@ -4,7 +4,6 @@ import { Ionicons } from '@expo/vector-icons';
 // @ts-ignore - MaterialCommunityIcons is available at runtime
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColorScheme } from '../hooks/use-color-scheme';
-import { useHapticPress } from '../hooks/use-haptic-press';
 import { darkenColor } from '../utils/colorUtils';
 import { normalizeColorScheme } from '../utils/themeUtils';
 import { Colors } from '../constants/theme';
@@ -87,13 +86,10 @@ const GroupedItemComponent = ({
         </View>
     );
 
-    const handlePressIn = useHapticPress();
-
     if (onPress && !disabled) {
         return (
             <TouchableOpacity
                 style={itemStyles}
-                onPressIn={disabled ? undefined : handlePressIn}
                 onPress={onPress}
                 activeOpacity={0.7}
                 accessibilityRole="button"

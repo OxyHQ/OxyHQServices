@@ -32,10 +32,6 @@ export const showBottomSheet = (
     const screen = typeof screenOrConfig === 'string' ? screenOrConfig : screenOrConfig.screen;
     const props = typeof screenOrConfig === 'string' ? {} : (screenOrConfig.props || {});
 
-    if (__DEV__) {
-        console.log('[BottomSheet] showBottomSheet called:', screen);
-    }
-
     if (!isValidRoute(screen)) {
         if (__DEV__) console.warn(`[BottomSheet] Invalid route: ${screen}`);
         return;
@@ -60,10 +56,6 @@ export const showBottomSheet = (
         currentStep: typeof props.initialStep === 'number' ? props.initialStep : undefined,
         isOpen: true,
     });
-
-    if (__DEV__) {
-        console.log('[BottomSheet] State after showBottomSheet:', bottomSheetStore.getState());
-    }
 };
 
 export const closeBottomSheet = (): void => {

@@ -29,7 +29,6 @@ import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
 import { Colors } from '../constants/theme';
 import { normalizeColorScheme, normalizeTheme } from '../utils/themeUtils';
-import { useHapticPress } from '../hooks/use-haptic-press';
 import { EditDisplayNameModal } from '../components/profile/EditDisplayNameModal';
 import { EditUsernameModal } from '../components/profile/EditUsernameModal';
 import { EditEmailModal } from '../components/profile/EditEmailModal';
@@ -176,7 +175,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     // Get theme colors using centralized hook
     const colorScheme = useColorScheme();
     const themeStyles = useThemeStyles(theme || 'light', colorScheme);
-    const handlePressIn = useHapticPress();
 
     // Extract colors for convenience - ensure it's always defined
     // useThemeStyles always returns colors, but add safety check for edge cases
