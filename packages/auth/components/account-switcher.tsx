@@ -36,10 +36,10 @@ export function AccountSwitcher({
     isLoading,
     ...props
 }: AccountSwitcherProps) {
-    // Use asset stream for avatars, or generate initials-based avatar as fallback
-    const displayName = account.displayName || account.username || 'User'
+    // Use cloud.oxy.so CDN for avatars, or generate initials-based avatar as fallback
+    const displayName = account.displayName || account.username || "User"
     const avatarUrl = account.avatar
-        ? `https://api.oxy.so/api/assets/${encodeURIComponent(account.avatar)}/stream?variant=thumb`
+        ? `https://cloud.oxy.so/assets/${encodeURIComponent(account.avatar)}/stream?variant=thumb`
         : `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=000&color=fff&bold=true&size=80`
 
     return (

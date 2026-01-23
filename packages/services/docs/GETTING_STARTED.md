@@ -40,6 +40,28 @@ For Expo projects, also install:
 npx expo install expo expo-font expo-image expo-linear-gradient
 ```
 
+## Oxy Infrastructure
+
+Oxy services are distributed across three specialized domains:
+
+| Domain | Purpose | Use For |
+|--------|---------|---------|
+| **api.oxy.so** | API | All data operations - users, sessions, posts, social features |
+| **auth.oxy.so** | Authentication | Identity provider - login, signup, SSO, FedCM |
+| **cloud.oxy.so** | Media/CDN | File storage, images, videos, static assets |
+
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│  auth.oxy.so    │     │   api.oxy.so    │     │  cloud.oxy.so   │
+│  (Identity)     │     │   (Data API)    │     │  (Media CDN)    │
+│                 │     │                 │     │                 │
+│  • Login/Signup │     │  • Users        │     │  • Images       │
+│  • SSO/FedCM    │     │  • Sessions     │     │  • Videos       │
+│  • OAuth flows  │     │  • Posts        │     │  • Files        │
+│                 │     │  • Social       │     │  • Avatars      │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+```
+
 ## Quick Start
 
 ### React Native / Expo (Recommended)

@@ -47,6 +47,37 @@ function MyComponent() {
 }
 ```
 
+## 🌐 Oxy Infrastructure
+
+Oxy services are distributed across specialized domains:
+
+| Domain | Purpose | Description |
+|--------|---------|-------------|
+| `https://api.oxy.so` | **API** | Main API endpoint for all data operations (users, sessions, social, etc.) |
+| `https://auth.oxy.so` | **Authentication** | Identity provider for SSO, FedCM, login/signup flows |
+| `https://cloud.oxy.so` | **Media** | CDN for static assets, images, videos, and file storage |
+
+### Usage Examples
+
+```typescript
+// API calls go to api.oxy.so
+const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+
+// Authentication redirects go to auth.oxy.so
+// (handled automatically by OxyProvider)
+<OxyProvider
+  baseURL="https://api.oxy.so"
+  authWebUrl="https://auth.oxy.so"
+/>
+
+// Media/assets are served from cloud.oxy.so
+const imageUrl = 'https://cloud.oxy.so/assets/abc123/stream';
+```
+
+### Cross-Domain SSO
+
+Oxy uses FedCM (Federated Credential Management) for seamless cross-domain authentication. When a user signs in at `auth.oxy.so`, they're automatically signed in across all Oxy-powered apps (alia.onl, accounts.oxy.so, etc.) without additional login prompts.
+
 ## 📖 Documentation Structure
 
 ```
