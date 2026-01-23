@@ -167,3 +167,10 @@ export async function apiGet<T>(path: string, init?: RequestInit): Promise<T> {
         method: "GET",
     })
 }
+
+export async function apiDelete<T>(path: string, init?: RequestInit): Promise<T> {
+    return apiRequest<T>(path, {
+        ...init,
+        method: "DELETE",
+    })
+}

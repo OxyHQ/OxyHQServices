@@ -36,9 +36,11 @@ export function AccountSwitcher({
     isLoading,
     ...props
 }: AccountSwitcherProps) {
+    // Use asset stream for avatars, or generate initials-based avatar as fallback
+    const displayName = account.displayName || account.username || 'User'
     const avatarUrl = account.avatar
-        ? `https://api.oxy.so/api/files/${account.avatar}`
-        : `https://api.dicebear.com/7.x/avataaars/svg?seed=${account.username || account.id}`
+        ? `https://api.oxy.so/api/assets/${encodeURIComponent(account.avatar)}/stream?variant=thumb`
+        : `https://ui-avatars.com/api/?name=${encodeURIComponent(displayName)}&background=000&color=fff&bold=true&size=80`
 
     return (
         <div className={cn("flex flex-col gap-6", className)} {...props}>

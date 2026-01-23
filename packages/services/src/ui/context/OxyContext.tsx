@@ -428,20 +428,12 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
   // Web SSO: Automatically check for cross-domain session on web platforms
   // Also used for popup auth - updates all state and persists session
   const handleWebSSOSession = useCallback(async (session: any) => {
-    console.log('[OxyContext] handleWebSSOSession called:', {
-      hasSession: !!session,
-      hasUser: !!session?.user,
-      hasSessionId: !!session?.sessionId,
-      sessionIdPrefix: session?.sessionId?.substring(0, 8),
-      userId: session?.user?.id,
-    });
-
     if (!session?.user || !session?.sessionId) {
-      console.warn('[OxyContext] handleWebSSOSession: Invalid session - missing user or sessionId');
+      if (__DEV__) {
+        loggerUtil.warn('handleWebSSOSession: Invalid session', { component: 'OxyContext' });
+      }
       return;
     }
-
-    console.log('[OxyContext] handleWebSSOSession: Processing valid session...');
 
     // Update sessions state
     const clientSession = {
@@ -467,33 +459,11 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         sessionIds.push(session.sessionId);
         await storage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
       }
-      console.log('[OxyContext] handleWebSSOSession: Session persisted to storage', {
-        sessionId: session.sessionId?.substring(0, 8),
-        totalSessions: sessionIds.length,
-      });
-    } else {
-      console.warn('[OxyContext] handleWebSSOSession: No storage available, session not persisted!');
     }
-
-    console.log('[OxyContext] handleWebSSOSession: Complete! User should now be authenticated.');
   }, [updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, storage, storageKeys]);
 
   // Enable web SSO only after local storage check completes and no user found
   const shouldTryWebSSO = isWebBrowser() && tokenReady && !user && initialized;
-
-  // Debug logging for SSO conditions
-  useEffect(() => {
-    if (isWebBrowser()) {
-      console.log('[OxyContext] Web SSO conditions:', {
-        isWebBrowser: true,
-        tokenReady,
-        hasUser: !!user,
-        initialized,
-        shouldTryWebSSO,
-        hostname: typeof window !== 'undefined' ? window.location.hostname : 'unknown',
-      });
-    }
-  }, [tokenReady, user, shouldTryWebSSO]);
 
   useWebSSO({
     oxyServices,

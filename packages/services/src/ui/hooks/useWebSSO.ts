@@ -87,60 +87,35 @@ export function useWebSSO({
   const fedCMSupported = isWebBrowser() && (oxyServices as any).isFedCMSupported?.();
 
   const checkSSO = useCallback(async (): Promise<SessionLoginResponse | null> => {
-    console.log('[useWebSSO] checkSSO called', {
-      isWebBrowser: isWebBrowser(),
-      isChecking: isCheckingRef.current,
-      isIdP: isIdentityProvider(),
-      fedCMSupported,
-    });
-
     if (!isWebBrowser() || isCheckingRef.current) {
       return null;
     }
 
     // Don't use FedCM on the auth domain itself - it would authenticate against itself
     if (isIdentityProvider()) {
-      console.log('[useWebSSO] Skipping - on identity provider domain');
       onSSOUnavailable?.();
       return null;
     }
 
     // FedCM is the only reliable cross-domain SSO mechanism
-    // Third-party cookies are deprecated and unreliable
     if (!fedCMSupported) {
-      console.log('[useWebSSO] Skipping - FedCM not supported');
       onSSOUnavailable?.();
       return null;
     }
 
     isCheckingRef.current = true;
-    console.log('[useWebSSO] Starting FedCM silent sign-in...');
 
     try {
-      // Use FedCM for cross-domain SSO
-      // This works because browser treats IdP requests as first-party
       const session = await (oxyServices as any).silentSignInWithFedCM?.();
 
-      console.log('[useWebSSO] FedCM result:', {
-        hasSession: !!session,
-        hasUser: !!session?.user,
-        hasSessionId: !!session?.sessionId,
-      });
-
       if (session) {
-        console.log('[useWebSSO] Session found, calling onSessionFound...');
         await onSessionFound(session);
-        console.log('[useWebSSO] onSessionFound completed');
         return session;
       }
 
-      // No session found - user needs to sign in
-      console.log('[useWebSSO] No session returned from FedCM');
       onSSOUnavailable?.();
       return null;
     } catch (error) {
-      // FedCM failed - could be network error, user not signed in, etc.
-      console.error('[useWebSSO] FedCM error:', error);
       onSSOUnavailable?.();
       onError?.(error instanceof Error ? error : new Error(String(error)));
       return null;
@@ -155,41 +130,27 @@ export function useWebSSO({
    * Use this when silent mediation fails (user hasn't previously consented).
    */
   const signInWithFedCM = useCallback(async (): Promise<SessionLoginResponse | null> => {
-    console.log('[useWebSSO] signInWithFedCM called');
-
     if (!isWebBrowser() || isCheckingRef.current) {
       return null;
     }
 
     if (!fedCMSupported) {
-      console.log('[useWebSSO] FedCM not supported for interactive sign-in');
       onError?.(new Error('FedCM is not supported in this browser'));
       return null;
     }
 
     isCheckingRef.current = true;
-    console.log('[useWebSSO] Starting interactive FedCM sign-in...');
 
     try {
-      // Use interactive sign-in (shows browser UI)
       const session = await (oxyServices as any).signInWithFedCM?.();
 
-      console.log('[useWebSSO] Interactive FedCM result:', {
-        hasSession: !!session,
-        hasUser: !!session?.user,
-        hasSessionId: !!session?.sessionId,
-      });
-
       if (session) {
-        console.log('[useWebSSO] Interactive session found, calling onSessionFound...');
         await onSessionFound(session);
-        console.log('[useWebSSO] onSessionFound completed');
         return session;
       }
 
       return null;
     } catch (error) {
-      console.error('[useWebSSO] Interactive FedCM error:', error);
       onError?.(error instanceof Error ? error : new Error(String(error)));
       return null;
     } finally {
@@ -199,19 +160,7 @@ export function useWebSSO({
 
   // Auto-check SSO on mount (web only, FedCM only, not on auth domain)
   useEffect(() => {
-    console.log('[useWebSSO] Effect running:', {
-      enabled,
-      isWeb: isWebBrowser(),
-      hasChecked: hasCheckedRef.current,
-      isIdP: isIdentityProvider(),
-      fedCMSupported,
-      hostname: typeof window !== 'undefined' ? window.location.hostname : 'unknown',
-    });
-
     if (!enabled || !isWebBrowser() || hasCheckedRef.current || isIdentityProvider()) {
-      console.log('[useWebSSO] Skipping SSO check:', {
-        reason: !enabled ? 'not enabled' : !isWebBrowser() ? 'not web' : hasCheckedRef.current ? 'already checked' : 'is IdP',
-      });
       if (isIdentityProvider()) {
         onSSOUnavailable?.();
       }
@@ -223,8 +172,6 @@ export function useWebSSO({
     if (fedCMSupported) {
       checkSSO();
     } else {
-      // Browser doesn't support FedCM - notify caller
-      console.log('[useWebSSO] FedCM not supported');
       onSSOUnavailable?.();
     }
   }, [enabled, checkSSO, fedCMSupported, onSSOUnavailable]);
