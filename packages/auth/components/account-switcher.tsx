@@ -10,6 +10,7 @@ import {
     CardHeader,
     CardTitle,
 } from "@/components/ui/card"
+import { Avatar } from "@/components/ui/avatar"
 
 type Account = {
     id: string
@@ -37,17 +38,6 @@ export function AccountSwitcher({
     ...props
 }: AccountSwitcherProps) {
     const displayName = account.displayName || account.username || "User"
-    const avatarUrl = account.avatar
-        ? `https://cloud.oxy.so/assets/${encodeURIComponent(account.avatar)}/stream?variant=thumb`
-        : null
-
-    // Get initials from display name (max 2 characters)
-    const initials = displayName
-        .split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase()
-        .slice(0, 2)
 
     return (
         <div className={cn("flex flex-col gap-6", className)} {...props}>
@@ -69,21 +59,9 @@ export function AccountSwitcher({
                         onClick={onContinue}
                         disabled={isLoading}
                     >
-                        {avatarUrl ? (
-                            <img
-                                src={avatarUrl}
-                                alt={displayName}
-                                className="size-10 rounded-full bg-muted shrink-0 object-cover"
-                            />
-                        ) : (
-                            <div className="size-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center shrink-0 font-semibold text-sm">
-                                {initials}
-                            </div>
-                        )}
+                        <Avatar src={account.avatar} name={displayName} />
                         <div className="flex-1 text-left ml-3 min-w-0">
-                            <div className="font-medium truncate">
-                                {account.displayName || account.username}
-                            </div>
+                            <div className="font-medium truncate">{displayName}</div>
                             {account.email && (
                                 <div className="text-sm text-muted-foreground truncate">
                                     {account.email}
