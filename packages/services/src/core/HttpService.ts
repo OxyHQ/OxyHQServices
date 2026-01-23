@@ -254,6 +254,7 @@ export class HttpService {
           headers,
           body: bodyValue as BodyInit | null | undefined,
           signal: controller.signal,
+          credentials: 'include', // Include cookies for cross-origin requests (CSRF, session)
         });
 
         if (timeoutId) clearTimeout(timeoutId);
@@ -439,6 +440,7 @@ export class HttpService {
             method: 'GET',
             headers: { 'Accept': 'application/json' },
             signal: AbortSignal.timeout(5000),
+            credentials: 'include', // Include cookies for cross-origin requests
           });
 
           if (response.ok) {

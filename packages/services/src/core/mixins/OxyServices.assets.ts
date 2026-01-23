@@ -402,7 +402,7 @@ export function OxyServicesAssetsMixin<T extends typeof OxyServicesBase>(Base: T
     public async fetchAssetContent(url: string, type: 'text'): Promise<string>;
     public async fetchAssetContent(url: string, type: 'blob'): Promise<Blob>;
     public async fetchAssetContent(url: string, type: 'text' | 'blob') {
-      const response = await fetch(url);
+      const response = await fetch(url, { credentials: 'include' });
       if (!response?.ok) {
         throw new Error(`Failed to fetch asset content (status ${response?.status})`);
       }
