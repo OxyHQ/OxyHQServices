@@ -151,9 +151,6 @@ try {
   // Logger might not be initialized yet, ignore
 }
 
-// Note: exec import kept for potential future use with execAsync
-// Currently using spawn() for all FFmpeg operations
-
 export interface VariantConfigWithType extends VariantConfig {
   type: string;
 }
@@ -420,93 +417,6 @@ export class VariantService {
     } catch (error) {
       logger.error('Error generating video variants:', error);
       throw error;
-    }
-  }
-
-  /**
-   * Extract video metadata using FFprobe (local file path version)
-   * Currently unused - using extractVideoMetadataFromUrl for S3 URLs
-   * Kept for potential future local file processing
-   */
-  private async _extractVideoMetadata(videoPath: string): Promise<{
-    duration?: number;
-    width?: number;
-    height?: number;
-    bitrate?: number;
-    fps?: number;
-    codec?: string;
-    audioCodec?: string;
-  }> {
-    try {
-      // Validate path to prevent command injection
-      this.validateMediaPath(videoPath);
-
-      // Use spawn for better cross-platform compatibility
-      return new Promise((resolve) => {
-        const args = [
-          '-v', 'quiet',
-          '-print_format', 'json',
-          '-show_format',
-          '-show_streams',
-          videoPath
-        ];
-
-        // Verify ffprobe path exists before spawning
-        if (!fs.existsSync(ffprobePath)) {
-          logger.warn('FFprobe binary not found', { path: ffprobePath });
-          resolve({});
-          return;
-        }
-
-        logger.debug('Spawning ffprobe process', { path: ffprobePath, args });
-        const ffprobeProcess = spawn(ffprobePath, args);
-        let stdout = '';
-        let stderr = '';
-
-        ffprobeProcess.stdout.on('data', (data) => {
-          stdout += data.toString();
-        });
-
-        ffprobeProcess.stderr.on('data', (data) => {
-          stderr += data.toString();
-        });
-
-        ffprobeProcess.on('close', (code) => {
-          if (code !== 0) {
-            logger.warn('FFprobe failed', { code, stderr });
-            resolve({});
-            return;
-          }
-
-          try {
-            const metadata = JSON.parse(stdout) as FFprobeMetadata;
-
-            const videoStream = metadata.streams?.find((s) => s.codec_type === 'video');
-            const audioStream = metadata.streams?.find((s) => s.codec_type === 'audio');
-
-            resolve({
-              duration: metadata.format?.duration ? parseFloat(metadata.format.duration) : undefined,
-              width: videoStream?.width,
-              height: videoStream?.height,
-              bitrate: metadata.format?.bit_rate ? parseInt(metadata.format.bit_rate) : undefined,
-              fps: videoStream?.r_frame_rate ? this.parseFps(videoStream.r_frame_rate) : undefined,
-              codec: videoStream?.codec_name,
-              audioCodec: audioStream?.codec_name
-            });
-          } catch (error) {
-            logger.warn('Error parsing FFprobe output', { error, stdout });
-            resolve({});
-          }
-        });
-
-        ffprobeProcess.on('error', (err) => {
-          logger.warn('FFprobe process error', { error: err });
-          resolve({});
-        });
-      });
-    } catch (error) {
-      logger.warn('Error extracting video metadata, using defaults', { error });
-      return {};
     }
   }
 
@@ -1294,8 +1204,9 @@ VariantService.prototype.commitVariants = async function(file: IFile, options: V
     try {
       await File.updateOne({ _id: file._id }, { $set: { variants: file.variants } }).exec();
       return;
-    } catch (err: any) {
-      if (String(err?.name) === 'VersionError' && attempt < actualRetries) {
+    } catch (err: unknown) {
+      const error = err as { name?: string };
+      if (String(error?.name) === 'VersionError' && attempt < actualRetries) {
         logger.warn('VersionError committing variants, retrying', { fileId: file._id, attempt });
         await new Promise(res => setTimeout(res, actualDelay * (attempt + 1)));
         // Refresh variants from DB to merge if needed
@@ -1312,8 +1223,8 @@ VariantService.prototype.commitVariants = async function(file: IFile, options: V
         attempt++;
         continue;
       }
-      logger.error('Failed to commit variants', { fileId: file._id, attempt, error: err });
-      throw err;
+      logger.error('Failed to commit variants', { fileId: file._id, attempt, error });
+      throw error;
     }
   }
 };
