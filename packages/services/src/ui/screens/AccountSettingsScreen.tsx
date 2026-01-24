@@ -589,13 +589,6 @@ const styles = StyleSheet.create({
     content: {
         flexShrink: 1,
     },
-    scrollView: {
-        flexShrink: 1,
-    },
-    contentEditing: {
-        flex: 1,
-        padding: 0,
-    },
     scrollContent: createScreenContentStyle(HEADER_PADDING_TOP_SETTINGS),
     headerContainer: {
         width: '100%',
@@ -630,7 +623,6 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 13,
         fontWeight: '600',
-        color: '#8E8E93',
         marginBottom: 8,
         marginTop: 4,
         textTransform: 'uppercase',
