@@ -512,7 +512,7 @@ await KeyManager.migrateToSharedIdentity();
 **Symptom:** Shared identity returns null across apps
 
 **Requirements:**
-1. All apps must have same keychain group: `group.com.oxy.shared`
+1. All apps must have same keychain group: `group.so.oxy.shared`
 2. Capability must be enabled in Xcode for ALL targets
 3. All apps must be signed with same Apple Team ID
 4. Test on real device (Simulator has limited keychain sharing)
@@ -522,7 +522,7 @@ await KeyManager.migrateToSharedIdentity();
 **Symptom:** Sessions not shared between apps
 
 **Requirements:**
-1. All apps must have same `android:sharedUserId="com.oxy.shared"` in manifest
+1. All apps must have same `android:sharedUserId="so.oxy.shared"` in manifest
 2. All apps must be signed with same certificate
 3. Must reinstall apps after adding `sharedUserId` (can't change on update)
 
