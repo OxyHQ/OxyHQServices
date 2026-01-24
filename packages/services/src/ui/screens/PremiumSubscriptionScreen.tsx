@@ -387,7 +387,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             setIndividualFeatures(updatedFeatures);
 
         } catch (error) {
-            console.error('Failed to load subscription data:', error);
+            if (__DEV__) {
+                console.error('Failed to load subscription data:', error);
+            }
             toast.error('Failed to load subscription information');
         } finally {
             setLoading(false);
@@ -434,7 +436,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             loadSubscriptionData();
 
         } catch (error) {
-            console.error('Payment failed:', error);
+            if (__DEV__) {
+                console.error('Payment failed:', error);
+            }
             toast.error(t('premium.toasts.paymentFailed') || 'Payment failed. Please try again.');
         } finally {
             setProcessingPayment(false);
@@ -525,7 +529,9 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             toast.success((t('premium.toasts.featureSubscribed', { name: feature?.name ?? '' }) ?? `Subscribed to ${feature?.name} successfully!`));
 
         } catch (error) {
-            console.error('Feature subscription failed:', error);
+            if (__DEV__) {
+                console.error('Feature subscription failed:', error);
+            }
             toast.error(t('premium.toasts.featureSubscribeFailed') || 'Feature subscription failed. Please try again.');
         } finally {
             setProcessingPayment(false);
