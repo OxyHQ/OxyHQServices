@@ -4,8 +4,7 @@ import { logger } from '../utils/logger';
 import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs';
-import { promisify } from 'util';
-import { exec, execSync, spawn } from 'child_process';
+import { execSync, spawn } from 'child_process';
 import { VariantConfig, VariantCommitRetryOptions } from '../types/variant.types';
 
 // Get FFmpeg and FFprobe paths - use static binaries if available, otherwise fallback to system
@@ -26,7 +25,7 @@ function getFfmpegPath(): string {
           // Make executable if not already (needed for some platforms)
           try {
             fs.chmodSync(binaryPath, 0o755);
-          } catch (e) {
+          } catch {
             // Ignore chmod errors
           }
           logger.info('[VariantService] Using ffmpeg-static binary', { binaryPath });
@@ -131,10 +130,8 @@ try {
   // Logger might not be initialized yet, ignore
 }
 
-const execAsync = promisify(exec);
-const mkdirAsync = promisify(fs.mkdir);
-const unlinkAsync = promisify(fs.unlink);
-const rmdirAsync = promisify(fs.rmdir);
+// Note: exec import kept for potential future use with execAsync
+// Currently using spawn() for all FFmpeg operations
 
 export interface VariantConfigWithType extends VariantConfig {
   type: string;
@@ -204,7 +201,7 @@ export class VariantService {
     if (mediaPath.startsWith('http://') || mediaPath.startsWith('https://')) {
       try {
         new URL(mediaPath);
-      } catch (e) {
+      } catch {
         throw new Error('Invalid media path: malformed URL');
       }
     }
@@ -406,9 +403,11 @@ export class VariantService {
   }
 
   /**
-   * Extract video metadata using FFprobe
+   * Extract video metadata using FFprobe (local file path version)
+   * Currently unused - using extractVideoMetadataFromUrl for S3 URLs
+   * Kept for potential future local file processing
    */
-  private async extractVideoMetadata(videoPath: string): Promise<{
+  private async _extractVideoMetadata(videoPath: string): Promise<{
     duration?: number;
     width?: number;
     height?: number;
@@ -422,7 +421,7 @@ export class VariantService {
       this.validateMediaPath(videoPath);
 
       // Use spawn for better cross-platform compatibility
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve) => {
         const args = [
           '-v', 'quiet',
           '-print_format', 'json',
@@ -643,7 +642,7 @@ export class VariantService {
       this.validateMediaPath(videoUrl);
 
       // Use spawn for better cross-platform compatibility
-      return new Promise((resolve, reject) => {
+      return new Promise((resolve) => {
         const args = [
           '-v', 'quiet',
           '-print_format', 'json',
@@ -714,7 +713,7 @@ export class VariantService {
   ): Promise<IFileVariant | null> {
     const variantKey = this.generateVariantKey(sha256, config.type, 'mp4');
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
       const args = [
         '-i', videoUrl, // Use S3 presigned URL directly
         '-c:v', config.videoCodec || 'libx264',
@@ -750,7 +749,7 @@ export class VariantService {
 
       let stderr = '';
       const stdoutChunks: Buffer[] = [];
-      let lastProgress = '';
+      let _lastProgress = '';
 
       ffmpegProcess.stderr.on('data', (data) => {
         const output = data.toString();
@@ -763,7 +762,7 @@ export class VariantService {
           const minutes = parseInt(timeMatch[2]);
           const seconds = parseFloat(timeMatch[3]);
           const totalSeconds = hours * 3600 + minutes * 60 + seconds;
-          lastProgress = totalSeconds.toString();
+          _lastProgress = totalSeconds.toString();
         }
       });
 
@@ -870,7 +869,7 @@ export class VariantService {
       let processedCount = 0;
       const totalVariants = availableVariants.length;
 
-      availableVariants.forEach((config, index) => {
+      availableVariants.forEach((config) => {
         const playlistName = `stream_${config.type}.m3u8`;
         const outputPath = path.join(hlsDir, playlistName);
         const segmentPattern = path.join(hlsDir, `segment_${config.type}_%03d.ts`);
