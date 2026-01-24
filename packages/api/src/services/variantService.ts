@@ -1228,7 +1228,3 @@ VariantService.prototype.commitVariants = async function(file: IFile, options: V
     }
   }
 };
-
-// Note: This implementation uses a placeholder for Sharp
-// In a real deployment, you would install Sharp with: npm install sharp
-// For now, we'll create a mock implementation to avoid build issues
