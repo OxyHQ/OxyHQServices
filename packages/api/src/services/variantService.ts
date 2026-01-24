@@ -171,20 +171,20 @@ export class VariantService {
    * Validate and sanitize path/URL for FFmpeg/FFprobe to prevent command injection
    * While spawn() with argument arrays is safer than exec(), we still validate inputs
    */
-  private validateMediaPath(path: string): void {
-    if (!path || typeof path !== 'string') {
+  private validateMediaPath(mediaPath: string): void {
+    if (!mediaPath || typeof mediaPath !== 'string') {
       throw new Error('Invalid media path: must be a non-empty string');
     }
 
     // Check path length to prevent DoS
-    if (path.length > 2048) {
+    if (mediaPath.length > 2048) {
       throw new Error('Invalid media path: path too long');
     }
 
     // For local file paths, check for path traversal attempts
-    if (!path.startsWith('http://') && !path.startsWith('https://')) {
+    if (!mediaPath.startsWith('http://') && !mediaPath.startsWith('https://')) {
       // Resolve to absolute path and check it doesn't escape
-      const resolvedPath = path.resolve(path);
+      const resolvedPath = path.resolve(mediaPath);
       if (resolvedPath.includes('..')) {
         throw new Error('Invalid media path: path traversal detected');
       }
@@ -201,9 +201,9 @@ export class VariantService {
     }
 
     // For URLs, validate format
-    if (path.startsWith('http://') || path.startsWith('https://')) {
+    if (mediaPath.startsWith('http://') || mediaPath.startsWith('https://')) {
       try {
-        new URL(path);
+        new URL(mediaPath);
       } catch (e) {
         throw new Error('Invalid media path: malformed URL');
       }
