@@ -33,7 +33,9 @@ const UserLinksScreen: React.FC<UserLinksScreenProps> = ({
         try {
             await Linking.openURL(url);
         } catch (error) {
-            console.error('Error opening link:', error);
+            if (__DEV__) {
+                console.error('Error opening link:', error);
+            }
         }
     };
 
