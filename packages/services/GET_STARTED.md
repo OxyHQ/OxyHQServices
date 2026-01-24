@@ -39,8 +39,10 @@ export default function App() {
 
 | App Type | Provider | Notes |
 |----------|----------|-------|
-| **Expo (native + web)** | `OxyProvider` | Works on iOS, Android, and Web |
-| **Pure React/Next.js** | `WebOxyProvider` | No React Native dependencies |
+| **Expo (native + web)** | `OxyProvider` | Already handles iOS, Android, AND web |
+| **Pure React/Next.js (NO Expo)** | `WebOxyProvider` | Web-only, lighter bundle |
+
+⚠️ **IMPORTANT:** If you're using Expo, **always use `OxyProvider`** - it already handles web in addition to native platforms. **Never use `WebOxyProvider` in Expo apps**.
 
 ### 2. Use Authentication
 
@@ -373,8 +375,8 @@ Wrap your app with `<OxyProvider>` (Expo) or `<WebOxyProvider>` (pure web).
 
 ### Native keychain issues
 
-1. iOS: Enable "Keychain Sharing" in Xcode with group `group.com.oxy.shared`
-2. Android: Add `android:sharedUserId="com.oxy.shared"` to manifest
+1. iOS: Enable "Keychain Sharing" in Xcode with group `group.so.oxy.shared`
+2. Android: Add `android:sharedUserId="so.oxy.shared"` to manifest
 3. Both: Apps must be signed with same certificate/team
 
 ---
