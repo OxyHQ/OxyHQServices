@@ -524,7 +524,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     // Validate file before upload
                     if (!raw || !raw.name || raw.size === undefined || raw.size <= 0) {
                         const errorMsg = `Invalid file: ${fileName}`;
-                        console.error('Upload validation failed:', { file: raw, error: errorMsg });
+                        if (__DEV__) {
+                            console.error('Upload validation failed:', { file: raw, error: errorMsg });
+                        }
                         failureCount++;
                         errors.push(`${fileName}: Invalid file (missing name or size)`);
                         continue;
@@ -569,7 +571,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     } else {
                         // Fallback: will reconcile on later list refresh
                         useFileStore.getState().updateFile(optimisticId, { metadata: { uploading: false } as any });
-                        console.warn('Upload completed but no file data returned:', { fileName, result });
+                        if (__DEV__) {
+                            console.warn('Upload completed but no file data returned:', { fileName, result });
+                        }
                         // Still count as success if upload didn't throw
                         successCount++;
                     }
@@ -578,13 +582,15 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                     const errorMessage = error.message || error.toString() || 'Upload failed';
                     const fullError = `${fileName}: ${errorMessage}`;
                     errors.push(fullError);
-                    console.error('File upload failed:', {
-                        fileName,
-                        fileSize: raw.size,
-                        fileType: raw.type,
-                        error: errorMessage,
-                        stack: error.stack
-                    });
+                    if (__DEV__) {
+                        console.error('File upload failed:', {
+                            fileName,
+                            fileSize: raw.size,
+                            fileType: raw.type,
+                            error: errorMessage,
+                            stack: error.stack
+                        });
+                    }
 
                     // Remove optimistic file on error (use the same optimisticId from above)
                     useFileStore.getState().removeFile(optimisticId);
@@ -619,25 +625,33 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
         for (const file of selectedFiles) {
             // Validate file has required properties
             if (!file) {
-                console.error('Invalid file: file is null or undefined');
+                if (__DEV__) {
+                    console.error('Invalid file: file is null or undefined');
+                }
                 toast.error('Invalid file: file is missing');
                 continue;
             }
 
             if (!file.name || typeof file.name !== 'string') {
-                console.error('Invalid file: missing or invalid name property', file);
+                if (__DEV__) {
+                    console.error('Invalid file: missing or invalid name property', file);
+                }
                 toast.error('Invalid file: missing file name');
                 continue;
             }
 
             if (file.size === undefined || file.size === null || isNaN(file.size)) {
-                console.error('Invalid file: missing or invalid size property', file);
+                if (__DEV__) {
+                    console.error('Invalid file: missing or invalid size property', file);
+                }
                 toast.error(`Invalid file "${file.name || 'unknown'}": missing file size`);
                 continue;
             }
 
             if (file.size <= 0) {
-                console.error('Invalid file: file size is zero or negative', file);
+                if (__DEV__) {
+                    console.error('Invalid file: file size is zero or negative', file);
+                }
                 toast.error(`File "${file.name}" is empty`);
                 continue;
             }
@@ -668,7 +682,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                             preview = URL.createObjectURL(file);
                         }
                     } catch (error: any) {
-                        console.warn('Failed to create preview URL:', error);
+                        if (__DEV__) {
+                            console.warn('Failed to create preview URL:', error);
+                        }
                         // Preview is optional, continue without it
                     }
                 }
@@ -858,7 +874,9 @@ const FileManagementScreen: React.FC<FileManagementScreenProps> = ({
                 toast.error('No files could be processed. Please try selecting files again.');
             }
         } catch (error: any) {
-            console.error('File upload error:', error);
+            if (__DEV__) {
+                console.error('File upload error:', error);
+            }
             if (error.message?.includes('expo-document-picker') || error.message?.includes('Different document picking in progress')) {
                 if (error.message?.includes('Different document picking in progress')) {
                     toast.error('Please wait for the current file selection to complete');
