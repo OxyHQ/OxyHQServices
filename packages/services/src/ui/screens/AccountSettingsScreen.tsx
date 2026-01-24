@@ -52,7 +52,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
     // Use TanStack Query for user data
     const { data: user, isLoading: userLoading } = useCurrentUser({ enabled: isAuthenticated });
-    const updateProfileMutation = useUpdateProfile();
     const uploadAvatarMutation = useUploadAvatar();
 
     // Fallback to store for backward compatibility
