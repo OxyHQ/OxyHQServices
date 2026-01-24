@@ -60,7 +60,7 @@ export default App;
 ┌─────────────────────────────────────────┐
 │  Oxy App (Homiio, Mention, etc.)        │
 │                                         │
-│  1. Check Keychain: group.com.oxy.shared│
+│  1. Check Keychain: group.so.oxy.shared│
 │  2. Found shared identity? ✅            │
 │  3. Found shared session? ✅             │
 │  4. Sign in automatically!              │
@@ -166,7 +166,7 @@ open YourApp.xcworkspace
 2. Go to **Signing & Capabilities**
 3. Click **+ Capability**
 4. Add **Keychain Sharing**
-5. Add keychain group: `group.com.oxy.shared`
+5. Add keychain group: `group.so.oxy.shared`
 
 #### 2. Verify in entitlements file
 
@@ -178,7 +178,7 @@ open YourApp.xcworkspace
 <dict>
     <key>keychain-access-groups</key>
     <array>
-        <string>$(AppIdentifierPrefix)group.com.oxy.shared</string>
+        <string>$(AppIdentifierPrefix)group.so.oxy.shared</string>
     </array>
 </dict>
 </plist>
@@ -198,7 +198,7 @@ npx expo run:ios
 ```xml
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.yourapp"
-    android:sharedUserId="com.oxy.shared">
+    android:sharedUserId="so.oxy.shared">
 
     <application>
         <!-- Your app configuration -->
@@ -379,7 +379,7 @@ if (Platform.OS === 'web') {
 #### ❌ "Keychain Sharing not working"
 
 **Solutions:**
-1. Verify keychain group: `group.com.oxy.shared`
+1. Verify keychain group: `group.so.oxy.shared`
 2. Check all apps have **same** group
 3. Ensure apps signed with **same team ID**
 4. **Test on real device** (Simulator has limitations)
@@ -407,7 +407,7 @@ console.log('Migration successful:', migrated);
 #### ❌ "Shared storage not working"
 
 **Solutions:**
-1. Verify `sharedUserId="com.oxy.shared"` in **all** manifests
+1. Verify `sharedUserId="so.oxy.shared"` in **all** manifests
 2. Apps must be signed with **same certificate**
 3. **Uninstall all apps** and reinstall (sharedUserId can't change)
 4. Check package names are different

@@ -27,10 +27,12 @@ Complete documentation for the Oxy ecosystem services and authentication.
 2. Follow [Expo 54 Guide](EXPO_54_GUIDE.md) for universal apps
 3. Check [Services Typography](../packages/services/FONTS.md) for fonts
 
-### Adding SSO to Existing Web App
+### Adding SSO to Existing App
 1. Read [Cross-Domain Auth](CROSS_DOMAIN_AUTH.md)
 2. Install `@oxyhq/services`
-3. Wrap app with `<WebOxyProvider>`
+3. Wrap app:
+   - Expo apps: `<OxyProvider>` (handles native + web)
+   - Pure React/Next.js: `<WebOxyProvider>` (web-only)
 
 ### Migrating Fonts to Inter
 1. Follow [Migration Checklist](../packages/services/MIGRATION_CHECKLIST.md)

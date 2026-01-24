@@ -99,6 +99,8 @@ function UserProfile() {
 
 ### Pure React/Next.js (No Expo)
 
+**Only use this if you're NOT using Expo/React Native:**
+
 ```typescript
 import { WebOxyProvider, useAuth } from '@oxyhq/services';
 
@@ -110,6 +112,8 @@ function App() {
   );
 }
 ```
+
+⚠️ **Important:** If you're using Expo, always use `OxyProvider` instead - it already handles web in addition to native platforms. Never use `WebOxyProvider` in Expo apps.
 
 ### Backend (Node.js / Express)
 
