@@ -25,7 +25,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 16,
         fontWeight: Platform.OS === 'web' ? '600' : undefined,
-        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-SemiBold',
+        fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-SemiBold',
     },
 });
 
