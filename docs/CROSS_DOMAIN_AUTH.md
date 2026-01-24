@@ -30,9 +30,23 @@ Sign in once at `auth.oxy.so` and be automatically authenticated across all Oxy 
 
 ## Quick Start
 
-### Expo Apps (Recommended)
+### Which Provider Should I Use?
 
-For Expo 54+ apps (native + web), use `OxyProvider` - it works on all platforms:
+| Your App Type | Use This Provider | Why |
+|--------------|-------------------|-----|
+| **Expo 54+ app** (native + web) | `OxyProvider` | Already handles web + native platforms |
+| **Pure web app** (React/Next.js, NO Expo) | `WebOxyProvider` | Web-only, lighter bundle |
+
+⚠️ **IMPORTANT:**
+- **If you're using Expo**, use `OxyProvider` - it already handles web in addition to native
+- **NEVER use `WebOxyProvider` in Expo apps** - it's only for pure React/Next.js projects without Expo
+- `OxyProvider` works seamlessly on iOS, Android, AND web when used with Expo
+
+---
+
+### Expo Apps
+
+For **Expo 54+ apps** (works on native + web):
 
 ```tsx
 import { OxyProvider, useAuth } from '@oxyhq/services';
@@ -56,11 +70,11 @@ function MyComponent() {
 }
 ```
 
-**That's it!** Cross-domain SSO is automatic. If a user is signed in on any Oxy domain, they're automatically signed in on your app.
+**That's it!** Cross-domain SSO works automatically on all platforms (iOS, Android, and web). If a user is signed in on any Oxy domain, they're automatically signed in on your app.
 
-### Pure React/Next.js Apps
+### Pure React/Next.js Apps (Web Only)
 
-For web-only apps that don't use Expo/React Native:
+**Only use this if you're NOT using Expo/React Native:**
 
 ```tsx
 import { WebOxyProvider, useAuth } from '@oxyhq/services';
@@ -73,6 +87,8 @@ function App() {
   );
 }
 ```
+
+⚠️ **Don't use `WebOxyProvider` in Expo apps** - use `OxyProvider` instead.
 
 ---
 
