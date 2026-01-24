@@ -24,7 +24,7 @@ import type { ProfileFieldType } from './EditProfileFieldScreen';
 import { getDisplayName } from '../utils/user-utils';
 import { useOxy } from '../context/OxyContext';
 import { useCurrentUser } from '../hooks/queries/useAccountQueries';
-import { useUpdateProfile, useUploadAvatar } from '../hooks/mutations/useAccountMutations';
+import { useUploadAvatar } from '../hooks/mutations/useAccountMutations';
 import {
     SECTION_GAP_LARGE,
     COMPONENT_GAP,
