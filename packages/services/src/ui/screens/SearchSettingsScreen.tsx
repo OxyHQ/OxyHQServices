@@ -64,7 +64,9 @@ const SearchSettingsScreen: React.FC<BaseScreenProps> = ({
                     });
                 }
             } catch (error) {
-                console.error('Failed to load search settings:', error);
+                if (__DEV__) {
+                    console.error('Failed to load search settings:', error);
+                }
             } finally {
                 setIsLoading(false);
             }

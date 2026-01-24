@@ -96,7 +96,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                     }
                 }
             } catch (error) {
-                console.error('Failed to load privacy settings:', error);
+                if (__DEV__) {
+                    console.error('Failed to load privacy settings:', error);
+                }
                 toast.error(t('privacySettings.loadError') || 'Failed to load privacy settings');
             } finally {
                 setIsLoading(false);
@@ -119,7 +121,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
                 setBlockedUsers(blocked);
                 setRestrictedUsers(restricted);
             } catch (error) {
-                console.error('Failed to load blocked/restricted users:', error);
+                if (__DEV__) {
+                    console.error('Failed to load blocked/restricted users:', error);
+                }
             } finally {
                 setIsLoadingUsers(false);
             }
@@ -138,7 +142,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
             }));
             toast.success(t('privacySettings.userUnblocked') || 'User unblocked');
         } catch (error) {
-            console.error('Failed to unblock user:', error);
+            if (__DEV__) {
+                console.error('Failed to unblock user:', error);
+            }
             toast.error(t('privacySettings.unblockError') || 'Failed to unblock user');
         }
     }, [oxyServices, t]);
@@ -153,7 +159,9 @@ const PrivacySettingsScreen: React.FC<BaseScreenProps> = ({
             }));
             toast.success(t('privacySettings.userUnrestricted') || 'User unrestricted');
         } catch (error) {
-            console.error('Failed to unrestrict user:', error);
+            if (__DEV__) {
+                console.error('Failed to unrestrict user:', error);
+            }
             toast.error(t('privacySettings.unrestrictError') || 'Failed to unrestrict user');
         }
     }, [oxyServices, t]);

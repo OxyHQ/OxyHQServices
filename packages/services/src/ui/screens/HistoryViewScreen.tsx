@@ -48,7 +48,9 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
                     removeItem: storage.removeItem.bind(storage),
                 };
             } catch (error) {
-                console.error('AsyncStorage not available:', error);
+                if (__DEV__) {
+                    console.error('AsyncStorage not available:', error);
+                }
                 throw new Error('AsyncStorage is required in React Native environment');
             }
         } else {
@@ -122,7 +124,9 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
 
                     toast.success(t('history.deleteLast15Minutes.success') || 'Last 15 minutes deleted');
                 } catch (error) {
-                    console.error('Failed to delete history:', error);
+                    if (__DEV__) {
+                        console.error('Failed to delete history:', error);
+                    }
                     toast.error(t('history.deleteLast15Minutes.error') || 'Failed to delete history');
                 } finally {
                     setIsDeleting(false);
@@ -146,7 +150,9 @@ const HistoryViewScreen: React.FC<BaseScreenProps> = ({
 
                     toast.success(t('history.clearAll.success') || 'History cleared');
                 } catch (error) {
-                    console.error('Failed to clear history:', error);
+                    if (__DEV__) {
+                        console.error('Failed to clear history:', error);
+                    }
                     toast.error(t('history.clearAll.error') || 'Failed to clear history');
                 } finally {
                     setIsDeleting(false);

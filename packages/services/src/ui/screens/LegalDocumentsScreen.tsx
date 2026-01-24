@@ -57,7 +57,9 @@ const LegalDocumentsScreen: React.FC<BaseScreenProps> = ({
                     toast.error(t('legal.openError') || 'Failed to open document');
                 }
             } catch (error) {
-                console.error(`Failed to open ${policyKey} policy:`, error);
+                if (__DEV__) {
+                    console.error(`Failed to open ${policyKey} policy:`, error);
+                }
                 toast.error(t('legal.openError') || 'Failed to open document');
             } finally {
                 setLoading(false);

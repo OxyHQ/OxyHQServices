@@ -86,7 +86,9 @@ const LanguageSelectorScreen: React.FC<LanguageSelectorScreenProps> = ({
 
         } catch (error) {
             // Only show error if local storage also failed
-            console.error('Error saving language preference:', error);
+            if (__DEV__) {
+                console.error('Error saving language preference:', error);
+            }
             toast.error('Failed to save language preference');
             setIsLoading(false);
         }

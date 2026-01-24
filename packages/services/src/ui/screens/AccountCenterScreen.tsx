@@ -54,7 +54,9 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 onClose();
             }
         } catch (error) {
-            console.error('Logout failed:', error);
+            if (__DEV__) {
+                console.error('Logout failed:', error);
+            }
             toast.error(t('common.errors.signOutFailed') || 'There was a problem signing you out. Please try again.');
         }
     }, [logout, onClose, t]);

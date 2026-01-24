@@ -190,7 +190,9 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 onClose();
             }
         } catch (error) {
-            console.error('Logout failed:', error);
+            if (__DEV__) {
+                console.error('Logout failed:', error);
+            }
             toast.error(t('common.errors.signOutFailed'));
         }
     }, [logout, onClose]);
@@ -245,7 +247,9 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     toast.success(t('accountOverview.items.downloadData.success') || 'Data downloaded successfully');
                                 }
                             } catch (error: any) {
-                                console.error('Failed to download data:', error);
+                                if (__DEV__) {
+                                    console.error('Failed to download data:', error);
+                                }
                                 toast.error(error?.message || t('accountOverview.items.downloadData.error') || 'Failed to download data');
                             }
                         },
@@ -273,7 +277,9 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                     toast.success(t('accountOverview.items.downloadData.success') || 'Data downloaded successfully');
                                 }
                             } catch (error: any) {
-                                console.error('Failed to download data:', error);
+                                if (__DEV__) {
+                                    console.error('Failed to download data:', error);
+                                }
                                 toast.error(error?.message || t('accountOverview.items.downloadData.error') || 'Failed to download data');
                             }
                         },
@@ -281,7 +287,9 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                 ]
             );
         } catch (error: any) {
-            console.error('Failed to initiate download:', error);
+            if (__DEV__) {
+                console.error('Failed to initiate download:', error);
+            }
             toast.error(error?.message || t('accountOverview.items.downloadData.error') || 'Failed to download data');
         }
     }, [oxyServices, user, t]);
