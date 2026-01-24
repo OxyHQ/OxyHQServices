@@ -7,6 +7,7 @@ A comprehensive TypeScript client library for the Oxy API providing authenticati
 - [Features](#features)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Typography - Inter Font](#typography---inter-font)
 - [Usage Patterns](#usage-patterns)
   - [Frontend (React/React Native)](#frontend-reactreact-native)
   - [Backend (Node.js)](#backend-nodejs)
@@ -25,6 +26,7 @@ A comprehensive TypeScript client library for the Oxy API providing authenticati
 - 🌐 **Cross-Domain SSO**: Sign in once, authenticated everywhere (FedCM-based)
 - 📱 **Universal Provider**: Single `OxyProvider` works on iOS, Android, and Web
 - 🎨 **UI Components**: Pre-built components for auth, profiles, and more
+- ✍️ **Inter Font Included**: Default Oxy ecosystem font with automatic loading
 - 🔄 **Cross-Platform**: Works in Expo, React Native, and Node.js
 - 📱 **Multi-Session Support**: Manage multiple user sessions simultaneously
 - 🔧 **TypeScript First**: Full type safety and IntelliSense support
@@ -146,6 +148,54 @@ app.get('/api/users/:id', async (req, res) => {
 
 app.listen(3000);
 ```
+
+## ✍️ Typography - Inter Font
+
+**Inter is the default font for all Oxy ecosystem apps.** This package includes the Inter font family and provides automatic font loading for both web and native platforms.
+
+### Quick Setup
+
+```typescript
+import { FontLoader, fontFamilies, fontStyles } from '@oxyhq/services';
+
+function App() {
+  return (
+    <FontLoader>
+      <YourAppContent />
+    </FontLoader>
+  );
+}
+```
+
+### Using Font Constants
+
+```typescript
+import { fontFamilies, fontStyles } from '@oxyhq/services';
+
+const styles = StyleSheet.create({
+  title: {
+    ...fontStyles.titleLarge,  // Pre-defined style (54px, Bold)
+    color: '#000000',
+  },
+  customText: {
+    fontFamily: fontFamilies.interSemiBold,  // Cross-platform font family
+    fontSize: 18,
+  },
+});
+```
+
+### Available Exports
+
+- **`FontLoader`** - Component that loads Inter fonts automatically
+- **`setupFonts()`** - Function to manually load fonts
+- **`fontFamilies`** - Object with all Inter weight variants (inter, interLight, interMedium, interSemiBold, interBold, interExtraBold, interBlack)
+- **`fontStyles`** - Pre-defined text styles (titleLarge, titleMedium, titleSmall, buttonText)
+
+**📖 See [FONTS.md](./FONTS.md) for the complete typography guide**, including:
+- Detailed usage examples
+- All available font weights
+- Platform-specific handling
+- Best practices and migration guide
 
 ## 📖 Usage Patterns
 
