@@ -458,7 +458,7 @@ const styles = StyleSheet.create({
     currentKarma: {
         fontSize: 36,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         marginBottom: 4,
     },
     achievementStats: {
@@ -467,7 +467,7 @@ const styles = StyleSheet.create({
     achievementCount: {
         fontSize: 36,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         marginBottom: 4,
     },
     achievementCountLabel: {
@@ -496,7 +496,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 20,
         fontWeight: Platform.OS === 'web' ? '600' : undefined,
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
         marginTop: 8,
     },
     achievementsGrid: {

@@ -302,7 +302,7 @@ const styles = StyleSheet.create({
     },
     versionText: {
         fontSize: 12,
-        fontFamily: fontFamilies.phudu,
+        fontFamily: fontFamilies.inter,
     },
     message: {
         fontSize: 16,

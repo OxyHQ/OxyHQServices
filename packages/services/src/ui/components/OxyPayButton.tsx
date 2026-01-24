@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     text: {
-        fontFamily: fontFamilies.phudu,
+        fontFamily: fontFamilies.inter,
         fontWeight: '700',
     },
 });

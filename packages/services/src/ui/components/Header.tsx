@@ -417,14 +417,14 @@ const styles = StyleSheet.create({
     titleDefault: {
         fontSize: 18,
         fontWeight: '700',
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         letterSpacing: -0.5,
         lineHeight: 22,
     },
     titleLarge: {
         fontSize: 28,
         fontWeight: '800',
-        fontFamily: fontFamilies.phuduExtraBold,
+        fontFamily: fontFamilies.interExtraBold,
         letterSpacing: -1,
         lineHeight: 34,
         marginBottom: 3,
@@ -432,7 +432,7 @@ const styles = StyleSheet.create({
     titleMinimal: {
         fontSize: 16,
         fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
         letterSpacing: -0.3,
         lineHeight: 20,
     },
@@ -486,7 +486,7 @@ const styles = StyleSheet.create({
     actionText: {
         fontSize: 14,
         fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
         letterSpacing: -0.2,
     },
     loadingContainer: {

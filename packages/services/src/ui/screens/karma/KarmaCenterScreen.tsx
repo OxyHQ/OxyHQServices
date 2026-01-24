@@ -179,13 +179,13 @@ const styles = StyleSheet.create({
     karmaLabel: {
         fontSize: 16,
         marginBottom: 18,
-        fontFamily: fontFamilies.phudu,
+        fontFamily: fontFamilies.inter,
     },
     karmaAmount: {
         fontSize: 48,
         fontWeight: 'bold',
         marginBottom: 4,
-        fontFamily: fontFamilies.phudu,
+        fontFamily: fontFamilies.inter,
     },
     actionContainer: {
         marginBottom: 18,
@@ -224,7 +224,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 18,
         fontWeight: Platform.OS === 'web' ? '600' : undefined,
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
         marginTop: 8,
         alignSelf: 'flex-start',
         marginLeft: 24,

@@ -179,7 +179,7 @@ const styles = StyleSheet.create({
     bigTitle: {
         fontSize: 34,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         lineHeight: 40,
         marginBottom: 8,
         letterSpacing: -0.5,

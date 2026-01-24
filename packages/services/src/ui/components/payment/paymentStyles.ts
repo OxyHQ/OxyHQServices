@@ -24,7 +24,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         fontWeight: '600',
         color: colors.text,
         marginBottom: 12,
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
     },
     errorContainer: {
         flex: 1,
@@ -54,7 +54,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         marginBottom: 8,
     },
     summaryCardMainTitle: {
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         fontWeight: 'bold',
         fontSize: 28,
         color: colors.text,
@@ -95,7 +95,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         color: colors.text,
         textAlign: 'center',
         marginBottom: 8,
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
     },
     summaryCardAmountDescription: {
         fontSize: 14,
@@ -146,7 +146,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         marginBottom: 8,
     },
     cardPaymentMainTitle: {
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         fontWeight: 'bold',
         fontSize: 28,
         color: colors.text,
@@ -215,7 +215,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         marginBottom: 8,
     },
     oxyPayMainTitle: {
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         fontWeight: 'bold',
         fontSize: 28,
         color: colors.text,
@@ -262,7 +262,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         marginBottom: 8,
     },
     faircoinMainTitle: {
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         fontWeight: 'bold',
         fontSize: 28,
         color: '#1b1f0a',
@@ -373,7 +373,7 @@ export const createPaymentStyles = (colors: PaymentColors) => StyleSheet.create(
         marginBottom: 8,
     },
     successMainTitle: {
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         fontWeight: 'bold',
         fontSize: 28,
         color: colors.success || '#4BB543',

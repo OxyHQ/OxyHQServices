@@ -191,7 +191,7 @@ const Avatar: React.FC<AvatarProps> = ({
             styles.text,
             {
                 fontSize,
-                fontFamily: fontFamilies.phuduBold,
+                fontFamily: fontFamilies.interBold,
                 color: textColor,
                 textAlign: 'center' as const,
                 lineHeight: size, // Match line height to size for perfect vertical centering

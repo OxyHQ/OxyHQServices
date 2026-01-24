@@ -1166,7 +1166,7 @@ const styles = StyleSheet.create({
     headerTitle: {
         fontSize: 20,
         fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
     },
     headerTitleContainer: {
         flex: 1,
@@ -1189,7 +1189,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 24,
         fontWeight: 'bold',
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         marginBottom: 8,
     },
     sectionSubtitle: {

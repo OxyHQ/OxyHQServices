@@ -606,7 +606,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 16,
         fontWeight: Platform.OS === 'web' ? '600' : undefined,
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
         color: '#333',
     },
     settingItem: {

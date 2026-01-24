@@ -50,14 +50,14 @@ export const fileManagementStyles = StyleSheet.create({
     headerTitle: {
         fontSize: 22,
         fontWeight: '700',
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         letterSpacing: -0.5,
         lineHeight: 28,
     },
     headerSubtitle: {
         fontSize: 13,
         fontWeight: '500',
-        fontFamily: fontFamilies.phuduMedium,
+        fontFamily: fontFamilies.interMedium,
         marginTop: 2,
         letterSpacing: 0.2,
     },
@@ -133,7 +133,7 @@ export const fileManagementStyles = StyleSheet.create({
     searchInput: {
         flex: 1,
         fontSize: 16,
-        fontFamily: fontFamilies.phudu,
+        fontFamily: fontFamilies.inter,
         lineHeight: 20,
     },
     searchClearButton: {
@@ -159,14 +159,14 @@ export const fileManagementStyles = StyleSheet.create({
     statValue: {
         fontSize: 20,
         fontWeight: '800',
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         letterSpacing: -0.5,
         lineHeight: 24,
     },
     statLabel: {
         fontSize: 12,
         fontWeight: '500',
-        fontFamily: fontFamilies.phuduMedium,
+        fontFamily: fontFamilies.interMedium,
         marginTop: 2,
         letterSpacing: 0.2,
     },
@@ -322,7 +322,7 @@ export const fileManagementStyles = StyleSheet.create({
     emptyStateTitle: {
         fontSize: 24,
         fontWeight: 'bold',
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         marginTop: 16,
         marginBottom: 8,
     },
@@ -362,7 +362,7 @@ export const fileManagementStyles = StyleSheet.create({
     modalTitle: {
         fontSize: 18,
         fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
     },
     modalPlaceholder: {
         width: 40,
@@ -383,7 +383,7 @@ export const fileManagementStyles = StyleSheet.create({
     fileDetailName: {
         fontSize: 20,
         fontWeight: 'bold',
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         textAlign: 'center',
         marginBottom: 24,
     },
@@ -442,7 +442,7 @@ export const fileManagementStyles = StyleSheet.create({
     uploadPreviewTitle: {
         fontSize: 20,
         fontWeight: '700',
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
     },
     uploadPreviewList: {
         flex: 1,
@@ -476,12 +476,12 @@ export const fileManagementStyles = StyleSheet.create({
     uploadPreviewName: {
         fontSize: 16,
         fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
         marginBottom: 4,
     },
     uploadPreviewMeta: {
         fontSize: 13,
-        fontFamily: fontFamilies.phudu,
+        fontFamily: fontFamilies.inter,
     },
     uploadPreviewRemove: {
         padding: 4,
@@ -498,7 +498,7 @@ export const fileManagementStyles = StyleSheet.create({
     uploadPreviewStatsText: {
         fontSize: 15,
         fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
     },
     uploadPreviewActions: {
         flexDirection: 'row',
@@ -515,7 +515,7 @@ export const fileManagementStyles = StyleSheet.create({
     uploadPreviewCancelText: {
         fontSize: 16,
         fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
     },
     uploadPreviewConfirmButton: {
         flex: 2,
@@ -530,7 +530,7 @@ export const fileManagementStyles = StyleSheet.create({
         color: '#FFFFFF',
         fontSize: 16,
         fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
     },
     fileViewerContainer: {
         flex: 1,
@@ -570,7 +570,7 @@ export const fileManagementStyles = StyleSheet.create({
     fileViewerTitle: {
         fontSize: 18,
         fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
         marginBottom: 2,
     },
     fileViewerSubtitle: {
@@ -661,7 +661,7 @@ export const fileManagementStyles = StyleSheet.create({
     unsupportedFileTitle: {
         fontSize: 24,
         fontWeight: 'bold',
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         marginTop: 16,
         marginBottom: 8,
         textAlign: 'center',
@@ -719,7 +719,7 @@ export const fileManagementStyles = StyleSheet.create({
     fileDetailsSectionTitle: {
         fontSize: 18,
         fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
         flex: 1,
     },
     fileDetailsSectionHeader: {

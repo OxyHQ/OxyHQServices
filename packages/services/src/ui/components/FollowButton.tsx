@@ -212,7 +212,7 @@ const FollowButton: React.FC<FollowButtonProps> = ({
   // Get base text style (without state-specific colors since they're animated)
   const getBaseTextStyle = (): StyleProp<TextStyle> => {
     const baseTextStyle = {
-      fontFamily: fontFamilies.phuduSemiBold,
+      fontFamily: fontFamilies.interSemiBold,
       fontWeight: '600' as const,
     };
 

@@ -588,7 +588,7 @@ const styles = StyleSheet.create({
     bigTitle: {
         fontSize: 34,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         lineHeight: 40,
         marginBottom: 8,
         letterSpacing: -0.5,
@@ -610,7 +610,7 @@ const styles = StyleSheet.create({
     label: {
         fontSize: 14,
         fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
     },
     input: {
         borderWidth: StyleSheet.hairlineWidth,
@@ -649,7 +649,7 @@ const styles = StyleSheet.create({
     listTitle: {
         fontSize: 16,
         fontWeight: '600',
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
         marginBottom: 12,
     },
     listItem: {

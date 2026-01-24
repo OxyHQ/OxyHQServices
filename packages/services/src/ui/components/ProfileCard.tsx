@@ -115,7 +115,7 @@ const styles = StyleSheet.create({
     userName: {
         fontSize: 22,
         fontWeight: 'bold',
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         marginBottom: 4,
     },
     userEmail: {

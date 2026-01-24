@@ -452,7 +452,7 @@ const styles = StyleSheet.create({
         fontSize: 24,
         fontWeight: 'bold',
         color: '#000',
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
     },
     placeholder: {
         width: 34, // Same width as cancel button to center title

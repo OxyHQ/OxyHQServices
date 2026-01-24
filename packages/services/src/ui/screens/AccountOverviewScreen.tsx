@@ -774,7 +774,7 @@ const styles = StyleSheet.create({
         fontSize: 28,
         fontWeight: '600',
         marginBottom: 8,
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         maxWidth: '90%',
     },
     welcomeSubtext: {

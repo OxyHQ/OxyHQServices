@@ -602,7 +602,7 @@ const styles = StyleSheet.create({
         gap: COMPONENT_GAP,
     },
     modernTitle: {
-        fontFamily: fontFamilies.phuduBold,
+        fontFamily: fontFamilies.interBold,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
         fontSize: 42,
         lineHeight: 50.4, // 42 * 1.2
@@ -627,7 +627,7 @@ const styles = StyleSheet.create({
         marginTop: 4,
         textTransform: 'uppercase',
         letterSpacing: 0.5,
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
     },
     groupedSectionWrapper: {
         backgroundColor: 'transparent',

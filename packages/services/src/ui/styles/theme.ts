@@ -121,7 +121,7 @@ export const createCommonStyles = (theme: 'light' | 'dark') => {
       marginTop: 24,
     },
     buttonText: {
-      fontFamily: fontFamilies.phuduSemiBold,
+      fontFamily: fontFamilies.interSemiBold,
       fontSize: 16,
       fontWeight: '600',
       color: '#FFFFFF',
