@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { useAuthStore } from '../stores/authStore';
 import { useThemeColors } from '../styles';
+import { fontFamilies } from '../styles/fonts';
 import { normalizeTheme } from '../utils/themeUtils';
 import GroupedPillButtons from '../components/internal/GroupedPillButtons';
 import { useI18n } from '../hooks/useI18n';
@@ -275,7 +276,7 @@ const createStyles = (theme: string) => {
         },
         title: {
             fontSize: 42,
-            fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+            fontFamily: fontFamilies.interBold,
             fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
             letterSpacing: -1,
             textAlign: 'left',

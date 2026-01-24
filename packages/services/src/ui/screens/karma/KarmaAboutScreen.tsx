@@ -54,20 +54,20 @@ const styles = StyleSheet.create({
     container: { flex: 1 },
     title: {
         fontFamily: Platform.OS === 'web'
-            ? 'Phudu'  // Use CSS font name directly for web
-            : 'Phudu-Bold',  // Use exact font name as registered with Font.loadAsync
+            ? 'Inter'  // Use CSS font name directly for web
+            : 'Inter-Bold',  // Use exact font name as registered with Font.loadAsync
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
         fontSize: 54,
         margin: 24,
         marginBottom: 24,
     },
     contentContainer: { padding: 24, paddingTop: 20 },
-    section: { 
-        fontSize: 18, 
+    section: {
+        fontSize: 18,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: fontFamilies.phuduBold,
-        marginTop: 24, 
-        marginBottom: 8 
+        fontFamily: fontFamilies.interBold,
+        marginTop: 24,
+        marginBottom: 8
     },
     paragraph: { fontSize: 16, marginBottom: 12 },
 });

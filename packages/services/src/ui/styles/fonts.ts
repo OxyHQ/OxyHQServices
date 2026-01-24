@@ -2,51 +2,51 @@ import { Platform, type TextStyle } from 'react-native';
 
 /**
  * Font family names for use across the app
- * 
+ *
  * For web platforms, we use the CSS font name with weights
  * For native platforms, we use the specific static font file names
  */
 export const fontFamilies = {
   // Regular weight (400)
-  phudu: Platform.select({
-    web: 'Phudu',  // Web projects will use standard CSS font name
-    default: 'Phudu-Regular'  // Native projects use the specific weight font
+  inter: Platform.select({
+    web: 'Inter',  // Web projects will use standard CSS font name
+    default: 'Inter-Regular'  // Native projects use the specific weight font
   }),
 
   // Light weight (300)
-  phuduLight: Platform.select({
-    web: 'Phudu',  // Web uses CSS weight
-    default: 'Phudu-Light'  // Native uses specific font
+  interLight: Platform.select({
+    web: 'Inter',  // Web uses CSS weight
+    default: 'Inter-Light'  // Native uses specific font
   }),
 
   // Medium weight (500)
-  phuduMedium: Platform.select({
-    web: 'Phudu',  // Web uses CSS weight
-    default: 'Phudu-Medium'  // Native uses specific font
+  interMedium: Platform.select({
+    web: 'Inter',  // Web uses CSS weight
+    default: 'Inter-Medium'  // Native uses specific font
   }),
 
   // SemiBold weight (600)
-  phuduSemiBold: Platform.select({
-    web: 'Phudu',  // Web uses CSS weight
-    default: 'Phudu-SemiBold'  // Native uses specific font
+  interSemiBold: Platform.select({
+    web: 'Inter',  // Web uses CSS weight
+    default: 'Inter-SemiBold'  // Native uses specific font
   }),
 
   // Bold weight (700)
-  phuduBold: Platform.select({
-    web: 'Phudu',  // Web uses CSS weight 
-    default: 'Phudu-Bold'  // Native uses specific font
+  interBold: Platform.select({
+    web: 'Inter',  // Web uses CSS weight
+    default: 'Inter-Bold'  // Native uses specific font
   }),
 
   // ExtraBold weight (800)
-  phuduExtraBold: Platform.select({
-    web: 'Phudu',  // Web uses CSS weight
-    default: 'Phudu-ExtraBold'  // Native uses specific font
+  interExtraBold: Platform.select({
+    web: 'Inter',  // Web uses CSS weight
+    default: 'Inter-ExtraBold'  // Native uses specific font
   }),
 
   // Black weight (900)
-  phuduBlack: Platform.select({
-    web: 'Phudu',  // Web uses CSS weight
-    default: 'Phudu-Black'  // Native uses specific font
+  interBlack: Platform.select({
+    web: 'Inter',  // Web uses CSS weight
+    default: 'Inter-Black'  // Native uses specific font
   }),
 };
 
@@ -55,22 +55,22 @@ export const fontFamilies = {
  */
 export const fontStyles: Record<string, TextStyle> = {
   titleLarge: {
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontFamily: fontFamilies.interBold,
     fontSize: 54,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
   },
   titleMedium: {
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontFamily: fontFamilies.interBold,
     fontSize: 24,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
   },
   titleSmall: {
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontFamily: fontFamilies.interBold,
     fontSize: 20,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
   },
   buttonText: {
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-SemiBold',
+    fontFamily: fontFamilies.interSemiBold,
     fontSize: 16,
     fontWeight: Platform.OS === 'web' ? '600' : undefined,  // Only apply fontWeight on web
   },

@@ -58,8 +58,8 @@ const createTheme = (isDark: boolean): Theme => {
     fonts: {
       title: {
         fontFamily: Platform.OS === 'web'
-          ? 'Phudu'
-          : 'Phudu-Bold',
+          ? 'Inter'
+          : 'Inter-Bold',
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
         fontSize: 34,
       },
@@ -68,7 +68,7 @@ const createTheme = (isDark: boolean): Theme => {
         lineHeight: 24,
       },
       button: {
-        fontFamily: fontFamilies.phuduSemiBold,
+        fontFamily: fontFamilies.interSemiBold,
         fontSize: 16,
         fontWeight: '600',
         color: '#FFFFFF',

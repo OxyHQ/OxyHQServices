@@ -2,6 +2,7 @@ import type React from 'react';
 import { useState } from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyle, type StyleProp, Platform } from 'react-native';
 import { useAuth } from '../hooks/useAuth';
+import { fontFamilies } from '../styles/fonts';
 import OxyLogo from './OxyLogo';
 
 export interface OxySignInButtonProps {
@@ -198,7 +199,7 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     text: {
-        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-SemiBold',
+        fontFamily: fontFamilies.interSemiBold,
         fontWeight: Platform.OS === 'web' ? '600' : undefined,
         fontSize: 16,
         marginLeft: 10,

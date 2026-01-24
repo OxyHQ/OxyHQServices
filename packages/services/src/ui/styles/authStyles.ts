@@ -32,7 +32,7 @@ export const createAuthStyles = (colors: AuthThemeColors, theme: string) => Styl
     marginBottom: 24,
   },
   modernTitle: {
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontFamily: fontFamilies.interBold,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
     fontSize: 62,
     lineHeight: 74.4, // 62 * 1.2
@@ -47,7 +47,7 @@ export const createAuthStyles = (colors: AuthThemeColors, theme: string) => Styl
     opacity: 0.8,
   },
   welcomeTitle: {
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontFamily: fontFamilies.interBold,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
     fontSize: 42,
     lineHeight: 50.4, // 42 * 1.2
@@ -56,7 +56,7 @@ export const createAuthStyles = (colors: AuthThemeColors, theme: string) => Styl
     letterSpacing: -1,
   },
   stepTitle: {
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontFamily: fontFamilies.interBold,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
     fontSize: 42,
     lineHeight: 50.4, // 42 * 1.2
@@ -257,7 +257,7 @@ export const createAuthStyles = (colors: AuthThemeColors, theme: string) => Styl
     borderColor: '#FFFFFF',
   },
   modernUserDisplayName: {
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontFamily: fontFamilies.interBold,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
     fontSize: 42,
     marginBottom: 4,

@@ -4,25 +4,25 @@ import { Platform } from 'react-native';
 import * as Font from 'expo-font';
 
 /**
- * Get the Phudu font sources for both native and web environments 
+ * Get the Inter font sources for both native and web environments
  * This is specifically designed to work when distributed as an npm package
  */
-const getPhuduFonts = () => {
+const getInterFonts = () => {
     try {
         // For both development and when used as a package
         // Load all static font weights
         return {
-            'Phudu-Light': require('../../assets/fonts/Phudu/Phudu-Light.ttf'),
-            'Phudu-Regular': require('../../assets/fonts/Phudu/Phudu-Regular.ttf'),
-            'Phudu-Medium': require('../../assets/fonts/Phudu/Phudu-Medium.ttf'),
-            'Phudu-SemiBold': require('../../assets/fonts/Phudu/Phudu-SemiBold.ttf'),
-            'Phudu-Bold': require('../../assets/fonts/Phudu/Phudu-Bold.ttf'),
-            'Phudu-ExtraBold': require('../../assets/fonts/Phudu/Phudu-ExtraBold.ttf'),
-            'Phudu-Black': require('../../assets/fonts/Phudu/Phudu-Black.ttf'),
+            'Inter-Light': require('../../assets/fonts/Inter/Inter_18pt-Light.ttf'),
+            'Inter-Regular': require('../../assets/fonts/Inter/Inter_18pt-Regular.ttf'),
+            'Inter-Medium': require('../../assets/fonts/Inter/Inter_18pt-Medium.ttf'),
+            'Inter-SemiBold': require('../../assets/fonts/Inter/Inter_18pt-SemiBold.ttf'),
+            'Inter-Bold': require('../../assets/fonts/Inter/Inter_18pt-Bold.ttf'),
+            'Inter-ExtraBold': require('../../assets/fonts/Inter/Inter_18pt-ExtraBold.ttf'),
+            'Inter-Black': require('../../assets/fonts/Inter/Inter_18pt-Black.ttf'),
         };
     } catch (error) {
         if (__DEV__) {
-        console.warn('Failed to load Phudu fonts:', error);
+        console.warn('Failed to load Inter fonts:', error);
         }
         return null;
     }
@@ -44,14 +44,14 @@ export const FontLoader = ({
         const loadFonts = async () => {
             try {
                 // Get all the font weights
-                const phuduFonts = getPhuduFonts();
+                const interFonts = getInterFonts();
 
-                if (!phuduFonts) {
-                    throw new Error('Phudu font files not found');
+                if (!interFonts) {
+                    throw new Error('Inter font files not found');
                 }
 
-                // Load all the static Phudu fonts with their respective weights
-                await Font.loadAsync(phuduFonts);
+                // Load all the static Inter fonts with their respective weights
+                await Font.loadAsync(interFonts);
 
                 setFontState('loaded');
             } catch (error) {
@@ -82,10 +82,10 @@ export const FontLoader = ({
  */
 export const setupFonts = async () => {
     try {
-        const phuduFonts = getPhuduFonts();
+        const interFonts = getInterFonts();
 
-        if (!phuduFonts) {
-            throw new Error('Phudu font files not found');
+        if (!interFonts) {
+            throw new Error('Inter font files not found');
         }
 
         if (Platform.OS === 'web') {
@@ -97,44 +97,44 @@ export const setupFonts = async () => {
                 // Define @font-face rules for each font weight
                 const fontFaceRules = `
                     @font-face {
-                        font-family: 'Phudu';
-                        src: url(${phuduFonts['Phudu-Light']}) format('truetype');
+                        font-family: 'Inter';
+                        src: url(${interFonts['Inter-Light']}) format('truetype');
                         font-weight: 300;
                         font-style: normal;
                     }
                     @font-face {
-                        font-family: 'Phudu';
-                        src: url(${phuduFonts['Phudu-Regular']}) format('truetype');
+                        font-family: 'Inter';
+                        src: url(${interFonts['Inter-Regular']}) format('truetype');
                         font-weight: 400;
                         font-style: normal;
                     }
                     @font-face {
-                        font-family: 'Phudu';
-                        src: url(${phuduFonts['Phudu-Medium']}) format('truetype');
+                        font-family: 'Inter';
+                        src: url(${interFonts['Inter-Medium']}) format('truetype');
                         font-weight: 500;
                         font-style: normal;
                     }
                     @font-face {
-                        font-family: 'Phudu';
-                        src: url(${phuduFonts['Phudu-SemiBold']}) format('truetype');
+                        font-family: 'Inter';
+                        src: url(${interFonts['Inter-SemiBold']}) format('truetype');
                         font-weight: 600;
                         font-style: normal;
                     }
                     @font-face {
-                        font-family: 'Phudu';
-                        src: url(${phuduFonts['Phudu-Bold']}) format('truetype');
+                        font-family: 'Inter';
+                        src: url(${interFonts['Inter-Bold']}) format('truetype');
                         font-weight: 700;
                         font-style: normal;
                     }
                     @font-face {
-                        font-family: 'Phudu';
-                        src: url(${phuduFonts['Phudu-ExtraBold']}) format('truetype');
+                        font-family: 'Inter';
+                        src: url(${interFonts['Inter-ExtraBold']}) format('truetype');
                         font-weight: 800;
                         font-style: normal;
                     }
                     @font-face {
-                        font-family: 'Phudu';
-                        src: url(${phuduFonts['Phudu-Black']}) format('truetype');
+                        font-family: 'Inter';
+                        src: url(${interFonts['Inter-Black']}) format('truetype');
                         font-weight: 900;
                         font-style: normal;
                     }
@@ -143,12 +143,12 @@ export const setupFonts = async () => {
                 style.textContent = fontFaceRules;
                 document.head.appendChild(style);
                 if (__DEV__) {
-                console.info('All Phudu web fonts have been dynamically loaded');
+                console.info('All Inter web fonts have been dynamically loaded');
                 }
             }
         } else {
             // Attempt to load the fonts anyway (this works if the consumer has linked the assets)
-            await Font.loadAsync(phuduFonts);
+            await Font.loadAsync(interFonts);
         }
 
         return true;

@@ -10,6 +10,7 @@ import Animated, {
     withTiming,
 } from 'react-native-reanimated';
 import { useThemeColors, createAuthStyles } from '../styles';
+import { fontFamilies } from '../styles/fonts';
 import type { BaseScreenProps, StepController } from '../types/navigation';
 import type { RouteName } from '../types/navigation';
 import { screenContentStyle } from '../constants/spacing';
@@ -139,7 +140,7 @@ const StepBasedScreen: React.FC<StepBasedScreenProps> = ({
             marginBottom: 24,
         },
         modernTitle: {
-            fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+            fontFamily: fontFamilies.interBold,
             fontWeight: Platform.OS === 'web' ? 'bold' as const : undefined,
             fontSize: 42,
             lineHeight: 50.4, // 42 * 1.2
