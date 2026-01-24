@@ -125,7 +125,7 @@ function getFfprobePath(): string {
     execSync('which ffprobe', { stdio: 'ignore' });
     logger.info('[VariantService] Using system ffprobe');
     return systemFfprobe;
-  } catch (e) {
+  } catch {
     logger.warn('[VariantService] System ffprobe not found in PATH - video metadata extraction may fail. Install with: sudo apt-get install ffmpeg');
     // Still return 'ffprobe' as fallback - spawn will handle the error gracefully
     return systemFfprobe;
