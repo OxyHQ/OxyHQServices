@@ -70,7 +70,9 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             await refreshSessions();
             setLastRefreshed(new Date());
         } catch (error) {
-            console.error('Failed to load sessions:', error);
+            if (__DEV__) {
+                console.error('Failed to load sessions:', error);
+            }
             if (Platform.OS === 'web') {
                 toast.error('Failed to load sessions. Please try again.');
             } else {
@@ -95,7 +97,9 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                 await refreshSessions();
                 toast.success('Session logged out successfully');
             } catch (error) {
-                console.error('Logout session failed:', error);
+                if (__DEV__) {
+                    console.error('Logout session failed:', error);
+                }
                 toast.error('Failed to logout session. Please try again.');
             } finally {
                 setActionLoading(null);
@@ -128,7 +132,9 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     await refreshSessions();
                     toast.success('Other sessions logged out successfully');
                 } catch (error) {
-                    console.error('Logout other sessions failed:', error);
+                    if (__DEV__) {
+                        console.error('Logout other sessions failed:', error);
+                    }
                     toast.error('Failed to logout other sessions. Please try again.');
                 } finally {
                     setActionLoading(null);
@@ -146,7 +152,9 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
                     setActionLoading('all');
                     await logoutAll();
                 } catch (error) {
-                    console.error('Logout all sessions failed:', error);
+                    if (__DEV__) {
+                        console.error('Logout all sessions failed:', error);
+                    }
                     toast.error('Failed to logout all sessions. Please try again.');
                 } finally {
                     setActionLoading(null);
@@ -181,7 +189,9 @@ const SessionManagementScreen: React.FC<BaseScreenProps> = ({
             await switchSession(sessionId);
             toast.success('Switched session');
         } catch (e) {
-            console.error('Switch session failed', e);
+            if (__DEV__) {
+                console.error('Switch session failed', e);
+            }
             toast.error('Failed to switch session');
         } finally {
             setSwitchLoading(null);
