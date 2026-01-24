@@ -225,15 +225,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     }, [finalUser, avatarFileId, isUpdatingAvatar, optimisticAvatarId]);
 
     // Set initial editing field if provided via props (e.g., from navigation)
-    // Use a ref to track if we've already set the initial field to avoid loops
-    const hasSetInitialFieldRef = useRef(false);
-    const previousInitialFieldRef = useRef<string | undefined>(undefined);
-    const initialFieldTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-    // Delay constant for scroll completion
-    const SCROLL_DELAY_MS = 600;
-
-
     // Handle initialSection prop to scroll to specific section
     const hasScrolledToSectionRef = useRef(false);
     const previousInitialSectionRef = useRef<string | undefined>(undefined);
