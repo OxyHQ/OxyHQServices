@@ -309,7 +309,7 @@ const styles = StyleSheet.create({
     },
     title: {
         fontSize: 28,
-        fontFamily: 'Phudu-SemiBold',
+        fontFamily: 'Inter-SemiBold',
         fontWeight: '600',
         marginBottom: 8,
         textAlign: 'center',
@@ -360,7 +360,7 @@ const styles = StyleSheet.create({
     },
     primaryButtonText: {
         fontSize: 16,
-        fontFamily: 'Phudu-SemiBold',
+        fontFamily: 'Inter-SemiBold',
         fontWeight: '600',
     },
     cancelButton: {

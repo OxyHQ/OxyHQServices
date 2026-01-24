@@ -41,7 +41,7 @@ const styles = StyleSheet.create({
         fontSize: 48,
         lineHeight: 56,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+        fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
     },
     subtitle: {
         fontSize: 16,
@@ -53,7 +53,7 @@ const styles = StyleSheet.create({
         fontSize: 40,
         lineHeight: 48,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+        fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
     },
     mobileSubtitle: {
         fontSize: 15,

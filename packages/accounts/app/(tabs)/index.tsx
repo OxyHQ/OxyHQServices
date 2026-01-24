@@ -762,7 +762,7 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '600',
     marginBottom: 8,
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
   } as const,
   welcomeSubtext: {
     fontSize: 16,

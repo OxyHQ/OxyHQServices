@@ -398,7 +398,7 @@ const styles = StyleSheet.create({
   startSearchTitle: {
     fontSize: Platform.OS === 'web' ? 56 : 36,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
     marginBottom: 16,
     textAlign: 'left',
     lineHeight: Platform.OS === 'web' ? 64 : 44,

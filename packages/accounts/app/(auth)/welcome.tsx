@@ -213,7 +213,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   text: {
-    fontFamily: 'Phudu-SemiBold',
+    fontFamily: 'Inter-SemiBold',
     fontWeight: '600',
     letterSpacing: -0.5,
   },

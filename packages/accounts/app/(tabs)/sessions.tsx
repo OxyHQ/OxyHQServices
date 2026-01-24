@@ -210,7 +210,7 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 32,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-        fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+        fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
         marginBottom: 8,
     },
     subtitle: {

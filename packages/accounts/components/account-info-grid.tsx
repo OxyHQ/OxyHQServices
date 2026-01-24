@@ -84,7 +84,7 @@ const styles = StyleSheet.create({
   accountInfoValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
   } as const,
 });
 

@@ -647,7 +647,7 @@ const styles = StyleSheet.create({
   walletBalance: {
     fontSize: 40,
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
     marginBottom: 8,
   },
   walletSubtitle: {

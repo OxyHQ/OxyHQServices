@@ -78,7 +78,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 38,
-    fontFamily: 'Phudu-SemiBold',
+    fontFamily: 'Inter-SemiBold',
     fontWeight: '600',
     marginBottom: 8,
     textAlign: 'center',

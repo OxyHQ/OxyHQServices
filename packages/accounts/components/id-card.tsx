@@ -204,7 +204,7 @@ const styles = StyleSheet.create({
   idCardValue: {
     fontSize: 20,
     fontWeight: 'bold',
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
   } as const,
 });
 

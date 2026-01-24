@@ -318,7 +318,7 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 42,
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
     textAlign: 'center',
     marginTop: 24,
@@ -338,7 +338,7 @@ const styles = StyleSheet.create({
   },
   appName: {
     fontSize: 42,
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-Bold',
+    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
     fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
     marginTop: 20,
     marginBottom: 12,
@@ -364,7 +364,7 @@ const styles = StyleSheet.create({
   },
   permissionsTitle: {
     fontSize: 18,
-    fontFamily: Platform.OS === 'web' ? 'Phudu' : 'Phudu-SemiBold',
+    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-SemiBold',
     fontWeight: Platform.OS === 'web' ? '600' : undefined,
     marginLeft: 8,
     letterSpacing: -0.5,

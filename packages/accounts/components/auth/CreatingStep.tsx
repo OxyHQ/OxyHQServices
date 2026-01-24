@@ -140,7 +140,7 @@ const styles = StyleSheet.create({
   },
   creatingTitle: {
     fontSize: 20,
-    fontFamily: 'Phudu-SemiBold',
+    fontFamily: 'Inter-SemiBold',
     fontWeight: '600',
     marginTop: 20,
     textAlign: 'center',

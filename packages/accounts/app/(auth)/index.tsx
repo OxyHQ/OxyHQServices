@@ -150,7 +150,7 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   text: {
-    fontFamily: 'Phudu-SemiBold',
+    fontFamily: 'Inter-SemiBold',
     fontWeight: '600',
     letterSpacing: -0.5,
   },
@@ -160,7 +160,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   tapText: {
-    fontFamily: 'Phudu-Regular',
+    fontFamily: 'Inter-Regular',
     fontWeight: '400',
     opacity: 0.6,
   },

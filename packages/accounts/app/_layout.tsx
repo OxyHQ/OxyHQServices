@@ -2,11 +2,10 @@ import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { useFonts } from 'expo-font';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
-import { OxyProvider } from '@oxyhq/services';
+import { OxyProvider, FontLoader } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ScrollProvider } from '@/contexts/scroll-context';
@@ -52,16 +51,13 @@ function RootLayoutContent() {
     fadeComplete: false,
   });
 
-  // Font Loading
-  const [fontsLoaded] = useFonts({
-    'Phudu-Light': require('@/assets/fonts/Phudu/Phudu-Light.ttf'),
-    'Phudu-Regular': require('@/assets/fonts/Phudu/Phudu-Regular.ttf'),
-    'Phudu-Medium': require('@/assets/fonts/Phudu/Phudu-Medium.ttf'),
-    'Phudu-SemiBold': require('@/assets/fonts/Phudu/Phudu-SemiBold.ttf'),
-    'Phudu-Bold': require('@/assets/fonts/Phudu/Phudu-Bold.ttf'),
-    'Phudu-ExtraBold': require('@/assets/fonts/Phudu/Phudu-ExtraBold.ttf'),
-    'Phudu-Black': require('@/assets/fonts/Phudu/Phudu-Black.ttf'),
-  });
+  // Fonts are now loaded automatically via FontLoader from @oxyhq/services
+  const [fontsLoaded, setFontsLoaded] = useState(false);
+
+  useEffect(() => {
+    // Fonts load in background via FontLoader, mark as ready immediately
+    setFontsLoaded(true);
+  }, []);
 
   // Callbacks
   const handleSplashFadeComplete = useCallback(() => {
@@ -106,22 +102,25 @@ function RootLayoutContent() {
 
   // Memoize app content to prevent unnecessary re-renders
   // OxyProvider must always be rendered so screens can use useOxy() hook
+  // FontLoader automatically loads Inter fonts from @oxyhq/services
   const appContent = useMemo(() => {
     return (
-      <KeyboardProvider>
-        <AlertProvider>
-          <OxyProvider baseURL={API_URL}>
-            {!appIsReady ? (
-              <AppSplashScreen
-                startFade={splashState.startFade}
-                onFadeComplete={handleSplashFadeComplete}
-              />
-            ) : (
-              <AppStackContent colorScheme={colorScheme} />
-            )}
-          </OxyProvider>
-        </AlertProvider>
-      </KeyboardProvider>
+      <FontLoader>
+        <KeyboardProvider>
+          <AlertProvider>
+            <OxyProvider baseURL={API_URL}>
+              {!appIsReady ? (
+                <AppSplashScreen
+                  startFade={splashState.startFade}
+                  onFadeComplete={handleSplashFadeComplete}
+                />
+              ) : (
+                <AppStackContent colorScheme={colorScheme} />
+              )}
+            </OxyProvider>
+          </AlertProvider>
+        </KeyboardProvider>
+      </FontLoader>
     );
   }, [
     appIsReady,

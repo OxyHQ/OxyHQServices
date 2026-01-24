@@ -77,7 +77,7 @@ export function Button({
     const getTextStyle = (): TextStyle => {
         const baseStyle: TextStyle = {
             fontSize: 14,
-            fontFamily: 'Phudu-SemiBold',
+            fontFamily: 'Inter-SemiBold',
             fontWeight: '600',
         };
 
