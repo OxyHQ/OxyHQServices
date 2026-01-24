@@ -45,7 +45,7 @@
     "viewAllAccounts": "View {{count}} more",
     "status": {
       "accountSwitched": "Now using {{name}}"
-    },
+    }
   },
   "signup": {
     "welcome": {
@@ -580,7 +580,7 @@
       "verifyAccount": {
         "title": "Verify Account",
         "subtitle": "Get a verified badge"
-      },
+      }
     },
     "confirms": {
       "removeAvatar": "Remove your profile picture?"
@@ -594,7 +594,7 @@
       "avatarSelected": "Avatar selected",
       "avatarUpdated": "Avatar updated",
       "updateAvatarFailed": "Failed to update avatar",
-      "noActiveSession": "No active session",
+      "noActiveSession": "No active session"
     }
   },
   "accountOverview": {

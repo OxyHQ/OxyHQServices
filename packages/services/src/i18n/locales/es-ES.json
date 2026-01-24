@@ -45,7 +45,7 @@
     "viewAllAccounts": "Ver {{count}} más",
     "status": {
       "accountSwitched": "Ahora usando {{name}}"
-    },
+    }
   },
   "signup": {
     "welcome": {
@@ -91,7 +91,15 @@
       },
       "notSet": "Sin definir",
       "securityTip": "Para mayor seguridad, habilita la autenticación biométrica en Configuración de la cuenta después de crear tu cuenta.",
-      "legalReminder": "Al crear una cuenta, aceptas nuestros Términos de servicio y Política de privacidad."
+      "legalReminder": "Al crear una cuenta, aceptas nuestros Términos de servicio y Política de privacidad.",
+      "sections": {
+        "account": "Información de la cuenta",
+        "next": "Próximos pasos"
+      },
+      "next": {
+        "securityTitle": "Mantén tu cuenta segura",
+        "legalTitle": "Todo listo"
+      }
     }
   },
   "profile": {
@@ -116,7 +124,8 @@
     "username": {
       "label": "Usuario",
       "placeholder": "Introduce tu usuario",
-      "errorRequired": "Por favor, introduce tu usuario."
+      "errorRequired": "Por favor, introduce tu usuario.",
+      "helper": "Introduce tu usuario o correo electrónico"
     },
     "verify": {
       "title": "Verificar código",
@@ -180,14 +189,12 @@
       },
       "privacySettings": {
         "title": "Ajustes de privacidad",
-        "subtitle": "Controla quién puede ver tu perfil",
-        "coming": "¡Los ajustes de privacidad estarán disponibles pronto!"
+        "subtitle": "Controla quién puede ver tu perfil"
       },
       "verifyAccount": {
         "title": "Verificar cuenta",
-        "subtitle": "Obtén una insignia verificada",
-        "coming": "¡La verificación de cuenta estará disponible pronto!"
-      },
+        "subtitle": "Obtén una insignia verificada"
+      }
     },
     "confirms": {
       "removeAvatar": "¿Eliminar tu foto de perfil?"
@@ -201,7 +208,7 @@
       "avatarSelected": "Avatar seleccionado",
       "avatarUpdated": "Avatar actualizado",
       "updateAvatarFailed": "Error al actualizar el avatar",
-      "noActiveSession": "No hay sesión activa",
+      "noActiveSession": "No hay sesión activa"
     }
   },
   "common": {
@@ -289,23 +296,27 @@
         "subtitle": "Métodos de pago y facturas",
         "coming": "¡La gestión de facturación estará disponible pronto!"
       },
-      "accountSwitcher": {
-        "titleShow": "Mostrar conmutador de cuentas",
-        "titleHide": "Ocultar conmutador de cuentas",
-        "subtitleHide": "Ocultar el conmutador de cuentas",
-        "subtitleSwitchBetween": "Cambiar entre {{count}} cuentas",
-        "subtitleLoading": "Cargando cuentas adicionales...",
-        "subtitleManageMultiple": "Gestionar varias cuentas"
-      },
       "downloadData": {
         "title": "Descargar mis datos",
         "subtitle": "Exporta la información de tu cuenta",
-        "coming": "¡La descarga de datos estará disponible pronto!"
+        "confirmTitle": "Descargar datos de la cuenta",
+        "confirmMessage": "Elige el formato para exportar los datos de tu cuenta:",
+        "downloading": "Preparando descarga...",
+        "success": "Datos descargados correctamente",
+        "error": "Error al descargar los datos"
       },
       "deleteAccount": {
         "title": "Eliminar cuenta",
         "subtitle": "Elimina tu cuenta permanentemente",
-        "coming": "¡La eliminación de cuenta estará disponible pronto!"
+        "confirmTitle": "Eliminar cuenta",
+        "confirmMessage": "Esta acción no se puede deshacer. Esto eliminará permanentemente tu cuenta y todos los datos asociados.\n\n¿Seguro que quieres eliminar tu cuenta?",
+        "finalConfirm": "Esta es tu advertencia final. Tu cuenta será eliminada permanentemente y no se podrá recuperar. Escribe \"{{username}}\" para confirmar.",
+        "confirm": "Eliminar para siempre",
+        "passwordRequired": "Se requiere confirmación de contraseña. Por favor, usa un modal con entrada de contraseña para completar la eliminación de la cuenta.",
+        "missingFields": "Se requiere contraseña y confirmación",
+        "confirmMismatch": "El texto de confirmación no coincide con el usuario",
+        "success": "Cuenta eliminada correctamente",
+        "error": "Error al eliminar la cuenta"
       },
       "preferences": {
         "title": "Preferencias de la cuenta",
@@ -329,6 +340,30 @@
       "signOut": {
         "title": "Cerrar sesión",
         "subtitle": "Cierra sesión en tu cuenta actual"
+      },
+      "history": {
+        "title": "Historial",
+        "subtitle": "Ver y gestionar tu historial de búsqueda"
+      },
+      "saves": {
+        "title": "Guardados y colecciones",
+        "subtitle": "Ver tus elementos guardados y colecciones"
+      },
+      "searchSettings": {
+        "title": "Configuración de búsqueda",
+        "subtitle": "SafeSearch y personalización"
+      },
+      "language": {
+        "title": "Idioma",
+        "subtitle": "Elige tu idioma preferido"
+      },
+      "privacyPolicy": {
+        "title": "Política de privacidad",
+        "subtitle": "Cómo manejamos tus datos"
+      },
+      "termsOfService": {
+        "title": "Términos de servicio",
+        "subtitle": "Términos y condiciones de uso"
       }
     },
     "manageComing": "¡La gestión de tu cuenta Oxy estará disponible pronto!",
@@ -718,6 +753,192 @@
       "skip": "Omitir",
       "enter": "Entrar",
       "continue": "Continuar"
+    }
+  },
+  "history": {
+    "title": "Historial",
+    "actions": "Acciones",
+    "recent": "Historial reciente",
+    "loading": "Cargando historial...",
+    "empty": "Aún no hay historial",
+    "justNow": "Justo ahora",
+    "minutesAgo": "minutos atrás",
+    "hoursAgo": "horas atrás",
+    "daysAgo": "días atrás",
+    "deleteLast15Minutes": {
+      "title": "Eliminar últimos 15 minutos",
+      "subtitle": "Eliminar entradas recientes del historial",
+      "confirm": "¿Eliminar los últimos 15 minutos del historial?",
+      "success": "Últimos 15 minutos eliminados",
+      "error": "Error al eliminar el historial"
+    },
+    "clearAll": {
+      "title": "Borrar todo el historial",
+      "subtitle": "Eliminar todas las entradas del historial",
+      "confirm": "¿Borrar todo el historial? Esto no se puede deshacer.",
+      "success": "Historial borrado",
+      "error": "Error al borrar el historial"
+    }
+  },
+  "saves": {
+    "title": "Guardados y colecciones",
+    "tabs": {
+      "saves": "Guardados",
+      "collections": "Colecciones"
+    },
+    "loading": "Cargando...",
+    "empty": "Aún no hay elementos guardados",
+    "noCollections": "Aún no hay colecciones",
+    "savedItems": "Elementos guardados",
+    "collections": "Colecciones",
+    "loadError": "Error al cargar elementos guardados"
+  },
+  "searchSettings": {
+    "title": "Configuración de búsqueda",
+    "safeSearch": {
+      "title": "SafeSearch",
+      "label": "Activar SafeSearch",
+      "description": "Filtrar contenido explícito de los resultados de búsqueda",
+      "updated": "Configuración de SafeSearch actualizada",
+      "error": "Error al actualizar SafeSearch"
+    },
+    "personalization": {
+      "title": "Personalización de búsqueda",
+      "label": "Búsqueda personalizada",
+      "description": "Usa tu actividad para mejorar los resultados de búsqueda",
+      "updated": "Personalización de búsqueda actualizada",
+      "error": "Error al actualizar la personalización"
+    }
+  },
+  "privacySettings": {
+    "title": "Configuración de privacidad",
+    "loadError": "Error al cargar la configuración de privacidad",
+    "updated": "Configuración de privacidad actualizada",
+    "updateError": "Error al actualizar la configuración de privacidad",
+    "sections": {
+      "account": "PRIVACIDAD DE LA CUENTA",
+      "interactions": "INTERACCIONES",
+      "activity": "ACTIVIDAD Y DATOS",
+      "content": "CONTENIDO Y SEGURIDAD"
+    },
+    "isPrivateAccount": "Cuenta privada",
+    "isPrivateAccountDesc": "Solo los seguidores aprobados pueden ver tus publicaciones",
+    "profileVisibility": "Visibilidad del perfil",
+    "profileVisibilityDesc": "Controla quién puede ver tu perfil",
+    "hideOnlineStatus": "Ocultar estado en línea",
+    "hideOnlineStatusDesc": "No mostrar cuando estás en línea",
+    "hideLastSeen": "Ocultar última vez visto",
+    "hideLastSeenDesc": "No mostrar cuándo estuviste activo por última vez",
+    "allowTagging": "Permitir etiquetado",
+    "allowTaggingDesc": "Permite que otros te etiqueten en publicaciones",
+    "allowMentions": "Permitir menciones",
+    "allowMentionsDesc": "Permite que otros te mencionen",
+    "allowDirectMessages": "Permitir mensajes directos",
+    "allowDirectMessagesDesc": "Permite que otros te envíen mensajes directos",
+    "hideReadReceipts": "Ocultar confirmaciones de lectura",
+    "hideReadReceiptsDesc": "No mostrar confirmaciones de lectura en mensajes",
+    "showActivity": "Mostrar estado de actividad",
+    "showActivityDesc": "Mostrar tu actividad en tu perfil",
+    "dataSharing": "Compartir datos",
+    "dataSharingDesc": "Permitir compartir datos para personalización",
+    "locationSharing": "Compartir ubicación",
+    "locationSharingDesc": "Compartir tu ubicación",
+    "analyticsSharing": "Compartir análisis",
+    "analyticsSharingDesc": "Permitir recopilación de datos de análisis",
+    "sensitiveContent": "Mostrar contenido sensible",
+    "sensitiveContentDesc": "Permitir contenido sensible o explícito",
+    "autoFilter": "Filtro automático",
+    "autoFilterDesc": "Filtrar automáticamente contenido inapropiado",
+    "muteKeywords": "Silenciar palabras clave",
+    "muteKeywordsDesc": "Ocultar publicaciones que contengan palabras clave silenciadas",
+    "blockScreenshots": "Bloquear capturas de pantalla",
+    "blockScreenshotsDesc": "Evitar capturas de pantalla de tu contenido"
+  },
+  "accountVerification": {
+    "title": "Verificación de cuenta",
+    "description": "Solicita una insignia verificada para tu cuenta. Las cuentas verificadas ayudan a establecer autenticidad y credibilidad.",
+    "sections": {
+      "request": "SOLICITUD DE VERIFICACIÓN"
+    },
+    "reasonLabel": "Motivo de la verificación *",
+    "reasonPlaceholder": "Explica por qué necesitas una insignia verificada (p. ej., figura pública, marca, organización)",
+    "reasonRequired": "Por favor, proporciona un motivo para la verificación",
+    "evidenceLabel": "Evidencia (Opcional)",
+    "evidencePlaceholder": "Proporciona documentación de respaldo o enlaces (p. ej., sitio web oficial, perfiles de redes sociales)",
+    "submit": "Enviar solicitud",
+    "submitError": "Error al enviar la solicitud de verificación",
+    "successTitle": "Solicitud enviada",
+    "successMessage": "Tu solicitud de verificación ha sido enviada. ID de solicitud: {{requestId}}",
+    "ok": "OK",
+    "error": "Servicio no disponible",
+    "note": "Nota: Las solicitudes de verificación se revisan manualmente y pueden tardar varios días. Te notificaremos cuando tu solicitud haya sido revisada."
+  },
+  "help": {
+    "title": "Ayuda y soporte",
+    "options": "Obtener ayuda",
+    "resources": "Recursos",
+    "contactError": "Error al abrir el cliente de correo",
+    "reportError": "Error al abrir el cliente de correo",
+    "linkError": "Error al abrir el enlace",
+    "faqComing": "FAQ próximamente",
+    "faq": {
+      "title": "Preguntas frecuentes",
+      "subtitle": "Encuentra respuestas a preguntas comunes"
+    },
+    "contact": {
+      "title": "Contactar con soporte",
+      "subtitle": "Obtén ayuda de nuestro equipo de soporte"
+    },
+    "reportBug": {
+      "title": "Reportar un error",
+      "subtitle": "Ayúdanos a mejorar reportando problemas"
+    },
+    "documentation": {
+      "title": "Documentación",
+      "subtitle": "Guías de usuario y tutoriales"
+    },
+    "community": {
+      "title": "Comunidad",
+      "subtitle": "Únete a nuestra comunidad"
+    },
+    "developersPortal": {
+      "title": "Portal de desarrolladores",
+      "subtitle": "Documentación de API y recursos para desarrolladores"
+    }
+  },
+  "legal": {
+    "title": "Documentos legales",
+    "documents": "Documentos",
+    "policies": "Políticas y directrices",
+    "opening": "Abriendo documento...",
+    "openError": "Error al abrir el documento",
+    "privacyPolicy": {
+      "title": "Política de privacidad",
+      "subtitle": "Cómo manejamos tus datos"
+    },
+    "termsOfService": {
+      "title": "Términos de servicio",
+      "subtitle": "Términos y condiciones de uso"
+    },
+    "communityGuidelines": {
+      "title": "Directrices de la comunidad",
+      "subtitle": "Reglas y expectativas para nuestra comunidad"
+    },
+    "dataRetention": {
+      "title": "Política de retención de datos",
+      "subtitle": "Cuánto tiempo conservamos tus datos"
+    },
+    "contentModeration": {
+      "title": "Política de moderación de contenido",
+      "subtitle": "Cómo moderamos el contenido"
+    },
+    "childSafety": {
+      "title": "Política de seguridad infantil",
+      "subtitle": "Protegiendo a los menores en nuestra plataforma"
+    },
+    "cookiePolicy": {
+      "title": "Política de cookies",
+      "subtitle": "Cómo usamos cookies y tecnologías similares"
     }
   }
 }
