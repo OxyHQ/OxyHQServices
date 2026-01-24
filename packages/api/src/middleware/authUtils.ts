@@ -51,9 +51,13 @@ export function extractTokenFromRequest(req: Request): string | undefined {
  */
 export function decodeToken(token: string): TokenDecoded | null {
   try {
+    if (!process.env.ACCESS_TOKEN_SECRET) {
+      logger.error('ACCESS_TOKEN_SECRET is not configured');
+      return null;
+    }
     return jwt.verify(
       token,
-      process.env.ACCESS_TOKEN_SECRET || 'default_secret'
+      process.env.ACCESS_TOKEN_SECRET
     ) as TokenDecoded;
   } catch (error) {
     return null;

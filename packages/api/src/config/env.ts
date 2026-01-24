@@ -15,18 +15,19 @@ import { logger } from '../utils/logger';
 export interface RequiredEnvVars {
   // Database
   MONGODB_URI: string;
-  
+
   // Authentication
   ACCESS_TOKEN_SECRET: string;
   REFRESH_TOKEN_SECRET: string;
-  
+  FEDCM_TOKEN_SECRET: string;
+
   // AWS/S3 Configuration
   AWS_REGION: string;
   AWS_ACCESS_KEY_ID: string;
   AWS_SECRET_ACCESS_KEY: string;
   AWS_S3_BUCKET: string;
   AWS_ENDPOINT_URL?: string; // Optional for S3-compatible services
-  
+
   // Server
   PORT?: string;
   NODE_ENV?: string;
@@ -61,6 +62,7 @@ export function validateRequiredEnvVars(): void {
     'MONGODB_URI',
     'ACCESS_TOKEN_SECRET',
     'REFRESH_TOKEN_SECRET',
+    'FEDCM_TOKEN_SECRET',
     'AWS_REGION',
     'AWS_ACCESS_KEY_ID',
     'AWS_SECRET_ACCESS_KEY',

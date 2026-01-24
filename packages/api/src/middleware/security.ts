@@ -1,6 +1,7 @@
 import rateLimit from "express-rate-limit";
 import slowDown from "express-slow-down";
 import { Request, Response, NextFunction } from "express";
+import helmet from "helmet";
 
 // General rate limiting middleware (exclude file uploads)
 // Set to 150 requests per 15 minutes per IP for general API usage
@@ -60,47 +61,44 @@ const bruteForceProtection = slowDown({
 });
 
 /**
- * Security headers middleware
- * Implements HTTPS security headers following OWASP recommendations
+ * Security headers middleware using Helmet
+ * Implements comprehensive HTTPS security headers following OWASP recommendations
  */
-const securityHeaders = (req: Request, res: Response, next: NextFunction) => {
+const securityHeaders = helmet({
   // Strict-Transport-Security: Enforce HTTPS for 1 year including subdomains
-  if (process.env.NODE_ENV === 'production') {
-    res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
-  }
-
-  // X-Content-Type-Options: Prevent MIME type sniffing
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-
-  // X-Frame-Options: Prevent clickjacking attacks
-  res.setHeader('X-Frame-Options', 'DENY');
-
-  // X-XSS-Protection: Enable browser XSS protection (legacy browsers)
-  res.setHeader('X-XSS-Protection', '1; mode=block');
-
-  // Referrer-Policy: Control referrer information
-  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  hsts: process.env.NODE_ENV === 'production' ? {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true,
+  } : false,
 
   // Content-Security-Policy: Prevent XSS and data injection attacks
-  // Adjust this based on your specific needs
-  res.setHeader(
-    'Content-Security-Policy',
-    "default-src 'self'; " +
-    "script-src 'self'; " +
-    "style-src 'self' 'unsafe-inline'; " +
-    "img-src 'self' data: https:; " +
-    "font-src 'self'; " +
-    "connect-src 'self'; " +
-    "frame-ancestors 'none';"
-  );
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      fontSrc: ["'self'"],
+      connectSrc: ["'self'"],
+      frameAncestors: ["'none'"],
+    },
+  },
 
-  // Permissions-Policy: Control browser features and APIs
-  res.setHeader(
-    'Permissions-Policy',
-    'geolocation=(), microphone=(), camera=(), payment=()'
-  );
+  // X-Frame-Options: Prevent clickjacking attacks
+  frameguard: {
+    action: 'deny',
+  },
 
-  next();
-};
+  // Referrer-Policy: Control referrer information
+  referrerPolicy: {
+    policy: 'strict-origin-when-cross-origin',
+  },
+
+  // X-Content-Type-Options: Prevent MIME type sniffing (enabled by default)
+  // X-DNS-Prefetch-Control: Control browser DNS prefetching
+  // X-Download-Options: Prevent IE from executing downloads in site context
+  // X-Permitted-Cross-Domain-Policies: Restrict Adobe Flash and PDF
+});
 
 export { rateLimiter, authRateLimiter, userRateLimiter, bruteForceProtection, securityHeaders };

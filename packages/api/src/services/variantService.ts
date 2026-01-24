@@ -13,11 +13,11 @@ function getFfmpegPath(): string {
   try {
     // ffmpeg-static exports the path as a string directly
     const ffmpegStatic = require('ffmpeg-static');
-    console.log('[VariantService] ffmpeg-static require result:', typeof ffmpegStatic, ffmpegStatic);
+    logger.debug('[VariantService] ffmpeg-static require result', { type: typeof ffmpegStatic, value: ffmpegStatic });
     
     if (ffmpegStatic && typeof ffmpegStatic === 'string') {
       const binaryPath = ffmpegStatic;
-      console.log('[VariantService] Checking ffmpeg path:', binaryPath);
+      logger.debug('[VariantService] Checking ffmpeg path', { binaryPath });
       
       // Verify the path exists and is a file
       if (fs.existsSync(binaryPath)) {
@@ -29,27 +29,24 @@ function getFfmpegPath(): string {
           } catch (e) {
             // Ignore chmod errors
           }
-          // Use console at module initialization time (logger may not be ready)
-          console.log('[VariantService] ✓ Using ffmpeg-static binary:', binaryPath);
+          logger.info('[VariantService] Using ffmpeg-static binary', { binaryPath });
           return binaryPath;
         } else {
-          console.warn('[VariantService] ✗ ffmpeg-static path is not a file:', binaryPath);
+          logger.warn('[VariantService] ffmpeg-static path is not a file', { binaryPath });
         }
       } else {
-        console.warn('[VariantService] ✗ ffmpeg-static path does not exist:', binaryPath);
+        logger.warn('[VariantService] ffmpeg-static path does not exist', { binaryPath });
       }
     } else {
-      console.warn('[VariantService] ✗ ffmpeg-static did not return a string, got:', typeof ffmpegStatic, ffmpegStatic);
+      logger.warn('[VariantService] ffmpeg-static did not return a string', { type: typeof ffmpegStatic, value: ffmpegStatic });
     }
   } catch (e) {
-    // Use console at module initialization time
     const error = e as Error;
-    console.error('[VariantService] ✗ Error loading ffmpeg-static:', error.message);
-    console.error('[VariantService] Error stack:', error.stack);
+    logger.error('[VariantService] Error loading ffmpeg-static', { message: error.message, stack: error.stack });
   }
   
   // Fallback to system ffmpeg
-  console.warn('[VariantService] ⚠ Falling back to system ffmpeg (may not be installed)');
+  logger.warn('[VariantService] Falling back to system ffmpeg (may not be installed)');
   return 'ffmpeg';
 }
 
@@ -57,7 +54,7 @@ function getFfprobePath(): string {
   try {
     // ffprobe-static exports an object with a path property
     const ffprobeStatic = require('ffprobe-static');
-    console.log('[VariantService] ffprobe-static require result:', typeof ffprobeStatic, ffprobeStatic);
+    logger.debug('[VariantService] ffprobe-static require result', { type: typeof ffprobeStatic, value: ffprobeStatic });
     
     if (ffprobeStatic) {
       const binaryPath = typeof ffprobeStatic === 'string' 
@@ -65,7 +62,7 @@ function getFfprobePath(): string {
         : (ffprobeStatic.path || ffprobeStatic.default);
       
       if (binaryPath) {
-        console.log('[VariantService] Checking ffprobe path:', binaryPath);
+        logger.debug('[VariantService] Checking ffprobe path', { binaryPath });
         
         // Verify the path exists and is a file
         if (fs.existsSync(binaryPath)) {
@@ -77,31 +74,28 @@ function getFfprobePath(): string {
             } catch (e) {
               // Ignore chmod errors
             }
-            // Use console at module initialization time (logger may not be ready)
-            console.log('[VariantService] ✓ Using ffprobe-static binary:', binaryPath);
+            logger.info('[VariantService] Using ffprobe-static binary', { binaryPath });
             return binaryPath;
           } else {
-            console.warn('[VariantService] ✗ ffprobe-static path is not a file:', binaryPath);
+            logger.warn('[VariantService] ffprobe-static path is not a file', { binaryPath });
           }
         } else {
-          console.warn('[VariantService] ✗ ffprobe-static path does not exist:', binaryPath);
+          logger.warn('[VariantService] ffprobe-static path does not exist', { binaryPath });
           // Check if this is an unsupported architecture issue
           const os = require('os');
           const arch = os.arch();
           const platform = os.platform();
           if (platform === 'linux' && arch === 'arm64') {
-            console.warn('[VariantService] ⚠ ffprobe-static does not provide ARM64 Linux binaries. Only x64 and ia32 are supported.');
+            logger.warn('[VariantService] ffprobe-static does not provide ARM64 Linux binaries', { arch, platform });
           }
         }
       } else {
-        console.warn('[VariantService] ✗ ffprobe-static did not provide a path');
+        logger.warn('[VariantService] ffprobe-static did not provide a path');
       }
     }
   } catch (e) {
-    // Use console at module initialization time
     const error = e as Error;
-    console.error('[VariantService] ✗ Error loading ffprobe-static:', error.message);
-    console.error('[VariantService] Error stack:', error.stack);
+    logger.error('[VariantService] Error loading ffprobe-static', { message: error.message, stack: error.stack });
   }
   
   // Fallback to system ffprobe - verify it exists first
@@ -109,11 +103,10 @@ function getFfprobePath(): string {
   try {
     // Try to check if system ffprobe is available by checking PATH
     execSync('which ffprobe', { stdio: 'ignore' });
-    console.log('[VariantService] ✓ Using system ffprobe');
+    logger.info('[VariantService] Using system ffprobe');
     return systemFfprobe;
   } catch (e) {
-    console.warn('[VariantService] ⚠ System ffprobe not found in PATH');
-    console.warn('[VariantService] ⚠ Video metadata extraction may fail. Install ffprobe with: sudo apt-get install ffmpeg (or equivalent for your system)');
+    logger.warn('[VariantService] System ffprobe not found in PATH - video metadata extraction may fail. Install with: sudo apt-get install ffmpeg');
     // Still return 'ffprobe' as fallback - spawn will handle the error gracefully
     return systemFfprobe;
   }
@@ -123,8 +116,8 @@ const ffmpegPath = getFfmpegPath();
 const ffprobePath = getFfprobePath();
 
 // Log resolved paths at module load
-console.log('[VariantService] Resolved FFmpeg path:', ffmpegPath);
-console.log('[VariantService] Resolved FFprobe path:', ffprobePath);
+logger.info('[VariantService] Resolved FFmpeg path', { ffmpegPath });
+logger.info('[VariantService] Resolved FFprobe path', { ffprobePath });
 
 // Log final paths being used
 try {
@@ -173,6 +166,49 @@ export class VariantService {
   ];
 
   constructor(private s3Service: S3Service) {}
+
+  /**
+   * Validate and sanitize path/URL for FFmpeg/FFprobe to prevent command injection
+   * While spawn() with argument arrays is safer than exec(), we still validate inputs
+   */
+  private validateMediaPath(path: string): void {
+    if (!path || typeof path !== 'string') {
+      throw new Error('Invalid media path: must be a non-empty string');
+    }
+
+    // Check path length to prevent DoS
+    if (path.length > 2048) {
+      throw new Error('Invalid media path: path too long');
+    }
+
+    // For local file paths, check for path traversal attempts
+    if (!path.startsWith('http://') && !path.startsWith('https://')) {
+      // Resolve to absolute path and check it doesn't escape
+      const resolvedPath = path.resolve(path);
+      if (resolvedPath.includes('..')) {
+        throw new Error('Invalid media path: path traversal detected');
+      }
+
+      // Verify file exists and is a file (not directory or symlink)
+      if (!fs.existsSync(resolvedPath)) {
+        throw new Error('Invalid media path: file does not exist');
+      }
+
+      const stats = fs.statSync(resolvedPath);
+      if (!stats.isFile()) {
+        throw new Error('Invalid media path: not a regular file');
+      }
+    }
+
+    // For URLs, validate format
+    if (path.startsWith('http://') || path.startsWith('https://')) {
+      try {
+        new URL(path);
+      } catch (e) {
+        throw new Error('Invalid media path: malformed URL');
+      }
+    }
+  }
 
   /**
    * Generate variants for a file
@@ -382,6 +418,9 @@ export class VariantService {
     audioCodec?: string;
   }> {
     try {
+      // Validate path to prevent command injection
+      this.validateMediaPath(videoPath);
+
       // Use spawn for better cross-platform compatibility
       return new Promise((resolve, reject) => {
         const args = [
@@ -600,6 +639,9 @@ export class VariantService {
     audioCodec?: string;
   }> {
     try {
+      // Validate URL to prevent command injection
+      this.validateMediaPath(videoUrl);
+
       // Use spawn for better cross-platform compatibility
       return new Promise((resolve, reject) => {
         const args = [

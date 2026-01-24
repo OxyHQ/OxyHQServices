@@ -2,28 +2,19 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
     View,
     Text,
-    TouchableOpacity,
     StyleSheet,
     ActivityIndicator,
     ScrollView,
-    Alert,
-    TextInput,
     Animated,
     Platform,
     Image,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import Avatar from '../components/Avatar';
-import type { FileMetadata } from '../../models/interfaces';
-import OxyIcon from '../components/icon/OxyIcon';
-import { Ionicons } from '@expo/vector-icons';
-// @ts-ignore - MaterialCommunityIcons is available at runtime
-import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { fontFamilies } from '../styles/fonts';
 import { confirmAction } from '../utils/confirmAction';
 import { useAuthStore } from '../stores/authStore';
-import { Header, GroupedSection, Section } from '../components';
+import { GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useColorScheme } from '../hooks/use-color-scheme';
@@ -31,25 +22,16 @@ import { Colors } from '../constants/theme';
 import { normalizeColorScheme } from '../utils/themeUtils';
 import type { ProfileFieldType } from './EditProfileFieldScreen';
 import { getDisplayName } from '../utils/user-utils';
-import { TTLCache, registerCacheForCleanup } from '../../utils/cache';
 import { useOxy } from '../context/OxyContext';
 import { useCurrentUser } from '../hooks/queries/useAccountQueries';
 import { useUpdateProfile, useUploadAvatar } from '../hooks/mutations/useAccountMutations';
 import {
-    SCREEN_PADDING_HORIZONTAL,
-    SCREEN_PADDING_VERTICAL,
-    SECTION_GAP,
     SECTION_GAP_LARGE,
     COMPONENT_GAP,
     HEADER_PADDING_TOP_SETTINGS,
     createScreenContentStyle,
 } from '../constants/spacing';
 
-// Caches for link metadata and location searches
-const linkMetadataCache = new TTLCache<any>(30 * 60 * 1000); // 30 minutes cache for link metadata
-const locationSearchCache = new TTLCache<any[]>(60 * 60 * 1000); // 1 hour cache for location searches
-registerCacheForCleanup(linkMetadataCache);
-registerCacheForCleanup(locationSearchCache);
 
 
 const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string; initialSection?: string }> = ({
@@ -65,7 +47,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     const {
         oxyServices,
         isAuthenticated,
-        activeSessionId,
     } = useOxy();
     const { t } = useI18n();
 
@@ -77,13 +58,10 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     // Fallback to store for backward compatibility
     const userFromStore = useAuthStore((state) => state.user);
     const finalUser = user || userFromStore;
-    const [isLoading, setIsLoading] = useState(false);
-    const isSaving = updateProfileMutation.isPending;
     const isUpdatingAvatar = uploadAvatarMutation.isPending;
     const [optimisticAvatarId, setOptimisticAvatarId] = useState<string | null>(null);
     const scrollViewRef = useRef<ScrollView>(null);
     const avatarSectionRef = useRef<View>(null);
-    const [avatarSectionY, setAvatarSectionY] = useState<number | null>(null);
 
     // Section refs for navigation
     const profilePictureSectionRef = useRef<View>(null);
@@ -100,8 +78,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     const [securitySectionY, setSecuritySectionY] = useState<number | null>(null);
 
 
-    // Animation refs
-    const saveButtonScale = useRef(new Animated.Value(1)).current;
 
     // Form state
     const [displayName, setDisplayName] = useState('');
@@ -133,35 +109,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
         id: string;
     }>>([]);
 
-    // State for inline editing (used by old renderEditingField code)
-    const [editingField, setEditingField] = useState<string | null>(null);
-    const [tempDisplayName, setTempDisplayName] = useState('');
-    const [tempLastName, setTempLastName] = useState('');
-    const [tempUsername, setTempUsername] = useState('');
-    const [tempEmail, setTempEmail] = useState('');
-    const [tempBio, setTempBio] = useState('');
-    const [tempLocation, setTempLocation] = useState('');
-    const [tempLinks, setTempLinks] = useState<string[]>([]);
-    const [tempLocations, setTempLocations] = useState<Array<{
-        id: string;
-        name: string;
-        label?: string;
-        coordinates?: { lat: number; lon: number };
-    }>>([]);
-    const [tempLinksWithMetadata, setTempLinksWithMetadata] = useState<Array<{
-        url: string;
-        title?: string;
-        description?: string;
-        image?: string;
-        id: string;
-    }>>([]);
-    const [isAddingLocation, setIsAddingLocation] = useState(false);
-    const [isSearchingLocations, setIsSearchingLocations] = useState(false);
-    const [locationSearchResults, setLocationSearchResults] = useState<any[]>([]);
-    const [newLocationQuery, setNewLocationQuery] = useState('');
-    const [isAddingLink, setIsAddingLink] = useState(false);
-    const [isFetchingMetadata, setIsFetchingMetadata] = useState(false);
-    const [newLinkUrl, setNewLinkUrl] = useState('');
 
     // Get theme colors using centralized hook
     const colorScheme = useColorScheme();
@@ -171,24 +118,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     // useThemeStyles always returns colors, but add safety check for edge cases
     const colors = themeStyles.colors || Colors[normalizeColorScheme(colorScheme, theme || 'light')];
 
-    // Memoize onBack handler to provide stable reference for Reanimated
-    const handleBack = useMemo(() => {
-        return goBack || onClose || undefined;
-    }, [goBack, onClose]);
-
-    // Memoize animation function to prevent recreation on every render
-    const animateSaveButton = useCallback((toValue: number, onComplete?: () => void) => {
-        Animated.spring(saveButtonScale, {
-            toValue,
-            useNativeDriver: Platform.OS !== 'web',
-            tension: 150,
-            friction: 8,
-        }).start(onComplete ? (finished) => {
-            if (finished) {
-                onComplete();
-            }
-        } : undefined);
-    }, [saveButtonScale]);
 
     // Track initialization to prevent unnecessary resets
     const isInitializedRef = useRef(false);
@@ -304,108 +233,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
     // Delay constant for scroll completion
     const SCROLL_DELAY_MS = 600;
 
-    // Helper functions for inline editing (legacy support)
-    const startEditing = useCallback((field: string, initialValue: string) => {
-        setEditingField(field);
-        switch (field) {
-            case 'displayName':
-                setTempDisplayName(initialValue || displayName);
-                setTempLastName(lastName);
-                break;
-            case 'username':
-                setTempUsername(initialValue || username);
-                break;
-            case 'email':
-                setTempEmail(initialValue || email);
-                break;
-            case 'bio':
-                setTempBio(initialValue || bio);
-                break;
-            case 'location':
-                setTempLocations([...locations]);
-                break;
-            case 'links':
-                setTempLinksWithMetadata([...linksMetadata]);
-                break;
-        }
-    }, [displayName, lastName, username, email, bio, locations, linksMetadata]);
-
-    const cancelEditing = useCallback(() => {
-        setEditingField(null);
-        setTempDisplayName('');
-        setTempLastName('');
-        setTempUsername('');
-        setTempEmail('');
-        setTempBio('');
-        setTempLocation('');
-        setTempLinks([]);
-        setTempLocations([]);
-        setTempLinksWithMetadata([]);
-        setIsAddingLocation(false);
-        setIsSearchingLocations(false);
-        setLocationSearchResults([]);
-        setNewLocationQuery('');
-        setIsAddingLink(false);
-        setIsFetchingMetadata(false);
-        setNewLinkUrl('');
-    }, []);
-
-    const saveField = useCallback(async (field: string | null) => {
-        if (!field) return;
-
-        try {
-            switch (field) {
-                case 'displayName':
-                    await updateProfileMutation.mutateAsync({ name: { first: tempDisplayName, last: tempLastName } });
-                    setDisplayName(tempDisplayName);
-                    setLastName(tempLastName);
-                    break;
-                case 'username':
-                    await updateProfileMutation.mutateAsync({ username: tempUsername });
-                    setUsername(tempUsername);
-                    break;
-                case 'email':
-                    await updateProfileMutation.mutateAsync({ email: tempEmail });
-                    setEmail(tempEmail);
-                    break;
-                case 'bio':
-                    await updateProfileMutation.mutateAsync({ bio: tempBio });
-                    setBio(tempBio);
-                    break;
-                case 'location':
-                    await updateProfileMutation.mutateAsync({ locations: tempLocations });
-                    setLocations(tempLocations);
-                    break;
-                case 'links':
-                    await updateProfileMutation.mutateAsync({ linksMetadata: tempLinksWithMetadata });
-                    setLinksMetadata(tempLinksWithMetadata);
-                    setLinks(tempLinksWithMetadata.map(l => l.url));
-                    break;
-            }
-            setEditingField(null);
-            toast.success(t('editProfile.toasts.saved') || 'Saved');
-        } catch (error: any) {
-            // Error is already handled by mutation's onError
-        }
-    }, [tempDisplayName, tempLastName, tempUsername, tempEmail, tempBio, tempLocations, tempLinksWithMetadata, updateProfileMutation, t]);
-
-    // Helper to get current value for a field
-    const getFieldCurrentValue = useCallback((field: string): string => {
-        switch (field) {
-            case 'displayName':
-                return displayName;
-            case 'username':
-                return username;
-            case 'email':
-                return email;
-            case 'bio':
-                return bio;
-            case 'location':
-            case 'links':
-            default:
-                return '';
-        }
-    }, [displayName, username, email, bio]);
 
     // Handle initialSection prop to scroll to specific section
     const hasScrolledToSectionRef = useRef(false);
@@ -442,48 +269,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
             }
         }
     }, [initialSection, sectionYPositions]);
-
-    const handleSave = async () => {
-        if (!finalUser) return;
-
-        try {
-            animateSaveButton(0.95); // Scale down slightly for animation
-
-            const updates: Record<string, any> = {
-                username,
-                email,
-                bio,
-                location: locations.length > 0 ? locations[0].name : '', // Keep backward compatibility
-                locations: locations.length > 0 ? locations : undefined,
-                links,
-                linksMetadata: linksMetadata.length > 0 ? linksMetadata : undefined,
-            };
-
-            // Handle name field
-            if (displayName || lastName) {
-                updates.name = { first: displayName, last: lastName };
-            }
-
-            // Handle avatar
-            if (avatarFileId !== (typeof finalUser.avatar === 'string' ? finalUser.avatar : '')) {
-                updates.avatar = avatarFileId;
-            }
-
-            await updateProfileMutation.mutateAsync(updates);
-            toast.success(t('editProfile.toasts.profileUpdated') || 'Profile updated successfully');
-
-            animateSaveButton(1); // Scale back to normal
-
-            if (onClose) {
-                onClose();
-            } else if (goBack) {
-                goBack();
-            }
-        } catch (error: any) {
-            // Error is already handled by mutation's onError
-            animateSaveButton(1); // Scale back to normal on error
-        }
-    };
 
     const handleAvatarRemove = () => {
         confirmAction(t('editProfile.confirms.removeAvatar') || 'Remove your profile picture?', () => {
@@ -534,509 +319,9 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
 
 
-    // Removed fetchLinkMetadata - now handled by EditLinksModal
-    const _fetchLinkMetadata = async (url: string) => {
-        // Check cache first
-        const cacheKey = url.toLowerCase().trim();
-        const cached = linkMetadataCache.get(cacheKey);
-        if (cached) {
-            return cached;
-        }
-
-        try {
-            setIsFetchingMetadata(true);
-
-            // Use the backend API to fetch metadata
-            const metadata = await oxyServices.fetchLinkMetadata(url);
-
-            const result = {
-                ...metadata,
-                id: Date.now().toString()
-            };
-
-            // Cache the result
-            linkMetadataCache.set(cacheKey, result);
-            return result;
-        } catch (error) {
-            // Fallback to basic metadata
-            const fallback = {
-                url: url.startsWith('http') ? url : 'https://' + url,
-                title: url.replace(/^https?:\/\//, '').replace(/\/$/, ''),
-                description: 'Link',
-                image: undefined,
-                id: Date.now().toString()
-            };
-            // Cache fallback too (shorter TTL)
-            linkMetadataCache.set(cacheKey, fallback, 5 * 60 * 1000); // 5 minutes for fallbacks
-            return fallback;
-        } finally {
-            setIsFetchingMetadata(false);
-        }
-    };
-
-    // Helper functions for inline editing (legacy support - still used by renderEditingField)
-    const searchLocations = async (query: string) => {
-        if (!query.trim() || query.length < 3) {
-            setLocationSearchResults([]);
-            return;
-        }
-
-        // Check cache first
-        const cacheKey = query.toLowerCase().trim();
-        const cached = locationSearchCache.get(cacheKey);
-        if (cached) {
-            setLocationSearchResults(cached);
-            return;
-        }
-
-        try {
-            setIsSearchingLocations(true);
-            const response = await fetch(
-                `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`
-            );
-            const data = await response.json();
-
-            // Cache the results
-            locationSearchCache.set(cacheKey, data);
-            setLocationSearchResults(data);
-        } catch (error) {
-            setLocationSearchResults([]);
-        } finally {
-            setIsSearchingLocations(false);
-        }
-    };
-
-    const addLocation = (locationData: {
-        place_id: number;
-        display_name: string;
-        lat: string;
-        lon: string;
-        type: string;
-    }) => {
-        const newLocation = {
-            id: Date.now().toString(),
-            name: locationData.display_name,
-            label: locationData.type === 'city' ? 'City' :
-                locationData.type === 'country' ? 'Country' :
-                    locationData.type === 'state' ? 'State' : 'Location',
-            coordinates: {
-                lat: Number.parseFloat(locationData.lat),
-                lon: Number.parseFloat(locationData.lon)
-            }
-        };
-
-        setTempLocations(prev => [...prev, newLocation]);
-        setNewLocationQuery('');
-        setLocationSearchResults([]);
-        setIsAddingLocation(false);
-    };
-
-    const removeLocation = (id: string) => {
-        setTempLocations(prev => prev.filter(loc => loc.id !== id));
-    };
-
-    const moveLocation = (fromIndex: number, toIndex: number) => {
-        setTempLocations(prev => {
-            const newLocations = [...prev];
-            const [movedLocation] = newLocations.splice(fromIndex, 1);
-            newLocations.splice(toIndex, 0, movedLocation);
-            return newLocations;
-        });
-    };
-
-    const addLink = async () => {
-        if (!newLinkUrl.trim()) return;
-
-        const url = newLinkUrl.trim();
-        const metadata = await _fetchLinkMetadata(url);
-
-        setTempLinksWithMetadata(prev => [...prev, metadata]);
-        setNewLinkUrl('');
-        setIsAddingLink(false);
-    };
-
-    const removeLink = (id: string) => {
-        setTempLinksWithMetadata(prev => prev.filter(link => link.id !== id));
-    };
-
-    const moveLink = (fromIndex: number, toIndex: number) => {
-        setTempLinksWithMetadata(prev => {
-            const newLinks = [...prev];
-            const [movedLink] = newLinks.splice(fromIndex, 1);
-            newLinks.splice(toIndex, 0, movedLink);
-            return newLinks;
-        });
-    };
-
     // Memoize display name for avatar
     const displayNameForAvatar = useMemo(() => getDisplayName(finalUser), [finalUser]);
 
-    // Legacy renderEditingField function (fallback)
-    const renderEditingField = (type: string | null) => {
-        if (!type) return null;
-        if (type === 'displayName') {
-            return (
-                <View style={[styles.editingFieldContainer, { backgroundColor: colors.background }]}>
-                    <View style={styles.editingFieldContent}>
-                        <View style={styles.newValueSection}>
-                            <View style={styles.editingFieldHeader}>
-                                <Text style={[styles.editingFieldLabel, { color: colors.text }]}>Edit Full Name</Text>
-                            </View>
-                            <View style={{ flexDirection: 'row', gap: 12 }}>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.editingFieldLabel}>First Name</Text>
-                                    <TextInput
-                                        style={styles.editingFieldInput}
-                                        value={tempDisplayName}
-                                        onChangeText={setTempDisplayName}
-                                        placeholder="Enter your first name"
-                                        placeholderTextColor={colors.secondaryText}
-                                        autoFocus
-                                        selectionColor={themeStyles.primaryColor}
-                                    />
-                                </View>
-                                <View style={{ flex: 1 }}>
-                                    <Text style={styles.editingFieldLabel}>Last Name</Text>
-                                    <TextInput
-                                        style={styles.editingFieldInput}
-                                        value={tempLastName}
-                                        onChangeText={setTempLastName}
-                                        placeholder="Enter your last name"
-                                        placeholderTextColor={colors.secondaryText}
-                                        selectionColor={themeStyles.primaryColor}
-                                    />
-                                </View>
-                            </View>
-                        </View>
-                    </View>
-                </View>
-            );
-        }
-
-        if (type === 'location') {
-            return (
-                <View style={[styles.editingFieldContainer, { backgroundColor: colors.background }]}>
-                    <View style={styles.editingFieldContent}>
-                        <View style={styles.newValueSection}>
-                            <View style={styles.editingFieldHeader}>
-                                <Text style={[styles.editingFieldLabel, { color: colors.text }]}>Manage Your Locations</Text>
-                            </View>
-
-                            {/* Add new location section */}
-                            {isAddingLocation ? (
-                                <View style={styles.addLocationSection}>
-                                    <Text style={styles.addLocationLabel}>
-                                        Add New Location
-                                        {isSearchingLocations && (
-                                            <Text style={[styles.searchingText, { color: colors.iconSecurity }]}> • Searching...</Text>
-                                        )}
-                                    </Text>
-                                    <View style={styles.addLocationInputContainer}>
-                                        <TextInput
-                                            style={styles.addLocationInput}
-                                            value={newLocationQuery}
-                                            onChangeText={(text) => {
-                                                setNewLocationQuery(text);
-                                                searchLocations(text);
-                                            }}
-                                            placeholder="Search for a location..."
-                                            placeholderTextColor={colors.secondaryText}
-                                            autoFocus
-                                            selectionColor={themeStyles.primaryColor}
-                                        />
-                                        <View style={styles.addLocationButtons}>
-                                            <TouchableOpacity
-                                                style={[styles.addLocationButton, styles.cancelButton]}
-                                                onPress={() => {
-                                                    setIsAddingLocation(false);
-                                                    setNewLocationQuery('');
-                                                    setLocationSearchResults([]);
-                                                }}
-                                            >
-                                                <Text style={styles.cancelButtonText}>Cancel</Text>
-                                            </TouchableOpacity>
-                                        </View>
-                                    </View>
-
-                                    {/* Search results */}
-                                    {locationSearchResults.length > 0 && (
-                                        <View style={styles.searchResults}>
-                                            {locationSearchResults.map((result) => (
-                                                <TouchableOpacity
-                                                    key={result.place_id}
-                                                    style={styles.searchResultItem}
-                                                    onPress={() => addLocation(result)}
-                                                >
-                                                    <Text style={styles.searchResultName} numberOfLines={2}>
-                                                        {result.display_name}
-                                                    </Text>
-                                                    <Text style={styles.searchResultType}>
-                                                        {result.type}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            ))}
-                                        </View>
-                                    )}
-                                </View>
-                            ) : (
-                                <TouchableOpacity
-                                    style={styles.addLocationTrigger}
-                                    onPress={() => setIsAddingLocation(true)}
-                                >
-                                    <OxyIcon name="add" size={20} color={themeStyles.primaryColor} />
-                                    <Text style={[styles.addLocationTriggerText, { color: colors.iconSecurity }]}>Add a new location</Text>
-                                </TouchableOpacity>
-                            )}
-
-                            {/* Existing locations list */}
-                            {tempLocations.length > 0 && (
-                                <View style={styles.locationsList}>
-                                    <Text style={styles.locationsListTitle}>Your Locations ({tempLocations.length})</Text>
-                                    {tempLocations.map((location, index) => (
-                                        <View key={location.id} style={styles.locationItem}>
-                                            <View style={styles.locationItemContent}>
-                                                <View style={styles.locationItemDragHandle}>
-                                                    <View style={styles.reorderButtons}>
-                                                        <TouchableOpacity
-                                                            style={[styles.reorderButton, index === 0 && styles.reorderButtonDisabled]}
-                                                            onPress={() => index > 0 && moveLocation(index, index - 1)}
-                                                            disabled={index === 0}
-                                                        >
-                                                            <OxyIcon name="chevron-up" size={12} color={index === 0 ? "#ccc" : "#666"} />
-                                                        </TouchableOpacity>
-                                                        <TouchableOpacity
-                                                            style={[styles.reorderButton, index === tempLocations.length - 1 && styles.reorderButtonDisabled]}
-                                                            onPress={() => index < tempLocations.length - 1 && moveLocation(index, index + 1)}
-                                                            disabled={index === tempLocations.length - 1}
-                                                        >
-                                                            <OxyIcon name="chevron-down" size={12} color={index === tempLocations.length - 1 ? "#ccc" : "#666"} />
-                                                        </TouchableOpacity>
-                                                    </View>
-                                                </View>
-                                                <View style={styles.locationItemInfo}>
-                                                    <View style={styles.locationItemHeader}>
-                                                        <Text style={styles.locationItemName} numberOfLines={1}>
-                                                            {location.name}
-                                                        </Text>
-                                                        {location.label && (
-                                                            <View style={[styles.locationLabel, { backgroundColor: colors.iconSecurity }]}>
-                                                                <Text style={styles.locationLabelText}>
-                                                                    {location.label}
-                                                                </Text>
-                                                            </View>
-                                                        )}
-                                                    </View>
-                                                    {location.coordinates && (
-                                                        <Text style={styles.locationCoordinates}>
-                                                            {location.coordinates.lat.toFixed(4)}, {location.coordinates.lon.toFixed(4)}
-                                                        </Text>
-                                                    )}
-                                                </View>
-                                                <View style={styles.locationItemActions}>
-                                                    <TouchableOpacity
-                                                        style={styles.locationItemButton}
-                                                        onPress={() => removeLocation(location.id)}
-                                                    >
-                                                        <OxyIcon name="trash" size={14} color="#FF3B30" />
-                                                    </TouchableOpacity>
-                                                </View>
-                                            </View>
-                                            {index < tempLocations.length - 1 && (
-                                                <View style={styles.locationItemDivider} />
-                                            )}
-                                        </View>
-                                    ))}
-                                    <View style={styles.reorderHint}>
-                                        <Text style={styles.reorderHintText}>Use ↑↓ buttons to reorder your locations</Text>
-                                    </View>
-                                </View>
-                            )}
-                        </View>
-                    </View>
-                </View>
-            );
-        }
-
-        if (type === 'links') {
-            return (
-                <View style={[styles.editingFieldContainer, { backgroundColor: colors.background }]}>
-                    <View style={styles.editingFieldContent}>
-                        <View style={styles.newValueSection}>
-                            <View style={styles.editingFieldHeader}>
-                                <Text style={[styles.editingFieldLabel, { color: colors.text }]}>Manage Your Links</Text>
-                            </View>
-
-                            <GroupedSection
-                                items={[
-                                    // Add new link item
-                                    ...(isAddingLink ? [{
-                                        id: 'add-link-input',
-                                        icon: 'plus',
-                                        iconColor: colors.sidebarIconSharing,
-                                        title: 'Add New Link',
-                                        subtitle: isFetchingMetadata ? 'Fetching metadata...' : 'Enter URL to add a new link',
-                                        customContent: (
-                                            <View style={styles.addLinkInputContainer}>
-                                                <TextInput
-                                                    style={styles.addLinkInput}
-                                                    value={newLinkUrl}
-                                                    onChangeText={setNewLinkUrl}
-                                                    placeholder="Enter URL (e.g., https://example.com)"
-                                                    placeholderTextColor={colors.secondaryText}
-                                                    keyboardType="url"
-                                                    autoFocus
-                                                    selectionColor={themeStyles.primaryColor}
-                                                />
-                                                <View style={styles.addLinkButtons}>
-                                                    <TouchableOpacity
-                                                        style={[styles.addLinkButton, styles.cancelButton]}
-                                                        onPress={() => {
-                                                            setIsAddingLink(false);
-                                                            setNewLinkUrl('');
-                                                        }}
-                                                    >
-                                                        <Text style={styles.cancelButtonText}>Cancel</Text>
-                                                    </TouchableOpacity>
-                                                    <TouchableOpacity
-                                                        style={[styles.addLinkButton, styles.addButton, { backgroundColor: colors.iconSecurity, opacity: isFetchingMetadata ? 0.5 : 1 }]}
-                                                        onPress={addLink}
-                                                        disabled={isFetchingMetadata}
-                                                    >
-                                                        {isFetchingMetadata ? (
-                                                            <ActivityIndicator size="small" color="#fff" />
-                                                        ) : (
-                                                            <Text style={styles.addButtonText}>Add</Text>
-                                                        )}
-                                                    </TouchableOpacity>
-                                                </View>
-                                            </View>
-                                        ),
-                                    }] : [{
-                                        id: 'add-link-trigger',
-                                        icon: 'plus',
-                                        iconColor: colors.sidebarIconSharing,
-                                        title: 'Add a new link',
-                                        subtitle: 'Tap to add a new link to your profile',
-                                        onPress: () => setIsAddingLink(true),
-                                    }]),
-                                    // Existing links
-                                    ...tempLinksWithMetadata.map((link, index) => ({
-                                        id: link.id,
-                                        customIcon: link.image ? (
-                                            <Image source={{ uri: link.image }} style={{ width: 36, height: 36, borderRadius: 18 }} />
-                                        ) : undefined,
-                                        icon: !link.image ? 'link-variant' : undefined,
-                                        iconColor: colors.sidebarIconSharing,
-                                        title: link.title || link.url,
-                                        subtitle: link.description && link.description !== link.title ? link.description : link.url,
-                                        customContent: (
-                                            <View style={styles.linkItemActions}>
-                                                <View style={styles.reorderButtons}>
-                                                    <TouchableOpacity
-                                                        style={[styles.reorderButton, index === 0 && styles.reorderButtonDisabled]}
-                                                        onPress={() => index > 0 && moveLink(index, index - 1)}
-                                                        disabled={index === 0}
-                                                    >
-                                                        <OxyIcon name="chevron-up" size={12} color={index === 0 ? "#ccc" : "#666"} />
-                                                    </TouchableOpacity>
-                                                    <TouchableOpacity
-                                                        style={[styles.reorderButton, index === tempLinksWithMetadata.length - 1 && styles.reorderButtonDisabled]}
-                                                        onPress={() => index < tempLinksWithMetadata.length - 1 && moveLink(index, index + 1)}
-                                                        disabled={index === tempLinksWithMetadata.length - 1}
-                                                    >
-                                                        <OxyIcon name="chevron-down" size={12} color={index === tempLinksWithMetadata.length - 1 ? "#ccc" : "#666"} />
-                                                    </TouchableOpacity>
-                                                </View>
-                                                <TouchableOpacity
-                                                    style={styles.linkItemButton}
-                                                    onPress={() => removeLink(link.id)}
-                                                >
-                                                    <OxyIcon name="trash" size={14} color="#FF3B30" />
-                                                </TouchableOpacity>
-                                            </View>
-                                        ),
-                                    })),
-                                ]}
-
-                            />
-                            {tempLinksWithMetadata.length > 0 && (
-                                <View style={styles.reorderHint}>
-                                    <Text style={styles.reorderHintText}>Use ↑↓ buttons to reorder your links</Text>
-                                </View>
-                            )}
-                        </View>
-                    </View>
-                </View>
-            );
-        }
-        const fieldConfig = {
-            displayName: { label: 'Display Name', value: displayName, placeholder: 'Enter your display name', icon: 'account', color: colors.iconPersonalInfo, multiline: false, keyboardType: 'default' as const },
-            username: { label: 'Username', value: username, placeholder: 'Choose a username', icon: 'at', color: colors.iconData, multiline: false, keyboardType: 'default' as const },
-            email: { label: 'Email', value: email, placeholder: 'Enter your email address', icon: 'mail', color: colors.iconStorage, multiline: false, keyboardType: 'email-address' as const },
-            bio: { label: 'Bio', value: bio, placeholder: 'Tell people about yourself...', icon: 'file-document', color: colors.iconPersonalInfo, multiline: true, keyboardType: 'default' as const },
-            location: { label: 'Location', value: location, placeholder: 'Enter your location', icon: 'location', color: colors.iconSharing, multiline: false, keyboardType: 'default' as const },
-            links: { label: 'Links', value: links.join(', '), placeholder: 'Enter your links (comma separated)', icon: 'link', color: colors.iconPersonalInfo, multiline: false, keyboardType: 'url' as const }
-        };
-
-        const config = fieldConfig[type as keyof typeof fieldConfig];
-        if (!config) return null;
-
-        const tempValue = (() => {
-            switch (type) {
-                case 'displayName': return tempDisplayName;
-                case 'username': return tempUsername;
-                case 'email': return tempEmail;
-                case 'bio': return tempBio;
-                case 'location': return tempLocation;
-                case 'links': return tempLinks.join(', ');
-                default: return '';
-            }
-        })();
-
-        const setTempValue = (text: string) => {
-            switch (type) {
-                case 'displayName': setTempDisplayName(text); break;
-                case 'username': setTempUsername(text); break;
-                case 'email': setTempEmail(text); break;
-                case 'bio': setTempBio(text); break;
-                case 'location': setTempLocation(text); break;
-                case 'links': setTempLinks(text.split(',').map(s => s.trim()).filter(Boolean)); break;
-            }
-        };
-
-        return (
-            <View style={[styles.editingFieldContainer, { backgroundColor: colors.background }]}>
-                <View style={styles.editingFieldContent}>
-                    <View style={styles.newValueSection}>
-                        <View style={styles.editingFieldHeader}>
-                            <Text style={[styles.editingFieldLabel, { color: colors.text }]}>
-                                {config.label}
-                            </Text>
-                        </View>
-                        <TextInput
-                            style={[
-                                config.multiline ? styles.editingFieldTextArea : styles.editingFieldInput,
-                                {
-                                    backgroundColor: themeStyles.isDarkTheme ? '#1C1C1E' : '#F2F2F7',
-                                    color: themeStyles.isDarkTheme ? '#FFFFFF' : '#000000',
-                                    borderColor: themeStyles.isDarkTheme ? '#38383A' : '#E5E5EA',
-                                }
-                            ]}
-                            value={tempValue}
-                            onChangeText={setTempValue}
-                            placeholder={config.placeholder}
-                            placeholderTextColor={themeStyles.isDarkTheme ? '#636366' : '#8E8E93'}
-                            multiline={config.multiline}
-                            numberOfLines={config.multiline ? 6 : 1}
-                            keyboardType={config.keyboardType}
-                            autoFocus
-                            selectionColor={themeStyles.primaryColor}
-                        />
-                    </View>
-                </View>
-            </View>
-        );
-    };
 
 
 
@@ -1053,98 +338,14 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
 
     return (
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
-            {/* Header */}
-            {editingField ? (
-                <View style={[styles.editingHeader, {
-                    backgroundColor: colors.background,
-                    borderBottomColor: colors.border
-                }]}>
-                    <View style={styles.editingHeaderContent}>
-                        <TouchableOpacity
-                            style={[styles.editingBackButton, {
-                                backgroundColor: colors.card
-                            }]}
-                            onPress={cancelEditing}
-                        >
-                            <Ionicons name="chevron-back" size={20} color={colors.tint} />
-                        </TouchableOpacity>
-                        <View style={styles.editingTitleContainer}>
-                        </View>
-                        <TouchableOpacity
-                            style={[
-                                styles.editingSaveButton,
-                                {
-                                    opacity: isSaving ? 0.5 : 1,
-                                    backgroundColor: colors.card
-                                }
-                            ]}
-                            onPress={() => saveField(editingField)}
-                            disabled={isSaving}
-                        >
-                            {isSaving ? (
-                                <ActivityIndicator size="small" color={colors.tint} />
-                            ) : (
-                                <Text style={[styles.editingSaveButtonText, { color: colors.tint }]}>Save</Text>
-                            )}
-                        </TouchableOpacity>
-                    </View>
-                    <View style={styles.editingHeaderBottom}>
-                        <View style={[styles.editingIconContainer, {
-                            backgroundColor: editingField === 'displayName' ? `${colors.sidebarIconPersonalInfo}20` :
-                                editingField === 'username' ? `${colors.sidebarIconData}20` :
-                                    editingField === 'email' ? `${colors.sidebarIconSecurity}20` :
-                                        editingField === 'bio' ? `${colors.sidebarIconPersonalInfo}20` :
-                                            editingField === 'location' ? `${colors.sidebarIconSharing}20` :
-                                                editingField === 'links' ? `${colors.sidebarIconPersonalInfo}20` : `${colors.tint}20`
-                        }]}>
-                            <MaterialCommunityIcons
-                                name={
-                                    editingField === 'displayName' ? 'account-outline' as any :
-                                        editingField === 'username' ? 'at' as any :
-                                            editingField === 'email' ? 'email-outline' as any :
-                                                editingField === 'bio' ? 'text-box-outline' as any :
-                                                    editingField === 'location' ? 'map-marker-outline' as any :
-                                                        editingField === 'links' ? 'link-variant' as any : 'account-outline' as any
-                                }
-                                size={28}
-                                color={
-                                    editingField === 'displayName' ? colors.sidebarIconPersonalInfo :
-                                        editingField === 'username' ? colors.sidebarIconData :
-                                            editingField === 'email' ? colors.sidebarIconSecurity :
-                                                editingField === 'bio' ? colors.sidebarIconPersonalInfo :
-                                                    editingField === 'location' ? colors.sidebarIconSharing :
-                                                        editingField === 'links' ? colors.sidebarIconPersonalInfo : colors.tint
-                                }
-                            />
-                        </View>
-                        <Text style={[styles.editingBottomTitle, { color: colors.text }]}>
-                            {editingField === 'displayName' ? (t('editProfile.items.displayName.title') || 'Display Name') :
-                                editingField === 'username' ? (t('editProfile.items.username.title') || 'Username') :
-                                    editingField === 'email' ? (t('editProfile.items.email.title') || 'Email') :
-                                        editingField === 'bio' ? (t('editProfile.items.bio.title') || 'Bio') :
-                                            editingField === 'location' ? (t('editProfile.items.locations.title') || 'Location') :
-                                                editingField === 'links' ? (t('editProfile.items.links.title') || 'Links') : 'Field'}
-                        </Text>
-                    </View>
-                </View>
-            ) : null}
-
             <ScrollView
                 ref={scrollViewRef}
-                style={editingField ? styles.contentEditing : styles.content}
+                style={styles.content}
                 contentContainerStyle={styles.scrollContent}
                 showsVerticalScrollIndicator={false}
             >
-                {editingField ? (
-                    // Show only the editing interface when editing
-                    <View style={styles.editingOnlyContainer}>
-                        {renderEditingField(editingField)}
-                    </View>
-                ) : (
-                    // Show all settings when not editing
-                    <>
-                        {/* Title and Subtitle Header */}
-                        <View style={[styles.headerContainer, styles.headerSection]}>
+                {/* Title and Subtitle Header */}
+                <View style={[styles.headerContainer, styles.headerSection]}>
                             <Text style={[styles.modernTitle, { color: themeStyles.textColor, marginBottom: 0, marginTop: 0 }]}>
                                 {t('accountOverview.items.editProfile.title') || t('editProfile.title') || 'Edit Profile'}
                             </Text>
@@ -1162,7 +363,6 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                             style={styles.section}
                             onLayout={(event) => {
                                 const { y } = event.nativeEvent.layout;
-                                setAvatarSectionY(y);
                                 setProfilePictureSectionY(y);
                             }}
                         >
@@ -1386,11 +586,7 @@ const AccountSettingsScreen: React.FC<BaseScreenProps & { initialField?: string;
                             <View style={styles.groupedSectionWrapper}>
                             </View>
                         </View>
-                    </>
-                )}
             </ScrollView>
-
-            {/* Note: Profile field editing now uses dedicated EditProfileField screen */}
         </View>
     );
 };

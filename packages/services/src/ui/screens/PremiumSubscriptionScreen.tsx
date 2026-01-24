@@ -342,10 +342,6 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
         const detectedApp = 'mention'; // This would be dynamic in real implementation
 
         setCurrentAppPackage(detectedApp);
-
-        // Log for debugging
-        console.log('Detected app package:', detectedApp);
-        console.log('Available plans for this app will be filtered accordingly');
     };
 
     const loadSubscriptionData = async () => {
@@ -407,19 +403,15 @@ const PremiumSubscriptionScreen: React.FC<BaseScreenProps> = ({
             // Check if plan is available for current app
             const selectedPlan = mockPlans.find(plan => plan.id === planId);
             if (!selectedPlan?.applicableApps.includes(currentAppPackage)) {
-                console.log(`❌ Subscription blocked: Plan "${selectedPlan?.name}" not available for app "${currentAppPackage}"`);
                 toast.error(t('premium.toasts.planUnavailable', { app: currentAppPackage }) || `This plan is not available for the current app (${currentAppPackage})`);
                 return;
             }
 
             // Special restriction for Mention+ plan - only available in mention app
             if (planId === 'mention-plus' && currentAppPackage !== 'mention') {
-                console.log(`❌ Subscription blocked: Mention+ plan requires app to be "mention", current app is "${currentAppPackage}"`);
                 toast.error(t('premium.toasts.mentionOnly') || 'Mention+ is only available in the Mention app');
                 return;
             }
-
-            console.log(`✅ Subscription allowed: Plan "${selectedPlan.name}" is available for app "${currentAppPackage}"`);
 
             setProcessingPayment(true);
 

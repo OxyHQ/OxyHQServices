@@ -13,7 +13,7 @@ type AsyncRequestHandler = (
   req: Request,
   res: Response,
   next: NextFunction
-) => Promise<any>;
+) => Promise<void | Response>;
 
 /**
  * Wraps an async route handler to automatically catch errors
@@ -50,13 +50,13 @@ export const asyncHandler = (fn: AsyncRequestHandler) => {
 /**
  * Creates a success response with consistent format
  */
-export const sendSuccess = (
+export const sendSuccess = <T = unknown>(
   res: Response,
-  data: any,
+  data: T,
   statusCode: number = 200,
-  meta?: Record<string, any>
+  meta?: Record<string, unknown>
 ) => {
-  const response: any = { data };
+  const response: { data: T; meta?: Record<string, unknown> } = { data };
 
   if (meta) {
     response.meta = meta;
@@ -68,9 +68,9 @@ export const sendSuccess = (
 /**
  * Creates a paginated response with consistent format
  */
-export const sendPaginated = (
+export const sendPaginated = <T = unknown>(
   res: Response,
-  data: any[],
+  data: T[],
   total: number,
   limit: number,
   offset: number

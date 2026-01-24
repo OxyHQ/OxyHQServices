@@ -1,3 +1,25 @@
+/**
+ * ⚠️ WARNING: STUB IMPLEMENTATION - NOT PRODUCTION READY ⚠️
+ *
+ * This payment controller contains MOCK implementations only.
+ * DO NOT use in production without integrating a real payment processor.
+ *
+ * Current limitations:
+ * - processPayment: Uses Math.random() for success/failure (90% success rate)
+ * - validatePaymentMethod: Random validation for non-card types
+ * - getPaymentMethods: Always returns empty array
+ * - No PCI-DSS compliance
+ * - No actual payment processor integration (Stripe, PayPal, etc.)
+ *
+ * Required for production:
+ * 1. Integrate with payment processor (Stripe recommended)
+ * 2. Implement proper PCI-DSS compliant card handling
+ * 3. Add webhook handling for payment status updates
+ * 4. Implement proper error handling and retry logic
+ * 5. Add payment method storage and retrieval
+ * 6. Implement refunds and dispute handling
+ */
+
 import { Request, Response } from 'express';
 import { z } from 'zod';
 import { AuthRequest } from '../middleware/auth';
@@ -5,6 +27,9 @@ import Transaction from '../models/Transaction';
 import { logger } from '../utils/logger';
 import { sendSuccess } from '../utils/asyncHandler';
 import { UnauthorizedError, InternalServerError } from '../utils/error';
+
+// Log warning on module load
+logger.warn('⚠️ Payment controller loaded with STUB implementation - NOT production ready!');
 
 // Validation schemas
 const paymentMethodSchema = z.object({
@@ -23,23 +48,33 @@ const processPaymentSchema = z.object({
   platform: z.string(),
 });
 
+/**
+ * ⚠️ STUB IMPLEMENTATION - DO NOT USE IN PRODUCTION ⚠️
+ *
+ * This function uses Math.random() to simulate payment success/failure.
+ * Replace with actual payment processor integration before production use.
+ */
 export const processPayment = async (req: Request, res: Response) => {
+  logger.warn('⚠️ STUB: processPayment called - using mock implementation');
+
   try {
     const paymentData = processPaymentSchema.parse(req.body);
 
+    // STUB IMPLEMENTATION: Uses Math.random() for testing only
     // TODO: Integrate with actual payment processor (Stripe, etc.)
-    // This is a mock implementation
     const success = Math.random() > 0.1; // 90% success rate for testing
 
     if (success) {
       res.json({
         success: true,
         transactionId: `trans_${Date.now()}`,
+        warning: 'STUB_IMPLEMENTATION',
       });
     } else {
       res.status(400).json({
         success: false,
         error: 'Payment processing failed',
+        warning: 'STUB_IMPLEMENTATION',
       });
     }
   } catch (error) {
@@ -51,18 +86,29 @@ export const processPayment = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * ⚠️ STUB IMPLEMENTATION - DO NOT USE IN PRODUCTION ⚠️
+ *
+ * Non-card payment methods use Math.random() for validation.
+ * Card validation uses basic Luhn algorithm without processor verification.
+ */
 export const validatePaymentMethod = async (req: Request, res: Response) => {
+  logger.warn('⚠️ STUB: validatePaymentMethod called - using mock implementation');
+
   try {
     const { paymentMethod } = req.body;
     const validatedPaymentMethod = paymentMethodSchema.parse(paymentMethod);
 
+    // STUB IMPLEMENTATION: Random validation for non-card types
     // TODO: Integrate with payment processor for actual validation
-    // This is a mock implementation
-    const isValid = validatedPaymentMethod.type === 'card' ? 
-      isValidCard(validatedPaymentMethod) : 
+    const isValid = validatedPaymentMethod.type === 'card' ?
+      isValidCard(validatedPaymentMethod) :
       Math.random() > 0.1;
 
-    res.json({ valid: isValid });
+    res.json({
+      valid: isValid,
+      warning: 'STUB_IMPLEMENTATION',
+    });
   } catch (error) {
     if (error instanceof z.ZodError) {
       res.status(400).json({ message: 'Invalid payment method data', errors: error.errors });
@@ -72,17 +118,25 @@ export const validatePaymentMethod = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * ⚠️ STUB IMPLEMENTATION - DO NOT USE IN PRODUCTION ⚠️
+ *
+ * Always returns empty array. No payment method storage implemented.
+ */
 export const getPaymentMethods = async (req: Request, res: Response) => {
+  logger.warn('⚠️ STUB: getPaymentMethods called - always returns empty array');
+
   try {
     const { userId } = req.body;
     if (!userId) {
       return res.status(400).json({ message: 'User ID is required' });
     }
 
+    // STUB IMPLEMENTATION: Always returns empty
     // TODO: Integrate with payment processor to get saved payment methods
-    // This is a mock implementation
     res.json({
-      methods: []
+      methods: [],
+      warning: 'STUB_IMPLEMENTATION',
     });
   } catch (error) {
     res.status(500).json({ message: 'Failed to fetch payment methods', error });

@@ -9,7 +9,10 @@ import * as crypto from 'crypto';
 const FEDCM_ISSUER = 'https://auth.oxy.so';
 
 // Shared secret for verifying FedCM tokens - must match auth.oxy.so
-const FEDCM_TOKEN_SECRET = process.env.FEDCM_TOKEN_SECRET || process.env.ACCESS_TOKEN_SECRET || 'fedcm-shared-secret';
+if (!process.env.FEDCM_TOKEN_SECRET) {
+  throw new Error('FEDCM_TOKEN_SECRET is required but not configured');
+}
+const FEDCM_TOKEN_SECRET = process.env.FEDCM_TOKEN_SECRET;
 
 interface FedCMTokenPayload {
   iss: string;

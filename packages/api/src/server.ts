@@ -104,7 +104,10 @@ io.use((socket: AuthenticatedSocket, next) => {
   
   try {
     // Verify the token
-    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET || 'default_secret');
+    if (!process.env.ACCESS_TOKEN_SECRET) {
+      throw new Error('ACCESS_TOKEN_SECRET is not configured');
+    }
+    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
     socket.user = decoded as { id: string, [key: string]: any };
     next();
   } catch (error) {

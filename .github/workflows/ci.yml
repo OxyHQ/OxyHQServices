@@ -1,0 +1,124 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # API Package Tests
+  api-test:
+    name: API Tests
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x]
+
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "mongosh --eval 'db.runCommand({ ping: 1 })'"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./packages/api
+
+      - name: Run linter
+        run: npm run lint
+        working-directory: ./packages/api
+
+      - name: Run tests
+        run: npm test
+        working-directory: ./packages/api
+        env:
+          MONGODB_URI: mongodb://localhost:27017/oxyapi-test
+          ACCESS_TOKEN_SECRET: test_access_token_secret_minimum_32_characters
+          REFRESH_TOKEN_SECRET: test_refresh_token_secret_minimum_32_characters
+          FEDCM_TOKEN_SECRET: test_fedcm_token_secret_minimum_32_characters
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: test_aws_access_key
+          AWS_SECRET_ACCESS_KEY: test_aws_secret_key
+          AWS_S3_BUCKET: test-bucket
+          NODE_ENV: test
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
+        working-directory: ./packages/api
+        env:
+          MONGODB_URI: mongodb://localhost:27017/oxyapi-test
+          ACCESS_TOKEN_SECRET: test_access_token_secret_minimum_32_characters
+          REFRESH_TOKEN_SECRET: test_refresh_token_secret_minimum_32_characters
+          FEDCM_TOKEN_SECRET: test_fedcm_token_secret_minimum_32_characters
+          AWS_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: test_aws_access_key
+          AWS_SECRET_ACCESS_KEY: test_aws_secret_key
+          AWS_S3_BUCKET: test-bucket
+          NODE_ENV: test
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./packages/api/coverage/lcov.info
+          flags: api
+          name: api-coverage
+
+  # Build check
+  api-build:
+    name: API Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: ./packages/api
+
+      - name: Build TypeScript
+        run: npm run build
+        working-directory: ./packages/api
+
+  # Security audit
+  security-audit:
+    name: Security Audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Run npm audit
+        run: npm audit --audit-level=moderate
+        working-directory: ./packages/api
+        continue-on-error: true

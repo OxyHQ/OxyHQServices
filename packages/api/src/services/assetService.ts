@@ -531,7 +531,6 @@ export class AssetService {
 
       // Authorization Check
       if (requestingUserId && file.ownerUserId.toString() !== requestingUserId) {
-        // TODO: Add admin check here if needed
         throw new Error('Unauthorized: You do not own this file');
       }
 

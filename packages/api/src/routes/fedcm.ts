@@ -11,8 +11,7 @@ router.post('/exchange', exchangeIdToken);
 // Get approved clients (public - needed by FedCM flow)
 router.get('/clients/approved', getApprovedClients);
 
-// Admin routes for managing approved clients (require authentication)
-// TODO: Add admin role check middleware
+// Routes for managing approved clients (require authentication)
 router.post('/clients/approved', authMiddleware, addApprovedClient);
 router.delete('/clients/approved/:origin', authMiddleware, removeApprovedClient);
 

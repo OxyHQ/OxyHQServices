@@ -98,7 +98,7 @@ const AppInfoScreen: React.FC<BaseScreenProps> = ({
         return () => {
             subscription?.remove();
         };
-    }, []);
+    }, [oxyServices]);
 
     const copyToClipboard = async (text: string, label: string) => {
         try {
