@@ -4,13 +4,34 @@ import { logger } from '../utils/logger';
 import sharp from 'sharp';
 import path from 'path';
 import fs from 'fs';
+import os from 'os';
 import { execSync, spawn } from 'child_process';
 import { VariantConfig, VariantCommitRetryOptions } from '../types/variant.types';
+
+// FFprobe metadata interfaces for type safety
+interface FFprobeStream {
+  codec_type?: string;
+  codec_name?: string;
+  width?: number;
+  height?: number;
+  r_frame_rate?: string;
+}
+
+interface FFprobeFormat {
+  duration?: string;
+  bit_rate?: string;
+}
+
+interface FFprobeMetadata {
+  streams?: FFprobeStream[];
+  format?: FFprobeFormat;
+}
 
 // Get FFmpeg and FFprobe paths - use static binaries if available, otherwise fallback to system
 function getFfmpegPath(): string {
   try {
     // ffmpeg-static exports the path as a string directly
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const ffmpegStatic = require('ffmpeg-static');
     logger.debug('[VariantService] ffmpeg-static require result', { type: typeof ffmpegStatic, value: ffmpegStatic });
     
@@ -52,6 +73,7 @@ function getFfmpegPath(): string {
 function getFfprobePath(): string {
   try {
     // ffprobe-static exports an object with a path property
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const ffprobeStatic = require('ffprobe-static');
     logger.debug('[VariantService] ffprobe-static require result', { type: typeof ffprobeStatic, value: ffprobeStatic });
     
@@ -70,7 +92,7 @@ function getFfprobePath(): string {
             // Make executable if not already (needed for some platforms)
             try {
               fs.chmodSync(binaryPath, 0o755);
-            } catch (e) {
+            } catch {
               // Ignore chmod errors
             }
             logger.info('[VariantService] Using ffprobe-static binary', { binaryPath });
@@ -81,7 +103,6 @@ function getFfprobePath(): string {
         } else {
           logger.warn('[VariantService] ffprobe-static path does not exist', { binaryPath });
           // Check if this is an unsupported architecture issue
-          const os = require('os');
           const arch = os.arch();
           const platform = os.platform();
           if (platform === 'linux' && arch === 'arm64') {
@@ -120,13 +141,13 @@ logger.info('[VariantService] Resolved FFprobe path', { ffprobePath });
 
 // Log final paths being used
 try {
-  logger.info('FFmpeg/FFprobe paths initialized', { 
-    ffmpegPath, 
+  logger.info('FFmpeg/FFprobe paths initialized', {
+    ffmpegPath,
     ffprobePath,
     ffmpegExists: fs.existsSync(ffmpegPath),
     ffprobeExists: fs.existsSync(ffprobePath)
   });
-} catch (e) {
+} catch {
   // Logger might not be initialized yet, ignore
 }
 
@@ -458,10 +479,10 @@ export class VariantService {
           }
 
           try {
-            const metadata = JSON.parse(stdout);
+            const metadata = JSON.parse(stdout) as FFprobeMetadata;
 
-            const videoStream = metadata.streams?.find((s: any) => s.codec_type === 'video');
-            const audioStream = metadata.streams?.find((s: any) => s.codec_type === 'audio');
+            const videoStream = metadata.streams?.find((s) => s.codec_type === 'video');
+            const audioStream = metadata.streams?.find((s) => s.codec_type === 'audio');
 
             resolve({
               duration: metadata.format?.duration ? parseFloat(metadata.format.duration) : undefined,
@@ -671,10 +692,10 @@ export class VariantService {
           }
 
           try {
-            const metadata = JSON.parse(stdout);
+            const metadata = JSON.parse(stdout) as FFprobeMetadata;
 
-            const videoStream = metadata.streams?.find((s: any) => s.codec_type === 'video');
-            const audioStream = metadata.streams?.find((s: any) => s.codec_type === 'audio');
+            const videoStream = metadata.streams?.find((s) => s.codec_type === 'video');
+            const audioStream = metadata.streams?.find((s) => s.codec_type === 'audio');
 
             resolve({
               duration: metadata.format?.duration ? parseFloat(metadata.format.duration) : undefined,
@@ -826,7 +847,7 @@ export class VariantService {
   private async generateHLSStream(
     videoUrl: string,
     sha256: string,
-    metadata: any
+    metadata: { width?: number; height?: number; duration?: number }
   ): Promise<IFileVariant[]> {
     // Use /tmp for HLS segments (ephemeral, OS cleans up automatically)
     // FFmpeg needs to write multiple segment files for HLS
@@ -940,15 +961,15 @@ export class VariantService {
               // Delete segment immediately after upload (no temp file accumulation)
               try {
                 fs.unlinkSync(segmentPath);
-              } catch (e) {
+              } catch {
                 // Ignore deletion errors
               }
             }
-            
+
             // Delete playlist file after upload
             try {
               fs.unlinkSync(outputPath);
-            } catch (e) {
+            } catch {
               // Ignore deletion errors
             }
 
