@@ -105,7 +105,7 @@ function App() {
 ┌────────────┐         ┌──────────────────┐         ┌────────────┐
 │  Homiio    │         │  iOS Keychain    │         │  Mention   │
 │   App      │  Write  │  Shared Group    │  Read   │   App      │
-│            ├────────▶│ (group.com.oxy)  │◀────────┤            │
+│            ├────────▶│ (group.so.oxy)   │◀────────┤            │
 │ Signs in   │         │                  │         │ Launches   │
 │            │         │  Identity +      │         │            │
 │            │         │  Session stored  │         │ Instant    │
@@ -188,7 +188,7 @@ For **each Oxy app** (Homiio, Mention, Alia, etc.):
 3. Go to "Signing & Capabilities"
 4. Click "+ Capability"
 5. Add "Keychain Sharing"
-6. Add keychain group: `group.com.oxy.shared`
+6. Add keychain group: `group.so.oxy.shared`
 
 #### 2. Use Shared Identity
 
@@ -294,7 +294,7 @@ In **each app's** `AndroidManifest.xml`:
 ```xml
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.yourapp"
-    android:sharedUserId="com.oxy.shared">
+    android:sharedUserId="so.oxy.shared">
 
     <!-- App content -->
 </manifest>
