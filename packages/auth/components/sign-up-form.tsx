@@ -4,7 +4,6 @@
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { GalleryVerticalEnd } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
@@ -17,6 +16,7 @@ import {
     FieldSeparator,
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
+import { Logo } from "@/components/logo"
 
 type SignUpFormProps = React.ComponentProps<"div"> & {
     error?: string
@@ -166,10 +166,8 @@ export function SignUpForm({
                             href="/login"
                             className="flex flex-col items-center gap-2 font-medium"
                         >
-                            <div className="flex size-8 items-center justify-center rounded-md">
-                                <GalleryVerticalEnd className="size-6" />
-                            </div>
-                            <span className="sr-only">Acme Inc.</span>
+                            <Logo />
+                            <span className="sr-only">Oxy</span>
                         </Link>
                         <h1 className="text-xl font-bold">Create your account</h1>
                         <FieldDescription>
@@ -238,8 +236,8 @@ export function SignUpForm({
                 </FieldGroup>
             </form>
             <FieldDescription className="px-6 text-center">
-                By clicking continue, you agree to our {" "}
-                <Link href="/terms">Terms of Service</Link> and <Link href="/privacy">Privacy Policy</Link>.
+                By clicking continue, you agree to our{" "}
+                <a href="https://oxy.so/company/transparency/policies/terms-of-service">Terms of Service</a> and <a href="https://oxy.so/company/transparency/policies/privacy">Privacy Policy</a>.
             </FieldDescription>
         </div>
     )

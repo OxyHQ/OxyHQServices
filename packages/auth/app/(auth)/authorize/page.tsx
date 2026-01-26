@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { GalleryVerticalEnd } from "lucide-react"
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
 
@@ -7,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Field, FieldDescription, FieldGroup } from "@/components/ui/field"
 import { ToastMessage } from "@/components/toast-message"
 import { Empty, EmptyActions, EmptyDescription, EmptyTitle } from "@/components/ui/empty"
+import { Logo } from "@/components/logo"
 import {
     apiGet,
     buildRelativeUrl,
@@ -148,10 +148,8 @@ export default async function AuthorizePage({ searchParams }: AuthorizePageProps
                         href="/login"
                         className="flex flex-col items-center gap-2 font-medium"
                     >
-                        <div className="flex size-8 items-center justify-center rounded-md">
-                            <GalleryVerticalEnd className="size-6" />
-                        </div>
-                        <span className="sr-only">Acme Inc.</span>
+                        <Logo />
+                        <span className="sr-only">Oxy</span>
                     </Link>
                     <h1 className="text-xl font-bold">Authorize sign in</h1>
                     <FieldDescription>

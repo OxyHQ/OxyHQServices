@@ -53,9 +53,7 @@ const KarmaAboutScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
 const styles = StyleSheet.create({
     container: { flex: 1 },
     title: {
-        fontFamily: Platform.OS === 'web'
-            ? 'Inter'  // Use CSS font name directly for web
-            : 'Inter-Bold',  // Use exact font name as registered with Font.loadAsync
+        fontFamily: fontFamilies.interBold,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,  // Only apply fontWeight on web
         fontSize: 54,
         margin: 24,

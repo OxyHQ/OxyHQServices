@@ -1,6 +1,6 @@
 "use client"
 
-import { GalleryVerticalEnd, ChevronRight, UserPlus } from "lucide-react"
+import { ChevronRight, UserPlus } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import {
@@ -11,6 +11,7 @@ import {
     CardTitle,
 } from "@/components/ui/card"
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
+import { Logo } from "@/components/logo"
 
 type Account = {
     id: string
@@ -58,9 +59,7 @@ export function AccountSwitcher({
             <Card>
                 <CardHeader className="text-center pb-2">
                     <div className="flex justify-center mb-2">
-                        <div className="flex size-10 items-center justify-center rounded-md bg-primary text-primary-foreground">
-                            <GalleryVerticalEnd className="size-6" />
-                        </div>
+                        <Logo />
                     </div>
                     <CardTitle className="text-xl">Choose an account</CardTitle>
                     <CardDescription>to continue to the app</CardDescription>
@@ -111,11 +110,11 @@ export function AccountSwitcher({
             </Card>
             <p className="px-6 text-center text-sm text-muted-foreground">
                 By continuing, you agree to our{" "}
-                <a href="#" className="underline underline-offset-4 hover:text-primary">
+                <a href="https://oxy.so/company/transparency/policies/terms-of-service" className="underline underline-offset-4 hover:text-primary">
                     Terms of Service
                 </a>{" "}
                 and{" "}
-                <a href="#" className="underline underline-offset-4 hover:text-primary">
+                <a href="https://oxy.so/company/transparency/policies/privacy" className="underline underline-offset-4 hover:text-primary">
                     Privacy Policy
                 </a>
                 .

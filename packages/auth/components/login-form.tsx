@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { GalleryVerticalEnd } from "lucide-react"
 import { toast } from "sonner"
 
 import { cn } from "@/lib/utils"
@@ -16,6 +15,7 @@ import {
 } from "@/components/ui/field"
 import { Input } from "@/components/ui/input"
 import { AccountSwitcher } from "@/components/account-switcher"
+import { Logo } from "@/components/logo"
 
 type Account = {
     id: string
@@ -319,12 +319,10 @@ export function LoginForm({
                             href="#"
                             className="flex flex-col items-center gap-2 font-medium"
                         >
-                            <div className="flex size-8 items-center justify-center rounded-md">
-                                <GalleryVerticalEnd className="size-6" />
-                            </div>
-                            <span className="sr-only">Acme Inc.</span>
+                            <Logo />
+                            <span className="sr-only">Oxy</span>
                         </a>
-                        <h1 className="text-xl font-bold">Welcome to Acme Inc.</h1>
+                        <h1 className="text-xl font-bold">Welcome to Oxy</h1>
                         <FieldDescription>
                             Don&apos;t have an account? <a href="/signup">Sign up</a>
                         </FieldDescription>
@@ -380,8 +378,8 @@ export function LoginForm({
                 </FieldGroup>
             </form>
             <FieldDescription className="px-6 text-center">
-                By clicking continue, you agree to our <a href="#">Terms of Service</a>{" "}
-                and <a href="#">Privacy Policy</a>.
+                By clicking continue, you agree to our <a href="https://oxy.so/company/transparency/policies/terms-of-service">Terms of Service</a>{" "}
+                and <a href="https://oxy.so/company/transparency/policies/privacy">Privacy Policy</a>.
             </FieldDescription>
         </div>
     )

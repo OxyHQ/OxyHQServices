@@ -57,9 +57,7 @@ const createTheme = (isDark: boolean): Theme => {
     colors,
     fonts: {
       title: {
-        fontFamily: Platform.OS === 'web'
-          ? 'Inter'
-          : 'Inter-Bold',
+        fontFamily: fontFamilies.interBold,
         fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
         fontSize: 34,
       },
