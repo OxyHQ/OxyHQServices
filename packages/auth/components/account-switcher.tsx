@@ -77,7 +77,6 @@ export function AccountSwitcher({
                                 <AvatarImage
                                     src={getAvatarUrl(account.avatar)}
                                     alt={displayName}
-                                    crossOrigin="use-credentials"
                                 />
                             )}
                             <AvatarFallback className="bg-primary text-primary-foreground font-semibold">
