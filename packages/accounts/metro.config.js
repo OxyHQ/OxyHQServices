@@ -32,6 +32,9 @@ config.resolver.nodeModulesPaths = [
 // 3. Force Metro to resolve (sub)dependencies in the workspace
 config.resolver.disableHierarchicalLookup = true;
 
+// 3.5 Enable package exports support to properly resolve @noble/hashes subpaths
+config.resolver.unstable_enablePackageExports = true;
+
 // 4. Ensure source extensions include TypeScript files
 config.resolver.sourceExts = [
   ...config.resolver.sourceExts,
@@ -45,6 +48,8 @@ config.resolver.extraNodeModules = {
   '@oxyhq/services/core': path.resolve(servicesRoot, 'src', 'core'),
   '@oxyhq/services/full': path.resolve(servicesRoot, 'src', 'index.ts'),
   '@oxyhq/services/ui': path.resolve(servicesRoot, 'src', 'ui'),
+  // Fix @noble/hashes exports warning - map .js imports to the correct paths
+  '@noble/hashes/crypto.js': path.resolve(monorepoRoot, 'node_modules', '@noble/hashes', 'crypto.js'),
 };
 
 // 6. Enable better platform resolution

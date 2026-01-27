@@ -8,7 +8,6 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
-import { Header } from '../components';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 
 interface InfoSection {
