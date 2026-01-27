@@ -97,12 +97,12 @@ function UserProfile() {
 }
 ```
 
-### Pure React/Next.js (No Expo)
+### Pure React/Next.js/Vite (No Expo)
 
 **Only use this if you're NOT using Expo/React Native:**
 
 ```typescript
-import { WebOxyProvider, useAuth } from '@oxyhq/services';
+import { WebOxyProvider, useAuth } from '@oxyhq/services/web';
 
 function App() {
   return (
@@ -114,6 +114,26 @@ function App() {
 ```
 
 ⚠️ **Important:** If you're using Expo, always use `OxyProvider` instead - it already handles web in addition to native platforms. Never use `WebOxyProvider` in Expo apps.
+
+#### Web Entry Point (`@oxyhq/services/web`)
+
+For pure web applications, use the `/web` entry point which excludes React Native dependencies:
+
+```typescript
+// ✅ Recommended for pure web (Vite, Next.js, CRA)
+import { WebOxyProvider, useAuth, OxyServices } from '@oxyhq/services/web';
+
+// ❌ Avoid using the main entry point on web (pulls in React Native deps)
+import { WebOxyProvider } from '@oxyhq/services';
+```
+
+**Benefits:**
+- Smaller bundle size (no React Native dependencies)
+- No need for react-native-web or complex build configuration
+- Faster builds and smaller production bundles
+- All web-compatible features included (auth, hooks, stores, etc.)
+
+**Note:** If you must use the main entry point (`@oxyhq/services`), you'll need to configure your bundler with react-native-web aliases. See the [Web Bundler Configuration](#web-bundler-configuration) section below.
 
 ### Backend (Node.js / Express)
 
@@ -982,6 +1002,131 @@ app.get('/api/users/:userId/followers', async (req, res) => {
 app.listen(3000, () => {
   console.log('Server running on port 3000');
 });
+```
+
+---
+
+## 🔧 Web Bundler Configuration
+
+### When to Configure Your Bundler
+
+You only need bundler configuration if:
+1. You're using the **main entry point** (`@oxyhq/services`) in a pure web app
+2. You're building an Expo web app that uses React Native components
+
+**If you're using `@oxyhq/services/web`**, you don't need any bundler configuration! ✅
+
+### Vite Configuration
+
+For apps using the main entry point with Vite:
+
+```typescript
+// vite.config.ts
+import path from "path"
+import react from "@vitejs/plugin-react"
+import { defineConfig } from "vite"
+
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "react-native": "react-native-web",
+      buffer: "buffer/",
+    },
+    extensions: ['.web.js', '.web.ts', '.web.tsx', '.js', '.ts', '.tsx', '.json'],
+  },
+  define: {
+    __DEV__: JSON.stringify(process.env.NODE_ENV !== 'production'),
+    global: 'globalThis',
+    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
+  },
+  optimizeDeps: {
+    include: ['elliptic', 'buffer', 'warn-once', 'react-native-is-edge-to-edge', 'hoist-non-react-statics'],
+    exclude: [
+      '@oxyhq/services',
+      'react-native-reanimated',
+      'react-native-gesture-handler',
+      'react-native-svg',
+      'react-native-screens',
+      'react-native-safe-area-context',
+      'lottie-react-native',
+      'expo-image',
+      'react-native-qrcode-svg',
+    ],
+    esbuildOptions: {
+      loader: {
+        '.js': 'jsx',
+      },
+    },
+  },
+})
+```
+
+**Install required dependencies:**
+```bash
+npm install react-native-web buffer
+```
+
+**Add to index.html (before your script tag):**
+```html
+<script>
+  // Polyfill for React Native packages
+  if (typeof window.require === 'undefined') {
+    window.require = function(module) {
+      console.warn('require() called for:', module);
+      return {};
+    };
+  }
+</script>
+```
+
+### Webpack Configuration
+
+For apps using the main entry point with Webpack:
+
+```javascript
+// webpack.config.js
+module.exports = {
+  resolve: {
+    alias: {
+      'react-native$': 'react-native-web',
+    },
+    extensions: ['.web.js', '.web.ts', '.web.tsx', '.js', '.ts', '.tsx', '.json'],
+  },
+  plugins: [
+    new webpack.DefinePlugin({
+      __DEV__: JSON.stringify(process.env.NODE_ENV !== 'production'),
+      'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
+    }),
+  ],
+};
+```
+
+### Next.js Configuration
+
+For Next.js apps:
+
+```javascript
+// next.config.js
+module.exports = {
+  webpack: (config) => {
+    config.resolve.alias = {
+      ...config.resolve.alias,
+      'react-native$': 'react-native-web',
+    };
+    return config;
+  },
+  transpilePackages: ['react-native-web'],
+};
+```
+
+**Recommendation:** For cleaner configuration, use `@oxyhq/services/web` instead:
+```typescript
+// ✅ Clean - no bundler config needed
+import { WebOxyProvider } from '@oxyhq/services/web';
+
+// ❌ Requires bundler config
+import { WebOxyProvider } from '@oxyhq/services';
 ```
 
 ---
