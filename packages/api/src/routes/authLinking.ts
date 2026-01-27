@@ -93,24 +93,32 @@ router.post('/link', asyncHandler(async (req: AuthenticatedRequest, res: Respons
 
   const { type, publicKey, signature, timestamp, email, password, providerId, providerToken } = req.body;
 
-  if (!type) {
-    throw new BadRequestError('Auth method type is required');
+  // Validate type is a non-empty string to prevent NoSQL injection
+  if (typeof type !== 'string' || !type.trim()) {
+    throw new BadRequestError('Auth method type is required and must be a string');
   }
+  const safeType = type.trim();
 
   const user = await User.findById(userId).select('+password');
   if (!user) {
     throw new BadRequestError('User not found');
   }
 
-  switch (type) {
+  switch (safeType) {
     case 'identity': {
       // Link identity (publicKey) to account
       if (!publicKey || !signature || !timestamp) {
         throw new BadRequestError('publicKey, signature, and timestamp are required for identity linking');
       }
 
+      // Validate publicKey is a non-empty string to prevent NoSQL injection
+      if (typeof publicKey !== 'string' || !publicKey.trim()) {
+        throw new BadRequestError('publicKey must be a non-empty string');
+      }
+      const safePublicKey = publicKey.trim();
+
       // Check if publicKey is already used by another user
-      const existingUser = await User.findOne({ publicKey });
+      const existingUser = await User.findOne({ publicKey: safePublicKey });
       if (existingUser && existingUser._id.toString() !== userId.toString()) {
         throw new ConflictError('This identity is already linked to another account');
       }
@@ -122,7 +130,7 @@ router.post('/link', asyncHandler(async (req: AuthenticatedRequest, res: Respons
         timestamp,
       });
 
-      const isValid = SignatureService.verifySignature(publicKey, message, signature);
+      const isValid = SignatureService.verifySignature(safePublicKey, message, signature);
       if (!isValid) {
         throw new BadRequestError('Invalid signature - cannot verify identity ownership');
       }
@@ -134,7 +142,7 @@ router.post('/link', asyncHandler(async (req: AuthenticatedRequest, res: Respons
       }
 
       // Link the identity
-      user.publicKey = publicKey;
+      user.publicKey = safePublicKey;
 
       // Add to authMethods array
       if (!user.authMethods) {
@@ -145,7 +153,7 @@ router.post('/link', asyncHandler(async (req: AuthenticatedRequest, res: Respons
         user.authMethods.push({
           type: 'identity',
           linkedAt: new Date(),
-          metadata: { publicKey },
+          metadata: { publicKey: safePublicKey },
         });
       }
 
@@ -160,8 +168,14 @@ router.post('/link', asyncHandler(async (req: AuthenticatedRequest, res: Respons
         throw new BadRequestError('email and password are required for password linking');
       }
 
+      // Validate email and password are strings to prevent NoSQL injection
+      if (typeof email !== 'string' || typeof password !== 'string') {
+        throw new BadRequestError('email and password must be strings');
+      }
+      const safeEmail = email.trim().toLowerCase();
+
       // Check if email is already used by another user
-      const existingUser = await User.findOne({ email: email.toLowerCase() });
+      const existingUser = await User.findOne({ email: safeEmail });
       if (existingUser && existingUser._id.toString() !== userId.toString()) {
         throw new ConflictError('This email is already linked to another account');
       }
@@ -173,7 +187,7 @@ router.post('/link', asyncHandler(async (req: AuthenticatedRequest, res: Respons
 
       // Hash password and update user
       const hashedPassword = await bcrypt.hash(password, 10);
-      user.email = email.toLowerCase();
+      user.email = safeEmail;
       user.password = hashedPassword;
 
       // Add to authMethods array
@@ -185,7 +199,7 @@ router.post('/link', asyncHandler(async (req: AuthenticatedRequest, res: Respons
         user.authMethods.push({
           type: 'password',
           linkedAt: new Date(),
-          metadata: { email: email.toLowerCase() },
+          metadata: { email: safeEmail },
         });
       }
 
@@ -202,13 +216,20 @@ router.post('/link', asyncHandler(async (req: AuthenticatedRequest, res: Respons
         throw new BadRequestError('providerId is required for social auth linking');
       }
 
+      // Validate providerId is a non-empty string to prevent NoSQL injection
+      if (typeof providerId !== 'string' || !providerId.trim()) {
+        throw new BadRequestError('providerId must be a non-empty string');
+      }
+      const safeProviderId = providerId.trim();
+
       // Check if this social account is already linked to another user
+      // Use literal type values instead of user-controlled type to prevent injection
       const existingUser = await User.findOne({
-        'authMethods.type': type,
-        'authMethods.metadata.providerId': providerId,
+        'authMethods.type': safeType,
+        'authMethods.metadata.providerId': safeProviderId,
       });
       if (existingUser && existingUser._id.toString() !== userId.toString()) {
-        throw new ConflictError(`This ${type} account is already linked to another user`);
+        throw new ConflictError(`This ${safeType} account is already linked to another user`);
       }
 
       // Add to authMethods array
@@ -216,26 +237,26 @@ router.post('/link', asyncHandler(async (req: AuthenticatedRequest, res: Respons
         user.authMethods = [];
       }
       const existingMethod = user.authMethods.find(
-        m => m.type === type && m.metadata?.providerId === providerId
+        m => m.type === safeType && m.metadata?.providerId === safeProviderId
       );
       if (!existingMethod) {
         user.authMethods.push({
-          type: type as AuthMethod['type'],
+          type: safeType as AuthMethod['type'],
           linkedAt: new Date(),
           metadata: {
-            providerId,
-            email: email || undefined,
+            providerId: safeProviderId,
+            email: typeof email === 'string' ? email.trim() : undefined,
           },
         });
       }
 
       await user.save();
-      res.json({ success: true, message: `${type} auth linked successfully` });
+      res.json({ success: true, message: `${safeType} auth linked successfully` });
       break;
     }
 
     default:
-      throw new BadRequestError(`Unknown auth method type: ${type}`);
+      throw new BadRequestError(`Unknown auth method type: ${safeType}`);
   }
 }));
 

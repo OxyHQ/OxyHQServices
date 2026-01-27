@@ -116,19 +116,21 @@ export const persistIdentitySyncState = async (isSynced: boolean): Promise<void>
 
 /**
  * Get sync state from secure storage directly (for non-reactive reads).
+ * Returns false (not synced) by default - only true if explicitly stored as 'true'.
  */
 export const getIdentitySyncStateFromStorage = async (): Promise<boolean> => {
   try {
     const store = await initSecureStore();
     if (!store) {
-      return true;
+      return false; // Not synced if storage unavailable
     }
     const synced = await store.getItemAsync(IDENTITY_SYNC_STORAGE_KEY);
-    return synced !== 'false';
+    // Only consider synced if explicitly stored as 'true'
+    return synced === 'true';
   } catch (error) {
     if (__DEV__) {
       console.warn('[IdentityStore] Failed to read sync state:', error);
     }
-    return true;
+    return false; // Not synced on error
   }
 };

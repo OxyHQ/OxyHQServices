@@ -19,6 +19,7 @@ export default function ImportIdentityPhraseScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const { importIdentity } = useIdentity();
   const { error, setAuthError } = useAuthFlowContext();
+  const [isLoading, setIsLoading] = useState(false);
 
   const backgroundColor = useMemo(
     () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
@@ -56,6 +57,7 @@ export default function ImportIdentityPhraseScreen() {
     }
 
     setAuthError(null);
+    setIsLoading(true);
 
     try {
       const result = await importIdentity(phrase);
@@ -69,6 +71,8 @@ export default function ImportIdentityPhraseScreen() {
       }
     } catch (err: unknown) {
       setAuthError(extractAuthErrorMessage(err, 'Failed to import identity'));
+    } finally {
+      setIsLoading(false);
     }
   }, [phraseWords, importIdentity, router, setAuthError]);
 
