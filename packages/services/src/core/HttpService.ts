@@ -18,7 +18,14 @@ import { RequestDeduplicator, RequestQueue, SimpleLogger } from '../utils/reques
 import { retryAsync } from '../utils/asyncUtils';
 import { handleHttpError } from '../utils/errorUtils';
 import { jwtDecode } from 'jwt-decode';
+import { Platform } from 'react-native';
 import type { OxyConfig } from '../models/interfaces';
+
+/**
+ * Check if we're running in a native app environment (React Native, not web)
+ * This is used to determine CSRF handling mode
+ */
+const isNativeApp = Platform.OS !== 'web';
 
 interface JwtPayload {
   exp?: number;
@@ -262,6 +269,13 @@ export class HttpService {
         // Add CSRF token header for state-changing requests
         if (csrfToken) {
           headers['X-CSRF-Token'] = csrfToken;
+        }
+
+        // Add native app header for React Native (required for CSRF validation)
+        // Native apps can't persist cookies like browsers, so the server uses
+        // header-only CSRF validation when this header is present
+        if (isNativeApp && isStateChangingMethod) {
+          headers['X-Native-App'] = 'true';
         }
 
         // Merge custom headers if provided
