@@ -1,10 +1,10 @@
 /**
  * Theme Utility Functions
  *
- * @deprecated Import from '@oxyhq/services/shared' instead
- * @module ui/utils/themeUtils
+ * Re-exports from shared module for cleaner internal imports.
+ * External consumers should use '@oxyhq/services/shared' directly.
  *
- * This file re-exports from the consolidated shared module for backward compatibility.
+ * @module ui/utils/themeUtils
  */
 
 export {

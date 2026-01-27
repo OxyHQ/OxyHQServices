@@ -12,6 +12,13 @@ import type { HttpService } from './HttpService';
 import type { SessionLoginResponse, MinimalUserData } from '../models/session';
 
 /**
+ * OxyServices with optional FedCM methods (provided by FedCM mixin).
+ */
+interface OxyServicesWithFedCM extends OxyServices {
+  revokeFedCMCredential?: () => Promise<void>;
+}
+
+/**
  * Storage adapter interface for platform-agnostic storage.
  */
 export interface StorageAdapter {
@@ -196,16 +203,14 @@ export class AuthManager {
     method: AuthMethod = 'credentials'
   ): Promise<void> {
     // Store tokens
-    const accessToken = (session as any).accessToken;
-    if (accessToken) {
-      await this.storage.setItem(STORAGE_KEYS.ACCESS_TOKEN, accessToken);
-      this.oxyServices.httpService.setTokens(accessToken);
+    if (session.accessToken) {
+      await this.storage.setItem(STORAGE_KEYS.ACCESS_TOKEN, session.accessToken);
+      this.oxyServices.httpService.setTokens(session.accessToken);
     }
 
     // Store refresh token if available
-    const refreshToken = (session as any).refreshToken;
-    if (refreshToken) {
-      await this.storage.setItem(STORAGE_KEYS.REFRESH_TOKEN, refreshToken);
+    if (session.refreshToken) {
+      await this.storage.setItem(STORAGE_KEYS.REFRESH_TOKEN, session.refreshToken);
     }
 
     // Store session info
@@ -295,8 +300,9 @@ export class AuthManager {
 
     // Revoke FedCM credential if supported
     try {
-      if ((this.oxyServices as any).revokeFedCMCredential) {
-        await (this.oxyServices as any).revokeFedCMCredential();
+      const services = this.oxyServices as OxyServicesWithFedCM;
+      if (services.revokeFedCMCredential) {
+        await services.revokeFedCMCredential();
       }
     } catch {
       // Ignore FedCM errors

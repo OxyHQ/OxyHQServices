@@ -145,11 +145,24 @@ export function WebOxyProvider({
   const handleAuthSuccess = useCallback(async (session: SessionLoginResponse, method: 'fedcm' | 'popup' | 'redirect' | 'credentials' = 'credentials') => {
     // Use centralized AuthManager for token/session storage
     await authManager.handleAuthSuccess(session, method);
-    // Session user may be minimal data from auth, treat as User for state
-    setUser(session.user as User);
+
+    // Fetch full user profile (session.user only contains MinimalUserData)
+    try {
+      const fullUser = await oxyServices.getCurrentUser();
+      if (fullUser) {
+        setUser(fullUser);
+      } else {
+        // Fallback to minimal data if full profile unavailable
+        setUser(session.user as User);
+      }
+    } catch {
+      // Fallback to minimal data on error
+      setUser(session.user as User);
+    }
+
     setError(null);
     setIsLoading(false);
-  }, [authManager]);
+  }, [authManager, oxyServices]);
 
   /**
    * Handles authentication errors

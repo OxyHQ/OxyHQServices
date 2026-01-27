@@ -213,9 +213,4 @@ export function logError(error: unknown, context?: string): void {
   }
 }
 
-/**
- * Retry function with exponential backoff
- * Re-exports retryAsync for backward compatibility
- * @deprecated Use retryAsync from asyncUtils instead
- */
-export { retryAsync as retryWithBackoff } from './asyncUtils'; 
+ 
