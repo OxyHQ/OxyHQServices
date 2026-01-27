@@ -52,7 +52,7 @@ export interface IdentityStore extends IdentityState {
 }
 
 const defaultState: IdentityState = {
-  isSynced: true, // Assume synced until proven otherwise
+  isSynced: false, // Not synced until confirmed by server registration
   isSyncing: false,
 };
 
@@ -81,7 +81,8 @@ export const useIdentityStore = create<IdentityStore>((set: (state: Partial<Iden
       }
 
       const synced = await store.getItemAsync(IDENTITY_SYNC_STORAGE_KEY);
-      set({ isSynced: synced !== 'false' });
+      // Only consider synced if explicitly stored as 'true'
+      set({ isSynced: synced === 'true' });
     } catch (error) {
       if (__DEV__) {
         console.warn('[IdentityStore] Failed to hydrate from secure storage:', error);

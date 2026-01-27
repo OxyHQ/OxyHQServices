@@ -11,15 +11,13 @@ import { useIdentity } from '@/hooks/useIdentity';
 
 /**
  * Import Identity - Phrase Screen (Index)
- * 
+ *
  * Allows user to enter recovery phrase to import identity
  */
 export default function ImportIdentityPhraseScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const { importIdentity } = useIdentity();
-  const { oxyServices } = useOxy();
-  const isLoading = oxyServices ? false : false; // Identity operations manage their own loading state
   const { error, setAuthError } = useAuthFlowContext();
 
   const backgroundColor = useMemo(

@@ -25,6 +25,7 @@ import devicesRouter from './routes/devices';
 import securityRoutes from './routes/security';
 import subscriptionRoutes from './routes/subscription.routes';
 import fedcmRoutes from './routes/fedcm';
+import authLinkingRoutes from './routes/authLinking';
 import fedcmService from './services/fedcm.service';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
@@ -322,6 +323,7 @@ app.get('/api/csrf-token', getCsrfToken);
 // Apply stricter rate limiting to auth routes
 app.use("/auth", authRateLimiter, authRoutes);
 app.use("/api/auth", authRateLimiter, authRoutes);
+app.use("/api/auth", userRateLimiter, csrfProtection, authLinkingRoutes); // Auth linking (requires auth)
 app.use("/api/assets", assetRoutes);
 app.use("/api/storage", userRateLimiter, csrfProtection, storageRoutes);
 app.use("/api/search", searchRoutes);
