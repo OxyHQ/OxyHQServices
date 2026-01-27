@@ -1,7 +1,7 @@
 import type React from 'react';
 import { View, StyleSheet, type StyleProp, type ViewStyle } from 'react-native';
 import SectionTitle from './SectionTitle';
-import { useColorScheme } from '../hooks/use-color-scheme';
+import { useColorScheme } from '../hooks/useColorScheme';
 import { normalizeColorScheme } from '../utils/themeUtils';
 
 interface SectionProps {

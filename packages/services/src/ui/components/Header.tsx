@@ -14,7 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import OxyIcon from './icon/OxyIcon';
 import { fontFamilies } from '../styles/fonts';
-import { useColorScheme } from '../hooks/use-color-scheme';
+import { useColorScheme } from '../hooks/useColorScheme';
 import { normalizeColorScheme } from '../utils/themeUtils';
 import { Colors } from '../constants/theme';
 

@@ -3,6 +3,7 @@
  *
  * Clean implementation with ZERO React Native dependencies.
  * Provides FedCM, popup, and redirect authentication methods.
+ * Uses centralized AuthManager for token and session management.
  *
  * @module web/WebOxyContext
  */
@@ -18,17 +19,11 @@ import {
 } from 'react';
 import { OxyServices } from '../core/OxyServices';
 import { CrossDomainAuth } from '../core/CrossDomainAuth';
+import { AuthManager, createAuthManager } from '../core/AuthManager';
 import type { User } from '../models/interfaces';
 import type { SessionLoginResponse, MinimalUserData } from '../models/session';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createQueryClient } from '../ui/hooks/queryClient';
-
-// Storage keys
-const STORAGE_KEYS = {
-  ACCESS_TOKEN: 'oxy_access_token',
-  SESSION: 'oxy_session',
-  USER: 'oxy_user',
-} as const;
 
 export interface WebAuthState {
   user: User | null;
@@ -73,6 +68,7 @@ export interface WebAuthActions {
 export interface WebOxyContextValue extends WebAuthState, WebAuthActions {
   oxyServices: OxyServices;
   crossDomainAuth: CrossDomainAuth;
+  authManager: AuthManager;
 }
 
 const WebOxyContext = createContext<WebOxyContextValue | null>(null);
@@ -130,9 +126,10 @@ export function WebOxyProvider({
   preferredAuthMethod = 'auto',
   skipAutoCheck = false,
 }: WebOxyProviderProps) {
-  // Initialize services
+  // Initialize services with centralized AuthManager
   const [oxyServices] = useState(() => new OxyServices({ baseURL, authWebUrl }));
   const [crossDomainAuth] = useState(() => new CrossDomainAuth(oxyServices));
+  const [authManager] = useState(() => createAuthManager(oxyServices, { autoRefresh: true }));
   const [queryClient] = useState(() => createQueryClient());
 
   // Auth state
@@ -143,53 +140,16 @@ export function WebOxyProvider({
   const isAuthenticated = !!user;
 
   /**
-   * Stores session data in localStorage
+   * Handles successful authentication via AuthManager
    */
-  const storeSession = useCallback((session: SessionLoginResponse) => {
-    if (typeof window === 'undefined') return;
-
-    try {
-      if ((session as any).accessToken) {
-        localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, (session as any).accessToken);
-      }
-      localStorage.setItem(STORAGE_KEYS.SESSION, JSON.stringify({
-        sessionId: session.sessionId,
-        deviceId: session.deviceId,
-        expiresAt: session.expiresAt,
-      }));
-      if (session.user) {
-        localStorage.setItem(STORAGE_KEYS.USER, JSON.stringify(session.user));
-      }
-    } catch (e) {
-      // Storage might be full or blocked
-    }
-  }, []);
-
-  /**
-   * Clears session data from localStorage
-   */
-  const clearSession = useCallback(() => {
-    if (typeof window === 'undefined') return;
-
-    try {
-      localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
-      localStorage.removeItem(STORAGE_KEYS.SESSION);
-      localStorage.removeItem(STORAGE_KEYS.USER);
-    } catch (e) {
-      // Ignore storage errors
-    }
-  }, []);
-
-  /**
-   * Handles successful authentication
-   */
-  const handleAuthSuccess = useCallback((session: SessionLoginResponse) => {
-    storeSession(session);
+  const handleAuthSuccess = useCallback(async (session: SessionLoginResponse, method: 'fedcm' | 'popup' | 'redirect' | 'credentials' = 'credentials') => {
+    // Use centralized AuthManager for token/session storage
+    await authManager.handleAuthSuccess(session, method);
     // Session user may be minimal data from auth, treat as User for state
     setUser(session.user as User);
     setError(null);
     setIsLoading(false);
-  }, [storeSession]);
+  }, [authManager]);
 
   /**
    * Handles authentication errors
@@ -212,17 +172,15 @@ export function WebOxyProvider({
         // 1. Check for redirect callback (user returning from auth.oxy.so)
         const callbackSession = crossDomainAuth.handleRedirectCallback();
         if (callbackSession && mounted) {
-          handleAuthSuccess(callbackSession);
+          await handleAuthSuccess(callbackSession, 'redirect');
           return;
         }
 
-        // 2. Try to restore session from localStorage
-        const storedToken = localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
-        const storedUser = localStorage.getItem(STORAGE_KEYS.USER);
-
-        if (storedToken && storedUser) {
+        // 2. Try to restore session from AuthManager (handles token refresh automatically)
+        const restoredUser = await authManager.initialize();
+        if (restoredUser && mounted) {
+          // Verify token is still valid by fetching current user
           try {
-            // Verify token is still valid by fetching current user
             const currentUser = await oxyServices.getCurrentUser();
             if (mounted && currentUser) {
               setUser(currentUser);
@@ -230,8 +188,8 @@ export function WebOxyProvider({
               return;
             }
           } catch {
-            // Token invalid, clear and continue
-            clearSession();
+            // Token invalid, AuthManager will handle clearing
+            await authManager.signOut();
           }
         }
 
@@ -239,7 +197,7 @@ export function WebOxyProvider({
         try {
           const session = await crossDomainAuth.silentSignIn();
           if (mounted && session?.user) {
-            handleAuthSuccess(session);
+            await handleAuthSuccess(session, 'fedcm');
             return;
           }
         } catch {
@@ -262,7 +220,7 @@ export function WebOxyProvider({
     return () => {
       mounted = false;
     };
-  }, [oxyServices, crossDomainAuth, skipAutoCheck, handleAuthSuccess, clearSession]);
+  }, [oxyServices, crossDomainAuth, authManager, skipAutoCheck, handleAuthSuccess]);
 
   // Notify parent of auth state changes
   useEffect(() => {
@@ -276,16 +234,18 @@ export function WebOxyProvider({
     setError(null);
     setIsLoading(true);
 
+    let selectedMethod: 'fedcm' | 'popup' | 'redirect' = 'popup';
+
     try {
       const session = await crossDomainAuth.signIn({
         method: preferredAuthMethod,
         onMethodSelected: (method) => {
-          // Could emit an event here for analytics
+          selectedMethod = method as 'fedcm' | 'popup' | 'redirect';
         },
       });
 
       if (session) {
-        handleAuthSuccess(session);
+        await handleAuthSuccess(session, selectedMethod);
       } else {
         // Redirect method - page will reload
         setIsLoading(false);
@@ -304,7 +264,7 @@ export function WebOxyProvider({
 
     try {
       const session = await crossDomainAuth.signInWithFedCM();
-      handleAuthSuccess(session);
+      await handleAuthSuccess(session, 'fedcm');
     } catch (err) {
       handleAuthError(err);
     }
@@ -319,7 +279,7 @@ export function WebOxyProvider({
 
     try {
       const session = await crossDomainAuth.signInWithPopup();
-      handleAuthSuccess(session);
+      await handleAuthSuccess(session, 'popup');
     } catch (err) {
       handleAuthError(err);
     }
@@ -343,19 +303,14 @@ export function WebOxyProvider({
   }, [crossDomainAuth]);
 
   /**
-   * Sign out
+   * Sign out via AuthManager (handles FedCM revocation and storage cleanup)
    */
   const signOut = useCallback(async () => {
     setError(null);
 
     try {
-      // Revoke FedCM credential if applicable
-      if (isFedCMSupported()) {
-        await (oxyServices as any).revokeFedCMCredential?.();
-      }
-
-      // Clear local storage
-      clearSession();
+      // Use centralized AuthManager for sign out (handles FedCM, storage cleanup)
+      await authManager.signOut();
 
       // Clear user state
       setUser(null);
@@ -364,7 +319,14 @@ export function WebOxyProvider({
       setError(errorMessage);
       onError?.(err instanceof Error ? err : new Error(errorMessage));
     }
-  }, [oxyServices, clearSession, isFedCMSupported, onError]);
+  }, [authManager, onError]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      authManager.destroy();
+    };
+  }, [authManager]);
 
   // Memoize context value to prevent unnecessary re-renders
   const contextValue = useMemo<WebOxyContextValue>(() => ({
@@ -376,6 +338,7 @@ export function WebOxyProvider({
     // Services
     oxyServices,
     crossDomainAuth,
+    authManager,
     // Actions
     signIn,
     signInWithFedCM,
@@ -390,6 +353,7 @@ export function WebOxyProvider({
     error,
     oxyServices,
     crossDomainAuth,
+    authManager,
     signIn,
     signInWithFedCM,
     signInWithPopup,
@@ -466,6 +430,7 @@ export function useAuth() {
     signOut,
     isFedCMSupported,
     oxyServices,
+    authManager,
   } = useWebOxy();
 
   return {
@@ -484,6 +449,7 @@ export function useAuth() {
     // Utilities
     isFedCMSupported,
     oxyServices,
+    authManager,
   };
 }
 

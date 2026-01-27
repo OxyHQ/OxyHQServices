@@ -23,7 +23,7 @@ import { Ionicons } from '@expo/vector-icons';
 import OxyServicesLogo from '../../assets/icons/OxyServices';
 import { Section, GroupedSection } from '../components';
 import { useThemeStyles } from '../hooks/useThemeStyles';
-import { useColorScheme } from '../hooks/use-color-scheme';
+import { useColorScheme } from '../hooks/useColorScheme';
 import { useOxy } from '../context/OxyContext';
 
 

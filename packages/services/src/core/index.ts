@@ -13,6 +13,10 @@ export { OXY_CLOUD_URL, oxyClient } from './OxyServices';
 export { CrossDomainAuth, createCrossDomainAuth } from './CrossDomainAuth';
 export type { CrossDomainAuthOptions } from './CrossDomainAuth';
 
+// Centralized auth management
+export { AuthManager, createAuthManager } from './AuthManager';
+export type { StorageAdapter, AuthStateChangeCallback, AuthMethod, AuthManagerConfig } from './AuthManager';
+
 // Re-export all models and types for convenience
 export * from '../models/interfaces';
 export * from '../models/session';

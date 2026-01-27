@@ -1,7 +1,7 @@
 import type React from 'react';
 import { Text, StyleSheet, type StyleProp, type TextStyle } from 'react-native';
 import { fontFamilies } from '../styles/fonts';
-import { useColorScheme } from '../hooks/use-color-scheme';
+import { useColorScheme } from '../hooks/useColorScheme';
 import { normalizeColorScheme } from '../utils/themeUtils';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 

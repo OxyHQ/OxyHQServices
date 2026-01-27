@@ -7,7 +7,7 @@ import { useOxy } from '../context/OxyContext';
 import { useFileDownloadUrl } from '../hooks';
 import { fontFamilies } from '../styles/fonts';
 import { useThemeStyles } from '../hooks/useThemeStyles';
-import { useColorScheme } from '../hooks/use-color-scheme';
+import { useColorScheme } from '../hooks/useColorScheme';
 
 interface ProfileCardProps {
     user: {

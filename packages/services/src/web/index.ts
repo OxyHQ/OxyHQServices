@@ -46,12 +46,20 @@ export {
   CrossDomainAuth,
   createCrossDomainAuth,
   DeviceManager,
+  // Centralized auth management
+  AuthManager,
+  createAuthManager,
 } from '../core';
 
 export type {
   CrossDomainAuthOptions,
   DeviceFingerprint,
   StoredDeviceInfo,
+  // Auth manager types
+  StorageAdapter,
+  AuthStateChangeCallback,
+  AuthMethod,
+  AuthManagerConfig,
 } from '../core';
 
 // ==================== Web Components ====================
