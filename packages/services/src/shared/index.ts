@@ -71,3 +71,12 @@ export type {
   CircuitBreakerState,
   CircuitBreakerConfig,
 } from './utils/networkUtils.js';
+
+// Debug utilities
+export {
+  isDev,
+  debugLog,
+  debugWarn,
+  debugError,
+  createDebugLogger,
+} from './utils/debugUtils.js';

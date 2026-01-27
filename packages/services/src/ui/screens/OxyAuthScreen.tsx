@@ -28,6 +28,9 @@ import { useThemeColors } from '../styles';
 import { useOxy } from '../context/OxyContext';
 import QRCode from 'react-native-qrcode-svg';
 import OxyLogo from '../components/OxyLogo';
+import { createDebugLogger } from '../../shared/utils/debugUtils.js';
+
+const debug = createDebugLogger('OxyAuthScreen');
 
 const OXY_ACCOUNTS_WEB_URL = 'https://accounts.oxy.so';
 const OXY_AUTH_WEB_URL = 'https://auth.oxy.so';
@@ -150,9 +153,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
         }
       }
     } catch (err) {
-      if (__DEV__) {
-        console.error('Error completing auth:', err);
-      }
+      debug.error('Error completing auth:', err);
       setError('Authorization successful but failed to complete sign in. Please try again.');
       isProcessingRef.current = false;
     }
@@ -173,24 +174,18 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
     socketRef.current = socket;
 
     socket.on('connect', () => {
-      if (__DEV__) {
-        console.log('Auth socket connected');
-      }
+      debug.log('Auth socket connected');
       // Join the room for this session token
       socket.emit('join', sessionToken);
       setConnectionType('socket');
     });
 
     socket.on('joined', () => {
-      if (__DEV__) {
-        console.log('Joined auth session room');
-      }
+      debug.log('Joined auth session room');
     });
 
     socket.on('auth_update', (payload: AuthUpdatePayload) => {
-      if (__DEV__) {
-        console.log('Auth update received:', payload);
-      }
+      debug.log('Auth update received:', payload);
 
       if (payload.status === 'authorized' && payload.sessionId) {
         cleanup();
@@ -205,18 +200,14 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
     });
 
     socket.on('connect_error', (err) => {
-      if (__DEV__) {
-        console.log('Socket connection error, falling back to polling:', err.message);
-      }
+      debug.log('Socket connection error, falling back to polling:', err.message);
       // Fall back to polling if socket fails
       socket.disconnect();
       startPolling(sessionToken);
     });
 
     socket.on('disconnect', () => {
-      if (__DEV__) {
-        console.log('Auth socket disconnected');
-      }
+      debug.log('Auth socket disconnected');
     });
   }, [oxyServices, handleAuthSuccess]);
 
@@ -247,9 +238,7 @@ const OxyAuthScreen: React.FC<BaseScreenProps> = ({
         }
       } catch (err) {
         // Silent fail for polling - will retry
-        if (__DEV__) {
-          console.log('Auth polling error:', err);
-        }
+        debug.log('Auth polling error:', err);
       }
     }, POLLING_INTERVAL_MS);
   }, [oxyServices, handleAuthSuccess]);

@@ -1,5 +1,8 @@
 import { create } from 'zustand';
 import type { User } from '../../models/interfaces';
+import { createDebugLogger } from '../../shared/utils/debugUtils.js';
+
+const debug = createDebugLogger('AuthStore');
 
 export interface AuthState {
   user: User | null;
@@ -43,9 +46,7 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
 
     // Use cached data if available and not forcing refresh
     if (!forceRefresh && state.user && cacheValid) {
-      if (__DEV__) {
-      console.log('AuthStore: Using cached user data (age:', cacheAge, 'ms)');
-      }
+      debug.log('Using cached user data (age:', cacheAge, 'ms)');
       return;
     }
 
@@ -55,9 +56,7 @@ export const useAuthStore = create<AuthState>((set: (state: Partial<AuthState>) 
       set({ user, isLoading: false, isAuthenticated: true, lastUserFetch: now });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Failed to fetch user';
-      if (__DEV__) {
-      console.error('AuthStore: Error fetching user:', error);
-      }
+      debug.error('Error fetching user:', error);
       set({ error: errorMessage, isLoading: false });
     }
   },

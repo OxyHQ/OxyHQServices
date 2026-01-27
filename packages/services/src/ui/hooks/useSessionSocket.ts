@@ -2,6 +2,9 @@ import { useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import { toast } from '../../lib/sonner';
 import { logger } from '../../utils/loggerUtils';
+import { createDebugLogger } from '../../shared/utils/debugUtils.js';
+
+const debug = createDebugLogger('SessionSocket');
 
 interface UseSessionSocketProps {
   userId: string | null | undefined;
@@ -69,27 +72,21 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
       socket.emit('join', { userId: roomId });
       joinedRoomRef.current = roomId;
       
-      if (__DEV__) {
-        console.log('Emitting join for room:', roomId);
-      }
+      debug.log('Emitting join for room:', roomId);
     }
 
     // Set up event handlers (only once per socket instance)
     const handleConnect = () => {
-      if (__DEV__) {
-        console.log('Socket connected:', socket.id);
-      }
+      debug.log('Socket connected:', socket.id);
     };
 
-    const handleSessionUpdate = async (data: { 
-      type: string; 
-      sessionId?: string; 
-      deviceId?: string; 
-      sessionIds?: string[] 
+    const handleSessionUpdate = async (data: {
+      type: string;
+      sessionId?: string;
+      deviceId?: string;
+      sessionIds?: string[]
     }) => {
-      if (__DEV__) {
-        console.log('Received session_update:', data);
-      }
+      debug.log('Received session_update:', data);
       
       const currentActiveSessionId = activeSessionIdRef.current;
       const currentDeviceId = currentDeviceIdRef.current;
@@ -213,9 +210,7 @@ export function useSessionSocket({ userId, activeSessionId, currentDeviceId, ref
           try {
             await clearSessionStateRef.current();
           } catch (error) {
-            if (__DEV__) {
-              console.error('Failed to clear session state after session_update:', error);
-            }
+            debug.error('Failed to clear session state after session_update:', error);
           }
         }
       }

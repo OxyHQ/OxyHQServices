@@ -135,10 +135,10 @@ router.post('/link', asyncHandler(async (req: AuthenticatedRequest, res: Respons
         throw new BadRequestError('Invalid signature - cannot verify identity ownership');
       }
 
-      // Check timestamp is recent (within 5 minutes)
+      // Check timestamp is recent (within 5 minutes) and not in the future
       const age = Date.now() - timestamp;
-      if (age > 5 * 60 * 1000) {
-        throw new BadRequestError('Signature expired - please try again');
+      if (age > 5 * 60 * 1000 || age < 0) {
+        throw new BadRequestError('Signature expired or invalid timestamp - please try again');
       }
 
       // Link the identity
