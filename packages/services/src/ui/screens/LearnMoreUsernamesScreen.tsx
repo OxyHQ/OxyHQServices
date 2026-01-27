@@ -51,9 +51,7 @@ const INFO_SECTIONS: InfoSection[] = [
 ];
 
 const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
-    onClose,
     theme,
-    goBack,
 }) => {
     const themeStyles = useThemeStyles(theme || 'light');
     const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set(['what'])); // Start with first section expanded
@@ -74,13 +72,6 @@ const LearnMoreUsernamesScreen: React.FC<BaseScreenProps> = ({
 
     return (
         <View style={[styles.container, { backgroundColor: themeStyles.backgroundColor }]}>
-            <Header
-                title="About usernames"
-                onBack={goBack || onClose}
-                variant="minimal"
-                elevation="subtle"
-            />
-
             <ScrollView
                 style={styles.content}
                 showsVerticalScrollIndicator={false}

@@ -278,6 +278,19 @@ export class HttpService {
           headers['X-Native-App'] = 'true';
         }
 
+        // Debug logging for CSRF issues
+        if (isStateChangingMethod && __DEV__) {
+          console.log('[HttpService] CSRF Debug:', {
+            url,
+            method,
+            isNativeApp,
+            platformOS: Platform.OS,
+            hasCsrfToken: !!csrfToken,
+            csrfTokenLength: csrfToken?.length,
+            hasNativeAppHeader: headers['X-Native-App'] === 'true',
+          });
+        }
+
         // Merge custom headers if provided
         if (config.headers) {
           Object.entries(config.headers).forEach(([key, value]) => {
