@@ -39,6 +39,9 @@ export type { AuthState, AuthActions, UseAuthReturn } from './ui/hooks/useAuth';
 // Streamlined provider with built-in bottom sheet
 export { default as OxyProvider } from './ui/components/OxyProvider';
 
+// Font loading utility
+export { FontLoader } from './ui/components/FontLoader';
+
 // Web-only provider (no React Native dependencies)
 export { default as WebOxyProvider } from './ui/components/WebOxyProvider';
 
@@ -222,7 +225,7 @@ export {
   withOpacity,
   isLightColor,
   getContrastTextColor,
-} from './shared/utils/colorUtils.js';
+} from './shared/utils/colorUtils';
 
 export {
   // Theme utilities
@@ -231,8 +234,8 @@ export {
   getOppositeTheme,
   systemPrefersDarkMode,
   getSystemColorScheme,
-} from './shared/utils/themeUtils.js';
-export type { ThemeValue } from './shared/utils/themeUtils.js';
+} from './shared/utils/themeUtils';
+export type { ThemeValue } from './shared/utils/themeUtils';
 
 export {
   // Error utilities
@@ -247,7 +250,7 @@ export {
   isServerError,
   isNetworkError,
   isRetryableError,
-} from './shared/utils/errorUtils.js';
+} from './shared/utils/errorUtils';
 
 export {
   // Network utilities
@@ -259,8 +262,8 @@ export {
   shouldAllowRequest,
   delay,
   withRetry,
-} from './shared/utils/networkUtils.js';
-export type { CircuitBreakerState, CircuitBreakerConfig } from './shared/utils/networkUtils.js';
+} from './shared/utils/networkUtils';
+export type { CircuitBreakerState, CircuitBreakerConfig } from './shared/utils/networkUtils';
 
 // Other utilities
 export * from './utils/apiUtils';

@@ -1,7 +1,7 @@
 import type { OxyServicesBase } from '../OxyServices.base';
 import { OxyAuthenticationError } from '../OxyServices.errors';
 import type { SessionLoginResponse } from '../../models/session';
-import { createDebugLogger } from '../../shared/utils/debugUtils.js';
+import { createDebugLogger } from '../../shared/utils/debugUtils';
 
 const debug = createDebugLogger('PopupAuth');
 

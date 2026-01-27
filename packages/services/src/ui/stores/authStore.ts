@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type { User } from '../../models/interfaces';
-import { createDebugLogger } from '../../shared/utils/debugUtils.js';
+import { createDebugLogger } from '../../shared/utils/debugUtils';
 
 const debug = createDebugLogger('AuthStore');
 

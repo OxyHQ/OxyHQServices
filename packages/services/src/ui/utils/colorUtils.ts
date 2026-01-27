@@ -15,4 +15,4 @@ export {
   withOpacity,
   isLightColor,
   getContrastTextColor,
-} from '../../shared/utils/colorUtils.js';
+} from '../../shared/utils/colorUtils';

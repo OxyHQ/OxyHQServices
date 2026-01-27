@@ -5,7 +5,9 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
-import { OxyProvider, FontLoader } from '@oxyhq/services';
+import { OxyProvider } from '@oxyhq/services';
+// FontLoader temporarily disabled for debugging
+// import { FontLoader } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ScrollProvider } from '@/contexts/scroll-context';
@@ -105,22 +107,20 @@ function RootLayoutContent() {
   // FontLoader automatically loads Inter fonts from @oxyhq/services
   const appContent = useMemo(() => {
     return (
-      <FontLoader>
-        <KeyboardProvider>
-          <AlertProvider>
-            <OxyProvider baseURL={API_URL}>
-              {!appIsReady ? (
-                <AppSplashScreen
-                  startFade={splashState.startFade}
-                  onFadeComplete={handleSplashFadeComplete}
-                />
-              ) : (
-                <AppStackContent colorScheme={colorScheme} />
-              )}
-            </OxyProvider>
-          </AlertProvider>
-        </KeyboardProvider>
-      </FontLoader>
+      <KeyboardProvider>
+        <AlertProvider>
+          <OxyProvider baseURL={API_URL}>
+            {!appIsReady ? (
+              <AppSplashScreen
+                startFade={splashState.startFade}
+                onFadeComplete={handleSplashFadeComplete}
+              />
+            ) : (
+              <AppStackContent colorScheme={colorScheme} />
+            )}
+          </OxyProvider>
+        </AlertProvider>
+      </KeyboardProvider>
     );
   }, [
     appIsReady,

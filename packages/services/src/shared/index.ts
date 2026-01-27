@@ -29,7 +29,7 @@ export {
   withOpacity,
   isLightColor,
   getContrastTextColor,
-} from './utils/colorUtils.js';
+} from './utils/colorUtils';
 
 // Theme utilities
 export {
@@ -38,8 +38,8 @@ export {
   getOppositeTheme,
   systemPrefersDarkMode,
   getSystemColorScheme,
-} from './utils/themeUtils.js';
-export type { ThemeValue } from './utils/themeUtils.js';
+} from './utils/themeUtils';
+export type { ThemeValue } from './utils/themeUtils';
 
 // Error utilities
 export {
@@ -54,7 +54,7 @@ export {
   isServerError,
   isNetworkError,
   isRetryableError,
-} from './utils/errorUtils.js';
+} from './utils/errorUtils';
 
 // Network utilities
 export {
@@ -66,11 +66,11 @@ export {
   shouldAllowRequest,
   delay,
   withRetry,
-} from './utils/networkUtils.js';
+} from './utils/networkUtils';
 export type {
   CircuitBreakerState,
   CircuitBreakerConfig,
-} from './utils/networkUtils.js';
+} from './utils/networkUtils';
 
 // Debug utilities
 export {
@@ -79,4 +79,4 @@ export {
   debugWarn,
   debugError,
   createDebugLogger,
-} from './utils/debugUtils.js';
+} from './utils/debugUtils';

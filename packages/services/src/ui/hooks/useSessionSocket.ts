@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import { toast } from '../../lib/sonner';
 import { logger } from '../../utils/loggerUtils';
-import { createDebugLogger } from '../../shared/utils/debugUtils.js';
+import { createDebugLogger } from '../../shared/utils/debugUtils';
 
 const debug = createDebugLogger('SessionSocket');
 
