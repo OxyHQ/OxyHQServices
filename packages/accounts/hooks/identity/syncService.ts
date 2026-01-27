@@ -1,5 +1,4 @@
-import { KeyManager, SignatureService } from '@oxyhq/services';
-import { isInvalidSessionError } from '@oxyhq/services/ui';
+import { KeyManager, SignatureService, isInvalidSessionError } from '@oxyhq/services';
 import type { User, OxyServices } from '@oxyhq/services';
 import { isAlreadyRegisteredError } from './errorUtils';
 

@@ -207,6 +207,10 @@ export {
 } from './ui/utils/authHelpers';
 export type { HandleApiErrorOptions } from './ui/utils/authHelpers';
 
+// Error handlers
+export { handleAuthError, isInvalidSessionError, isTimeoutOrNetworkError, extractErrorMessage } from './ui/utils/errorHandlers';
+export type { HandleAuthErrorOptions } from './ui/utils/errorHandlers';
+
 // File filtering hook
 export { useFileFiltering } from './ui/hooks/useFileFiltering';
 export type { ViewMode, SortBy, SortOrder } from './ui/hooks/useFileFiltering';
@@ -289,3 +293,7 @@ export {
 } from './utils/loggerUtils';
 export * from './utils/asyncUtils';
 export * from './utils/hookUtils';
+
+// Bottom sheet navigation
+export { showBottomSheet, closeBottomSheet } from './ui/navigation/bottomSheetManager';
+export type { RouteName } from './ui/navigation/routes';

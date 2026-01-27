@@ -1,6 +1,5 @@
 import { useEffect, useRef } from 'react';
-import type { OxyServices } from '@oxyhq/services';
-import { isTimeoutOrNetworkError } from '@oxyhq/services/ui';
+import { isTimeoutOrNetworkError, type OxyServices } from '@oxyhq/services';
 import {
   createCircuitBreakerState,
   recordFailure,

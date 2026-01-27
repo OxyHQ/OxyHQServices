@@ -6,8 +6,8 @@ import {
   SignatureService,
   useOxy,
   useAuthStore,
+  handleAuthError,
 } from '@oxyhq/services';
-import { handleAuthError } from '@oxyhq/services/ui';
 import type { User } from '@oxyhq/services';
 import { useBiometricSignIn } from './useBiometricSignIn';
 import { useIdentityStore, persistIdentitySyncState, getIdentitySyncStateFromStorage } from './identity/identityStore';

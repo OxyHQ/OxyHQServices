@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button, KeyboardAwareScrollViewWrapper } from '@/components/ui';
 import { useUsernameValidation } from '@/hooks/auth/useUsernameValidation';
 import { sanitizeUsernameInput } from '@/utils/auth/usernameUtils';
-import type { OxyServices } from '@oxyhq/services';
+import { showBottomSheet, type OxyServices } from '@oxyhq/services';
 import telescopeAnimation from '@/assets/lottie/telescope.json';
 
 interface UsernameStepProps {
@@ -211,7 +211,7 @@ export function UsernameStep({
         {!isOffline && (
           <Button
             variant="ghost"
-            onPress={() => { }}
+            onPress={() => showBottomSheet('LearnMoreUsernames')}
             disabled={isUpdating}
           >
             Learn more about usernames
