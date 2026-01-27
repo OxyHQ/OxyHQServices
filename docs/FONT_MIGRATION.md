@@ -94,17 +94,17 @@ Successfully migrated the entire Oxy ecosystem from Phudu to Inter as the defaul
 
 ## Usage for App Developers
 
-Apps using `@oxyhq/services` will automatically get Inter fonts. No configuration needed!
+Apps using `@oxyhq/services` will automatically get Inter fonts when using `OxyProvider`. No additional configuration needed!
 
 ### Quick Start
 ```typescript
-import { FontLoader, fontFamilies } from '@oxyhq/services';
+import { OxyProvider, fontFamilies } from '@oxyhq/services';
 
 function App() {
   return (
-    <FontLoader>
+    <OxyProvider baseURL="https://api.oxy.so">
       <YourApp />
-    </FontLoader>
+    </OxyProvider>
   );
 }
 
@@ -116,6 +116,8 @@ const styles = StyleSheet.create({
   },
 });
 ```
+
+> **Note:** `OxyProvider` automatically calls `setupFonts()` to load Inter fonts. No separate `FontLoader` wrapper is needed.
 
 See [FONTS.md](packages/services/FONTS.md) for complete documentation.
 

@@ -103,7 +103,7 @@ function RootLayoutContent() {
 
   // Memoize app content to prevent unnecessary re-renders
   // OxyProvider must always be rendered so screens can use useOxy() hook
-  // FontLoader automatically loads Inter fonts from @oxyhq/services
+  // Note: OxyProvider automatically loads Inter fonts via setupFonts()
   const appContent = useMemo(() => {
     return (
       <KeyboardProvider>
