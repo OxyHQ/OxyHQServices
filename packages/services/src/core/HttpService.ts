@@ -498,12 +498,19 @@ export class HttpService {
     const fetchPromise = (async () => {
       try {
         if (__DEV__) console.log('[HttpService] Fetching CSRF token from:', `${this.baseURL}/api/csrf-token`);
+
+        // Use AbortController for timeout (more compatible than AbortSignal.timeout)
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000);
+
         const response = await fetch(`${this.baseURL}/api/csrf-token`, {
           method: 'GET',
           headers: { 'Accept': 'application/json' },
           credentials: 'include', // Required to receive and send cookies
-          signal: AbortSignal.timeout(5000),
+          signal: controller.signal,
         });
+
+        clearTimeout(timeoutId);
 
         if (__DEV__) console.log('[HttpService] CSRF fetch response:', response.status, response.ok);
 
