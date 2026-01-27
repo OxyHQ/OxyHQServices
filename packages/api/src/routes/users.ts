@@ -27,6 +27,7 @@ import { userService } from '../services/user.service';
 import { UsersController } from '../controllers/users.controller';
 import { PaginationParams, UserStatistics } from '../types/user.types';
 import { resolveUserIdToObjectId } from '../utils/validation';
+import SignatureService from '../services/signature.service';
 
 // Types
 interface AuthRequest extends Request {
@@ -677,7 +678,6 @@ router.delete(
     }
 
     // Verify signature using SignatureService
-    const SignatureService = require('../services/signature.service').default;
     const message = `delete:${user.publicKey}:${timestamp}`;
     const isValidSignature = SignatureService.verifySignature(message, signature, user.publicKey);
     

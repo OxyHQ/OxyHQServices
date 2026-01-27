@@ -5,7 +5,7 @@
 
 import mongoose from 'mongoose';
 import User from '../models/User';
-import { NotFoundError, BadRequestError } from './error';
+import { NotFoundError, BadRequestError, ValidationError } from './error';
 import { logger } from './logger';
 
 /**
@@ -30,7 +30,7 @@ export function validateRequiredFields(
   });
   
   if (missing.length > 0) {
-    throw new (require('./error').ValidationError)(
+    throw new ValidationError(
       `Missing required fields: ${missing.join(', ')}`
     );
   }
