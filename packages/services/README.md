@@ -23,7 +23,7 @@ A comprehensive TypeScript client library for the Oxy API providing authenticati
 ## ✨ Features
 
 - 🔐 **Zero-Config Authentication**: Automatic token management and refresh
-- 🌐 **Cross-Domain SSO**: Sign in once, authenticated everywhere (FedCM-based)
+- 🌐 **Cross-Domain SSO**: Sign in once, authenticated everywhere (FedCM, popup, redirect)
 - 📱 **Universal Provider**: Single `OxyProvider` works on iOS, Android, and Web
 - 🎨 **UI Components**: Pre-built components for auth, profiles, and more
 - ✍️ **Inter Font Included**: Default Oxy ecosystem font with automatic loading
@@ -32,6 +32,20 @@ A comprehensive TypeScript client library for the Oxy API providing authenticati
 - 🔧 **TypeScript First**: Full type safety and IntelliSense support
 - 🚀 **Performance Optimized**: Automatic caching with TanStack Query
 - 🛡️ **Production Ready**: Error handling, retry logic, and security best practices
+
+## 🏗️ Architecture
+
+OxyServices uses a modular architecture with multiple entry points for different use cases:
+
+| Entry Point | Use Case | Dependencies |
+|------------|----------|--------------|
+| `@oxyhq/services` | Expo apps (native + web) | Full (RN, Expo) |
+| `@oxyhq/services/web` | Pure React apps (Vite, Next.js) | React only |
+| `@oxyhq/services/core` | Node.js / Backend | None |
+| `@oxyhq/services/shared` | Utilities anywhere | None |
+| `@oxyhq/services/crypto` | Identity management | Node crypto |
+
+📖 **[Complete Architecture Guide](./docs/ARCHITECTURE.md)**
 
 ## 📦 Installation
 
@@ -111,6 +125,25 @@ function App() {
     </WebOxyProvider>
   );
 }
+
+function LoginButton() {
+  const { signIn, signOut, user, isAuthenticated, isFedCMSupported } = useAuth();
+
+  if (isAuthenticated) {
+    return (
+      <div>
+        <p>Welcome, {user?.username}!</p>
+        <button onClick={signOut}>Sign Out</button>
+      </div>
+    );
+  }
+
+  return (
+    <button onClick={signIn}>
+      {isFedCMSupported() ? 'Sign in with Oxy' : 'Sign in'}
+    </button>
+  );
+}
 ```
 
 ⚠️ **Important:** If you're using Expo, always use `OxyProvider` instead - it already handles web in addition to native platforms. Never use `WebOxyProvider` in Expo apps.
@@ -127,10 +160,28 @@ import { WebOxyProvider, useAuth, OxyServices } from '@oxyhq/services/web';
 import { WebOxyProvider } from '@oxyhq/services';
 ```
 
+**Authentication Methods Available:**
+- **FedCM** (Browser-native, Google-style) - Best UX, no popups
+- **Popup** - OAuth2-style popup window
+- **Redirect** - Full page redirect (fallback)
+
+```typescript
+const { signIn, signInWithFedCM, signInWithPopup, signInWithRedirect, isFedCMSupported } = useAuth();
+
+// Auto-select best method (FedCM → Popup → Redirect)
+await signIn();
+
+// Or use specific method
+await signInWithFedCM();
+await signInWithPopup();
+signInWithRedirect();
+```
+
 **Benefits:**
 - Smaller bundle size (no React Native dependencies)
 - No need for react-native-web or complex build configuration
 - Faster builds and smaller production bundles
+- Full FedCM support for modern browsers
 - All web-compatible features included (auth, hooks, stores, etc.)
 
 **Note:** If you must use the main entry point (`@oxyhq/services`), you'll need to configure your bundler with react-native-web aliases. See the [Web Bundler Configuration](#web-bundler-configuration) section below.

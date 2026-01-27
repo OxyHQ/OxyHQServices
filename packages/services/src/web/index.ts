@@ -7,7 +7,7 @@
  * Features:
  * - WebOxyProvider for React context
  * - useAuth hook for authentication
- * - Cross-domain SSO via FedCM
+ * - Cross-domain SSO via FedCM, popup, or redirect
  * - Full TypeScript support
  * - Zero bundler configuration needed
  *
@@ -24,8 +24,13 @@
  * }
  *
  * function YourApp() {
- *   const { user, isAuthenticated, signIn, signOut } = useAuth();
- *   // ... your app logic
+ *   const { user, isAuthenticated, signIn, signOut, isFedCMSupported } = useAuth();
+ *
+ *   return (
+ *     <button onClick={signIn}>
+ *       {isFedCMSupported() ? 'Sign in with Oxy' : 'Sign in'}
+ *     </button>
+ *   );
  * }
  * ```
  */
@@ -50,8 +55,62 @@ export type {
 } from '../core';
 
 // ==================== Web Components ====================
-export { WebOxyProvider, useWebOxy, useAuth } from './WebOxyContext';
-export type { WebOxyProviderProps, WebAuthState, WebAuthActions, WebOxyContextValue } from './WebOxyContext';
+export {
+  WebOxyProvider,
+  useWebOxy,
+  useAuth,
+} from './WebOxyContext';
+
+export type {
+  WebOxyProviderProps,
+  WebAuthState,
+  WebAuthActions,
+  WebOxyContextValue,
+} from './WebOxyContext';
+
+// ==================== Shared Utilities ====================
+// Re-export shared utilities that work everywhere
+export {
+  // Color utilities
+  darkenColor,
+  lightenColor,
+  hexToRgb,
+  rgbToHex,
+  withOpacity,
+  isLightColor,
+  getContrastTextColor,
+} from '../shared/utils/colorUtils.js';
+
+export {
+  // Theme utilities
+  normalizeTheme,
+  normalizeColorScheme,
+  getOppositeTheme,
+  systemPrefersDarkMode,
+  getSystemColorScheme,
+} from '../shared/utils/themeUtils.js';
+export type { ThemeValue } from '../shared/utils/themeUtils.js';
+
+export {
+  // Error utilities
+  HttpStatus,
+  getErrorStatus,
+  getErrorMessage,
+  isAlreadyRegisteredError,
+  isUnauthorizedError,
+  isForbiddenError,
+  isNotFoundError,
+  isRateLimitError,
+  isServerError,
+  isNetworkError,
+  isRetryableError,
+} from '../shared/utils/errorUtils.js';
+
+export {
+  // Network utilities
+  delay,
+  withRetry,
+} from '../shared/utils/networkUtils.js';
 
 // ==================== Models & Types ====================
 // Re-export commonly used types
@@ -66,12 +125,15 @@ export type {
   KarmaRule,
   Transaction,
   DeviceSession,
+  LoginResponse,
 } from '../models/interfaces';
 
-// Re-export session types
-export type { ClientSession } from '../models/session';
+export type { SessionLoginResponse } from '../models/session';
 
-// ==================== Utilities ====================
+// Re-export session types
+export type { ClientSession, MinimalUserData } from '../models/session';
+
+// ==================== Language Utilities ====================
 export {
   SUPPORTED_LANGUAGES,
   getLanguageMetadata,
