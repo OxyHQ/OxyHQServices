@@ -13,7 +13,6 @@ import {
 } from 'react';
 import { OxyServices } from '../core';
 import type { User } from '../models/interfaces';
-import type { ClientSession } from '../models/session';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createQueryClient } from '../ui/hooks/queryClient';
 
@@ -66,57 +65,15 @@ export function WebOxyProvider({
 
     const initAuth = async () => {
       try {
-        // Try to get sessions from storage (localStorage)
-        const sessions = await oxyServices.getAllSessions();
+        // Try to get current user (will use existing auth token if available)
+        const currentUser = await oxyServices.getCurrentUser();
 
-        if (sessions && sessions.length > 0) {
-          const activeSession = sessions.find((s: ClientSession) => s.isCurrent) || sessions[0];
-
-          // Try to get user info from the active session's userId
-          if (activeSession && activeSession.userId) {
-            try {
-              const userProfile = await oxyServices.getProfile(activeSession.userId);
-              if (mounted && userProfile) {
-                setUser(userProfile as User);
-                setIsLoading(false);
-                return;
-              }
-            } catch (err) {
-              console.log('[WebOxy] Could not fetch user profile:', err);
-            }
-          }
-        }
-
-        // No active session - check for cross-domain SSO via FedCM
-        if (typeof window !== 'undefined' && 'IdentityCredential' in window) {
-          try {
-            const credential = await navigator.credentials.get({
-              // @ts-expect-error - FedCM identity property is not in standard types
-              identity: {
-                providers: [{
-                  configURL: `${authWebUrl || 'https://auth.oxy.so'}/fedcm.json`,
-                  clientId: window.location.origin,
-                }]
-              }
-            });
-
-            if (credential && 'token' in credential) {
-              // Use the token to authenticate
-              const session = await oxyServices.authenticateWithToken(credential.token);
-              if (mounted && session.user) {
-                setUser(session.user);
-              }
-            }
-          } catch (fedcmError) {
-            // FedCM not available or user cancelled - this is fine
-            console.log('[WebOxy] FedCM SSO not available:', fedcmError);
-          }
+        if (mounted && currentUser) {
+          setUser(currentUser);
         }
       } catch (err) {
-        console.error('[WebOxy] Init error:', err);
-        if (mounted) {
-          setError(err instanceof Error ? err.message : 'Failed to initialize auth');
-        }
+        // No active session - this is fine
+        console.log('[WebOxy] No active session');
       } finally {
         if (mounted) {
           setIsLoading(false);
@@ -129,7 +86,7 @@ export function WebOxyProvider({
     return () => {
       mounted = false;
     };
-  }, [oxyServices, authWebUrl]);
+  }, [oxyServices]);
 
   // Notify parent of auth state changes
   useEffect(() => {
@@ -159,18 +116,12 @@ export function WebOxyProvider({
         }
 
         if (event.data.type === 'oxy-auth-success') {
-          const { sessionId, accessToken, user: authUser } = event.data;
+          const { accessToken, user: authUser } = event.data;
 
-          // Store session (note: user property doesn't exist in ClientSession type)
-          const session: ClientSession = {
-            sessionId,
-            deviceId: event.data.deviceId || '',
-            expiresAt: event.data.expiresAt || '',
-            lastActive: new Date().toISOString(),
-            userId: authUser.id,
-            isCurrent: true,
-          };
-          await oxyServices.storeSession(session);
+          // Store the access token for API requests
+          if (typeof window !== 'undefined' && accessToken) {
+            localStorage.setItem('oxy-access-token', accessToken);
+          }
 
           setUser(authUser);
           setIsLoading(false);
@@ -200,19 +151,23 @@ export function WebOxyProvider({
       setError(err instanceof Error ? err.message : 'Sign in failed');
       setIsLoading(false);
     }
-  }, [oxyServices, authWebUrl]);
+  }, [authWebUrl]);
 
   const signOut = useCallback(async () => {
     setError(null);
 
     try {
-      await oxyServices.logout();
+      // Clear stored token
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('oxy-access-token');
+      }
+
       setUser(null);
     } catch (err) {
       console.error('[WebOxy] Sign out error:', err);
       setError(err instanceof Error ? err.message : 'Sign out failed');
     }
-  }, [oxyServices]);
+  }, []);
 
   const contextValue: WebOxyContextValue = {
     user,
