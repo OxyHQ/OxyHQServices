@@ -4,38 +4,27 @@ Inter is the default font family for all apps in the Oxy ecosystem. This guide e
 
 ## Quick Start
 
-### 1. Import the Font Setup
+### Automatic Font Loading (Recommended)
 
-```typescript
-import { FontLoader, setupFonts, fontFamilies, fontStyles } from '@oxyhq/services';
-```
-
-### 2. Load Fonts in Your App
-
-#### React Native (with Expo)
-
-Wrap your app root with `FontLoader`:
+If you're using `OxyProvider`, **fonts are loaded automatically**. No additional setup needed:
 
 ```tsx
-import { FontLoader } from '@oxyhq/services';
+import { OxyProvider } from '@oxyhq/services';
 
 export default function App() {
   return (
-    <FontLoader>
+    <OxyProvider baseURL="https://api.oxy.so">
       <YourAppContent />
-    </FontLoader>
+    </OxyProvider>
   );
 }
 ```
 
-The `FontLoader` component:
-- Loads fonts asynchronously in the background
-- Renders children immediately (system fonts are used as fallback)
-- Automatically handles both web and native platforms
+`OxyProvider` automatically calls `setupFonts()` when it initializes, loading Inter fonts in the background. System fonts are used as a fallback until custom fonts are ready.
 
-#### Alternative: Manual Setup
+### Manual Setup (Without OxyProvider)
 
-For more control, use `setupFonts()`:
+If you're not using `OxyProvider`, you can manually initialize fonts:
 
 ```typescript
 import { setupFonts } from '@oxyhq/services';
@@ -44,6 +33,12 @@ async function initializeApp() {
   await setupFonts();
   // Continue with app initialization
 }
+```
+
+### Using Font Utilities
+
+```typescript
+import { fontFamilies, fontStyles } from '@oxyhq/services';
 ```
 
 ## Available Font Families
@@ -212,7 +207,7 @@ const style: TextStyle = fontStyles.titleLarge;
 ### Fonts not loading on native
 
 Make sure:
-1. You're using `FontLoader` component or calling `setupFonts()`
+1. You're using `OxyProvider` (which automatically loads fonts) or calling `setupFonts()` manually
 2. The services package is properly installed
 3. You're not using the fonts before they're loaded
 

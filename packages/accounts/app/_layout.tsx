@@ -6,8 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider } from '@oxyhq/services';
-// FontLoader temporarily disabled for debugging
-// import { FontLoader } from '@oxyhq/services';
+// Note: Fonts are loaded automatically by OxyProvider via setupFonts()
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ScrollProvider } from '@/contexts/scroll-context';

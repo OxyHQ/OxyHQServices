@@ -228,16 +228,18 @@ app.listen(3000);
 
 **Inter is the default font for all Oxy ecosystem apps.** This package includes the Inter font family and provides automatic font loading for both web and native platforms.
 
-### Quick Setup
+### Automatic Loading
+
+**If you're using `OxyProvider`, fonts are loaded automatically.** No additional setup needed:
 
 ```typescript
-import { FontLoader, fontFamilies, fontStyles } from '@oxyhq/services';
+import { OxyProvider } from '@oxyhq/services';
 
 function App() {
   return (
-    <FontLoader>
+    <OxyProvider baseURL="https://api.oxy.so">
       <YourAppContent />
-    </FontLoader>
+    </OxyProvider>
   );
 }
 ```
@@ -261,8 +263,7 @@ const styles = StyleSheet.create({
 
 ### Available Exports
 
-- **`FontLoader`** - Component that loads Inter fonts automatically
-- **`setupFonts()`** - Function to manually load fonts
+- **`setupFonts()`** - Function to manually load fonts (called automatically by OxyProvider)
 - **`fontFamilies`** - Object with all Inter weight variants (inter, interLight, interMedium, interSemiBold, interBold, interExtraBold, interBlack)
 - **`fontStyles`** - Pre-defined text styles (titleLarge, titleMedium, titleSmall, buttonText)
 
