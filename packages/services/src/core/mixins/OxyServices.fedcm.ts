@@ -1,6 +1,9 @@
 import type { OxyServicesBase } from '../OxyServices.base';
 import { OxyAuthenticationError } from '../OxyServices.errors';
 import type { SessionLoginResponse } from '../../models/session';
+import { createDebugLogger } from '../../shared/utils/debugUtils.js';
+
+const debug = createDebugLogger('FedCM');
 
 export interface FedCMAuthOptions {
   nonce?: string;
@@ -99,9 +102,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       const nonce = options.nonce || this.generateNonce();
       const clientId = this.getClientId();
 
-      if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        console.log('[FedCM] Interactive sign-in: Requesting credential for', clientId);
-      }
+      debug.log('Interactive sign-in: Requesting credential for', clientId);
 
       // Request credential from browser's native identity flow
       const credential = await this.requestIdentityCredential({
@@ -115,9 +116,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         throw new OxyAuthenticationError('No credential received from browser');
       }
 
-      if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        console.log('[FedCM] Interactive sign-in: Got credential, exchanging for session');
-      }
+      debug.log('Interactive sign-in: Got credential, exchanging for session');
 
       // Exchange FedCM ID token for Oxy session
       const session = await this.exchangeIdTokenForSession(credential.token);
@@ -127,15 +126,11 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         this.httpService.setTokens((session as any).accessToken);
       }
 
-      if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        console.log('[FedCM] Interactive sign-in: Success!', { userId: (session as any)?.user?.id });
-      }
+      debug.log('Interactive sign-in: Success!', { userId: (session as any)?.user?.id });
 
       return session;
     } catch (error) {
-      if (typeof __DEV__ !== 'undefined' && __DEV__) {
-        console.log('[FedCM] Interactive sign-in failed:', error);
-      }
+      debug.log('Interactive sign-in failed:', error);
       if ((error as any).name === 'AbortError') {
         throw new OxyAuthenticationError('Sign-in was cancelled by user');
       }
@@ -178,19 +173,19 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
    */
   async silentSignInWithFedCM(): Promise<SessionLoginResponse | null> {
     if (!this.isFedCMSupported()) {
-      console.log('[FedCM] Silent SSO: FedCM not supported in this browser');
+      debug.log('Silent SSO: FedCM not supported in this browser');
       return null;
     }
 
     const clientId = this.getClientId();
-    console.log('[FedCM] Silent SSO: Starting for', clientId);
+    debug.log('Silent SSO: Starting for', clientId);
 
     // First try silent mediation (no UI) - works if user previously consented
     let credential: { token: string } | null = null;
 
     try {
       const nonce = this.generateNonce();
-      console.log('[FedCM] Silent SSO: Attempting silent mediation...');
+      debug.log('Silent SSO: Attempting silent mediation...');
 
       credential = await this.requestIdentityCredential({
         configURL: (this.constructor as any).DEFAULT_CONFIG_URL,
@@ -199,19 +194,19 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         mediation: 'silent',
       });
 
-      console.log('[FedCM] Silent SSO: Silent mediation result:', { hasCredential: !!credential, hasToken: !!credential?.token });
+      debug.log('Silent SSO: Silent mediation result:', { hasCredential: !!credential, hasToken: !!credential?.token });
     } catch (silentError) {
       // Silent mediation failed - this is expected if user hasn't consented before or is in quiet period
       const errorName = silentError instanceof Error ? silentError.name : 'Unknown';
       const errorMessage = silentError instanceof Error ? silentError.message : String(silentError);
-      console.log('[FedCM] Silent SSO: Silent mediation error (will try optional):', { name: errorName, message: errorMessage });
+      debug.log('Silent SSO: Silent mediation error (will try optional):', { name: errorName, message: errorMessage });
     }
 
     // If silent failed, try optional mediation which shows browser UI if needed
     if (!credential || !credential.token) {
       try {
         const nonce = this.generateNonce();
-        console.log('[FedCM] Silent SSO: Trying optional mediation (may show browser UI)...');
+        debug.log('Silent SSO: Trying optional mediation (may show browser UI)...');
 
         credential = await this.requestIdentityCredential({
           configURL: (this.constructor as any).DEFAULT_CONFIG_URL,
@@ -220,55 +215,55 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
           mediation: 'optional',
         });
 
-        console.log('[FedCM] Silent SSO: Optional mediation result:', { hasCredential: !!credential, hasToken: !!credential?.token });
+        debug.log('Silent SSO: Optional mediation result:', { hasCredential: !!credential, hasToken: !!credential?.token });
       } catch (optionalError) {
         const errorName = optionalError instanceof Error ? optionalError.name : 'Unknown';
         const errorMessage = optionalError instanceof Error ? optionalError.message : String(optionalError);
-        console.log('[FedCM] Silent SSO: Optional mediation also failed:', { name: errorName, message: errorMessage });
+        debug.log('Silent SSO: Optional mediation also failed:', { name: errorName, message: errorMessage });
         return null;
       }
     }
 
     if (!credential || !credential.token) {
-      console.log('[FedCM] Silent SSO: No credential returned (user may have dismissed prompt or is not logged in at IdP)');
+      debug.log('Silent SSO: No credential returned (user may have dismissed prompt or is not logged in at IdP)');
       return null;
     }
 
-    console.log('[FedCM] Silent SSO: Got credential, exchanging for session...');
+    debug.log('Silent SSO: Got credential, exchanging for session...');
 
     let session: SessionLoginResponse;
     try {
       session = await this.exchangeIdTokenForSession(credential.token);
     } catch (exchangeError) {
-      console.error('[FedCM] Silent SSO: Token exchange failed:', exchangeError);
+      debug.error('Silent SSO: Token exchange failed:', exchangeError);
       return null;
     }
 
     // Validate session response has required fields
     if (!session) {
-      console.error('[FedCM] Silent SSO: Exchange returned null session');
+      debug.error('Silent SSO: Exchange returned null session');
       return null;
     }
 
     if (!session.sessionId) {
-      console.error('[FedCM] Silent SSO: Exchange returned session without sessionId:', session);
+      debug.error('Silent SSO: Exchange returned session without sessionId:', session);
       return null;
     }
 
     if (!session.user) {
-      console.error('[FedCM] Silent SSO: Exchange returned session without user:', session);
+      debug.error('Silent SSO: Exchange returned session without user:', session);
       return null;
     }
 
     // Set the access token
     if ((session as any).accessToken) {
       this.httpService.setTokens((session as any).accessToken);
-      console.log('[FedCM] Silent SSO: Access token set');
+      debug.log('Silent SSO: Access token set');
     } else {
-      console.warn('[FedCM] Silent SSO: No accessToken in session response');
+      debug.warn('Silent SSO: No accessToken in session response');
     }
 
-    console.log('[FedCM] Silent SSO: Success!', {
+    debug.log('Silent SSO: Success!', {
       sessionId: session.sessionId?.substring(0, 8) + '...',
       userId: session.user?.id
     });
@@ -296,7 +291,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     const requestedMediation = options.mediation || 'optional';
     const isInteractive = requestedMediation !== 'silent';
 
-    console.log('[FedCM] requestIdentityCredential called:', {
+    debug.log('requestIdentityCredential called:', {
       mediation: requestedMediation,
       clientId: options.clientId,
       inProgress: fedCMRequestInProgress,
@@ -304,7 +299,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
 
     // If a request is already in progress...
     if (fedCMRequestInProgress && fedCMRequestPromise) {
-      console.log('[FedCM] Request already in progress, waiting...');
+      debug.log('Request already in progress, waiting...');
       // If current request is silent and new request is interactive,
       // wait for silent to finish, then make the interactive request
       if (currentMediationMode === 'silent' && isInteractive) {
@@ -332,13 +327,13 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       ? (this.constructor as any).FEDCM_SILENT_TIMEOUT
       : (this.constructor as any).FEDCM_TIMEOUT;
     const timeout = setTimeout(() => {
-      console.log('[FedCM] Request timed out after', timeoutMs, 'ms (mediation:', requestedMediation + ')');
+      debug.log('Request timed out after', timeoutMs, 'ms (mediation:', requestedMediation + ')');
       controller.abort();
     }, timeoutMs);
 
     fedCMRequestPromise = (async () => {
       try {
-        console.log('[FedCM] Calling navigator.credentials.get with mediation:', requestedMediation);
+        debug.log('Calling navigator.credentials.get with mediation:', requestedMediation);
         // Type assertion needed as FedCM types may not be in all TypeScript versions
         const credential = (await (navigator.credentials as any).get({
           identity: {
@@ -359,23 +354,23 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
           signal: controller.signal,
         })) as any;
 
-        console.log('[FedCM] navigator.credentials.get returned:', {
+        debug.log('navigator.credentials.get returned:', {
           hasCredential: !!credential,
           type: credential?.type,
           hasToken: !!credential?.token,
         });
 
         if (!credential || credential.type !== 'identity') {
-          console.log('[FedCM] No valid identity credential returned');
+          debug.log('No valid identity credential returned');
           return null;
         }
 
-        console.log('[FedCM] Got valid identity credential with token');
+        debug.log('Got valid identity credential with token');
         return { token: credential.token };
       } catch (error) {
         const errorName = error instanceof Error ? error.name : 'Unknown';
         const errorMessage = error instanceof Error ? error.message : String(error);
-        console.log('[FedCM] navigator.credentials.get error:', { name: errorName, message: errorMessage });
+        debug.log('navigator.credentials.get error:', { name: errorName, message: errorMessage });
         throw error;
       } finally {
         clearTimeout(timeout);
@@ -397,9 +392,9 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
    * @private
    */
   public async exchangeIdTokenForSession(idToken: string): Promise<SessionLoginResponse> {
-    console.log('[FedCM] exchangeIdTokenForSession: Starting exchange...');
-    console.log('[FedCM] exchangeIdTokenForSession: Token length:', idToken?.length);
-    console.log('[FedCM] exchangeIdTokenForSession: Token preview:', idToken?.substring(0, 50) + '...');
+    debug.log('exchangeIdTokenForSession: Starting exchange...');
+    debug.log('exchangeIdTokenForSession: Token length:', idToken?.length);
+    debug.log('exchangeIdTokenForSession: Token preview:', idToken?.substring(0, 50) + '...');
 
     try {
       const response = await this.makeRequest<SessionLoginResponse>(
@@ -409,7 +404,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         { cache: false }
       );
 
-      console.log('[FedCM] exchangeIdTokenForSession: Response received:', {
+      debug.log('exchangeIdTokenForSession: Response received:', {
         hasResponse: !!response,
         hasSessionId: !!(response as any)?.sessionId,
         hasUser: !!(response as any)?.user,
@@ -421,7 +416,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
 
       return response;
     } catch (error) {
-      console.error('[FedCM] exchangeIdTokenForSession: Error:', {
+      debug.error('exchangeIdTokenForSession: Error:', {
         name: error instanceof Error ? error.name : 'Unknown',
         message: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined,

@@ -2,7 +2,7 @@ import type React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useThemeStyles } from '../hooks/useThemeStyles';
-import { useColorScheme } from '../hooks/use-color-scheme';
+import { useColorScheme } from '../hooks/useColorScheme';
 
 interface QuickAction {
     id: string;

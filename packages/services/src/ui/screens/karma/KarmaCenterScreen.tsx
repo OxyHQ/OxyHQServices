@@ -15,7 +15,7 @@ import { fontFamilies } from '../../styles/fonts';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../../hooks/useI18n';
 import { useThemeStyles } from '../../hooks/useThemeStyles';
-import { useColorScheme } from '../../hooks/use-color-scheme';
+import { useColorScheme } from '../../hooks/useColorScheme';
 import { darkenColor } from '../../utils/colorUtils';
 import { useOxy } from '../../context/OxyContext';
 

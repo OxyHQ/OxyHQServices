@@ -1,6 +1,9 @@
 import type { OxyServicesBase } from '../OxyServices.base';
 import { OxyAuthenticationError } from '../OxyServices.errors';
 import type { SessionLoginResponse } from '../../models/session';
+import { createDebugLogger } from '../../shared/utils/debugUtils.js';
+
+const debug = createDebugLogger('PopupAuth');
 
 export interface PopupAuthOptions {
   width?: number;
@@ -125,7 +128,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
             (session as any).user = userData;
           }
         } catch (userError) {
-          console.warn('[PopupAuth] Failed to fetch user data:', userError);
+          debug.warn('Failed to fetch user data:', userError);
           // Continue without user data - caller can fetch separately
         }
       }
@@ -261,7 +264,7 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
 
         // Log all messages for debugging
         if (event.data && typeof event.data === 'object' && event.data.type) {
-          console.log('[PopupAuth] Message received:', {
+          debug.log('Message received:', {
             origin: event.origin,
             expectedOrigin: authUrl,
             type: event.data.type,
@@ -281,12 +284,12 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
           return;
         }
 
-        console.log('[PopupAuth] Valid auth response:', { state, expectedState, hasSession: !!session, error });
+        debug.log('Valid auth response:', { state, expectedState, hasSession: !!session, error });
 
         // Verify state parameter to prevent CSRF attacks
         if (state !== expectedState) {
           cleanup();
-          console.error('[PopupAuth] State mismatch');
+          debug.error('State mismatch');
           reject(new OxyAuthenticationError('Invalid state parameter. Possible CSRF attack.'));
           return;
         }
@@ -294,13 +297,13 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
         cleanup();
 
         if (error) {
-          console.error('[PopupAuth] Auth error:', error);
+          debug.error('Auth error:', error);
           reject(new OxyAuthenticationError(error));
         } else if (session) {
-          console.log('[PopupAuth] Session received successfully');
+          debug.log('Session received successfully');
           resolve(session);
         } else {
-          console.error('[PopupAuth] No session in response');
+          debug.error('No session in response');
           reject(new OxyAuthenticationError('No session received from authentication server'));
         }
       };

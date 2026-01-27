@@ -38,7 +38,7 @@ import Header from '../components/Header';
 import JustifiedPhotoGrid from '../components/photogrid/JustifiedPhotoGrid';
 import { GroupedSection } from '../components';
 import { useThemeStyles } from '../hooks/useThemeStyles';
-import { useColorScheme } from '../hooks/use-color-scheme';
+import { useColorScheme } from '../hooks/useColorScheme';
 import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
 import { useUploadFile } from '../hooks/mutations/useAccountMutations';

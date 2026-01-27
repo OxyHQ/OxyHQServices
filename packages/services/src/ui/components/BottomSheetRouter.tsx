@@ -4,7 +4,7 @@ import { useStore } from 'zustand';
 import type { RouteName } from '../navigation/routes';
 import { getScreenComponent, isValidRoute } from '../navigation/routes';
 import type { BaseScreenProps } from '../types/navigation';
-import { useColorScheme } from '../hooks/use-color-scheme';
+import { useColorScheme } from '../hooks/useColorScheme';
 import { Colors } from '../constants/theme';
 import BottomSheet, { type BottomSheetRef } from './BottomSheet';
 import {

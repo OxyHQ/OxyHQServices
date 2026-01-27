@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { useThemeStyles } from '../hooks/useThemeStyles';
-import { useColorScheme } from '../hooks/use-color-scheme';
+import { useColorScheme } from '../hooks/useColorScheme';
 import { normalizeTheme } from '../utils/themeUtils';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';

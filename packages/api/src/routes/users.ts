@@ -27,6 +27,7 @@ import { userService } from '../services/user.service';
 import { UsersController } from '../controllers/users.controller';
 import { PaginationParams, UserStatistics } from '../types/user.types';
 import { resolveUserIdToObjectId } from '../utils/validation';
+import SignatureService from '../services/signature.service';
 
 // Types
 interface AuthRequest extends Request {
@@ -676,8 +677,12 @@ router.delete(
       throw new NotFoundError('User not found');
     }
 
+    // Verify user has a publicKey for signature verification
+    if (!user.publicKey) {
+      throw new BadRequestError('Account does not have an identity key for signature verification');
+    }
+
     // Verify signature using SignatureService
-    const SignatureService = require('../services/signature.service').default;
     const message = `delete:${user.publicKey}:${timestamp}`;
     const isValidSignature = SignatureService.verifySignature(message, signature, user.publicKey);
     

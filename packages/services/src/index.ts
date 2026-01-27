@@ -212,19 +212,69 @@ export type { ViewMode, SortBy, SortOrder } from './ui/hooks/useFileFiltering';
 export { OxySignInButton } from './ui/components/OxySignInButton';
 export { OxyLogo, FollowButton } from './ui';
 
-// New consolidated utilities
+// Shared utilities (platform-agnostic)
+export {
+  // Color utilities
+  darkenColor,
+  lightenColor,
+  hexToRgb,
+  rgbToHex,
+  withOpacity,
+  isLightColor,
+  getContrastTextColor,
+} from './shared/utils/colorUtils.js';
+
+export {
+  // Theme utilities
+  normalizeTheme,
+  normalizeColorScheme,
+  getOppositeTheme,
+  systemPrefersDarkMode,
+  getSystemColorScheme,
+} from './shared/utils/themeUtils.js';
+export type { ThemeValue } from './shared/utils/themeUtils.js';
+
+export {
+  // Error utilities
+  HttpStatus,
+  getErrorStatus,
+  getErrorMessage,
+  isAlreadyRegisteredError,
+  isUnauthorizedError,
+  isForbiddenError,
+  isNotFoundError,
+  isRateLimitError,
+  isServerError,
+  isNetworkError,
+  isRetryableError,
+} from './shared/utils/errorUtils.js';
+
+export {
+  // Network utilities
+  DEFAULT_CIRCUIT_BREAKER_CONFIG,
+  createCircuitBreakerState,
+  calculateBackoffInterval,
+  recordFailure,
+  recordSuccess,
+  shouldAllowRequest,
+  delay,
+  withRetry,
+} from './shared/utils/networkUtils.js';
+export type { CircuitBreakerState, CircuitBreakerConfig } from './shared/utils/networkUtils.js';
+
+// Other utilities
 export * from './utils/apiUtils';
-export { 
-  ErrorCodes, 
-  createApiError, 
-  handleHttpError, 
+export {
+  ErrorCodes,
+  createApiError,
+  handleHttpError,
   validateRequiredFields,
-  retryWithBackoff 
 } from './utils/errorUtils';
+export { retryAsync } from './utils/asyncUtils';
 export * from './utils/validationUtils';
-export { 
-  logger, 
-  LogLevel, 
+export {
+  logger,
+  LogLevel,
   LogContext,
   logAuth,
   logApi,

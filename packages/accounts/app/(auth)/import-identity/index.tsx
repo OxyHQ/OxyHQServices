@@ -11,16 +11,15 @@ import { useIdentity } from '@/hooks/useIdentity';
 
 /**
  * Import Identity - Phrase Screen (Index)
- * 
+ *
  * Allows user to enter recovery phrase to import identity
  */
 export default function ImportIdentityPhraseScreen() {
   const router = useRouter();
   const colorScheme = useColorScheme() ?? 'light';
   const { importIdentity } = useIdentity();
-  const { oxyServices } = useOxy();
-  const isLoading = oxyServices ? false : false; // Identity operations manage their own loading state
   const { error, setAuthError } = useAuthFlowContext();
+  const [isLoading, setIsLoading] = useState(false);
 
   const backgroundColor = useMemo(
     () => (colorScheme === 'dark' ? Colors.dark.background : Colors.light.background),
@@ -58,6 +57,7 @@ export default function ImportIdentityPhraseScreen() {
     }
 
     setAuthError(null);
+    setIsLoading(true);
 
     try {
       const result = await importIdentity(phrase);
@@ -71,6 +71,8 @@ export default function ImportIdentityPhraseScreen() {
       }
     } catch (err: unknown) {
       setAuthError(extractAuthErrorMessage(err, 'Failed to import identity'));
+    } finally {
+      setIsLoading(false);
     }
   }, [phraseWords, importIdentity, router, setAuthError]);
 

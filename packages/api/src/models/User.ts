@@ -1,11 +1,26 @@
 import mongoose, { Document, Schema } from "mongoose";
 
+/**
+ * Represents an authentication method linked to a user account.
+ * Users can have multiple auth methods (identity, password, social) linked to the same account.
+ */
+export interface AuthMethod {
+  type: 'identity' | 'password' | 'google' | 'apple' | 'github';
+  linkedAt: Date;
+  metadata?: {
+    publicKey?: string;      // For identity type
+    email?: string;          // For password/social types
+    providerId?: string;     // For social types (Google ID, Apple ID, etc.)
+  };
+}
+
 export interface IUser extends Document {
   username?: string;
   email?: string;
   publicKey?: string; // ECDSA secp256k1 public key (hex) - primary identifier for local identity
   password?: string; // Hashed password for password-based accounts
   refreshToken?: string | null;
+  authMethods?: AuthMethod[]; // Linked authentication methods for unified auth
   twoFactorAuth?: {
     enabled: boolean;
     secret?: string; // TOTP secret (encrypted)
@@ -181,6 +196,19 @@ const UserSchema: Schema = new Schema(
       backupCodes: { type: [String], select: false, default: [] }, // Hashed backup codes
       verifiedAt: { type: Date },
     },
+    authMethods: [{
+      type: {
+        type: String,
+        enum: ['identity', 'password', 'google', 'apple', 'github'],
+        required: true,
+      },
+      linkedAt: { type: Date, default: Date.now },
+      metadata: {
+        publicKey: { type: String },
+        email: { type: String },
+        providerId: { type: String },
+      },
+    }],
     verified: {
       type: Boolean,
       default: false,

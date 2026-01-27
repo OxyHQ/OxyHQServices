@@ -14,7 +14,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import type { BaseScreenProps } from '../types/navigation';
 import { useThemeStyles } from '../hooks/useThemeStyles';
-import { useColorScheme } from '../hooks/use-color-scheme';
+import { useColorScheme } from '../hooks/useColorScheme';
 import { normalizeTheme } from '../utils/themeUtils';
 import { Header } from '../components';
 import { useI18n } from '../hooks/useI18n';

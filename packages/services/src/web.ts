@@ -211,8 +211,8 @@ export {
   createApiError,
   handleHttpError,
   validateRequiredFields,
-  retryWithBackoff
 } from './utils/errorUtils';
+export { retryAsync } from './utils/asyncUtils';
 export * from './utils/validationUtils';
 export {
   logger,

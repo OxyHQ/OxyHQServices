@@ -12,7 +12,7 @@ export default defineConfig([
       ecmaVersion: 2022,
       sourceType: 'module',
       parserOptions: {
-        project: './tsconfig.json',
+        project: './tsconfig.eslint.json',
       },
     },
     rules: {

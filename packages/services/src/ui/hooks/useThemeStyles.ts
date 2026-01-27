@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useColorScheme } from './use-color-scheme';
+import { useColorScheme } from './useColorScheme';
 import { Colors } from '../constants/theme';
 import { normalizeColorScheme } from '../utils/themeUtils';
 

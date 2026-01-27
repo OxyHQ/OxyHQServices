@@ -63,6 +63,12 @@
       "require": "./lib/commonjs/crypto/index.js",
       "default": "./lib/module/crypto/index.js"
     },
+    "./shared": {
+      "types": "./lib/typescript/module/shared/index.d.ts",
+      "import": "./lib/module/shared/index.js",
+      "require": "./lib/commonjs/shared/index.js",
+      "default": "./lib/module/shared/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

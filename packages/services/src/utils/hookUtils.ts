@@ -172,8 +172,8 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
     try {
       const item = window.localStorage.getItem(key);
       return item ? JSON.parse(item) : initialValue;
-    } catch (error) {
-      console.error(`Error reading localStorage key "${key}":`, error);
+    } catch {
+      // Silently fail and return initial value
       return initialValue;
     }
   });
@@ -185,8 +185,8 @@ export function useLocalStorage<T>(key: string, initialValue: T) {
       if (hasLocalStorage) {
         window.localStorage.setItem(key, JSON.stringify(valueToStore));
       }
-    } catch (error) {
-      console.error(`Error setting localStorage key "${key}":`, error);
+    } catch {
+      // Silently fail - storage might be full or blocked
     }
   }, [key, storedValue]);
 
@@ -202,8 +202,8 @@ export function useSessionStorage<T>(key: string, initialValue: T) {
     try {
       const item = window.sessionStorage.getItem(key);
       return item ? JSON.parse(item) : initialValue;
-    } catch (error) {
-      console.error(`Error reading sessionStorage key "${key}":`, error);
+    } catch {
+      // Silently fail and return initial value
       return initialValue;
     }
   });
@@ -215,8 +215,8 @@ export function useSessionStorage<T>(key: string, initialValue: T) {
       if (hasSessionStorage) {
         window.sessionStorage.setItem(key, JSON.stringify(valueToStore));
       }
-    } catch (error) {
-      console.error(`Error setting sessionStorage key "${key}":`, error);
+    } catch {
+      // Silently fail - storage might be full or blocked
     }
   }, [key, storedValue]);
 

@@ -6,7 +6,7 @@ import { Header } from '../../components';
 import { useI18n } from '../../hooks/useI18n';
 import { useThemeStyles } from '../../hooks/useThemeStyles';
 import { normalizeTheme } from '../../utils/themeUtils';
-import { useColorScheme } from '../../hooks/use-color-scheme';
+import { useColorScheme } from '../../hooks/useColorScheme';
 import { useOxy } from '../../context/OxyContext';
 
 const KarmaRulesScreen: React.FC<BaseScreenProps> = ({ goBack, theme }) => {
