@@ -282,8 +282,10 @@ export class AuthManager {
       await this.handleAuthSuccess(response, 'credentials');
       return true;
     } catch {
-      // Refresh failed, clear session
+      // Refresh failed, clear session and update state
       await this.clearSession();
+      this.currentUser = null;
+      this.notifyListeners();
       return false;
     }
   }
