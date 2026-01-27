@@ -130,7 +130,7 @@ router.post('/link', asyncHandler(async (req: AuthenticatedRequest, res: Respons
         timestamp,
       });
 
-      const isValid = SignatureService.verifySignature(safePublicKey, message, signature);
+      const isValid = SignatureService.verifySignature(message, signature, safePublicKey);
       if (!isValid) {
         throw new BadRequestError('Invalid signature - cannot verify identity ownership');
       }
