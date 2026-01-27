@@ -677,6 +677,11 @@ router.delete(
       throw new NotFoundError('User not found');
     }
 
+    // Verify user has a publicKey for signature verification
+    if (!user.publicKey) {
+      throw new BadRequestError('Account does not have an identity key for signature verification');
+    }
+
     // Verify signature using SignatureService
     const message = `delete:${user.publicKey}:${timestamp}`;
     const isValidSignature = SignatureService.verifySignature(message, signature, user.publicKey);

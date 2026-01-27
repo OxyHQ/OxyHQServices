@@ -9,13 +9,13 @@
  * - View and manage linked auth methods
  */
 
-import { Router, Request, Response } from 'express';
+import { Router, Response } from 'express';
 import bcrypt from 'bcrypt';
-import { User, AuthMethod } from '../models/User';
-import { authMiddleware, AuthenticatedRequest } from '../middleware/auth';
-import SignatureService from '../services/signature.service';
-import { asyncHandler } from '../utils/asyncHandler';
-import { BadRequestError, ConflictError } from '../utils/error';
+import { User, AuthMethod } from '../models/User.js';
+import { authMiddleware, AuthRequest } from '../middleware/auth.js';
+import SignatureService from '../services/signature.service.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
+import { BadRequestError, ConflictError } from '../utils/error.js';
 
 const router = Router();
 
@@ -26,7 +26,7 @@ router.use(authMiddleware);
  * GET /api/auth/methods
  * Get all linked authentication methods for the current user
  */
-router.get('/methods', asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+router.get('/methods', asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user?._id;
   if (!userId) {
     throw new BadRequestError('User not authenticated');
@@ -85,7 +85,7 @@ router.get('/methods', asyncHandler(async (req: AuthenticatedRequest, res: Respo
  * POST /api/auth/link
  * Link a new authentication method to the current user account
  */
-router.post('/link', asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+router.post('/link', asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user?._id;
   if (!userId) {
     throw new BadRequestError('User not authenticated');
@@ -265,7 +265,7 @@ router.post('/link', asyncHandler(async (req: AuthenticatedRequest, res: Respons
  * Unlink an authentication method from the current user account
  * Must keep at least one auth method
  */
-router.delete('/link/:type', asyncHandler(async (req: AuthenticatedRequest, res: Response) => {
+router.delete('/link/:type', asyncHandler(async (req: AuthRequest, res: Response) => {
   const userId = req.user?._id;
   if (!userId) {
     throw new BadRequestError('User not authenticated');
