@@ -11,7 +11,8 @@
 
 import { Router, Response } from 'express';
 import bcrypt from 'bcrypt';
-import { User, AuthMethod } from '../models/User.js';
+import { User } from '../models/User.js';
+import type { AuthMethod } from '../models/User.js';
 import { authMiddleware, AuthRequest } from '../middleware/auth.js';
 import SignatureService from '../services/signature.service.js';
 import { asyncHandler } from '../utils/asyncHandler.js';
@@ -32,7 +33,7 @@ router.get('/methods', asyncHandler(async (req: AuthRequest, res: Response) => {
     throw new BadRequestError('User not authenticated');
   }
 
-  const user = await User.findById(userId).select('authMethods publicKey email');
+  const user = await User.findById(userId).select('authMethods publicKey email createdAt');
   if (!user) {
     throw new BadRequestError('User not found');
   }

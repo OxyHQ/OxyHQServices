@@ -220,8 +220,8 @@ export class AuthManager {
       expiresAt: session.expiresAt,
     }));
 
-    // Store user
-    if (session.user) {
+    // Store user only if it has valid required fields (not an empty placeholder)
+    if (session.user && typeof (session.user as any).id === 'string' && (session.user as any).id.length > 0) {
       await this.storage.setItem(STORAGE_KEYS.USER, JSON.stringify(session.user));
       this.currentUser = session.user;
     }
