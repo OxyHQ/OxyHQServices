@@ -9,7 +9,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AccountCard, ScreenHeader, useAlert, LinkButton } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useHapticPress } from '@/hooks/use-haptic-press';
-import { useOxy, useFollow, useCurrentUser } from '@oxyhq/services';
+import { useOxy, useFollow, useCurrentUser, showBottomSheet } from '@oxyhq/services';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import * as Contacts from 'expo-contacts';
 
@@ -167,8 +167,9 @@ export default function PeopleAndSharingScreen() {
         ? `${followerCount} ${followerCount === 1 ? 'person follows' : 'people follow'} you`
         : 'People who follow you',
       onPress: () => {
-        // Navigate to followers list when implemented
-        alert('Followers', 'Followers list coming soon');
+        if (userId) {
+          showBottomSheet({ screen: 'Profile', props: { userId } });
+        }
       },
       showChevron: true,
     });
@@ -183,8 +184,9 @@ export default function PeopleAndSharingScreen() {
         ? `You follow ${followingCount} ${followingCount === 1 ? 'person' : 'people'}`
         : 'People you follow',
       onPress: () => {
-        // Navigate to following list when implemented
-        alert('Following', 'Following list coming soon');
+        if (userId) {
+          showBottomSheet({ screen: 'Profile', props: { userId } });
+        }
       },
       showChevron: true,
     });
@@ -201,7 +203,7 @@ export default function PeopleAndSharingScreen() {
     });
 
     return items;
-  }, [colors, followerCount, followingCount, alert, router, handleSyncContacts, isSyncingContacts, syncedContactsCount, contactsPermission]);
+  }, [colors, followerCount, followingCount, router, handleSyncContacts, isSyncingContacts, syncedContactsCount, contactsPermission, userId]);
 
   // Privacy & blocking items
   const privacyItems = useMemo(() => {
