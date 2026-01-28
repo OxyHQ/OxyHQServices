@@ -29,15 +29,14 @@ export default function PeopleAndSharingScreen() {
   // Blocked and restricted users state
   const [blockedCount, setBlockedCount] = useState(0);
   const [restrictedCount, setRestrictedCount] = useState(0);
-  const [isLoadingPrivacy, setIsLoadingPrivacy] = useState(true);
+  const [hasFetchedPrivacy, setHasFetchedPrivacy] = useState(false);
 
   // Fetch blocked/restricted counts
   useEffect(() => {
     const fetchPrivacyCounts = async () => {
-      if (!isAuthenticated || !oxyServices) return;
+      if (!isAuthenticated || !oxyServices || !userId) return;
 
       try {
-        setIsLoadingPrivacy(true);
         const [blockedUsers, restrictedUsers] = await Promise.all([
           oxyServices.getBlockedUsers?.() || Promise.resolve([]),
           oxyServices.getRestrictedUsers?.() || Promise.resolve([]),
@@ -47,17 +46,17 @@ export default function PeopleAndSharingScreen() {
       } catch (error) {
         console.error('Failed to fetch privacy counts:', error);
       } finally {
-        setIsLoadingPrivacy(false);
+        setHasFetchedPrivacy(true);
       }
     };
 
-    if (isAuthenticated && userId) {
+    if (isAuthenticated && userId && !hasFetchedPrivacy) {
       fetchPrivacyCounts();
       fetchUserCounts?.();
     }
-  }, [isAuthenticated, userId, oxyServices, fetchUserCounts]);
+  }, [isAuthenticated, userId, oxyServices, fetchUserCounts, hasFetchedPrivacy]);
 
-  const isLoading = authLoading || isLoadingPrivacy;
+  const isLoading = authLoading;
 
   // Contacts section items
   const contactsItems = useMemo(() => {
