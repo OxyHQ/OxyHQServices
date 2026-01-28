@@ -135,7 +135,7 @@
     "sonner-native": "^0.20.0",
     "zod": "^3.25.64",
     "zustand": "^5.0.6",
-    "@types/react": "~19.1.0",
+    "@types/react": "^19.2.0",
     "copyfiles": "^2.4.1",
     "typescript": "^5.9.2"
   },
