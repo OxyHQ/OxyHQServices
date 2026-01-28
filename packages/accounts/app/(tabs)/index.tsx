@@ -69,7 +69,7 @@ export default function HomeScreen() {
   }, []);
 
   // Use reactive state from identity store (with defaults)
-  const { isSynced, isSyncing } = identitySyncState || { isSynced: true, isSyncing: false };
+  const { isSynced } = identitySyncState || { isSynced: true };
 
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
 
@@ -130,21 +130,6 @@ export default function HomeScreen() {
     checkAndSync();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isIdentitySynced, syncIdentity]);
-
-  const handleSyncNow = useCallback(async () => {
-    if (!syncIdentity) return;
-    try {
-      // syncIdentity updates the Zustand store (isSyncing, isSynced)
-      await syncIdentity();
-    } catch (err: any) {
-      // Check if error is username required
-      if (err?.code === 'USERNAME_REQUIRED' || err?.message === 'USERNAME_REQUIRED') {
-        setShowUsernameModal(true);
-      } else {
-        alert('Sync Failed', err.message || 'Could not sync with server. Please check your internet connection.');
-      }
-    }
-  }, [syncIdentity, alert]);
 
   const handleUsernameModalComplete = useCallback(async () => {
     setShowUsernameModal(false);
@@ -660,6 +645,7 @@ export default function HomeScreen() {
                     { label: 'Security', query: 'security' },
                     { label: 'Activity', query: 'activity' },
                     { label: 'Email', query: 'email' },
+                    { label: 'Alia', query: 'alia' },
                   ].map((chip) => (
                     <TouchableOpacity
                       key={chip.query}
@@ -878,41 +864,6 @@ const styles = StyleSheet.create({
     width: '100%',
     gap: 12,
     marginTop: 8,
-  } as const,
-  syncBanner: {
-    borderWidth: 1,
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
-  } as const,
-  syncBannerContent: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    marginBottom: 12,
-  } as const,
-  syncBannerText: {
-    flex: 1,
-    marginLeft: 12,
-  } as const,
-  syncBannerTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 4,
-  } as const,
-  syncBannerSubtitle: {
-    fontSize: 14,
-    lineHeight: 20,
-  } as const,
-  syncButton: {
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-    borderRadius: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  } as const,
-  syncButtonText: {
-    fontSize: 14,
-    fontWeight: '600',
   } as const,
   infoBanner: {
     borderWidth: 1,

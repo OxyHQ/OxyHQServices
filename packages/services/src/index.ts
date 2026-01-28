@@ -118,16 +118,6 @@ export type {
   SecurityEventSeverity,
   SecurityActivity,
   SecurityActivityResponse,
-  // Account sharing
-  ShareRole,
-  ShareStatus,
-  SharedUser,
-  PendingInvitation,
-  SharedAccount,
-  CreateInvitationRequest,
-  CreateInvitationResponse,
-  UpdateShareRoleRequest,
-  ShareActionResponse,
 } from './models/interfaces';
 
 // Export security constants
@@ -178,17 +168,6 @@ export {
   // Security activity queries
   useSecurityActivity,
   useRecentSecurityActivity,
-  // Sharing queries and mutations
-  useSharedWithUsers,
-  useAccountsSharedWithMe,
-  usePendingInvitations,
-  useCreateShareInvitation,
-  useAcceptShareInvitation,
-  useDeclineShareInvitation,
-  useUpdateShareRole,
-  useRevokeShare,
-  useLeaveSharedAccount,
-  useResendShareInvitation,
 } from './ui/hooks/queries';
 
 // UI hooks - Mutation hooks (TanStack Query)
