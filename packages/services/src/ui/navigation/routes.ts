@@ -1,4 +1,4 @@
-import React, { type ComponentType } from 'react';
+import type { ComponentType } from 'react';
 import type { BaseScreenProps } from '../types/navigation';
 
 // Lazy loading: Screens are loaded on-demand to break require cycles
@@ -78,14 +78,8 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     AboutKarma: () => require('../screens/karma/KarmaAboutScreen').default,
     KarmaFAQ: () => require('../screens/karma/KarmaFAQScreen').default,
     // User list screens (followers/following)
-    FollowersList: () => {
-        const UserListScreen = require('../screens/UserListScreen').default;
-        return (props: any) => <UserListScreen {...props} mode="followers" />;
-    },
-    FollowingList: () => {
-        const UserListScreen = require('../screens/UserListScreen').default;
-        return (props: any) => <UserListScreen {...props} mode="following" />;
-    },
+    FollowersList: () => require('../screens/FollowersListScreen').default,
+    FollowingList: () => require('../screens/FollowingListScreen').default,
 };
 
 // Cache loaded components to avoid re-requiring
