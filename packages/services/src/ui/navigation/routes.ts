@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react';
+import React, { type ComponentType } from 'react';
 import type { BaseScreenProps } from '../types/navigation';
 
 // Lazy loading: Screens are loaded on-demand to break require cycles
@@ -6,7 +6,6 @@ import type { BaseScreenProps } from '../types/navigation';
 // before OxyContext is fully initialized
 
 // Define all available route names
-// Note: SignIn has been replaced with OxyAuth for cross-app authentication via Oxy Accounts
 export type RouteName =
     | 'OxyAuth'          // Sign in with Oxy (QR code / deep link to Accounts app)
     | 'AccountOverview'
@@ -31,7 +30,6 @@ export type RouteName =
     | 'UserLinks'
     | 'HistoryView'
     | 'SavesCollections'
-    | 'EditProfile' // For backward compatibility, maps to AccountSettings
     | 'EditProfileField' // Dedicated screen for editing a single profile field
     | 'LearnMoreUsernames' // Informational screen about usernames
     | 'KarmaCenter'
@@ -40,15 +38,13 @@ export type RouteName =
     | 'KarmaRules'
     | 'AboutKarma'
     | 'KarmaFAQ'
-    // Legacy aliases for backward compatibility
-    | 'SignIn';  // Maps to OxyAuth
+    | 'FollowersList'  // List of user's followers
+    | 'FollowingList'; // List of users being followed
 
 // Lazy screen loaders - functions that return screen components on-demand
 // This breaks the require cycle by deferring imports until screens are actually needed
 const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     OxyAuth: () => require('../screens/OxyAuthScreen').default,
-    // Legacy alias - SignIn now maps to OxyAuth
-    SignIn: () => require('../screens/OxyAuthScreen').default,
     AccountOverview: () => require('../screens/AccountOverviewScreen').default,
     AccountSettings: () => require('../screens/AccountSettingsScreen').default,
     AccountCenter: () => require('../screens/AccountCenterScreen').default,
@@ -71,9 +67,6 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     UserLinks: () => require('../screens/UserLinksScreen').default,
     HistoryView: () => require('../screens/HistoryViewScreen').default,
     SavesCollections: () => require('../screens/SavesCollectionsScreen').default,
-    // Backward compatibility - EditProfile maps to AccountSettings
-    EditProfile: () => require('../screens/AccountSettingsScreen').default,
-    // Dedicated screen for editing a single profile field
     EditProfileField: () => require('../screens/EditProfileFieldScreen').default,
     // Informational screens
     LearnMoreUsernames: () => require('../screens/LearnMoreUsernamesScreen').default,
@@ -84,6 +77,15 @@ const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
     KarmaRules: () => require('../screens/karma/KarmaRulesScreen').default,
     AboutKarma: () => require('../screens/karma/KarmaAboutScreen').default,
     KarmaFAQ: () => require('../screens/karma/KarmaFAQScreen').default,
+    // User list screens (followers/following)
+    FollowersList: () => {
+        const UserListScreen = require('../screens/UserListScreen').default;
+        return (props: any) => <UserListScreen {...props} mode="followers" />;
+    },
+    FollowingList: () => {
+        const UserListScreen = require('../screens/UserListScreen').default;
+        return (props: any) => <UserListScreen {...props} mode="following" />;
+    },
 };
 
 // Cache loaded components to avoid re-requiring

@@ -389,7 +389,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: baseThemeStyles.colors.iconSecurity,
                                 title: displayName,
                                 subtitle: user ? (user.email || user.username) : (t('common.status.loading') || 'Loading...'),
-                                onPress: () => navigate?.('EditProfile', { activeTab: 'profile' }),
+                                onPress: () => navigate?.('AccountSettings', { activeTab: 'profile' }),
                             },
                         ]}
                     />
@@ -405,7 +405,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: baseThemeStyles.colors.iconPersonalInfo,
                                 title: t('accountOverview.items.editProfile.title'),
                                 subtitle: t('accountOverview.items.editProfile.subtitle'),
-                                onPress: () => navigate?.('EditProfile', { activeTab: 'profile' }),
+                                onPress: () => navigate?.('AccountSettings', { activeTab: 'profile' }),
                             },
                             {
                                 id: 'security-privacy',
@@ -413,7 +413,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: baseThemeStyles.colors.iconSecurity,
                                 title: t('accountOverview.items.security.title'),
                                 subtitle: t('accountOverview.items.security.subtitle'),
-                                onPress: () => navigate?.('EditProfile', { activeTab: 'password' }),
+                                onPress: () => navigate?.('AccountSettings', { activeTab: 'password' }),
                             },
                             {
                                 id: 'notifications',
@@ -421,7 +421,7 @@ const AccountOverviewScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: baseThemeStyles.colors.iconStorage,
                                 title: t('accountOverview.items.notifications.title'),
                                 subtitle: t('accountOverview.items.notifications.subtitle'),
-                                onPress: () => navigate?.('EditProfile', { activeTab: 'notifications' }),
+                                onPress: () => navigate?.('AccountSettings', { activeTab: 'notifications' }),
                             },
                             {
                                 id: 'premium-subscription',

@@ -168,7 +168,7 @@ export default function PeopleAndSharingScreen() {
         : 'People who follow you',
       onPress: () => {
         if (userId) {
-          showBottomSheet({ screen: 'Profile', props: { userId } });
+          showBottomSheet({ screen: 'FollowersList', props: { userId, initialCount: followerCount } });
         }
       },
       showChevron: true,
@@ -185,7 +185,7 @@ export default function PeopleAndSharingScreen() {
         : 'People you follow',
       onPress: () => {
         if (userId) {
-          showBottomSheet({ screen: 'Profile', props: { userId } });
+          showBottomSheet({ screen: 'FollowingList', props: { userId, initialCount: followingCount } });
         }
       },
       showChevron: true,

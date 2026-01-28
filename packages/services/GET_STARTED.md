@@ -146,7 +146,7 @@ const { showBottomSheet } = useOxy();
 showBottomSheet('AccountCenter');      // Main account hub
 showBottomSheet('AccountSwitcher');    // Switch accounts
 showBottomSheet('SessionManagement');  // Manage devices
-showBottomSheet('EditProfile');        // Edit profile
+showBottomSheet('AccountSettings');    // Edit profile
 
 // Auth
 showBottomSheet('OxyAuth');            // QR code auth

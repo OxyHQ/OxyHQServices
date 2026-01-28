@@ -460,7 +460,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                         iconColor: '#007AFF',
                                         title: 'Add Another Account',
                                         subtitle: 'Sign in with a different account',
-                                        onPress: () => navigate?.('SignIn'),
+                                        onPress: () => navigate?.('OxyAuth'),
                                     },
                                     {
                                         id: 'device-management',
@@ -561,7 +561,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                             iconColor: '#ccc',
                                             title: t('accountSwitcher.empty.title') || 'No saved accounts',
                                             subtitle: t('accountSwitcher.empty.subtitle') || 'Add another account to switch between them quickly',
-                                            onPress: () => navigate?.('SignIn'),
+                                            onPress: () => navigate?.('OxyAuth'),
                                             customContent: (
                                                 <View style={styles.emptyStateContainer}>
                                                     <OxyIcon name="person-outline" size={48} color="#ccc" />
@@ -571,7 +571,7 @@ const ModernAccountSwitcherScreen: React.FC<BaseScreenProps> = ({
                                                     </Text>
                                                     <TouchableOpacity
                                                         style={styles.addAccountButton}
-                                                        onPress={() => navigate?.('SignIn')}
+                                                        onPress={() => navigate?.('OxyAuth')}
                                                     >
                                                         <Text style={styles.addAccountButtonText}>{t('accountCenter.sections.addAccount') || 'Add Account'}</Text>
                                                     </TouchableOpacity>

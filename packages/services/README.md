@@ -781,7 +781,7 @@ function AuthModal({ visible, onRequestClose }: { visible: boolean; onRequestClo
     <Modal visible onRequestClose={onRequestClose} animationType="slide">
       <OxyRouter
         oxyServices={oxyServices}
-        initialScreen="SignIn"
+        initialScreen="OxyAuth"
         onClose={onRequestClose}
         onAuthenticated={onRequestClose}
         theme="light"

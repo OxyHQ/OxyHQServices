@@ -34,7 +34,7 @@ function MyComponent() {
   const { showBottomSheet } = useOxy();
 
   const handleSignIn = () => {
-    showBottomSheet('SignIn');
+    showBottomSheet('OxyAuth');
   };
 
   return (
@@ -50,7 +50,7 @@ const { showBottomSheet } = useOxy();
 
 // Open sign-in screen with pre-filled username
 showBottomSheet({
-  screen: 'SignIn',
+  screen: 'OxyAuth',
   props: {
     username: 'user@example.com',
     initialStep: 1, // Start at step 1 (password step)
@@ -141,11 +141,11 @@ showBottomSheet(
 **Example:**
 ```typescript
 // Simple usage
-showBottomSheet('SignIn');
+showBottomSheet('OxyAuth');
 
 // With props
 showBottomSheet({
-  screen: 'SignIn',
+  screen: 'OxyAuth',
   props: {
     username: 'user@example.com',
     initialStep: 1,
@@ -172,8 +172,7 @@ closeBottomSheet();
 
 The following routes are available:
 
-- `SignIn` - Sign in screen with multi-step flow
-- `SignUp` - Sign up screen with multi-step flow
+- `OxyAuth` - Sign in with Oxy (QR code / deep link to Accounts app)
 - `AccountOverview` - Account overview screen
 - `AccountSettings` - Account settings screen
 - `AccountCenter` - Account center screen
@@ -191,12 +190,11 @@ The following routes are available:
 - `LegalDocuments` - Legal documents viewer
 - `AppInfo` - App information screen
 - `PremiumSubscription` - Premium subscription screen
-- `RecoverAccount` - Account recovery screen
 - `WelcomeNewUser` - Welcome screen for new users
 - `UserLinks` - User links management
 - `HistoryView` - History view screen
 - `SavesCollections` - Saved collections screen
-- `EditProfile` - Edit profile screen (alias for AccountSettings)
+- `EditProfileField` - Edit a single profile field
 
 ## Usage Examples
 
@@ -214,7 +212,7 @@ function LoginButton() {
 
   return (
     <Button
-      onPress={() => showBottomSheet('SignIn')}
+      onPress={() => showBottomSheet('OxyAuth')}
       title="Sign In"
     />
   );
@@ -254,7 +252,7 @@ function PrefillSignIn() {
 
   const handleSignInWithEmail = (email: string) => {
     showBottomSheet({
-      screen: 'SignIn',
+      screen: 'OxyAuth',
       props: {
         username: email,
         initialStep: 1, // Skip to password step
@@ -364,7 +362,7 @@ This ensures that users can navigate back through the bottom sheet's internal na
 
 ## Step-Based Screens
 
-Some screens use a multi-step flow (e.g., SignIn, SignUp, RecoverAccount). The router handles step navigation automatically.
+Some screens use a multi-step flow. The router handles step navigation automatically.
 
 ### Step Navigation Behavior
 
@@ -532,12 +530,12 @@ Example:
 
 ```typescript
 // In routes.ts
-export type RouteName = 
-  | 'SignIn'
+export type RouteName =
+  | 'OxyAuth'
   | 'MyNewScreen'; // Add here
 
 const screenLoaders: Record<RouteName, () => ComponentType<BaseScreenProps>> = {
-  SignIn: () => require('../screens/SignInScreen').default,
+  OxyAuth: () => require('../screens/OxyAuthScreen').default,
   MyNewScreen: () => require('../screens/MyNewScreen').default, // Add here
 };
 ```
@@ -548,14 +546,14 @@ All navigation is fully type-safe:
 
 ```typescript
 // RouteName is a union type
-type RouteName = 'SignIn' | 'SignUp' | ...;
+type RouteName = 'OxyAuth' | 'AccountOverview' | ...;
 
 // TypeScript will error on invalid routes
 showBottomSheet('InvalidRoute'); // ❌ Type error
 
 // Props are typed
 showBottomSheet({
-  screen: 'SignIn',
+  screen: 'OxyAuth',
   props: {
     username: 'user@example.com', // ✅ Typed
     invalidProp: 123, // ⚠️ May not be recognized by screen

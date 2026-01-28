@@ -92,7 +92,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                 <ProfileCard
                     user={user}
                     theme={normalizedTheme}
-                    onEditPress={() => navigate?.('EditProfile', { activeTab: 'profile' })}
+                    onEditPress={() => navigate?.('AccountSettings', { activeTab: 'profile' })}
                     onClosePress={onClose}
                     showCloseButton={!!onClose}
                 />
@@ -105,7 +105,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                         theme={normalizedTheme}
                         actions={useMemo(() => [
                             { id: 'overview', icon: 'account-circle', iconColor: colors.iconSecurity, title: t('accountCenter.quickActions.overview') || 'Overview', onPress: () => navigate?.('AccountOverview') },
-                            { id: 'settings', icon: 'cog', iconColor: colors.iconData, title: t('accountCenter.quickActions.editProfile') || 'Edit Profile', onPress: () => navigate?.('EditProfile') },
+                            { id: 'settings', icon: 'cog', iconColor: colors.iconData, title: t('accountCenter.quickActions.editProfile') || 'Edit Profile', onPress: () => navigate?.('AccountSettings') },
                             { id: 'sessions', icon: 'shield-check', iconColor: colors.iconSecurity, title: t('accountCenter.quickActions.sessions') || 'Sessions', onPress: () => navigate?.('SessionManagement') },
                             { id: 'premium', icon: 'star', iconColor: colors.iconPayments, title: t('accountCenter.quickActions.premium') || 'Premium', onPress: () => navigate?.('PremiumSubscription') },
                             ...(user?.isPremium ? [{ id: 'billing', icon: 'card', iconColor: colors.iconPersonalInfo, title: t('accountCenter.quickActions.billing') || 'Billing', onPress: () => navigate?.('PaymentGateway') }] : []),
@@ -133,7 +133,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: colors.iconData,
                                 title: t('accountCenter.items.editProfile.title') || 'Edit Profile',
                                 subtitle: t('accountCenter.items.editProfile.subtitle') || 'Manage your profile and preferences',
-                                onPress: () => navigate?.('EditProfile'),
+                                onPress: () => navigate?.('AccountSettings'),
                             },
                             {
                                 id: 'sessions',
@@ -191,7 +191,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                     iconColor: colors.iconPersonalInfo,
                                     title: t('accountCenter.items.addAccount.title') || 'Add Another Account',
                                     subtitle: t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account',
-                                    onPress: () => navigate?.('SignIn'),
+                                    onPress: () => navigate?.('OxyAuth'),
                                 },
                             ], [sessions.length, navigate, t, colors])}
 
@@ -210,7 +210,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                     iconColor: colors.iconPersonalInfo,
                                     title: t('accountCenter.items.addAccount.title') || 'Add Another Account',
                                     subtitle: t('accountCenter.items.addAccount.subtitle') || 'Sign in with a different account',
-                                    onPress: () => navigate?.('SignIn'),
+                                    onPress: () => navigate?.('OxyAuth'),
                                 },
                             ], [navigate, t, colors])}
 
@@ -228,7 +228,7 @@ const AccountCenterScreen: React.FC<BaseScreenProps> = ({
                                 iconColor: colors.iconStorage,
                                 title: t('accountCenter.items.notifications.title') || 'Notifications',
                                 subtitle: t('accountCenter.items.notifications.subtitle') || 'Manage notification settings',
-                                onPress: () => navigate?.('EditProfile', { activeTab: 'notifications' }),
+                                onPress: () => navigate?.('AccountSettings', { activeTab: 'notifications' }),
                             }] : []),
                             {
                                 id: 'language',

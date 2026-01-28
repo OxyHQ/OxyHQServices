@@ -50,7 +50,7 @@ export default function HomeScreen() {
       return;
     }
 
-    showBottomSheet('EditProfile');
+    showBottomSheet('AccountSettings');
   }, [showBottomSheet]);
 
   const handleOpenScreen = useCallback((screen: string) => {

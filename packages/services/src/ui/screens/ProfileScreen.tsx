@@ -226,7 +226,7 @@ const ProfileScreen: React.FC<ProfileScreenProps> = ({ userId, username, theme, 
                         {isOwnProfile ? (
                             <TouchableOpacity
                                 style={styles.actionButton}
-                                onPress={() => navigate?.('EditProfile')}
+                                onPress={() => navigate?.('AccountSettings')}
                             >
                                 <Text style={styles.actionButtonText}>{t('editProfile.title') || 'Edit Profile'}</Text>
                             </TouchableOpacity>
