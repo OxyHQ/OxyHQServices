@@ -12,6 +12,7 @@ export interface BottomSheetState {
     currentStep?: number;
     history: Array<{ screen: RouteName; props: Record<string, unknown>; step?: number }>;
     isOpen: boolean;
+    fullScreen: boolean;
 }
 
 const initialState: BottomSheetState = {
@@ -20,6 +21,7 @@ const initialState: BottomSheetState = {
     currentStep: undefined,
     history: [],
     isOpen: false,
+    fullScreen: false,
 };
 
 export const bottomSheetStore = createStore<BottomSheetState>(() => initialState);
@@ -27,10 +29,11 @@ export const bottomSheetStore = createStore<BottomSheetState>(() => initialState
 export const getState = () => bottomSheetStore.getState();
 
 export const showBottomSheet = (
-    screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown> },
+    screenOrConfig: RouteName | { screen: RouteName; props?: Record<string, unknown>; fullScreen?: boolean },
 ): void => {
     const screen = typeof screenOrConfig === 'string' ? screenOrConfig : screenOrConfig.screen;
     const props = typeof screenOrConfig === 'string' ? {} : (screenOrConfig.props || {});
+    const fullScreen = typeof screenOrConfig === 'string' ? false : (screenOrConfig.fullScreen ?? false);
 
     if (!isValidRoute(screen)) {
         if (__DEV__) console.warn(`[BottomSheet] Invalid route: ${screen}`);
@@ -55,6 +58,7 @@ export const showBottomSheet = (
         screenProps: props,
         currentStep: typeof props.initialStep === 'number' ? props.initialStep : undefined,
         isOpen: true,
+        fullScreen,
     });
 };
 

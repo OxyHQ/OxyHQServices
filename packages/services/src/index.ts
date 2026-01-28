@@ -297,3 +297,6 @@ export * from './utils/hookUtils';
 // Bottom sheet navigation
 export { showBottomSheet, closeBottomSheet } from './ui/navigation/bottomSheetManager';
 export type { RouteName } from './ui/navigation/routes';
+
+// Sign-in modal
+export { showSignInModal, hideSignInModal } from './ui/components/SignInModal';

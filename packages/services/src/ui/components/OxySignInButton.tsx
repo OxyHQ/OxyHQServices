@@ -4,7 +4,7 @@ import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyl
 import { useAuth } from '../hooks/useAuth';
 import { fontFamilies } from '../styles/fonts';
 import OxyLogo from './OxyLogo';
-import { showBottomSheet } from '../navigation/bottomSheetManager';
+import { showSignInModal } from './SignInModal';
 
 export interface OxySignInButtonProps {
     /**
@@ -87,16 +87,15 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     // Don't show the button if already authenticated (unless explicitly overridden)
     if (isAuthenticated && !showWhenAuthenticated) return null;
 
-    // Handle button press - opens OxyAuth bottom sheet with QR code and sign-in options
+    // Handle button press - opens full-screen sign-in modal with QR code and auth options
     const handlePress = useCallback(() => {
         if (onPress) {
             onPress();
             return;
         }
 
-        // Show the OxyAuth bottom sheet on all platforms
-        // This provides QR code scanning and "Open Oxy Auth" button
-        showBottomSheet('OxyAuth');
+        // Show the full-screen sign-in modal on all platforms
+        showSignInModal();
     }, [onPress]);
 
     const isButtonDisabled = disabled || isLoading;

@@ -19,6 +19,7 @@ const isWeb = Platform.OS === 'web';
 // Conditionally import components
 let KeyboardProvider: any = ({ children }: any) => children;
 let BottomSheetRouter: any = null;
+let SignInModal: any = null;
 
 // KeyboardProvider only on native
 if (!isWeb) {
@@ -34,6 +35,13 @@ try {
     BottomSheetRouter = require('./BottomSheetRouter').default;
 } catch {
     // BottomSheetRouter not available
+}
+
+// SignInModal works on all platforms
+try {
+    SignInModal = require('./SignInModal').default;
+} catch {
+    // SignInModal not available
 }
 
 /**
@@ -206,6 +214,8 @@ const OxyProvider: FC<OxyProviderProps> = ({
                 {children}
                 {/* Only render bottom sheet router on native */}
                 {BottomSheetRouter && <BottomSheetRouter />}
+                {/* Sign-in modal for all platforms */}
+                {SignInModal && <SignInModal />}
                 <Toaster />
             </OxyContextProvider>
         </QueryClientProvider>
