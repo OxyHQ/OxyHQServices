@@ -25,10 +25,8 @@ export default function TabLayout() {
 
   const searchInputRef = useRef<TextInput>(null);
 
-  // Use custom hook for search navigation management
-  const { searchQuery, handleSearchChange } = useSearchNavigation({
-    searchInputRef,
-  });
+  // Use custom hook for search navigation management (has side effects)
+  useSearchNavigation({ searchInputRef });
   const { setIsScrolled, scrollToTop, scrollY } = useScrollContext();
   const { toggleColorScheme } = useThemeContext();
   const [showGoToTopButton, setShowGoToTopButton] = useState(false);
@@ -49,10 +47,6 @@ export default function TabLayout() {
 
   const handleDevices = useCallback(() => {
     showBottomSheet?.('SessionManagement');
-  }, [showBottomSheet]);
-
-  const handleMenu = useCallback(() => {
-    showBottomSheet?.('AccountOverview');
   }, [showBottomSheet]);
 
   const handleScanQR = useCallback(() => {
@@ -109,7 +103,7 @@ export default function TabLayout() {
           <View style={styles.desktopContentColumn}>
             <View style={styles.desktopContentWrapper}>
               <ScrollView
-                ref={scrollRef}
+                ref={scrollRef as React.RefObject<ScrollView>}
                 style={styles.desktopMain}
                 contentContainerStyle={styles.desktopMainContent}
                 showsVerticalScrollIndicator={false}
