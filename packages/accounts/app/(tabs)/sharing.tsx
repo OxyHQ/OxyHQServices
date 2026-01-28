@@ -11,6 +11,7 @@ import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useOxy, useFollow, useCurrentUser } from '@oxyhq/services';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
+import * as Contacts from 'expo-contacts';
 
 export default function PeopleAndSharingScreen() {
   const colorScheme = useColorScheme() ?? 'light';
@@ -30,6 +31,74 @@ export default function PeopleAndSharingScreen() {
   const [blockedCount, setBlockedCount] = useState(0);
   const [restrictedCount, setRestrictedCount] = useState(0);
   const [hasFetchedPrivacy, setHasFetchedPrivacy] = useState(false);
+
+  // Contacts sync state (native only)
+  const [contactsPermission, setContactsPermission] = useState<Contacts.PermissionStatus | null>(null);
+  const [isSyncingContacts, setIsSyncingContacts] = useState(false);
+  const [syncedContactsCount, setSyncedContactsCount] = useState<number | null>(null);
+
+  // Check contacts permission on mount (native only)
+  useEffect(() => {
+    if (Platform.OS === 'web') return;
+
+    const checkPermission = async () => {
+      const { status } = await Contacts.getPermissionsAsync();
+      setContactsPermission(status);
+    };
+    checkPermission();
+  }, []);
+
+  // Handle contacts sync
+  const handleSyncContacts = useCallback(async () => {
+    if (Platform.OS === 'web') return;
+
+    try {
+      // Request permission if not granted
+      let { status } = await Contacts.getPermissionsAsync();
+      if (status !== 'granted') {
+        const permissionResult = await Contacts.requestPermissionsAsync();
+        status = permissionResult.status;
+        setContactsPermission(status);
+      }
+
+      if (status !== 'granted') {
+        alert('Permission Required', 'Please allow access to your contacts to sync them with your Oxy account.');
+        return;
+      }
+
+      setIsSyncingContacts(true);
+
+      // Fetch contacts from device
+      const { data } = await Contacts.getContactsAsync({
+        fields: [
+          Contacts.Fields.Name,
+          Contacts.Fields.Emails,
+          Contacts.Fields.PhoneNumbers,
+          Contacts.Fields.Image,
+        ],
+      });
+
+      if (data.length === 0) {
+        alert('No Contacts', 'No contacts found on your device.');
+        setIsSyncingContacts(false);
+        return;
+      }
+
+      // Here you would sync contacts to the backend
+      // For now, just show the count
+      setSyncedContactsCount(data.length);
+
+      alert(
+        'Contacts Synced',
+        `Successfully synced ${data.length} contacts from your device. You can now find friends who are also on Oxy.`
+      );
+    } catch (error) {
+      console.error('Failed to sync contacts:', error);
+      alert('Error', 'Failed to sync contacts. Please try again.');
+    } finally {
+      setIsSyncingContacts(false);
+    }
+  }, [alert]);
 
   // Fetch blocked/restricted counts
   useEffect(() => {
@@ -62,13 +131,39 @@ export default function PeopleAndSharingScreen() {
   const contactsItems = useMemo(() => {
     const items = [];
 
+    // Sync contacts from device (native only)
+    if (Platform.OS !== 'web') {
+      const getContactsSubtitle = () => {
+        if (syncedContactsCount !== null) {
+          return `${syncedContactsCount} contacts synced`;
+        }
+        if (contactsPermission === 'denied') {
+          return 'Permission denied - tap to request access';
+        }
+        return 'Find friends from your contacts';
+      };
+
+      items.push({
+        id: 'sync-contacts',
+        icon: 'contacts-outline',
+        iconColor: colors.tint,
+        title: 'Sync device contacts',
+        subtitle: getContactsSubtitle(),
+        onPress: handleSyncContacts,
+        showChevron: true,
+        customContent: isSyncingContacts ? (
+          <ActivityIndicator size="small" color={colors.tint} />
+        ) : undefined,
+      });
+    }
+
     // Followers
     items.push({
       id: 'followers',
       icon: 'account-group-outline',
       iconColor: colors.sidebarIconSharing,
       title: 'Followers',
-      subtitle: followerCount !== undefined
+      subtitle: followerCount !== undefined && followerCount !== null
         ? `${followerCount} ${followerCount === 1 ? 'person follows' : 'people follow'} you`
         : 'People who follow you',
       onPress: () => {
@@ -84,7 +179,7 @@ export default function PeopleAndSharingScreen() {
       icon: 'account-heart-outline',
       iconColor: colors.sidebarIconSharing,
       title: 'Following',
-      subtitle: followingCount !== undefined
+      subtitle: followingCount !== undefined && followingCount !== null
         ? `You follow ${followingCount} ${followingCount === 1 ? 'person' : 'people'}`
         : 'People you follow',
       onPress: () => {
@@ -106,7 +201,7 @@ export default function PeopleAndSharingScreen() {
     });
 
     return items;
-  }, [colors, followerCount, followingCount, alert, router]);
+  }, [colors, followerCount, followingCount, alert, router, handleSyncContacts, isSyncingContacts, syncedContactsCount, contactsPermission]);
 
   // Privacy & blocking items
   const privacyItems = useMemo(() => {

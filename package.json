@@ -55,5 +55,8 @@
     "send": "0.19.1",
     "react": "19.2.3",
     "react-dom": "19.2.3"
+  },
+  "dependencies": {
+    "expo-contacts": "~15.0.11"
   }
 }
