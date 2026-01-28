@@ -20,8 +20,11 @@ export default function PeopleAndSharingScreen() {
   const router = useRouter();
   const { isAuthenticated, isLoading: authLoading, user, oxyServices } = useOxy();
 
+  // Get user ID as string
+  const userId = typeof user?._id === 'string' ? user._id : undefined;
+
   // Fetch follower/following counts
-  const { followerCount, followingCount, fetchUserCounts } = useFollow(user?._id || '');
+  const { followerCount, followingCount, fetchUserCounts } = useFollow(userId);
 
   // Blocked and restricted users state
   const [blockedCount, setBlockedCount] = useState(0);
@@ -48,11 +51,11 @@ export default function PeopleAndSharingScreen() {
       }
     };
 
-    if (isAuthenticated && user?._id) {
+    if (isAuthenticated && userId) {
       fetchPrivacyCounts();
-      fetchUserCounts(user._id);
+      fetchUserCounts?.();
     }
-  }, [isAuthenticated, user?._id, oxyServices, fetchUserCounts]);
+  }, [isAuthenticated, userId, oxyServices, fetchUserCounts]);
 
   const isLoading = authLoading || isLoadingPrivacy;
 

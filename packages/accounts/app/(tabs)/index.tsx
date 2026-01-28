@@ -14,7 +14,7 @@ import { darkenColor } from '@/utils/color-utils';
 import { AccountCard, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { useOxy, useUserDevices, useRecentSecurityActivity } from '@oxyhq/services';
-import { formatDate, getDisplayName, getShortDisplayName } from '@/utils/date-utils';
+import { formatDate, getDisplayName } from '@/utils/date-utils';
 import { useIdentity } from '@/hooks/useIdentity';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 import { useBiometricSettings } from '@/hooks/useBiometricSettings';
@@ -38,7 +38,8 @@ export default function HomeScreen() {
   const alert = useAlert();
 
   // Fetch devices for stats
-  const { data: devices = [] } = useUserDevices({ enabled: isAuthenticated });
+  const { data: devicesData } = useUserDevices({ enabled: isAuthenticated });
+  const devices = (devicesData ?? []) as { id: string }[];
 
   // Fetch security activity
   const { data: securityActivities = [] } = useRecentSecurityActivity(5);
@@ -75,7 +76,6 @@ export default function HomeScreen() {
 
   // Compute user data
   const displayName = useMemo(() => getDisplayName(user), [user]);
-  const shortDisplayName = useMemo(() => getShortDisplayName(user), [user]);
   const accountCreatedDate = useMemo(() => formatDate(user?.createdAt), [user?.createdAt]);
   const avatarUrl = useMemo(() => {
     if (user?.avatar && oxyServices) {
@@ -98,9 +98,6 @@ export default function HomeScreen() {
     });
   }, [showBottomSheet]);
 
-  const handleManageSubscription = useCallback(() => {
-    showBottomSheet?.('PremiumSubscription');
-  }, [showBottomSheet]);
 
   const [showUsernameModal, setShowUsernameModal] = useState(false);
 
@@ -128,7 +125,6 @@ export default function HomeScreen() {
       }
     };
     checkAndSync();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isIdentitySynced, syncIdentity]);
 
   const handleUsernameModalComplete = useCallback(async () => {
@@ -242,7 +238,7 @@ export default function HomeScreen() {
 
     // Sort by priority (lower number = higher priority)
     return recs.sort((a, b) => a.priority - b.priority);
-  }, [user?.username, handleSetUsername]);
+  }, [user?.username, colors.warning, handleSetUsername]);
 
   // Quick action cards for horizontal scroll
   const quickActions = useMemo<QuickAction[]>(() => [
@@ -482,7 +478,7 @@ export default function HomeScreen() {
     });
 
     return items;
-  }, [biometricEnabled, canEnableBiometric, hasBiometricHardware, biometricLoading, colors.sidebarIconSecurity, colors.sidebarIconPayments, user?.email, router]);
+  }, [biometricEnabled, canEnableBiometric, hasBiometricHardware, biometricLoading, colors.sidebarIconSecurity, colors.sidebarIconPayments, colors.success, user?.email, router]);
 
 
   const content = useMemo(() => (
