@@ -1,77 +1,144 @@
-import React, { useMemo } from 'react';
-import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity } from 'react-native';
+import React, { useMemo, useState, useEffect, useCallback } from 'react';
+import { View, StyleSheet, Platform, useWindowDimensions, Text, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { ThemedText } from '@/components/themed-text';
 import { GroupedSection } from '@/components/grouped-section';
+import { Section } from '@/components/section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { AccountCard, ScreenHeader } from '@/components/ui';
+import { AccountCard, ScreenHeader, useAlert } from '@/components/ui';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
+import { useOxy } from '@oxyhq/services';
+import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
+import { useHapticPress } from '@/hooks/use-haptic-press';
 
-export default function FamilyScreen() {
+export default function ThirdPartyConnectionsScreen() {
   const colorScheme = useColorScheme() ?? 'light';
   const { width } = useWindowDimensions();
-
   const colors = useMemo(() => Colors[colorScheme], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 768;
+  const { isAuthenticated, isLoading: authLoading, oxyServices } = useOxy();
+  const alert = useAlert();
+  const handlePressIn = useHapticPress();
 
-  const familyMembers = useMemo(() => [
+  // Third-party apps that have access
+  const connectedApps = useMemo(() => [
     {
-      id: 'member1',
-      icon: 'account-outline',
+      id: 'app1',
+      icon: 'application-outline',
       iconColor: colors.sidebarIconFamily,
-      title: 'Sarah Isern',
-      subtitle: 'Parent • sarah@example.com',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
-        </TouchableOpacity>
-      ),
-    },
-    {
-      id: 'member2',
-      icon: 'account-outline',
-      iconColor: colors.sidebarIconFamily,
-      title: 'Emma Isern',
-      subtitle: 'Child • emma@example.com',
-      customContent: (
-        <TouchableOpacity style={[styles.button, { backgroundColor: colors.card }]}>
-          <Text style={[styles.buttonText, { color: colors.text }]}>Manage</Text>
-        </TouchableOpacity>
-      ),
+      title: 'No connected apps',
+      subtitle: 'Apps you connect will appear here',
+      showChevron: false,
     },
   ], [colors]);
 
+  // Sign-in with Oxy sessions
+  const signInSessions = useMemo(() => [
+    {
+      id: 'signin1',
+      icon: 'login-variant',
+      iconColor: colors.tint,
+      title: 'No sign-in sessions',
+      subtitle: 'Sites you sign in to with Oxy will appear here',
+      showChevron: false,
+    },
+  ], [colors]);
+
+  // Settings items
+  const settingsItems = useMemo(() => [
+    {
+      id: 'manage-access',
+      icon: 'shield-check-outline',
+      iconColor: colors.sidebarIconSecurity,
+      title: 'Manage third-party access',
+      subtitle: 'Review and revoke app permissions',
+      onPress: () => {
+        alert('Manage Access', 'Third-party access management coming soon');
+      },
+      showChevron: true,
+    },
+    {
+      id: 'data-shared',
+      icon: 'database-outline',
+      iconColor: colors.sidebarIconData,
+      title: 'Data shared with apps',
+      subtitle: 'See what data apps can access',
+      onPress: () => {
+        alert('Data Shared', 'Data sharing details coming soon');
+      },
+      showChevron: true,
+    },
+  ], [colors, alert]);
+
+  // Show loading state
+  if (authLoading) {
+    return (
+      <ScreenContentWrapper>
+        <View style={[styles.container, styles.loadingContainer, { backgroundColor: colors.background }]}>
+          <ActivityIndicator size="large" color={colors.tint} />
+          <Text style={[styles.loadingText, { color: colors.text }]}>Loading...</Text>
+        </View>
+      </ScreenContentWrapper>
+    );
+  }
+
+  // Show unauthenticated screen
+  if (!isAuthenticated) {
+    return (
+      <UnauthenticatedScreen
+        title="Third-party connections"
+        subtitle="Manage apps and services connected to your account."
+        message="Please sign in to manage your third-party connections."
+        isAuthenticated={isAuthenticated}
+      />
+    );
+  }
+
+  const renderContent = () => (
+    <>
+      <Section title="Connected apps">
+        <Text style={[styles.sectionSubtitle, { color: colors.text }]}>
+          Apps that have access to your Oxy account
+        </Text>
+        <AccountCard>
+          <GroupedSection items={connectedApps} />
+        </AccountCard>
+      </Section>
+
+      <Section title="Sign in with Oxy">
+        <Text style={[styles.sectionSubtitle, { color: colors.text }]}>
+          Sites and apps you've signed in to using Oxy
+        </Text>
+        <AccountCard>
+          <GroupedSection items={signInSessions} />
+        </AccountCard>
+      </Section>
+
+      <Section title="Settings">
+        <AccountCard>
+          <GroupedSection items={settingsItems} />
+        </AccountCard>
+      </Section>
+    </>
+  );
 
   if (isDesktop) {
     return (
       <>
-        <ScreenHeader title="Family Group" subtitle="Manage your family members and settings." />
-        <AccountCard>
-          <GroupedSection items={familyMembers} />
-        </AccountCard>
-        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
-          <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
-          <Text style={styles.addButtonText}>Add family member</Text>
-        </TouchableOpacity>
+        <ScreenHeader title="Third-party connections" subtitle="Manage apps and services connected to your account." />
+        {renderContent()}
       </>
     );
   }
 
   return (
     <ScreenContentWrapper>
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.mobileContent}>
-        <ScreenHeader title="Family Group" subtitle="Manage your family members and settings." />
-        <AccountCard>
-          <GroupedSection items={familyMembers} />
-        </AccountCard>
-        <TouchableOpacity style={[styles.addButton, { backgroundColor: colors.tint }]}>
-          <MaterialCommunityIcons name="plus" size={20} color="#FFFFFF" />
-          <Text style={styles.addButtonText}>Add family member</Text>
-        </TouchableOpacity>
+          <ScreenHeader title="Third-party connections" subtitle="Manage apps and services connected to your account." />
+          {renderContent()}
         </View>
-    </View>
+      </View>
     </ScreenContentWrapper>
   );
 }
@@ -80,116 +147,22 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  scrollView: {
-    flex: 1,
-  },
-  desktopBody: {
-    flex: 1,
-    flexDirection: 'row',
-  },
-  desktopSidebar: {
-    width: 260,
-    padding: 20,
-  },
-  desktopHeader: {
-    marginBottom: 24,
-  },
-  welcomeText: {
-    fontSize: 22,
-    fontWeight: '600',
-    marginBottom: 4,
-  },
-  welcomeSubtext: {
-    fontSize: 13,
-    opacity: 0.6,
-  },
-  menuContainer: {
-    gap: 4,
-  },
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-    borderRadius: 26,
-    gap: 12,
-  },
-  menuItemActive: {},
-  menuIconContainer: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
+  loadingContainer: {
     justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
   },
-  menuItemText: {
-    fontSize: 14,
-    fontWeight: '400',
-  },
-  desktopMain: {
-    flex: 1,
-    maxWidth: 720,
-  },
-  desktopMainContent: {
-    padding: 32,
-  },
-  headerSection: {
-    marginBottom: 24,
-  },
-  title: {
-    fontSize: 32,
-    fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
-    marginBottom: 8,
-  },
-  subtitle: {
+  loadingText: {
     fontSize: 16,
-    opacity: 0.6,
+    opacity: 0.7,
   },
-  accountCard: {
-    borderRadius: 16,
-    overflow: 'hidden',
-    marginBottom: 16,
-  },
-  button: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
-  },
-  buttonText: {
+  sectionSubtitle: {
     fontSize: 14,
-    fontWeight: '500',
-  },
-  addButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    borderRadius: 12,
-    gap: 8,
-  },
-  addButtonText: {
-    color: '#FFFFFF',
-    fontSize: 15,
-    fontWeight: '600',
+    opacity: 0.7,
+    marginBottom: 8,
   },
   mobileContent: {
     padding: 16,
     paddingBottom: 120,
   },
-  mobileHeaderSection: {
-    marginBottom: 20,
-  },
-  mobileTitle: {
-    fontSize: 28,
-    fontWeight: Platform.OS === 'web' ? 'bold' : undefined,
-    fontFamily: Platform.OS === 'web' ? 'Inter' : 'Inter-Bold',
-    marginBottom: 6,
-  },
-  mobileSubtitle: {
-    fontSize: 15,
-    opacity: 0.6,
-  },
 });
-

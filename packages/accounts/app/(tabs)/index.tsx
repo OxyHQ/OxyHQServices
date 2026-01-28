@@ -204,6 +204,14 @@ export default function HomeScreen() {
     router.push('/(tabs)/sharing' as any);
   }, [router]);
 
+  const handleSearch = useCallback((query?: string) => {
+    if (query) {
+      router.push({ pathname: '/(tabs)/search', params: { q: query } } as any);
+    } else {
+      router.push('/(tabs)/search' as any);
+    }
+  }, [router]);
+
   const handlePayments = useCallback(() => {
     router.push('/(tabs)/payments' as any);
   }, [router]);
@@ -494,35 +502,9 @@ export default function HomeScreen() {
 
   const content = useMemo(() => (
     <>
-      {/* Sync Status Banner */}
-      {!isSynced && (
-        <View style={[styles.syncBanner, { backgroundColor: colors.bannerWarningBackground, borderColor: colors.bannerWarningBorder }]}>
-          <View style={styles.syncBannerContent}>
-            <MaterialCommunityIcons name="cloud-off-outline" size={24} color={colors.bannerWarningIcon} />
-            <View style={styles.syncBannerText}>
-              <Text style={[styles.syncBannerTitle, { color: colors.bannerWarningText }]}>Pending Sync</Text>
-              <Text style={[styles.syncBannerSubtitle, { color: colors.bannerWarningSubtext }]}>
-                Your identity is stored locally. Connect to sync with Oxy servers.
-              </Text>
-            </View>
-          </View>
-          <TouchableOpacity
-            style={[styles.syncButton, { backgroundColor: colors.bannerWarningButton }]}
-            onPress={handleSyncNow}
-            disabled={isSyncing}
-          >
-            {isSyncing ? (
-              <ActivityIndicator size="small" color={colors.avatarText} />
-            ) : (
-              <Text style={[styles.syncButtonText, { color: colors.avatarText }]}>Sync Now</Text>
-            )}
-          </TouchableOpacity>
-        </View>
-      )}
-
       {/* Recommendations Section */}
       {recommendations.length > 0 && (
-        <Section title="Recommendations" isFirst={isSynced}>
+        <Section title="Recommendations" isFirst>
           <AccountCard>
             <GroupedSection items={recommendations} />
           </AccountCard>
@@ -530,7 +512,7 @@ export default function HomeScreen() {
       )}
 
       {/* Quick Actions - Horizontal Scroll */}
-      <Section title="Quick Actions" isFirst={recommendations.length === 0 && isSynced}>
+      <Section title="Quick Actions" isFirst={recommendations.length === 0}>
         <QuickActionsSection actions={quickActions} onPressIn={handlePressIn} />
       </Section>
 
@@ -580,7 +562,7 @@ export default function HomeScreen() {
         )}
       </Section>
     </>
-  ), [quickActions, accountCards, identityCards, recentActivityItems, quickStatsCards, securityOverviewItems, isSynced, isSyncing, handleSyncNow, colors, handlePressIn, recommendations]);
+  ), [quickActions, accountCards, identityCards, recentActivityItems, quickStatsCards, securityOverviewItems, colors, handlePressIn, recommendations]);
 
 
   useEffect(() => {
@@ -659,6 +641,36 @@ export default function HomeScreen() {
                 <View style={styles.nameWrapper}>
                   <ThemedText style={styles.welcomeText}>{displayName}</ThemedText>
                   <ThemedText style={styles.welcomeSubtext}>Manage your Oxy account.</ThemedText>
+                </View>
+                {/* Search Bar */}
+                <TouchableOpacity
+                  style={[styles.searchBar, { backgroundColor: colors.card, borderColor: colors.border }]}
+                  onPress={() => handleSearch()}
+                  onPressIn={handlePressIn}
+                  activeOpacity={0.7}
+                >
+                  <Ionicons name="search" size={20} color={colors.icon} />
+                  <Text style={[styles.searchPlaceholder, { color: colors.icon }]}>Search Oxy Account</Text>
+                </TouchableOpacity>
+                {/* Quick Search Chips */}
+                <View style={styles.searchChipsContainer}>
+                  {[
+                    { label: 'Password', query: 'password' },
+                    { label: 'Devices', query: 'devices' },
+                    { label: 'Security', query: 'security' },
+                    { label: 'Activity', query: 'activity' },
+                    { label: 'Email', query: 'email' },
+                  ].map((chip) => (
+                    <TouchableOpacity
+                      key={chip.query}
+                      style={[styles.searchChip, { borderColor: colors.border }]}
+                      onPress={() => handleSearch(chip.query)}
+                      onPressIn={handlePressIn}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[styles.searchChipText, { color: colors.text }]}>{chip.label}</Text>
+                    </TouchableOpacity>
+                  ))}
                 </View>
               </View>
             </View>
@@ -924,5 +936,39 @@ const styles = StyleSheet.create({
   infoBannerSubtitle: {
     fontSize: 14,
     lineHeight: 20,
+  } as const,
+  searchBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderRadius: 28,
+    borderWidth: 1,
+    width: '100%',
+    maxWidth: 600,
+    gap: 12,
+  } as const,
+  searchPlaceholder: {
+    fontSize: 16,
+    flex: 1,
+  } as const,
+  searchChipsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    marginTop: 16,
+    gap: 8,
+    maxWidth: 600,
+  } as const,
+  searchChip: {
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 20,
+    borderWidth: 1,
+  } as const,
+  searchChipText: {
+    fontSize: 14,
+    fontWeight: '500',
   } as const,
 });

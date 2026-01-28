@@ -58,10 +58,18 @@ export const queryKeys = {
   // Security activity queries
   security: {
     all: ['security'] as const,
-    activity: (limit?: number, offset?: number, eventType?: string) => 
+    activity: (limit?: number, offset?: number, eventType?: string) =>
       [...queryKeys.security.all, 'activity', limit, offset, eventType] as const,
-    recent: (limit: number) => 
+    recent: (limit: number) =>
       [...queryKeys.security.all, 'recent', limit] as const,
+  },
+
+  // Sharing queries
+  sharing: {
+    all: ['sharing'] as const,
+    sharedWith: () => [...queryKeys.sharing.all, 'shared-with'] as const,
+    sharedWithMe: () => [...queryKeys.sharing.all, 'shared-with-me'] as const,
+    pendingInvitations: () => [...queryKeys.sharing.all, 'pending-invitations'] as const,
   },
 } as const;
 
@@ -84,5 +92,12 @@ export const invalidateUserQueries = (queryClient: any) => {
  */
 export const invalidateSessionQueries = (queryClient: any) => {
   queryClient.invalidateQueries({ queryKey: queryKeys.sessions.all });
+};
+
+/**
+ * Helper to invalidate all sharing-related queries
+ */
+export const invalidateSharingQueries = (queryClient: any) => {
+  queryClient.invalidateQueries({ queryKey: queryKeys.sharing.all });
 };
 

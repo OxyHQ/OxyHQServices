@@ -25,7 +25,7 @@ const baseMenuItems: MenuItem[] = [
     { path: '/(tabs)/devices', icon: 'desktop-classic', label: 'Your devices', iconColor: 'sidebarIconDevices' },
     { path: '/(tabs)/data', icon: 'toggle-switch-outline', label: 'Data & privacy', iconColor: 'sidebarIconData' },
     { path: '/(tabs)/sharing', icon: 'account-group-outline', label: 'People & sharing', iconColor: 'sidebarIconSharing' },
-    { path: '/(tabs)/family', icon: 'home-group', label: 'Family Group', iconColor: 'sidebarIconFamily' },
+    { path: '/(tabs)/family', icon: 'share-variant-outline', label: 'Third-party connections', iconColor: 'sidebarIconFamily' },
     { path: '/(tabs)/payments', icon: 'wallet-outline', label: 'Payments & subscriptions', iconColor: 'sidebarIconPayments' },
     { path: '/(tabs)/storage', icon: 'cloud-outline', label: 'Oxy storage', iconColor: 'sidebarIconStorage' },
 ];

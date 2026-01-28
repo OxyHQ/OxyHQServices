@@ -1,10 +1,10 @@
 import type React from 'react';
-import { useCallback } from 'react';
+import { useCallback, useState, useEffect } from 'react';
 import { TouchableOpacity, Text, View, StyleSheet, type ViewStyle, type TextStyle, type StyleProp, Platform } from 'react-native';
 import { useAuth } from '../hooks/useAuth';
 import { fontFamilies } from '../styles/fonts';
 import OxyLogo from './OxyLogo';
-import { showSignInModal } from './SignInModal';
+import { showSignInModal, subscribeToSignInModal } from './SignInModal';
 
 export interface OxySignInButtonProps {
     /**
@@ -83,6 +83,12 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
     showWhenAuthenticated = false,
 }) => {
     const { isAuthenticated, isLoading } = useAuth();
+    const [isModalOpen, setIsModalOpen] = useState(false);
+
+    // Subscribe to modal close events
+    useEffect(() => {
+        return subscribeToSignInModal(setIsModalOpen);
+    }, []);
 
     // Don't show the button if already authenticated (unless explicitly overridden)
     if (isAuthenticated && !showWhenAuthenticated) return null;
@@ -94,11 +100,15 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
             return;
         }
 
+        // Set state immediately before showing modal
+        console.log('[OxySignInButton] Setting isModalOpen to true');
+        setIsModalOpen(true);
         // Show the full-screen sign-in modal on all platforms
         showSignInModal();
     }, [onPress]);
 
-    const isButtonDisabled = disabled || isLoading;
+    console.log('[OxySignInButton] render - isModalOpen:', isModalOpen);
+    const isButtonDisabled = disabled || isLoading || isModalOpen;
 
     // Determine the button style based on the variant
     const getButtonStyle = () => {
@@ -139,7 +149,7 @@ export const OxySignInButton: React.FC<OxySignInButtonProps> = ({
                     style={isButtonDisabled ? { opacity: 0.6 } : undefined}
                 />
                 <Text style={[styles.text, getTextStyle(), isButtonDisabled && styles.textDisabled]}>
-                    {text}
+                    {isLoading || isModalOpen ? 'Signing in...' : text}
                 </Text>
             </View>
         </TouchableOpacity>

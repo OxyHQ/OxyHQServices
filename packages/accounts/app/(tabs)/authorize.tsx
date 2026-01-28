@@ -28,7 +28,7 @@ export default function AuthorizeScreen() {
   const params = useLocalSearchParams<{ token: string }>();
   const colorScheme = useColorScheme() ?? 'light';
   const alert = useAlert();
-  const { oxyServices, user, isAuthenticated, activeSessionId } = useOxy();
+  const { oxyServices, user, isAuthenticated, activeSessionId, isTokenReady } = useOxy();
 
   const [isLoading, setIsLoading] = useState(true);
   const [isAuthorizing, setIsAuthorizing] = useState(false);
@@ -75,13 +75,23 @@ export default function AuthorizeScreen() {
     }
   }, [params.token, oxyServices]);
 
-  // Load session info
+  // Load session info after token is ready
   useEffect(() => {
-    loadSessionInfo();
-  }, [params.token, loadSessionInfo]);
+    if (isTokenReady) {
+      loadSessionInfo();
+    }
+  }, [params.token, loadSessionInfo, isTokenReady]);
 
   const handleAuthorize = useCallback(async () => {
-    if (!params.token || !activeSessionId) return;
+    if (!params.token) {
+      setError('No authorization token provided');
+      return;
+    }
+
+    if (!activeSessionId) {
+      setError('No active session. Please sign in first.');
+      return;
+    }
 
     setIsAuthorizing(true);
     setError(null);
@@ -173,13 +183,13 @@ export default function AuthorizeScreen() {
     );
   }
 
-  if (isLoading) {
+  if (isLoading || !isTokenReady) {
     return (
       <View style={[styles.container, styles.centered, { backgroundColor }]}>
         <View style={styles.content}>
           <ActivityIndicator size="large" color={textColor} />
           <Text style={[styles.loadingText, { color: textColor, opacity: 0.8 }]}>
-            Loading authorization request...
+            {!isTokenReady ? 'Preparing session...' : 'Loading authorization request...'}
           </Text>
         </View>
       </View>
@@ -283,11 +293,11 @@ export default function AuthorizeScreen() {
         <Button
           variant="primary"
           onPress={handleAuthorize}
-          disabled={isAuthorizing}
+          disabled={isAuthorizing || !activeSessionId}
           loading={isAuthorizing}
           style={styles.button}
         >
-          Continue
+          {!activeSessionId ? 'Session Not Ready...' : 'Continue'}
         </Button>
       </View>
     </View>

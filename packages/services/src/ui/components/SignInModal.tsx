@@ -56,21 +56,30 @@ interface AuthUpdatePayload {
     username?: string;
 }
 
-// Store for modal visibility
+// Store for modal visibility with subscription support
 let modalVisible = false;
 let setModalVisibleCallback: ((visible: boolean) => void) | null = null;
+const visibilityListeners = new Set<(visible: boolean) => void>();
 
 export const showSignInModal = () => {
     modalVisible = true;
     setModalVisibleCallback?.(true);
+    visibilityListeners.forEach(listener => listener(true));
 };
 
 export const hideSignInModal = () => {
     modalVisible = false;
     setModalVisibleCallback?.(false);
+    visibilityListeners.forEach(listener => listener(false));
 };
 
 export const isSignInModalVisible = () => modalVisible;
+
+/** Subscribe to modal visibility changes */
+export const subscribeToSignInModal = (listener: (visible: boolean) => void): (() => void) => {
+    visibilityListeners.add(listener);
+    return () => visibilityListeners.delete(listener);
+};
 
 const SignInModal: React.FC = () => {
     const [visible, setVisible] = useState(false);

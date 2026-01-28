@@ -13,16 +13,16 @@ export interface INotification extends Document {
 const NotificationSchema = new Schema({
   recipientId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
   actorId: { type: Schema.Types.ObjectId, ref: 'User', required: true },
-  type: { 
-    type: String, 
+  type: {
+    type: String,
     required: true,
-    enum: ['like', 'reply', 'mention', 'follow', 'repost', 'quote', 'welcome']
+    enum: ['like', 'reply', 'mention', 'follow', 'repost', 'quote', 'welcome', 'share_invited', 'share_accepted', 'share_revoked']
   },
   entityId: { type: Schema.Types.ObjectId, required: true },
-  entityType: { 
-    type: String, 
+  entityType: {
+    type: String,
     required: true,
-    enum: ['post', 'reply', 'profile']
+    enum: ['post', 'reply', 'profile', 'share']
   },
   read: { type: Boolean, default: false },
 }, { 

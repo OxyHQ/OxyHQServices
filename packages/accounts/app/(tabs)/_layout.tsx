@@ -221,8 +221,8 @@ export default function TabLayout() {
         <Drawer.Screen
           name="family"
           options={{
-            drawerLabel: 'Family Group',
-            title: 'Family Group',
+            drawerLabel: 'Third-party connections',
+            title: 'Third-party connections',
           }}
         />
         <Drawer.Screen
