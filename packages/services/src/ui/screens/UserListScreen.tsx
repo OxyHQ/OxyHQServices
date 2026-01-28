@@ -49,7 +49,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
   const styles = createStyles(colors);
   const { t } = useI18n();
 
-  const currentUserId = currentUser?.id || currentUser?._id;
+  const currentUserId = currentUser?.id || (currentUser?._id as string | undefined);
 
   const fetchUsers = useCallback(
     async (offset = 0, isRefresh = false) => {
@@ -114,7 +114,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
 
   const handleUserPress = useCallback(
     (user: User) => {
-      const targetUserId = user._id || user.id;
+      const targetUserId = user.id || (user._id as string | undefined);
       if (targetUserId && navigate) {
         navigate('Profile', { userId: targetUserId });
       }
@@ -124,8 +124,9 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
 
   const renderUser = useCallback(
     ({ item }: { item: User }) => {
-      const itemUserId = item._id || item.id;
+      const itemUserId = item.id || (item._id as string) || '';
       const isCurrentUser = itemUserId === currentUserId;
+      const description = typeof item.description === 'string' ? item.description : '';
 
       return (
         <TouchableOpacity
@@ -151,17 +152,17 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
                 @{item.username}
               </Text>
             )}
-            {item.description && (
+            {description ? (
               <Text style={styles.userBio} numberOfLines={2}>
-                {item.description}
+                {description}
               </Text>
-            )}
+            ) : null}
           </View>
-          {!isCurrentUser && itemUserId && (
+          {!isCurrentUser && itemUserId ? (
             <View style={styles.followButtonWrapper}>
               <FollowButton userId={itemUserId} size="small" />
             </View>
-          )}
+          ) : null}
         </TouchableOpacity>
       );
     },
@@ -263,7 +264,7 @@ const UserListScreen: React.FC<UserListScreenProps> = ({
       <FlatList
         data={users}
         renderItem={renderUser}
-        keyExtractor={(item) => item._id || item.id || Math.random().toString()}
+        keyExtractor={(item, index) => item.id || (item._id as string) || `user-${index}`}
         contentContainerStyle={styles.listContent}
         ItemSeparatorComponent={() => <View style={styles.separator} />}
         ListEmptyComponent={renderEmpty}
