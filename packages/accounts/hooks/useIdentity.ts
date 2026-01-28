@@ -118,58 +118,34 @@ export const useIdentity = (): UseIdentityResult => {
         setSynced(false);
         await persistIdentitySyncState(false);
 
+        // Register and sign in
         try {
-          if (__DEV__) {
-            console.log('[useIdentity] Creating registration signature...');
-          }
           const { signature, timestamp } = await SignatureService.createRegistrationSignature();
 
-          if (__DEV__) {
-            console.log('[useIdentity] Registering with server...', { publicKey: publicKey.substring(0, 20) + '...' });
-          }
           try {
             await oxyServices.register(publicKey, signature, timestamp);
-            if (__DEV__) {
-              console.log('[useIdentity] Registration successful');
-            }
           } catch (registerError: unknown) {
-            if (__DEV__) {
-              console.log('[useIdentity] Registration error:', registerError);
-            }
+            // Already registered is not an error - continue to sign in
             if (!isAlreadyRegisteredError(registerError)) {
               throw registerError;
-            }
-            if (__DEV__) {
-              console.log('[useIdentity] User already registered, continuing...');
             }
           }
 
           setSynced(true);
           await persistIdentitySyncState(true);
 
-          if (__DEV__) {
-            console.log('[useIdentity] Signing in...');
-          }
           const user = await signIn(publicKey);
-          if (__DEV__) {
-            console.log('[useIdentity] Sign in successful:', user?._id);
-          }
 
           return {
             recoveryPhrase: words,
             synced: true,
             user,
           };
-        } catch (syncError) {
-          if (__DEV__) {
-            console.warn('[useIdentity] Sync failed, continuing offline:', syncError);
-          }
+        } catch {
+          // Sync failed - identity created locally, will sync when online
           return { recoveryPhrase: words, synced: false };
         }
       } catch (error) {
-        if (__DEV__) {
-          console.warn('Error during identity creation (identity may still exist):', error);
-        }
         setSynced(false);
         await persistIdentitySyncState(false).catch(() => {});
 
@@ -212,10 +188,8 @@ export const useIdentity = (): UseIdentityResult => {
           setSynced(true);
           await persistIdentitySyncState(true);
           return { synced: true };
-        } catch (syncError) {
-          if (__DEV__) {
-            console.warn('Identity imported locally, will sync when online', syncError);
-          }
+        } catch {
+          // Sync failed - identity imported locally, will sync when online
           return { synced: false };
         }
       } catch (error) {
@@ -234,6 +208,7 @@ export const useIdentity = (): UseIdentityResult => {
   const hasIdentity = useCallback(() => KeyManager.hasIdentity(), []);
   const getPublicKey = useCallback(() => KeyManager.getPublicKey(), []);
 
+  // Identity integrity check and backup restoration (native only)
   useEffect(() => {
     if (Platform.OS === 'web') return;
 
@@ -243,26 +218,15 @@ export const useIdentity = (): UseIdentityResult => {
         if (hasIdentityValue) {
           const isValid = await KeyManager.verifyIdentityIntegrity();
           if (!isValid) {
-            const restored = await KeyManager.restoreIdentityFromBackup();
-            if (__DEV__) {
-              console.warn('[useIdentity]', restored
-                ? 'Identity restored from backup successfully'
-                : 'Identity integrity check failed - user may need to restore from recovery phrase'
-              );
-            }
+            await KeyManager.restoreIdentityFromBackup();
           } else {
             await KeyManager.backupIdentity();
           }
         } else {
-          const restored = await KeyManager.restoreIdentityFromBackup();
-          if (restored && __DEV__) {
-            console.warn('[useIdentity] Identity restored from backup on startup');
-          }
+          await KeyManager.restoreIdentityFromBackup();
         }
-      } catch (error) {
-        if (__DEV__) {
-          console.warn('[useIdentity] Error during identity integrity check', error);
-        }
+      } catch {
+        // Silent fail - identity integrity is best-effort
       }
     };
 
