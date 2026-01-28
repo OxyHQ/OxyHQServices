@@ -740,6 +740,8 @@ const styles = StyleSheet.create({
   avatarSectionWrapper: {
     alignItems: 'center',
     justifyContent: 'center',
+    width: '100%',
+    maxWidth: 600,
   } as const,
   nameWrapper: {
     marginTop: 12,
