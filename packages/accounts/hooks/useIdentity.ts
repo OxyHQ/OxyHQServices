@@ -119,26 +119,51 @@ export const useIdentity = (): UseIdentityResult => {
         await persistIdentitySyncState(false);
 
         try {
+          if (__DEV__) {
+            console.log('[useIdentity] Creating registration signature...');
+          }
           const { signature, timestamp } = await SignatureService.createRegistrationSignature();
+
+          if (__DEV__) {
+            console.log('[useIdentity] Registering with server...', { publicKey: publicKey.substring(0, 20) + '...' });
+          }
           try {
             await oxyServices.register(publicKey, signature, timestamp);
+            if (__DEV__) {
+              console.log('[useIdentity] Registration successful');
+            }
           } catch (registerError: unknown) {
+            if (__DEV__) {
+              console.log('[useIdentity] Registration error:', registerError);
+            }
             if (!isAlreadyRegisteredError(registerError)) {
               throw registerError;
             }
+            if (__DEV__) {
+              console.log('[useIdentity] User already registered, continuing...');
+            }
           }
-          
+
           setSynced(true);
           await persistIdentitySyncState(true);
-          
+
+          if (__DEV__) {
+            console.log('[useIdentity] Signing in...');
+          }
           const user = await signIn(publicKey);
+          if (__DEV__) {
+            console.log('[useIdentity] Sign in successful:', user?._id);
+          }
 
           return {
             recoveryPhrase: words,
             synced: true,
             user,
           };
-        } catch {
+        } catch (syncError) {
+          if (__DEV__) {
+            console.warn('[useIdentity] Sync failed, continuing offline:', syncError);
+          }
           return { recoveryPhrase: words, synced: false };
         }
       } catch (error) {
