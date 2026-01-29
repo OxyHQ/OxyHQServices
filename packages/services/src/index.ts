@@ -1,10 +1,16 @@
 /**
  * OxyHQServices Main Export File - Universal (Frontend + Backend)
- * 
+ *
  * This exports everything but uses environment detection to avoid crashes.
  * - Frontend: Full UI + Core functionality
  * - Backend: Core functionality only (UI components are no-ops)
  */
+
+// IMPORTANT: Initialize platform detection first (before any other imports that may use it)
+// This allows core modules to detect the platform without importing react-native directly
+import { setPlatformOS, type PlatformOS } from './utils/platform';
+import { Platform } from 'react-native';
+setPlatformOS(Platform.OS as PlatformOS);
 
 // IMPORTANT: Import crypto module first to ensure polyfills are loaded
 // before any other code that might use Buffer or other polyfilled APIs

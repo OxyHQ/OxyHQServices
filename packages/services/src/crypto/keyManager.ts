@@ -7,7 +7,7 @@
 
 import { ec as EC } from 'elliptic';
 import type { ECKeyPair } from 'elliptic';
-import { Platform } from 'react-native';
+import { isWeb, isIOS, isAndroid } from '../utils/platform';
 import { logger } from '../utils/loggerUtils';
 
 // Lazy imports for React Native specific modules
@@ -80,12 +80,7 @@ function isNodeJS(): boolean {
  * Identity storage is only available on native platforms (iOS/Android)
  */
 function isWebPlatform(): boolean {
-  try {
-    return Platform.OS === 'web';
-  } catch {
-    // Fallback if Platform is not available
-    return typeof window !== 'undefined' && typeof navigator !== 'undefined' && navigator.product !== 'ReactNative';
-  }
+  return isWeb();
 }
 
 async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
@@ -212,7 +207,7 @@ export class KeyManager {
     const store = await initSecureStore();
     const { privateKey, publicKey } = await KeyManager.generateKeyPair();
 
-    if (Platform.OS === 'ios') {
+    if (isIOS()) {
       // iOS: Store in shared keychain group
       // Note: keychainAccessGroup requires Keychain Sharing capability in Xcode
       try {
@@ -229,7 +224,7 @@ export class KeyManager {
           `Failed to create shared identity on iOS. Ensure your app has the Keychain Sharing capability enabled with access group "${IOS_KEYCHAIN_GROUP}". Error: ${error}`
         );
       }
-    } else if (Platform.OS === 'android') {
+    } else if (isAndroid()) {
       // Android: Store in secure store (accessible via sharedUserId)
       // Note: All Oxy apps must have the same sharedUserId in AndroidManifest.xml
       await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, privateKey, {
@@ -269,11 +264,11 @@ export class KeyManager {
       const store = await initSecureStore();
       let publicKey: string | null = null;
 
-      if (Platform.OS === 'ios') {
+      if (isIOS()) {
         publicKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY, {
           keychainAccessGroup: IOS_KEYCHAIN_GROUP,
         } as any);
-      } else if (Platform.OS === 'android') {
+      } else if (isAndroid()) {
         publicKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY);
       }
 
@@ -307,11 +302,11 @@ export class KeyManager {
       const store = await initSecureStore();
       let privateKey: string | null = null;
 
-      if (Platform.OS === 'ios') {
+      if (isIOS()) {
         privateKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, {
           keychainAccessGroup: IOS_KEYCHAIN_GROUP,
         } as any);
-      } else if (Platform.OS === 'android') {
+      } else if (isAndroid()) {
         privateKey = await store.getItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY);
       }
 
@@ -376,7 +371,7 @@ export class KeyManager {
     const keyPair = ec.keyFromPrivate(privateKey);
     const publicKey = keyPair.getPublic('hex');
 
-    if (Platform.OS === 'ios') {
+    if (isIOS()) {
       await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, privateKey, {
         keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
         keychainAccessGroup: IOS_KEYCHAIN_GROUP,
@@ -385,7 +380,7 @@ export class KeyManager {
       await store.setItemAsync(STORAGE_KEYS.SHARED_PUBLIC_KEY, publicKey, {
         keychainAccessGroup: IOS_KEYCHAIN_GROUP,
       } as any);
-    } else if (Platform.OS === 'android') {
+    } else if (isAndroid()) {
       await store.setItemAsync(STORAGE_KEYS.SHARED_PRIVATE_KEY, privateKey, {
         keychainAccessible: store.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
       });
@@ -422,7 +417,7 @@ export class KeyManager {
     try {
       const store = await initSecureStore();
 
-      if (Platform.OS === 'ios') {
+      if (isIOS()) {
         await store.setItemAsync(STORAGE_KEYS.SHARED_SESSION_ID, sessionId, {
           keychainAccessGroup: IOS_KEYCHAIN_GROUP,
         } as any);
@@ -431,7 +426,7 @@ export class KeyManager {
           keychainAccessible: store.WHEN_UNLOCKED,
           keychainAccessGroup: IOS_KEYCHAIN_GROUP,
         } as any);
-      } else if (Platform.OS === 'android') {
+      } else if (isAndroid()) {
         await store.setItemAsync(STORAGE_KEYS.SHARED_SESSION_ID, sessionId);
         await store.setItemAsync(STORAGE_KEYS.SHARED_SESSION_TOKEN, accessToken);
       }
@@ -465,7 +460,7 @@ export class KeyManager {
       let sessionId: string | null = null;
       let accessToken: string | null = null;
 
-      if (Platform.OS === 'ios') {
+      if (isIOS()) {
         sessionId = await store.getItemAsync(STORAGE_KEYS.SHARED_SESSION_ID, {
           keychainAccessGroup: IOS_KEYCHAIN_GROUP,
         } as any);
@@ -473,7 +468,7 @@ export class KeyManager {
         accessToken = await store.getItemAsync(STORAGE_KEYS.SHARED_SESSION_TOKEN, {
           keychainAccessGroup: IOS_KEYCHAIN_GROUP,
         } as any);
-      } else if (Platform.OS === 'android') {
+      } else if (isAndroid()) {
         sessionId = await store.getItemAsync(STORAGE_KEYS.SHARED_SESSION_ID);
         accessToken = await store.getItemAsync(STORAGE_KEYS.SHARED_SESSION_TOKEN);
       }
@@ -505,14 +500,14 @@ export class KeyManager {
     try {
       const store = await initSecureStore();
 
-      if (Platform.OS === 'ios') {
+      if (isIOS()) {
         await store.deleteItemAsync(STORAGE_KEYS.SHARED_SESSION_ID, {
           keychainAccessGroup: IOS_KEYCHAIN_GROUP,
         } as any);
         await store.deleteItemAsync(STORAGE_KEYS.SHARED_SESSION_TOKEN, {
           keychainAccessGroup: IOS_KEYCHAIN_GROUP,
         } as any);
-      } else if (Platform.OS === 'android') {
+      } else if (isAndroid()) {
         await store.deleteItemAsync(STORAGE_KEYS.SHARED_SESSION_ID);
         await store.deleteItemAsync(STORAGE_KEYS.SHARED_SESSION_TOKEN);
       }

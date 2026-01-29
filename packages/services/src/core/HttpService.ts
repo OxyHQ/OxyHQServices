@@ -18,14 +18,14 @@ import { RequestDeduplicator, RequestQueue, SimpleLogger } from '../utils/reques
 import { retryAsync } from '../utils/asyncUtils';
 import { handleHttpError } from '../utils/errorUtils';
 import { jwtDecode } from 'jwt-decode';
-import { Platform } from 'react-native';
+import { isNative, getPlatformOS } from '../utils/platform';
 import type { OxyConfig } from '../models/interfaces';
 
 /**
  * Check if we're running in a native app environment (React Native, not web)
  * This is used to determine CSRF handling mode
  */
-const isNativeApp = Platform.OS !== 'web';
+const isNativeApp = isNative();
 
 interface JwtPayload {
   exp?: number;
@@ -284,7 +284,7 @@ export class HttpService {
             url,
             method,
             isNativeApp,
-            platformOS: Platform.OS,
+            platformOS: getPlatformOS(),
             hasCsrfToken: !!csrfToken,
             csrfTokenLength: csrfToken?.length,
             hasNativeAppHeader: headers['X-Native-App'] === 'true',

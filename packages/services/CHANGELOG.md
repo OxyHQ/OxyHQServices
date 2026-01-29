@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+- **Fixed react-native imports in core modules** - Critical packaging bug fix
+  - `HttpService.ts`: Removed direct `Platform` import from react-native
+  - `keyManager.ts`: Removed direct `Platform` import from react-native
+  - `sonner.ts`: Split into platform-specific files (`sonner.web.ts`, `sonner.native.ts`)
+  - `/web` and `/core` entry points now truly have **zero react-native dependencies**
+
+### Added
+- **New platform detection utility** (`src/utils/platform.ts`)
+  - Provides `isWeb()`, `isNative()`, `isIOS()`, `isAndroid()`, `getPlatformOS()`
+  - Works in all environments without importing react-native
+  - Platform is auto-initialized in React Native via main entry point
+
+### Changed
+- Core modules now use the new platform utility instead of importing `react-native` directly
+- Bundlers (Vite, Webpack) no longer need react-native stubs for `/web` or `/core` entry points
+
+### Why This Matters
+Before this fix, even when using `@oxyhq/services/web` or `@oxyhq/services/core`, bundlers would encounter `import { Platform } from 'react-native'` in core modules, causing build failures in pure web/Node.js environments. This is now fixed.
+
 ## [5.22.0] - 2026-01-27
 
 ### Added
