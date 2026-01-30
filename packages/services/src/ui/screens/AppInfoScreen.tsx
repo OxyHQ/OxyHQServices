@@ -15,7 +15,7 @@ import {
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
 import { fontFamilies } from '../styles/fonts';
-import { packageInfo } from '../../constants/version';
+import { packageInfo } from '@oxyhq/core';
 import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';
 import OxyIcon from '../components/icon/OxyIcon';

@@ -1,0 +1,71 @@
+{
+  "name": "@oxyhq/auth",
+  "version": "1.0.0",
+  "description": "OxyHQ Web Authentication SDK — headless auth with React hooks for Next.js, Vite, and web apps",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "keywords": [
+    "oxyhq",
+    "sdk",
+    "authentication",
+    "react",
+    "hooks",
+    "web",
+    "fedcm",
+    "sso"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oxyhq/sdk",
+    "directory": "packages/auth-sdk"
+  },
+  "author": "OxyHQ",
+  "license": "MIT",
+  "homepage": "https://oxy.so",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "npm run build:cjs && npm run build:esm && npm run build:types",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:types": "tsc -p tsconfig.types.json",
+    "clean": "rm -rf dist",
+    "typescript": "tsc --noEmit",
+    "lint": "biome lint --error-on-warnings ./src"
+  },
+  "dependencies": {
+    "@tanstack/react-query": "^5.59.0",
+    "socket.io-client": "^4.8.1",
+    "sonner": "^2.0.4",
+    "zustand": "^5.0.6"
+  },
+  "peerDependencies": {
+    "@oxyhq/core": "*",
+    "react": ">=18.0.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/react": "^19.2.0",
+    "@types/node": "^20.19.9",
+    "typescript": "^5.9.2"
+  }
+}

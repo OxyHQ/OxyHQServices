@@ -14,7 +14,7 @@ import {
 import type { BaseScreenProps } from '../types/navigation';
 import { screenContentStyle } from '../constants/spacing';
 import { toast } from '../../lib/sonner';
-import type { ClientSession } from '../../models/session';
+import type { ClientSession } from '@oxyhq/core';
 import { confirmAction } from '../utils/confirmAction';
 import { Header, GroupedSection } from '../components';
 import { useThemeStyles } from '../hooks/useThemeStyles';

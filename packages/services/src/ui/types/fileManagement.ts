@@ -1,5 +1,5 @@
 import type { BaseScreenProps } from './navigation';
-import type { FileMetadata } from '../../models/interfaces';
+import type { FileMetadata } from '@oxyhq/core';
 
 // Exporting props & callback types so external callers (e.g. showBottomSheet config objects) can annotate
 export type OnConfirmFileSelection = (files: FileMetadata[]) => void;

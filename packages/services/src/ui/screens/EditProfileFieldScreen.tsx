@@ -22,7 +22,7 @@ import { useOxy } from '../context/OxyContext';
 import { useProfileEditing } from '../hooks/useProfileEditing';
 import { fontFamilies } from '../styles/fonts';
 import { toast } from '../../lib/sonner';
-import { EMAIL_REGEX } from '../../utils/validationUtils';
+import { EMAIL_REGEX } from '@oxyhq/core';
 
 /**
  * Field types supported by EditProfileFieldScreen

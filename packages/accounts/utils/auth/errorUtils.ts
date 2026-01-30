@@ -1,4 +1,4 @@
-import { handleHttpError, ErrorCodes, type ApiError } from '@oxyhq/services';
+import { handleHttpError, ErrorCodes, type ApiError } from '@oxyhq/core';
 
 /**
  * Check if an error is a network or timeout error using Oxy core utilities

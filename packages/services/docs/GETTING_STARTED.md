@@ -138,7 +138,7 @@ export default function App() {
 ```typescript
 // server.ts
 import express from 'express';
-import { oxyClient } from '@oxyhq/services';
+import { oxyClient } from '@oxyhq/core';
 
 const app = express();
 app.use(express.json());
@@ -182,13 +182,13 @@ Oxy ships with two entry points. Pick the one that matches your environment so t
 
 ### Backend (Node.js, serverless, API routes)
 
-- **Import path:** `import { oxyClient, OxyServices } from '@oxyhq/services/core';`
-- The core build contains only the TypeScript client—no React or React Native code—so it is safe for Node.js, Express, Next.js API routes, and serverless functions.
+- **Import path:** `import { oxyClient, OxyServices } from '@oxyhq/core';`
+- The `@oxyhq/core` package contains only the TypeScript client—no React or React Native code—so it is safe for Node.js, Express, Next.js API routes, and serverless functions.
 - Use the preconfigured `oxyClient` for convenience, or instantiate your own `new OxyServices({ baseURL })` if you need custom configuration or multiple instances.
 - You can reuse tokens generated on the frontend (`OxyProvider`) by sending them to your backend via headers or cookies—the backend `oxyClient` understands the same token format.
 - The backend bundle also exposes helpers such as `oxyClient.auth()` for Express middleware.
 
-> **Tip:** In SSR frameworks (Next.js, Remix, etc.) import UI hooks/components from `@oxyhq/services` in client components and import `@oxyhq/services/core` anywhere that runs on the server (API routes, middleware, server components).
+> **Tip:** In SSR frameworks (Next.js, Remix, etc.) import UI hooks/components from `@oxyhq/services` in client components and import `@oxyhq/core` anywhere that runs on the server (API routes, middleware, server components).
 
 ## Platform-Specific Setup
 

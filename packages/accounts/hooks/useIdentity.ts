@@ -1,14 +1,8 @@
 import { useCallback, useEffect } from 'react';
 import { Platform } from 'react-native';
-import {
-  KeyManager,
-  RecoveryPhraseService,
-  SignatureService,
-  useOxy,
-  useAuthStore,
-  handleAuthError,
-} from '@oxyhq/services';
-import type { User } from '@oxyhq/services';
+import { useOxy, useAuthStore, handleAuthError } from '@oxyhq/services';
+import { KeyManager, RecoveryPhraseService, SignatureService } from '@oxyhq/core';
+import type { User } from '@oxyhq/core';
 import { useBiometricSignIn } from './useBiometricSignIn';
 import { useIdentityStore, persistIdentitySyncState, getIdentitySyncStateFromStorage } from './identity/identityStore';
 import { syncIdentityWithServer } from './identity/syncService';

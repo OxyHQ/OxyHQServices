@@ -25,7 +25,7 @@
 
 import { useCallback, useState } from 'react';
 import { useOxy } from '../context/OxyContext';
-import type { User } from '../../models/interfaces';
+import type { User } from '@oxyhq/core';
 import { isWebBrowser } from './useWebSSO';
 
 export interface AuthState {

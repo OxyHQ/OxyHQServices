@@ -176,7 +176,7 @@ Note: These endpoints are also available under `/auth` (e.g., `POST /auth/verify
 #### Example: User Registration
 
 ```typescript
-import { KeyManager, SignatureService } from '@oxyhq/services/crypto';
+import { KeyManager, SignatureService } from '@oxyhq/core';
 
 // Client-side (in Oxy Accounts app)
 async function registerUser() {
@@ -236,12 +236,12 @@ async function signIn() {
 
 ## Crypto Module API
 
-The crypto module is exported from `@oxyhq/services/crypto`:
+The crypto module is exported from `@oxyhq/core`:
 
 ### KeyManager
 
 ```typescript
-import { KeyManager } from '@oxyhq/services/crypto';
+import { KeyManager } from '@oxyhq/core';
 
 // Generate new identity
 const publicKey = await KeyManager.createIdentity();
@@ -268,7 +268,7 @@ const publicKey = KeyManager.derivePublicKey(privateKeyHex);
 ### SignatureService
 
 ```typescript
-import { SignatureService } from '@oxyhq/services/crypto';
+import { SignatureService } from '@oxyhq/core';
 
 // Sign a message (uses stored private key)
 const signature = await SignatureService.sign('Hello, World!');
@@ -299,7 +299,7 @@ const { signature, timestamp } = await SignatureService.signRequestData({
 ### RecoveryPhraseService
 
 ```typescript
-import { RecoveryPhraseService } from '@oxyhq/services/crypto';
+import { RecoveryPhraseService } from '@oxyhq/core';
 
 // Generate new identity with recovery phrase (12 words)
 const { phrase, words, publicKey } = await RecoveryPhraseService.generateIdentityWithRecovery();
@@ -340,7 +340,7 @@ const publicKey = await RecoveryPhraseService.derivePublicKeyFromPhrase(phrase);
 Always verify signatures server-side before processing sensitive operations:
 
 ```typescript
-import { SignatureService } from '@oxyhq/services/crypto';
+import { SignatureService } from '@oxyhq/core';
 
 // Server-side
 function verifyRequest(publicKey: string, data: any, signature: string, timestamp: number) {

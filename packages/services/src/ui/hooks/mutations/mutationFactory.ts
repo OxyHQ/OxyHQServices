@@ -10,7 +10,7 @@
  */
 
 import { QueryClient, UseMutationOptions } from '@tanstack/react-query';
-import type { User } from '../../../models/interfaces';
+import type { User } from '@oxyhq/core';
 import { queryKeys, invalidateAccountQueries, invalidateUserQueries } from '../queries/queryKeys';
 import { toast } from '../../../lib/sonner';
 import { useAuthStore } from '../../stores/authStore';

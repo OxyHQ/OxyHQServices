@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import type { OxyServices } from '@oxyhq/services';
+import type { OxyServices } from '@oxyhq/core';
 import { USERNAME_MIN_LENGTH, USERNAME_FORMAT_ERROR, USERNAME_DEBOUNCE_MS } from '@/constants/auth';
 import { validateUsernameFormat } from '@/utils/auth/usernameUtils';
 import { isNetworkOrTimeoutError, extractAuthErrorMessage } from '@/utils/auth/errorUtils';

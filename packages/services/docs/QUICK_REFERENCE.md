@@ -162,7 +162,7 @@ try {
 ## Node.js / Express
 
 ```typescript
-import { oxyClient } from '@oxyhq/services';
+import { oxyClient } from '@oxyhq/core';
 import express from 'express';
 
 const app = express();

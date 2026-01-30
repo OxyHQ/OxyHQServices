@@ -8,10 +8,10 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import { OxyServices } from '../../core';
-import type { User, ApiError } from '../../models/interfaces';
-import { KeyManager } from '../../crypto/keyManager';
-import type { ClientSession } from '../../models/session';
+import { OxyServices } from '@oxyhq/core';
+import type { User, ApiError } from '@oxyhq/core';
+import { KeyManager } from '@oxyhq/core';
+import type { ClientSession } from '@oxyhq/core';
 import { toast } from '../../lib/sonner';
 import { useAuthStore, type AuthState } from '../stores/authStore';
 import { useShallow } from 'zustand/react/shallow';
@@ -27,10 +27,10 @@ import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
 import { useQueryClient } from '@tanstack/react-query';
 import { clearQueryCache } from '../hooks/queryClient';
-import { translate } from '../../i18n';
+import { translate } from '@oxyhq/core';
 import { updateAvatarVisibility, updateProfileWithAvatar } from '../utils/avatarUtils';
 import { useAccountStore } from '../stores/accountStore';
-import { logger as loggerUtil } from '../../utils/loggerUtils';
+import { logger as loggerUtil } from '@oxyhq/core';
 import { useWebSSO, isWebBrowser } from '../hooks/useWebSSO';
 
 export interface OxyContextState {

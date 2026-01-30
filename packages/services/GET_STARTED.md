@@ -1,14 +1,18 @@
 # Getting Started with @oxyhq/services
 
-Zero-config authentication for all Oxy apps. Cross-domain SSO is automatic.
+Zero-config authentication for Expo and React Native apps. Cross-domain SSO is automatic.
+
+> **Web apps:** Use `@oxyhq/auth` + `@oxyhq/core` instead. See the [Platform Guide](./PLATFORM_GUIDE.md).
+>
+> **Backend / Node.js:** Use `@oxyhq/core` only. See the [Platform Guide](./PLATFORM_GUIDE.md).
 
 ## Installation
 
 ```bash
-npm install @oxyhq/services
+npm install @oxyhq/services @oxyhq/core
 ```
 
-### Peer Dependencies (Expo only)
+### Peer Dependencies
 
 ```bash
 npm install react-native-reanimated react-native-gesture-handler \
@@ -35,14 +39,7 @@ export default function App() {
 }
 ```
 
-**Which provider to use:**
-
-| App Type | Provider | Notes |
-|----------|----------|-------|
-| **Expo (native + web)** | `OxyProvider` | Already handles iOS, Android, AND web |
-| **Pure React/Next.js (NO Expo)** | `WebOxyProvider` | Web-only, lighter bundle |
-
-⚠️ **IMPORTANT:** If you're using Expo, **always use `OxyProvider`** - it already handles web in addition to native platforms. **Never use `WebOxyProvider` in Expo apps**.
+`OxyProvider` works on iOS, Android, and Expo web. Always use `OxyProvider` in Expo apps.
 
 ### 2. Use Authentication
 
@@ -72,7 +69,7 @@ function HomeScreen() {
 }
 ```
 
-**That's it!** Cross-domain SSO is automatic. If user is signed in on any Oxy domain (accounts.oxy.so, mention.earth, homiio.com, etc.), they're automatically signed in on your app.
+That is it. Cross-domain SSO is automatic. If a user is signed in on any Oxy domain (accounts.oxy.so, mention.earth, homiio.com, etc.), they are automatically signed in on your app.
 
 ---
 
@@ -164,14 +161,20 @@ showBottomSheet({ screen: 'PaymentGateway', props: { amount: 10 } });
 
 ## Web Apps (Next.js / React)
 
-For pure web apps without Expo/React Native, use `WebOxyProvider`:
+For web apps without Expo/React Native, use the `@oxyhq/auth` package with `@oxyhq/core`.
+
+### Installation
+
+```bash
+npm install @oxyhq/auth @oxyhq/core
+```
 
 ### Next.js Example
 
 ```tsx
 // app/providers.tsx
 'use client';
-import { WebOxyProvider } from '@oxyhq/services';
+import { WebOxyProvider } from '@oxyhq/auth';
 
 export function Providers({ children }) {
   return (
@@ -196,7 +199,7 @@ export default function RootLayout({ children }) {
 
 // app/page.tsx
 'use client';
-import { useAuth } from '@oxyhq/services';
+import { useAuth } from '@oxyhq/auth';
 
 export default function Home() {
   const { user, isAuthenticated, isLoading, signIn } = useAuth();
@@ -213,7 +216,7 @@ export default function Home() {
 
 ### How Web SSO Works
 
-Cross-domain SSO uses **FedCM** (Federated Credential Management) - the browser-native identity API that works without third-party cookies.
+Cross-domain SSO uses **FedCM** (Federated Credential Management) -- the browser-native identity API that works without third-party cookies.
 
 1. User signs in on `auth.oxy.so` (or any Oxy app)
 2. Browser stores FedCM credential
@@ -227,12 +230,18 @@ Cross-domain SSO uses **FedCM** (Federated Credential Management) - the browser-
 
 ## Backend (Node.js / Express / Next.js API)
 
-For server-side, import from `/core` to avoid React dependencies.
+For server-side usage, install `@oxyhq/core` only.
+
+### Installation
+
+```bash
+npm install @oxyhq/core
+```
 
 ### Quick Start
 
 ```typescript
-import { oxyClient } from '@oxyhq/services/core';
+import { oxyClient } from '@oxyhq/core';
 
 // Get user
 const user = await oxyClient.getUserById('123');
@@ -244,7 +253,7 @@ const { valid, user } = await oxyClient.validateSession(sessionId);
 ### Express Middleware
 
 ```typescript
-import { oxyClient } from '@oxyhq/services/core';
+import { oxyClient } from '@oxyhq/core';
 
 async function authMiddleware(req, res, next) {
   const sessionId = req.headers['x-session-id'] || req.cookies.sessionId;
@@ -270,7 +279,7 @@ app.get('/api/me', authMiddleware, (req, res) => res.json(req.user));
 
 ```typescript
 // app/api/user/[id]/route.ts
-import { oxyClient } from '@oxyhq/services/core';
+import { oxyClient } from '@oxyhq/core';
 import { NextResponse } from 'next/server';
 
 export async function GET(req, { params }) {
@@ -320,7 +329,7 @@ await oxyClient.deleteFile(fileId);
 
 ## Advanced: useOxy Hook
 
-For full control, use `useOxy` instead of `useAuth`:
+For full control in Expo/RN apps, use `useOxy` instead of `useAuth`:
 
 ```tsx
 import { useOxy } from '@oxyhq/services';
@@ -364,11 +373,11 @@ OXY_API_URL=https://api.oxy.so
 
 ### "useAuth/useOxy must be used within OxyProvider"
 
-Wrap your app with `<OxyProvider>` (Expo) or `<WebOxyProvider>` (pure web).
+Wrap your app with `<OxyProvider>` (Expo/RN) or `<WebOxyProvider>` from `@oxyhq/auth` (web).
 
 ### SSO not working on web
 
-1. Ensure you're using HTTPS (required for FedCM)
+1. Ensure you are using HTTPS (required for FedCM)
 2. Check browser version: Chrome 108+, Safari 16.4+, Edge 108+
 3. For Firefox: FedCM not supported, users must click "Sign In" (uses popup)
 4. Verify FedCM config: `https://auth.oxy.so/fedcm.json`
@@ -384,4 +393,5 @@ Wrap your app with `<OxyProvider>` (Expo) or `<WebOxyProvider>` (pure web).
 ## Full Documentation
 
 - [README.md](./README.md) - Full API reference
+- [PLATFORM_GUIDE.md](./PLATFORM_GUIDE.md) - Platform-specific setup guide
 - [CROSS_DOMAIN_AUTH.md](../../CROSS_DOMAIN_AUTH.md) - SSO deep dive

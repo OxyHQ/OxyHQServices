@@ -13,7 +13,7 @@ import { useI18n } from '../hooks/useI18n';
 import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useSettingToggles } from '../hooks/useSettingToggle';
 import { normalizeTheme } from '../utils/themeUtils';
-import type { BlockedUser, RestrictedUser } from '../../models/interfaces';
+import type { BlockedUser, RestrictedUser } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 
 interface PrivacySettings {

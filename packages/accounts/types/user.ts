@@ -1,4 +1,4 @@
-import type { User } from '@oxyhq/services';
+import type { User } from '@oxyhq/core';
 
 /**
  * Extended User type for accounts app

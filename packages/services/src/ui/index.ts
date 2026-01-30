@@ -90,9 +90,6 @@ export {
   useStorage,
 };
 
-// Re-export core services for convenience in UI context
-export { OxyServices } from '../core';
-export type { User, LoginResponse, ApiError } from '../models/interfaces';
 
 // Export error handler utilities (pure functions, no conditional needed)
 export {

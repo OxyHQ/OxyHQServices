@@ -11,7 +11,7 @@ import {
 } from 'react-native';
 import { useCallback, useMemo } from 'react';
 import type { BaseScreenProps } from '../types/navigation';
-import { packageInfo } from '../../constants/version';
+import { packageInfo } from '@oxyhq/core';
 import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';
 import { Ionicons } from '@expo/vector-icons';

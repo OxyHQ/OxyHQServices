@@ -15,8 +15,8 @@ import { FollowButton } from '../components';
 import { Ionicons } from '@expo/vector-icons';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';
-import { logger } from '../../utils/loggerUtils';
-import type { User } from '../../models/interfaces';
+import { logger } from '@oxyhq/core';
+import type { User } from '@oxyhq/core';
 
 type ListMode = 'followers' | 'following';
 

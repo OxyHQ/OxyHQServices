@@ -1,17 +1,20 @@
-# OxyHQServices
+# @oxyhq/services
 
-A comprehensive TypeScript client library for the Oxy API providing authentication, user management, and UI components for React Native, Expo, and Node.js applications.
+A comprehensive TypeScript UI library for the Oxy API providing authentication, user management, and UI components for React Native and Expo applications.
 
-## 📋 Table of Contents
+> **For web apps (Vite, Next.js, CRA):** Use [`@oxyhq/auth`](../auth) for authentication and [`@oxyhq/core`](../core) for types and services.
+>
+> **For backend / Node.js:** Use [`@oxyhq/core`](../core) only.
+>
+> **For the full platform guide:** See [PLATFORM_GUIDE.md](./PLATFORM_GUIDE.md).
+
+## Table of Contents
 
 - [Features](#features)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
 - [Typography - Inter Font](#typography---inter-font)
 - [Usage Patterns](#usage-patterns)
-  - [Frontend (React/React Native)](#frontend-reactreact-native)
-  - [Backend (Node.js)](#backend-nodejs)
-  - [Mixed Applications](#mixed-applications)
 - [API Reference](#api-reference)
 - [Configuration](#configuration)
 - [Authentication](#authentication)
@@ -20,40 +23,41 @@ A comprehensive TypeScript client library for the Oxy API providing authenticati
 - [Troubleshooting](#troubleshooting)
 - [Requirements](#requirements)
 
-## ✨ Features
+## Features
 
-- 🔐 **Zero-Config Authentication**: Automatic token management and refresh
-- 🌐 **Cross-Domain SSO**: Sign in once, authenticated everywhere (FedCM, popup, redirect)
-- 📱 **Universal Provider**: Single `OxyProvider` works on iOS, Android, and Web
-- 🎨 **UI Components**: Pre-built components for auth, profiles, and more
-- ✍️ **Inter Font Included**: Default Oxy ecosystem font with automatic loading
-- 🔄 **Cross-Platform**: Works in Expo, React Native, and Node.js
-- 📱 **Multi-Session Support**: Manage multiple user sessions simultaneously
-- 🔧 **TypeScript First**: Full type safety and IntelliSense support
-- 🚀 **Performance Optimized**: Automatic caching with TanStack Query
-- 🛡️ **Production Ready**: Error handling, retry logic, and security best practices
+- **Zero-Config Authentication**: Automatic token management and refresh
+- **Cross-Domain SSO**: Sign in once, authenticated everywhere (FedCM, popup, redirect)
+- **Universal Provider**: Single `OxyProvider` works on iOS, Android, and Expo Web
+- **UI Components**: Pre-built components for auth, profiles, and more
+- **Inter Font Included**: Default Oxy ecosystem font with automatic loading
+- **Cross-Platform**: Works in Expo and React Native (iOS, Android, Web)
+- **Multi-Session Support**: Manage multiple user sessions simultaneously
+- **TypeScript First**: Full type safety and IntelliSense support
+- **Performance Optimized**: Automatic caching with TanStack Query
+- **Production Ready**: Error handling, retry logic, and security best practices
 
-## 🏗️ Architecture
+## Architecture
 
-OxyServices uses a modular architecture with multiple entry points for different use cases:
+The OxyHQ SDK is split into three packages:
 
-| Entry Point | Use Case | Dependencies |
-|------------|----------|--------------|
-| `@oxyhq/services` | Expo apps (native + web) | Full (RN, Expo) |
-| `@oxyhq/services/web` | Pure React apps (Vite, Next.js) | React only |
-| `@oxyhq/services/core` | Node.js / Backend | None |
-| `@oxyhq/services/shared` | Utilities anywhere | None |
-| `@oxyhq/services/crypto` | Identity management | Node crypto |
+| Package | Use Case | Dependencies |
+|---------|----------|--------------|
+| `@oxyhq/services` | Expo / React Native apps | Full (RN, Expo) |
+| `@oxyhq/auth` | Web apps (Vite, Next.js) | React only |
+| `@oxyhq/core` | All platforms (types, API client, crypto) | None |
 
-📖 **[Complete Architecture Guide](./docs/ARCHITECTURE.md)**
+This package (`@oxyhq/services`) is for **Expo and React Native** applications. It provides `OxyProvider`, UI components, screens, bottom sheet routing, fonts, and hooks.
 
-## 📦 Installation
+See [PLATFORM_GUIDE.md](./PLATFORM_GUIDE.md) for the complete architecture guide.
+
+## Installation
 
 ```bash
-npm install @oxyhq/services
+npm install @oxyhq/services @oxyhq/core
 ```
 
-### Peer dependencies
+### Peer Dependencies
+
 To avoid duplicate native modules and ensure smooth integration across apps, install (or ensure your app already includes) the following peer dependencies:
 
 - react: >=18, react-native: >=0.76
@@ -80,7 +84,7 @@ import 'react-native-url-polyfill/auto';
 
 **Note**: This polyfill is already included in the package dependencies, but you need to import it to activate it.
 
-## 🚀 Quick Start
+## Quick Start
 
 ### Expo Apps (Native + Web)
 
@@ -111,126 +115,15 @@ function UserProfile() {
 }
 ```
 
-### Pure React/Next.js/Vite (No Expo)
+`OxyProvider` handles iOS, Android, and Expo web. Always use `OxyProvider` in Expo apps.
 
-**Only use this if you're NOT using Expo/React Native:**
-
-```typescript
-import { WebOxyProvider, useAuth } from '@oxyhq/services/web';
-
-function App() {
-  return (
-    <WebOxyProvider baseURL="https://api.oxy.so">
-      <YourApp />
-    </WebOxyProvider>
-  );
-}
-
-function LoginButton() {
-  const { signIn, signOut, user, isAuthenticated, isFedCMSupported } = useAuth();
-
-  if (isAuthenticated) {
-    return (
-      <div>
-        <p>Welcome, {user?.username}!</p>
-        <button onClick={signOut}>Sign Out</button>
-      </div>
-    );
-  }
-
-  return (
-    <button onClick={signIn}>
-      {isFedCMSupported() ? 'Sign in with Oxy' : 'Sign in'}
-    </button>
-  );
-}
-```
-
-⚠️ **Important:** If you're using Expo, always use `OxyProvider` instead - it already handles web in addition to native platforms. Never use `WebOxyProvider` in Expo apps.
-
-#### Web Entry Point (`@oxyhq/services/web`)
-
-For pure web applications, use the `/web` entry point which excludes React Native dependencies:
-
-```typescript
-// ✅ Recommended for pure web (Vite, Next.js, CRA)
-import { WebOxyProvider, useAuth, OxyServices } from '@oxyhq/services/web';
-
-// ❌ Avoid using the main entry point on web (pulls in React Native deps)
-import { WebOxyProvider } from '@oxyhq/services';
-```
-
-**Authentication Methods Available:**
-- **FedCM** (Browser-native, Google-style) - Best UX, no popups
-- **Popup** - OAuth2-style popup window
-- **Redirect** - Full page redirect (fallback)
-
-```typescript
-const { signIn, signInWithFedCM, signInWithPopup, signInWithRedirect, isFedCMSupported } = useAuth();
-
-// Auto-select best method (FedCM → Popup → Redirect)
-await signIn();
-
-// Or use specific method
-await signInWithFedCM();
-await signInWithPopup();
-signInWithRedirect();
-```
-
-**Benefits:**
-- Smaller bundle size (no React Native dependencies)
-- No need for react-native-web or complex build configuration
-- Faster builds and smaller production bundles
-- Full FedCM support for modern browsers
-- All web-compatible features included (auth, hooks, stores, etc.)
-
-**Note:** If you must use the main entry point (`@oxyhq/services`), you'll need to configure your bundler with react-native-web aliases. See the [Web Bundler Configuration](#web-bundler-configuration) section below.
-
-### Backend (Node.js / Express)
-
-```typescript
-// Prefer the core-only entry on the backend
-import { oxyClient, OxyServices } from '@oxyhq/services/core';
-
-// Quick Express example
-import express from 'express';
-
-const app = express();
-app.use(express.json());
-
-// Optional: create your own client (e.g., different baseURL per env)
-const services = new OxyServices({ baseURL: process.env.OXY_CLOUD_URL || 'https://api.oxy.so' });
-
-// /api/auth/login works too (alias)
-app.post('/auth/login', async (req, res) => {
-  try {
-    const { username, password } = req.body;
-    const session = await oxyClient.signIn(username, password);
-    res.json(session);
-  } catch (err: any) {
-    res.status(401).json({ error: err.message });
-  }
-});
-
-app.get('/api/users/:id', async (req, res) => {
-  try {
-    const user = await services.getUserById(req.params.id);
-    res.json(user);
-  } catch (err: any) {
-    res.status(404).json({ error: err.message });
-  }
-});
-
-app.listen(3000);
-```
-
-## ✍️ Typography - Inter Font
+## Typography - Inter Font
 
 **Inter is the default font for all Oxy ecosystem apps.** This package includes the Inter font family and provides automatic font loading for both web and native platforms.
 
 ### Automatic Loading
 
-**If you're using `OxyProvider`, fonts are loaded automatically.** No additional setup needed:
+**If you are using `OxyProvider`, fonts are loaded automatically.** No additional setup needed:
 
 ```typescript
 import { OxyProvider } from '@oxyhq/services';
@@ -267,17 +160,11 @@ const styles = StyleSheet.create({
 - **`fontFamilies`** - Object with all Inter weight variants (inter, interLight, interMedium, interSemiBold, interBold, interExtraBold, interBlack)
 - **`fontStyles`** - Pre-defined text styles (titleLarge, titleMedium, titleSmall, buttonText)
 
-**📖 See [FONTS.md](./FONTS.md) for the complete typography guide**, including:
-- Detailed usage examples
-- All available font weights
-- Platform-specific handling
-- Best practices and migration guide
+See [FONTS.md](./FONTS.md) for the complete typography guide, including detailed usage examples, all available font weights, platform-specific handling, best practices, and migration guide.
 
-## 📖 Usage Patterns
+## Usage Patterns
 
-### Expo Apps (Native + Web)
-
-#### 1. **OxyProvider + useAuth Hook (Recommended)**
+### 1. OxyProvider + useAuth Hook (Recommended)
 
 `OxyProvider` works on all platforms (iOS, Android, Web). Use `useAuth` for authentication.
 
@@ -324,100 +211,32 @@ function UserProfile() {
 }
 ```
 
-#### 2. **Direct Import (Non-React Files)**
+### 2. Direct Import (Non-React Files)
 
 For utility functions, services, or non-React Native files:
 
 ```typescript
-import { oxyClient } from '@oxyhq/services';
+import { oxyClient } from '@oxyhq/core';
 
 // utils/api.ts
 export const userUtils = {
   async fetchUserById(userId: string) {
     return await oxyClient.getUserById(userId);
   },
-  
+
   async fetchProfileByUsername(username: string) {
     return await oxyClient.getProfileByUsername(username);
   },
-  
+
   async updateUserProfile(updates: any) {
     return await oxyClient.updateProfile(updates);
   }
 };
 ```
 
-### Backend (Node.js)
+### 3. Mixed Usage (Hooks + Direct Client)
 
-#### 1. **Pre-configured Client (Recommended)**
-
-Use the pre-configured `oxyClient` for immediate access:
-
-```typescript
-import { oxyClient } from '@oxyhq/services/core';
-
-// routes/auth.ts
-export const signIn = async (req, res) => {
-  try {
-    const { username, password } = req.body;
-    const response = await oxyClient.signIn(username, password);
-    res.json(response);
-  } catch (error) {
-    res.status(401).json({ error: error.message });
-  }
-};
-
-// routes/users.ts
-export const getUserProfile = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const user = await oxyClient.getUserById(userId);
-    res.json(user);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-// routes/profiles.ts
-export const getProfileByUsername = async (req, res) => {
-  try {
-    const { username } = req.params;
-    const profile = await oxyClient.getProfileByUsername(username);
-    res.json(profile);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-
-// routes/social.ts
-export const getFollowers = async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const followers = await oxyClient.getUserFollowers(userId);
-    res.json(followers);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-};
-```
-
-#### 2. **Custom Configuration**
-
-Create your own instance with custom settings:
-
-```typescript
-import { OxyServices, OXY_CLOUD_URL } from '@oxyhq/services';
-
-const oxy = new OxyServices({ 
-  baseURL: process.env.OXY_API_URL || OXY_CLOUD_URL 
-});
-
-export { oxy };
-```
-
-### Mixed Applications (React Native + Backend)
-
-You can use both patterns in the same application:
+You can use both hooks and the direct client in the same Expo app:
 
 ```typescript
 // App.tsx - React Native setup
@@ -432,7 +251,7 @@ function App() {
 }
 
 // utils/api.ts - Direct import
-import { oxyClient } from '@oxyhq/services';
+import { oxyClient } from '@oxyhq/core';
 
 export const apiUtils = {
   async fetchData() {
@@ -445,37 +264,34 @@ import { useOxy } from '@oxyhq/services';
 
 function Component() {
   const { oxyServices } = useOxy();
-  // Both oxyServices and oxyClient share the same tokens!
+  // Both oxyServices and oxyClient share the same tokens
 }
 ```
 
-## 🔧 API Reference
+## API Reference
 
-### Core Exports
+### Core Exports (from @oxyhq/core)
 
 ```typescript
-import { 
+import {
   OxyServices,           // Main service class
   oxyClient,            // Pre-configured instance
   OXY_CLOUD_URL,        // Default API URL
   OxyAuthenticationError,
-  OxyAuthenticationTimeoutError
-} from '@oxyhq/services';
-
-// Crypto module (for identity management)
-import {
+  OxyAuthenticationTimeoutError,
   KeyManager,
   SignatureService,
   RecoveryPhraseService
-} from '@oxyhq/services/crypto';
+} from '@oxyhq/core';
 ```
 
-### React Native Exports
+### React Native Exports (from @oxyhq/services)
 
 ```typescript
-import { 
+import {
   OxyProvider,          // Context provider
   useOxy,              // React Native hook
+  useAuth,             // Auth hook
   OxySignInButton,     // UI components
   Avatar,
   FollowButton
@@ -562,26 +378,26 @@ const metadata = await oxyClient.fetchLinkMetadata('https://example.com'); // Fe
 ### useOxy Hook
 
 ```typescript
-const { 
+const {
   // Service instance
   oxyServices,
-  
+
   // Authentication state
   user,
   isAuthenticated,
   isLoading,
   error,
-  
+
   // Identity management (Public Key Authentication)
   createIdentity,     // Create new identity with recovery phrase
   importIdentity,     // Import identity from recovery phrase
   signIn,             // Sign in with stored identity
   hasIdentity,        // Check if identity exists on device
   getPublicKey,       // Get stored public key
-  
+
   // Session management
   logout,
-  
+
   // Session management
   sessions,
   activeSessionId,
@@ -590,7 +406,7 @@ const {
 } = useOxy();
 ```
 
-## ⚙️ Configuration
+## Configuration
 
 ### OxyProvider Props
 
@@ -609,21 +425,20 @@ const {
 
 ```bash
 # .env
-OXY_API_URL=https://cloud.oxy.so
-NODE_ENV=production
+EXPO_PUBLIC_API_URL=https://api.oxy.so
 ```
 
 ### Custom Configuration
 
 ```typescript
-import { OxyServices } from '@oxyhq/services';
+import { OxyServices } from '@oxyhq/core';
 
 const oxy = new OxyServices({
   baseURL: process.env.OXY_API_URL || 'https://cloud.oxy.so'
 });
 ```
 
-## 🔐 Authentication
+## Authentication
 
 Oxy supports **public/private key cryptography** (ECDSA secp256k1) as the primary identity system, with optional password-based accounts for the web gateway. Users manage their cryptographic identity in the **Oxy Accounts** app, and other apps can integrate "Sign in with Oxy" for seamless authentication.
 
@@ -634,23 +449,23 @@ import { useOxy } from '@oxyhq/services';
 
 function AuthScreen() {
   const { createIdentity, importIdentity, signIn, hasIdentity } = useOxy();
-  
+
   // Create new identity (in Oxy Accounts app)
   const handleCreate = async () => {
     const { user, recoveryPhrase } = await createIdentity('username', 'email');
     // Show recoveryPhrase to user - they must save it!
   };
-  
+
   // Import existing identity
   const handleImport = async (phrase: string) => {
     const user = await importIdentity(phrase, 'username', 'email');
   };
-  
+
   // Sign in with stored identity
   const handleSignIn = async () => {
     const user = await signIn();
   };
-  
+
   // Check if identity exists
   const hasStoredIdentity = await hasIdentity();
 }
@@ -661,8 +476,10 @@ function AuthScreen() {
 For web-only or legacy flows, Oxy also supports password sign-in (email/username + password). Use the auth gateway (`/login`, `/signup`, `/recover`) for browser-based flows, or call the API directly:
 
 ```typescript
-const session = await oxyServices.signUp('username', 'email@example.com', 'password');
-const session2 = await oxyServices.signIn('username-or-email', 'password');
+import { oxyClient } from '@oxyhq/core';
+
+const session = await oxyClient.signUp('username', 'email@example.com', 'password');
+const session2 = await oxyClient.signIn('username-or-email', 'password');
 ```
 
 ### Cross-App Authentication (Sign in with Oxy)
@@ -685,22 +502,14 @@ Web fallback: send users to the auth gateway at `https://accounts.oxy.so/authori
 
 ### Documentation
 
-📖 **[Complete Public Key Authentication Guide](./docs/PUBLIC_KEY_AUTHENTICATION.md)**
+See [Complete Public Key Authentication Guide](./docs/PUBLIC_KEY_AUTHENTICATION.md) for architecture, concepts, user flows, developer integration, crypto module API reference, security best practices, and migration from password auth.
 
-This guide covers:
-- Architecture and concepts
-- User flows (creating/importing identities)
-- Developer integration (cross-app auth)
-- Crypto module API reference
-- Security best practices
-- Migration from password auth
-
-## 🎨 UI Components
+## UI Components
 
 ### Built-in Components
 
 ```typescript
-import { 
+import {
   OxySignInButton,
   Avatar,
   FollowButton,
@@ -748,12 +557,12 @@ function MyComponent() {
 ```
 
 **Features:**
-- ✅ Full navigation history with back button support
-- ✅ Step-based screen navigation (multi-step flows)
-- ✅ Keyboard-aware (automatically adjusts for keyboard)
-- ✅ Dynamic sizing (fits content automatically)
-- ✅ Type-safe route names
-- ✅ 25+ pre-built screens available
+- Full navigation history with back button support
+- Step-based screen navigation (multi-step flows)
+- Keyboard-aware (automatically adjusts for keyboard)
+- Dynamic sizing (fits content automatically)
+- Type-safe route names
+- 25+ pre-built screens available
 
 **Available Screens:**
 - `OxyAuth` (Sign in with Oxy - for third-party apps)
@@ -792,7 +601,7 @@ function AuthModal({ visible, onRequestClose }: { visible: boolean; onRequestClo
 }
 ```
 
-## 🌍 Internationalization (i18n)
+## Internationalization (i18n)
 
 OxyHQ Services includes built-in language selection and storage. The selected language can be accessed and synced with your app's i18n system.
 
@@ -802,13 +611,13 @@ OxyHQ Services includes built-in language selection and storage. The selected la
 import { useOxy } from '@oxyhq/services';
 
 function MyComponent() {
-  const { 
+  const {
     currentLanguage,           // 'en-US'
     currentLanguageName,       // 'English'
-    currentNativeLanguageName, // 'Español' (if Spanish is selected)
+    currentNativeLanguageName, // 'Espanol' (if Spanish is selected)
     currentLanguageMetadata    // Full metadata object
   } = useOxy();
-  
+
   return <Text>Current language: {currentLanguageName}</Text>;
 }
 ```
@@ -817,18 +626,12 @@ function MyComponent() {
 
 To integrate with react-i18next, i18n-js, next-intl, or other i18n libraries, see the comprehensive guide:
 
-📖 **[Complete i18n Integration Guide](./I18N_INTEGRATION.md)**
-
-This guide includes:
-- Step-by-step integration with popular i18n libraries
-- Bidirectional sync between services and your i18n system
-- Language code format conversion utilities
-- Complete working examples
+See [Complete i18n Integration Guide](./I18N_INTEGRATION.md) for step-by-step integration with popular i18n libraries, bidirectional sync between services and your i18n system, language code format conversion utilities, and complete working examples.
 
 ### Using OxyServices (Non-React)
 
 ```typescript
-import { OxyServices } from '@oxyhq/services/core';
+import { OxyServices } from '@oxyhq/core';
 
 const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
 
@@ -845,10 +648,10 @@ const metadata = await oxy.getCurrentLanguageMetadata();
 ### Language Utilities
 
 ```typescript
-import { 
+import {
   SUPPORTED_LANGUAGES,
   getLanguageName,
-  getLanguageMetadata 
+  getLanguageMetadata
 } from '@oxyhq/services';
 
 // Get all supported languages
@@ -859,14 +662,14 @@ const name = getLanguageName('es-ES'); // 'Spanish'
 
 // Get full metadata
 const metadata = getLanguageMetadata('es-ES');
-// { id: 'es-ES', name: 'Spanish', nativeName: 'Español', flag: '🇪🇸', ... }
+// { id: 'es-ES', name: 'Spanish', nativeName: 'Espanol', flag: '...', ... }
 ```
 
-## 🛠️ Troubleshooting
+## Troubleshooting
 
 ### Common Issues
 
-#### 1. **"useOxy must be used within an OxyContextProvider"**
+#### 1. "useOxy must be used within an OxyContextProvider"
 
 **Solution**: Wrap your app with `OxyProvider`
 
@@ -882,7 +685,7 @@ function App() {
 }
 ```
 
-#### 2. **FormData Issues in React Native/Expo**
+#### 2. FormData Issues in React Native/Expo
 
 **Solution**: Add polyfill import at the very top of your entry file
 
@@ -891,14 +694,14 @@ function App() {
 import 'react-native-url-polyfill/auto';
 ```
 
-**Why needed**: Your app uses file uploads which require `FormData`. React Native with Hermes engine doesn't include `FormData` natively, so it needs to be polyfilled.
+**Why needed**: Your app uses file uploads which require `FormData`. React Native with Hermes engine does not include `FormData` natively, so it needs to be polyfilled.
 
-#### 3. **Authentication Not Persisting**
+#### 3. Authentication Not Persisting
 
 **Solution**: Check storage configuration
 
 ```typescript
-<OxyProvider 
+<OxyProvider
   baseURL="https://api.oxy.so"
   storageKeyPrefix="my_app_oxy"  // Custom storage key
 >
@@ -909,7 +712,7 @@ import 'react-native-url-polyfill/auto';
 ### Error Handling
 
 ```typescript
-import { OxyAuthenticationError } from '@oxyhq/services';
+import { OxyAuthenticationError } from '@oxyhq/core';
 
 try {
   await oxyClient.getCurrentUser();
@@ -924,11 +727,10 @@ try {
 }
 ```
 
-## 📋 Requirements
+## Requirements
 
-- **Node.js**: 16+ (for backend usage)
-- **React Native**: 0.60+ (for mobile components)
-- **Expo**: 44+ (recommended)
+- **React Native**: 0.76+ (for mobile components)
+- **Expo**: 54+ (recommended)
 - **TypeScript**: 4.0+ (optional but recommended)
 
 ### Peer Dependencies
@@ -941,17 +743,7 @@ npm install axios jwt-decode invariant
 
 **Note**: `react-native-url-polyfill` is already included as a dependency in this package.
 
-## 📚 Documentation
-
-Comprehensive documentation is available in the `/docs` directory:
-
-- **[Getting Started](./docs/GETTING_STARTED.md)** - Quick start guide for new developers
-- **[API Reference](./docs/API_REFERENCE.md)** - Complete API method documentation
-- **[Integration Guide](./docs/INTEGRATION_GUIDE.md)** - Platform-specific integration guides
-- **[Examples](./docs/EXAMPLES.md)** - Complete working code examples
-- **[Best Practices](./docs/BEST_PRACTICES.md)** - Production-ready patterns and tips
-
-## 📚 Examples
+## Examples
 
 ### Complete React Native App
 
@@ -973,19 +765,19 @@ import { View, Text, StyleSheet } from 'react-native';
 
 function UserDashboard() {
   const { user, isAuthenticated, oxyServices } = useOxy();
-  
+
   const [followers, setFollowers] = useState([]);
-  
+
   useEffect(() => {
     if (isAuthenticated && user) {
       oxyServices.getUserFollowers(user.id).then(setFollowers);
     }
   }, [isAuthenticated, user]);
-  
+
   if (!isAuthenticated) {
     return <Text>Please sign in</Text>;
   }
-  
+
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Welcome, {user?.name}!</Text>
@@ -1008,181 +800,18 @@ const styles = StyleSheet.create({
 });
 ```
 
-### Complete Backend API
+---
 
-```typescript
-// server.ts
-import express from 'express';
-import { oxyClient } from '@oxyhq/services';
+## Documentation
 
-const app = express();
-app.use(express.json());
+Comprehensive documentation is available in the `/docs` directory:
 
-// Auth routes
-app.post('/api/auth/signin', async (req, res) => {
-  try {
-    const { username, password } = req.body;
-    const response = await oxyClient.signIn(username, password);
-    res.json(response);
-  } catch (error) {
-    res.status(401).json({ error: error.message });
-  }
-});
-
-// User routes
-app.get('/api/users/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const user = await oxyClient.getUserById(userId);
-    res.json(user);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-// Social routes
-app.get('/api/users/:userId/followers', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const followers = await oxyClient.getUserFollowers(userId);
-    res.json(followers);
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-app.listen(3000, () => {
-  console.log('Server running on port 3000');
-});
-```
+- **[Getting Started](./GET_STARTED.md)** - Quick start guide for new developers
+- **[Platform Guide](./PLATFORM_GUIDE.md)** - Platform-specific setup guide
+- **[CROSS_DOMAIN_AUTH.md](../../CROSS_DOMAIN_AUTH.md)** - SSO deep dive
 
 ---
 
-## 🔧 Web Bundler Configuration
-
-### When to Configure Your Bundler
-
-You only need bundler configuration if:
-1. You're using the **main entry point** (`@oxyhq/services`) in a pure web app
-2. You're building an Expo web app that uses React Native components
-
-**If you're using `@oxyhq/services/web`**, you don't need any bundler configuration! ✅
-
-### Vite Configuration
-
-For apps using the main entry point with Vite:
-
-```typescript
-// vite.config.ts
-import path from "path"
-import react from "@vitejs/plugin-react"
-import { defineConfig } from "vite"
-
-export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    alias: {
-      "react-native": "react-native-web",
-      buffer: "buffer/",
-    },
-    extensions: ['.web.js', '.web.ts', '.web.tsx', '.js', '.ts', '.tsx', '.json'],
-  },
-  define: {
-    __DEV__: JSON.stringify(process.env.NODE_ENV !== 'production'),
-    global: 'globalThis',
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
-  },
-  optimizeDeps: {
-    include: ['elliptic', 'buffer', 'warn-once', 'react-native-is-edge-to-edge', 'hoist-non-react-statics'],
-    exclude: [
-      '@oxyhq/services',
-      'react-native-reanimated',
-      'react-native-gesture-handler',
-      'react-native-svg',
-      'react-native-screens',
-      'react-native-safe-area-context',
-      'lottie-react-native',
-      'expo-image',
-      'react-native-qrcode-svg',
-    ],
-    esbuildOptions: {
-      loader: {
-        '.js': 'jsx',
-      },
-    },
-  },
-})
-```
-
-**Install required dependencies:**
-```bash
-npm install react-native-web buffer
-```
-
-**Add to index.html (before your script tag):**
-```html
-<script>
-  // Polyfill for React Native packages
-  if (typeof window.require === 'undefined') {
-    window.require = function(module) {
-      console.warn('require() called for:', module);
-      return {};
-    };
-  }
-</script>
-```
-
-### Webpack Configuration
-
-For apps using the main entry point with Webpack:
-
-```javascript
-// webpack.config.js
-module.exports = {
-  resolve: {
-    alias: {
-      'react-native$': 'react-native-web',
-    },
-    extensions: ['.web.js', '.web.ts', '.web.tsx', '.js', '.ts', '.tsx', '.json'],
-  },
-  plugins: [
-    new webpack.DefinePlugin({
-      __DEV__: JSON.stringify(process.env.NODE_ENV !== 'production'),
-      'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
-    }),
-  ],
-};
-```
-
-### Next.js Configuration
-
-For Next.js apps:
-
-```javascript
-// next.config.js
-module.exports = {
-  webpack: (config) => {
-    config.resolve.alias = {
-      ...config.resolve.alias,
-      'react-native$': 'react-native-web',
-    };
-    return config;
-  },
-  transpilePackages: ['react-native-web'],
-};
-```
-
-**Recommendation:** For cleaner configuration, use `@oxyhq/services/web` instead:
-```typescript
-// ✅ Clean - no bundler config needed
-import { WebOxyProvider } from '@oxyhq/services/web';
-
-// ❌ Requires bundler config
-import { WebOxyProvider } from '@oxyhq/services';
-```
-
----
-
-## 📄 License
+## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.

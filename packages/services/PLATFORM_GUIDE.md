@@ -1,72 +1,72 @@
-# @oxyhq/services Platform Guide
+# OxyHQ SDK Platform Guide
 
-Complete guide for using @oxyhq/services across different platforms and environments.
+Guide for using the OxyHQ SDK across different platforms and environments.
+
+The SDK is split into three packages with clear responsibilities:
+
+- **@oxyhq/core** -- Platform-agnostic foundation: OxyServices, types, crypto utilities, shared helpers.
+- **@oxyhq/auth** -- Web authentication: WebOxyProvider, auth hooks, FedCM/popup/redirect flows. React web only.
+- **@oxyhq/services** -- Expo/React Native UI: OxyProvider, screens, components, bottom sheet, fonts.
 
 ## Quick Reference
 
-| Platform | Entry Point | Provider | Bundler Config | react-native-web |
-|----------|------------|----------|----------------|------------------|
-| **Expo 54 Native** | `@oxyhq/services` | `OxyProvider` | ❌ None | ❌ Not needed |
-| **Expo 54 Web** | `@oxyhq/services` | `OxyProvider` | ✅ Built-in | ✅ Built-in |
-| **Vite/React** | `@oxyhq/services/web` | `WebOxyProvider` | ❌ None | ❌ Not needed |
-| **Next.js** | `@oxyhq/services/web` | `WebOxyProvider` | ❌ None | ❌ Not needed |
-| **Node.js** | `@oxyhq/services/core` | N/A (backend) | ❌ None | ❌ Not needed |
+| Platform | Packages | Provider | Notes |
+|----------|----------|----------|-------|
+| **Expo / React Native** | `@oxyhq/services` + `@oxyhq/core` | `OxyProvider` | Full UI, components, screens |
+| **Vite / React** | `@oxyhq/auth` + `@oxyhq/core` | `WebOxyProvider` | Web auth, no RN dependencies |
+| **Next.js** | `@oxyhq/auth` + `@oxyhq/core` | `WebOxyProvider` | Web auth, SSR compatible |
+| **Node.js / Backend** | `@oxyhq/core` | N/A | API client only, no React |
 
-## Entry Points Explained
+## Package Details
 
-### 1. Main Entry Point: `@oxyhq/services`
+### @oxyhq/core
 
-**Use for:**
-- Expo apps (native + web)
-- React Native apps
+Platform-agnostic package. Use everywhere.
 
-**What you get:**
-- Everything: Core API, UI components, hooks, stores
-- Both `OxyProvider` (universal) and `WebOxyProvider` (web-only)
-- Full React Native component support
+**Provides:**
+- `OxyServices` class with all API methods
+- `oxyClient` pre-configured instance
+- All TypeScript types and interfaces
+- `KeyManager`, `SignatureService`, `RecoveryPhraseService` (crypto)
+- Shared utilities (`OXY_CLOUD_URL`, error classes, helpers)
+
+**Install:**
+```bash
+npm install @oxyhq/core
+```
 
 **Example:**
 ```typescript
-import { OxyProvider, useAuth, OxyServices } from '@oxyhq/services';
+import { OxyServices, oxyClient } from '@oxyhq/core';
+import type { User, Session } from '@oxyhq/core';
 
-function App() {
-  return (
-    <OxyProvider baseURL="https://api.oxy.so">
-      <YourApp />
-    </OxyProvider>
-  );
-}
+// Use the pre-configured client
+const user = await oxyClient.getUserById('123');
+
+// Or create a custom instance
+const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+const session = await oxy.signIn(username, password);
 ```
-
-**Platform Resolution:**
-- **Metro (React Native)**: Resolves to `src/index.ts` (source files)
-- **Expo Web**: Resolves to `lib/module/index.js` (pre-built with react-native-web)
-- **Vite/Webpack**: Resolves to `lib/module/index.js` (requires react-native-web setup)
-- **Node.js**: Resolves to `lib/module/core/index.js` (core-only, no UI)
 
 ---
 
-### 2. Web Entry Point: `@oxyhq/services/web` ✨ NEW
+### @oxyhq/auth
 
-**Use for:**
-- Pure React apps (Vite, Create React App)
-- Next.js apps
-- Any web-only application without Expo
+Web authentication package. For React web apps (Vite, Next.js, CRA) without Expo.
 
-**What you get:**
-- Core API, `WebOxyProvider`, hooks, stores
-- NO React Native UI components (OxyProvider excluded)
-- NO React Native dependencies
+**Provides:**
+- `WebOxyProvider` component
+- `useAuth` hook (FedCM, popup, redirect sign-in)
+- Web-specific auth stores and utilities
 
-**Benefits:**
-- ✅ Smaller bundle size (~30% smaller)
-- ✅ No bundler configuration needed
-- ✅ No react-native-web required
-- ✅ Faster builds
+**Install:**
+```bash
+npm install @oxyhq/auth @oxyhq/core
+```
 
 **Example:**
 ```typescript
-import { WebOxyProvider, useAuth, OxyServices } from '@oxyhq/services/web';
+import { WebOxyProvider, useAuth } from '@oxyhq/auth';
 
 function App() {
   return (
@@ -75,99 +75,80 @@ function App() {
     </WebOxyProvider>
   );
 }
-```
 
-**Platform Resolution:**
-- **All bundlers**: Resolves to `lib/module/web.js` (pre-built, web-only)
+function LoginPage() {
+  const { user, isAuthenticated, signIn, signOut } = useAuth();
 
----
+  if (isAuthenticated) {
+    return <p>Welcome, {user?.username}!</p>;
+  }
 
-### 3. Core Entry Point: `@oxyhq/services/core`
-
-**Use for:**
-- Node.js backends (Express, Fastify, etc.)
-- Server-side applications
-- Non-React environments
-
-**What you get:**
-- Core `OxyServices` class with all API methods
-- Authentication utilities
-- Type definitions
-- NO React or UI components
-
-**Example:**
-```typescript
-import { OxyServices, oxyClient } from '@oxyhq/services/core';
-
-const app = express();
-
-app.post('/auth/login', async (req, res) => {
-  const { username, password } = req.body;
-  const session = await oxyClient.signIn(username, password);
-  res.json(session);
-});
-```
-
-**Platform Resolution:**
-- **Node.js**: Resolves to `lib/module/core/index.js` or `lib/commonjs/core/index.js`
-
----
-
-### 4. UI Entry Point: `@oxyhq/services/ui`
-
-**Use for:**
-- Advanced use cases where you only need UI components
-- Apps that manage their own OxyServices instance
-
-**What you get:**
-- All UI components (OxyProvider, WebOxyProvider)
-- Hooks, stores, and utilities
-- NO core OxyServices class
-
-**Example:**
-```typescript
-import { OxyProvider, useAuth } from '@oxyhq/services/ui';
-
-// When you want to use UI but initialize OxyServices separately
+  return <button onClick={() => signIn()}>Sign In</button>;
+}
 ```
 
 ---
 
-### 5. Crypto Entry Point: `@oxyhq/services/crypto`
+### @oxyhq/services
 
-**Use for:**
-- Apps that only need cryptography utilities
-- Identity and signature services
+Expo and React Native UI package. For mobile and Expo web apps.
 
-**What you get:**
-- `KeyManager`, `SignatureService`, `RecoveryPhraseService`
-- Crypto utilities and polyfills
+**Provides:**
+- `OxyProvider` (universal provider for iOS, Android, Expo web)
+- `useOxy`, `useAuth` hooks
+- UI components (`OxySignInButton`, `Avatar`, `FollowButton`, `OxyLogo`)
+- Bottom sheet routing system with 25+ screens
+- Inter font family with automatic loading
+- i18n language selection
+
+**Install:**
+```bash
+npm install @oxyhq/services @oxyhq/core
+```
+
+**Peer dependencies (Expo):**
+```bash
+npm install react-native-reanimated react-native-gesture-handler \
+  react-native-safe-area-context react-native-svg \
+  expo expo-font expo-image expo-linear-gradient \
+  @react-navigation/native @tanstack/react-query
+```
 
 **Example:**
 ```typescript
-import { KeyManager, SignatureService } from '@oxyhq/services/crypto';
+import { OxyProvider, useAuth, OxySignInButton } from '@oxyhq/services';
+import type { User } from '@oxyhq/core';
 
-const keyManager = new KeyManager();
-const keyPair = await keyManager.generateKeyPair();
+export default function App() {
+  return (
+    <OxyProvider baseURL="https://api.oxy.so">
+      <YourApp />
+    </OxyProvider>
+  );
+}
 ```
 
 ---
 
 ## Platform-Specific Setup
 
-### Expo 54 (Native + Web)
+### Expo / React Native
 
-**Installation:**
+**Install:**
 ```bash
-npm install @oxyhq/services
+npm install @oxyhq/services @oxyhq/core
 npm install react-native-reanimated react-native-gesture-handler \
   react-native-safe-area-context react-native-svg
 ```
 
-**Usage:**
-```typescript
-// App.tsx
-import 'react-native-url-polyfill/auto'; // ← Add at top of entry file
+**Entry file setup:**
+```javascript
+// index.js or App.js (first line)
+import 'react-native-url-polyfill/auto';
+```
+
+**App setup:**
+```tsx
 import { OxyProvider, useAuth } from '@oxyhq/services';
 
 export default function App() {
@@ -179,24 +160,20 @@ export default function App() {
 }
 ```
 
-**Works on:**
-- ✅ iOS
-- ✅ Android
-- ✅ Web (via Expo's built-in react-native-web)
+Works on iOS, Android, and Expo web.
 
 ---
 
-### Vite (Pure React Web)
+### Vite (React Web)
 
-**Installation:**
+**Install:**
 ```bash
-npm install @oxyhq/services
+npm install @oxyhq/auth @oxyhq/core
 ```
 
 **Usage:**
-```typescript
-// main.tsx
-import { WebOxyProvider, useAuth } from '@oxyhq/services/web';
+```tsx
+import { WebOxyProvider, useAuth } from '@oxyhq/auth';
 
 function App() {
   return (
@@ -207,50 +184,59 @@ function App() {
 }
 ```
 
-**No configuration needed!** ✅
+No bundler configuration required. No react-native-web dependency.
 
 ---
 
 ### Next.js
 
-**Installation:**
+**Install:**
 ```bash
-npm install @oxyhq/services
+npm install @oxyhq/auth @oxyhq/core
 ```
 
 **Usage:**
-```typescript
-// app/layout.tsx or pages/_app.tsx
-import { WebOxyProvider } from '@oxyhq/services/web';
+```tsx
+// app/providers.tsx
+'use client';
+import { WebOxyProvider } from '@oxyhq/auth';
+
+export function Providers({ children }) {
+  return (
+    <WebOxyProvider baseURL="https://api.oxy.so">
+      {children}
+    </WebOxyProvider>
+  );
+}
+
+// app/layout.tsx
+import { Providers } from './providers';
 
 export default function RootLayout({ children }) {
   return (
     <html>
       <body>
-        <WebOxyProvider baseURL="https://api.oxy.so">
-          {children}
-        </WebOxyProvider>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );
 }
 ```
 
-**No configuration needed!** ✅
+No bundler configuration required.
 
 ---
 
 ### Node.js (Backend)
 
-**Installation:**
+**Install:**
 ```bash
-npm install @oxyhq/services
+npm install @oxyhq/core
 ```
 
 **Usage:**
 ```typescript
-// server.ts
-import { OxyServices, oxyClient } from '@oxyhq/services/core';
+import { OxyServices, oxyClient } from '@oxyhq/core';
 import express from 'express';
 
 const app = express();
@@ -271,178 +257,70 @@ app.listen(3000);
 
 ---
 
-## Advanced: Using Main Entry Point on Web
+## Import Patterns
 
-If you need to use the main entry point (`@oxyhq/services`) in a pure web app instead of `/web`, you'll need bundler configuration.
+Each package has a single entry point. There are no sub-path imports.
 
-### Why?
-
-The main entry point includes `OxyProvider` which uses React Native components. These need to be aliased to `react-native-web` on web platforms.
-
-### Vite Configuration
-
-**1. Install dependencies:**
-```bash
-npm install react-native-web buffer
-```
-
-**2. Update vite.config.ts:**
 ```typescript
-import path from "path"
-import react from "@vitejs/plugin-react"
-import { defineConfig } from "vite"
+// Expo / React Native
+import { OxyProvider, useOxy, useAuth, Avatar } from '@oxyhq/services';
+import { OxyServices, oxyClient } from '@oxyhq/core';
+import type { User, Session } from '@oxyhq/core';
 
-export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    alias: {
-      "react-native": "react-native-web",
-      buffer: "buffer/",
-    },
-    extensions: ['.web.js', '.web.ts', '.web.tsx', '.js', '.ts', '.tsx', '.json'],
-  },
-  define: {
-    __DEV__: JSON.stringify(process.env.NODE_ENV !== 'production'),
-    global: 'globalThis',
-    'process.env.NODE_ENV': JSON.stringify(process.env.NODE_ENV || 'development'),
-  },
-  optimizeDeps: {
-    include: ['elliptic', 'buffer', 'warn-once', 'react-native-is-edge-to-edge', 'hoist-non-react-statics'],
-    exclude: [
-      '@oxyhq/services',
-      'react-native-reanimated',
-      'react-native-gesture-handler',
-      'react-native-svg',
-      'react-native-screens',
-      'react-native-safe-area-context',
-      'lottie-react-native',
-      'expo-image',
-      'react-native-qrcode-svg',
-    ],
-    esbuildOptions: {
-      loader: {
-        '.js': 'jsx',
-      },
-    },
-  },
-})
+// Web (Vite, Next.js, CRA)
+import { WebOxyProvider, useAuth } from '@oxyhq/auth';
+import { OxyServices, oxyClient } from '@oxyhq/core';
+import type { User, Session } from '@oxyhq/core';
+
+// Node.js backend
+import { OxyServices, oxyClient, KeyManager } from '@oxyhq/core';
+import type { User, Session } from '@oxyhq/core';
 ```
-
-**3. Add to index.html:**
-```html
-<body>
-  <div id="root"></div>
-  <script>
-    // Polyfill for React Native packages
-    if (typeof window.require === 'undefined') {
-      window.require = function(module) {
-        console.warn('require() called for:', module);
-        return {};
-      };
-    }
-  </script>
-  <script type="module" src="/src/main.tsx"></script>
-</body>
-```
-
-**Recommendation:** Use `@oxyhq/services/web` instead to avoid this configuration!
-
----
-
-## Migration Guide
-
-### From 5.21.x to 5.22.0
-
-For pure web apps using Vite, Next.js, or CRA:
-
-**Before:**
-```typescript
-import { WebOxyProvider, useAuth } from '@oxyhq/services';
-// Required complex vite.config.ts with react-native-web
-```
-
-**After:**
-```typescript
-import { WebOxyProvider, useAuth } from '@oxyhq/services/web';
-// No vite.config.ts changes needed!
-```
-
-**No changes needed for:**
-- Expo apps (native + web)
-- React Native apps
-- Node.js backends
-
----
-
-## Comparison: Main vs Web Entry Point
-
-| Feature | `@oxyhq/services` | `@oxyhq/services/web` |
-|---------|-------------------|----------------------|
-| **Target** | Expo, React Native | Pure React web |
-| **OxyProvider** | ✅ Yes | ❌ No |
-| **WebOxyProvider** | ✅ Yes | ✅ Yes |
-| **Core API** | ✅ Yes | ✅ Yes |
-| **Hooks & Stores** | ✅ Yes | ✅ Yes |
-| **React Native deps** | ✅ Yes | ❌ No |
-| **Bundle size** | ~500KB | ~350KB |
-| **Bundler config** | Required on web | ❌ None |
-| **react-native-web** | Required on web | ❌ Not needed |
 
 ---
 
 ## Best Practices
 
-### ✅ Do
-
-1. **Use `/web` for pure web apps** - It's cleaner and faster
-2. **Use main entry for Expo** - It's universal and works everywhere
-3. **Use `/core` for backends** - Smallest footprint
-4. **Import only what you need** - Tree-shaking works best with named imports
-
-### ❌ Don't
-
-1. **Don't use `OxyProvider` on pure web** - Use `WebOxyProvider` instead
-2. **Don't use `WebOxyProvider` in Expo** - Use `OxyProvider` instead
-3. **Don't mix entry points** - Pick one and stick with it
-4. **Don't import UI in backends** - Use `/core` entry point
+1. **Use @oxyhq/core for types everywhere.** All shared types, interfaces, and the OxyServices class live in @oxyhq/core.
+2. **Use @oxyhq/auth for web apps.** It has no React Native dependencies, resulting in smaller bundles and zero bundler configuration.
+3. **Use @oxyhq/services for Expo/RN only.** It includes React Native UI components that require native dependencies.
+4. **Use @oxyhq/core alone for backends.** No React or UI dependencies are pulled in.
+5. **Do not mix @oxyhq/auth and @oxyhq/services.** Pick one based on your platform. Both depend on @oxyhq/core for shared functionality.
 
 ---
 
 ## Troubleshooting
 
-### "react-native" not found
+### Module not found errors on web
 
-**Problem:** Using main entry point on pure web without configuration.
+**Problem:** Importing from `@oxyhq/services` in a web-only app.
 
-**Solution:** Either:
-1. Use `@oxyhq/services/web` instead (recommended)
-2. Add bundler configuration for react-native-web
+**Solution:** Use `@oxyhq/auth` for web apps. The `@oxyhq/services` package requires React Native dependencies.
 
-### Bundle size too large
+### Types not available
 
-**Problem:** Web bundle includes React Native dependencies.
+**Problem:** Cannot find type definitions.
 
-**Solution:** Switch from `@oxyhq/services` to `@oxyhq/services/web`
+**Solution:** Install `@oxyhq/core`. All shared types are exported from this package.
 
-### OxyProvider not working on web
+### Bundle size too large on web
 
-**Problem:** Using `OxyProvider` in pure web app.
+**Problem:** Web bundle includes React Native code.
 
-**Solution:** Use `WebOxyProvider` from `@oxyhq/services/web` instead
+**Solution:** Ensure you are importing from `@oxyhq/auth`, not `@oxyhq/services`.
 
-### Module resolution errors in Node.js
+### OxyProvider not found
 
-**Problem:** Trying to use UI components in Node.js.
+**Problem:** Cannot import `OxyProvider`.
 
-**Solution:** Use `@oxyhq/services/core` for backend applications
+**Solution:** `OxyProvider` is in `@oxyhq/services` (Expo/RN). For web, use `WebOxyProvider` from `@oxyhq/auth`.
 
 ---
 
 ## Summary
 
-- **Expo apps**: Use `@oxyhq/services` with `OxyProvider`
-- **Pure web**: Use `@oxyhq/services/web` with `WebOxyProvider`
-- **Node.js**: Use `@oxyhq/services/core`
-- **Advanced**: Mix entry points as needed (`/ui`, `/crypto`, etc.)
-
-The new `/web` entry point makes it easier than ever to use OxyHQ authentication in pure React web applications!
+| Package | Use Case | Key Exports |
+|---------|----------|-------------|
+| `@oxyhq/core` | All platforms | `OxyServices`, `oxyClient`, types, crypto |
+| `@oxyhq/auth` | Web apps (React) | `WebOxyProvider`, `useAuth` |
+| `@oxyhq/services` | Expo / React Native | `OxyProvider`, `useOxy`, UI components, screens |

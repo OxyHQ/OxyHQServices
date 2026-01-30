@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useOxy } from '../context/OxyContext';
-import { translate } from '../../i18n';
+import { translate } from '@oxyhq/core';
 
 export function useI18n() {
   const { currentLanguage } = useOxy();

@@ -1,5 +1,5 @@
 import { useQuery, useQueries } from '@tanstack/react-query';
-import type { User } from '../../../models/interfaces';
+import type { User } from '@oxyhq/core';
 import { queryKeys } from './queryKeys';
 import { useOxy } from '../../context/OxyContext';
 import { authenticatedApiCall } from '../../utils/authHelpers';

@@ -12,7 +12,8 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { File } from 'expo-file-system';
 import * as FileSystemLegacy from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
-import { KeyManager, useOxy } from '@oxyhq/services';
+import { useOxy } from '@oxyhq/services';
+import { KeyManager } from '@oxyhq/core';
 import JSZip from 'jszip';
 
 interface EncryptedBackupGeneratorProps {

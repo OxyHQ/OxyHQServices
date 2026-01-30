@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { queryKeys } from './queryKeys';
 import { useOxy } from '../../context/OxyContext';
-import type { SecurityActivity, SecurityEventType } from '../../../models/interfaces';
+import type { SecurityActivity, SecurityEventType } from '@oxyhq/core';
 
 /**
  * Get user's security activity with pagination

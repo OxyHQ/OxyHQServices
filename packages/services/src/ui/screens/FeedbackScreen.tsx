@@ -15,7 +15,7 @@ import { useThemeColors } from '../styles';
 import { normalizeTheme } from '../utils/themeUtils';
 import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
-import { packageInfo } from '../../constants/version';
+import { packageInfo } from '@oxyhq/core';
 import { GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
 import { useOxy } from '../context/OxyContext';

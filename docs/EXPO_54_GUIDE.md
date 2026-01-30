@@ -33,7 +33,7 @@ Expo 54 (released December 2024) introduces **universal platform support**, mean
 ### 1. Install Dependencies
 
 ```bash
-npx expo install @oxyhq/services
+npx expo install @oxyhq/services @oxyhq/core
 ```
 
 ### 2. Copy the Universal Auth Example
@@ -115,10 +115,10 @@ export default App;
 
 ## Installation
 
-### Step 1: Install Package
+### Step 1: Install Packages
 
 ```bash
-npx expo install @oxyhq/services
+npx expo install @oxyhq/services @oxyhq/core
 ```
 
 ### Step 2: Install Platform-Specific Dependencies
@@ -286,7 +286,7 @@ const isWeb = Platform.OS === 'web';
 // Conditional imports
 let KeyManager: any = null;
 if (!isWeb) {
-  KeyManager = require('@oxyhq/services/crypto').KeyManager;
+  KeyManager = require('@oxyhq/core').KeyManager;
 }
 
 // Conditional rendering
@@ -468,11 +468,11 @@ let KeyManager: any = null;
 
 if (Platform.OS !== 'web') {
   // Only import on native
-  KeyManager = require('@oxyhq/services/crypto').KeyManager;
+  KeyManager = require('@oxyhq/core').KeyManager;
 }
 ```
 
-#### ❌ "Different behavior on web vs native"
+#### "Different behavior on web vs native"
 
 This is **expected**! The auth system adapts to each platform:
 
@@ -520,16 +520,16 @@ if (auth.platform !== 'web' && auth.createIdentity) {
 4. **Don't** use different auth flows for same app
 
 ```tsx
-// ❌ Bad: Unconditional import
-import { KeyManager } from '@oxyhq/services/crypto'; // Breaks on web!
+// BAD: Unconditional import
+import { KeyManager } from '@oxyhq/core'; // Breaks on web!
 
-// ❌ Bad: No platform check
+// BAD: No platform check
 await KeyManager.getSharedPublicKey(); // Crashes on web!
 
-// ✅ Good: Conditional import
+// GOOD: Conditional import
 let KeyManager: any = null;
 if (Platform.OS !== 'web') {
-  KeyManager = require('@oxyhq/services/crypto').KeyManager;
+  KeyManager = require('@oxyhq/core').KeyManager;
 }
 ```
 
@@ -569,7 +569,7 @@ your-expo-app/
 #### Before (Native-only):
 
 ```tsx
-import { KeyManager } from '@oxyhq/services/crypto';
+import { KeyManager } from '@oxyhq/core';
 
 const publicKey = await KeyManager.getPublicKey();
 ```
@@ -581,7 +581,7 @@ import { Platform } from 'react-native';
 
 let KeyManager: any = null;
 if (Platform.OS !== 'web') {
-  KeyManager = require('@oxyhq/services/crypto').KeyManager;
+  KeyManager = require('@oxyhq/core').KeyManager;
 }
 
 const publicKey = KeyManager
@@ -604,7 +604,7 @@ await auth.signIn();
 
 ```tsx
 import { Platform } from 'react-native';
-import { createCrossDomainAuth } from '@oxyhq/services/core';
+import { createCrossDomainAuth } from '@oxyhq/core';
 
 const crossDomainAuth = Platform.OS === 'web'
   ? createCrossDomainAuth(oxyServices)

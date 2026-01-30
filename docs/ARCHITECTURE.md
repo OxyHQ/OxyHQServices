@@ -22,23 +22,24 @@ Complete architecture documentation for the Oxy ecosystem: identity, authenticat
 Oxy uses **device-based cryptographic identity** as the primary authentication method. Your mobile device securely stores your private key, making the device itself your password.
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    IDENTITY vs AUTHENTICATION                    │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  IDENTITY (Private Key)          AUTHENTICATION (OxyServices)  │
-│  ─────────────────────           ────────────────────────────  │
-│  • Stored ONLY in               • Handles login flows          │
-│    Oxy Accounts app             • Token management             │
-│  • Never leaves device          • Session handling             │
-│  • Device = Password            • Multiple auth methods        │
-│  • BIP39 recovery phrase        • FedCM, popup, redirect       │
-│                                 • Cross-domain SSO             │
-│                                                                 │
-│  [accounts app]  ────────────>  [@oxyhq/services]              │
-│   (native only)                  (all platforms)               │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
++-----------------------------------------------------------------+
+|                    IDENTITY vs AUTHENTICATION                    |
++-----------------------------------------------------------------+
+|                                                                  |
+|  IDENTITY (Private Key)          AUTHENTICATION (Oxy SDK)        |
+|  ----------------------          ----------------------------    |
+|  - Stored ONLY in               - Handles login flows            |
+|    Oxy Accounts app             - Token management               |
+|  - Never leaves device          - Session handling               |
+|  - Device = Password            - Multiple auth methods          |
+|  - BIP39 recovery phrase        - FedCM, popup, redirect         |
+|                                 - Cross-domain SSO               |
+|                                                                  |
+|  [accounts app]  ----------->   [@oxyhq/core]  (foundation)     |
+|   (native only)                 [@oxyhq/auth]  (web auth)       |
+|                                 [@oxyhq/services] (RN/Expo)     |
+|                                                                  |
++-----------------------------------------------------------------+
 ```
 
 ### Key Principles
@@ -53,6 +54,16 @@ Oxy uses **device-based cryptographic identity** as the primary authentication m
 
 ## System Architecture
 
+### 3-Package SDK
+
+The Oxy SDK is split into three independent packages:
+
+| Package | Purpose | Platform |
+|---------|---------|----------|
+| **@oxyhq/core** | Foundation: API client, AuthManager, crypto utilities, types | All (Node.js, web, native) |
+| **@oxyhq/auth** | Web authentication: WebOxyProvider, FedCM, popup/redirect flows | Web only (React, Next.js, Vite) |
+| **@oxyhq/services** | React Native / Expo: OxyProvider, native components, UI | React Native / Expo |
+
 ### Package Structure
 
 ```
@@ -61,57 +72,61 @@ OxyHQServices/
 │   ├── accounts/          # Native-only identity wallet app
 │   │   └── (private keys, recovery, QR transfer)
 │   │
-│   ├── services/          # @oxyhq/services - Auth & API client
-│   │   ├── /core          # API client, FedCM, SSO (no UI)
-│   │   ├── /web           # React web provider (no RN deps)
-│   │   ├── /native        # Expo/RN provider & components
+│   ├── core/              # @oxyhq/core - Foundation
+│   │   ├── /core          # API client, AuthManager, FedCM, SSO (no UI)
 │   │   ├── /crypto        # Signing utilities (NOT key storage)
 │   │   └── /shared        # Platform-agnostic utilities
+│   │
+│   ├── auth/              # @oxyhq/auth - Web auth provider
+│   │   └── /web           # WebOxyProvider, useAuth (no RN deps)
+│   │
+│   ├── services/          # @oxyhq/services - React Native / Expo
+│   │   └── /native        # OxyProvider, native components & hooks
 │   │
 │   ├── api/               # Backend API server
 │   │   └── (users, sessions, auth, FedCM IdP)
 │   │
-│   └── auth/              # auth.oxy.so web app
+│   └── auth-web/          # auth.oxy.so web app
 │       └── (login portal for popup/redirect flows)
 ```
 
 ### Layer Diagram
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                         USER APPLICATIONS                        │
-│   Third-party apps, Oxy apps (Posts, Messenger, etc.)           │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│   ┌─────────────────┐              ┌─────────────────┐         │
-│   │  Oxy Accounts   │              │  @oxyhq/services │         │
-│   │  (Native App)   │              │  (npm package)   │         │
-│   │                 │              │                  │         │
-│   │  • KeyManager   │   signs →    │  • OxyServices   │         │
-│   │  • Recovery     │   challenges │  • AuthManager   │         │
-│   │  • QR Transfer  │              │  • Hooks/UI      │         │
-│   └────────┬────────┘              └────────┬─────────┘         │
-│            │                                │                    │
-│            │  Public Key                    │  API Calls         │
-│            │  + Signature                   │  + Tokens          │
-│            ▼                                ▼                    │
-│   ┌─────────────────────────────────────────────────────────┐   │
-│   │                      api.oxy.so                          │   │
-│   │                                                          │   │
-│   │  • Challenge-Response Auth    • Password Auth            │   │
-│   │  • Session Management         • Social Auth (OAuth)      │   │
-│   │  • FedCM Identity Provider    • User Linking             │   │
-│   └──────────────────────────┬───────────────────────────────┘   │
-│                              │                                   │
-│                              ▼                                   │
-│   ┌─────────────────────────────────────────────────────────┐   │
-│   │                       MongoDB                            │   │
-│   │                                                          │   │
-│   │  Users: { publicKey?, email?, username?, password?,      │   │
-│   │          linkedAccounts?, authMethods[] }                │   │
-│   └─────────────────────────────────────────────────────────┘   │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
++-----------------------------------------------------------------+
+|                         USER APPLICATIONS                        |
+|   Third-party apps, Oxy apps (Posts, Messenger, etc.)           |
++-----------------------------------------------------------------+
+|                                                                  |
+|   +-------------------+              +-------------------+       |
+|   |  Oxy Accounts     |              |  Oxy SDK          |       |
+|   |  (Native App)     |              |  (npm packages)   |       |
+|   |                   |              |                    |       |
+|   |  - KeyManager     |   signs ->   |  @oxyhq/core      |       |
+|   |  - Recovery       |   challenges |  @oxyhq/auth      |       |
+|   |  - QR Transfer    |              |  @oxyhq/services  |       |
+|   +---------+---------+              +---------+----------+       |
+|             |                                  |                  |
+|             |  Public Key                      |  API Calls       |
+|             |  + Signature                     |  + Tokens        |
+|             v                                  v                  |
+|   +---------------------------------------------------------+    |
+|   |                      api.oxy.so                          |    |
+|   |                                                          |    |
+|   |  - Challenge-Response Auth    - Password Auth            |    |
+|   |  - Session Management         - Social Auth (OAuth)      |    |
+|   |  - FedCM Identity Provider    - User Linking             |    |
+|   +----------------------------+-----------------------------+    |
+|                                |                                  |
+|                                v                                  |
+|   +---------------------------------------------------------+    |
+|   |                       MongoDB                            |    |
+|   |                                                          |    |
+|   |  Users: { publicKey?, email?, username?, password?,      |    |
+|   |          linkedAccounts?, authMethods[] }                |    |
+|   +---------------------------------------------------------+    |
+|                                                                  |
++-----------------------------------------------------------------+
 ```
 
 ---
@@ -119,15 +134,15 @@ OxyHQServices/
 ## Identity System
 
 > **IMPORTANT**: Identity (private key storage) exists ONLY in the Oxy Accounts app.
-> `@oxyhq/services` handles authentication but NOT identity storage.
+> The Oxy SDK packages handle authentication but NOT identity storage.
 
 ### Where Identity Lives
 
 | Component | Identity Storage | Signing | Verification |
 |-----------|-----------------|---------|--------------|
-| accounts app | ✅ KeyManager (expo-secure-store) | ✅ Yes | ✅ Yes |
-| @oxyhq/services | ❌ None | ❌ No | ✅ Yes (SignatureService.verify) |
-| api.oxy.so | ❌ None | ❌ No | ✅ Yes (server-side) |
+| accounts app | KeyManager (expo-secure-store) | Yes | Yes |
+| @oxyhq/core | None | No | Yes (SignatureService.verify) |
+| api.oxy.so | None | No | Yes (server-side) |
 
 ### Cryptographic Primitives
 
@@ -140,38 +155,38 @@ OxyHQServices/
 
 ```
 1. CREATE IDENTITY (in Oxy Accounts app)
-   ┌──────────────────────────────────────────────────────────────┐
-   │  1. Generate ECDSA keypair locally (works offline)           │
-   │  2. Store private key in expo-secure-store                   │
-   │  3. Generate BIP39 recovery phrase                           │
-   │  4. User saves recovery phrase (IMPORTANT!)                  │
-   │  5. When online: Register publicKey with api.oxy.so          │
-   └──────────────────────────────────────────────────────────────┘
+   +--------------------------------------------------------------+
+   |  1. Generate ECDSA keypair locally (works offline)           |
+   |  2. Store private key in expo-secure-store                   |
+   |  3. Generate BIP39 recovery phrase                           |
+   |  4. User saves recovery phrase (IMPORTANT!)                  |
+   |  5. When online: Register publicKey with api.oxy.so          |
+   +--------------------------------------------------------------+
 
 2. AUTHENTICATE (sign in to any app)
-   ┌──────────────────────────────────────────────────────────────┐
-   │  1. App requests challenge from api.oxy.so                   │
-   │  2. Oxy Accounts app signs challenge with private key        │
-   │  3. Server verifies signature matches registered publicKey   │
-   │  4. Server creates session, returns JWT tokens               │
-   └──────────────────────────────────────────────────────────────┘
+   +--------------------------------------------------------------+
+   |  1. App requests challenge from api.oxy.so                   |
+   |  2. Oxy Accounts app signs challenge with private key        |
+   |  3. Server verifies signature matches registered publicKey   |
+   |  4. Server creates session, returns JWT tokens               |
+   +--------------------------------------------------------------+
 
 3. TRANSFER TO NEW DEVICE (via QR code)
-   ┌──────────────────────────────────────────────────────────────┐
-   │  1. Old device: Shows QR with encrypted recovery phrase      │
-   │  2. New device: Scans QR, decrypts recovery phrase           │
-   │  3. New device: Restores keypair from recovery phrase        │
-   │  4. New device: Can now sign as the same identity            │
-   └──────────────────────────────────────────────────────────────┘
+   +--------------------------------------------------------------+
+   |  1. Old device: Shows QR with encrypted recovery phrase      |
+   |  2. New device: Scans QR, decrypts recovery phrase           |
+   |  3. New device: Restores keypair from recovery phrase        |
+   |  4. New device: Can now sign as the same identity            |
+   +--------------------------------------------------------------+
 ```
 
 ### Using the Crypto Module
 
-The `/crypto` module is for **signature verification** and **utilities**, NOT key storage:
+Crypto utilities are exported from `@oxyhq/core`. They handle **signature verification** and **utilities**, NOT key storage:
 
 ```typescript
 // In Oxy Accounts app (has full KeyManager)
-import { KeyManager, SignatureService, RecoveryPhraseService } from '@oxyhq/services/crypto';
+import { KeyManager, SignatureService, RecoveryPhraseService } from '@oxyhq/core';
 
 // Generate identity (only in accounts app)
 const publicKey = await KeyManager.createIdentity();
@@ -180,10 +195,10 @@ const { phrase, words } = await RecoveryPhraseService.generateIdentityWithRecove
 // Sign challenges (only in accounts app)
 const signature = await SignatureService.sign(challenge);
 
-// ─────────────────────────────────────────────────────────────
+// -----------------------------------------------------------------
 
 // In other apps (verification only)
-import { SignatureService } from '@oxyhq/services/crypto';
+import { SignatureService } from '@oxyhq/core';
 
 // Verify signatures (works anywhere)
 const isValid = await SignatureService.verify(message, signature, publicKey);
@@ -208,11 +223,11 @@ function LoginScreen() {
 }
 
 // This opens Oxy Accounts app via deep link or shows QR code
-// User authorizes in accounts app → session created
+// User authorizes in accounts app -> session created
 ```
 
 **Flow**:
-1. App creates auth session → gets sessionToken + QR code
+1. App creates auth session -> gets sessionToken + QR code
 2. User scans QR or opens Oxy Accounts app via deep link
 3. Oxy Accounts app signs authorization with private key
 4. Server verifies, links session to user
@@ -223,8 +238,12 @@ function LoginScreen() {
 For web users who prefer traditional login:
 
 ```typescript
+import { OxyServices } from '@oxyhq/core';
+
+const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
+
 // Web login form
-const session = await oxyServices.signIn({
+const session = await oxy.signIn({
   email: 'user@example.com',
   password: 'secret123',
 });
@@ -239,7 +258,7 @@ const session = await oxyServices.signIn({
 Modern browser-native authentication (Chrome 108+, Safari 16.4+):
 
 ```typescript
-import { useAuth } from '@oxyhq/services/web';
+import { useAuth } from '@oxyhq/auth';
 
 function LoginButton() {
   const { signIn, isFedCMSupported } = useAuth();
@@ -273,13 +292,13 @@ const session = crossDomainAuth.handleRedirectCallback();
 
 ### Auth Method Priority
 
-When calling `signIn()`, OxyServices automatically selects the best method:
+When calling `signIn()`, the SDK automatically selects the best method:
 
 ```
 1. FedCM (if browser supports)
-   ↓ fallback
+   | fallback
 2. Popup (default for web)
-   ↓ fallback
+   | fallback
 3. Redirect (if popup blocked)
 ```
 
@@ -572,7 +591,7 @@ function LoginScreen() {
 ### For Web Apps (React, Next.js, Vite)
 
 ```tsx
-import { WebOxyProvider, useAuth } from '@oxyhq/services/web';
+import { WebOxyProvider, useAuth } from '@oxyhq/auth';
 
 function App() {
   return (
@@ -596,8 +615,7 @@ function LoginButton() {
 ### For Node.js/Backend
 
 ```typescript
-import { OxyServices } from '@oxyhq/services/core';
-import { SignatureService } from '@oxyhq/services/crypto';
+import { OxyServices, SignatureService } from '@oxyhq/core';
 
 const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
 

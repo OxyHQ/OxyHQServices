@@ -1,11 +1,11 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
-import type { ApiError, User } from '../../models/interfaces';
-import type { ClientSession } from '../../models/session';
-import { mergeSessions, normalizeAndSortSessions, sessionsArraysEqual } from '../../utils/sessionUtils';
+import type { ApiError, User } from '@oxyhq/core';
+import type { ClientSession } from '@oxyhq/core';
+import { mergeSessions, normalizeAndSortSessions, sessionsArraysEqual } from '@oxyhq/core';
 import { fetchSessionsWithFallback, mapSessionsToClient, validateSessionBatch } from '../utils/sessionHelpers';
 import { getStorageKeys, type StorageInterface } from '../utils/storageHelpers';
 import { handleAuthError, isInvalidSessionError } from '../utils/errorHandlers';
-import type { OxyServices } from '../../core';
+import type { OxyServices } from '@oxyhq/core';
 import type { QueryClient } from '@tanstack/react-query';
 import { clearQueryCache } from './queryClient';
 

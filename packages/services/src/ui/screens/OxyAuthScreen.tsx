@@ -28,7 +28,7 @@ import { useThemeColors } from '../styles';
 import { useOxy } from '../context/OxyContext';
 import QRCode from 'react-native-qrcode-svg';
 import OxyLogo from '../components/OxyLogo';
-import { createDebugLogger } from '../../shared/utils/debugUtils';
+import { createDebugLogger } from '@oxyhq/core';
 
 const debug = createDebugLogger('OxyAuthScreen');
 

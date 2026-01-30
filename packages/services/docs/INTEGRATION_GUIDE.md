@@ -218,7 +218,7 @@ For server components, use the core API directly:
 
 ```typescript
 // app/api/users/route.ts
-import { oxyClient } from '@oxyhq/services/core';
+import { oxyClient } from '@oxyhq/core';
 import { NextResponse } from 'next/server';
 
 export async function GET(request: Request) {
@@ -304,7 +304,7 @@ npm install @oxyhq/services express
 ```typescript
 // server.ts
 import express from 'express';
-import { oxyClient } from '@oxyhq/services';
+import { oxyClient } from '@oxyhq/core';
 
 const app = express();
 app.use(express.json());
@@ -335,7 +335,7 @@ app.listen(3000, () => {
 ### Custom Instance
 
 ```typescript
-import { OxyServices } from '@oxyhq/services';
+import { OxyServices } from '@oxyhq/core';
 
 const oxy = new OxyServices({
   baseURL: process.env.OXY_API_URL || 'https://api.oxy.so'
@@ -380,7 +380,7 @@ npm install @oxyhq/services
 ```typescript
 // composables/useOxy.ts
 import { ref, onMounted } from 'vue';
-import { oxyClient } from '@oxyhq/services';
+import { oxyClient } from '@oxyhq/core';
 
 export function useOxy() {
   const user = ref(null);

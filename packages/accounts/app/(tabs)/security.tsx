@@ -13,7 +13,7 @@ import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy, useUserDevices, useRecentSecurityActivity, useUpdateProfile } from '@oxyhq/services';
 import { formatDate } from '@/utils/date-utils';
-import type { ClientSession, SecurityActivity } from '@oxyhq/services';
+import type { ClientSession, SecurityActivity } from '@oxyhq/core';
 import { useBiometricSettings } from '@/hooks/useBiometricSettings';
 import { getEventIcon, getSeverityColor, getEventSeverity, formatEventDescription } from '@/utils/security-utils';
 import type { MaterialCommunityIconName } from '@/types/icons';

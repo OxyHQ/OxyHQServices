@@ -11,7 +11,7 @@ import { AccountCard } from '@/components/ui';
 import { GroupedSection } from '@/components/grouped-section';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { formatDate } from '@/utils/date-utils';
-import type { ClientSession } from '@oxyhq/services';
+import type { ClientSession } from '@oxyhq/core';
 import { useHapticPress } from '@/hooks/use-haptic-press';
 
 export default function SessionsScreen() {

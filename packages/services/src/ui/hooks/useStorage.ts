@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { ApiError } from '../../models/interfaces';
+import type { ApiError } from '@oxyhq/core';
 import { createPlatformStorage, type StorageInterface } from '../utils/storageHelpers';
 
 export interface UseStorageOptions {

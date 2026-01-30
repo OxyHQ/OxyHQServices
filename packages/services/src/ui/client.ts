@@ -42,10 +42,6 @@ export { fontFamilies, fontStyles } from './styles/fonts';
 // Toast
 export { toast } from '../lib/sonner';
 
-// Core re-exports for convenience
-export { OxyServices } from '../core';
-export type { User, LoginResponse, ApiError } from '../models/interfaces';
-
 // Error handler utilities
 export {
     handleAuthError,

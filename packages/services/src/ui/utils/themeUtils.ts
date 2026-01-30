@@ -13,6 +13,6 @@ export {
   getOppositeTheme,
   systemPrefersDarkMode,
   getSystemColorScheme,
-} from '../../shared/utils/themeUtils';
+} from '@oxyhq/core';
 
-export type { ThemeValue } from '../../shared/utils/themeUtils';
+export type { ThemeValue } from '@oxyhq/core';

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { ClientSession } from '../../../models/session';
+import type { ClientSession } from '@oxyhq/core';
 import { queryKeys } from './queryKeys';
 import { useOxy } from '../../context/OxyContext';
 import { fetchSessionsWithFallback, mapSessionsToClient } from '../../utils/sessionHelpers';

@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import { toast } from '../../lib/sonner';
-import { logger } from '../../utils/loggerUtils';
-import { createDebugLogger } from '../../shared/utils/debugUtils';
+import { logger } from '@oxyhq/core';
+import { createDebugLogger } from '@oxyhq/core';
 
 const debug = createDebugLogger('SessionSocket');
 

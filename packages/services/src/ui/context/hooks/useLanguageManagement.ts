@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { ApiError, User } from '../../../models/interfaces';
+import type { ApiError, User } from '@oxyhq/core';
 import {
   getLanguageMetadata,
   getLanguageName,
   getNativeLanguageName,
   normalizeLanguageCode,
   type LanguageMetadata,
-} from '../../../utils/languageUtils';
+} from '@oxyhq/core';
 import type { StorageInterface } from '../../utils/storageHelpers';
 import { extractErrorMessage } from '../../utils/errorHandlers';
 

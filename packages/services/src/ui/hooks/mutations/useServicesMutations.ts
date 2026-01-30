@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import type { User } from '../../../models/interfaces';
+import type { User } from '@oxyhq/core';
 import { queryKeys, invalidateSessionQueries } from '../queries/queryKeys';
 import { useOxy } from '../../context/OxyContext';
 import { toast } from '../../../lib/sonner';

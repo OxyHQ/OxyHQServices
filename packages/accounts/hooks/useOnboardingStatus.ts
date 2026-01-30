@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Platform } from 'react-native';
-import { useOxy, KeyManager } from '@oxyhq/services';
+import { useOxy } from '@oxyhq/services';
+import { KeyManager } from '@oxyhq/core';
 
 export type OnboardingStatus = 'checking' | 'none' | 'in_progress' | 'complete';
 

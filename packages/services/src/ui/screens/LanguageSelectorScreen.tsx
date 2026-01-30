@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { toast } from '../../lib/sonner';
 import { Header, GroupedSection } from '../components';
 import { useI18n } from '../hooks/useI18n';
-import { SUPPORTED_LANGUAGES } from '../../utils/languageUtils';
+import { SUPPORTED_LANGUAGES } from '@oxyhq/core';
 import { useOxy } from '../context/OxyContext';
 import { fontFamilies } from '../styles/fonts';
 

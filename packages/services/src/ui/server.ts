@@ -56,10 +56,6 @@ export const toast = Object.assign(
     }
 );
 
-// Core re-exports (these work in both environments)
-export { OxyServices } from '../core';
-export type { User, LoginResponse, ApiError } from '../models/interfaces';
-
 // Error handler utilities (pure functions work everywhere)
 export {
     handleAuthError,

@@ -1,5 +1,5 @@
 import { Alert } from 'react-native';
-import type { FileMetadata } from '../../models/interfaces';
+import type { FileMetadata } from '@oxyhq/core';
 import { File as ExpoFile } from 'expo-file-system';
 import { toast } from '../../lib/sonner';
 import type { RouteName } from '../navigation/routes';

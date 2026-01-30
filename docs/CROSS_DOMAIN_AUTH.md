@@ -35,11 +35,11 @@ Sign in once at `auth.oxy.so` and be automatically authenticated across all Oxy 
 | Your App Type | Use This Provider | Why |
 |--------------|-------------------|-----|
 | **Expo 54+ app** (native + web) | `OxyProvider` | Already handles web + native platforms |
-| **Pure web app** (React/Next.js, NO Expo) | `WebOxyProvider` | Web-only, lighter bundle |
+| **Pure web app** (React/Next.js, NO Expo) | `WebOxyProvider` from `@oxyhq/auth` | Web-only, lighter bundle |
 
-⚠️ **IMPORTANT:**
-- **If you're using Expo**, use `OxyProvider` - it already handles web in addition to native
-- **NEVER use `WebOxyProvider` in Expo apps** - it's only for pure React/Next.js projects without Expo
+**IMPORTANT:**
+- **If you're using Expo**, use `OxyProvider` from `@oxyhq/services` -- it already handles web in addition to native
+- **NEVER use `WebOxyProvider` in Expo apps** -- it is only for pure React/Next.js projects without Expo
 - `OxyProvider` works seamlessly on iOS, Android, AND web when used with Expo
 
 ---
@@ -77,7 +77,7 @@ function MyComponent() {
 **Only use this if you're NOT using Expo/React Native:**
 
 ```tsx
-import { WebOxyProvider, useAuth } from '@oxyhq/services';
+import { WebOxyProvider, useAuth } from '@oxyhq/auth';
 
 function App() {
   return (
@@ -88,7 +88,7 @@ function App() {
 }
 ```
 
-⚠️ **Don't use `WebOxyProvider` in Expo apps** - use `OxyProvider` instead.
+**Don't use `WebOxyProvider` in Expo apps** -- use `OxyProvider` from `@oxyhq/services` instead.
 
 ---
 
@@ -236,8 +236,8 @@ await KeyManager.storeSharedSession(sessionId, accessToken);
 #### 3. Complete iOS Flow
 
 ```typescript
-import { OxyServices } from '@oxyhq/services';
-import { KeyManager } from '@oxyhq/services/crypto';
+import { OxyServices } from '@oxyhq/core';
+import { KeyManager } from '@oxyhq/core';
 
 const oxyServices = new OxyServices({ baseURL: 'https://api.oxy.so' });
 

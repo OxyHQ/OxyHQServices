@@ -31,7 +31,7 @@ import QRCode from 'react-native-qrcode-svg';
 import { useThemeColors } from '../hooks/useThemeColors';
 import { useOxy } from '../context/OxyContext';
 import OxyLogo from './OxyLogo';
-import { createDebugLogger } from '../../shared/utils/debugUtils';
+import { createDebugLogger } from '@oxyhq/core';
 
 const debug = createDebugLogger('SignInModal');
 

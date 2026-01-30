@@ -887,7 +887,7 @@ Express.js authentication middleware.
 
 ```typescript
 import express from 'express';
-import { oxyClient } from '@oxyhq/services';
+import { oxyClient } from '@oxyhq/core';
 
 const app = express();
 

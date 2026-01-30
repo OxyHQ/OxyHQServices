@@ -11,7 +11,7 @@ import { useThemeStyles } from '../hooks/useThemeStyles';
 import { useSettingToggles } from '../hooks/useSettingToggle';
 import { normalizeTheme } from '../utils/themeUtils';
 import { useOxy } from '../context/OxyContext';
-import type { User } from '../../models/interfaces';
+import type { User } from '@oxyhq/core';
 
 interface SearchSettings {
     safeSearch: boolean;

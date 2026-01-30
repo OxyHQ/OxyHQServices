@@ -1,12 +1,12 @@
 import { useCallback } from 'react';
 import { useAssetStore } from '../stores/assetStore';
-import { OxyServices } from '../../core/OxyServices';
-import { 
-  Asset, 
-  AssetLinkRequest, 
-  AssetUnlinkRequest, 
-  AssetUploadProgress 
-} from '../../models/interfaces';
+import { OxyServices } from '@oxyhq/core';
+import {
+  Asset,
+  AssetLinkRequest,
+  AssetUnlinkRequest,
+  AssetUploadProgress
+} from '@oxyhq/core';
 
 // Create a singleton instance for the hook
 let oxyInstance: OxyServices | null = null;

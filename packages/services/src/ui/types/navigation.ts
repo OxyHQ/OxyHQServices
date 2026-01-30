@@ -1,8 +1,8 @@
 import type { ReactNode, RefObject } from 'react';
 import type { QueryClient } from '@tanstack/react-query';
 import type { RouteName } from '../navigation/routes';
-import type { User } from '../../models/interfaces';
-import type { ClientSession } from '../../models/session';
+import type { User } from '@oxyhq/core';
+import type { ClientSession } from '@oxyhq/core';
 
 // Re-export RouteName from routes for convenience
 export type { RouteName };

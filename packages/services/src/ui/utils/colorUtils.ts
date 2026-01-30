@@ -15,4 +15,4 @@ export {
   withOpacity,
   isLightColor,
   getContrastTextColor,
-} from '../../shared/utils/colorUtils';
+} from '@oxyhq/core';

@@ -13,7 +13,7 @@ import { darkenColor } from '@/utils/color-utils';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 // @ts-expect-error - FollowButton has conditional export type issue
 import { useOxy, FollowButton } from '@oxyhq/services';
-import type { User, BlockedUser, RestrictedUser } from '@oxyhq/services';
+import type { User, BlockedUser, RestrictedUser } from '@oxyhq/core';
 import { UserAvatar } from '@/components/user-avatar';
 
 export default function SearchScreen() {

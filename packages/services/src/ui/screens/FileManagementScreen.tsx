@@ -32,7 +32,7 @@ import { toast } from '../../lib/sonner';
 import { Ionicons } from '@expo/vector-icons';
 // @ts-ignore - MaterialCommunityIcons is available at runtime
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import type { FileMetadata } from '../../models/interfaces';
+import type { FileMetadata } from '@oxyhq/core';
 import { useFileStore, useFiles, useUploading as useUploadingStore, useUploadAggregateProgress, useDeleting as useDeletingStore } from '../stores/fileStore';
 import Header from '../components/Header';
 import JustifiedPhotoGrid from '../components/photogrid/JustifiedPhotoGrid';

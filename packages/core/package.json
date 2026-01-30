@@ -1,0 +1,84 @@
+{
+  "name": "@oxyhq/core",
+  "version": "1.0.0",
+  "description": "OxyHQ SDK Foundation — API client, authentication, cryptographic identity, and shared utilities",
+  "main": "dist/cjs/index.js",
+  "module": "dist/esm/index.js",
+  "types": "dist/types/index.d.ts",
+  "source": "src/index.ts",
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/esm/index.js",
+      "require": "./dist/cjs/index.js",
+      "default": "./dist/esm/index.js"
+    },
+    "./crypto": {
+      "types": "./dist/types/crypto/index.d.ts",
+      "import": "./dist/esm/crypto/index.js",
+      "require": "./dist/cjs/crypto/index.js",
+      "default": "./dist/esm/crypto/index.js"
+    },
+    "./shared": {
+      "types": "./dist/types/shared/index.d.ts",
+      "import": "./dist/esm/shared/index.js",
+      "require": "./dist/cjs/shared/index.js",
+      "default": "./dist/esm/shared/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src"
+  ],
+  "keywords": [
+    "oxyhq",
+    "sdk",
+    "authentication",
+    "api-client",
+    "crypto",
+    "identity"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oxyhq/sdk",
+    "directory": "packages/core"
+  },
+  "author": "OxyHQ",
+  "license": "MIT",
+  "homepage": "https://oxy.so",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build": "npm run build:cjs && npm run build:esm && npm run build:types && npm run copy-assets",
+    "copy-assets": "cp -r src/i18n/locales dist/cjs/i18n/locales && cp -r src/i18n/locales dist/esm/i18n/locales",
+    "build:cjs": "tsc -p tsconfig.cjs.json",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:types": "tsc -p tsconfig.types.json",
+    "clean": "rm -rf dist",
+    "typescript": "tsc --noEmit",
+    "lint": "biome lint --error-on-warnings ./src"
+  },
+  "dependencies": {
+    "axios": "^1.9.0",
+    "bip39": "^3.1.0",
+    "buffer": "^6.0.3",
+    "elliptic": "^6.6.1",
+    "invariant": "^2.2.4",
+    "jwt-decode": "^4.0.0",
+    "socket.io-client": "^4.8.1",
+    "zod": "^3.25.64"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
+    "@types/elliptic": "^6.4.18",
+    "@types/invariant": "^2.2.34",
+    "@types/node": "^20.19.9",
+    "typescript": "^5.9.2"
+  }
+}

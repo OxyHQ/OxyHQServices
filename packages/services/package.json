@@ -1,7 +1,7 @@
 {
   "name": "@oxyhq/services",
-  "version": "5.26.1",
-  "description": "Reusable OxyHQ module to handle authentication, user management, karma system, device-based session management and more 🚀",
+  "version": "6.0.0",
+  "description": "OxyHQ Expo/React Native SDK — UI components, screens, and native features",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
   "types": "lib/typescript/commonjs/index.d.ts",
@@ -15,32 +15,9 @@
     ".": {
       "types": "./lib/typescript/module/index.d.ts",
       "react-native": "./src/index.ts",
-      "node": {
-        "import": {
-          "types": "./lib/typescript/module/core/index.d.ts",
-          "default": "./lib/module/core/index.js"
-        },
-        "require": {
-          "types": "./lib/typescript/commonjs/core/index.d.ts",
-          "default": "./lib/commonjs/core/index.js"
-        }
-      },
       "import": "./lib/module/index.js",
       "require": "./lib/commonjs/index.js",
       "default": "./lib/module/index.js"
-    },
-    "./web": {
-      "types": "./lib/typescript/module/web/index.d.ts",
-      "import": "./lib/module/web/index.js",
-      "require": "./lib/commonjs/web/index.js",
-      "default": "./lib/module/web/index.js"
-    },
-    "./core": {
-      "types": "./lib/typescript/module/core/index.d.ts",
-      "react-native": "./src/core/index.ts",
-      "import": "./lib/module/core/index.js",
-      "require": "./lib/commonjs/core/index.js",
-      "default": "./lib/module/core/index.js"
     },
     "./ui": {
       "types": "./lib/typescript/module/ui/index.d.ts",
@@ -48,26 +25,6 @@
       "import": "./lib/module/ui/index.js",
       "require": "./lib/commonjs/ui/index.js",
       "default": "./lib/module/ui/index.js"
-    },
-    "./full": {
-      "types": "./lib/typescript/module/index.d.ts",
-      "react-native": "./src/index.ts",
-      "import": "./lib/module/index.js",
-      "require": "./lib/commonjs/index.js",
-      "default": "./lib/module/index.js"
-    },
-    "./crypto": {
-      "types": "./lib/typescript/module/crypto/index.d.ts",
-      "react-native": "./src/crypto/index.ts",
-      "import": "./lib/module/crypto/index.js",
-      "require": "./lib/commonjs/crypto/index.js",
-      "default": "./lib/module/crypto/index.js"
-    },
-    "./shared": {
-      "types": "./lib/typescript/module/shared/index.d.ts",
-      "import": "./lib/module/shared/index.js",
-      "require": "./lib/commonjs/shared/index.js",
-      "default": "./lib/module/shared/index.js"
     },
     "./package.json": "./package.json"
   },
@@ -78,29 +35,31 @@
   ],
   "keywords": [
     "react-native",
+    "expo",
     "ios",
     "android",
-    "web",
-    "OxyHQ",
+    "oxyhq",
+    "sdk",
     "authentication",
-    "bottom-sheet"
+    "ui-components"
   ],
-  "repository": "https://github.com/oxyhq/oxyhqservices",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oxyhq/sdk",
+    "directory": "packages/services"
+  },
   "author": "OxyHQ",
   "license": "MIT",
   "engines": {
     "node": ">=18.0.0",
     "npm": ">=9.0.0"
   },
-  "bugs": {
-    "url": "https://github.com/oxyhq/oxyhqservices/issues"
-  },
   "homepage": "https://oxy.so",
   "scripts": {
     "typescript": "tsc --skipLibCheck --noEmit",
     "lint": "biome lint --error-on-warnings ./src",
     "build": "npx react-native-builder-bob build && npm run copy-assets && npm run copy-dts && npm run delete-dts.js && npm run delete-debug-view",
-    "test": "jest",
+    "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "copy-assets": "copyfiles -u 1 \"src/assets/**/*\" lib/commonjs/assets && copyfiles -u 1 \"src/assets/**/*\" lib/module/assets",
@@ -111,21 +70,16 @@
     "prepublishOnly": "npm run typescript && npm test && npm run build"
   },
   "dependencies": {
+    "@oxyhq/core": "*",
     "@lottiefiles/dotlottie-react": "^0.13.5",
     "@react-native-async-storage/async-storage": "2.1.2",
     "@react-native-community/netinfo": "^11.4.1",
     "@tanstack/react-query": "^5.59.0",
-    "axios": "^1.9.0",
-    "bip39": "^3.1.0",
-    "buffer": "^6.0.3",
-    "elliptic": "^6.6.1",
     "expo-blur": "~15.0.8",
     "expo-checkbox": "^5.0.8",
     "expo-crypto": "~14.0.1",
     "expo-print": "~15.0.8",
     "expo-secure-store": "~14.0.0",
-    "invariant": "^2.2.4",
-    "jwt-decode": "^4.0.0",
     "lottie-react-native": "^7.3.4",
     "react-native-keyboard-controller": "1.18.5",
     "react-native-qrcode-svg": "^6.3.0",
@@ -133,7 +87,6 @@
     "socket.io-client": "^4.8.1",
     "sonner": "^2.0.4",
     "sonner-native": "^0.20.0",
-    "zod": "^3.25.64",
     "zustand": "^5.0.6",
     "@types/react": "^19.2.0",
     "copyfiles": "^2.4.1",
@@ -146,11 +99,7 @@
     "@react-native/babel-preset": "^0.77.0",
     "@release-it/conventional-changelog": "^10.0.2",
     "@testing-library/jest-dom": "^6.4.2",
-    "@types/color": "^3.0.6",
-    "@types/elliptic": "^6.4.18",
-    "@types/invariant": "^2.2.34",
     "@types/jest": "^29.5.14",
-    "@types/jwt-decode": "^2.2.1",
     "@types/node": "^20.19.9",
     "expo-file-system": "~19.0.0",
     "expo-font": "~14.0.9",
@@ -173,15 +122,12 @@
     "@react-navigation/native": "^7.1.8",
     "@types/react": "*",
     "@types/react-native": "*",
-    "axios": "^1.9.0",
     "expo": "~54.0.23",
     "expo-document-picker": "~14.0.0",
     "expo-file-system": "~19.0.0",
     "expo-font": "~14.0.9",
     "expo-image": "~3.0.10",
     "expo-linear-gradient": "^15.0.0",
-    "invariant": "^2.2.4",
-    "jwt-decode": "^4.0.0",
     "react": ">=18.0.0",
     "react-native": ">=0.76.0",
     "react-native-gesture-handler": "~2.28.0",
@@ -190,53 +136,23 @@
     "react-native-svg": ">=13.0.0"
   },
   "peerDependenciesMeta": {
-    "@expo/vector-icons": {
-      "optional": true
-    },
-    "@types/react-native": {
-      "optional": true
-    },
-    "@types/react": {
-      "optional": true
-    },
-    "react-native-qrcode-svg": {
-      "optional": true
-    },
-    "expo": {
-      "optional": true
-    },
-    "expo-font": {
-      "optional": true
-    },
-    "expo-image": {
-      "optional": true
-    },
-    "expo-linear-gradient": {
-      "optional": true
-    },
-    "@react-navigation/native": {
-      "optional": true
-    },
-    "expo-document-picker": {
-      "optional": true
-    }
+    "@expo/vector-icons": { "optional": true },
+    "@types/react-native": { "optional": true },
+    "@types/react": { "optional": true },
+    "react-native-qrcode-svg": { "optional": true },
+    "expo": { "optional": true },
+    "expo-font": { "optional": true },
+    "expo-image": { "optional": true },
+    "expo-linear-gradient": { "optional": true },
+    "@react-navigation/native": { "optional": true },
+    "expo-document-picker": { "optional": true }
   },
   "react-native-builder-bob": {
     "source": "src",
     "output": "lib",
     "targets": [
-      [
-        "commonjs",
-        {
-          "esm": true
-        }
-      ],
-      [
-        "module",
-        {
-          "esm": true
-        }
-      ],
+      ["commonjs", { "esm": true }],
+      ["module", { "esm": true }],
       "typescript"
     ]
   },

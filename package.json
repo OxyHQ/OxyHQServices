@@ -1,29 +1,33 @@
 {
-  "name": "@oxyhq/monorepo",
-  "version": "1.0.1",
-  "description": "OxyHQ Monorepo containing services and API packages",
+  "name": "@oxyhq/sdk",
+  "version": "1.0.0",
+  "description": "OxyHQ SDK Monorepo — core, auth, services, and API packages",
   "private": true,
   "workspaces": [
-    "packages/api",
+    "packages/core",
+    "packages/auth-sdk",
     "packages/services",
+    "packages/api",
     "packages/accounts",
     "packages/test-app"
   ],
   "scripts": {
     "build": "npm run build:all",
+    "build:all": "npm run core:build && npm run auth:build && npm run services:build && npm run build --workspaces --if-present",
     "build:workspaces": "npm run build --workspaces --if-present",
-    "build:all": "npm run services:build && npm run build --workspaces --if-present && npm run accounts:build",
     "start": "cd packages/api && npm start",
     "dev": "npm run dev --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
     "clean": "npm run clean --workspaces --if-present",
     "install:all": "npm install",
-    "api:build": "npm run build -w @oxyhq/api",
-    "api:dev": "npm run dev -w @oxyhq/api",
-    "api:start": "npm run start -w @oxyhq/api",
+    "core:build": "npm run build -w @oxyhq/core",
+    "auth:build": "npm run build -w @oxyhq/auth",
     "services:build": "npm run build -w @oxyhq/services",
     "services:dev": "npm run dev -w @oxyhq/services --if-present",
     "services:test": "npm run test -w @oxyhq/services",
+    "api:build": "npm run build -w @oxyhq/api",
+    "api:dev": "npm run dev -w @oxyhq/api",
+    "api:start": "npm run start -w @oxyhq/api",
     "accounts:build": "npm run build -w accounts",
     "accounts:dev": "npm run start -w accounts",
     "accounts:start": "npm run start -w accounts",
@@ -39,15 +43,15 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/oxyhq/services.git"
+    "url": "git+https://github.com/oxyhq/sdk.git"
   },
   "keywords": [
     "monorepo",
     "oxyhq",
-    "services",
-    "api",
+    "sdk",
     "authentication",
-    "user-management"
+    "api",
+    "services"
   ],
   "author": "OxyHQ",
   "license": "MIT",

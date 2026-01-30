@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, TouchableOpacity, Modal, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import type { FileMetadata } from '../../../models/interfaces';
+import type { FileMetadata } from '@oxyhq/core';
 import { formatFileSize, getFileIcon } from '../../utils/fileManagement';
 import { fileManagementStyles } from './styles';
 import type { ThemeStyles } from '../../hooks/useThemeStyles';

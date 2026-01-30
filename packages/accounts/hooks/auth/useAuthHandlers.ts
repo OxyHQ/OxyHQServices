@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { useRouter } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
-import type { OxyServices } from '@oxyhq/services';
+import type { OxyServices } from '@oxyhq/core';
 import { useAuthStore } from '@oxyhq/services';
 import { checkIfOffline } from '@/utils/auth/networkUtils';
 import { isNetworkOrTimeoutError, extractAuthErrorMessage, handleAuthError } from '@/utils/auth/errorUtils';

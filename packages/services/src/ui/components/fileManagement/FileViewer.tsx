@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, Image } fr
 import { Image as ExpoImage } from 'expo-image';
 // @ts-ignore - MaterialCommunityIcons is available at runtime
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import type { FileMetadata } from '../../../models/interfaces';
+import type { FileMetadata } from '@oxyhq/core';
 import { formatFileSize } from '../../utils/fileManagement';
 import { fileManagementStyles } from './styles';
 import type { ThemeStyles } from '../../hooks/useThemeStyles';

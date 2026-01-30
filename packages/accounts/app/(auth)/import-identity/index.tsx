@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'expo-router';
-import { RecoveryPhraseService } from '@oxyhq/services';
+import { RecoveryPhraseService } from '@oxyhq/core';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { ImportPhraseStep } from '@/components/auth/ImportPhraseStep';
 import { extractAuthErrorMessage } from '@/utils/auth/errorUtils';

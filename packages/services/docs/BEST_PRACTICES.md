@@ -393,7 +393,7 @@ test('handles authentication error', async () => {
 
 ```typescript
 // services/userService.ts
-import { oxyClient } from '@oxyhq/services';
+import { oxyClient } from '@oxyhq/core';
 
 export const userService = {
   async getUserProfile(userId: string) {

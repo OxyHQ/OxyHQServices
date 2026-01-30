@@ -1,4 +1,4 @@
-import type { ApiError } from '@oxyhq/services';
+import type { ApiError } from '@oxyhq/core';
 
 /**
  * Authentication step type

@@ -8,7 +8,8 @@
 import { useCallback } from 'react';
 import { Platform } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useOxy, KeyManager } from '@oxyhq/services';
+import { useOxy } from '@oxyhq/services';
+import { KeyManager } from '@oxyhq/core';
 import { authenticate, canUseBiometrics, getErrorMessage } from '@/lib/biometricAuth';
 
 export function useBiometricSignIn() {

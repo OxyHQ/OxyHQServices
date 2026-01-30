@@ -13,9 +13,9 @@ import {
     Dimensions,
 } from 'react-native';
 import type { BaseScreenProps } from '../types/navigation';
-import type { ClientSession } from '../../models/session';
+import type { ClientSession } from '@oxyhq/core';
 import { fontFamilies } from '../styles/fonts';
-import type { User } from '../../models/interfaces';
+import type { User } from '@oxyhq/core';
 import { toast } from '../../lib/sonner';
 import { confirmAction } from '../utils/confirmAction';
 import OxyIcon from '../components/icon/OxyIcon';

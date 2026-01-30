@@ -11,7 +11,7 @@ import { GroupedSection } from '@/components/grouped-section';
 import { ScreenContentWrapper } from '@/components/screen-content-wrapper';
 import { UnauthenticatedScreen } from '@/components/unauthenticated-screen';
 import { useOxy } from '@oxyhq/services';
-import type { AccountStorageUsageResponse } from '@oxyhq/services';
+import type { AccountStorageUsageResponse } from '@oxyhq/core';
 import { formatDate } from '@/utils/date-utils';
 
 export default function StorageScreen() {

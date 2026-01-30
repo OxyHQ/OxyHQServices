@@ -1,9 +1,10 @@
 const { getDefaultConfig } = require('expo/metro-config');
 const path = require('path');
 
-// Find the project and services directories
+// Find the project and package directories
 const projectRoot = __dirname;
 const monorepoRoot = path.resolve(projectRoot, '..', '..');
+const coreRoot = path.resolve(monorepoRoot, 'packages', 'core');
 const servicesRoot = path.resolve(monorepoRoot, 'packages', 'services');
 const servicesSrc = path.resolve(servicesRoot, 'src');
 const servicesNodeModules = path.resolve(servicesRoot, 'node_modules');
@@ -17,6 +18,7 @@ config.projectRoot = projectRoot;
 // Explicitly include the src directory to ensure hot reload works
 config.watchFolders = [
   projectRoot,
+  coreRoot,
   servicesRoot,
   servicesSrc,
   servicesNodeModules,
@@ -41,9 +43,8 @@ config.resolver.sourceExts = [
 
 // 5. Extra module resolution for local packages
 config.resolver.extraNodeModules = {
+  '@oxyhq/core': path.resolve(coreRoot, 'src', 'index.ts'),
   '@oxyhq/services': path.resolve(servicesRoot, 'src', 'index.ts'),
-  '@oxyhq/services/core': path.resolve(servicesRoot, 'src', 'core'),
-  '@oxyhq/services/full': path.resolve(servicesRoot, 'src', 'index.ts'),
   '@oxyhq/services/ui': path.resolve(servicesRoot, 'src', 'ui'),
 };
 

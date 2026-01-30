@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { shallow } from 'zustand/shallow';
-import type { FileMetadata } from '../../models/interfaces';
+import type { FileMetadata } from '@oxyhq/core';
 // Shallow compare two file metadata objects by keys/values
 function shallowEqualFile(a: FileMetadata, b: FileMetadata): boolean {
   if (a === b) return true;

@@ -1,64 +1,122 @@
-# OxyHQ Services
+# @oxyhq/sdk
 
-A comprehensive monorepo for the Oxy ecosystem including authentication, user management, cross-platform services, and API infrastructure.
+Monorepo for the OxyHQ SDK. Provides modular packages for building web, mobile, and server applications on the Oxy platform.
 
-## 📚 Documentation
+## Packages
 
-All documentation is organized in the [docs/](docs/) folder:
+### Libraries
 
-- **[Cross-Domain Authentication](docs/CROSS_DOMAIN_AUTH.md)** - Web SSO with FedCM guide
-- **[Expo 54 Universal Apps](docs/EXPO_54_GUIDE.md)** - iOS, Android, Web with one codebase
-- **[Font Migration](docs/FONT_MIGRATION.md)** - Inter font migration summary
-- **[Services Package](packages/services/README.md)** - Main package documentation
-- **[Typography Guide](packages/services/FONTS.md)** - Inter font usage
+| Package | Path | Description |
+|---------|------|-------------|
+| `@oxyhq/core` | `packages/core/` | Platform-agnostic foundation. API client, auth, crypto, and types. Works in Node.js, browsers, and React Native. |
+| `@oxyhq/auth` | `packages/auth-sdk/` | Web auth SDK with React hooks and provider. Built for Next.js and Vite. No React Native or Expo dependencies. |
+| `@oxyhq/services` | `packages/services/` | Expo and React Native SDK. UI components, screens, and native features. |
+| `@oxyhq/api` | `packages/api/` | Express.js backend API server. |
 
-## 📦 Packages
+### Applications
 
-### [@oxyhq/services](packages/services/)
-Main TypeScript client library for Oxy API with:
-- Zero-config authentication
-- Cross-domain SSO
-- Universal provider (iOS, Android, Web)
-- UI components
-- Inter font (default Oxy ecosystem typography)
+| App | Path | Description |
+|-----|------|-------------|
+| accounts | `packages/accounts/` | Expo accounts app. |
+| auth | `packages/auth/` | Next.js auth app (standalone). |
+| test-app | `packages/test-app/` | Expo test playground. |
 
-### [@oxyhq/api](packages/api/)
-Node.js/Express API server with:
-- User management
-- Session handling
-- FedCM identity provider
-- Asset management
+## Architecture
 
-## 🚀 Quick Start
+Each platform has a clear import path. Packages do not re-export from one another.
 
-### Install Services Package
+| Platform | Imports |
+|----------|---------|
+| Next.js / Vite | `@oxyhq/core` for types and services, `@oxyhq/auth` for React hooks and provider |
+| Expo / React Native | `@oxyhq/services` for UI components, `@oxyhq/core` for types and services |
+| Node.js | `@oxyhq/core` for API client, auth, and types |
+
+## Quick Start
+
+### Prerequisites
+
+- Node.js 18+
+- npm 9+
+
+### Install and Build
 
 ```bash
-npm install @oxyhq/services
+npm install
+npm run build:all
 ```
 
-### Use in Your App
+Build order: `core` -> `auth` -> `services` -> remaining packages.
 
-```typescript
-import { OxyProvider, useAuth } from '@oxyhq/services';
+### Next.js / Vite
+
+```tsx
+import { WebOxyProvider, useAuth } from "@oxyhq/auth";
+import type { User } from "@oxyhq/core";
+
+function App() {
+  return (
+    <WebOxyProvider baseURL="https://api.oxy.so">
+      <MyComponent />
+    </WebOxyProvider>
+  );
+}
+
+function MyComponent() {
+  const { user, signIn, signOut, isAuthenticated } = useAuth();
+  if (!isAuthenticated) return <button onClick={signIn}>Sign In</button>;
+  return <p>Welcome, {user?.username}</p>;
+}
+```
+
+### Expo / React Native
+
+```tsx
+import { OxyProvider, useAuth } from "@oxyhq/services";
+import type { User } from "@oxyhq/core";
 
 function App() {
   return (
     <OxyProvider baseURL="https://api.oxy.so">
-      <YourApp />
+      <MyComponent />
     </OxyProvider>
   );
 }
+
+function MyComponent() {
+  const { user, signIn, signOut, isAuthenticated } = useAuth();
+  // ...
+}
 ```
 
-See [packages/services/README.md](packages/services/README.md) for complete documentation.
+### Node.js
 
-## 🎨 Typography
+```ts
+import { OxyServices, oxyClient } from "@oxyhq/core";
 
-Inter is the default font for all Oxy ecosystem apps. It's included in `@oxyhq/services` and loads automatically.
+// Use the pre-configured singleton
+const user = await oxyClient.getUserById("user-id");
 
-See [packages/services/FONTS.md](packages/services/FONTS.md) for usage guide.
+// Or create a custom instance
+const oxy = new OxyServices({ baseURL: "https://api.oxy.so" });
+const profile = await oxy.getProfileByUsername("johndoe");
+```
 
-## 📄 License
+## Development
 
-MIT © OxyHQ
+```bash
+# Build all packages in order
+npm run build:all
+
+# Run the API server
+npm start
+
+# Run dev mode across workspaces
+npm run dev
+
+# Run tests
+npm test
+```
+
+## License
+
+MIT -- OxyHQ

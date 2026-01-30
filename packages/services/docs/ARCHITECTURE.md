@@ -1,59 +1,59 @@
 # OxyServices Architecture
 
-This document explains the modular architecture of `@oxyhq/services` and how to use it across different platforms.
+This document explains the modular architecture of the Oxy SDK and how to use it across different platforms.
 
 ## Overview
 
-OxyServices is designed with a layered architecture that separates concerns:
+The Oxy SDK is designed with a layered architecture that separates concerns across dedicated packages:
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    @oxyhq/services (Main)                       │
-│         Full package with everything (Expo/RN + Web)            │
+│         Full package with everything (Expo/RN)                  │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
-│  │   /native   │  │    /web     │  │   /crypto   │             │
-│  │  Expo/RN    │  │  Pure React │  │  Identity   │             │
-│  │  Components │  │  No RN deps │  │  Management │             │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘             │
-│         │                │                │                     │
-│         └────────────────┼────────────────┘                     │
-│                          │                                      │
-│                  ┌───────┴───────┐                              │
-│                  │    /core      │                              │
-│                  │  API Client   │                              │
-│                  │  FedCM Auth   │                              │
-│                  │  No UI deps   │                              │
-│                  └───────┬───────┘                              │
-│                          │                                      │
-│                  ┌───────┴───────┐                              │
-│                  │   /shared     │                              │
-│                  │  Utilities    │                              │
-│                  │  No deps      │                              │
-│                  └───────────────┘                              │
+│  ┌─────────────┐  ┌─────────────┐                               │
+│  │   /native   │  │  @oxyhq/auth│                               │
+│  │  Expo/RN    │  │  Pure React │                               │
+│  │  Components │  │  No RN deps │                               │
+│  └──────┬──────┘  └──────┬──────┘                               │
+│         │                │                                      │
+│         └────────────────┘                                      │
+│                  │                                              │
+│                  ▼                                              │
+│          ┌───────────────┐                                      │
+│          │  @oxyhq/core  │                                      │
+│          │  API Client   │                                      │
+│          │  FedCM Auth   │                                      │
+│          │  Crypto/Utils │                                      │
+│          │  No UI deps   │                                      │
+│          └───────────────┘                                      │
 │                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-## Entry Points
+## Packages
 
-| Entry Point | Use Case | Dependencies | Size |
-|------------|----------|--------------|------|
-| `@oxyhq/services` | Expo apps (native + web) | Full (RN, Expo) | Large |
-| `@oxyhq/services/web` | Pure React apps (Vite, Next.js, CRA) | React only | Small |
-| `@oxyhq/services/core` | Node.js / Backend | None | Minimal |
-| `@oxyhq/services/shared` | Utilities anywhere | None | Tiny |
-| `@oxyhq/services/crypto` | Identity management | Node crypto | Small |
+| Package | Use Case | Dependencies | Size |
+|---------|----------|--------------|------|
+| `@oxyhq/services` | Expo apps (native) | Full (RN, Expo) | Large |
+| `@oxyhq/auth` | Pure React apps (Vite, Next.js, CRA) | React only | Small |
+| `@oxyhq/core` | Node.js / Backend / Utilities / Crypto | None | Minimal |
 
-## Module Descriptions
+## Package Descriptions
 
-### `/shared` - Platform-Agnostic Utilities
+### `@oxyhq/core` - API Client, Authentication, Utilities & Crypto
 
-Zero dependencies. Works everywhere.
+No UI dependencies. Works in Node.js and browsers. Includes platform-agnostic utilities, cryptographic identity management, and the core API client.
 
 ```typescript
 import {
+  // API Client & Auth
+  OxyServices,
+  oxyClient,
+  CrossDomainAuth,
+  createCrossDomainAuth,
+
   // Color utilities
   darkenColor,
   lightenColor,
@@ -73,20 +73,12 @@ import {
   // Network utilities
   withRetry,
   delay,
-} from '@oxyhq/services/shared';
-```
 
-### `/core` - API Client & Authentication
-
-No UI dependencies. Works in Node.js and browsers.
-
-```typescript
-import {
-  OxyServices,
-  oxyClient,
-  CrossDomainAuth,
-  createCrossDomainAuth,
-} from '@oxyhq/services/core';
+  // Crypto / Identity
+  KeyManager,
+  SignatureService,
+  RecoveryPhraseService,
+} from '@oxyhq/core';
 
 // Create client
 const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
@@ -94,15 +86,23 @@ const oxy = new OxyServices({ baseURL: 'https://api.oxy.so' });
 // Use cross-domain auth (FedCM, popup, redirect)
 const auth = createCrossDomainAuth(oxy);
 const session = await auth.signIn(); // Auto-selects best method
+
+// Generate new identity
+const keyManager = new KeyManager();
+const keyPair = await keyManager.generateKeyPair();
+const recoveryPhrase = RecoveryPhraseService.generate();
+
+// Sign messages
+const signature = await SignatureService.sign(message, privateKey);
 ```
 
-### `/web` - Pure React Web Apps
+### `@oxyhq/auth` - Pure React Web Apps
 
 For Next.js, Vite, Create React App, and other pure web frameworks.
 No React Native dependencies = smaller bundles, no bundler config needed.
 
 ```tsx
-import { WebOxyProvider, useAuth } from '@oxyhq/services/web';
+import { WebOxyProvider, useAuth } from '@oxyhq/auth';
 
 function App() {
   return (
@@ -121,26 +121,6 @@ function LoginButton() {
     </button>
   );
 }
-```
-
-### `/crypto` - Identity Management
-
-Cryptographic identity for local-first authentication.
-
-```typescript
-import {
-  KeyManager,
-  SignatureService,
-  RecoveryPhraseService,
-} from '@oxyhq/services/crypto';
-
-// Generate new identity
-const keyManager = new KeyManager();
-const keyPair = await keyManager.generateKeyPair();
-const recoveryPhrase = RecoveryPhraseService.generate();
-
-// Sign messages
-const signature = await SignatureService.sign(message, privateKey);
 ```
 
 ### Main Entry Point - Full Expo/RN
@@ -211,7 +191,7 @@ if (session) {
 }
 ```
 
-## Choosing the Right Entry Point
+## Choosing the Right Package
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -227,8 +207,8 @@ if (session) {
            │                  │                  │
            ▼                  ▼                  ▼
     ┌─────────────┐    ┌─────────────┐    ┌─────────────┐
-    │@oxyhq/      │    │@oxyhq/      │    │@oxyhq/      │
-    │services     │    │services/web │    │services/core│
+    │@oxyhq/      │    │@oxyhq/auth  │    │@oxyhq/core  │
+    │services     │    │             │    │             │
     └─────────────┘    └─────────────┘    └─────────────┘
 ```
 
@@ -241,7 +221,7 @@ if (session) {
 import { normalizeTheme, darkenColor } from '@oxyhq/services';
 
 // NEW (guaranteed no RN deps)
-import { normalizeTheme, darkenColor } from '@oxyhq/services/shared';
+import { normalizeTheme, darkenColor } from '@oxyhq/core';
 ```
 
 ### For Web-Only Apps
@@ -251,13 +231,13 @@ import { normalizeTheme, darkenColor } from '@oxyhq/services/shared';
 import { WebOxyProvider } from '@oxyhq/services';
 
 // NEW (no RN deps, no config needed)
-import { WebOxyProvider, useAuth } from '@oxyhq/services/web';
+import { WebOxyProvider, useAuth } from '@oxyhq/auth';
 ```
 
 ## Best Practices
 
-1. **Use the most specific entry point** - Don't import from main if you only need `/shared`
-2. **Web apps should use `/web`** - Smaller bundles, no bundler configuration
-3. **Backend should use `/core`** - No UI dependencies, works in Node.js
+1. **Use the most specific package** - Don't import from `@oxyhq/services` if you only need `@oxyhq/core`
+2. **Web apps should use `@oxyhq/auth`** - Smaller bundles, no bundler configuration
+3. **Backend should use `@oxyhq/core`** - No UI dependencies, works in Node.js
 4. **Check FedCM support** - Use `isFedCMSupported()` to show appropriate UI
 5. **Handle auth errors** - FedCM can fail, always have fallback to popup/redirect
