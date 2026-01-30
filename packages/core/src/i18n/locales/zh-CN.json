@@ -45,7 +45,7 @@
     "viewAllAccounts": "查看更多{{count}}个",
     "status": {
       "accountSwitched": "正在使用{{name}}"
-    },
+    }
   },
   "signup": {
     "welcome": {

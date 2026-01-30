@@ -45,7 +45,7 @@
         "viewAllAccounts": "さらに{{count}}件を表示",
         "status": {
             "accountSwitched": "{{name}}を使用中"
-        },
+        }
     },
     "signup": {
         "welcome": {

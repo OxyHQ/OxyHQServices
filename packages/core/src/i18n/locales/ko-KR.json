@@ -45,7 +45,7 @@
     "viewAllAccounts": "{{count}}개 더 보기",
     "status": {
       "accountSwitched": "{{name}} 사용 중"
-    },
+    }
   },
   "signup": {
     "welcome": {

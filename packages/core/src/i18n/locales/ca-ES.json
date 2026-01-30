@@ -45,7 +45,7 @@
     "viewAllAccounts": "Veure {{count}} més",
     "status": {
       "accountSwitched": "Ara utilitzant {{name}}"
-    },
+    }
   },
   "signup": {
     "welcome": {

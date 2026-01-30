@@ -45,7 +45,7 @@
     "viewAllAccounts": "{{count}} weitere anzeigen",
     "status": {
       "accountSwitched": "Verwende jetzt {{name}}"
-    },
+    }
   },
   "signup": {
     "welcome": {

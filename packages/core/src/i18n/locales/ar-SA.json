@@ -45,7 +45,7 @@
     "viewAllAccounts": "عرض {{count}} المزيد",
     "status": {
       "accountSwitched": "استخدام {{name}} الآن"
-    },
+    }
   },
   "signup": {
     "welcome": {
