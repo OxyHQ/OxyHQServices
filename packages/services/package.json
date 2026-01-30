@@ -1,6 +1,6 @@
 {
   "name": "@oxyhq/services",
-  "version": "6.0.0",
+  "version": "6.0.1",
   "description": "OxyHQ Expo/React Native SDK — UI components, screens, and native features",
   "main": "lib/commonjs/index.js",
   "module": "lib/module/index.js",
@@ -71,11 +71,13 @@
     "prepublishOnly": "npm run typescript && npm test && npm run build"
   },
   "dependencies": {
-    "@oxyhq/core": "*",
     "@lottiefiles/dotlottie-react": "^0.13.5",
+    "@oxyhq/core": "*",
     "@react-native-async-storage/async-storage": "2.1.2",
     "@react-native-community/netinfo": "^11.4.1",
     "@tanstack/react-query": "^5.59.0",
+    "@types/react": "*",
+    "copyfiles": "^2.4.1",
     "expo-blur": "~15.0.8",
     "expo-checkbox": "^5.0.8",
     "expo-crypto": "~14.0.1",
@@ -88,10 +90,8 @@
     "socket.io-client": "^4.8.1",
     "sonner": "^2.0.4",
     "sonner-native": "^0.20.0",
-    "zustand": "^5.0.6",
-    "@types/react": "^19.2.0",
-    "copyfiles": "^2.4.1",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "zustand": "^5.0.6"
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
@@ -100,6 +100,7 @@
     "@react-native/babel-preset": "^0.77.0",
     "@release-it/conventional-changelog": "^10.0.2",
     "@testing-library/jest-dom": "^6.4.2",
+    "@types/color": "^4.2.0",
     "@types/jest": "^29.5.14",
     "@types/node": "^20.19.9",
     "expo-file-system": "~19.0.0",
@@ -137,23 +138,53 @@
     "react-native-svg": ">=13.0.0"
   },
   "peerDependenciesMeta": {
-    "@expo/vector-icons": { "optional": true },
-    "@types/react-native": { "optional": true },
-    "@types/react": { "optional": true },
-    "react-native-qrcode-svg": { "optional": true },
-    "expo": { "optional": true },
-    "expo-font": { "optional": true },
-    "expo-image": { "optional": true },
-    "expo-linear-gradient": { "optional": true },
-    "@react-navigation/native": { "optional": true },
-    "expo-document-picker": { "optional": true }
+    "@expo/vector-icons": {
+      "optional": true
+    },
+    "@types/react-native": {
+      "optional": true
+    },
+    "@types/react": {
+      "optional": true
+    },
+    "react-native-qrcode-svg": {
+      "optional": true
+    },
+    "expo": {
+      "optional": true
+    },
+    "expo-font": {
+      "optional": true
+    },
+    "expo-image": {
+      "optional": true
+    },
+    "expo-linear-gradient": {
+      "optional": true
+    },
+    "@react-navigation/native": {
+      "optional": true
+    },
+    "expo-document-picker": {
+      "optional": true
+    }
   },
   "react-native-builder-bob": {
     "source": "src",
     "output": "lib",
     "targets": [
-      ["commonjs", { "esm": true }],
-      ["module", { "esm": true }],
+      [
+        "commonjs",
+        {
+          "esm": true
+        }
+      ],
+      [
+        "module",
+        {
+          "esm": true
+        }
+      ],
       "typescript"
     ]
   },
