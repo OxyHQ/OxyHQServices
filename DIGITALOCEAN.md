@@ -12,7 +12,7 @@ All components use **Source Directory:** `/` since they depend on the monorepo w
 |-------|-------|
 | **Type** | Static Site |
 | **Source Directory** | `/` |
-| **Build Command** | `npm ci && npm run build --workspace=packages/core && npm run build --workspace=packages/accounts` |
+| **Build Command** | `npm ci && npm run build -w @oxyhq/core && npm run build -w accounts` |
 | **Output Directory** | `packages/accounts/dist` |
 
 ---
@@ -23,7 +23,7 @@ All components use **Source Directory:** `/` since they depend on the monorepo w
 |-------|-------|
 | **Type** | Web Service |
 | **Source Directory** | `/` |
-| **Build Command** | `npm ci && npm run build --workspace=packages/core && npm run build --workspace=packages/api` |
+| **Build Command** | `npm ci && npm run build -w @oxyhq/core && npm run build -w @oxyhq/api` |
 | **Run Command** | `node packages/api/dist/server.js` |
 
 ---
@@ -34,8 +34,8 @@ All components use **Source Directory:** `/` since they depend on the monorepo w
 |-------|-------|
 | **Type** | Web Service |
 | **Source Directory** | `/` |
-| **Build Command** | `npm ci && npm run build --workspace=packages/core && npm run build --workspace=packages/auth-sdk && npm run build --workspace=packages/auth` |
-| **Run Command** | `npm start --workspace=packages/auth` |
+| **Build Command** | `npm ci && npm run build -w @oxyhq/core && npm run build -w @oxyhq/auth && npm run build -w auth` |
+| **Run Command** | `npm start -w auth` |
 
 ---
 

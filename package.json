@@ -8,6 +8,7 @@
     "packages/auth-sdk",
     "packages/services",
     "packages/api",
+    "packages/auth",
     "packages/accounts",
     "packages/test-app"
   ],
