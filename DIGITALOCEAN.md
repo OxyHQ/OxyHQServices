@@ -39,9 +39,14 @@ All components use **Source Directory:** `/` since they depend on the monorepo w
 
 ---
 
+## Important: Heroku Buildpack Behavior
+
+DigitalOcean uses the Heroku Node.js buildpack. It automatically runs `heroku-postbuild` or `build` scripts from the root `package.json` **before** your custom build command. To prevent this from building all packages (including `@oxyhq/services` which requires React Native), the root `package.json` intentionally has **no** `"build"` or `"heroku-postbuild"` script. Each component's custom build command handles everything.
+
 ## Notes
 
 - **Build order matters.** `@oxyhq/core` must be built first since all other packages depend on it.
 - **auth** also requires `@oxyhq/auth` (`packages/auth-sdk`) to be built before the Next.js app.
 - **accounts** is a static site (Expo web export). **api** and **auth** are web services with run commands.
 - All components point to the same GitHub repo and branch (`main`).
+- **Do not** add `"build"` or `"heroku-postbuild"` to the root `package.json` — this would trigger a full monorepo build including `@oxyhq/services`, which fails without React Native dependencies.

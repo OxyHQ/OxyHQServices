@@ -12,7 +12,6 @@
     "packages/test-app"
   ],
   "scripts": {
-    "build": "npm run build:all",
     "build:all": "npm run core:build && npm run auth:build && npm run services:build && npm run build --workspaces --if-present",
     "build:workspaces": "npm run build --workspaces --if-present",
     "start": "cd packages/api && npm start",
@@ -30,8 +29,7 @@
     "api:start": "npm run start -w @oxyhq/api",
     "accounts:build": "npm run build -w accounts",
     "accounts:dev": "npm run start -w accounts",
-    "accounts:start": "npm run start -w accounts",
-    "heroku-postbuild": "npm run build:all"
+    "accounts:start": "npm run start -w accounts"
   },
   "devDependencies": {
     "@types/express": "^4.17.21",
