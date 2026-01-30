@@ -59,6 +59,7 @@
     "typescript": "tsc --skipLibCheck --noEmit",
     "lint": "biome lint --error-on-warnings ./src",
     "build": "npx react-native-builder-bob build && npm run copy-assets && npm run copy-dts && npm run delete-dts.js && npm run delete-debug-view",
+    "build:js": "npx react-native-builder-bob build --target commonjs && npx react-native-builder-bob build --target module && npm run copy-assets",
     "test": "jest --passWithNoTests",
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",

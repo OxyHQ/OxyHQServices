@@ -12,7 +12,7 @@ All components use **Source Directory:** `/` since they depend on the monorepo w
 |-------|-------|
 | **Type** | Static Site |
 | **Source Directory** | `/` |
-| **Build Command** | `npm ci && npm run build -w @oxyhq/core && npm run build -w accounts` |
+| **Build Command** | `npm ci && npm run build -w @oxyhq/core && npm run build:js -w @oxyhq/services && npm run build -w accounts` |
 | **Output Directory** | `packages/accounts/dist` |
 
 ---
@@ -50,3 +50,4 @@ DigitalOcean uses the Heroku Node.js buildpack. It automatically runs `heroku-po
 - **accounts** is a static site (Expo web export). **api** and **auth** are web services with run commands.
 - All components point to the same GitHub repo and branch (`main`).
 - **Do not** add `"build"` or `"heroku-postbuild"` to the root `package.json` — this would trigger a full monorepo build including `@oxyhq/services`, which fails without React Native dependencies.
+- **accounts** depends on `@oxyhq/services`. Use `build:js` (not `build`) for services on DO — it compiles only the JS targets (commonjs + module) without TypeScript definitions, which would fail without full React Native type dependencies.
