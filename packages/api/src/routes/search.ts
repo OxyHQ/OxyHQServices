@@ -1,13 +1,15 @@
 import express, { Request, Response } from "express";
 import User from "../models/User";
 import { logger } from '../utils/logger';
+import { sanitizeSearchQuery } from '../utils/sanitize';
 
 const router = express.Router();
 
 router.get("/", async (req: Request, res: Response) => {
   try {
     const { query, type = "all" } = req.query;
-    const searchQuery = { $regex: query as string, $options: "i" };
+    const sanitized = sanitizeSearchQuery((query as string) || '');
+    const searchQuery = { $regex: sanitized, $options: "i" };
     
     const results: any = { users: [] };
 

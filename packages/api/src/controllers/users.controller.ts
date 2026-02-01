@@ -10,6 +10,7 @@ import User from '../models/User';
 import { logger } from '../utils/logger';
 import { BadRequestError, InternalServerError } from '../utils/error';
 import { sendSuccess } from '../utils/asyncHandler';
+import { sanitizeSearchQuery } from '../utils/sanitize';
 
 export class UsersController {
   /**
@@ -28,8 +29,8 @@ export class UsersController {
         throw new BadRequestError('Search query is required and must be a non-empty string');
       }
 
-      // Sanitize search query (basic injection prevention)
-      const sanitizedQuery = query.trim().substring(0, 100); // Limit length
+      // Sanitize search query (length limit + HTML escaping)
+      const sanitizedQuery = sanitizeSearchQuery(query);
 
       // Search for users where username or name matches the query
       const users = await User.find({

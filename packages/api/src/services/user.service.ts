@@ -10,6 +10,7 @@ import Follow, { FollowType } from '../models/Follow';
 import { logger } from '../utils/logger';
 import { Types } from 'mongoose';
 import securityActivityService from './securityActivityService';
+import { sanitizeProfileUpdate } from '../utils/sanitize';
 import { Request } from 'express';
 import {
   PaginationParams,
@@ -77,10 +78,13 @@ export class UserService {
       'accountExpiresAfterInactivityDays',
     ] as const;
 
+    // Sanitize text fields to prevent XSS
+    const sanitizedUpdates = sanitizeProfileUpdate(updates as Record<string, unknown>) as ProfileUpdateInput;
+
     // Filter and validate updates
     const filteredUpdates: Partial<ProfileUpdateInput> = {};
-    
-    for (const [key, value] of Object.entries(updates)) {
+
+    for (const [key, value] of Object.entries(sanitizedUpdates)) {
       if (!allowedFields.includes(key as any)) continue;
       
       // Handle avatar field - can be string ID or object with id
