@@ -1,25 +1,41 @@
-import { Request, Response } from "express";
+import { Response } from "express";
+import { AuthRequest } from "../middleware/auth";
 import Subscription from "../models/Subscription";
 import User from "../models/User";
 import { logger } from '../utils/logger';
+import { ForbiddenError, UnauthorizedError } from '../utils/error';
 
-export const getSubscription = async (req: Request, res: Response) => {
+function assertOwnership(req: AuthRequest, userId: string): void {
+  if (!req.user) {
+    throw new UnauthorizedError('Authentication required');
+  }
+  if (req.user._id.toString() !== userId) {
+    throw new ForbiddenError('You do not have permission to access this subscription');
+  }
+}
+
+export const getSubscription = async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
+    assertOwnership(req, userId);
     const subscription = await Subscription.findOne({ userId });
     res.json(subscription || { plan: "basic" });
   } catch (error) {
+    if (error instanceof ForbiddenError || error instanceof UnauthorizedError) {
+      throw error;
+    }
     logger.error('Error fetching subscription:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: "Error fetching subscription",
       error: error instanceof Error ? error.message : "Unknown error"
     });
   }
 };
 
-export const updateSubscription = async (req: Request, res: Response) => {
+export const updateSubscription = async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
+    assertOwnership(req, userId);
     const { plan } = req.body;
 
     let features = {
@@ -78,17 +94,21 @@ export const updateSubscription = async (req: Request, res: Response) => {
 
     res.json(subscription);
   } catch (error) {
+    if (error instanceof ForbiddenError || error instanceof UnauthorizedError) {
+      throw error;
+    }
     logger.error('Error updating subscription:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: "Error updating subscription",
       error: error instanceof Error ? error.message : "Unknown error"
     });
   }
 };
 
-export const cancelSubscription = async (req: Request, res: Response) => {
+export const cancelSubscription = async (req: AuthRequest, res: Response) => {
   try {
     const { userId } = req.params;
+    assertOwnership(req, userId);
     const subscription = await Subscription.findOneAndUpdate(
       { userId },
       { status: "canceled" },
@@ -101,8 +121,11 @@ export const cancelSubscription = async (req: Request, res: Response) => {
 
     res.json(subscription);
   } catch (error) {
+    if (error instanceof ForbiddenError || error instanceof UnauthorizedError) {
+      throw error;
+    }
     logger.error('Error canceling subscription:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       message: "Error canceling subscription",
       error: error instanceof Error ? error.message : "Unknown error"
     });

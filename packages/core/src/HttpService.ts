@@ -131,6 +131,7 @@ export class HttpService {
   private requestQueue: RequestQueue;
   private logger: SimpleLogger;
   private config: OxyConfig;
+  private tokenRefreshPromise: Promise<string | null> | null = null;
 
   // Performance monitoring
   private requestMetrics = {
@@ -563,25 +564,15 @@ export class HttpService {
 
       // If token expires in less than 60 seconds, refresh it
       if (decoded.exp && decoded.exp - currentTime < 60 && decoded.sessionId) {
+        // Deduplicate concurrent refresh attempts
+        if (!this.tokenRefreshPromise) {
+          this.tokenRefreshPromise = this._refreshTokenFromSession(decoded.sessionId);
+        }
         try {
-          const refreshUrl = `${this.baseURL}/api/session/token/${decoded.sessionId}`;
-          
-          // Use AbortSignal.timeout for consistent timeout handling
-          const response = await fetch(refreshUrl, {
-            method: 'GET',
-            headers: { 'Accept': 'application/json' },
-            signal: AbortSignal.timeout(5000),
-            credentials: 'include', // Include cookies for cross-origin requests
-          });
-
-          if (response.ok) {
-            const { accessToken: newToken } = await response.json();
-            this.tokenStore.setTokens(newToken);
-            this.logger.debug('Token refreshed');
-            return `Bearer ${newToken}`;
-          }
-        } catch (refreshError) {
-          this.logger.warn('Token refresh failed, using current token');
+          const result = await this.tokenRefreshPromise;
+          if (result) return result;
+        } finally {
+          this.tokenRefreshPromise = null;
         }
       }
 
@@ -590,6 +581,28 @@ export class HttpService {
       this.logger.error('Error processing token:', error);
       return `Bearer ${accessToken}`;
     }
+  }
+
+  private async _refreshTokenFromSession(sessionId: string): Promise<string | null> {
+    try {
+      const refreshUrl = `${this.baseURL}/api/session/token/${sessionId}`;
+      const response = await fetch(refreshUrl, {
+        method: 'GET',
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(5000),
+        credentials: 'include',
+      });
+
+      if (response.ok) {
+        const { accessToken: newToken } = await response.json();
+        this.tokenStore.setTokens(newToken);
+        this.logger.debug('Token refreshed');
+        return `Bearer ${newToken}`;
+      }
+    } catch (refreshError) {
+      this.logger.warn('Token refresh failed, using current token');
+    }
+    return null;
   }
 
   /**

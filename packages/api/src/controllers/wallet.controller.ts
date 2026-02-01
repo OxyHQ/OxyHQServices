@@ -46,18 +46,11 @@ const PURCHASE_SCHEMA = z.object({
 // =============================================================================
 
 /**
- * Checks if the requesting user has permission to access a resource
- * @param requestingUserId - The ID of the user making the request
- * @param resourceUserId - The ID of the user who owns the resource
- * @returns Promise<boolean> - True if user has permission
+ * Checks if the requesting user has permission to access a resource.
+ * Currently only allows self-access. Extend with proper RBAC when admin roles are implemented.
  */
-async function hasPermission(requestingUserId: string, resourceUserId: string): Promise<boolean> {
-  if (requestingUserId === resourceUserId) {
-    return true;
-  }
-
-  const requestingUser = await User.findById(requestingUserId);
-  return requestingUser?.username?.includes('admin') ?? false;
+function hasPermission(requestingUserId: string, resourceUserId: string): boolean {
+  return requestingUserId === resourceUserId;
 }
 
 // =============================================================================
@@ -84,7 +77,7 @@ export const getWallet = async (req: AuthRequest, res: Response): Promise<void> 
     }
 
     // Check permissions
-    const hasAccess = await hasPermission(req.user._id.toString(), userId);
+    const hasAccess = hasPermission(req.user._id.toString(), userId);
     if (!hasAccess) {
       throw new ForbiddenError('You do not have permission to view this wallet');
     }
@@ -136,7 +129,7 @@ export const getTransactionHistory = async (req: AuthRequest, res: Response): Pr
     }
 
     // Check permissions
-    const hasAccess = await hasPermission(req.user._id.toString(), userId);
+    const hasAccess = hasPermission(req.user._id.toString(), userId);
     if (!hasAccess) {
       throw new ForbiddenError('You do not have permission to view these transactions');
     }
@@ -202,7 +195,7 @@ export const transferFunds = async (req: AuthRequest, res: Response): Promise<vo
     }
 
     // Check permissions
-    const hasAccess = await hasPermission(req.user._id.toString(), fromUserId);
+    const hasAccess = hasPermission(req.user._id.toString(), fromUserId);
     if (!hasAccess) {
       throw new ForbiddenError('You do not have permission to transfer from this account');
     }
@@ -311,7 +304,7 @@ export const processPurchase = async (req: AuthRequest, res: Response): Promise<
     }
 
     // Check permissions
-    const hasAccess = await hasPermission(req.user._id.toString(), userId);
+    const hasAccess = hasPermission(req.user._id.toString(), userId);
     if (!hasAccess) {
       throw new ForbiddenError('You do not have permission to make purchases from this account');
     }
@@ -408,7 +401,7 @@ export const requestWithdrawal = async (req: AuthRequest, res: Response): Promis
     }
 
     // Check permissions
-    const hasAccess = await hasPermission(req.user._id.toString(), userId);
+    const hasAccess = hasPermission(req.user._id.toString(), userId);
     if (!hasAccess) {
       throw new ForbiddenError('You do not have permission to withdraw from this account');
     }
@@ -516,7 +509,7 @@ export const getTransaction = async (req: AuthRequest, res: Response): Promise<v
     const isRecipient = req.user._id.toString() === (transaction.recipientId?.toString() || '');
     
     if (!isSender && !isRecipient) {
-      const hasAccess = await hasPermission(req.user._id.toString(), transaction.userId.toString());
+      const hasAccess = hasPermission(req.user._id.toString(), transaction.userId.toString());
       if (!hasAccess) {
         throw new ForbiddenError('You do not have permission to view this transaction');
       }

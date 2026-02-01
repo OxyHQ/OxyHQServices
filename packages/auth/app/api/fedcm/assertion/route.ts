@@ -17,7 +17,11 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // Shared secret for signing FedCM tokens - must match api.oxy.so
-const FEDCM_TOKEN_SECRET = process.env.FEDCM_TOKEN_SECRET || process.env.ACCESS_TOKEN_SECRET || 'fedcm-shared-secret';
+const FEDCM_TOKEN_SECRET = process.env.FEDCM_TOKEN_SECRET || process.env.ACCESS_TOKEN_SECRET;
+
+if (!FEDCM_TOKEN_SECRET) {
+  throw new Error('FEDCM_TOKEN_SECRET or ACCESS_TOKEN_SECRET environment variable is required');
+}
 
 /**
  * Get CORS headers for FedCM responses

@@ -53,12 +53,15 @@ export async function POST(request: NextRequest) {
 }
 
 /**
- * GET handler for logout - supports redirect after logout
+ * GET handler for logout - supports redirect after logout.
+ * Only allows relative path redirects to prevent open redirect attacks.
  */
 export async function GET(request: NextRequest) {
     const cookieStore = await cookies()
     const sessionId = cookieStore.get(SESSION_COOKIE_NAME)?.value
-    const redirectUrl = request.nextUrl.searchParams.get("redirect") || "/"
+    const rawRedirect = request.nextUrl.searchParams.get("redirect") || "/"
+    // Only allow relative paths — block absolute URLs, protocol-relative URLs, etc.
+    const redirectUrl = rawRedirect.startsWith("/") && !rawRedirect.startsWith("//") ? rawRedirect : "/"
 
     if (sessionId) {
         try {

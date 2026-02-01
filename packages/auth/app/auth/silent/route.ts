@@ -31,6 +31,18 @@ export async function GET(request: NextRequest) {
     return new NextResponse('client_id parameter is required', { status: 400 });
   }
 
+  // Validate client_id is a valid origin URL to prevent postMessage to arbitrary targets
+  let clientOrigin: string;
+  try {
+    const parsed = new URL(clientId);
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+      return new NextResponse('client_id must be a valid HTTP(S) origin', { status: 400 });
+    }
+    clientOrigin = parsed.origin;
+  } catch {
+    return new NextResponse('client_id must be a valid URL origin', { status: 400 });
+  }
+
   // Check for session cookie
   const cookieStore = await cookies();
   const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
@@ -59,6 +71,15 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Safely encode data as base64 to prevent script injection via </script> in JSON
+  const payloadJson = JSON.stringify({
+    sessionData,
+    clientId,
+    nonce,
+    targetOrigin: clientOrigin,
+  });
+  const payloadBase64 = Buffer.from(payloadJson).toString('base64');
+
   // Return HTML that sends postMessage to parent
   const html = `
 <!DOCTYPE html>
@@ -70,21 +91,16 @@ export async function GET(request: NextRequest) {
 <body>
   <script>
     (function() {
-      const sessionData = ${JSON.stringify(sessionData)};
-      const clientId = ${JSON.stringify(clientId)};
-      const nonce = ${JSON.stringify(nonce)};
+      var payload = JSON.parse(atob("${payloadBase64}"));
 
-      // Send message to parent window
-      const message = {
+      var message = {
         type: 'oxy_silent_auth',
-        session: sessionData,
-        nonce: nonce,
+        session: payload.sessionData,
+        nonce: payload.nonce,
       };
 
       try {
-        // Send to specific origin (client_id is the origin)
-        window.parent.postMessage(message, clientId);
-        console.log('[Silent Auth] Sent message to parent:', message.type, sessionData ? 'with session' : 'no session');
+        window.parent.postMessage(message, payload.targetOrigin);
       } catch (error) {
         console.error('[Silent Auth] Failed to send postMessage:', error);
       }

@@ -142,6 +142,7 @@ export class AuthManager {
   private listeners: Set<AuthStateChangeCallback> = new Set();
   private currentUser: MinimalUserData | null = null;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
+  private refreshPromise: Promise<boolean> | null = null;
   private config: Required<AuthManagerConfig>;
 
   constructor(oxyServices: OxyServices, config: AuthManagerConfig = {}) {
@@ -261,9 +262,24 @@ export class AuthManager {
   }
 
   /**
-   * Refresh the access token.
+   * Refresh the access token. Deduplicates concurrent calls so only one
+   * refresh request is in-flight at a time.
    */
   async refreshToken(): Promise<boolean> {
+    // If a refresh is already in-flight, return the same promise
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    this.refreshPromise = this._doRefreshToken();
+    try {
+      return await this.refreshPromise;
+    } finally {
+      this.refreshPromise = null;
+    }
+  }
+
+  private async _doRefreshToken(): Promise<boolean> {
     const refreshToken = await this.storage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
     if (!refreshToken) {
       return false;

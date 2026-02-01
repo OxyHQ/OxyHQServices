@@ -397,10 +397,15 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
    * @private
    */
   public generateState(): string {
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
-      return window.crypto.randomUUID();
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
     }
-    return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    }
+    throw new Error('No secure random source available for state generation');
   }
 
   /**
@@ -409,10 +414,15 @@ export function OxyServicesPopupAuthMixin<T extends typeof OxyServicesBase>(Base
    * @private
    */
   public generateNonce(): string {
-    if (typeof window !== 'undefined' && window.crypto && window.crypto.randomUUID) {
-      return window.crypto.randomUUID();
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+      return crypto.randomUUID();
     }
-    return `${Date.now()}-${Math.random().toString(36).substring(2, 15)}`;
+    if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+      const bytes = new Uint8Array(16);
+      crypto.getRandomValues(bytes);
+      return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+    }
+    throw new Error('No secure random source available for nonce generation');
   }
 
   /**

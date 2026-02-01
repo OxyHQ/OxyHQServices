@@ -24,6 +24,14 @@ interface User {
 }
 
 export async function GET(request: NextRequest) {
+  // Only available in development to prevent user data exposure in production
+  if (process.env.NODE_ENV === 'production') {
+    return NextResponse.json(
+      { error: 'Debug endpoint is disabled in production' },
+      { status: 404 }
+    );
+  }
+
   const debugInfo: Record<string, any> = {
     timestamp: new Date().toISOString(),
     origin: request.headers.get('origin'),
@@ -45,7 +53,7 @@ export async function GET(request: NextRequest) {
       debugInfo.error = 'No session cookie found';
       return NextResponse.json(debugInfo, {
         headers: {
-          'Access-Control-Allow-Origin': request.headers.get('origin') || '*',
+          'Access-Control-Allow-Origin': request.headers.get('origin') || 'https://auth.oxy.so',
           'Access-Control-Allow-Credentials': 'true',
         },
       });

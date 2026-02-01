@@ -170,15 +170,12 @@ export class DeviceManager {
    * Generate a unique device ID
    */
   private static generateDeviceId(): string {
-    // Use crypto.getRandomValues if available, otherwise fallback to Math.random
     if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
       const array = new Uint8Array(32);
       crypto.getRandomValues(array);
       return Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
-    } else {
-      // Fallback for environments without crypto.getRandomValues
-      return 'device_' + Date.now().toString(36) + Math.random().toString(36).substr(2);
     }
+    throw new Error('No secure random source available for device ID generation');
   }
 
   /**
