@@ -287,7 +287,7 @@ function NavBar() {
 
   return (
     <div>
-      <span>{user.username}</span>
+      <span>{user?.username}</span>
       <button onClick={signOut}>Sign Out</button>
     </div>
   );
