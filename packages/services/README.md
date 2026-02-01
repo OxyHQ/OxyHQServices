@@ -573,9 +573,9 @@ function MyComponent() {
 **Documentation:**
 For complete documentation, see [Bottom Sheet Routing Guide](./docs/BOTTOM_SHEET_ROUTING.md).
 
-### Using OxyRouter in Your Own UI (Legacy)
+### Using OxyRouter Standalone
 
-> The legacy bottom sheet component has been removed. Use the new `showBottomSheet()` API instead (see above).
+If you need to embed the router in your own modal or container instead of using `showBottomSheet()`:
 
 ```typescript
 import { Modal } from 'react-native';
@@ -626,7 +626,7 @@ function MyComponent() {
 
 To integrate with react-i18next, i18n-js, next-intl, or other i18n libraries, see the comprehensive guide:
 
-See [Complete i18n Integration Guide](./I18N_INTEGRATION.md) for step-by-step integration with popular i18n libraries, bidirectional sync between services and your i18n system, language code format conversion utilities, and complete working examples.
+See the language utilities and `useOxy()` hook sections above for integration with your i18n system.
 
 ### Using OxyServices (Non-React)
 
@@ -738,7 +738,7 @@ try {
 For React Native/Expo projects:
 
 ```bash
-npm install axios jwt-decode invariant
+npm install jwt-decode invariant
 ```
 
 **Note**: `react-native-url-polyfill` is already included as a dependency in this package.
@@ -808,7 +808,7 @@ Comprehensive documentation is available in the `/docs` directory:
 
 - **[Getting Started](./GET_STARTED.md)** - Quick start guide for new developers
 - **[Platform Guide](./PLATFORM_GUIDE.md)** - Platform-specific setup guide
-- **[CROSS_DOMAIN_AUTH.md](../../CROSS_DOMAIN_AUTH.md)** - SSO deep dive
+- **[CROSS_DOMAIN_AUTH.md](../../docs/CROSS_DOMAIN_AUTH.md)** - SSO deep dive
 
 ---
 

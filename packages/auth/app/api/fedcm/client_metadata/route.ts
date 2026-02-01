@@ -38,8 +38,9 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Map of known Oxy apps with their metadata
-  const clientMetadata: Record<string, any> = {
+  // Known Oxy ecosystem apps with specific metadata.
+  // Unknown clients get default Oxy policies.
+  const clientMetadata: Record<string, { privacy_policy_url: string; terms_of_service_url: string }> = {
     'https://homiio.com': {
       privacy_policy_url: 'https://homiio.com/privacy',
       terms_of_service_url: 'https://homiio.com/terms',
@@ -52,25 +53,14 @@ export async function GET(request: NextRequest) {
       privacy_policy_url: 'https://alia.onl/privacy',
       terms_of_service_url: 'https://alia.onl/terms',
     },
-    'https://oxy.so': {
-      privacy_policy_url: 'https://oxy.so/privacy',
-      terms_of_service_url: 'https://oxy.so/terms',
-    },
-    'http://localhost:3000': {
-      privacy_policy_url: 'https://oxy.so/privacy',
-      terms_of_service_url: 'https://oxy.so/terms',
-    },
-    'http://localhost:8081': {
-      privacy_policy_url: 'https://oxy.so/privacy',
-      terms_of_service_url: 'https://oxy.so/terms',
-    },
   };
 
-  // Return metadata for the client or default Oxy metadata
-  const metadata = clientMetadata[clientId] || {
+  const defaultMetadata = {
     privacy_policy_url: 'https://oxy.so/privacy',
     terms_of_service_url: 'https://oxy.so/terms',
   };
+
+  const metadata = clientMetadata[clientId] || defaultMetadata;
 
   return NextResponse.json(metadata, {
     headers: {

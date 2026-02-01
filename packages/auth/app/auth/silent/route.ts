@@ -116,8 +116,8 @@ export async function GET(request: NextRequest) {
       'Cache-Control': 'no-store, no-cache, must-revalidate',
       'Pragma': 'no-cache',
       'Expires': '0',
-      // Allow embedding in iframes from any origin for silent auth
-      'Content-Security-Policy': "frame-ancestors *",
+      // Allow embedding in iframes from the validated client origin for silent auth
+      'Content-Security-Policy': `frame-ancestors ${clientOrigin}`,
     },
   });
 }

@@ -46,8 +46,6 @@ export async function GET(request: NextRequest) {
     }
   );
 
-  console.log('[FedCM Login Status] Set-Login:', hasSession ? 'logged-in' : 'logged-out');
-
   return response;
 }
 

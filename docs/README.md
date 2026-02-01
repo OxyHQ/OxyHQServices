@@ -56,6 +56,7 @@ Complete documentation for the Oxy ecosystem: identity, authentication, and serv
 ```
 OxyHQServices/
 ├── README.md                          # Main project readme
+├── CLAUDE.md                          # Dev instructions and build commands
 ├── docs/                              # Central documentation
 │   ├── README.md                      # This file (documentation index)
 │   ├── ARCHITECTURE.md               # Complete architecture guide
@@ -63,24 +64,16 @@ OxyHQServices/
 │   ├── EXPO_54_GUIDE.md              # Expo 54 universal app guide
 │   └── FONT_MIGRATION.md             # Font migration summary
 ├── packages/
-│   ├── accounts/                      # Identity wallet (native only)
-│   ├── core/                          # @oxyhq/core package
-│   │   └── src/
-│   │       ├── core/                  # API client, AuthManager
-│   │       ├── crypto/                # Signing (NOT key storage)
-│   │       └── shared/                # Platform-agnostic utils
-│   ├── auth/                          # @oxyhq/auth package (web auth)
-│   │   └── src/
-│   │       └── web/                   # WebOxyProvider (no RN deps)
-│   ├── services/                      # @oxyhq/services package (RN/Expo)
+│   ├── core/                          # @oxyhq/core (platform-agnostic foundation)
+│   ├── auth-sdk/                      # @oxyhq/auth (web auth SDK, React hooks)
+│   ├── services/                      # @oxyhq/services (Expo/React Native SDK)
 │   │   ├── README.md                  # Package documentation
-│   │   ├── docs/                      # Detailed package docs
-│   │   │   ├── ARCHITECTURE.md        # Package architecture
-│   │   │   └── PUBLIC_KEY_AUTHENTICATION.md  # Crypto docs
-│   │   └── src/
-│   │       └── native/                # OxyProvider (Expo/RN)
-│   └── api/                           # Backend API server
-│       └── README.md                  # API documentation
+│   │   └── docs/                      # Detailed package docs
+│   ├── api/                           # @oxyhq/api (Express.js backend)
+│   ├── auth/                          # Next.js auth app (FedCM IdP)
+│   ├── accounts/                      # Expo accounts app
+│   ├── test-app-expo/                 # Expo test playground
+│   └── test-app-vite/                 # Vite web test app
 ```
 
 ## Key Concepts

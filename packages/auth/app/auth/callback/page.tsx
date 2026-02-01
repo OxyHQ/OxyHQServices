@@ -61,8 +61,10 @@ function AuthCallbackContent() {
         state,
       };
 
-      // Debug logging
-      console.log('[AuthCallback] Params:', { sessionId, accessToken: accessToken ? '[present]' : '[missing]', state, redirectUri, targetOrigin });
+      // Debug logging (dev only)
+      if (process.env.NODE_ENV === 'development') {
+        console.log('[AuthCallback] Params:', { sessionId, accessToken: accessToken ? '[present]' : '[missing]', state, redirectUri, targetOrigin });
+      }
 
       if (error) {
         response.error = errorDescription || error;
@@ -80,7 +82,6 @@ function AuthCallbackContent() {
       // Send message to parent window
       try {
         window.opener.postMessage(response, targetOrigin);
-        console.log('[AuthCallback] Sent auth response to parent:', response.type);
       } catch (e) {
         console.error('[AuthCallback] Failed to send postMessage:', e);
       }

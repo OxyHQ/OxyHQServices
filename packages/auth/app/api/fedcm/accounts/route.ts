@@ -61,9 +61,13 @@ function createFedCMResponse(
   return NextResponse.json(data, { headers });
 }
 
+const isDev = process.env.NODE_ENV === 'development';
+
 export async function GET(request: NextRequest) {
-  console.log('[FedCM Accounts] Request received from:', request.headers.get('origin'));
-  console.log('[FedCM Accounts] sec-fetch-dest:', request.headers.get('sec-fetch-dest'));
+  if (isDev) {
+    console.log('[FedCM Accounts] Request received from:', request.headers.get('origin'));
+    console.log('[FedCM Accounts] sec-fetch-dest:', request.headers.get('sec-fetch-dest'));
+  }
 
   // Validate this is a FedCM request (optional but recommended for security)
   const secFetchDest = request.headers.get('sec-fetch-dest');
@@ -78,12 +82,12 @@ export async function GET(request: NextRequest) {
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
     const allCookies = cookieStore.getAll();
-    console.log('[FedCM Accounts] All cookies:', allCookies.map(c => c.name));
-    console.log('[FedCM Accounts] Session cookie:', sessionCookie ? `${sessionCookie.value.substring(0, 8)}...` : 'NOT FOUND');
+    if (isDev) {
+      console.log('[FedCM Accounts] All cookies:', allCookies.map(c => c.name));
+      console.log('[FedCM Accounts] Session cookie:', sessionCookie ? `${sessionCookie.value.substring(0, 8)}...` : 'NOT FOUND');
+    }
 
     if (!sessionCookie) {
-      // No session - return empty accounts list (not an error)
-      console.log('[FedCM Accounts] No session cookie, returning empty accounts');
       return createFedCMResponse({ accounts: [] }, request);
     }
 
@@ -93,14 +97,12 @@ export async function GET(request: NextRequest) {
       user = await apiGet<User>(`/api/session/user/${sessionCookie.value}`);
     } catch (error) {
       // Invalid session - return empty accounts (not an error for FedCM)
-      console.log('[FedCM Accounts] Session lookup failed, returning empty accounts');
       return createFedCMResponse({ accounts: [] }, request);
     }
 
     // Approved clients for auto sign-in (no UI prompt)
-    // SECURITY: Only pre-approved Oxy ecosystem domains are allowed
-    // Do NOT dynamically add arbitrary origins
-    const APPROVED_CLIENTS = [
+    // Configurable via FEDCM_APPROVED_CLIENTS env var (comma-separated origins)
+    const defaultClients = [
       'https://homiio.com',
       'https://mention.earth',
       'https://alia.onl',
@@ -108,11 +110,14 @@ export async function GET(request: NextRequest) {
       'https://accounts.oxy.so',
       'https://auth.oxy.so',
       'https://api.oxy.so',
-      ...(process.env.NODE_ENV === 'development' ? [
-        'http://localhost:3000',
-        'http://localhost:8081',
-      ] : []),
     ];
+    const envClients = process.env.FEDCM_APPROVED_CLIENTS
+      ? process.env.FEDCM_APPROVED_CLIENTS.split(',').map(s => s.trim()).filter(Boolean)
+      : [];
+    const devClients = process.env.NODE_ENV === 'development'
+      ? ['http://localhost:3000', 'http://localhost:8081', 'http://localhost:5173']
+      : [];
+    const APPROVED_CLIENTS = [...defaultClients, ...envClients, ...devClients];
 
     // Return account information
     const accounts = [
@@ -126,7 +131,7 @@ export async function GET(request: NextRequest) {
       },
     ];
 
-    console.log('[FedCM Accounts] Returning account for user:', user.id);
+    if (isDev) console.log('[FedCM Accounts] Returning account for user:', user.id);
     return createFedCMResponse({ accounts }, request, { loggedIn: true });
   } catch (error) {
     // IMPORTANT: Return 200 with empty accounts instead of 500

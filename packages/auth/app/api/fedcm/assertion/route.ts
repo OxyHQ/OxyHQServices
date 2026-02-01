@@ -17,10 +17,12 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // Shared secret for signing FedCM tokens - must match api.oxy.so
-const FEDCM_TOKEN_SECRET = process.env.FEDCM_TOKEN_SECRET || process.env.ACCESS_TOKEN_SECRET;
-
-if (!FEDCM_TOKEN_SECRET) {
-  throw new Error('FEDCM_TOKEN_SECRET or ACCESS_TOKEN_SECRET environment variable is required');
+function getFedCMTokenSecret(): string {
+  const secret = process.env.FEDCM_TOKEN_SECRET || process.env.ACCESS_TOKEN_SECRET;
+  if (!secret) {
+    throw new Error('FEDCM_TOKEN_SECRET or ACCESS_TOKEN_SECRET environment variable is required');
+  }
+  return secret;
 }
 
 /**
@@ -56,7 +58,7 @@ function generateIdToken(userId: string, clientId: string, nonce?: string): stri
   };
 
   const payload = {
-    iss: 'https://auth.oxy.so', // Issuer
+    iss: process.env.NEXT_PUBLIC_OXY_AUTH_URL || 'https://auth.oxy.so', // Issuer
     sub: userId, // Subject (user ID)
     aud: clientId, // Audience (client app)
     exp: Math.floor(Date.now() / 1000) + 300, // Expires in 5 minutes (short-lived for exchange)
@@ -78,7 +80,7 @@ function generateIdToken(userId: string, clientId: string, nonce?: string): stri
 
   // Sign with HMAC-SHA256
   const signature = crypto
-    .createHmac('sha256', FEDCM_TOKEN_SECRET)
+    .createHmac('sha256', getFedCMTokenSecret())
     .update(signatureInput)
     .digest('base64')
     .replace(/\+/g, '-')
@@ -88,9 +90,11 @@ function generateIdToken(userId: string, clientId: string, nonce?: string): stri
   return `${headerB64}.${payloadB64}.${signature}`;
 }
 
+const isDev = process.env.NODE_ENV === 'development';
+
 export async function POST(request: NextRequest) {
   const corsHeaders = getCorsHeaders(request);
-  console.log('[FedCM Assertion] Request received from:', request.headers.get('origin'));
+  if (isDev) console.log('[FedCM Assertion] Request received from:', request.headers.get('origin'));
 
   // Validate this is a FedCM request (optional but recommended for security)
   const secFetchDest = request.headers.get('sec-fetch-dest');
@@ -117,7 +121,7 @@ export async function POST(request: NextRequest) {
       client_id = formData.get('client_id') as string;
       disclosure_text_shown = formData.get('disclosure_text_shown') as string;
       nonce = formData.get('nonce') as string;
-      console.log('[FedCM Assertion] Parsed form data:', { account_id, client_id, hasNonce: !!nonce, disclosure_text_shown });
+      if (isDev) console.log('[FedCM Assertion] Parsed form data:', { account_id, client_id, hasNonce: !!nonce, disclosure_text_shown });
     } else if (contentType.includes('application/json')) {
       const body = await request.json();
       account_id = body.account_id;
@@ -125,7 +129,7 @@ export async function POST(request: NextRequest) {
       disclosure_text_shown = body.disclosure_text_shown;
       // Prefer params.nonce (Chrome 145+), fallback to top-level nonce (older browsers)
       nonce = body.params?.nonce || body.nonce;
-      console.log('[FedCM Assertion] Parsed JSON body:', { account_id, client_id, hasNonce: !!nonce, disclosure_text_shown });
+      if (isDev) console.log('[FedCM Assertion] Parsed JSON body:', { account_id, client_id, hasNonce: !!nonce, disclosure_text_shown });
     } else {
       // Try to parse as form data by default (FedCM standard)
       try {
@@ -135,14 +139,13 @@ export async function POST(request: NextRequest) {
         client_id = params.get('client_id');
         disclosure_text_shown = params.get('disclosure_text_shown');
         nonce = params.get('nonce');
-        console.log('[FedCM Assertion] Parsed URL params:', { account_id, client_id, hasNonce: !!nonce, disclosure_text_shown });
+        if (isDev) console.log('[FedCM Assertion] Parsed URL params:', { account_id, client_id, hasNonce: !!nonce, disclosure_text_shown });
       } catch (parseError) {
-        console.log('[FedCM Assertion] Failed to parse body:', parseError);
+        if (isDev) console.log('[FedCM Assertion] Failed to parse body:', parseError);
       }
     }
 
     if (!account_id || !client_id) {
-      console.log('[FedCM Assertion] Missing required fields');
       return NextResponse.json(
         { error: 'account_id and client_id are required' },
         { status: 400, headers: corsHeaders }
@@ -152,12 +155,8 @@ export async function POST(request: NextRequest) {
     // Verify session
     const cookieStore = await cookies();
     const sessionCookie = cookieStore.get(SESSION_COOKIE_NAME);
-    const allCookies = cookieStore.getAll();
-    console.log('[FedCM Assertion] All cookies:', allCookies.map(c => c.name));
-    console.log('[FedCM Assertion] Session cookie:', sessionCookie ? `${sessionCookie.value.substring(0, 8)}...` : 'NOT FOUND');
 
     if (!sessionCookie) {
-      console.log('[FedCM Assertion] ERROR: No session cookie found');
       return NextResponse.json(
         { error: 'No active session' },
         { status: 401, headers: corsHeaders }
@@ -167,11 +166,9 @@ export async function POST(request: NextRequest) {
     // Fetch user to verify account_id matches session
     let user: User;
     try {
-      console.log('[FedCM Assertion] Looking up user for session:', sessionCookie.value.substring(0, 8) + '...');
       user = await apiGet<User>(`/api/session/user/${sessionCookie.value}`);
-      console.log('[FedCM Assertion] User found:', { id: user.id, username: user.username });
     } catch (error) {
-      console.log('[FedCM Assertion] ERROR: Session lookup failed:', error);
+      if (isDev) console.log('[FedCM Assertion] Session lookup failed:', error);
       return NextResponse.json(
         { error: 'Invalid session' },
         { status: 401, headers: corsHeaders }
@@ -180,7 +177,6 @@ export async function POST(request: NextRequest) {
 
     // Verify account_id matches the authenticated user
     if (user.id !== account_id) {
-      console.log('[FedCM Assertion] ERROR: Account ID mismatch:', { userId: user.id, accountId: account_id });
       return NextResponse.json(
         { error: 'Account ID mismatch' },
         { status: 403, headers: corsHeaders }
@@ -188,9 +184,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Generate ID token
-    console.log('[FedCM Assertion] Generating token for user:', user.id, 'client:', client_id);
     const token = generateIdToken(user.id, client_id, nonce || undefined);
-    console.log('[FedCM Assertion] Token generated successfully, length:', token.length);
+    if (isDev) console.log('[FedCM Assertion] Token generated for user:', user.id);
 
     // Return the ID assertion
     return NextResponse.json(

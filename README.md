@@ -18,8 +18,9 @@ Monorepo for the OxyHQ SDK. Provides modular packages for building web, mobile, 
 | App | Path | Description |
 |-----|------|-------------|
 | accounts | `packages/accounts/` | Expo accounts app. |
-| auth | `packages/auth/` | Next.js auth app (standalone). |
-| test-app | `packages/test-app/` | Expo test playground. |
+| auth | `packages/auth/` | Next.js auth app (standalone, FedCM IdP). |
+| test-app-expo | `packages/test-app-expo/` | Expo test playground. |
+| test-app-vite | `packages/test-app-vite/` | Vite web test app (`@oxyhq/core` + `@oxyhq/auth`). |
 
 ## Architecture
 
