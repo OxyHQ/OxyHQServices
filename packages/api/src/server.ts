@@ -103,18 +103,23 @@ io.use(createSocketRateLimiter(100, 10_000)); // 100 events per 10s
 // Socket.IO authentication middleware
 io.use((socket: AuthenticatedSocket, next) => {
   const token = socket.handshake.auth.token;
-  
+
   if (!token) {
     return next(new Error('Authentication error'));
   }
-  
+
   try {
     // Verify the token
     if (!process.env.ACCESS_TOKEN_SECRET) {
       throw new Error('ACCESS_TOKEN_SECRET is not configured');
     }
-    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET);
-    socket.user = decoded as { id: string, [key: string]: any };
+    const decoded = jwt.verify(token, process.env.ACCESS_TOKEN_SECRET) as any;
+    // Normalize userId: tokens use 'userId' field, but socket interface expects 'id'
+    const userId = decoded.userId || decoded.id;
+    if (!userId) {
+      return next(new Error('Token missing user ID'));
+    }
+    socket.user = { id: userId, ...decoded };
     next();
   } catch (error) {
     logger.error('Socket authentication error:', error);
@@ -125,7 +130,7 @@ io.use((socket: AuthenticatedSocket, next) => {
 // Socket connection handling for authenticated users
 io.on('connection', (socket: AuthenticatedSocket) => {
   logger.debug('Socket connected', { socketId: socket.id });
-  
+
   if (socket.user?.id) {
     const room = `user:${socket.user.id}`;
     socket.join(room);

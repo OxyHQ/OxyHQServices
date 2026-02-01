@@ -128,6 +128,19 @@ export interface OxyServices extends InstanceType<ReturnType<typeof composeOxySe
   // Redirect authentication
   signInWithRedirect(options?: RedirectAuthOptions): void;
   signUpWithRedirect(options?: RedirectAuthOptions): void;
+
+  // Express.js middleware
+  auth(options?: {
+    debug?: boolean;
+    onError?: (error: any) => any;
+    loadUser?: boolean;
+    optional?: boolean;
+  }): (req: any, res: any, next: any) => Promise<void>;
+
+  // Socket.IO middleware
+  authSocket(options?: {
+    debug?: boolean;
+  }): (socket: any, next: (err?: Error) => void) => Promise<void>;
 }
 
 // Re-export error classes for convenience

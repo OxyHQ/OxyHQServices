@@ -280,8 +280,18 @@ export class AuthManager {
   }
 
   private async _doRefreshToken(): Promise<boolean> {
-    const refreshToken = await this.storage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
-    if (!refreshToken) {
+    // Get session info to find sessionId for token refresh
+    const sessionJson = await this.storage.getItem(STORAGE_KEYS.SESSION);
+    if (!sessionJson) {
+      return false;
+    }
+
+    let sessionId: string;
+    try {
+      const session = JSON.parse(sessionJson);
+      sessionId = session.sessionId;
+      if (!sessionId) return false;
+    } catch {
       return false;
     }
 
@@ -289,13 +299,36 @@ export class AuthManager {
       await retryAsync(
         async () => {
           const httpService = this.oxyServices.httpService as HttpService;
-          const response = await httpService.request<SessionLoginResponse>({
-            method: 'POST',
-            url: '/api/auth/refresh',
-            data: { refreshToken },
+          // Use session-based token endpoint which handles auto-refresh server-side
+          const response = await httpService.request<{ accessToken: string; expiresAt: string }>({
+            method: 'GET',
+            url: `/api/session/token/${sessionId}`,
             cache: false,
+            retry: false,
           });
-          await this.handleAuthSuccess(response, 'credentials');
+
+          if (!response.accessToken) {
+            throw new Error('No access token in refresh response');
+          }
+
+          // Update access token in storage and HTTP client
+          await this.storage.setItem(STORAGE_KEYS.ACCESS_TOKEN, response.accessToken);
+          this.oxyServices.httpService.setTokens(response.accessToken);
+
+          // Update session expiry and schedule next refresh
+          if (response.expiresAt) {
+            try {
+              const session = JSON.parse(sessionJson);
+              session.expiresAt = response.expiresAt;
+              await this.storage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(session));
+            } catch {
+              // Ignore parse errors for session update
+            }
+
+            if (this.config.autoRefresh) {
+              this.setupTokenRefresh(response.expiresAt);
+            }
+          }
         },
         2,    // 2 retries = 3 total attempts
         1000, // 1s base delay with exponential backoff + jitter
