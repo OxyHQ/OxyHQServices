@@ -10,7 +10,7 @@
  *
  * Usage:
  * ```typescript
- * import { CrossDomainAuth } from '@oxyhq/services';
+ * import { CrossDomainAuth } from '@oxyhq/core';
  *
  * const auth = new CrossDomainAuth(oxyServices);
  *
@@ -287,7 +287,7 @@ export class CrossDomainAuth {
  *
  * @example
  * ```typescript
- * import { createCrossDomainAuth } from '@oxyhq/services';
+ * import { createCrossDomainAuth } from '@oxyhq/core';
  *
  * const oxyServices = new OxyServices({ baseURL: 'https://api.oxy.so' });
  * const auth = createCrossDomainAuth(oxyServices);

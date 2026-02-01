@@ -3,10 +3,10 @@
 ## Commands
 
 ```bash
+npm run build -w @oxyhq/core     # Build @oxyhq/core
+npm run build -w @oxyhq/auth     # Build @oxyhq/auth
+npm run build -w @oxyhq/services # Build @oxyhq/services
 npm run build:all                # Build all (order: core -> auth -> services -> rest)
-npm run core:build               # Build @oxyhq/core
-npm run auth:build               # Build @oxyhq/auth
-npm run services:build           # Build @oxyhq/services
 npm run test                     # Run all workspace tests
 npm run dev                      # Dev mode across workspaces
 npm install                      # Install all workspace deps
@@ -18,13 +18,14 @@ Monorepo (`@oxyhq/sdk`) using npm workspaces. Build order matters: `core` -> `au
 
 ```
 packages/
-  core/        @oxyhq/core       Platform-agnostic foundation (zero React/RN)
-  auth-sdk/    @oxyhq/auth       Web auth SDK (React hooks, zero RN/Expo)
-  services/    @oxyhq/services   Expo/React Native SDK (UI, screens, native features)
-  api/         @oxyhq/api        Express.js backend API
-  accounts/                      Expo accounts app
-  auth/                          Next.js auth app (standalone)
-  test-app/                      Expo test/playground app
+  core/           @oxyhq/core       Platform-agnostic foundation (zero React/RN)
+  auth-sdk/       @oxyhq/auth       Web auth SDK (React hooks, zero RN/Expo)
+  services/       @oxyhq/services   Expo/React Native SDK (UI, screens, native features)
+  api/            @oxyhq/api        Express.js backend API
+  accounts/                         Expo accounts app
+  auth/                             Next.js auth app (standalone, FedCM IdP)
+  test-app/                         Expo test/playground app
+  test-app-vite/                    Vite test app (web-only, uses @oxyhq/core + @oxyhq/auth)
 ```
 
 **Dependency graph:**
@@ -34,6 +35,7 @@ packages/
 @oxyhq/services       dep: @oxyhq/core
 accounts              dep: @oxyhq/core + @oxyhq/services
 test-app              dep: @oxyhq/services
+test-app-vite         dep: @oxyhq/core + @oxyhq/auth
 ```
 
 ## Package Boundaries (strict)
@@ -41,6 +43,16 @@ test-app              dep: @oxyhq/services
 - **@oxyhq/core** must never import `react`, `react-native`, or `expo-*`. Dynamic imports (`await import(...)`) for optional RN modules are allowed.
 - **@oxyhq/auth** must never import `react-native` or `expo-*`. Dynamic import of `@react-native-async-storage/async-storage` is the only exception.
 - **@oxyhq/services** does NOT re-export from `@oxyhq/core`. Consumers import core types directly from `@oxyhq/core`.
+
+## ESM/CJS Compatibility (critical)
+
+Both `@oxyhq/core` and `@oxyhq/auth` ship dual CJS + ESM builds. The ESM build **must not contain `require()` calls** — Vite and other ESM-only bundlers will crash.
+
+- **Never** use `require()` in `packages/core/` or `packages/auth-sdk/` source code
+- Use `import ... from` for static imports (JSON files, modules)
+- Use `await import(moduleName)` for optional/platform-specific modules (e.g. expo-crypto)
+- Guard any unavoidable `require()` with `typeof require !== 'undefined'`
+- For platform-specific crypto: use `isReactNative()` → expo-crypto, `isNodeJS()` → node crypto, else → Web Crypto API
 
 ## Import Conventions
 
