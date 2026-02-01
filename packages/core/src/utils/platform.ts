@@ -98,21 +98,3 @@ export function setPlatformOS(os: PlatformOS): void {
   (globalThis as any).__REACT_NATIVE_PLATFORM__ = os;
 }
 
-/**
- * Try to initialize platform from react-native if available
- * This is called lazily when needed, avoiding top-level imports
- */
-export async function initPlatformFromReactNative(): Promise<void> {
-  if (cachedPlatform !== null && cachedPlatform !== 'unknown') {
-    return; // Already initialized
-  }
-
-  try {
-    // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
-    const moduleName = 'react-native';
-    const { Platform } = await import(moduleName);
-    setPlatformOS(Platform.OS as PlatformOS);
-  } catch {
-    // react-native not available, use detected platform
-  }
-}

@@ -61,7 +61,6 @@ export {
   isNative,
   isIOS,
   isAndroid,
-  initPlatformFromReactNative,
 } from './utils/platform';
 export type { PlatformOS } from './utils/platform';
 
