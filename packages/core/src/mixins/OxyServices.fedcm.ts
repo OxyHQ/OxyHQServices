@@ -49,8 +49,8 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
       super(...(args as [any]));
     }
   public static readonly DEFAULT_CONFIG_URL = 'https://auth.oxy.so/fedcm.json';
-  public static readonly FEDCM_TIMEOUT = 60000; // 1 minute for interactive
-  public static readonly FEDCM_SILENT_TIMEOUT = 10000; // 10 seconds for silent mediation
+  public static readonly FEDCM_TIMEOUT = 15000; // 15 seconds for interactive
+  public static readonly FEDCM_SILENT_TIMEOUT = 3000; // 3 seconds for silent mediation
 
   /**
    * Check if FedCM is supported in the current browser
@@ -180,7 +180,10 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
     const clientId = this.getClientId();
     debug.log('Silent SSO: Starting for', clientId);
 
-    // First try silent mediation (no UI) - works if user previously consented
+    // Only try silent mediation (no UI) - works if user previously consented.
+    // We intentionally do NOT fall back to optional mediation here because
+    // this runs on app startup — showing browser UI without user action is bad UX.
+    // Optional/interactive mediation should only happen when the user clicks "Sign In".
     let credential: { token: string } | null = null;
 
     try {
@@ -196,36 +199,14 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
 
       debug.log('Silent SSO: Silent mediation result:', { hasCredential: !!credential, hasToken: !!credential?.token });
     } catch (silentError) {
-      // Silent mediation failed - this is expected if user hasn't consented before or is in quiet period
       const errorName = silentError instanceof Error ? silentError.name : 'Unknown';
       const errorMessage = silentError instanceof Error ? silentError.message : String(silentError);
-      debug.log('Silent SSO: Silent mediation error (will try optional):', { name: errorName, message: errorMessage });
-    }
-
-    // If silent failed, try optional mediation which shows browser UI if needed
-    if (!credential || !credential.token) {
-      try {
-        const nonce = this.generateNonce();
-        debug.log('Silent SSO: Trying optional mediation (may show browser UI)...');
-
-        credential = await this.requestIdentityCredential({
-          configURL: (this.constructor as any).DEFAULT_CONFIG_URL,
-          clientId,
-          nonce,
-          mediation: 'optional',
-        });
-
-        debug.log('Silent SSO: Optional mediation result:', { hasCredential: !!credential, hasToken: !!credential?.token });
-      } catch (optionalError) {
-        const errorName = optionalError instanceof Error ? optionalError.name : 'Unknown';
-        const errorMessage = optionalError instanceof Error ? optionalError.message : String(optionalError);
-        debug.log('Silent SSO: Optional mediation also failed:', { name: errorName, message: errorMessage });
-        return null;
-      }
+      debug.log('Silent SSO: Silent mediation failed:', { name: errorName, message: errorMessage });
+      return null;
     }
 
     if (!credential || !credential.token) {
-      debug.log('Silent SSO: No credential returned (user may have dismissed prompt or is not logged in at IdP)');
+      debug.log('Silent SSO: No credential returned (user not logged in at IdP or hasn\'t consented)');
       return null;
     }
 
@@ -392,9 +373,7 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
    * @private
    */
   public async exchangeIdTokenForSession(idToken: string): Promise<SessionLoginResponse> {
-    debug.log('exchangeIdTokenForSession: Starting exchange...');
-    debug.log('exchangeIdTokenForSession: Token length:', idToken?.length);
-    debug.log('exchangeIdTokenForSession: Token preview:', idToken?.substring(0, 50) + '...');
+    debug.log('Exchanging ID token for session...');
 
     try {
       const response = await this.makeRequest<SessionLoginResponse>(
@@ -404,23 +383,14 @@ export function OxyServicesFedCMMixin<T extends typeof OxyServicesBase>(Base: T)
         { cache: false }
       );
 
-      debug.log('exchangeIdTokenForSession: Response received:', {
-        hasResponse: !!response,
-        hasSessionId: !!(response as any)?.sessionId,
-        hasUser: !!(response as any)?.user,
-        hasAccessToken: !!(response as any)?.accessToken,
-        userId: (response as any)?.user?.id,
-        username: (response as any)?.user?.username,
-        responseKeys: response ? Object.keys(response) : [],
+      debug.log('Token exchange complete:', {
+        hasSession: !!response?.sessionId,
+        hasUser: !!response?.user,
       });
 
       return response;
     } catch (error) {
-      debug.error('exchangeIdTokenForSession: Error:', {
-        name: error instanceof Error ? error.name : 'Unknown',
-        message: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
-      });
+      debug.error('Token exchange failed:', error instanceof Error ? error.message : String(error));
       throw error;
     }
   }

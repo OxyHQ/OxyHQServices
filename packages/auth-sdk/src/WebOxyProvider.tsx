@@ -115,26 +115,16 @@ export function WebOxyProvider({
   ) => {
     await authManager.handleAuthSuccess(session, method);
 
-    // Set active session
     if (session.sessionId) {
       setActiveSessionId(session.sessionId);
     }
 
-    // Fetch full user profile
-    try {
-      const fullUser = await oxyServices.getCurrentUser();
-      if (fullUser) {
-        setUser(fullUser);
-      } else {
-        setUser(session.user as User);
-      }
-    } catch {
-      setUser(session.user as User);
-    }
-
+    // Use the session user directly to avoid an extra API round-trip.
+    // The session already contains user data from the auth exchange.
+    setUser(session.user as User);
     setError(null);
     setIsLoading(false);
-  }, [authManager, oxyServices]);
+  }, [authManager]);
 
   const handleAuthError = useCallback((err: unknown) => {
     const errorMessage = err instanceof Error ? err.message : 'Authentication failed';
