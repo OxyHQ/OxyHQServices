@@ -452,7 +452,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     if (storage) {
       await storage.setItem(storageKeys.activeSessionId, session.sessionId);
       const existingIds = await storage.getItem(storageKeys.sessionIds);
-      const sessionIds = existingIds ? JSON.parse(existingIds) : [];
+      let sessionIds: string[] = [];
+      try { sessionIds = existingIds ? JSON.parse(existingIds) : []; } catch { /* corrupted storage */ }
       if (!sessionIds.includes(session.sessionId)) {
         sessionIds.push(session.sessionId);
         await storage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));

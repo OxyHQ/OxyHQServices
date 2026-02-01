@@ -342,7 +342,7 @@ app.use('/api/payments', userRateLimiter, csrfProtection, paymentRoutes);
 app.use('/api/notifications', userRateLimiter, csrfProtection, notificationsRouter);
 app.use('/api/karma', csrfProtection, karmaRoutes);
 app.use('/api/wallet', userRateLimiter, csrfProtection, walletRoutes);
-app.use('/api/link-metadata', linkMetadataRoutes);
+app.use('/api/link-metadata', userRateLimiter, linkMetadataRoutes);
 app.use('/api/location-search', locationSearchRoutes);
 app.use('/api/developer', csrfProtection, developerRoutes);
 app.use('/api/devices', userRateLimiter, csrfProtection, devicesRouter);
