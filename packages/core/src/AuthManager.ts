@@ -322,8 +322,9 @@ export class AuthManager {
               const session = JSON.parse(sessionJson);
               session.expiresAt = response.expiresAt;
               await this.storage.setItem(STORAGE_KEYS.SESSION, JSON.stringify(session));
-            } catch {
-              // Ignore parse errors for session update
+} catch (err) {
+              // Ignore parse errors for session update, but log for debugging.
+              console.error('AuthManager: Failed to re-save session after token refresh.', err);
             }
 
             if (this.config.autoRefresh) {
