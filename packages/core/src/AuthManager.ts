@@ -291,7 +291,8 @@ export class AuthManager {
       const session = JSON.parse(sessionJson);
       sessionId = session.sessionId;
       if (!sessionId) return false;
-    } catch {
+} catch (err) {
+      console.error('AuthManager: Failed to parse session from storage.', err);
       return false;
     }
 
