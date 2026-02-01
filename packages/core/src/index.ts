@@ -27,6 +27,9 @@ export type { StorageAdapter, AuthStateChangeCallback, AuthMethod, AuthManagerCo
 
 export { CrossDomainAuth, createCrossDomainAuth } from './CrossDomainAuth';
 export type { CrossDomainAuthOptions } from './CrossDomainAuth';
+export type { FedCMAuthOptions, FedCMConfig } from './mixins/OxyServices.fedcm';
+export type { PopupAuthOptions } from './mixins/OxyServices.popup';
+export type { RedirectAuthOptions } from './mixins/OxyServices.redirect';
 
 // --- Crypto / Identity ---
 export { KeyManager, SignatureService, RecoveryPhraseService } from './crypto';

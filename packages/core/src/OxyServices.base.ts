@@ -131,21 +131,38 @@ export class OxyServicesBase {
    */
   public clearTokens(): void {
     this.httpService.clearTokens();
+    this._cachedUserId = undefined;
+    this._cachedAccessToken = null;
   }
 
+  /** @internal */ _cachedUserId: string | null | undefined = undefined;
+  /** @internal */ _cachedAccessToken: string | null = null;
+
   /**
-   * Get the current user ID from the access token
+   * Get the current user ID from the access token.
+   * Caches the decoded value and invalidates when the token changes.
    */
   public getCurrentUserId(): string | null {
     const accessToken = this.httpService.getAccessToken();
+
+    // Return cached value if token hasn't changed
+    if (accessToken === this._cachedAccessToken && this._cachedUserId !== undefined) {
+      return this._cachedUserId;
+    }
+
+    this._cachedAccessToken = accessToken;
+
     if (!accessToken) {
+      this._cachedUserId = null;
       return null;
     }
-    
+
     try {
       const decoded = jwtDecode<JwtPayload>(accessToken);
-      return decoded.userId || decoded.id || null;
-    } catch (error) {
+      this._cachedUserId = decoded.userId || decoded.id || null;
+      return this._cachedUserId;
+    } catch {
+      this._cachedUserId = null;
       return null;
     }
   }

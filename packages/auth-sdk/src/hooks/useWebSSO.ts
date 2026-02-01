@@ -84,7 +84,7 @@ export function useWebSSO({
   const hasCheckedRef = useRef(false);
 
   // Check FedCM support once
-  const fedCMSupported = isWebBrowser() && (oxyServices as any).isFedCMSupported?.();
+  const fedCMSupported = isWebBrowser() && oxyServices.isFedCMSupported();
 
   const checkSSO = useCallback(async (): Promise<SessionLoginResponse | null> => {
     if (!isWebBrowser() || isCheckingRef.current) {
@@ -106,7 +106,7 @@ export function useWebSSO({
     isCheckingRef.current = true;
 
     try {
-      const session = await (oxyServices as any).silentSignInWithFedCM?.();
+      const session = await oxyServices.silentSignInWithFedCM();
 
       if (session) {
         await onSessionFound(session);
@@ -142,7 +142,7 @@ export function useWebSSO({
     isCheckingRef.current = true;
 
     try {
-      const session = await (oxyServices as any).signInWithFedCM?.();
+      const session = await oxyServices.signInWithFedCM();
 
       if (session) {
         await onSessionFound(session);

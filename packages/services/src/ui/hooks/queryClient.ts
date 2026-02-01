@@ -1,4 +1,5 @@
 import { QueryClient } from '@tanstack/react-query';
+import { isDev } from '@oxyhq/core';
 import type { StorageInterface } from '../utils/storageHelpers';
 
 const QUERY_CACHE_KEY = 'oxy_query_cache';
@@ -18,7 +19,7 @@ export const createPersistenceAdapter = (storage: StorageInterface) => {
         });
         await storage.setItem(QUERY_CACHE_KEY, serialized);
       } catch (error) {
-        if (__DEV__) {
+        if (isDev()) {
           console.warn('[QueryClient] Failed to persist cache:', error);
         }
       }
@@ -46,7 +47,7 @@ export const createPersistenceAdapter = (storage: StorageInterface) => {
 
         return parsed.clientState;
       } catch (error) {
-        if (__DEV__) {
+        if (isDev()) {
           console.warn('[QueryClient] Failed to restore cache:', error);
         }
         return undefined;
@@ -56,7 +57,7 @@ export const createPersistenceAdapter = (storage: StorageInterface) => {
       try {
         await storage.removeItem(QUERY_CACHE_KEY);
       } catch (error) {
-        if (__DEV__) {
+        if (isDev()) {
           console.warn('[QueryClient] Failed to remove cache:', error);
         }
       }

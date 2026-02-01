@@ -58,6 +58,10 @@
  */
 import { OxyServicesBase, type OxyConfig } from './OxyServices.base';
 import { OxyAuthenticationError, OxyAuthenticationTimeoutError } from './OxyServices.errors';
+import type { SessionLoginResponse } from './models/session';
+import type { FedCMAuthOptions, FedCMConfig } from './mixins/OxyServices.fedcm';
+import type { PopupAuthOptions } from './mixins/OxyServices.popup';
+import type { RedirectAuthOptions } from './mixins/OxyServices.redirect';
 
 // Import mixin composition helper
 import { composeOxyServices } from './mixins';
@@ -106,8 +110,25 @@ export class OxyServices extends (OxyServicesComposed as any) {
 }
 
 // Type augmentation to expose mixin methods to TypeScript
-// This allows proper type checking while avoiding complex mixin type inference
-export interface OxyServices extends InstanceType<ReturnType<typeof composeOxyServices>> {}
+// This allows proper type checking while avoiding complex mixin type inference.
+// Explicit declarations are added for cross-domain auth methods that downstream
+// packages (auth-sdk, services) need without casting to `any`.
+export interface OxyServices extends InstanceType<ReturnType<typeof composeOxyServices>> {
+  // FedCM authentication
+  isFedCMSupported(): boolean;
+  signInWithFedCM(options?: FedCMAuthOptions): Promise<SessionLoginResponse>;
+  silentSignInWithFedCM(): Promise<SessionLoginResponse | null>;
+  revokeFedCMCredential(): Promise<void>;
+  getFedCMConfig(): FedCMConfig;
+
+  // Popup authentication
+  signInWithPopup(options?: PopupAuthOptions): Promise<SessionLoginResponse>;
+  signUpWithPopup(options?: PopupAuthOptions): Promise<SessionLoginResponse>;
+
+  // Redirect authentication
+  signInWithRedirect(options?: RedirectAuthOptions): void;
+  signUpWithRedirect(options?: RedirectAuthOptions): void;
+}
 
 // Re-export error classes for convenience
 export { OxyAuthenticationError, OxyAuthenticationTimeoutError };

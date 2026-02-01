@@ -17,6 +17,7 @@ import { TTLCache, registerCacheForCleanup } from './utils/cache';
 import { RequestDeduplicator, RequestQueue, SimpleLogger } from './utils/requestUtils';
 import { retryAsync } from './utils/asyncUtils';
 import { handleHttpError } from './utils/errorUtils';
+import { isDev } from './shared/utils/debugUtils';
 import { jwtDecode } from 'jwt-decode';
 import { isNative, getPlatformOS } from './utils/platform';
 import type { OxyConfig } from './models/interfaces';
@@ -279,7 +280,7 @@ export class HttpService {
         }
 
         // Debug logging for CSRF issues
-        if (isStateChangingMethod && __DEV__) {
+        if (isStateChangingMethod && isDev()) {
           console.log('[HttpService] CSRF Debug:', {
             url,
             method,
@@ -484,20 +485,20 @@ export class HttpService {
     // Return cached token if available
     const cachedToken = this.tokenStore.getCsrfToken();
     if (cachedToken) {
-      if (__DEV__) console.log('[HttpService] Using cached CSRF token');
+      if (isDev()) console.log('[HttpService] Using cached CSRF token');
       return cachedToken;
     }
 
     // Deduplicate concurrent CSRF token fetches
     const existingPromise = this.tokenStore.getCsrfTokenFetchPromise();
     if (existingPromise) {
-      if (__DEV__) console.log('[HttpService] Waiting for existing CSRF fetch');
+      if (isDev()) console.log('[HttpService] Waiting for existing CSRF fetch');
       return existingPromise;
     }
 
     const fetchPromise = (async () => {
       try {
-        if (__DEV__) console.log('[HttpService] Fetching CSRF token from:', `${this.baseURL}/api/csrf-token`);
+        if (isDev()) console.log('[HttpService] Fetching CSRF token from:', `${this.baseURL}/api/csrf-token`);
 
         // Use AbortController for timeout (more compatible than AbortSignal.timeout)
         const controller = new AbortController();
@@ -512,11 +513,11 @@ export class HttpService {
 
         clearTimeout(timeoutId);
 
-        if (__DEV__) console.log('[HttpService] CSRF fetch response:', response.status, response.ok);
+        if (isDev()) console.log('[HttpService] CSRF fetch response:', response.status, response.ok);
 
         if (response.ok) {
           const data = await response.json() as { csrfToken?: string };
-          if (__DEV__) console.log('[HttpService] CSRF response data:', data);
+          if (isDev()) console.log('[HttpService] CSRF response data:', data);
           const token = data.csrfToken || null;
           this.tokenStore.setCsrfToken(token);
           this.logger.debug('CSRF token fetched');
@@ -531,11 +532,11 @@ export class HttpService {
           return headerToken;
         }
 
-        if (__DEV__) console.log('[HttpService] CSRF fetch failed with status:', response.status);
+        if (isDev()) console.log('[HttpService] CSRF fetch failed with status:', response.status);
         this.logger.warn('Failed to fetch CSRF token:', response.status);
         return null;
       } catch (error) {
-        if (__DEV__) console.log('[HttpService] CSRF fetch error:', error);
+        if (isDev()) console.log('[HttpService] CSRF fetch error:', error);
         this.logger.warn('CSRF token fetch error:', error);
         return null;
       } finally {

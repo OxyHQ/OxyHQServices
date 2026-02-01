@@ -27,8 +27,7 @@ import type { RouteName } from '../navigation/routes';
 import { showBottomSheet as globalShowBottomSheet } from '../navigation/bottomSheetManager';
 import { useQueryClient } from '@tanstack/react-query';
 import { clearQueryCache } from '../hooks/queryClient';
-import { translate } from '@oxyhq/core';
-import { updateAvatarVisibility, updateProfileWithAvatar } from '../utils/avatarUtils';
+import { useAvatarPicker } from '../hooks/useAvatarPicker';
 import { useAccountStore } from '../stores/accountStore';
 import { logger as loggerUtil } from '@oxyhq/core';
 import { useWebSSO, isWebBrowser } from '../hooks/useWebSSO';
@@ -492,7 +491,8 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       // Load hidden iframe to check IdP session via postMessage
       const iframe = document.createElement('iframe');
       iframe.style.cssText = 'display:none;width:0;height:0;border:0';
-      iframe.src = 'https://auth.oxy.so/api/auth/session-check';
+      const idpOrigin = authWebUrl || 'https://auth.oxy.so';
+      iframe.src = `${idpOrigin}/api/auth/session-check`;
 
       let cleaned = false;
       const cleanup = () => {
@@ -503,7 +503,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       };
 
       const handleMessage = async (event: MessageEvent) => {
-        if (event.origin !== 'https://auth.oxy.so') return;
+        if (event.origin !== idpOrigin) return;
         if (event.data?.type !== 'oxy-session-check') return;
         cleanup();
 
@@ -588,40 +588,14 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
     [],
   );
 
-  // Create openAvatarPicker function
-  const openAvatarPicker = useCallback(() => {
-    showBottomSheetForContext({
-      screen: 'FileManagement' as RouteName,
-      props: {
-        selectMode: true,
-        multiSelect: false,
-        disabledMimeTypes: ['video/', 'audio/', 'application/pdf'],
-        afterSelect: 'none', // Don't navigate away - stay on current screen
-        onSelect: async (file: any) => {
-          if (!file.contentType.startsWith('image/')) {
-            toast.error(translate(currentLanguage, 'editProfile.toasts.selectImage') || 'Please select an image file');
-            return;
-          }
-          try {
-            // Update file visibility to public for avatar
-            await updateAvatarVisibility(file.id, oxyServices, 'OxyContext');
-
-            // Update user profile (handles query invalidation and accountStore update)
-            await updateProfileWithAvatar(
-              { avatar: file.id },
-              oxyServices,
-              activeSessionId,
-              queryClient
-            );
-
-            toast.success(translate(currentLanguage, 'editProfile.toasts.avatarUpdated') || 'Avatar updated');
-          } catch (e: any) {
-            toast.error(e.message || translate(currentLanguage, 'editProfile.toasts.updateAvatarFailed') || 'Failed to update avatar');
-          }
-        },
-      },
-    });
-  }, [oxyServices, currentLanguage, showBottomSheetForContext, activeSessionId, queryClient]);
+  // Avatar picker extracted into dedicated hook
+  const { openAvatarPicker } = useAvatarPicker({
+    oxyServices,
+    currentLanguage,
+    activeSessionId,
+    queryClient,
+    showBottomSheet: showBottomSheetForContext,
+  });
 
   const contextValue: OxyContextState = useMemo(() => ({
     user,

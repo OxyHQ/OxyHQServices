@@ -95,6 +95,10 @@ interface AuthenticatedSocket extends Socket {
   };
 }
 
+// Socket.IO rate limiting (applied before auth to protect against unauthenticated floods)
+import { createSocketRateLimiter } from './middleware/socketRateLimit';
+io.use(createSocketRateLimiter(100, 10_000)); // 100 events per 10s
+
 // Socket.IO authentication middleware
 io.use((socket: AuthenticatedSocket, next) => {
   const token = socket.handshake.auth.token;
@@ -146,6 +150,7 @@ io.on('connection', (socket: AuthenticatedSocket) => {
 import { initAuthSessionNamespace } from './utils/authSessionSocket';
 
 const authSessionNamespace = io.of('/auth-session');
+authSessionNamespace.use(createSocketRateLimiter(20, 10_000)); // Stricter: 20 events per 10s
 initAuthSessionNamespace(authSessionNamespace);
 
 // No authentication required for this namespace

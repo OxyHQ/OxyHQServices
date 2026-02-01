@@ -4,6 +4,7 @@
 import { normalizeLanguageCode, getLanguageMetadata, getLanguageName, getNativeLanguageName } from '../utils/languageUtils';
 import type { LanguageMetadata } from '../utils/languageUtils';
 import type { OxyServicesBase } from '../OxyServices.base';
+import { isDev } from '../shared/utils/debugUtils';
 
 export function OxyServicesLanguageMixin<T extends typeof OxyServicesBase>(Base: T) {
   return class extends Base {
@@ -86,7 +87,7 @@ export function OxyServicesLanguageMixin<T extends typeof OxyServicesBase>(Base:
 
         return null;
       } catch (error) {
-        if (__DEV__) {
+        if (isDev()) {
           console.warn('Failed to get current language:', error);
         }
         return null;

@@ -10,13 +10,13 @@
 import type { OxyServices } from './OxyServices';
 import type { HttpService } from './HttpService';
 import type { SessionLoginResponse, MinimalUserData } from './models/session';
+import { retryAsync } from './utils/asyncUtils';
 
 /**
- * OxyServices with optional FedCM methods (provided by FedCM mixin).
+ * OxyServices already declares revokeFedCMCredential via mixin type augmentation.
+ * This alias is kept for readability in the signOut method.
  */
-interface OxyServicesWithFedCM extends OxyServices {
-  revokeFedCMCredential?: () => Promise<void>;
-}
+type OxyServicesWithFedCM = OxyServices;
 
 /**
  * Storage adapter interface for platform-agnostic storage.
@@ -270,19 +270,29 @@ export class AuthManager {
     }
 
     try {
-      // Cast httpService to proper type (needed due to mixin composition)
-      const httpService = this.oxyServices.httpService as HttpService;
-      const response = await httpService.request<SessionLoginResponse>({
-        method: 'POST',
-        url: '/api/auth/refresh',
-        data: { refreshToken },
-        cache: false,
-      });
-
-      await this.handleAuthSuccess(response, 'credentials');
+      await retryAsync(
+        async () => {
+          const httpService = this.oxyServices.httpService as HttpService;
+          const response = await httpService.request<SessionLoginResponse>({
+            method: 'POST',
+            url: '/api/auth/refresh',
+            data: { refreshToken },
+            cache: false,
+          });
+          await this.handleAuthSuccess(response, 'credentials');
+        },
+        2,    // 2 retries = 3 total attempts
+        1000, // 1s base delay with exponential backoff + jitter
+        (error: any) => {
+          // Don't retry on 4xx client errors (invalid/revoked token)
+          const status = error?.status ?? error?.response?.status;
+          if (status && status >= 400 && status < 500) return false;
+          return true;
+        }
+      );
       return true;
     } catch {
-      // Refresh failed, clear session and update state
+      // All retry attempts exhausted, clear session
       await this.clearSession();
       this.currentUser = null;
       this.notifyListeners();

@@ -105,7 +105,10 @@ export function WebOxyProvider({
   const [isLoading, setIsLoading] = useState(!skipAutoCheck);
   const [error, setError] = useState<string | null>(null);
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
-  const [sessions, setSessions] = useState<ClientSession[]>([]);
+
+  // Sessions array kept as constant empty for API compatibility.
+  // Multi-session management is handled by @oxyhq/services (OxyContext) for RN apps.
+  const sessions: ClientSession[] = [];
 
   const isAuthenticated = !!user;
 
@@ -177,8 +180,20 @@ export function WebOxyProvider({
       }
     };
 
-    initAuth();
-    return () => { mounted = false; };
+    // Safety timeout: if all auth methods stall, stop loading
+    const INIT_TIMEOUT_MS = 15_000;
+    const timeoutId = setTimeout(() => {
+      if (mounted) {
+        setIsLoading(false);
+      }
+    }, INIT_TIMEOUT_MS);
+
+    initAuth().finally(() => clearTimeout(timeoutId));
+
+    return () => {
+      mounted = false;
+      clearTimeout(timeoutId);
+    };
   }, [oxyServices, crossDomainAuth, authManager, skipAutoCheck, handleAuthSuccess]);
 
   useEffect(() => {
@@ -248,7 +263,6 @@ export function WebOxyProvider({
       await authManager.signOut();
       setUser(null);
       setActiveSessionId(null);
-      setSessions([]);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Sign out failed';
       setError(errorMessage);
@@ -273,7 +287,6 @@ export function WebOxyProvider({
     await authManager.signOut();
     setUser(null);
     setActiveSessionId(null);
-    setSessions([]);
   }, [authManager]);
 
   useEffect(() => {

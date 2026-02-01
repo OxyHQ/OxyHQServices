@@ -14,7 +14,12 @@ declare const __DEV__: boolean | undefined;
  * Check if running in development mode
  */
 export const isDev = (): boolean => {
-  return typeof __DEV__ !== 'undefined' && __DEV__;
+  if (typeof __DEV__ !== 'undefined') return __DEV__;
+  try {
+    return typeof process !== 'undefined' && process.env?.NODE_ENV === 'development';
+  } catch {
+    return false;
+  }
 };
 
 /**
