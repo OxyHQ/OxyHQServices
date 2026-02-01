@@ -183,7 +183,7 @@ function ProfileScreen() {
 
   return (
     <View>
-      <Text>Welcome, {user.username}</Text>
+      <Text>Welcome, {user?.username}</Text>
       <Button onPress={signOut} title="Sign Out" />
     </View>
   );
