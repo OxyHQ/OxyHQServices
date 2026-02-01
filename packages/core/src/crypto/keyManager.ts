@@ -49,7 +49,9 @@ const ANDROID_ACCOUNT_TYPE = 'com.oxy.account';
 async function initSecureStore(): Promise<typeof import('expo-secure-store')> {
   if (!SecureStore) {
     try {
-      SecureStore = await import('expo-secure-store');
+      // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
+      const moduleName = 'expo-secure-store';
+      SecureStore = await import(moduleName);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new Error(`Failed to load expo-secure-store: ${errorMessage}. Make sure expo-secure-store is installed and properly configured.`);
@@ -85,9 +87,11 @@ function isWebPlatform(): boolean {
 
 async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
   if (!ExpoCrypto) {
-    ExpoCrypto = await import('expo-crypto');
+    // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
+    const moduleName = 'expo-crypto';
+    ExpoCrypto = await import(moduleName);
   }
-  return ExpoCrypto;
+  return ExpoCrypto!;
 }
 
 /**

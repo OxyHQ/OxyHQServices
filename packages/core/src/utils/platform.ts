@@ -108,8 +108,9 @@ export async function initPlatformFromReactNative(): Promise<void> {
   }
 
   try {
-    // Dynamic import to avoid bundler issues
-    const { Platform } = await import('react-native');
+    // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
+    const moduleName = 'react-native';
+    const { Platform } = await import(moduleName);
     setPlatformOS(Platform.OS as PlatformOS);
   } catch {
     // react-native not available, use detected platform

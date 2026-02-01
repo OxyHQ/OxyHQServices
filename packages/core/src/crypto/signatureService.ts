@@ -32,9 +32,11 @@ function isNodeJS(): boolean {
  */
 async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
   if (!ExpoCrypto) {
-    ExpoCrypto = await import('expo-crypto');
+    // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
+    const moduleName = 'expo-crypto';
+    ExpoCrypto = await import(moduleName);
   }
-  return ExpoCrypto;
+  return ExpoCrypto!;
 }
 
 /**
