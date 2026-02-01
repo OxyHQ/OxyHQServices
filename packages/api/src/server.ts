@@ -38,6 +38,7 @@ import { validateRequiredEnvVars, getSanitizedConfig, getEnvNumber } from './con
 import performanceMiddleware, { getMemoryStats, getConnectionPoolStats } from './middleware/performance';
 import { performanceMonitor } from './utils/performanceMonitor';
 import { waitForMongoConnection } from './utils/dbConnection';
+import { errorHandler } from './middleware/errorHandler';
 
 // Load environment variables
 dotenv.config();
@@ -357,19 +358,12 @@ app.get('/api/protected-server-route', authMiddleware, (req: any, res: Response)
   });
 });
 
-// Global error handler
-app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  logger.error('Unhandled error:', err);
-  const statusCode = err?.status || 500;
-  res.status(statusCode).json({
-    message: 'Internal server error',
-    error: process.env.NODE_ENV === 'production' ? 'An unexpected error occurred' : err.message
-  });
-});
+// Global error handler — standardised { error, message, details? } format
+app.use(errorHandler);
 
 // 404 handler for undefined routes
-app.use((req: express.Request, res: express.Response) => {
-  res.status(404).json({ message: 'Resource not found' });
+app.use((_req: express.Request, res: express.Response) => {
+  res.status(404).json({ error: 'NOT_FOUND', message: 'Resource not found' });
 });
 
 // Only call listen if this module is run directly

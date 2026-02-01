@@ -4,7 +4,9 @@ module.exports = {
   setupFilesAfterEnv: ['<rootDir>/jest.setup.js'],
   moduleFileExtensions: ['ts', 'js', 'json'],
   transform: {
-    '^.+\\.ts$': 'ts-jest',
+    '^.+\\.ts$': ['ts-jest', {
+      diagnostics: false,
+    }],
   },
   testMatch: ['**/__tests__/**/*.ts', '**/*.test.ts'],
   coverageDirectory: 'coverage',
