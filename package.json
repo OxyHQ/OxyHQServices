@@ -10,7 +10,8 @@
     "packages/api",
     "packages/auth",
     "packages/accounts",
-    "packages/test-app"
+    "packages/test-app",
+    "packages/test-app-vite"
   ],
   "scripts": {
     "build:all": "npm run core:build && npm run auth:build && npm run services:build && npm run build --workspaces --if-present",

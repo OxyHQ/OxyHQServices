@@ -1,52 +1,40 @@
-// Use JSON locale files (RN Metro supports static requires reliably)
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const enUS = require('./locales/en-US.json') as Record<string, any>;
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const esES = require('./locales/es-ES.json') as Record<string, any>;
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const caES = require('./locales/ca-ES.json') as Record<string, any>;
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const frFR = require('./locales/fr-FR.json') as Record<string, any>;
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const deDE = require('./locales/de-DE.json') as Record<string, any>;
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const itIT = require('./locales/it-IT.json') as Record<string, any>;
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const ptPT = require('./locales/pt-PT.json') as Record<string, any>;
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const jaJP = require('./locales/ja-JP.json') as Record<string, any>;
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const koKR = require('./locales/ko-KR.json') as Record<string, any>;
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const zhCN = require('./locales/zh-CN.json') as Record<string, any>;
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const arSA = require('./locales/ar-SA.json') as Record<string, any>;
+import enUS from './locales/en-US.json';
+import esES from './locales/es-ES.json';
+import caES from './locales/ca-ES.json';
+import frFR from './locales/fr-FR.json';
+import deDE from './locales/de-DE.json';
+import itIT from './locales/it-IT.json';
+import ptPT from './locales/pt-PT.json';
+import jaJP from './locales/ja-JP.json';
+import koKR from './locales/ko-KR.json';
+import zhCN from './locales/zh-CN.json';
+import arSA from './locales/ar-SA.json';
 
 export type LocaleDict = Record<string, any>;
 
 const DICTS: Record<string, LocaleDict> = {
-  'en': enUS as LocaleDict,
-  'en-US': enUS as LocaleDict,
-  'es': esES as LocaleDict,
-  'es-ES': esES as LocaleDict,
-  'ca': caES as LocaleDict,
-  'ca-ES': caES as LocaleDict,
-  'fr': frFR as LocaleDict,
-  'fr-FR': frFR as LocaleDict,
-  'de': deDE as LocaleDict,
-  'de-DE': deDE as LocaleDict,
-  'it': itIT as LocaleDict,
-  'it-IT': itIT as LocaleDict,
-  'pt': ptPT as LocaleDict,
-  'pt-PT': ptPT as LocaleDict,
-  'ja': jaJP as LocaleDict,
-  'ja-JP': jaJP as LocaleDict,
-  'ko': koKR as LocaleDict,
-  'ko-KR': koKR as LocaleDict,
-  'zh': zhCN as LocaleDict,
-  'zh-CN': zhCN as LocaleDict,
-  'ar': arSA as LocaleDict,
-  'ar-SA': arSA as LocaleDict,
+  'en': enUS,
+  'en-US': enUS,
+  'es': esES,
+  'es-ES': esES,
+  'ca': caES,
+  'ca-ES': caES,
+  'fr': frFR,
+  'fr-FR': frFR,
+  'de': deDE,
+  'de-DE': deDE,
+  'it': itIT,
+  'it-IT': itIT,
+  'pt': ptPT,
+  'pt-PT': ptPT,
+  'ja': jaJP,
+  'ja-JP': jaJP,
+  'ko': koKR,
+  'ko-KR': koKR,
+  'zh': zhCN,
+  'zh-CN': zhCN,
+  'ar': arSA,
+  'ar-SA': arSA,
 };
 
 const FALLBACK = 'en-US';

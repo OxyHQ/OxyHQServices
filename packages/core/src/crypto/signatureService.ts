@@ -43,31 +43,33 @@ async function initExpoCrypto(): Promise<typeof import('expo-crypto')> {
  * Compute SHA-256 hash of a string
  */
 async function sha256(message: string): Promise<string> {
-  // In React Native, always use expo-crypto
-  if (isReactNative() || !isNodeJS()) {
+  // In React Native, use expo-crypto
+  if (isReactNative()) {
     const Crypto = await initExpoCrypto();
     return Crypto.digestStringAsync(
       Crypto.CryptoDigestAlgorithm.SHA256,
       message
     );
   }
-  
+
   // In Node.js, use Node's crypto module
-  // Use Function constructor to prevent Metro bundler from statically analyzing this require
-  // This ensures the require is only evaluated in Node.js runtime, not during Metro bundling
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-implied-eval
-    const getCrypto = new Function('return require("crypto")');
-    const crypto = getCrypto();
-    return crypto.createHash('sha256').update(message).digest('hex');
-  } catch (error) {
-    // Fallback to expo-crypto if Node crypto fails
-    const Crypto = await initExpoCrypto();
-    return Crypto.digestStringAsync(
-      Crypto.CryptoDigestAlgorithm.SHA256,
-      message
-    );
+  if (isNodeJS()) {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-implied-eval
+      const getCrypto = new Function('return require("crypto")');
+      const nodeCrypto = getCrypto();
+      return nodeCrypto.createHash('sha256').update(message).digest('hex');
+    } catch {
+      // Fall through to Web Crypto API
+    }
   }
+
+  // Browser: use Web Crypto API
+  const encoder = new TextEncoder();
+  const data = encoder.encode(message);
+  const hashBuffer = await globalThis.crypto.subtle.digest('SHA-256', data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 export interface SignedMessage {
@@ -89,29 +91,33 @@ export class SignatureService {
    * Uses expo-crypto in React Native, crypto.randomBytes in Node.js
    */
   static async generateChallenge(): Promise<string> {
-    if (isReactNative() || !isNodeJS()) {
-      // Use expo-crypto for React Native (expo-random is deprecated)
+    // In React Native, use expo-crypto
+    if (isReactNative()) {
       const Crypto = await initExpoCrypto();
       const randomBytes = await Crypto.getRandomBytesAsync(32);
       return Array.from(randomBytes)
         .map((b: number) => b.toString(16).padStart(2, '0'))
         .join('');
     }
-    
-    // Node.js fallback
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-implied-eval
-      const getCrypto = new Function('return require("crypto")');
-      const crypto = getCrypto();
-      return crypto.randomBytes(32).toString('hex');
-    } catch (error) {
-      // Fallback to expo-crypto if Node crypto fails
-      const Crypto = await initExpoCrypto();
-      const randomBytes = await Crypto.getRandomBytesAsync(32);
-      return Array.from(randomBytes)
-        .map((b: number) => b.toString(16).padStart(2, '0'))
-        .join('');
+
+    // In Node.js, use Node's crypto module
+    if (isNodeJS()) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-implied-eval
+        const getCrypto = new Function('return require("crypto")');
+        const nodeCrypto = getCrypto();
+        return nodeCrypto.randomBytes(32).toString('hex');
+      } catch {
+        // Fall through to Web Crypto API
+      }
     }
+
+    // Browser: use Web Crypto API
+    const bytes = new Uint8Array(32);
+    globalThis.crypto.getRandomValues(bytes);
+    return Array.from(bytes)
+      .map(b => b.toString(16).padStart(2, '0'))
+      .join('');
   }
 
   /**
@@ -321,5 +327,3 @@ export class SignatureService {
 }
 
 export default SignatureService;
-
-

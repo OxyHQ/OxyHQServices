@@ -37,9 +37,12 @@ function getRandomBytesSync(byteCount: number): Uint8Array {
   if (!expoCryptoLoadAttempted) {
     expoCryptoLoadAttempted = true;
     try {
-      // Variable indirection prevents bundlers (Vite, webpack) from statically resolving this
-      const moduleName = 'expo-crypto';
-      expoCryptoModule = require(moduleName);
+      // Only use require() in CJS environments (Metro/Node). In ESM (Vite/browser),
+      // crypto.getRandomValues exists natively so this code path is never reached.
+      if (typeof require !== 'undefined') {
+        const moduleName = 'expo-crypto';
+        expoCryptoModule = require(moduleName);
+      }
     } catch {
       // expo-crypto not available — expected in non-RN environments
     }
