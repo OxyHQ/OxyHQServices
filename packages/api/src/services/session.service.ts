@@ -237,10 +237,6 @@ class SessionService {
       }
 
       const { session } = result;
-      if (session.accessToken !== accessToken) {
-        sessionCache.invalidate(sessionId);
-        return null;
-      }
 
       if (sessionCache.shouldUpdateLastActive(sessionId)) {
         this.updateLastActivity(sessionId).catch(() => {
@@ -342,12 +338,16 @@ class SessionService {
         const sessionId = existingSession.sessionId;
         const expiresAt = new Date(Date.now() + SESSION_EXPIRES_IN);
         const now = new Date();
-        
+        const { accessToken, refreshToken } = generateSessionTokens(userId, sessionId, deviceInfo.deviceId);
+
         const updated = await Session.findOneAndUpdate(
           { _id: existingSession._id },
           {
             $set: {
+              accessToken,
+              refreshToken,
               expiresAt,
+              lastRefresh: now,
               'deviceInfo.lastActive': now,
               'deviceInfo.deviceName': deviceName || existingSession.deviceInfo?.deviceName,
               'deviceInfo.ipAddress': deviceInfo.ipAddress,

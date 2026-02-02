@@ -153,6 +153,11 @@ export class AuthManager {
       refreshBuffer: config.refreshBuffer ?? 5 * 60 * 1000, // 5 minutes
     };
     this.storage = this.config.storage;
+
+    // Persist tokens to storage when HttpService refreshes them automatically
+    this.oxyServices.httpService.onTokenRefreshed = (accessToken: string) => {
+      this.storage.setItem(STORAGE_KEYS.ACCESS_TOKEN, accessToken);
+    };
   }
 
   /**

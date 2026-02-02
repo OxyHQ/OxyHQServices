@@ -433,7 +433,13 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
       return;
     }
 
-    // Update sessions state
+    // Set the access token on the HTTP client before updating UI state
+    if (session.accessToken) {
+      oxyServices.httpService.setTokens(session.accessToken);
+    } else {
+      await oxyServices.getTokenBySession(session.sessionId);
+    }
+
     const clientSession = {
       sessionId: session.sessionId,
       deviceId: session.deviceId || '',
@@ -459,7 +465,7 @@ export const OxyProvider: React.FC<OxyContextProviderProps> = ({
         await storage.setItem(storageKeys.sessionIds, JSON.stringify(sessionIds));
       }
     }
-  }, [updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, storage, storageKeys]);
+  }, [oxyServices, updateSessions, setActiveSessionId, loginSuccess, onAuthStateChange, storage, storageKeys]);
 
   // Enable web SSO only after local storage check completes and no user found
   const shouldTryWebSSO = isWebBrowser() && tokenReady && !user && initialized;

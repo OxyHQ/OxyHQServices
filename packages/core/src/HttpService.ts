@@ -52,6 +52,8 @@ interface RequestConfig extends RequestOptions {
   url: string;
   data?: unknown;
   params?: Record<string, unknown>;
+  /** @internal Used to prevent infinite auth retry loops */
+  _isAuthRetry?: boolean;
 }
 
 /**
@@ -132,6 +134,7 @@ export class HttpService {
   private logger: SimpleLogger;
   private config: OxyConfig;
   private tokenRefreshPromise: Promise<string | null> | null = null;
+  private _onTokenRefreshed: ((accessToken: string) => void) | null = null;
 
   // Performance monitoring
   private requestMetrics = {
@@ -322,10 +325,27 @@ export class HttpService {
 
         // Handle response
         if (!response.ok) {
-          if (response.status === 401) {
+          // On 401, attempt token refresh and retry once before giving up
+          if (response.status === 401 && !config._isAuthRetry) {
+            const currentToken = this.tokenStore.getAccessToken();
+            if (currentToken) {
+              try {
+                const decoded = jwtDecode<JwtPayload>(currentToken);
+                if (decoded.sessionId) {
+                  const refreshResult = await this._refreshTokenFromSession(decoded.sessionId);
+                  if (refreshResult) {
+                    // Retry the request with the new token
+                    return this.request<T>({ ...config, _isAuthRetry: true, retry: false });
+                  }
+                }
+              } catch {
+                // Token decode failed, fall through to clear
+              }
+            }
+            // Refresh failed or no token — clear tokens
             this.tokenStore.clearTokens();
           }
-          
+
           // Try to parse error response (handle empty/malformed JSON)
           let errorMessage = `HTTP ${response.status}: ${response.statusText}`;
           const contentType = response.headers.get('content-type');
@@ -343,10 +363,10 @@ export class HttpService {
               this.logger.warn('Failed to parse error response JSON:', parseError);
             }
           }
-          
-          const error = new Error(errorMessage) as Error & { 
-            status?: number; 
-            response?: { status: number; statusText: string } 
+
+          const error = new Error(errorMessage) as Error & {
+            status?: number;
+            response?: { status: number; statusText: string }
           };
           error.status = response.status;
           error.response = { status: response.status, statusText: response.statusText };
@@ -596,6 +616,7 @@ export class HttpService {
       if (response.ok) {
         const { accessToken: newToken } = await response.json();
         this.tokenStore.setTokens(newToken);
+        this._onTokenRefreshed?.(newToken);
         this.logger.debug('Token refreshed');
         return `Bearer ${newToken}`;
       }
@@ -710,6 +731,10 @@ export class HttpService {
   // Token management
   setTokens(accessToken: string, refreshToken = ''): void {
     this.tokenStore.setTokens(accessToken, refreshToken);
+  }
+
+  set onTokenRefreshed(callback: ((accessToken: string) => void) | null) {
+    this._onTokenRefreshed = callback;
   }
 
   clearTokens(): void {
