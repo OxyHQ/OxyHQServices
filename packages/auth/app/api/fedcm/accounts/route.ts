@@ -19,7 +19,22 @@ interface User {
   id: string;
   username: string;
   email: string;
-  avatarUrl?: string;
+  avatar?: string;
+  name?: {
+    first?: string;
+    last?: string;
+  };
+}
+
+function getAvatarUrl(fileId: string): string {
+  return `https://cloud.oxy.so/assets/${encodeURIComponent(fileId)}/stream?variant=thumb`;
+}
+
+function getDisplayName(user: User): string {
+  if (user.name?.first && user.name?.last) {
+    return `${user.name.first} ${user.name.last}`;
+  }
+  return user.username;
 }
 
 /**
@@ -123,9 +138,9 @@ export async function GET(request: NextRequest) {
     const accounts = [
       {
         id: user.id,
-        name: user.username,
+        name: getDisplayName(user),
         email: user.email,
-        picture: user.avatarUrl || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.username}`,
+        picture: user.avatar ? getAvatarUrl(user.avatar) : undefined,
         // List of origins approved for auto sign-in (no UI prompt)
         approved_clients: APPROVED_CLIENTS,
       },
