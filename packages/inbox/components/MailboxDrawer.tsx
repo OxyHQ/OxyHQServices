@@ -100,9 +100,9 @@ function NavItem({
       activeOpacity={0.7}
     >
       {Platform.OS === 'web' ? (
-        <HugeiconsIcon icon={hugeIcon} size={22} color={iconColor} strokeWidth={2} />
+        <HugeiconsIcon icon={hugeIcon} size={20} color={iconColor} strokeWidth={2} />
       ) : (
-        <MaterialCommunityIcons name={icon} size={22} color={iconColor} />
+        <MaterialCommunityIcons name={icon} size={20} color={iconColor} />
       )}
       <Text
         style={[
@@ -329,18 +329,18 @@ const styles = StyleSheet.create({
     paddingTop: 48,
   },
   header: {
-    paddingHorizontal: 24,
-    paddingBottom: 16,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    marginBottom: 8,
-  },
-  appTitle: {
-    fontSize: 22,
-    fontWeight: '700',
     marginBottom: 4,
   },
+  appTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    marginBottom: 2,
+  },
   email: {
-    fontSize: 13,
+    fontSize: 12,
   },
   list: {
     flex: 1,
@@ -349,35 +349,34 @@ const styles = StyleSheet.create({
   item: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 12,
-    paddingHorizontal: 16,
+    padding: 10,
     borderRadius: 28,
     marginVertical: 1,
-    gap: 16,
+    gap: 12,
   },
   itemLabel: {
     flex: 1,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '500',
   },
   itemLabelActive: {
     fontWeight: '700',
   },
   badge: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   divider: {
     height: StyleSheet.hairlineWidth,
-    marginVertical: 8,
-    marginHorizontal: 16,
+    marginVertical: 4,
+    marginHorizontal: 14,
   },
   sectionTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
     textTransform: 'uppercase',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 6,
     letterSpacing: 0.5,
   },
   footerWrapper: {
