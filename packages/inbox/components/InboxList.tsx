@@ -171,7 +171,10 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     clearSelection();
   }, [selectedMessageIds, messages, toggleRead, clearSelection]);
 
-  const mailboxTitle = currentMailbox?.specialUse || currentMailbox?.name || 'Inbox';
+  // Normalize special use flag for display (remove backslash prefix from IMAP format)
+  const mailboxTitle = currentMailbox?.specialUse
+    ? currentMailbox.specialUse.replace(/^\\+/, '')
+    : currentMailbox?.name || 'Inbox';
 
   const handleSwipeArchive = useCallback(
     (messageId: string) => {

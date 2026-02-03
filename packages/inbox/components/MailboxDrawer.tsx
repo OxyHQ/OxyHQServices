@@ -182,14 +182,9 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
 
   // Auto-select inbox on first load
   useEffect(() => {
-    console.log('[MailboxDrawer] mailboxes:', mailboxes.length, 'currentMailbox:', !!currentMailbox);
-    if (mailboxes.length > 0) {
-      console.log('[MailboxDrawer] First mailbox specialUse:', mailboxes[0].specialUse);
-    }
     if (mailboxes.length > 0 && !currentMailbox) {
       // specialUse comes from backend with backslash prefix like \\Inbox, \\Sent, etc.
       const inbox = mailboxes.find((m) => m.specialUse === '\\Inbox') ?? mailboxes[0];
-      console.log('[MailboxDrawer] Auto-selecting inbox:', inbox.name, 'specialUse:', inbox.specialUse);
       selectMailbox(inbox);
     }
   }, [mailboxes, currentMailbox, selectMailbox]);

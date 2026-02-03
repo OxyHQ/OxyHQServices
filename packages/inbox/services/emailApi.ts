@@ -114,6 +114,14 @@ export function createEmailApi(http: HttpService) {
 
     async listMailboxes(): Promise<Mailbox[]> {
       const res = await http.get<{ data: Mailbox[] }>('/email/mailboxes');
+      console.log('[emailApi.listMailboxes] Response structure:', {
+        hasRes: !!res,
+        hasResData: !!res?.data,
+        resDataType: typeof res?.data,
+        resDataIsArray: Array.isArray(res?.data),
+        resKeys: res ? Object.keys(res) : [],
+        resDataKeys: res?.data ? Object.keys(res.data).slice(0, 5) : [],
+      });
       return z.array(MailboxSchema).parse(res.data);
     },
 
