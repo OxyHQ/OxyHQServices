@@ -57,13 +57,6 @@ function RootLayoutContent() {
                     animation: 'slide_from_bottom',
                   }}
                 />
-                <Stack.Screen
-                  name="message/[id]"
-                  options={{
-                    headerShown: false,
-                    animation: 'slide_from_right',
-                  }}
-                />
               </Stack>
               <StatusBar style="auto" />
             </ThemeProvider>

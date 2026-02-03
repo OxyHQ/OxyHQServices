@@ -23,6 +23,7 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
 import { MessageRow } from '@/components/MessageRow';
+import { SearchHeader } from '@/components/SearchHeader';
 import type { Message } from '@/services/emailApi';
 
 export default function InboxScreen() {
@@ -126,20 +127,12 @@ export default function InboxScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Search Bar / App Bar */}
-      <View style={[styles.appBar, { paddingTop: insets.top + 8, backgroundColor: colors.background }]}>
-        <TouchableOpacity
-          style={[styles.searchBar, { backgroundColor: colors.searchBackground }]}
-          onPress={handleSearch}
-          activeOpacity={0.8}
-        >
-          <TouchableOpacity onPress={handleOpenDrawer} activeOpacity={0.7}>
-            <MaterialCommunityIcons name="menu" size={24} color={colors.icon} />
-          </TouchableOpacity>
-          <Text style={[styles.searchPlaceholder, { color: colors.searchPlaceholder, flex: 1 }]}>
-            Search in {mailboxTitle.toLowerCase()}
-          </Text>
-        </TouchableOpacity>
-      </View>
+      <SearchHeader
+        onLeftIcon={handleOpenDrawer}
+        leftIcon="menu"
+        placeholder={`Search in ${mailboxTitle.toLowerCase()}`}
+        onPress={handleSearch}
+      />
 
       {/* Loading */}
       {loading && messages.length === 0 && (
@@ -204,24 +197,6 @@ export default function InboxScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  appBar: {
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-  },
-  searchBar: {
-    width: '100%',
-    maxWidth: 720,
-    flexDirection: 'row',
-    alignItems: 'center',
-    height: 48,
-    borderRadius: 28,
-    paddingHorizontal: 16,
-    gap: 12,
-  },
-  searchPlaceholder: {
-    fontSize: 16,
   },
   loadingContainer: {
     flex: 1,

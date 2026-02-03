@@ -7,25 +7,23 @@ import {
   View,
   Text,
   TextInput,
-  TouchableOpacity,
   FlatList,
   StyleSheet,
   ActivityIndicator,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { createEmailApi, type Message } from '@/services/emailApi';
 import { MessageRow } from '@/components/MessageRow';
+import { SearchHeader } from '@/components/SearchHeader';
 import { useEmailStore } from '@/hooks/useEmail';
 
 export default function SearchScreen() {
   const router = useRouter();
-  const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const { oxyServices } = useOxy();
@@ -100,29 +98,17 @@ export default function SearchScreen() {
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Search bar */}
-      <View style={[styles.searchBar, { paddingTop: insets.top + 8, backgroundColor: colors.background }]}>
-        <TouchableOpacity onPress={handleBack} style={styles.iconButton}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={colors.icon} />
-        </TouchableOpacity>
-        <TextInput
-          ref={inputRef}
-          style={[styles.input, { color: colors.searchText, backgroundColor: colors.searchBackground }]}
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Search mail"
-          placeholderTextColor={colors.searchPlaceholder}
-          returnKeyType="search"
-          onSubmitEditing={handleSearch}
-          autoFocus
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        {query.length > 0 && (
-          <TouchableOpacity onPress={handleClear} style={styles.iconButton}>
-            <MaterialCommunityIcons name="close" size={20} color={colors.icon} />
-          </TouchableOpacity>
-        )}
-      </View>
+      <SearchHeader
+        ref={inputRef}
+        onLeftIcon={handleBack}
+        leftIcon="arrow-left"
+        placeholder="Search mail"
+        value={query}
+        onChangeText={setQuery}
+        onSubmitEditing={handleSearch}
+        onClear={handleClear}
+        autoFocus
+      />
 
       {searching && (
         <View style={styles.loadingContainer}>
@@ -148,27 +134,6 @@ export default function SearchScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  searchBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 8,
-    paddingBottom: 8,
-    gap: 4,
-  },
-  iconButton: {
-    width: 44,
-    height: 44,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 22,
-  },
-  input: {
-    flex: 1,
-    height: 48,
-    borderRadius: 24,
-    paddingHorizontal: 16,
-    fontSize: 16,
   },
   loadingContainer: {
     paddingTop: 40,

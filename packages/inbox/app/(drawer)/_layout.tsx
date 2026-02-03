@@ -70,6 +70,7 @@ export default function DrawerLayout() {
       >
         <Drawer.Screen name="index" options={{ title: 'Inbox' }} />
         <Drawer.Screen name="search" options={{ title: 'Search', drawerItemStyle: { display: 'none' } }} />
+        <Drawer.Screen name="message/[id]" options={{ title: 'Message', drawerItemStyle: { display: 'none' } }} />
         <Drawer.Screen name="settings" options={{ title: 'Settings', drawerItemStyle: { display: 'none' } }} />
       </Drawer>
     </View>
