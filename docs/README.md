@@ -23,6 +23,9 @@ Complete documentation for the Oxy ecosystem: identity, authentication, and serv
 - **[Font Migration Guide](FONT_MIGRATION.md)** - Phudu to Inter migration complete summary
 - **[Services Typography](../packages/services/FONTS.md)** - Complete Inter font usage guide
 
+### Email
+- **[Email Server](EMAIL.md)** - Native email system (username@oxy.so), setup, API reference, DKIM/SPF/DMARC
+
 ### API & Backend
 - **[API Package](../packages/api/README.md)** - Backend API documentation
 - **[Services Changelog](../packages/services/CHANGELOG.md)** - Version history and breaking changes
@@ -61,6 +64,7 @@ OxyHQServices/
 │   ├── README.md                      # This file (documentation index)
 │   ├── ARCHITECTURE.md               # Complete architecture guide
 │   ├── CROSS_DOMAIN_AUTH.md          # Cross-domain SSO guide
+│   ├── EMAIL.md                      # Email server setup & API reference
 │   ├── EXPO_54_GUIDE.md              # Expo 54 universal app guide
 │   └── FONT_MIGRATION.md             # Font migration summary
 ├── packages/
@@ -85,6 +89,7 @@ OxyHQServices/
 | SignatureService | @oxyhq/core | Sign/verify (NOT key storage) |
 | User Linking | api.oxy.so | Multiple auth methods to one account |
 | FedCM | @oxyhq/auth | Browser-native SSO |
+| Email | @oxyhq/api | Native email (username@oxy.so), SMTP in/out |
 
 ## Contributing
 

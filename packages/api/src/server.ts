@@ -27,6 +27,10 @@ import subscriptionRoutes from './routes/subscription.routes';
 import fedcmRoutes from './routes/fedcm';
 import authLinkingRoutes from './routes/authLinking';
 import fedcmService from './services/fedcm.service';
+import emailRoutes from './routes/email';
+import { startSmtpInbound, stopSmtpInbound } from './services/smtp.inbound';
+import { smtpOutbound } from './services/smtp.outbound';
+import { getEnvBoolean } from './config/env';
 import jwt from 'jsonwebtoken';
 import { logger } from './utils/logger';
 import { Response } from 'express';
@@ -243,6 +247,8 @@ mongoose.connection.on('reconnected', () => {
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
+  await stopSmtpInbound();
+  smtpOutbound.shutdown();
   await mongoose.connection.close();
   logger.info('MongoDB connection closed through app termination');
   process.exit(0);
@@ -354,6 +360,7 @@ app.use('/api/devices', userRateLimiter, csrfProtection, devicesRouter);
 app.use('/api/security', userRateLimiter, csrfProtection, securityRoutes);
 app.use('/api/subscription', userRateLimiter, csrfProtection, subscriptionRoutes);
 app.use('/api/fedcm', fedcmRoutes);
+app.use('/api/email', userRateLimiter, csrfProtection, emailRoutes);
 
 // Add a protected route for testing
 app.get('/api/protected-server-route', authMiddleware, (req: any, res: Response) => {
@@ -380,6 +387,12 @@ if (require.main === module) {
     .then(async () => {
       // Seed FedCM approved clients (idempotent - only inserts if not exists)
       await fedcmService.seedApprovedClients();
+
+      // Start SMTP inbound server if enabled
+      if (getEnvBoolean('SMTP_ENABLED', false)) {
+        startSmtpInbound();
+        logger.info('SMTP inbound server enabled');
+      }
 
       server.listen(PORT, '0.0.0.0', () => {
         logger.info(`Server running on port ${PORT}`, {
