@@ -5,7 +5,7 @@
  * When `section` is undefined, shows all sections in a scroll view (mobile full page).
  */
 
-import React, { useState, useCallback, useEffect, useMemo } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -25,8 +25,8 @@ import { useOxy } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import type { QuotaUsage } from '@/services/emailApi';
-import { useEmailStore } from '@/hooks/useEmail';
+import { useSettings, useUpdateSettings } from '@/hooks/queries/useSettings';
+import { useQuota } from '@/hooks/queries/useQuota';
 import { useThemeContext } from '@/contexts/theme-context';
 
 function formatBytes(bytes: number): string {
@@ -49,65 +49,48 @@ export function SettingsPage({ section }: SettingsPageProps) {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const { user } = useOxy();
-  const api = useEmailStore((s) => s._api);
   const { toggleColorScheme } = useThemeContext();
   const isDesktop = Platform.OS === 'web' && width >= 900;
 
-  const [quota, setQuota] = useState<QuotaUsage | null>(null);
+  const { data: settingsData } = useSettings();
+  const { data: quota } = useQuota();
+  const updateSettings = useUpdateSettings();
+
   const [signature, setSignature] = useState('');
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
   const [autoReplySubject, setAutoReplySubject] = useState('');
   const [autoReplyBody, setAutoReplyBody] = useState('');
-  const [saving, setSaving] = useState(false);
+  const initialized = useRef(false);
 
+  // Sync local form state from query data (once)
   useEffect(() => {
-    const load = async () => {
-      if (!api) {
-        if (__DEV__) {
-          // Mock settings data
-          setSignature('Sent from Inbox by Oxy');
-          setQuota({
-            used: 524288000,
-            limit: 1073741824,
-            percentage: 49,
-            dailySendCount: 12,
-            dailySendLimit: 500,
-          });
-        }
-        return;
-      }
-      try {
-        const [s, q] = await Promise.all([api.getSettings(), api.getQuota()]);
-        setQuota(q);
-        setSignature(s.signature);
-        setAutoReplyEnabled(s.autoReply.enabled);
-        setAutoReplySubject(s.autoReply.subject);
-        setAutoReplyBody(s.autoReply.body);
-      } catch {}
-    };
-    load();
-  }, [api]);
-
-  const handleSave = useCallback(async () => {
-    setSaving(true);
-    try {
-      if (api) {
-        await api.updateSettings({
-          signature,
-          autoReply: {
-            enabled: autoReplyEnabled,
-            subject: autoReplySubject,
-            body: autoReplyBody,
-          },
-        });
-      }
-      Alert.alert('Saved', 'Settings updated.');
-    } catch (err: any) {
-      Alert.alert('Error', err.message || 'Failed to save settings.');
-    } finally {
-      setSaving(false);
+    if (settingsData && !initialized.current) {
+      initialized.current = true;
+      setSignature(settingsData.signature);
+      setAutoReplyEnabled(settingsData.autoReply.enabled);
+      setAutoReplySubject(settingsData.autoReply.subject);
+      setAutoReplyBody(settingsData.autoReply.body);
     }
-  }, [signature, autoReplyEnabled, autoReplySubject, autoReplyBody, api]);
+  }, [settingsData]);
+
+  const saving = updateSettings.isPending;
+
+  const handleSave = useCallback(() => {
+    updateSettings.mutate(
+      {
+        signature,
+        autoReply: {
+          enabled: autoReplyEnabled,
+          subject: autoReplySubject,
+          body: autoReplyBody,
+        },
+      },
+      {
+        onSuccess: () => Alert.alert('Saved', 'Settings updated.'),
+        onError: (err: any) => Alert.alert('Error', err.message || 'Failed to save settings.'),
+      },
+    );
+  }, [signature, autoReplyEnabled, autoReplySubject, autoReplyBody, updateSettings]);
 
   const emailAddress = user?.username ? `${user.username}@oxy.so` : '';
 

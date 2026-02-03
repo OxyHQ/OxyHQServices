@@ -23,6 +23,8 @@ import { useOxy, OxySignInButton } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
+import { useMessages } from '@/hooks/queries/useMessages';
+import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
 import { MessageRow } from '@/components/MessageRow';
 import { SearchHeader } from '@/components/SearchHeader';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
@@ -41,38 +43,36 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const { isAuthenticated } = useOxy();
 
+  const currentMailbox = useEmailStore((s) => s.currentMailbox);
+  const selectedMessageId = useEmailStore((s) => s.selectedMessageId);
   const {
-    messages,
-    loading,
-    refreshing,
-    loadingMore,
-    currentMailbox,
-    selectedMessageId,
-    refreshMessages,
-    loadMoreMessages,
-    toggleStar,
-  } = useEmailStore();
+    data,
+    isLoading,
+    isRefetching,
+    isFetchingNextPage,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+  } = useMessages(currentMailbox?._id);
+  const toggleStar = useToggleStar();
 
-  const handleRefresh = useCallback(async () => {
-    try {
-      await refreshMessages();
-    } catch {}
-  }, [refreshMessages]);
+  const messages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);
 
-  const handleLoadMore = useCallback(async () => {
-    if (loadingMore) return;
-    try {
-      await loadMoreMessages();
-    } catch {}
-  }, [loadMoreMessages, loadingMore]);
+  const handleRefresh = useCallback(() => {
+    refetch();
+  }, [refetch]);
+
+  const handleLoadMore = useCallback(() => {
+    if (isFetchingNextPage || !hasNextPage) return;
+    fetchNextPage();
+  }, [fetchNextPage, isFetchingNextPage, hasNextPage]);
 
   const handleStar = useCallback(
-    async (messageId: string) => {
-      try {
-        await toggleStar(messageId);
-      } catch {}
+    (messageId: string) => {
+      const msg = messages.find((m) => m._id === messageId);
+      if (msg) toggleStar.mutate({ messageId, starred: !msg.flags.starred });
     },
-    [toggleStar],
+    [messages, toggleStar],
   );
 
   const handleMessagePress = useCallback(
@@ -91,8 +91,12 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   }, [navigation]);
 
   const handleCompose = useCallback(() => {
-    router.push('/compose');
-  }, [router]);
+    if (replaceNavigation) {
+      router.replace('/compose');
+    } else {
+      router.push('/compose');
+    }
+  }, [router, replaceNavigation]);
 
   const handleSearch = useCallback(() => {
     router.push('/search');
@@ -120,7 +124,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   );
 
   const renderEmpty = useCallback(() => {
-    if (loading) return null;
+    if (isLoading) return null;
     return (
       <View style={styles.emptyContainer}>
         <EmptyIllustration size={180} />
@@ -135,16 +139,16 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         )}
       </View>
     );
-  }, [loading, colors, isAuthenticated]);
+  }, [isLoading, colors, isAuthenticated]);
 
   const renderFooter = useCallback(() => {
-    if (!loadingMore) return null;
+    if (!isFetchingNextPage) return null;
     return (
       <View style={styles.footer}>
         <ActivityIndicator size="small" color={colors.primary} />
       </View>
     );
-  }, [loadingMore, colors.primary]);
+  }, [isFetchingNextPage, colors.primary]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
@@ -155,7 +159,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         onPress={handleSearch}
       />
 
-      {loading && messages.length === 0 && (
+      {isLoading && messages.length === 0 && (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
         </View>
@@ -172,7 +176,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         onEndReachedThreshold={0.3}
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
+            refreshing={isRefetching && !isFetchingNextPage}
             onRefresh={handleRefresh}
             tintColor={colors.primary}
             colors={[colors.primary]}

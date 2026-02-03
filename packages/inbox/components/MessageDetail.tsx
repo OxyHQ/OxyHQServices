@@ -23,6 +23,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
+import { useMessage } from '@/hooks/queries/useMessage';
+import { useMailboxes } from '@/hooks/queries/useMailboxes';
+import { useToggleStar, useArchiveMessage, useDeleteMessage } from '@/hooks/mutations/useMessageMutations';
 import { Avatar } from '@/components/Avatar';
 import type { EmailAddress } from '@/services/emailApi';
 
@@ -54,17 +57,14 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
 
-  const { currentMessage, loadMessage, clearCurrentMessage, toggleStar, archiveMessage, deleteMessage } =
-    useEmailStore();
+  const { data: currentMessage, isLoading } = useMessage(messageId);
+  const { data: mailboxes = [] } = useMailboxes();
+  const currentMailbox = useEmailStore((s) => s.currentMailbox);
+  const toggleStar = useToggleStar();
+  const archiveMutation = useArchiveMessage();
+  const deleteMutation = useDeleteMessage();
 
   const [expanded, setExpanded] = useState(false);
-
-  useEffect(() => {
-    if (messageId) loadMessage(messageId);
-    return () => {
-      if (mode === 'standalone') clearCurrentMessage();
-    };
-  }, [messageId, loadMessage, clearCurrentMessage, mode]);
 
   // Reset expanded state when message changes
   useEffect(() => {
@@ -75,32 +75,33 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
     router.back();
   }, [router]);
 
-  const handleStar = useCallback(async () => {
-    if (!messageId) return;
-    try {
-      await toggleStar(messageId);
-    } catch {}
-  }, [messageId, toggleStar]);
+  const handleStar = useCallback(() => {
+    if (!messageId || !currentMessage) return;
+    toggleStar.mutate({ messageId, starred: !currentMessage.flags.starred });
+  }, [messageId, currentMessage, toggleStar]);
 
-  const handleArchive = useCallback(async () => {
+  const handleArchive = useCallback(() => {
     if (!messageId) return;
-    try {
-      await archiveMessage(messageId);
-      if (mode === 'standalone') router.back();
-    } catch {}
-  }, [messageId, archiveMessage, router, mode]);
+    const archiveBox = mailboxes.find((m) => m.specialUse === 'Archive');
+    if (archiveBox) {
+      archiveMutation.mutate({ messageId, archiveMailboxId: archiveBox._id });
+    }
+    if (mode === 'standalone') router.back();
+  }, [messageId, mailboxes, archiveMutation, router, mode]);
 
-  const handleDelete = useCallback(async () => {
+  const handleDelete = useCallback(() => {
     if (!messageId) return;
-    try {
-      await deleteMessage(messageId);
-      if (mode === 'standalone') router.back();
-    } catch {}
-  }, [messageId, deleteMessage, router, mode]);
+    const trashBox = mailboxes.find((m) => m.specialUse === 'Trash');
+    const isInTrash = currentMailbox?.specialUse === 'Trash';
+    deleteMutation.mutate({ messageId, trashMailboxId: trashBox?._id, isInTrash });
+    if (mode === 'standalone') router.back();
+  }, [messageId, mailboxes, currentMailbox, deleteMutation, router, mode]);
+
+  const navigate = mode === 'embedded' ? router.replace : router.push;
 
   const handleReply = useCallback(() => {
     if (!currentMessage) return;
-    router.push({
+    navigate({
       pathname: '/compose',
       params: {
         replyTo: currentMessage._id,
@@ -111,11 +112,11 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
           : `Re: ${currentMessage.subject}`,
       },
     });
-  }, [router, currentMessage]);
+  }, [navigate, currentMessage]);
 
   const handleForward = useCallback(() => {
     if (!currentMessage) return;
-    router.push({
+    navigate({
       pathname: '/compose',
       params: {
         forward: currentMessage._id,
@@ -125,9 +126,9 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
         body: `\n\n---------- Forwarded message ----------\nFrom: ${currentMessage.from.name || currentMessage.from.address}\nDate: ${formatFullDate(currentMessage.date)}\nSubject: ${currentMessage.subject}\nTo: ${formatRecipients(currentMessage.to)}\n\n${currentMessage.text || ''}`,
       },
     });
-  }, [router, currentMessage]);
+  }, [navigate, currentMessage]);
 
-  if (!currentMessage || currentMessage._id !== messageId) {
+  if (isLoading || !currentMessage) {
     return (
       <View
         style={[

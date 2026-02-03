@@ -6,8 +6,10 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import 'react-native-reanimated';
 import { KeyboardProvider } from 'react-native-keyboard-controller';
 import { OxyProvider } from '@oxyhq/services';
+import { QueryClientProvider } from '@tanstack/react-query';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { queryClient } from '@/hooks/queries/queryClient';
 import { ThemeProvider as AppThemeProvider } from '@/contexts/theme-context';
 import * as SplashScreen from 'expo-splash-screen';
 
@@ -43,26 +45,20 @@ function RootLayoutContent() {
 
   const content = useMemo(
     () => (
-      <KeyboardProvider>
-        <OxyProvider baseURL={API_URL}>
-          <SafeAreaProvider>
-            <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-              <Stack>
-                <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
-                <Stack.Screen
-                  name="compose/index"
-                  options={{
-                    presentation: 'modal',
-                    headerShown: false,
-                    animation: 'slide_from_bottom',
-                  }}
-                />
-              </Stack>
-              <StatusBar style="auto" />
-            </ThemeProvider>
-          </SafeAreaProvider>
-        </OxyProvider>
-      </KeyboardProvider>
+      <QueryClientProvider client={queryClient}>
+        <KeyboardProvider>
+          <OxyProvider baseURL={API_URL}>
+            <SafeAreaProvider>
+              <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+                <Stack>
+                  <Stack.Screen name="(drawer)" options={{ headerShown: false }} />
+                </Stack>
+                <StatusBar style="auto" />
+              </ThemeProvider>
+            </SafeAreaProvider>
+          </OxyProvider>
+        </KeyboardProvider>
+      </QueryClientProvider>
     ),
     [colorScheme],
   );

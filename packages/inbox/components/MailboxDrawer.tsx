@@ -2,13 +2,14 @@
  * Gmail-style drawer sidebar listing mailboxes.
  */
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ScrollView } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useOxy } from '@oxyhq/services';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
+import { useMailboxes } from '@/hooks/queries/useMailboxes';
 import type { Mailbox } from '@/services/emailApi';
 
 const MAILBOX_ICONS: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
@@ -32,15 +33,23 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const { user } = useOxy();
-  const { mailboxes, currentMailbox, selectMailbox } = useEmailStore();
+  const currentMailbox = useEmailStore((s) => s.currentMailbox);
+  const selectMailbox = useEmailStore((s) => s.selectMailbox);
+  const { data: mailboxes = [] } = useMailboxes();
+
+  // Auto-select inbox on first load
+  useEffect(() => {
+    if (mailboxes.length > 0 && !currentMailbox) {
+      const inbox = mailboxes.find((m) => m.specialUse === 'Inbox') ?? mailboxes[0];
+      selectMailbox(inbox);
+    }
+  }, [mailboxes, currentMailbox, selectMailbox]);
 
   const systemMailboxes = mailboxes.filter((m) => m.specialUse);
   const customMailboxes = mailboxes.filter((m) => !m.specialUse);
 
-  const handleSelect = async (mailbox: Mailbox) => {
-    try {
-      await selectMailbox(mailbox);
-    } catch {}
+  const handleSelect = (mailbox: Mailbox) => {
+    selectMailbox(mailbox);
     onClose?.();
   };
 

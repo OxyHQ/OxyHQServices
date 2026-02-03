@@ -17,11 +17,12 @@ import { useRouter } from 'expo-router';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import type { Message } from '@/services/emailApi';
-import { MOCK_MESSAGES } from '@/constants/mockData';
 import { MessageRow } from '@/components/MessageRow';
 import { SearchHeader } from '@/components/SearchHeader';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
 import { useEmailStore } from '@/hooks/useEmail';
+import { useSearchMessages } from '@/hooks/queries/useSearchMessages';
+import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
 
 interface SearchListProps {
   /** When true, uses router.replace for message navigation (desktop split-view) */
@@ -32,49 +33,26 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
-  const api = useEmailStore((s) => s._api);
   const inputRef = useRef<TextInput>(null);
-  const { toggleStar, selectedMessageId } = useEmailStore();
+  const selectedMessageId = useEmailStore((s) => s.selectedMessageId);
+  const toggleStar = useToggleStar();
 
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Message[]>([]);
-  const [searching, setSearching] = useState(false);
-  const [hasSearched, setHasSearched] = useState(false);
+  const [submittedQuery, setSubmittedQuery] = useState('');
+  const { data: results = [], isLoading: searching } = useSearchMessages(submittedQuery);
+  const hasSearched = submittedQuery.trim().length > 0;
 
-  const handleSearch = useCallback(async () => {
+  const handleSearch = useCallback(() => {
     if (!query.trim()) return;
-    setSearching(true);
-    setHasSearched(true);
-    try {
-      if (api) {
-        const res = await api.search(query.trim());
-        setResults(res.data);
-      } else if (__DEV__) {
-        // Mock search: filter by subject, sender, or body text
-        const q = query.trim().toLowerCase();
-        const filtered = MOCK_MESSAGES.filter(
-          (m) =>
-            m.subject.toLowerCase().includes(q) ||
-            m.from.name?.toLowerCase().includes(q) ||
-            m.from.address.toLowerCase().includes(q) ||
-            m.text?.toLowerCase().includes(q),
-        );
-        setResults(filtered);
-      }
-    } catch {
-      setResults([]);
-    } finally {
-      setSearching(false);
-    }
-  }, [query, api]);
+    setSubmittedQuery(query);
+  }, [query]);
 
   const handleStar = useCallback(
-    async (messageId: string) => {
-      try {
-        await toggleStar(messageId);
-      } catch {}
+    (messageId: string) => {
+      const msg = results.find((m) => m._id === messageId);
+      if (msg) toggleStar.mutate({ messageId, starred: !msg.flags.starred });
     },
-    [toggleStar],
+    [results, toggleStar],
   );
 
   const handleMessagePress = useCallback(
@@ -97,8 +75,7 @@ export function SearchList({ replaceNavigation }: SearchListProps) {
 
   const handleClear = useCallback(() => {
     setQuery('');
-    setResults([]);
-    setHasSearched(false);
+    setSubmittedQuery('');
     inputRef.current?.focus();
   }, []);
 

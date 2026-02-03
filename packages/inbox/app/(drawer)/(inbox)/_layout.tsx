@@ -36,6 +36,7 @@ export default function InboxLayout() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="index" />
       <Stack.Screen name="conversation/[id]" />
+      <Stack.Screen name="compose" />
     </Stack>
   );
 }

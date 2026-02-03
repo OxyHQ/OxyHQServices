@@ -1,7 +1,9 @@
 /**
- * Compose / Reply / Forward email screen.
+ * Reusable compose / reply / forward form.
  *
- * Presented as a modal with Gmail-style compose UI.
+ * Supports two modes:
+ * - standalone: full-screen route with close/back button (mobile)
+ * - embedded: inline panel without safe area padding (desktop split-view)
  */
 
 import React, { useState, useCallback, useMemo, useRef } from 'react';
@@ -17,40 +19,43 @@ import {
   Alert,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useOxy } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { createEmailApi } from '@/services/emailApi';
+import { useSendMessage, useSaveDraft } from '@/hooks/mutations/useMessageMutations';
 
-export default function ComposeScreen() {
+interface ComposeFormProps {
+  mode: 'standalone' | 'embedded';
+  replyTo?: string;
+  forward?: string;
+  to?: string;
+  toName?: string;
+  subject?: string;
+  body?: string;
+}
+
+export function ComposeForm({ mode, replyTo, forward, to: initialTo, subject: initialSubject, body: initialBody }: ComposeFormProps) {
   const router = useRouter();
-  const params = useLocalSearchParams<{
-    replyTo?: string;
-    forward?: string;
-    to?: string;
-    toName?: string;
-    subject?: string;
-    body?: string;
-  }>();
   const insets = useSafeAreaInsets();
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
-  const { user, oxyServices } = useOxy();
-  const emailApi = useMemo(() => createEmailApi(oxyServices.httpService), [oxyServices]);
+  const { user } = useOxy();
+  const sendMessage = useSendMessage();
+  const saveDraftMutation = useSaveDraft();
   const bodyRef = useRef<TextInput>(null);
 
-  const [to, setTo] = useState(params.to || '');
+  const [to, setTo] = useState(initialTo || '');
   const [cc, setCc] = useState('');
   const [bcc, setBcc] = useState('');
-  const [subject, setSubject] = useState(params.subject || '');
-  const [body, setBody] = useState(params.body || '');
+  const [subject, setSubject] = useState(initialSubject || '');
+  const [body, setBody] = useState(initialBody || '');
   const [showCcBcc, setShowCcBcc] = useState(false);
-  const [sending, setSending] = useState(false);
 
   const fromAddress = user?.username ? `${user.username}@oxy.so` : '';
+  const sending = sendMessage.isPending;
 
   const parseAddresses = (input: string) => {
     return input
@@ -60,44 +65,42 @@ export default function ComposeScreen() {
       .map((addr) => ({ address: addr }));
   };
 
-  const handleSend = useCallback(async () => {
+  const handleSend = useCallback(() => {
     if (!to.trim()) {
       Alert.alert('Error', 'Please add at least one recipient.');
       return;
     }
 
-    setSending(true);
-    try {
-      await emailApi.sendMessage({
+    sendMessage.mutate(
+      {
         to: parseAddresses(to),
         cc: cc.trim() ? parseAddresses(cc) : undefined,
         bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
         subject,
         text: body,
-        inReplyTo: params.replyTo,
-      });
+        inReplyTo: replyTo,
+      },
+      {
+        onSuccess: () => router.back(),
+        onError: (err: any) =>
+          Alert.alert('Send failed', err.message || 'Unable to send email. Please try again.'),
+      },
+    );
+  }, [to, cc, bcc, subject, body, replyTo, sendMessage, router]);
 
-      router.back();
-    } catch (err: any) {
-      Alert.alert('Send failed', err.message || 'Unable to send email. Please try again.');
-    } finally {
-      setSending(false);
-    }
-  }, [to, cc, bcc, subject, body, params.replyTo, emailApi, router]);
-
-  const handleSaveDraft = useCallback(async () => {
-    try {
-      await emailApi.saveDraft({
+  const handleSaveDraft = useCallback(() => {
+    saveDraftMutation.mutate(
+      {
         to: to.trim() ? parseAddresses(to) : undefined,
         cc: cc.trim() ? parseAddresses(cc) : undefined,
         bcc: bcc.trim() ? parseAddresses(bcc) : undefined,
         subject,
         text: body,
-        inReplyTo: params.replyTo,
-      });
-    } catch {}
-    router.back();
-  }, [to, cc, bcc, subject, body, params.replyTo, emailApi, router]);
+        inReplyTo: replyTo,
+      },
+      { onSettled: () => router.back() },
+    );
+  }, [to, cc, bcc, subject, body, replyTo, saveDraftMutation, router]);
 
   const handleClose = useCallback(() => {
     if (to.trim() || subject.trim() || body.trim()) {
@@ -109,16 +112,22 @@ export default function ComposeScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={[styles.container, { backgroundColor: colors.background, paddingTop: insets.top }]}
+      style={[
+        styles.container,
+        { backgroundColor: colors.background },
+        mode === 'standalone' && { paddingTop: insets.top },
+      ]}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       {/* Header */}
       <View style={[styles.header, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={handleClose} style={styles.iconButton}>
-          <MaterialCommunityIcons name="close" size={24} color={colors.icon} />
-        </TouchableOpacity>
+        {mode === 'standalone' && (
+          <TouchableOpacity onPress={handleClose} style={styles.iconButton}>
+            <MaterialCommunityIcons name="close" size={24} color={colors.icon} />
+          </TouchableOpacity>
+        )}
         <Text style={[styles.headerTitle, { color: colors.text }]}>
-          {params.replyTo ? 'Reply' : params.forward ? 'Forward' : 'Compose'}
+          {replyTo ? 'Reply' : forward ? 'Forward' : 'Compose'}
         </Text>
         <View style={styles.headerSpacer} />
         <TouchableOpacity onPress={handleSaveDraft} style={styles.iconButton}>

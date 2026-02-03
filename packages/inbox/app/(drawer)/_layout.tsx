@@ -1,5 +1,5 @@
 import { Drawer } from 'expo-router/drawer';
-import React, { useMemo, useEffect, useCallback } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { View, StyleSheet, Platform, useWindowDimensions } from 'react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
@@ -13,33 +13,14 @@ export default function DrawerLayout() {
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const isDesktop = Platform.OS === 'web' && width >= 900;
   const { isAuthenticated, oxyServices } = useOxy();
-  const { _initApi, loadMailboxes, mailboxesLoaded, currentMailbox, loadMessages } = useEmailStore();
+  const _initApi = useEmailStore((s) => s._initApi);
 
-  // Initialize email API with httpService
+  // Initialize email API with httpService when authenticated
   useEffect(() => {
     if (isAuthenticated) {
       _initApi(oxyServices.httpService);
     }
   }, [isAuthenticated, oxyServices, _initApi]);
-
-  // Load mailboxes on auth (or with mock data in __DEV__)
-  const initEmail = useCallback(async () => {
-    if (!isAuthenticated && !__DEV__) return;
-    if (!mailboxesLoaded) {
-      await loadMailboxes();
-    }
-  }, [isAuthenticated, mailboxesLoaded, loadMailboxes]);
-
-  useEffect(() => {
-    initEmail();
-  }, [initEmail]);
-
-  // Load messages when mailbox is set
-  useEffect(() => {
-    if (!currentMailbox) return;
-    if (!isAuthenticated && !__DEV__) return;
-    loadMessages(currentMailbox._id);
-  }, [currentMailbox?._id, isAuthenticated, loadMessages]);
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
