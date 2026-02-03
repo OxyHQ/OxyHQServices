@@ -31,7 +31,7 @@ function getMailboxIcon(mailbox: Mailbox): keyof typeof MaterialCommunityIcons.g
 export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
-  const { user, oxyServices } = useOxy();
+  const { user } = useOxy();
   const { mailboxes, currentMailbox, selectMailbox } = useEmailStore();
 
   const systemMailboxes = mailboxes.filter((m) => m.specialUse);
@@ -39,10 +39,7 @@ export function MailboxDrawer({ onClose }: { onClose?: () => void }) {
 
   const handleSelect = async (mailbox: Mailbox) => {
     try {
-      const token = oxyServices.httpService.getAccessToken();
-      if (token) {
-        await selectMailbox(mailbox, token);
-      }
+      await selectMailbox(mailbox);
     } catch {}
     onClose?.();
   };

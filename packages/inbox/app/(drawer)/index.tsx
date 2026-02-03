@@ -127,17 +127,15 @@ export default function InboxScreen() {
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       {/* Search Bar / App Bar */}
       <View style={[styles.appBar, { paddingTop: insets.top + 8, backgroundColor: colors.background }]}>
-        <TouchableOpacity onPress={handleOpenDrawer} style={styles.iconButton} activeOpacity={0.7}>
-          <MaterialCommunityIcons name="menu" size={24} color={colors.icon} />
-        </TouchableOpacity>
-
         <TouchableOpacity
           style={[styles.searchBar, { backgroundColor: colors.searchBackground }]}
           onPress={handleSearch}
           activeOpacity={0.8}
         >
-          <MaterialCommunityIcons name="magnify" size={20} color={colors.searchPlaceholder} />
-          <Text style={[styles.searchPlaceholder, { color: colors.searchPlaceholder }]}>
+          <TouchableOpacity onPress={handleOpenDrawer} activeOpacity={0.7}>
+            <MaterialCommunityIcons name="menu" size={24} color={colors.icon} />
+          </TouchableOpacity>
+          <Text style={[styles.searchPlaceholder, { color: colors.searchPlaceholder, flex: 1 }]}>
             Search in {mailboxTitle.toLowerCase()}
           </Text>
         </TouchableOpacity>
@@ -208,21 +206,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   appBar: {
-    flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 8,
     paddingBottom: 8,
-    gap: 4,
-  },
-  iconButton: {
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 24,
   },
   searchBar: {
-    flex: 1,
+    width: '100%',
+    maxWidth: 720,
     flexDirection: 'row',
     alignItems: 'center',
     height: 48,
