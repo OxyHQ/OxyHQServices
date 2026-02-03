@@ -256,19 +256,23 @@ export function MailboxDrawer({ onClose, onToggle, collapsed }: { onClose?: () =
         <NavItem icon="cards-heart-outline" hugeIcon={FavouriteIcon as unknown as IconSvgElement} label="For You" isActive={isForYouActive} colors={colors} collapsed={collapsed} onPress={handleForYou} />
 
         {/* System Mailboxes */}
-        {systemMailboxes.map((mailbox) => (
-          <NavItem
-            key={mailbox._id}
-            icon={getMailboxFallbackIcon(mailbox)}
-            hugeIcon={getMailboxHugeIcon(mailbox)}
-            label={mailbox.specialUse || mailbox.name}
-            isActive={!isSpecialPage && currentMailbox?._id === mailbox._id}
-            colors={colors}
-            badge={mailbox.unseenMessages}
-            collapsed={collapsed}
-            onPress={() => handleSelect(mailbox)}
-          />
-        ))}
+        {systemMailboxes.map((mailbox) => {
+          // Normalize special use flag for display (remove backslash prefix)
+          const label = mailbox.specialUse ? mailbox.specialUse.replace(/^\\+/, '') : mailbox.name;
+          return (
+            <NavItem
+              key={mailbox._id}
+              icon={getMailboxFallbackIcon(mailbox)}
+              hugeIcon={getMailboxHugeIcon(mailbox)}
+              label={label}
+              isActive={!isSpecialPage && currentMailbox?._id === mailbox._id}
+              colors={colors}
+              badge={mailbox.unseenMessages}
+              collapsed={collapsed}
+              onPress={() => handleSelect(mailbox)}
+            />
+          );
+        })}
 
         {/* Custom Labels */}
         {!collapsed && customMailboxes.length > 0 && (
