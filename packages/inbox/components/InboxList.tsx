@@ -3,7 +3,7 @@
  * Used by the (inbox) layout on desktop (always visible) and by the index route on mobile.
  */
 
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useEffect } from 'react';
 import {
   View,
   Text,
@@ -26,9 +26,16 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
 import { useEmailStore } from '@/hooks/useEmail';
 import { useMessages } from '@/hooks/queries/useMessages';
-import { useToggleStar } from '@/hooks/mutations/useMessageMutations';
+import { useMailboxes } from '@/hooks/queries/useMailboxes';
+import {
+  useToggleStar,
+  useToggleRead,
+  useArchiveMessage,
+  useDeleteMessage,
+} from '@/hooks/mutations/useMessageMutations';
 import { MessageRow } from '@/components/MessageRow';
 import { SearchHeader } from '@/components/SearchHeader';
+import { SelectionToolbar } from '@/components/SelectionToolbar';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
 import type { Message } from '@/services/emailApi';
 
@@ -47,6 +54,12 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
   const currentMailbox = useEmailStore((s) => s.currentMailbox);
   const selectedMessageId = useEmailStore((s) => s.selectedMessageId);
+  const isSelectionMode = useEmailStore((s) => s.isSelectionMode);
+  const selectedMessageIds = useEmailStore((s) => s.selectedMessageIds);
+  const toggleMessageSelection = useEmailStore((s) => s.toggleMessageSelection);
+  const enterSelectionMode = useEmailStore((s) => s.enterSelectionMode);
+  const clearSelection = useEmailStore((s) => s.clearSelection);
+
   const {
     data,
     isLoading,
@@ -56,9 +69,18 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     fetchNextPage,
     hasNextPage,
   } = useMessages(currentMailbox?._id);
+  const { data: mailboxes = [] } = useMailboxes();
   const toggleStar = useToggleStar();
+  const toggleRead = useToggleRead();
+  const archiveMutation = useArchiveMessage();
+  const deleteMutation = useDeleteMessage();
 
   const messages = useMemo(() => data?.pages.flatMap((p) => p.data) ?? [], [data]);
+
+  // Clear selection when mailbox changes
+  useEffect(() => {
+    clearSelection();
+  }, [currentMailbox?._id, clearSelection]);
 
   const handleRefresh = useCallback(() => {
     refetch();
@@ -104,6 +126,48 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
     router.push('/search');
   }, [router]);
 
+  const handleLongPress = useCallback(
+    (id: string) => {
+      enterSelectionMode(id);
+    },
+    [enterSelectionMode],
+  );
+
+  // Bulk actions
+  const handleBulkArchive = useCallback(() => {
+    const archiveBox = mailboxes.find((m) => m.specialUse === 'Archive');
+    if (!archiveBox) return;
+    selectedMessageIds.forEach((id) => {
+      archiveMutation.mutate({ messageId: id, archiveMailboxId: archiveBox._id });
+    });
+    clearSelection();
+  }, [selectedMessageIds, mailboxes, archiveMutation, clearSelection]);
+
+  const handleBulkDelete = useCallback(() => {
+    const trashBox = mailboxes.find((m) => m.specialUse === 'Trash');
+    const isInTrash = currentMailbox?.specialUse === 'Trash';
+    selectedMessageIds.forEach((id) => {
+      deleteMutation.mutate({ messageId: id, trashMailboxId: trashBox?._id, isInTrash });
+    });
+    clearSelection();
+  }, [selectedMessageIds, mailboxes, currentMailbox, deleteMutation, clearSelection]);
+
+  const handleBulkStar = useCallback(() => {
+    selectedMessageIds.forEach((id) => {
+      const msg = messages.find((m) => m._id === id);
+      if (msg) toggleStar.mutate({ messageId: id, starred: !msg.flags.starred });
+    });
+    clearSelection();
+  }, [selectedMessageIds, messages, toggleStar, clearSelection]);
+
+  const handleBulkMarkRead = useCallback(() => {
+    selectedMessageIds.forEach((id) => {
+      const msg = messages.find((m) => m._id === id);
+      if (msg) toggleRead.mutate({ messageId: id, seen: !msg.flags.seen });
+    });
+    clearSelection();
+  }, [selectedMessageIds, messages, toggleRead, clearSelection]);
+
   const mailboxTitle = currentMailbox?.specialUse || currentMailbox?.name || 'Inbox';
 
   const renderItem = useCallback(
@@ -113,9 +177,13 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         onStar={handleStar}
         onSelect={handleMessagePress}
         isSelected={item._id === selectedMessageId}
+        isSelectionMode={isSelectionMode}
+        isMultiSelected={selectedMessageIds.has(item._id)}
+        onToggleSelect={toggleMessageSelection}
+        onLongPress={handleLongPress}
       />
     ),
-    [handleStar, handleMessagePress, selectedMessageId],
+    [handleStar, handleMessagePress, selectedMessageId, isSelectionMode, selectedMessageIds, toggleMessageSelection, handleLongPress],
   );
 
   const keyExtractor = useCallback((item: Message) => item._id, []);
@@ -154,12 +222,23 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      <SearchHeader
-        onLeftIcon={handleOpenDrawer}
-        leftIcon="menu"
-        placeholder={`Search in ${mailboxTitle.toLowerCase()}`}
-        onPress={handleSearch}
-      />
+      {isSelectionMode ? (
+        <SelectionToolbar
+          count={selectedMessageIds.size}
+          onClose={clearSelection}
+          onArchive={handleBulkArchive}
+          onDelete={handleBulkDelete}
+          onStar={handleBulkStar}
+          onMarkRead={handleBulkMarkRead}
+        />
+      ) : (
+        <SearchHeader
+          onLeftIcon={handleOpenDrawer}
+          leftIcon="menu"
+          placeholder={`Search in ${mailboxTitle.toLowerCase()}`}
+          onPress={handleSearch}
+        />
+      )}
 
       {isLoading && messages.length === 0 && (
         <View style={styles.loadingContainer}>
@@ -176,6 +255,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         ListFooterComponent={renderFooter}
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.3}
+        extraData={selectedMessageIds}
         refreshControl={
           <RefreshControl
             refreshing={isRefetching && !isFetchingNextPage}
@@ -188,36 +268,38 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
         showsVerticalScrollIndicator={false}
       />
 
-      <TouchableOpacity
-        style={[
-          styles.fab,
-          {
-            backgroundColor: colors.composeFab,
-            bottom: insets.bottom + 16,
-          },
-          Platform.select({
-            ios: {
-              shadowColor: '#000',
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.2,
-              shadowRadius: 8,
+      {!isSelectionMode && (
+        <TouchableOpacity
+          style={[
+            styles.fab,
+            {
+              backgroundColor: colors.composeFab,
+              bottom: insets.bottom + 16,
             },
-            android: { elevation: 6 },
-            web: { boxShadow: '0 2px 10px rgba(0,0,0,0.2)' } as any,
-          }),
-        ]}
-        onPress={handleCompose}
-        activeOpacity={0.8}
-      >
-        {Platform.OS === 'web' ? (
-          <HugeiconsIcon icon={PencilEdit01Icon as unknown as IconSvgElement} size={24} color={colors.composeFabIcon} />
-        ) : (
-          <MaterialCommunityIcons name="pencil" size={24} color={colors.composeFabIcon} />
-        )}
-        {Platform.OS === 'web' && (
-          <Text style={[styles.fabLabel, { color: colors.composeFabText }]}>Compose</Text>
-        )}
-      </TouchableOpacity>
+            Platform.select({
+              ios: {
+                shadowColor: '#000',
+                shadowOffset: { width: 0, height: 4 },
+                shadowOpacity: 0.2,
+                shadowRadius: 8,
+              },
+              android: { elevation: 6 },
+              web: { boxShadow: '0 2px 10px rgba(0,0,0,0.2)' } as any,
+            }),
+          ]}
+          onPress={handleCompose}
+          activeOpacity={0.8}
+        >
+          {Platform.OS === 'web' ? (
+            <HugeiconsIcon icon={PencilEdit01Icon as unknown as IconSvgElement} size={24} color={colors.composeFabIcon} />
+          ) : (
+            <MaterialCommunityIcons name="pencil" size={24} color={colors.composeFabIcon} />
+          )}
+          {Platform.OS === 'web' && (
+            <Text style={[styles.fabLabel, { color: colors.composeFabText }]}>Compose</Text>
+          )}
+        </TouchableOpacity>
+      )}
     </View>
   );
 }

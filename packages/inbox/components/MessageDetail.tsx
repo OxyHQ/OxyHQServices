@@ -209,7 +209,8 @@ export function MessageDetail({ mode, messageId }: MessageDetailProps) {
               icon={StarIcon as unknown as IconSvgElement}
               size={22}
               color={currentMessage.flags.starred ? colors.starred : colors.icon}
-              strokeWidth={currentMessage.flags.starred ? 2.5 : 1.5}
+              strokeWidth={1.5}
+              fill={currentMessage.flags.starred ? colors.starred : 'none'}
             />
           ) : (
             <MaterialCommunityIcons

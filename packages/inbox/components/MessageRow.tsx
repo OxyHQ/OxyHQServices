@@ -2,10 +2,11 @@
  * Gmail-style message row for the inbox list.
  *
  * Shows sender, subject, preview, and mini-card previews for attachments.
+ * Supports multi-select via avatar checkbox (web hover / native long-press).
  */
 
-import React, { useCallback, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, Platform } from 'react-native';
+import React, { useCallback, useMemo, useState } from 'react';
+import { View, Text, Pressable, TouchableOpacity, StyleSheet, Platform } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { HugeiconsIcon, type IconSvgElement } from '@hugeicons/react';
 import {
@@ -86,19 +87,50 @@ export function MessageRow({
   onStar,
   onSelect,
   isSelected,
+  isSelectionMode,
+  isMultiSelected,
+  onToggleSelect,
+  onLongPress,
 }: {
   message: Message;
   onStar: (id: string) => void;
   onSelect: (id: string) => void;
   isSelected?: boolean;
+  isSelectionMode?: boolean;
+  isMultiSelected?: boolean;
+  onToggleSelect?: (id: string) => void;
+  onLongPress?: (id: string) => void;
 }) {
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
   const isUnread = !message.flags.seen;
+  const [avatarHovered, setAvatarHovered] = useState(false);
+
+  const showCheckbox = isSelectionMode || (Platform.OS === 'web' && avatarHovered);
 
   const handlePress = useCallback(() => {
-    onSelect(message._id);
-  }, [message._id, onSelect]);
+    if (isSelectionMode && onToggleSelect) {
+      onToggleSelect(message._id);
+    } else {
+      onSelect(message._id);
+    }
+  }, [message._id, onSelect, onToggleSelect, isSelectionMode]);
+
+  const handleLongPress = useCallback(() => {
+    if (Platform.OS !== 'web' && onLongPress) {
+      try {
+        const Haptics = require('expo-haptics');
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      } catch {}
+      onLongPress(message._id);
+    }
+  }, [message._id, onLongPress]);
+
+  const handleAvatarPress = useCallback(() => {
+    if (onToggleSelect) {
+      onToggleSelect(message._id);
+    }
+  }, [message._id, onToggleSelect]);
 
   const handleStar = useCallback(() => {
     onStar(message._id);
@@ -109,16 +141,40 @@ export function MessageRow({
   const dateStr = formatDate(message.date);
   const hasAttachments = message.attachments.length > 0;
 
+  const rowBg = isMultiSelected
+    ? colors.selectedRow
+    : isSelected
+      ? colors.selectedRow
+      : isUnread
+        ? colors.surface
+        : colors.background;
+
   return (
-    <TouchableOpacity
-      style={[
+    <Pressable
+      style={({ pressed }) => [
         styles.container,
-        { backgroundColor: isSelected ? colors.selectedRow : isUnread ? colors.surface : colors.background },
+        { backgroundColor: rowBg },
+        pressed && { opacity: 0.7 },
       ]}
       onPress={handlePress}
-      activeOpacity={0.7}
+      onLongPress={handleLongPress}
+      delayLongPress={500}
     >
-      <Avatar name={senderName} size={40} />
+      <Pressable
+        onPress={showCheckbox ? handleAvatarPress : undefined}
+        hitSlop={4}
+        {...(Platform.OS === 'web' ? {
+          onMouseEnter: () => setAvatarHovered(true),
+          onMouseLeave: () => setAvatarHovered(false),
+        } as any : {})}
+      >
+        <Avatar
+          name={senderName}
+          size={40}
+          showCheckbox={showCheckbox}
+          isChecked={isMultiSelected}
+        />
+      </Pressable>
 
       <View style={styles.content}>
         <View style={styles.topRow}>
@@ -147,7 +203,8 @@ export function MessageRow({
                 icon={StarIcon as unknown as IconSvgElement}
                 size={16}
                 color={message.flags.starred ? colors.starred : colors.icon}
-                strokeWidth={message.flags.starred ? 2.5 : 1.5}
+                strokeWidth={message.flags.starred ? 1.5 : 1.5}
+                fill={message.flags.starred ? colors.starred : 'none'}
               />
             ) : (
               <MaterialCommunityIcons
@@ -205,7 +262,7 @@ export function MessageRow({
           </View>
         )}
       </View>
-    </TouchableOpacity>
+    </Pressable>
   );
 }
 
