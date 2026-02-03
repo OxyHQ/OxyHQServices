@@ -24,7 +24,7 @@ export function useMessages(mailboxId: string | undefined) {
           pagination: { offset: 0, limit: PAGE_SIZE, total: filtered.length, hasMore: false },
         };
       }
-      return { data: [], pagination: { offset: 0, limit: PAGE_SIZE, total: 0, hasMore: false } };
+      throw new Error('Email API not initialized');
     },
     initialPageParam: 0,
     getNextPageParam: (lastPage) =>

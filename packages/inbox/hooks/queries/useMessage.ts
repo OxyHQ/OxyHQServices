@@ -11,7 +11,7 @@ export function useMessage(messageId: string | undefined) {
     queryFn: async () => {
       if (api) return api.getMessage(messageId!);
       if (__DEV__) return MOCK_MESSAGES.find((m) => m._id === messageId) ?? null;
-      return null;
+      throw new Error('Email API not initialized');
     },
     enabled: !!messageId && (!!api || __DEV__),
   });

@@ -15,7 +15,7 @@ export function useSettings() {
     queryFn: async () => {
       if (api) return api.getSettings();
       if (__DEV__) return MOCK_SETTINGS;
-      return MOCK_SETTINGS;
+      throw new Error('Email API not initialized');
     },
     enabled: !!api || __DEV__,
   });

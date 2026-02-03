@@ -11,7 +11,7 @@ export function useMailboxes() {
     queryFn: async () => {
       if (api) return api.listMailboxes();
       if (__DEV__) return MOCK_MAILBOXES;
-      return [];
+      throw new Error('Email API not initialized');
     },
     enabled: !!api || __DEV__,
   });

@@ -24,7 +24,7 @@ export function useSearchMessages(query: string) {
             m.text?.toLowerCase().includes(q),
         );
       }
-      return [];
+      throw new Error('Email API not initialized');
     },
     enabled: trimmed.length > 0 && (!!api || __DEV__),
   });
