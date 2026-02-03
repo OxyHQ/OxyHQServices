@@ -1,0 +1,80 @@
+##
+## Docker Compose — Oxy API + Email Server
+##
+## Runs everything on a single DigitalOcean Droplet:
+## - Oxy API (Express, port 8080 behind Caddy reverse proxy)
+## - SMTP inbound (port 25) + outbound
+## - Rspamd spam filtering
+## - Caddy reverse proxy (auto HTTPS with Let's Encrypt)
+##
+## Usage:
+##   cp .env.example .env       # fill in your values
+##   docker compose up -d       # start all services
+##   docker compose logs -f     # watch logs
+##
+
+services:
+  # ─── Oxy API + SMTP Server ──────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: oxy-api
+    restart: unless-stopped
+    ports:
+      - "25:25"        # SMTP inbound (must be exposed directly, not through Caddy)
+      - "587:587"      # SMTP submission
+    expose:
+      - "8080"         # HTTP API (Caddy proxies to this)
+    env_file:
+      - .env
+    environment:
+      - PORT=8080
+      - SMTP_ENABLED=true
+      - RSPAMD_URL=http://rspamd:11333
+    volumes:
+      # Mount TLS certs for SMTP STARTTLS
+      - certs:/certs:ro
+    depends_on:
+      rspamd:
+        condition: service_started
+    networks:
+      - oxy-net
+
+  # ─── Rspamd Spam Filter ─────────────────────────────────────────
+  rspamd:
+    image: rspamd/rspamd:latest
+    container_name: oxy-rspamd
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11334:11334"   # Web UI (localhost only, for admin)
+    volumes:
+      - rspamd-data:/var/lib/rspamd
+    networks:
+      - oxy-net
+
+  # ─── Caddy Reverse Proxy (auto HTTPS) ───────────────────────────
+  caddy:
+    image: caddy:2-alpine
+    container_name: oxy-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"        # HTTP (redirect to HTTPS + ACME challenges)
+      - "443:443"      # HTTPS
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+      - certs:/certs   # Shared with api for SMTP TLS
+    networks:
+      - oxy-net
+
+volumes:
+  rspamd-data:
+  caddy-data:
+  caddy-config:
+  certs:
+
+networks:
+  oxy-net:
+    driver: bridge

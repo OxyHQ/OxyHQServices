@@ -509,5 +509,117 @@ packages/api/src/
 - [ ] Port 25 open in firewall (inbound SMTP)
 - [ ] Reverse DNS (PTR) set for your server IP
 - [ ] `SMTP_ENABLED=true` in env
+- [ ] DigitalOcean port 25 unblock request approved
 - [ ] Test sending/receiving with an external email provider
 - [ ] Monitor spam score of outgoing mail at [mail-tester.com](https://www.mail-tester.com)
+
+## Deployment Architecture
+
+Everything runs on a **single DigitalOcean Droplet** — the API, SMTP server, spam filter, and reverse proxy:
+
+```
+                        Internet
+                           │
+              ┌────────────┼────────────┐
+              │            │            │
+         HTTPS (443)   SMTP (25)   SMTP (587)
+              │            │            │
+              ▼            │            │
+        ┌──────────┐       │            │
+        │  Caddy   │       │            │
+        │  (auto   │       │            │
+        │   TLS)   │       │            │
+        └────┬─────┘       │            │
+             │ proxy       │            │
+             ▼             ▼            ▼
+        ┌─────────────────────────────────┐
+        │         Oxy API Container       │
+        │                                 │
+        │  Express.js (:8080)             │
+        │  + SMTP Inbound (:25)           │
+        │  + SMTP Outbound (nodemailer)   │
+        │                                 │
+        │  SMTP_ENABLED=true              │
+        └──────────┬──────────────────────┘
+                   │ spam check
+                   ▼
+        ┌──────────────────┐
+        │  Rspamd          │
+        │  (spam filter)   │
+        └──────────────────┘
+                   │
+                   ▼
+              MongoDB
+         (managed cluster)
+```
+
+**Key points:**
+
+- **Caddy** handles HTTPS with automatic Let's Encrypt certificates and reverse proxies to the API
+- **SMTP ports 25/587** are exposed directly (not through Caddy — SMTP is not HTTP)
+- **Rspamd** runs as a Docker sidecar for spam filtering
+- **MongoDB** is a managed cluster (e.g., DigitalOcean Managed MongoDB) — not on the Droplet
+- **Auto-deploy**: Push to `main` → GitHub Actions SSHs into the Droplet → pulls → rebuilds → restarts
+
+### Quick Start
+
+```bash
+# 1. Create an Ubuntu 22.04+ Droplet and name it "mail.oxy.so" (sets PTR/rDNS)
+
+# 2. Run the setup script on the Droplet
+ssh root@YOUR_DROPLET_IP
+bash <(curl -sL https://raw.githubusercontent.com/OxyHQ/OxyHQServices/main/scripts/setup-droplet.sh)
+
+# 3. Configure your environment
+cd /opt/oxy
+nano .env    # Fill in MongoDB URI, DKIM key, S3 creds, etc.
+
+# 4. Generate DKIM keys
+docker run --rm -v $(pwd):/app -w /app node:20-alpine node packages/api/scripts/generate-dkim.js
+# Copy the private key into .env (DKIM_PRIVATE_KEY)
+# Add the DNS TXT record shown in the output
+
+# 5. Update the Caddyfile with your domain
+nano Caddyfile
+
+# 6. Add DNS records (see DNS Records section above)
+
+# 7. Request port 25 unblock from DigitalOcean
+#    https://cloud.digitalocean.com/support
+
+# 8. Start everything
+docker compose up -d
+
+# 9. Verify
+docker compose logs -f
+```
+
+### Auto-Deploy (GitHub Actions)
+
+Push to `main` → GitHub Actions SSHs into the Droplet → pulls → rebuilds → restarts. Same push-to-deploy experience as App Platform.
+
+Add these **GitHub Secrets**:
+
+| Secret | Value |
+|--------|-------|
+| `DROPLET_HOST` | Your Droplet IP or `api.oxy.so` |
+| `DROPLET_USER` | `deploy` |
+| `DROPLET_SSH_KEY` | SSH private key for the deploy user |
+
+You can also trigger a deploy manually from the GitHub Actions tab → "Deploy to Droplet" → "Run workflow".
+
+### Deployment Files
+
+```
+OxyHQServices/
+├── Dockerfile                    # Multi-stage Docker build (API + SMTP)
+├── docker-compose.yml            # API + Rspamd + Caddy
+├── Caddyfile                     # Reverse proxy config (auto HTTPS)
+├── .env.example                  # Template for all env vars
+├── scripts/
+│   └── setup-droplet.sh          # One-time Droplet provisioning
+├── .github/workflows/
+│   └── deploy.yml                # Auto-deploy on push to main
+└── packages/api/scripts/
+    └── generate-dkim.js          # DKIM key generation utility
+```

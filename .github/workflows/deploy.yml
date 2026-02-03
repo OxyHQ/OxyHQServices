@@ -1,0 +1,60 @@
+##
+## Auto-deploy Oxy API + Email to DigitalOcean Droplet
+##
+## Triggers on push to main. SSHs into the droplet, pulls, rebuilds, restarts.
+## Same auto-deploy experience as App Platform — push to git, it updates.
+##
+## Required GitHub Secrets:
+##   DROPLET_HOST    - Droplet IP or hostname (e.g., api.oxy.so)
+##   DROPLET_USER    - SSH user (e.g., deploy)
+##   DROPLET_SSH_KEY - Private SSH key for the deploy user
+##
+## One-time droplet setup: run scripts/setup-droplet.sh
+##
+
+name: Deploy to Droplet
+
+on:
+  push:
+    branches: [main]
+
+  # Allow manual trigger from GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script_stop: true
+          script: |
+            set -e
+            cd /opt/oxy
+
+            echo "=== Pulling latest code ==="
+            git fetch origin main
+            git reset --hard origin/main
+
+            echo "=== Building ==="
+            docker compose build api
+
+            echo "=== Restarting ==="
+            docker compose up -d
+
+            echo "=== Cleanup ==="
+            docker image prune -f
+
+            echo "=== Status ==="
+            docker compose ps
+
+            echo "=== Recent logs ==="
+            docker compose logs --tail=20 api
+
+            echo "Deploy complete!"
