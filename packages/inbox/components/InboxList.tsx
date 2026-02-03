@@ -153,17 +153,19 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   }, [selectedMessageIds, mailboxes, currentMailbox, deleteMutation, clearSelection]);
 
   const handleBulkStar = useCallback(() => {
-    selectedMessageIds.forEach((id) => {
-      const msg = messages.find((m) => m._id === id);
-      if (msg) toggleStar.mutate({ messageId: id, starred: !msg.flags.starred });
+    const selected = messages.filter((m) => selectedMessageIds.has(m._id));
+    const shouldStar = selected.some((m) => !m.flags.starred);
+    selected.forEach((msg) => {
+      toggleStar.mutate({ messageId: msg._id, starred: shouldStar });
     });
     clearSelection();
   }, [selectedMessageIds, messages, toggleStar, clearSelection]);
 
   const handleBulkMarkRead = useCallback(() => {
-    selectedMessageIds.forEach((id) => {
-      const msg = messages.find((m) => m._id === id);
-      if (msg) toggleRead.mutate({ messageId: id, seen: !msg.flags.seen });
+    const selected = messages.filter((m) => selectedMessageIds.has(m._id));
+    const shouldMarkRead = selected.some((m) => !m.flags.seen);
+    selected.forEach((msg) => {
+      toggleRead.mutate({ messageId: msg._id, seen: shouldMarkRead });
     });
     clearSelection();
   }, [selectedMessageIds, messages, toggleRead, clearSelection]);
