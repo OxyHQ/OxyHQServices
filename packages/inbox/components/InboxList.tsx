@@ -95,7 +95,7 @@ export function InboxList({ replaceNavigation }: InboxListProps) {
   }, [router]);
 
   const handleSearch = useCallback(() => {
-    router.push('/(drawer)/search');
+    router.push('/search');
   }, [router]);
 
   const mailboxTitle = currentMailbox?.specialUse || currentMailbox?.name || 'Inbox';

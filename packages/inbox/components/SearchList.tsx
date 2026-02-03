@@ -1,5 +1,6 @@
 /**
- * Search emails screen with Gmail-style search bar.
+ * Search emails list with Gmail-style search bar.
+ * Used by the (search) layout on desktop (always visible) and by the index route on mobile.
  */
 
 import React, { useState, useCallback, useMemo, useRef } from 'react';
@@ -12,24 +13,28 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { useOxy } from '@oxyhq/services';
 
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { Colors } from '@/constants/theme';
-import { createEmailApi, type Message } from '@/services/emailApi';
+import type { Message } from '@/services/emailApi';
+import { MOCK_MESSAGES } from '@/constants/mockData';
 import { MessageRow } from '@/components/MessageRow';
 import { SearchHeader } from '@/components/SearchHeader';
 import { EmptyIllustration } from '@/components/EmptyIllustration';
 import { useEmailStore } from '@/hooks/useEmail';
 
-export default function SearchScreen() {
+interface SearchListProps {
+  /** When true, uses router.replace for message navigation (desktop split-view) */
+  replaceNavigation?: boolean;
+}
+
+export function SearchList({ replaceNavigation }: SearchListProps) {
   const router = useRouter();
   const colorScheme = useColorScheme();
   const colors = useMemo(() => Colors[colorScheme ?? 'light'], [colorScheme]);
-  const { oxyServices } = useOxy();
-  const emailApi = useMemo(() => createEmailApi(oxyServices.httpService), [oxyServices]);
+  const api = useEmailStore((s) => s._api);
   const inputRef = useRef<TextInput>(null);
-  const { toggleStar } = useEmailStore();
+  const { toggleStar, selectedMessageId } = useEmailStore();
 
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<Message[]>([]);
@@ -41,14 +46,27 @@ export default function SearchScreen() {
     setSearching(true);
     setHasSearched(true);
     try {
-      const res = await emailApi.search(query.trim());
-      setResults(res.data);
+      if (api) {
+        const res = await api.search(query.trim());
+        setResults(res.data);
+      } else if (__DEV__) {
+        // Mock search: filter by subject, sender, or body text
+        const q = query.trim().toLowerCase();
+        const filtered = MOCK_MESSAGES.filter(
+          (m) =>
+            m.subject.toLowerCase().includes(q) ||
+            m.from.name?.toLowerCase().includes(q) ||
+            m.from.address.toLowerCase().includes(q) ||
+            m.text?.toLowerCase().includes(q),
+        );
+        setResults(filtered);
+      }
     } catch {
       setResults([]);
     } finally {
       setSearching(false);
     }
-  }, [query, emailApi]);
+  }, [query, api]);
 
   const handleStar = useCallback(
     async (messageId: string) => {
@@ -57,6 +75,20 @@ export default function SearchScreen() {
       } catch {}
     },
     [toggleStar],
+  );
+
+  const handleMessagePress = useCallback(
+    (messageId: string) => {
+      const path = replaceNavigation
+        ? `/search/conversation/${messageId}`
+        : `/search/conversation/${messageId}`;
+      if (replaceNavigation) {
+        router.replace(path);
+      } else {
+        router.push(path);
+      }
+    },
+    [router, replaceNavigation],
   );
 
   const handleBack = useCallback(() => {
@@ -71,8 +103,15 @@ export default function SearchScreen() {
   }, []);
 
   const renderItem = useCallback(
-    ({ item }: { item: Message }) => <MessageRow message={item} onStar={handleStar} />,
-    [handleStar],
+    ({ item }: { item: Message }) => (
+      <MessageRow
+        message={item}
+        onStar={handleStar}
+        onSelect={handleMessagePress}
+        isSelected={item._id === selectedMessageId}
+      />
+    ),
+    [handleStar, handleMessagePress, selectedMessageId],
   );
 
   const renderEmpty = useCallback(() => {
@@ -97,7 +136,6 @@ export default function SearchScreen() {
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Search bar */}
       <SearchHeader
         ref={inputRef}
         onLeftIcon={handleBack}
