@@ -38,6 +38,7 @@ const SCROLL_AMOUNT = CARD_WIDTH + CARD_GAP;
 
 function HorizontalSection({
   title,
+  description,
   icon,
   items,
   iconColor,
@@ -46,6 +47,7 @@ function HorizontalSection({
   onStar,
 }: {
   title: string;
+  description: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
   items: Message[];
   iconColor: string;
