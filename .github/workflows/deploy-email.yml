@@ -1,0 +1,63 @@
+##
+## Auto-deploy Oxy Email Worker to DigitalOcean Droplet
+##
+## Triggers on push to main when email-related files change.
+## SSHs into the droplet, pulls latest code, rebuilds, and restarts.
+##
+## Required GitHub Secrets:
+##   EMAIL_DROPLET_HOST  - Droplet IP or hostname (e.g., mail.oxy.so)
+##   EMAIL_DROPLET_USER  - SSH user (e.g., deploy)
+##   EMAIL_DROPLET_SSH_KEY - Private SSH key for the deploy user
+##
+## One-time droplet setup: run scripts/setup-email-droplet.sh
+##
+
+name: Deploy Email Worker
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/api/src/services/smtp.inbound.ts'
+      - 'packages/api/src/services/smtp.outbound.ts'
+      - 'packages/api/src/services/spam.service.ts'
+      - 'packages/api/src/services/email.service.ts'
+      - 'packages/api/src/models/Mailbox.ts'
+      - 'packages/api/src/models/Message.ts'
+      - 'packages/api/src/config/email.config.ts'
+      - 'packages/api/src/email-worker.ts'
+      - 'Dockerfile.email'
+      - 'docker-compose.email.yml'
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy to Email Droplet
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EMAIL_DROPLET_HOST }}
+          username: ${{ secrets.EMAIL_DROPLET_USER }}
+          key: ${{ secrets.EMAIL_DROPLET_SSH_KEY }}
+          script: |
+            set -e
+            cd /opt/oxy-email
+
+            echo "=== Pulling latest code ==="
+            git pull origin main
+
+            echo "=== Rebuilding and restarting ==="
+            docker compose -f docker-compose.email.yml build --no-cache email-worker
+            docker compose -f docker-compose.email.yml up -d
+
+            echo "=== Cleaning old images ==="
+            docker image prune -f
+
+            echo "=== Status ==="
+            docker compose -f docker-compose.email.yml ps
+            echo "Deploy complete!"

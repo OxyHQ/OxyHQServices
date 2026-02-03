@@ -509,5 +509,94 @@ packages/api/src/
 - [ ] Port 25 open in firewall (inbound SMTP)
 - [ ] Reverse DNS (PTR) set for your server IP
 - [ ] `SMTP_ENABLED=true` in env
+- [ ] DigitalOcean port 25 unblock request approved
 - [ ] Test sending/receiving with an external email provider
 - [ ] Monitor spam score of outgoing mail at [mail-tester.com](https://www.mail-tester.com)
+
+## Deployment Architecture
+
+The email system runs as **two separate components** that share the same MongoDB:
+
+```
+┌──────────────────────────────────────┐    ┌───────────────────────────────────┐
+│  DigitalOcean App Platform           │    │  DigitalOcean Droplet             │
+│                                      │    │  (mail.oxy.so)                    │
+│  Oxy API (Express)                   │    │                                   │
+│  - /api/email/* REST endpoints       │    │  Email Worker (email-worker.ts)   │
+│  - All other API routes              │    │  - SMTP inbound (port 25)         │
+│  - SMTP_ENABLED=false                │    │  - SMTP outbound (nodemailer)     │
+│                                      │    │  - Rspamd (Docker sidecar)        │
+│  Port: 443 (HTTPS only)             │    │                                   │
+└──────────────┬───────────────────────┘    │  Ports: 25, 587                   │
+               │                            └──────────────┬────────────────────┘
+               │                                           │
+               └────────── same MongoDB ───────────────────┘
+```
+
+**Why two components?**
+
+- **App Platform** only exposes HTTP/HTTPS ports — it cannot receive SMTP traffic on port 25
+- The **API** handles REST endpoints for your Expo client (list messages, send, search, etc.)
+- The **Email Worker** handles the SMTP protocol (receiving mail from the internet, sending with DKIM)
+- Both read/write the same `messages` and `mailboxes` collections in MongoDB
+
+### Quick Start (Droplet)
+
+```bash
+# 1. Create a $6/mo Ubuntu droplet, name it "mail.oxy.so"
+
+# 2. Run the setup script on the droplet
+ssh root@YOUR_DROPLET_IP
+curl -sL https://raw.githubusercontent.com/OxyHQ/OxyHQServices/main/scripts/setup-email-droplet.sh | bash
+
+# 3. Configure your environment
+cd /opt/oxy-email
+cp .env.email.example .env.email
+nano .env.email    # Fill in MongoDB URI, DKIM key, S3 creds
+
+# 4. Generate DKIM keys
+docker run --rm -v $(pwd):/app -w /app node:20-alpine node packages/api/scripts/generate-dkim.js
+
+# 5. Get TLS certificate
+certbot certonly --standalone -d mail.oxy.so
+
+# 6. Mount certs in docker-compose.email.yml (add under email-worker > volumes):
+#    - /etc/letsencrypt/live/mail.oxy.so:/certs:ro
+
+# 7. Start
+docker compose -f docker-compose.email.yml up -d
+
+# 8. Verify
+docker compose -f docker-compose.email.yml logs -f email-worker
+```
+
+### Auto-Deploy (GitHub Actions)
+
+Push to `main` → GitHub Actions SSHs into the droplet → pulls → rebuilds → restarts.
+
+Add these **GitHub Secrets**:
+
+| Secret | Value |
+|--------|-------|
+| `EMAIL_DROPLET_HOST` | Your droplet IP or `mail.oxy.so` |
+| `EMAIL_DROPLET_USER` | `deploy` |
+| `EMAIL_DROPLET_SSH_KEY` | SSH private key for the deploy user |
+
+The workflow (`.github/workflows/deploy-email.yml`) only triggers when email-related files change, so regular API pushes don't redeploy the email worker.
+
+You can also trigger a deploy manually from the GitHub Actions tab → "Deploy Email Worker" → "Run workflow".
+
+### Deployment Files
+
+```
+OxyHQServices/
+├── Dockerfile.email              # Multi-stage Docker build for email worker
+├── docker-compose.email.yml      # Email worker + Rspamd services
+├── .env.email.example            # Template for email worker env vars
+├── scripts/
+│   └── setup-email-droplet.sh    # One-time droplet provisioning
+├── .github/workflows/
+│   └── deploy-email.yml          # Auto-deploy on push to main
+└── packages/api/src/
+    └── email-worker.ts           # Standalone SMTP entry point
+```
